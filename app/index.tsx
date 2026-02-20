@@ -9,7 +9,7 @@ const RADIUS = Math.min(114, width * 0.31);
 const LETTER_STEP = 9.4;
 const SPACE_STEP = 5.2;
 
-export default function Index() {
+export default function Page() {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const titleRiseAnim = useRef(new Animated.Value(14)).current;
   const titleScaleAnim = useRef(new Animated.Value(0.9)).current;
@@ -129,7 +129,7 @@ export default function Index() {
       >
         <View style={styles.arcTitleWrap}>{titleLetters}</View>
         <Animated.Image
-          source={require("../assets/images/bootup_sampleIMG.png")}
+          source={require("../mobile-app/assets/images/bootup_sampleIMG.png")}
           style={[
             styles.image,
             {
