@@ -1,16 +1,10 @@
-import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Pressable, StyleSheet, Text } from "react-native";
+import { FormTextInput } from "../components/forms/FormTextInput";
+import { PasswordField } from "../components/forms/PasswordField";
+import { AuthCardLayout } from "../components/layout/AuthCardLayout";
+import { AppPrimaryButton } from "../components/ui/AppPrimaryButton";
 
 export default function ResetPasswordNewScreen() {
   const [newPassword, setNewPassword] = useState("");
@@ -18,66 +12,53 @@ export default function ResetPasswordNewScreen() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   return (
-    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <View style={styles.card}>
-          <Text style={styles.title}>Reset your password</Text>
-          <Text style={styles.subtitle}>Enter and confirm your new password below.</Text>
+    <AuthCardLayout contentContainerStyle={styles.content} cardStyle={styles.card}>
+      <Text style={styles.title}>Reset your password</Text>
+      <Text style={styles.subtitle}>Enter and confirm your new password below.</Text>
 
-          <Text style={styles.label}>Enter your new password</Text>
-          <TextInput
-            style={styles.input}
-            value={newPassword}
-            onChangeText={setNewPassword}
-            secureTextEntry
-            placeholder="******"
-            placeholderTextColor="#8D8D8D"
-          />
+      <FormTextInput
+        label="Enter your new password"
+        value={newPassword}
+        onChangeText={setNewPassword}
+        secureTextEntry
+        placeholder="******"
+        placeholderTextColor="#8D8D8D"
+        labelStyle={styles.label}
+      />
 
-          <Text style={styles.label}>Confirm your new password</Text>
-          <View style={styles.passwordWrap}>
-            <TextInput
-              style={styles.passwordInput}
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry={!showConfirmPassword}
-              placeholder="******"
-              placeholderTextColor="#8D8D8D"
-            />
-            <Pressable style={styles.eyeButton} onPress={() => setShowConfirmPassword((prev) => !prev)}>
-              <Ionicons name={showConfirmPassword ? "eye-off" : "eye"} size={18} color="#1D1D1D" />
-            </Pressable>
-          </View>
+      <PasswordField
+        label="Confirm your new password"
+        value={confirmPassword}
+        onChangeText={setConfirmPassword}
+        showPassword={showConfirmPassword}
+        onToggleVisibility={() => setShowConfirmPassword((prev) => !prev)}
+        placeholder="******"
+        placeholderTextColor="#8D8D8D"
+        containerStyle={styles.passwordContainer}
+        inputWrapStyle={styles.passwordWrap}
+        inputStyle={styles.passwordInput}
+      />
 
-          <Pressable style={styles.actionButton} onPress={() => router.replace("/login")}>
-            <Text style={styles.actionButtonText}>Reset Password</Text>
-          </Pressable>
+      <AppPrimaryButton
+        label="Reset Password"
+        onPress={() => router.replace("/login")}
+        containerStyle={styles.actionButton}
+      />
 
-          <Pressable style={styles.backToLogin} onPress={() => router.replace("/login")}>
-            <Text style={styles.backText}>
-              Go back to <Text style={styles.backLink}>login page</Text>
-            </Text>
-          </Pressable>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      <Pressable style={styles.backToLogin} onPress={() => router.replace("/login")}>
+        <Text style={styles.backText}>
+          Go back to <Text style={styles.backLink}>login page</Text>
+        </Text>
+      </Pressable>
+    </AuthCardLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-  },
   content: {
-    flexGrow: 1,
     justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 24,
   },
   card: {
-    width: "100%",
     maxWidth: 320,
   },
   title: {
@@ -97,59 +78,19 @@ const styles = StyleSheet.create({
   label: {
     color: "#111111",
     fontSize: 14,
-    marginBottom: 7,
   },
-  input: {
-    height: 44,
-    borderWidth: 1,
-    borderColor: "#1A1A1A",
-    borderRadius: 8,
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 10,
-    fontSize: 14,
-    color: "#111111",
-    marginBottom: 16,
+  passwordContainer: {
+    marginBottom: 0,
   },
   passwordWrap: {
-    height: 44,
-    borderWidth: 1,
-    borderColor: "#1A1A1A",
-    borderRadius: 8,
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 10,
     marginBottom: 58,
-    flexDirection: "row",
-    alignItems: "center",
   },
   passwordInput: {
-    flex: 1,
     fontSize: 14,
     color: "#111111",
   },
-  eyeButton: {
-    width: 28,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   actionButton: {
-    width: 290,
-    height: 28,
-    borderRadius: 999,
-    backgroundColor: "#7A9EBA",
-    alignSelf: "center",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#5E7D95",
-    shadowOpacity: 0.34,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 5,
     marginBottom: 16,
-  },
-  actionButtonText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "700",
   },
   backToLogin: {
     alignItems: "center",

@@ -1,5 +1,6 @@
 import { router } from "expo-router";
-import { Image, Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
 export default function AuthChoiceScreen() {
   return (
@@ -8,7 +9,7 @@ export default function AuthChoiceScreen() {
         <View style={styles.shapeWrap}>
           <View style={styles.shape} />
           <Image
-            source={require("../assets/images/game_logo.png")}
+            source={require("../assets/images/logo_sampleIMG.png")}
             style={styles.heroLogo}
             resizeMode="contain"
           />

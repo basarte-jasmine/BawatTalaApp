@@ -8,9 +8,11 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
+import { FormTextInput } from "../components/forms/FormTextInput";
+import { StepProgress } from "../components/forms/StepProgress";
+import { AppPrimaryButton } from "../components/ui/AppPrimaryButton";
 
 const TOTAL_STEPS = 4;
 
@@ -43,20 +45,11 @@ export default function RegisterScreen() {
     router.replace("/home");
   };
 
-  const renderProgress = () => (
-    <View style={styles.progressRow}>
-      {Array.from({ length: TOTAL_STEPS }, (_, index) => {
-        const isActive = index + 1 === step;
-        return <View key={`step-${index + 1}`} style={[styles.progressPill, isActive && styles.progressPillActive]} />;
-      })}
-    </View>
-  );
-
   const renderStepOne = () => (
     <>
       <Text style={styles.title}>Welcome!</Text>
       <Text style={styles.subtitle}>Create your account to start journaling{"\n"}and track your progress.</Text>
-      {renderProgress()}
+      <StepProgress total={TOTAL_STEPS} current={step} containerStyle={styles.progressRow} />
 
       <Text style={styles.sectionTitle}>Upload a photo of your Student ID</Text>
       <View style={styles.uploadWrap}>
@@ -72,87 +65,113 @@ export default function RegisterScreen() {
 
   const renderStepTwo = () => (
     <>
-      {renderProgress()}
+      <StepProgress total={TOTAL_STEPS} current={step} containerStyle={styles.progressRow} />
       <Text style={styles.headerBody}>Does this look right?{"\n"}Review the details we found.</Text>
 
-      <Text style={styles.label}>Full Name</Text>
-      <TextInput style={styles.input} value={fullName} onChangeText={setFullName} />
+      <FormTextInput
+        label="Full Name"
+        value={fullName}
+        onChangeText={setFullName}
+        labelStyle={styles.label}
+        inputStyle={styles.input}
+      />
 
-      <Text style={styles.label}>Student Number</Text>
-      <TextInput style={styles.input} value={studentNumber} onChangeText={setStudentNumber} />
+      <FormTextInput
+        label="Student Number"
+        value={studentNumber}
+        onChangeText={setStudentNumber}
+        labelStyle={styles.label}
+        inputStyle={styles.input}
+      />
 
-      <Text style={styles.label}>Program</Text>
-      <View style={styles.inputWithIcon}>
-        <TextInput
-          style={styles.inputField}
-          value={program}
-          onChangeText={setProgram}
-          placeholder=""
-          placeholderTextColor="#8D8D8D"
-        />
-        <Ionicons name="chevron-down" size={20} color="#1D1D1D" />
-      </View>
+      <FormTextInput
+        label="Program"
+        value={program}
+        onChangeText={setProgram}
+        placeholder=""
+        placeholderTextColor="#8D8D8D"
+        labelStyle={styles.label}
+        inputWrapStyle={styles.inputWithIcon}
+        inputStyle={styles.inputField}
+        rightAdornment={<Ionicons name="chevron-down" size={20} color="#1D1D1D" />}
+      />
     </>
   );
 
   const renderStepThree = () => (
     <>
-      {renderProgress()}
+      <StepProgress total={TOTAL_STEPS} current={step} containerStyle={styles.progressRow} />
       <Text style={styles.headerBody}>
         Where are you writing from?{"\n"}Add your address to help us tailor your{"\n"}experience.
       </Text>
 
-      <Text style={styles.label}>Barangay</Text>
-      <View style={styles.inputWithIcon}>
-        <TextInput style={styles.inputField} value={barangay} onChangeText={setBarangay} />
-        <Ionicons name="chevron-down" size={20} color="#1D1D1D" />
-      </View>
+      <FormTextInput
+        label="Barangay"
+        value={barangay}
+        onChangeText={setBarangay}
+        labelStyle={styles.label}
+        inputWrapStyle={styles.inputWithIcon}
+        inputStyle={styles.inputField}
+        rightAdornment={<Ionicons name="chevron-down" size={20} color="#1D1D1D" />}
+      />
 
-      <Text style={styles.label}>Street</Text>
-      <TextInput style={styles.input} value={street} onChangeText={setStreet} />
+      <FormTextInput
+        label="Street"
+        value={street}
+        onChangeText={setStreet}
+        labelStyle={styles.label}
+        inputStyle={styles.input}
+      />
 
-      <Text style={styles.label}>House Number</Text>
-      <TextInput style={styles.input} value={houseNumber} onChangeText={setHouseNumber} />
+      <FormTextInput
+        label="House Number"
+        value={houseNumber}
+        onChangeText={setHouseNumber}
+        labelStyle={styles.label}
+        inputStyle={styles.input}
+      />
     </>
   );
 
   const renderStepFour = () => (
     <>
-      {renderProgress()}
+      <StepProgress total={TOTAL_STEPS} current={step} containerStyle={styles.progressRow} />
       <Text style={styles.headerBody}>Secure your journal Add a few more details{"\n"}to keep your entries safe.</Text>
 
-      <Text style={styles.label}>Email Address</Text>
-      <TextInput
-        style={styles.input}
+      <FormTextInput
+        label="Email Address"
         value={email}
         onChangeText={setEmail}
         keyboardType="email-address"
         autoCapitalize="none"
         placeholder="name@gmail.com"
         placeholderTextColor="#728274"
+        labelStyle={styles.label}
+        inputStyle={styles.input}
       />
 
-      <Text style={styles.label}>Birthdate</Text>
-      <TextInput
-        style={styles.input}
+      <FormTextInput
+        label="Birthdate"
         value={birthdate}
         onChangeText={setBirthdate}
         placeholder="MM/DD/YYYY"
         placeholderTextColor="#8D8D8D"
+        labelStyle={styles.label}
+        inputStyle={styles.input}
       />
 
-      <Text style={styles.label}>Password</Text>
-      <View style={styles.inputWithIcon}>
-        <TextInput
-          style={styles.inputField}
-          value={birthdate}
-          editable={false}
-          selectTextOnFocus={false}
-          placeholder="Auto-set from birthdate"
-          placeholderTextColor="#8D8D8D"
-        />
-        <Ionicons name="lock-closed-outline" size={18} color="#1D1D1D" />
-      </View>
+      <FormTextInput
+        label="Password"
+        value={birthdate}
+        editable={false}
+        selectTextOnFocus={false}
+        placeholder="Auto-set from birthdate"
+        placeholderTextColor="#8D8D8D"
+        labelStyle={styles.label}
+        inputWrapStyle={styles.inputWithIcon}
+        inputStyle={styles.inputField}
+        rightAdornment={<Ionicons name="lock-closed-outline" size={18} color="#1D1D1D" />}
+      />
       <Text style={styles.helperText}>
         Password is set to your birthdate by default. You can change it later.
       </Text>
@@ -173,11 +192,11 @@ export default function RegisterScreen() {
           {step === 4 && renderStepFour()}
         </View>
 
-        <Pressable style={styles.actionButton} onPress={handleContinue}>
-          <Text style={styles.actionButtonText}>
-            {step === 1 ? "Continue" : step === 4 ? "Finish Setup" : "Next"}
-          </Text>
-        </Pressable>
+        <AppPrimaryButton
+          label={step === 1 ? "Continue" : step === 4 ? "Finish Setup" : "Next"}
+          onPress={handleContinue}
+          containerStyle={styles.actionButton}
+        />
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -223,21 +242,7 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   progressRow: {
-    flexDirection: "row",
-    alignSelf: "center",
-    gap: 3,
     marginBottom: 52,
-  },
-  progressPill: {
-    width: 30,
-    height: 7,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#111111",
-    backgroundColor: "#FFFFFF",
-  },
-  progressPillActive: {
-    backgroundColor: "#111111",
   },
   sectionTitle: {
     textAlign: "center",
@@ -290,30 +295,14 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   input: {
-    height: 44,
-    borderWidth: 1,
-    borderColor: "#1A1A1A",
-    borderRadius: 8,
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 10,
     paddingVertical: 10,
-    fontSize: 14,
-    color: "#111111",
     marginBottom: 14,
   },
   inputWithIcon: {
     height: 44,
-    borderWidth: 1,
-    borderColor: "#1A1A1A",
-    borderRadius: 8,
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 10,
     marginBottom: 14,
-    flexDirection: "row",
-    alignItems: "center",
   },
   inputField: {
-    flex: 1,
     fontSize: 14,
     color: "#111111",
   },
@@ -324,23 +313,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   actionButton: {
-    width: 290,
-    height: 28,
-    borderRadius: 999,
-    backgroundColor: "#7A9EBA",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#5E7D95",
-    shadowOpacity: 0.33,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 5,
     marginTop: 20,
-    alignSelf: "center",
-  },
-  actionButtonText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "700",
   },
 });

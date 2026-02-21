@@ -1,5 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { HomeBottomNav } from "../components/home/HomeBottomNav";
+import { HomeCard } from "../components/home/HomeCard";
+import { AppPrimaryButton } from "../components/ui/AppPrimaryButton";
 
 export default function HomeScreen() {
   return (
@@ -15,7 +19,7 @@ export default function HomeScreen() {
           </Pressable>
         </View>
 
-        <View style={styles.quillCard}>
+        <HomeCard style={styles.quillCard}>
           <Text style={styles.quillTitle}>Ready to write today&apos;s chapter?{"\n"}Your journal is waiting.</Text>
           <View style={styles.featherWrap}>
             <View style={styles.featherShadow} />
@@ -23,20 +27,24 @@ export default function HomeScreen() {
               <Ionicons name="leaf-outline" size={42} color="#7E6A4A" />
             </View>
           </View>
-          <Pressable style={styles.primaryButton}>
-            <Text style={styles.primaryButtonText}>Pick Up the Quill</Text>
-          </Pressable>
-        </View>
+          <AppPrimaryButton
+            label="Pick Up the Quill"
+            containerStyle={styles.primaryButton}
+            labelStyle={styles.primaryButtonText}
+          />
+        </HomeCard>
 
-        <View style={styles.entryCard}>
+        <HomeCard style={styles.entryCard}>
           <Text style={styles.entryMeta}>03 February 2026 · 9:00pm</Text>
           <Text style={styles.entryQuote}>
             &quot;Today, I did not do anything yet I feel so tired and Janice kept bugging me about the new game and
             a bug commit about the new area.&quot;
           </Text>
-          <Pressable style={styles.primaryButton}>
-            <Text style={styles.primaryButtonText}>View Full Entry</Text>
-          </Pressable>
+          <AppPrimaryButton
+            label="View Full Entry"
+            containerStyle={styles.primaryButton}
+            labelStyle={styles.primaryButtonText}
+          />
 
           <View style={styles.reflectionCard}>
             <Text style={styles.reflectionLabel}>AI-Generated Reflection</Text>
@@ -45,41 +53,19 @@ export default function HomeScreen() {
               conflict with JANICE A.K.M regarding your ideas.&quot;
             </Text>
           </View>
-        </View>
+        </HomeCard>
 
         <Text style={styles.sectionTitle}>Start Peer-Counseling</Text>
-        <View style={styles.placeholderCard}>
+        <HomeCard style={styles.placeholderCard}>
           <View style={styles.placeholderInner} />
-        </View>
-        <Pressable style={styles.exploreButton}>
-          <Text style={styles.primaryButtonText}>Explore</Text>
-        </Pressable>
+        </HomeCard>
+        <AppPrimaryButton label="Explore" containerStyle={styles.exploreButton} labelStyle={styles.primaryButtonText} />
 
         <Text style={styles.sectionTitle}>Weekly Summary</Text>
-        <View style={styles.placeholderCard} />
+        <HomeCard style={styles.placeholderCard} />
       </ScrollView>
 
-      <View style={styles.bottomNav}>
-        <Pressable style={styles.navItem}>
-          <Ionicons name="home-outline" size={19} color="#6E6E6E" />
-        </Pressable>
-        <Pressable style={styles.navItem}>
-          <Ionicons name="book-outline" size={19} color="#6E6E6E" />
-        </Pressable>
-
-        <View style={styles.centerNavWrap}>
-          <Pressable style={styles.centerNavButton}>
-            <Ionicons name="sparkles-outline" size={19} color="#4F4F4F" />
-          </Pressable>
-        </View>
-
-        <Pressable style={styles.navItem}>
-          <Ionicons name="chatbox-ellipses-outline" size={19} color="#6E6E6E" />
-        </Pressable>
-        <Pressable style={styles.navItem}>
-          <Ionicons name="person-outline" size={19} color="#6E6E6E" />
-        </Pressable>
-      </View>
+      <HomeBottomNav />
     </SafeAreaView>
   );
 }
@@ -115,19 +101,12 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   quillCard: {
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#D7D7D7",
-    backgroundColor: "#F7F7F7",
     paddingHorizontal: 12,
     paddingTop: 12,
     paddingBottom: 12,
     marginBottom: 10,
-    shadowColor: "#A0A0A0",
     shadowOpacity: 0.25,
     shadowRadius: 5,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
   },
   quillTitle: {
     textAlign: "center",
@@ -163,16 +142,6 @@ const styles = StyleSheet.create({
   primaryButton: {
     width: 140,
     height: 28,
-    borderRadius: 999,
-    backgroundColor: "#7A9EBA",
-    alignSelf: "center",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#5E7D95",
-    shadowOpacity: 0.34,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 5,
   },
   primaryButtonText: {
     color: "#FFFFFF",
@@ -180,17 +149,8 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   entryCard: {
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#D7D7D7",
-    backgroundColor: "#F7F7F7",
     padding: 10,
     marginBottom: 10,
-    shadowColor: "#A0A0A0",
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
   },
   entryMeta: {
     color: "#3D3D3D",
@@ -230,10 +190,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   placeholderCard: {
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#D7D7D7",
-    backgroundColor: "#F7F7F7",
     minHeight: 80,
     marginBottom: 10,
     overflow: "hidden",
@@ -250,49 +206,6 @@ const styles = StyleSheet.create({
   exploreButton: {
     width: 80,
     height: 28,
-    borderRadius: 999,
-    backgroundColor: "#7A9EBA",
-    alignSelf: "center",
-    alignItems: "center",
-    justifyContent: "center",
     marginBottom: 10,
-    shadowColor: "#5E7D95",
-    shadowOpacity: 0.34,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 5,
-  },
-  bottomNav: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 58,
-    borderTopWidth: 1,
-    borderTopColor: "#E1E1E1",
-    backgroundColor: "#FFFFFF",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-around",
-    paddingHorizontal: 6,
-  },
-  navItem: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  centerNavWrap: {
-    marginTop: -18,
-  },
-  centerNavButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 999,
-    backgroundColor: "#E2E6EA",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#D2D6DB",
   },
 });

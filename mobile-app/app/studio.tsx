@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { router } from "expo-router";
-import { Image, Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
 export default function StudioScreen() {
   useEffect(() => {
@@ -12,7 +13,7 @@ export default function StudioScreen() {
     <SafeAreaView style={styles.studioScreen}>
       <View style={styles.centeredScreen}>
         <Image
-          source={require("../assets/images/studio.gif")}
+          source={require("../assets/images/logo_sampleIMG.png")}
           style={styles.studioGif}
           resizeMode="contain"
         />
