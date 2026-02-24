@@ -2,12 +2,59 @@ import { router } from "expo-router";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text } from "react-native";
 import { FormTextInput } from "../components/forms/FormTextInput";
+import { PasswordField } from "../components/forms/PasswordField";
 import { AuthCardLayout } from "../components/layout/AuthCardLayout";
 import { AppPrimaryButton } from "../components/ui/AppPrimaryButton";
+import { forgotPasswordSendCode } from "../lib/backend-api";
+import {
+  AUTH_MESSAGES,
+  isValidStudentId,
+  normalizeStudentIdInput,
+} from "../lib/auth-validation";
 
 export default function ResetPasswordScreen() {
   const [studentId, setStudentId] = useState("");
-  const [birthdate, setBirthdate] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isBusy, setIsBusy] = useState(false);
+
+  const handleConfirmAccount = async () => {
+    const studentNumber = normalizeStudentIdInput(studentId);
+    const passwordValue = password.trim();
+
+    if (!studentNumber && !passwordValue) {
+      setErrorMessage(AUTH_MESSAGES.enterUsernameAndPassword);
+      return;
+    }
+    if (!studentNumber) {
+      setErrorMessage(AUTH_MESSAGES.studentIdRequired);
+      return;
+    }
+    if (!passwordValue) {
+      setErrorMessage(AUTH_MESSAGES.passwordRequired);
+      return;
+    }
+    if (!isValidStudentId(studentNumber)) {
+      setErrorMessage(AUTH_MESSAGES.invalidEmailOrPassword);
+      return;
+    }
+
+    setErrorMessage("");
+    setIsBusy(true);
+    const result = await forgotPasswordSendCode(studentNumber, passwordValue);
+    setIsBusy(false);
+
+    if (!result.ok) {
+      setErrorMessage(result.message ?? "The account could not be verified. Please check your details.");
+      return;
+    }
+
+    router.push({
+      pathname: "/reset-password-otp",
+      params: { studentId: studentNumber },
+    });
+  };
 
   return (
     <AuthCardLayout contentContainerStyle={styles.content} cardStyle={styles.card}>
@@ -20,26 +67,32 @@ export default function ResetPasswordScreen() {
         label="Student ID"
         value={studentId}
         onChangeText={setStudentId}
-        placeholder="xx-xxxx"
+        placeholder="(e.g. 23-2903)"
         placeholderTextColor="#8D8D8D"
         autoCapitalize="none"
         labelStyle={styles.label}
       />
 
-      <FormTextInput
-        label="Birthdate"
-        value={birthdate}
-        onChangeText={setBirthdate}
-        placeholder="MM/DD/YYYY"
+      <PasswordField
+        label="Password"
+        value={password}
+        onChangeText={setPassword}
+        showPassword={showPassword}
+        onToggleVisibility={() => setShowPassword((prev) => !prev)}
+        placeholder="Enter your password"
         placeholderTextColor="#8D8D8D"
-        labelStyle={styles.label}
+        containerStyle={styles.passwordContainer}
+        inputWrapStyle={styles.passwordWrap}
+        inputStyle={styles.passwordInput}
       />
 
       <AppPrimaryButton
-        label="Confirm Account"
-        onPress={() => router.push("/reset-password-otp")}
+        label={isBusy ? "Confirming..." : "Confirm Account"}
+        onPress={handleConfirmAccount}
         containerStyle={styles.actionButton}
       />
+
+      {!!errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
 
       <Pressable style={styles.backToLogin} onPress={() => router.replace("/login")}>
         <Text style={styles.backText}>
@@ -76,9 +129,24 @@ const styles = StyleSheet.create({
     color: "#111111",
     fontSize: 14,
   },
+  passwordContainer: {
+    marginBottom: 0,
+  },
+  passwordWrap: {
+    marginBottom: 0,
+  },
+  passwordInput: {
+    fontSize: 14,
+    color: "#111111",
+  },
   actionButton: {
     marginTop: 24,
     marginBottom: 16,
+  },
+  errorText: {
+    color: "#C31A1A",
+    fontSize: 12,
+    marginBottom: 12,
   },
   backToLogin: {
     alignItems: "center",

@@ -1,206 +1,244 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import AuthShell from "../components/auth/AuthShell";
+import OtpBoxes from "../components/auth/OtpBoxes";
+import {
+  resendAdminResetCode,
+  resetAdminPassword,
+  sendAdminResetCode,
+  verifyAdminResetCode,
+} from "../lib/admin-api";
+import { EMAIL_PATTERN, validateResetPassword } from "../lib/admin-validation";
+
+const RESEND_SECONDS = 30;
+const OTP_LENGTH = 8;
 
 export default function ForgotPassword() {
   const navigate = useNavigate();
-  const [step, setStep] = useState("email"); // email, reset, success
+  const [step, setStep] = useState("email");
   const [email, setEmail] = useState("");
+  const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [pending, setPending] = useState(false);
+  const [resendCountdown, setResendCountdown] = useState(0);
 
-  const handleEmailSubmit = (e) => {
-    e.preventDefault();
+  useEffect(() => {
+    if (!resendCountdown) return;
+    const interval = setInterval(() => {
+      setResendCountdown((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [resendCountdown]);
+
+  async function handleSendCode(event) {
+    event.preventDefault();
     setError("");
-    setSuccess("");
+    setMessage("");
 
-    if (!email) {
-      setError("Please enter your email");
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setError("Email is required.");
+      return;
+    }
+    if (!EMAIL_PATTERN.test(trimmedEmail)) {
+      setError("Please enter a valid email address.");
       return;
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setError("Please enter a valid email");
-      return;
+    try {
+      setPending(true);
+      await sendAdminResetCode({ email: trimmedEmail });
+      setMessage("Verification code sent.");
+      setStep("otp");
+      setResendCountdown(RESEND_SECONDS);
+    } catch (requestError) {
+      setError(requestError.message || "Failed to send code.");
+    } finally {
+      setPending(false);
     }
+  }
 
-    // Mock API call
-    setSuccess("Check your email for reset instructions");
-    setTimeout(() => setStep("reset"), 1500);
-  };
-
-  const handleResetSubmit = (e) => {
-    e.preventDefault();
+  async function handleVerifyCode(event) {
+    event.preventDefault();
     setError("");
-    setSuccess("");
+    setMessage("");
 
-    if (!newPassword || !confirmPassword) {
-      setError("Please fill in all password fields");
+    if (otp.length !== OTP_LENGTH) {
+      setError("Please enter the 8-digit verification code.");
       return;
     }
 
-    if (newPassword.length < 8) {
-      setError("Password must be at least 8 characters");
+    try {
+      setPending(true);
+      await verifyAdminResetCode({ email: email.trim(), token: otp });
+      setMessage("Code verified.");
+      setStep("password");
+    } catch (requestError) {
+      setError(requestError.message || "The code has expired or is invalid. Please try again.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleResendCode() {
+    setError("");
+    setMessage("");
+    try {
+      setPending(true);
+      await resendAdminResetCode({ email: email.trim() });
+      setMessage("Code resent successfully.");
+      setResendCountdown(RESEND_SECONDS);
+    } catch (requestError) {
+      setError(requestError.message || "Failed to resend code.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleResetPassword(event) {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+
+    const validationMessage = validateResetPassword({ newPassword, confirmPassword });
+    if (validationMessage) {
+      setError(validationMessage);
       return;
     }
 
-    if (newPassword !== confirmPassword) {
-      setError("Passwords do not match");
-      return;
+    try {
+      setPending(true);
+      await resetAdminPassword({
+        email: email.trim(),
+        newPassword,
+        confirmPassword,
+      });
+      setMessage("Password updated successfully");
+      setTimeout(() => navigate("/login"), 1000);
+    } catch (requestError) {
+      setError(requestError.message || "Failed to update password.");
+    } finally {
+      setPending(false);
     }
-
-    setSuccess("Password reset successfully!");
-    setTimeout(() => navigate("/login"), 1500);
-  };
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-mint via-primary-turquoise to-primary-lime flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        {/* Logo/Title */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-full mb-4 shadow-lg">
-            <span className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary-mint to-primary-lime">
-              BT
-            </span>
+    <AuthShell
+      title={step === "password" ? "Reset Your Password" : "Forgot Password"}
+      subtitle={
+        step === "email"
+          ? "Enter your admin email to receive a verification code."
+          : step === "otp"
+            ? "Enter the 8-digit recovery code sent to your email."
+            : "Enter and confirm your new password."
+      }
+    >
+      <form
+        onSubmit={
+          step === "email" ? handleSendCode : step === "otp" ? handleVerifyCode : handleResetPassword
+        }
+        className="space-y-5"
+      >
+        {message ? <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{message}</p> : null}
+        {error ? <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
+
+        {step === "email" ? (
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-admin-ink">Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="admin@example.com"
+              className="h-11 w-full rounded-lg border border-admin-border px-3 text-admin-ink focus:border-admin-brand focus:outline-none focus:ring-2 focus:ring-admin-brand/20"
+            />
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">
-            {step === "email" ? "Reset Password" : "Create New Password"}
-          </h1>
-          <p className="text-white/80">
-            {step === "email"
-              ? "Enter your email to receive reset instructions"
-              : "Enter and confirm your new password"}
-          </p>
-        </div>
+        ) : null}
 
-        {/* Reset Form */}
-        <form
-          onSubmit={step === "email" ? handleEmailSubmit : handleResetSubmit}
-          className="bg-white rounded-2xl shadow-xl p-8 space-y-6"
+        {step === "otp" ? (
+          <div className="space-y-3">
+            <OtpBoxes value={otp} onChange={setOtp} length={OTP_LENGTH} />
+            <button
+              type="button"
+              onClick={handleResendCode}
+              disabled={pending || resendCountdown > 0}
+              className="w-full rounded-lg border border-admin-border py-2 text-sm font-semibold text-admin-ink disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {resendCountdown > 0 ? `Resend Code in ${resendCountdown}s` : "Resend Code"}
+            </button>
+          </div>
+        ) : null}
+
+        {step === "password" ? (
+          <div className="space-y-4">
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-admin-ink">New Password</label>
+              <div className="relative">
+                <input
+                  type={showNewPassword ? "text" : "password"}
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                  placeholder="••••••••"
+                  className="h-11 w-full rounded-lg border border-admin-border px-3 pr-11 text-admin-ink focus:border-admin-brand focus:outline-none focus:ring-2 focus:ring-admin-brand/20"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword((prev) => !prev)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-sm text-admin-muted hover:text-admin-ink"
+                >
+                  {showNewPassword ? "Hide" : "Show"}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-admin-ink">Confirm Password</label>
+              <div className="relative">
+                <input
+                  type={showConfirmPassword ? "text" : "password"}
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  placeholder="••••••••"
+                  className="h-11 w-full rounded-lg border border-admin-border px-3 pr-11 text-admin-ink focus:border-admin-brand focus:outline-none focus:ring-2 focus:ring-admin-brand/20"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword((prev) => !prev)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-sm text-admin-muted hover:text-admin-ink"
+                >
+                  {showConfirmPassword ? "Hide" : "Show"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        <button
+          type="submit"
+          disabled={pending}
+          className="h-11 w-full rounded-lg bg-admin-ink text-sm font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
         >
-          {error && (
-            <div className="p-4 bg-secondary-rust/10 border border-secondary-rust rounded-lg text-secondary-rust text-sm">
-              {error}
-            </div>
-          )}
+          {step === "email"
+            ? pending
+              ? "Sending..."
+              : "Send Reset Code"
+            : step === "otp"
+              ? pending
+                ? "Verifying..."
+                : "Verify Code"
+              : pending
+                ? "Updating..."
+                : "Change Password"}
+        </button>
 
-          {success && (
-            <div className="p-4 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
-              {success}
-            </div>
-          )}
-
-          {step === "email" ? (
-            <>
-              {/* Email Field */}
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-neutral-900">
-                  Email
-                </label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 transform -translate-y-1/2 text-neutral-400 text-lg">
-                    📧
-                  </span>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="admin@example.com"
-                    className="w-full pl-12 pr-4 py-2.5 border border-neutral-300 rounded-lg focus:outline-none focus:border-primary-mint focus:ring-2 focus:ring-primary-mint/20 transition-colors"
-                  />
-                </div>
-              </div>
-
-              {/* Submit Button */}
-              <button
-                type="submit"
-                className="w-full py-2.5 bg-gradient-to-r from-secondary-coffee to-secondary-rust text-white font-semibold rounded-lg hover:shadow-lg transition-all duration-300 transform hover:scale-105"
-              >
-                Send Reset Link
-              </button>
-            </>
-          ) : (
-            <>
-              {/* New Password Field */}
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-neutral-900">
-                  New Password
-                </label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 transform -translate-y-1/2 text-neutral-400 text-lg">
-                    🔒
-                  </span>
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full pl-12 pr-12 py-2.5 border border-neutral-300 rounded-lg focus:outline-none focus:border-primary-mint focus:ring-2 focus:ring-primary-mint/20 transition-colors"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 top-1/2 transform -translate-y-1/2 text-neutral-400 hover:text-neutral-600 text-lg"
-                  >
-                    {showPassword ? "👁️" : "👁️‍🗨️"}
-                  </button>
-                </div>
-              </div>
-
-              {/* Confirm Password Field */}
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-neutral-900">
-                  Confirm Password
-                </label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 transform -translate-y-1/2 text-neutral-400 text-lg">
-                    🔒
-                  </span>
-                  <input
-                    type={showConfirm ? "text" : "password"}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full pl-12 pr-12 py-2.5 border border-neutral-300 rounded-lg focus:outline-none focus:border-primary-mint focus:ring-2 focus:ring-primary-mint/20 transition-colors"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirm(!showConfirm)}
-                    className="absolute right-4 top-1/2 transform -translate-y-1/2 text-neutral-400 hover:text-neutral-600 text-lg"
-                  >
-                    {showConfirm ? "👁️" : "👁️‍🗨️"}
-                  </button>
-                </div>
-              </div>
-
-              {/* Submit Button */}
-              <button
-                type="submit"
-                className="w-full py-2.5 bg-gradient-to-r from-secondary-coffee to-secondary-rust text-white font-semibold rounded-lg hover:shadow-lg transition-all duration-300 transform hover:scale-105"
-              >
-                Change Password
-              </button>
-            </>
-          )}
-
-          {/* Back to Login Link */}
-          <Link
-            to="/login"
-            className="flex items-center justify-center gap-2 text-primary-mint hover:text-primary-lime font-medium text-sm"
-          >
-            <span>←</span>
-            Back to Login Page
-          </Link>
-        </form>
-
-        {/* Footer */}
-        <p className="text-center text-white/70 text-sm mt-6">
-          BAWAT TALA Admin Dashboard © 2024
-        </p>
-      </div>
-    </div>
+        <Link to="/login" className="block text-center text-sm font-semibold text-admin-brand hover:underline">
+          Back to Login Page
+        </Link>
+      </form>
+    </AuthShell>
   );
 }

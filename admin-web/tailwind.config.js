@@ -4,32 +4,28 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: {
-          lime: "#ACF44A",
-          mint: "#35C8B4",
-          turquoise: "#C2F2E4",
-          yellow: "#EDF7BE",
-        },
-        secondary: {
-          coffee: "#542916",
-          rust: "#a13a1e",
-          brown: "#8B6F47",
-        },
-        neutral: {
-          50: "#FAFAFA",
-          100: "#F5F5F5",
-          200: "#EEEEEE",
-          300: "#E0E0E0",
-          400: "#BDBDBD",
-          500: "#9E9E9E",
-          600: "#757575",
-          700: "#616161",
-          800: "#424242",
-          900: "#212121",
+        admin: {
+          frame: "#160078",
+          surface: "#f5f2ff",
+          card: "#ffffff",
+          ink: "#101321",
+          muted: "#5f6880",
+          border: "#d7dded",
+          brand: "#7226ff",
+          accent: "#f042ff",
+          deep: "#010030",
+          purple: "#160078",
+          logo: "#eaf5ff",
+          track: "#ececf7",
+          sidebar: "#f8f6ff",
         },
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
+        sans: ["Plus Jakarta Sans", "system-ui", "sans-serif"],
+        display: ["Fraunces", "Georgia", "serif"],
+      },
+      boxShadow: {
+        admin: "0 24px 60px rgba(16, 19, 33, 0.25)",
       },
     },
   },
