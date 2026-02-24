@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700;9..144,900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -15,9 +15,9 @@ html {
 }
 
 body {
-  font-family: "Inter", system-ui, sans-serif;
-  background-color: #fafafa;
-  color: #212121;
+  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  background-color: #eceff3;
+  color: #141414;
   line-height: 1.5;
 }
 
@@ -28,16 +28,16 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #f5f5f5;
+  background: #e5e9f0;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #35c8b4;
+  background: #160078;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #2ab09c;
+  background: #100030;
 }
 
 /* Smooth transitions */
@@ -53,6 +53,6 @@ textarea {
 button:focus-visible,
 a:focus-visible,
 input:focus-visible {
-  outline: 2px solid #acf44a;
+  outline: 2px solid #7226ff;
   outline-offset: 2px;
 }

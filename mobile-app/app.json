@@ -19,7 +19,8 @@
         "monochromeImage": "./assets/images/logo_sampleIMG.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.anonymous.mobileapp"
     },
     "web": {
       "output": "static",

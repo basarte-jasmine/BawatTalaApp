@@ -1,40 +1,117 @@
-import { router } from "expo-router";
-import { useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text } from "react-native";
-import { FormTextInput } from "../components/forms/FormTextInput";
+import { OtpCodeInput } from "../components/forms/OtpCodeInput";
 import { AuthCardLayout } from "../components/layout/AuthCardLayout";
 import { AppPrimaryButton } from "../components/ui/AppPrimaryButton";
+import { forgotPasswordResendCode, forgotPasswordVerifyCode } from "../lib/backend-api";
+
+const OTP_LENGTH = 8;
+const OTP_EXPIRY_SECONDS = 60;
 
 export default function ResetPasswordOtpScreen() {
+  const params = useLocalSearchParams<{ studentId?: string }>();
+  const studentId = String(params.studentId || "").trim();
   const [otpCode, setOtpCode] = useState("");
+  const [resendSeconds, setResendSeconds] = useState(30);
+  const [otpExpiresAt, setOtpExpiresAt] = useState(Date.now() + OTP_EXPIRY_SECONDS * 1000);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isBusy, setIsBusy] = useState(false);
+
+  useEffect(() => {
+    if (!studentId) {
+      setErrorMessage("Missing student ID. Please confirm your account again.");
+    }
+  }, [studentId]);
+
+  useEffect(() => {
+    if (resendSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setResendSeconds((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendSeconds]);
+
+  const handleVerifyCode = async () => {
+    if (!studentId) return;
+    if (otpCode.trim().length !== OTP_LENGTH) {
+      setErrorMessage("Please enter the 8-digit OTP.");
+      return;
+    }
+    if (Date.now() > otpExpiresAt) {
+      setErrorMessage("The code has expired or is invalid. Please try again");
+      return;
+    }
+
+    setErrorMessage("");
+    setIsBusy(true);
+    const result = await forgotPasswordVerifyCode(studentId, otpCode.trim());
+    setIsBusy(false);
+
+    if (!result.ok) {
+      setErrorMessage(result.message ?? "The code has expired or is invalid. Please try again");
+      return;
+    }
+
+    router.push({
+      pathname: "/reset-password-new",
+      params: { studentId },
+    });
+  };
+
+  const handleResendCode = async () => {
+    if (!studentId || resendSeconds > 0) return;
+
+    setIsBusy(true);
+    const result = await forgotPasswordResendCode(studentId);
+    setIsBusy(false);
+
+    if (!result.ok) {
+      setErrorMessage(result.message ?? "Failed to send reset code.");
+      return;
+    }
+
+    setResendSeconds(30);
+    setOtpExpiresAt(Date.now() + OTP_EXPIRY_SECONDS * 1000);
+    setOtpCode("");
+    setErrorMessage("");
+  };
 
   return (
     <AuthCardLayout contentContainerStyle={styles.content} cardStyle={styles.card}>
       <Text style={styles.title}>Enter verification code</Text>
       <Text style={styles.subtitle}>
-        We sent a 6-digit code to the email linked to your account.
+        Enter the reset code sent to your email.
       </Text>
 
-      <FormTextInput
-        label="Verification Code"
+      <Text style={styles.label}>Verification Code</Text>
+      <OtpCodeInput
+        length={OTP_LENGTH}
         value={otpCode}
-        onChangeText={setOtpCode}
-        placeholder="123456"
-        placeholderTextColor="#8D8D8D"
-        keyboardType="number-pad"
-        maxLength={6}
-        labelStyle={styles.label}
-        inputStyle={styles.input}
+        onChangeCode={setOtpCode}
+        containerStyle={styles.otpRow}
       />
 
       <AppPrimaryButton
-        label="Verify Code"
-        onPress={() => router.push("/reset-password-new")}
+        label={isBusy ? "Verifying..." : "Verify Code"}
+        onPress={handleVerifyCode}
         containerStyle={styles.actionButton}
       />
 
-      <Pressable style={styles.linkButton}>
-        <Text style={styles.linkText}>Didn&apos;t get a code? <Text style={styles.linkAccent}>Resend</Text></Text>
+      <AppPrimaryButton
+        label={resendSeconds > 0 ? `Send reset code in ${resendSeconds}s` : "Send reset code"}
+        onPress={handleResendCode}
+        disabled={resendSeconds > 0}
+        containerStyle={[styles.resendButton, resendSeconds > 0 && styles.disabledButton]}
+        labelStyle={styles.resendButtonText}
+      />
+
+      {!!errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
+
+      <Pressable style={styles.linkButton} onPress={() => router.replace("/reset-password")}>
+        <Text style={styles.linkText}>
+          Go back to <Text style={styles.linkAccent}>confirm account</Text>
+        </Text>
       </Pressable>
     </AuthCardLayout>
   );
@@ -50,7 +127,7 @@ const styles = StyleSheet.create({
   title: {
     textAlign: "center",
     color: "#111111",
-    fontSize: 40 / 2,
+    fontSize: 20,
     lineHeight: 26,
     fontFamily: "Fraunces-Regular",
     marginBottom: 8,
@@ -60,18 +137,35 @@ const styles = StyleSheet.create({
     color: "#1A1A1A",
     fontSize: 13,
     lineHeight: 20,
-    marginBottom: 30,
+    marginBottom: 24,
   },
   label: {
     color: "#111111",
     fontSize: 14,
+    marginBottom: 8,
   },
-  input: {
-    letterSpacing: 2,
+  otpRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 18,
   },
   actionButton: {
-    marginTop: 24,
-    marginBottom: 16,
+    marginBottom: 12,
+  },
+  resendButton: {
+    marginBottom: 12,
+    backgroundColor: "#E4EDF5",
+  },
+  resendButtonText: {
+    color: "#2D3F4E",
+  },
+  disabledButton: {
+    opacity: 0.7,
+  },
+  errorText: {
+    color: "#C31A1A",
+    fontSize: 12,
+    marginBottom: 12,
   },
   linkButton: {
     alignItems: "center",

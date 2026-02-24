@@ -28,10 +28,6 @@ export default function AuthChoiceScreen() {
             <Text style={styles.registerButtonText}>Register</Text>
           </Pressable>
         </View>
-
-        <Pressable style={styles.googleButton} onPress={() => router.push("/register")}>
-          <Text style={styles.googleButtonText}>Continue with Google</Text>
-        </Pressable>
       </View>
     </SafeAreaView>
   );
@@ -109,19 +105,6 @@ const styles = StyleSheet.create({
   registerButtonText: {
     color: "#b33131",
     fontSize: 20,
-    fontWeight: "600",
-  },
-  googleButton: {
-    borderWidth: 1,
-    borderColor: "#b3a68f",
-    borderRadius: 8,
-    alignItems: "center",
-    paddingVertical: 12,
-    backgroundColor: "#ebe6df",
-  },
-  googleButtonText: {
-    color: "#4a4033",
-    fontSize: 16,
     fontWeight: "600",
   },
 });

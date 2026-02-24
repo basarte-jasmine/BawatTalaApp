@@ -7,20 +7,20 @@ export default function Card({
 }) {
   return (
     <div
-      className={`bg-white rounded-xl border border-neutral-200 shadow-sm hover:shadow-md transition-shadow p-6 ${className}`}
+      className={`rounded-xl border border-admin-border bg-white p-6 shadow-sm transition hover:shadow-md ${className}`}
     >
       {(title || icon) && (
-        <div className="flex items-start gap-3 mb-4">
+        <div className="mb-4 flex items-start gap-3">
           {icon && (
-            <div className="p-2 bg-primary-yellow rounded-lg text-xl">
+            <div className="rounded-lg bg-admin-surface p-2 text-xl">
               {icon}
             </div>
           )}
           <div>
             {title && (
-              <h3 className="font-semibold text-neutral-900">{title}</h3>
+              <h3 className="font-semibold text-admin-ink">{title}</h3>
             )}
-            {subtitle && <p className="text-sm text-neutral-600">{subtitle}</p>}
+            {subtitle && <p className="text-sm text-admin-muted">{subtitle}</p>}
           </div>
         </div>
       )}

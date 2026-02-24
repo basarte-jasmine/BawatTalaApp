@@ -5,11 +5,53 @@ import { FormTextInput } from "../components/forms/FormTextInput";
 import { PasswordField } from "../components/forms/PasswordField";
 import { AuthCardLayout } from "../components/layout/AuthCardLayout";
 import { AppPrimaryButton } from "../components/ui/AppPrimaryButton";
+import { loginWithStudentId } from "../lib/backend-api";
+import {
+  AUTH_MESSAGES,
+  isValidStudentId,
+  normalizeStudentIdInput,
+} from "../lib/auth-validation";
 
 export default function LoginScreen() {
   const [studentId, setStudentId] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isBusy, setIsBusy] = useState(false);
+
+  const handleLogin = async () => {
+    const studentNumber = normalizeStudentIdInput(studentId);
+    const passwordValue = password.trim();
+
+    if (!studentNumber && !passwordValue) {
+      setErrorMessage(AUTH_MESSAGES.enterUsernameAndPassword);
+      return;
+    }
+    if (!studentNumber) {
+      setErrorMessage(AUTH_MESSAGES.studentIdRequired);
+      return;
+    }
+    if (!passwordValue) {
+      setErrorMessage(AUTH_MESSAGES.passwordRequired);
+      return;
+    }
+    if (!isValidStudentId(studentNumber)) {
+      setErrorMessage(AUTH_MESSAGES.invalidEmailOrPassword);
+      return;
+    }
+
+    setErrorMessage("");
+    setIsBusy(true);
+    const result = await loginWithStudentId(studentNumber, passwordValue);
+    setIsBusy(false);
+
+    if (!result.ok) {
+      setErrorMessage(result.message ?? "Invalid username or password. Please try again.");
+      return;
+    }
+
+    router.replace("/home");
+  };
 
   return (
     <AuthCardLayout contentContainerStyle={styles.scrollContent} cardStyle={styles.card}>
@@ -22,7 +64,7 @@ export default function LoginScreen() {
         label="Student ID"
         value={studentId}
         onChangeText={setStudentId}
-        placeholder="xx-xxxx"
+        placeholder="(e.g. 23-2903)"
         placeholderTextColor="#8D8D8D"
         autoCapitalize="none"
         labelStyle={styles.label}
@@ -30,7 +72,7 @@ export default function LoginScreen() {
       />
 
       <PasswordField
-        label="Password or Birthdate"
+        label="Password"
         value={password}
         onChangeText={setPassword}
         showPassword={showPassword}
@@ -47,23 +89,19 @@ export default function LoginScreen() {
       </Pressable>
 
       <AppPrimaryButton
-        label="Login"
-        onPress={() => router.replace("/home")}
+        label={isBusy ? "Logging in..." : "Login"}
+        onPress={handleLogin}
         containerStyle={styles.loginButton}
         labelStyle={styles.loginButtonText}
       />
+
+      {!!errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
 
       <View style={styles.orRow}>
         <View style={styles.orLine} />
         <Text style={styles.orText}>OR</Text>
         <View style={styles.orLine} />
       </View>
-
-      <Pressable style={styles.googleButton}>
-        <Text style={styles.googleText}>
-          Sign up with <Text style={styles.googleG}>G</Text>
-        </Text>
-      </Pressable>
 
       <Pressable style={styles.registerWrap} onPress={() => router.push("/register")}>
         <Text style={styles.registerText}>
@@ -112,14 +150,16 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   passwordWrap: {
-    height: 42 / 2,
+    height: 42,
     borderRadius: 6,
     marginBottom: 0,
   },
   passwordInput: {
     paddingHorizontal: 10,
-    fontSize: 10,
+    fontSize: 14,
     color: "#111111",
+    paddingVertical: 0,
+    textAlignVertical: "center",
   },
   forgotWrap: {
     alignSelf: "flex-start",
@@ -139,6 +179,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
   },
+  errorText: {
+    color: "#C31A1A",
+    fontSize: 11,
+    marginBottom: 8,
+  },
   orRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -154,30 +199,6 @@ const styles = StyleSheet.create({
     color: "#555555",
     fontSize: 10,
     fontWeight: "600",
-  },
-  googleButton: {
-    width: 290,
-    alignSelf: "center",
-    height: 25,
-    borderRadius: 999,
-    backgroundColor: "#E8ECEF",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
-    shadowColor: "#99A2AB",
-    shadowOpacity: 0.28,
-    shadowRadius: 7,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 5,
-  },
-  googleText: {
-    color: "#434343",
-    fontSize: 13,
-    fontWeight: "500",
-  },
-  googleG: {
-    color: "#4285F4",
-    fontWeight: "700",
   },
   registerWrap: {
     alignItems: "center",
