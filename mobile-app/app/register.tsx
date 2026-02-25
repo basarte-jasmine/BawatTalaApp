@@ -5,6 +5,7 @@ import { router } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -40,6 +41,76 @@ import {
 const TOTAL_STEPS = 5;
 const OTP_LENGTH = 8;
 const OTP_EXPIRY_SECONDS = 60;
+const TERMS_AND_CONDITIONS_CONTENT = `Bawat Tala Terms and Conditions
+
+Effective Date: February 25, 2026
+
+1. Purpose of the Service
+Bawat Tala is a school-focused digital journaling and support platform. The registration process may request identity details to verify that each account belongs to a legitimate student user.
+
+2. Account Registration
+You agree to provide truthful and complete information during registration, including your full name, student number, and other required details. You are responsible for keeping your account credentials confidential.
+
+3. ID Upload and OCR Processing
+When you upload a school ID image, we process the image through Optical Character Recognition (OCR) to extract text-based details such as your name, student number, and program. Extracted data may be used to prefill registration fields for convenience and accuracy.
+
+4. Acceptable Use
+You agree not to use the service for impersonation, fraud, harassment, distribution of unlawful content, or misuse of school-related data.
+
+5. Verification and Security
+We may require additional verification, including OTP validation, to protect your account and maintain system integrity.
+
+6. Service Availability
+We may update, modify, or temporarily suspend parts of the service for maintenance, security improvements, and feature updates.
+
+7. Limitation of Liability
+The service is provided on an as-available basis. While we implement reasonable safeguards, no digital system can guarantee absolute uninterrupted operation.
+
+8. Updates to Terms
+These terms may be updated as needed. Continued use of the platform after updates constitutes acceptance of the revised terms.
+`;
+
+const PRIVACY_POLICY_CONTENT = `Bawat Tala Privacy Policy
+
+Effective Date: February 25, 2026
+
+This policy is aligned with the Data Privacy Act of 2012 (Republic Act No. 10173) and its implementing rules and regulations.
+
+1. Personal Data We Collect
+During registration and verification, we may collect:
+- Full name
+- Student number
+- Program/course
+- Address details
+- Email address
+- Birthdate
+- School ID image (for OCR and verification)
+
+2. Why We Process Your Data
+We process personal data to:
+- Verify identity and student legitimacy
+- Populate registration fields using OCR-extracted text
+- Secure accounts through authentication and OTP flows
+- Enable platform features and support operations
+
+3. How ID Images Are Used
+Uploaded ID images are used only for verification and OCR extraction related to account setup and fraud prevention. We do not process your image for unrelated advertising or profiling purposes.
+
+4. Data Protection Measures
+We apply organizational and technical safeguards designed to protect personal data against unauthorized access, alteration, disclosure, or loss.
+
+5. Data Sharing
+Personal data is only shared with authorized personnel or service providers when necessary for legitimate operational, legal, or security purposes and subject to confidentiality safeguards.
+
+6. Retention
+Data is retained only for as long as reasonably necessary for verification, account administration, legal compliance, and legitimate platform operations.
+
+7. Your Rights as a Data Subject
+Under RA 10173, you may have rights including access, correction, objection, and other applicable rights, subject to lawful limitations and verification procedures.
+
+8. Contact and Requests
+For data privacy concerns, correction requests, or account-related concerns, contact the platform administrators through official support channels.
+`;
 
 export default function RegisterScreen() {
   const [step, setStep] = useState(1);
@@ -57,6 +128,10 @@ export default function RegisterScreen() {
   const [scanPreviewUri, setScanPreviewUri] = useState("");
   const [scanMessage, setScanMessage] = useState("");
   const [hasValidIdScan, setHasValidIdScan] = useState(false);
+  const [hasAcceptedScanTerms, setHasAcceptedScanTerms] = useState(false);
+  const [policyModalVisible, setPolicyModalVisible] = useState(false);
+  const [policyModalTitle, setPolicyModalTitle] = useState("");
+  const [policyModalContent, setPolicyModalContent] = useState("");
   const [resendSeconds, setResendSeconds] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
   const [isBusy, setIsBusy] = useState(false);
@@ -98,6 +173,13 @@ export default function RegisterScreen() {
 
   const handleScanId = async () => {
     setErrorMessage("");
+    if (!hasAcceptedScanTerms) {
+      setErrorMessage(
+        "Please agree to the Terms and Data Privacy notice before scanning your ID.",
+      );
+      return;
+    }
+
     const ImagePicker = await import("expo-image-picker");
 
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -256,6 +338,17 @@ export default function RegisterScreen() {
     });
   };
 
+  const openPolicyModal = (type: "terms" | "privacy") => {
+    if (type === "terms") {
+      setPolicyModalTitle("Terms and Conditions");
+      setPolicyModalContent(TERMS_AND_CONDITIONS_CONTENT);
+    } else {
+      setPolicyModalTitle("Privacy Policy");
+      setPolicyModalContent(PRIVACY_POLICY_CONTENT);
+    }
+    setPolicyModalVisible(true);
+  };
+
   return (
     <KeyboardAvoidingView
       style={styles.screen}
@@ -307,6 +400,47 @@ export default function RegisterScreen() {
               {!!scanMessage && (
                 <Text style={styles.helperText}>{scanMessage}</Text>
               )}
+              <View style={styles.consentCard}>
+                <Pressable
+                  style={styles.checkboxRow}
+                  onPress={() => {
+                    setHasAcceptedScanTerms((prev) => !prev);
+                    setErrorMessage("");
+                  }}
+                >
+                  <View
+                    style={[
+                      styles.checkbox,
+                      hasAcceptedScanTerms && styles.checkboxChecked,
+                    ]}
+                  >
+                    {hasAcceptedScanTerms ? (
+                      <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                    ) : null}
+                  </View>
+                  <Text style={styles.checkboxText}>
+                    I understand and agree with the{" "}
+                    <Text
+                      style={styles.linkText}
+                      onPress={() => openPolicyModal("terms")}
+                    >
+                      Terms and Conditions
+                    </Text>{" "}
+                    and{" "}
+                    <Text
+                      style={styles.linkText}
+                      onPress={() => openPolicyModal("privacy")}
+                    >
+                      Privacy Policy
+                    </Text>
+                    .
+                  </Text>
+                </Pressable>
+                <Text style={styles.consentBody}>
+                  Your school ID photo is processed for verification and OCR
+                  autofill of registration details in accordance with RA 10173.
+                </Text>
+              </View>
             </>
           )}
 
@@ -500,6 +634,12 @@ export default function RegisterScreen() {
                 return;
               }
               if (step === 1) {
+                if (!hasAcceptedScanTerms) {
+                  setErrorMessage(
+                    "Please agree to the Terms and Data Privacy notice before continuing.",
+                  );
+                  return;
+                }
                 if (!hasValidIdScan) {
                   setErrorMessage(
                     "Please scan a valid school ID before continuing.",
@@ -543,6 +683,31 @@ export default function RegisterScreen() {
           />
         )}
       </ScrollView>
+      <Modal
+        visible={policyModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPolicyModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{policyModalTitle}</Text>
+              <Pressable onPress={() => setPolicyModalVisible(false)}>
+                <Ionicons name="close" size={20} color="#1F2A33" />
+              </Pressable>
+            </View>
+            <ScrollView style={styles.modalBody}>
+              <Text style={styles.modalBodyText}>{policyModalContent}</Text>
+            </ScrollView>
+            <AppPrimaryButton
+              label="Close"
+              onPress={() => setPolicyModalVisible(false)}
+              containerStyle={styles.modalCloseButton}
+            />
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -583,7 +748,59 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 15,
     color: "#1A1A1A",
-    marginBottom: 18,
+    marginBottom: 14,
+  },
+  consentCard: {
+    borderWidth: 1,
+    borderColor: "#D2DCE5",
+    backgroundColor: "#F4F8FB",
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 10,
+    marginBottom: 20,
+  },
+  consentTitle: {
+    color: "#1B2C3A",
+    fontSize: 12,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  consentBody: {
+    color: "#2F3F4C",
+    fontSize: 10,
+    lineHeight: 14,
+    marginTop: 10,
+  },
+  checkboxRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: "#6E8295",
+    marginTop: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  checkboxChecked: {
+    backgroundColor: "#5E7D98",
+    borderColor: "#5E7D98",
+  },
+  checkboxText: {
+    flex: 1,
+    color: "#233442",
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  linkText: {
+    color: "#2C7DB0",
+    textDecorationLine: "underline",
+    fontWeight: "600",
   },
   progressRow: {
     marginBottom: 32,
@@ -689,5 +906,48 @@ const styles = StyleSheet.create({
     width: 36,
     alignItems: "center",
     justifyContent: "center",
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 16,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 360,
+    maxHeight: "82%",
+    borderRadius: 10,
+    backgroundColor: "#FFFFFF",
+    padding: 12,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  modalTitle: {
+    color: "#1F2A33",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  modalBody: {
+    borderWidth: 1,
+    borderColor: "#D4DFE8",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: "#F8FBFD",
+  },
+  modalBodyText: {
+    color: "#2F3F4C",
+    fontSize: 11,
+    lineHeight: 16,
+    paddingBottom: 12,
+  },
+  modalCloseButton: {
+    marginTop: 10,
   },
 });
