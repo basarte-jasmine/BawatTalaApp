@@ -191,7 +191,7 @@ export default function RegisterScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       allowsEditing: true,
-      quality: 0.7,
+      quality: 0.25,
       base64: true,
     });
 
@@ -209,34 +209,41 @@ export default function RegisterScreen() {
       return;
     }
 
-    const scanResult = await scanSchoolId(asset.base64);
-    setIsBusy(false);
+    try {
+      const scanResult = await scanSchoolId(asset.base64);
 
-    if (!scanResult.ok) {
+      if (!scanResult.ok) {
+        setScanMessage(
+          scanResult.message ?? "OCR scan failed. Please try again.",
+        );
+        return;
+      }
+
+      if (
+        !scanResult.isValidId ||
+        !scanResult.ocrText ||
+        !isLikelySchoolId(scanResult.ocrText)
+      ) {
+        setScanMessage(
+          "Uploaded image does not appear to be a valid school ID. Please try again using a clearer image or different ID.",
+        );
+        return;
+      }
+
+      const parsed = parseIdText(scanResult.ocrText);
+      if (parsed.fullName) setFullName(parsed.fullName);
+      if (parsed.studentNumber)
+        setStudentNumber(normalizeStudentNumber(parsed.studentNumber));
+      if (parsed.program) setProgram(parsed.program);
+      setScanMessage("ID scanned successfully. Proceed to continue.");
+      setHasValidIdScan(true);
+    } catch {
       setScanMessage(
-        scanResult.message ?? "OCR scan failed. Please try again.",
+        "Unable to reach OCR service. Check your internet/API URL and try again.",
       );
-      return;
+    } finally {
+      setIsBusy(false);
     }
-
-    if (
-      !scanResult.isValidId ||
-      !scanResult.ocrText ||
-      !isLikelySchoolId(scanResult.ocrText)
-    ) {
-      setScanMessage(
-        "Uploaded image does not appear to be a valid school ID. Please try again using a clearer image or different ID.",
-      );
-      return;
-    }
-
-    const parsed = parseIdText(scanResult.ocrText);
-    if (parsed.fullName) setFullName(parsed.fullName);
-    if (parsed.studentNumber)
-      setStudentNumber(normalizeStudentNumber(parsed.studentNumber));
-    if (parsed.program) setProgram(parsed.program);
-    setScanMessage("ID scanned successfully. Proceed to continue.");
-    setHasValidIdScan(true);
   };
 
   const handleSendOtp = async () => {

@@ -5,7 +5,7 @@ import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
 export default function StudioScreen() {
   useEffect(() => {
-    const timer = setTimeout(() => router.replace("/intro"), 2800);
+    const timer = setTimeout(() => router.replace("/home"), 2800);
     return () => clearTimeout(timer);
   }, []);
 
@@ -17,7 +17,7 @@ export default function StudioScreen() {
           style={styles.studioGif}
           resizeMode="contain"
         />
-        <Pressable style={styles.skipButton} onPress={() => router.replace("/intro")}>
+        <Pressable style={styles.skipButton} onPress={() => router.replace("/home")}>
           <Text style={styles.skipButtonText}>Skip</Text>
         </Pressable>
       </View>

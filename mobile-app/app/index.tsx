@@ -78,7 +78,7 @@ export default function Index() {
     }
 
     hasNavigatedRef.current = true;
-    router.replace("/intro");
+    router.replace("/home");
   };
 
   const totalSpan =

@@ -112,7 +112,7 @@ export default function IntroScreen() {
       </Animated.View>
 
       <Animated.View style={[styles.buttonWrap, { transform: [{ scale: buttonAnim }] }]}>
-        <Pressable style={styles.button} onPress={() => router.push("/login")}>
+        <Pressable style={styles.button} onPress={() => router.push("/home")}>
           <Text style={styles.buttonText}>Get Started</Text>
         </Pressable>
       </Animated.View>
