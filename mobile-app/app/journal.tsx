@@ -108,11 +108,17 @@ export default function JournalScreen() {
             <Image source={BOOK_IMAGE} style={[styles.bookImage, compact && styles.bookImageCompact, veryCompact && styles.bookImageVeryCompact]} resizeMode="contain" />
           </View>
 
-          <Pressable style={[styles.addEntryButton, compact && styles.addEntryButtonCompact]}>
+          <Pressable
+            style={[styles.addEntryButton, compact && styles.addEntryButtonCompact]}
+            onPress={() => router.push("/write-entry")}
+          >
             <Text style={[styles.addEntryText, compact && styles.addEntryTextCompact]}>Add Entry</Text>
           </Pressable>
 
-          <Pressable style={[styles.viewEntriesButton, compact && styles.viewEntriesButtonCompact]}>
+          <Pressable
+            style={[styles.viewEntriesButton, compact && styles.viewEntriesButtonCompact]}
+            onPress={() => router.push("/journal-entries")}
+          >
             <Text style={[styles.viewEntriesText, compact && styles.viewEntriesTextCompact]}>View Entries</Text>
           </Pressable>
         </View>

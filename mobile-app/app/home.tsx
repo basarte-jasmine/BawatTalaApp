@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Animated, Easing, Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -12,10 +12,15 @@ type MoodItem = {
   label: string;
 };
 
+type DailyCheckinReward = {
+  id: string;
+  state: "active" | "done" | "locked";
+  value: string;
+};
+
 type SupportCardItem = {
   backgroundColor: string;
   description: string;
-  icon?: string;
   id: string;
   title: string;
 };
@@ -27,6 +32,16 @@ const MOODS: MoodItem[] = [
   { color: "#F19137", emoji: "\uD83D\uDE23", label: "Stressed" },
   { color: "#E86686", emoji: "\uD83D\uDE21", label: "Angry" },
   { color: "#B895C8", emoji: "\uD83D\uDE30", label: "Anxious" },
+];
+
+const DAILY_CHECKIN_REWARDS: DailyCheckinReward[] = [
+  { id: "r10", value: "+10", state: "done" },
+  { id: "r20", value: "+20", state: "done" },
+  { id: "r30", value: "+30", state: "active" },
+  { id: "r50", value: "+50", state: "locked" },
+  { id: "r70", value: "+70", state: "locked" },
+  { id: "r100", value: "+100", state: "locked" },
+  { id: "r150", value: "+150", state: "locked" },
 ];
 
 const RECENT_ENTRY_PLACEHOLDERS = [
@@ -60,35 +75,48 @@ const RECENT_ENTRY_PLACEHOLDERS = [
 const SUPPORT_CARDS: SupportCardItem[] = [
   {
     id: "support-1",
-    title: "Talk to a Peer",
-    description: "Connect with a trained student listener today.",
-    backgroundColor: "#8DD867",
-    icon: "people",
+    title: "Style Lumi",
+    description: "Write your entry for today",
+    backgroundColor: "#B1DEB3",
   },
   {
     id: "support-2",
-    title: "Guidance\nCounseling",
-    description: "Set up a confidential session.",
-    backgroundColor: "#3EA760",
-    icon: "person",
+    title: "Wellness Tools",
+    description: "Calm your mind and body with exercises.",
+    backgroundColor: "#BDE0AA",
   },
   {
     id: "support-3",
-    title: "Wellness Tools",
-    description: "Calm your mind and body with exercises.",
-    backgroundColor: "#99DF62",
+    title: "Talk to Peer",
+    description: "Connect with a trained student listener today.",
+    backgroundColor: "#BDE0AA",
+  },
+  {
+    id: "support-4",
+    title: "Counseling",
+    description: "Set up a private and safe session with guidance counselors.",
+    backgroundColor: "#B1DEB3",
   },
 ];
 
 const TALA_IMAGE = require("../assets/images/tala_sample.png");
-const PET_IMAGE = require("../assets/images/pet_sample.png");
+const PET_AWAKE_IMAGE = require("../assets/images/pet-awake_sample.png");
+const PET_IDLE_IMAGE = require("../assets/images/pet-idle_sample.png");
 
 export default function HomeScreen() {
-  const { height } = useWindowDimensions();
+  const { height, width } = useWindowDimensions();
+  const { consultConfirmed } = useLocalSearchParams<{ consultConfirmed?: string }>();
   const compact = height < 760;
   const tiny = height < 680;
+  const frameWidth = Math.min(width, 412);
+  const rewardGap = 4;
+  const rewardTileWidth = Math.floor((frameWidth - 44 - rewardGap * 6) / 7);
+  const rewardTileHeight = rewardTileWidth + 30;
+  const rewardTileIconSize = Math.max(24, Math.floor(rewardTileWidth * 0.7));
+  const rewardTileLabelSize = rewardTileWidth <= 41 ? 26 / 2 : 30 / 2;
   const [selectedMood, setSelectedMood] = useState("Happy");
   const [hasScrolled, setHasScrolled] = useState(false);
+  const [showConsultOverlay, setShowConsultOverlay] = useState(false);
   const headerSwitchOn = 120;
   const headerSwitchOff = 120;
   const idleValues = useRef(MOODS.map(() => new Animated.Value(0))).current;
@@ -148,6 +176,12 @@ export default function HomeScreen() {
     };
   }, [waveDrift]);
 
+  useEffect(() => {
+    if (consultConfirmed === "1") {
+      setShowConsultOverlay(true);
+    }
+  }, [consultConfirmed]);
+
   const handleMoodPressIn = (index: number) => {
     Animated.spring(pressScales[index], {
       toValue: 0.9,
@@ -171,6 +205,11 @@ export default function HomeScreen() {
       if (currentHasScrolled) return offsetY > headerSwitchOff;
       return offsetY > headerSwitchOn;
     });
+  };
+
+  const closeConsultOverlay = () => {
+    setShowConsultOverlay(false);
+    router.replace("/home");
   };
 
   const waveTranslateX = waveDrift.interpolate({
@@ -199,11 +238,11 @@ export default function HomeScreen() {
         </Pressable>
 
         <Pressable
-          style={styles.calendarButton}
-          accessibilityLabel="Open calendar"
-          onPress={() => router.push("/calendar-checkin")}
+          style={styles.headerActionButton}
+          accessibilityLabel="Open notifications"
+          onPress={() => router.push("/notifications")}
         >
-          <Ionicons name="calendar-outline" size={22} color={hasScrolled ? "#2D3034" : "#2E4A39"} />
+          <Ionicons name="notifications-outline" size={22} color={hasScrolled ? "#2D3034" : "#2E4A39"} />
         </Pressable>
       </View>
 
@@ -256,29 +295,14 @@ export default function HomeScreen() {
           </Animated.View>
         </View>
 
-        <View style={styles.quickRow}>
-          <View style={[styles.quickCard, styles.quickCardLeft]}>
-            <Image source={TALA_IMAGE} style={styles.quickArtTala} resizeMode="contain" />
-            <Text style={styles.quickTitle}>Daily Tala</Text>
-            <Text style={styles.quickDescription}>Keep going and gather your tala!</Text>
-            <Pressable style={styles.quickButton}>
-              <Text style={styles.quickButtonText}>Check in</Text>
-            </Pressable>
-          </View>
-
-          <View style={styles.quickCard}>
-            <Image source={PET_IMAGE} style={styles.quickArtPet} resizeMode="contain" />
-            <Text style={styles.quickTitle}>Express yourself!</Text>
-            <Text style={styles.quickDescription}>Level up your look! Tap to style your Diwa.</Text>
-            <Pressable style={styles.quickButton}>
-              <Text style={styles.quickButtonText}>Style my Diwa</Text>
-            </Pressable>
-          </View>
-        </View>
-
         <View style={styles.moodCard}>
-          <Text style={styles.moodHeading}>Mood Check:</Text>
-          <Text style={styles.moodSubHeading}>Your feelings matter. What&apos;s showing up?</Text>
+          <View style={styles.moodHeaderRow}>
+            <Image source={PET_AWAKE_IMAGE} style={styles.moodPetArt} resizeMode="contain" />
+            <View style={styles.moodHeaderTextWrap}>
+              <Text style={styles.moodHeading}>How are you feeling?</Text>
+              <Text style={styles.moodSubHeading}>Track your mood to understand patterns</Text>
+            </View>
+          </View>
 
           <View style={styles.moodRow}>
             {MOODS.map((mood, index) => (
@@ -309,10 +333,101 @@ export default function HomeScreen() {
                     <Text style={styles.moodEmoji}>{mood.emoji}</Text>
                   </Animated.View>
                 </Pressable>
-                <Text style={[styles.moodLabel, selectedMood === mood.label && styles.moodLabelActive]}>
+                <Text style={[styles.moodLabel, selectedMood === mood.label && styles.moodLabelActive]} numberOfLines={1}>
                   {mood.label}
                 </Text>
               </View>
+            ))}
+          </View>
+
+          <Pressable style={styles.moodHistoryButton} onPress={() => router.push("/mood-overview")}>
+            <Text style={styles.moodHistoryButtonText}>View Mood History</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.dailyCheckinCard}>
+          <View style={styles.dailyCheckinHeader}>
+            <Text style={styles.dailyCheckinTitle}>Daily Check-in</Text>
+            <View style={styles.dailyTalaPill}>
+              <Image source={TALA_IMAGE} style={styles.dailyTalaPillIcon} resizeMode="contain" />
+              <Text style={styles.dailyTalaPillText}>10,000</Text>
+            </View>
+          </View>
+
+          <View style={styles.dailyRewardsRow}>
+            {DAILY_CHECKIN_REWARDS.map((reward) => (
+              <View
+                key={reward.id}
+                style={[
+                  styles.dailyRewardBox,
+                  { width: rewardTileWidth, height: rewardTileHeight },
+                  reward.state === "done" && styles.dailyRewardBoxDone,
+                  reward.state === "active" && styles.dailyRewardBoxActive,
+                  reward.state === "locked" && styles.dailyRewardBoxLocked,
+                ]}
+              >
+                {reward.state === "done" ? (
+                  <View
+                    style={[
+                      styles.dailyRewardDoneCircle,
+                      {
+                        width: rewardTileIconSize,
+                        height: rewardTileIconSize,
+                        borderRadius: rewardTileIconSize / 2,
+                      },
+                    ]}
+                  >
+                    <Ionicons name="checkmark" size={20} color="#FFFFFF" />
+                  </View>
+                ) : (
+                  <Image
+                    source={TALA_IMAGE}
+                    style={[styles.dailyRewardTalaIcon, { width: rewardTileIconSize, height: rewardTileIconSize }]}
+                    resizeMode="contain"
+                  />
+                )}
+                <Text
+                  style={[
+                    styles.dailyRewardValue,
+                    { fontSize: rewardTileLabelSize, lineHeight: rewardTileLabelSize + 4 },
+                    reward.state === "done" && styles.dailyRewardValueDone,
+                    reward.state === "active" && styles.dailyRewardValueActive,
+                    reward.state === "locked" && styles.dailyRewardValueLocked,
+                  ]}
+                >
+                  {reward.value}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          <Text style={styles.dailyCheckinSubText}>Earn a Tala for each check-in.</Text>
+
+          <Pressable style={styles.dailyCheckinButton} onPress={() => router.push("/calendar-checkin")}>
+            <Text style={styles.dailyCheckinButtonText}>Check-in today</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.supportWrapCard}>
+          <View style={styles.supportGrid}>
+            {SUPPORT_CARDS.map((card) => (
+              <Pressable
+                key={card.id}
+                style={[styles.supportCard, { backgroundColor: card.backgroundColor }]}
+                onPress={() => {
+                  if (card.title === "Wellness Tools") {
+                    router.push("/wellness-tools");
+                    return;
+                  }
+                  if (card.title === "Style Lumi") {
+                    router.push("/write-entry");
+                  }
+                }}
+              >
+                <Image source={PET_IDLE_IMAGE} style={styles.supportPetIcon} resizeMode="contain" />
+                <Text style={styles.supportTitle}>{card.title}</Text>
+                <Text style={styles.supportDescription}>{card.description}</Text>
+              </Pressable>
             ))}
           </View>
         </View>
@@ -349,26 +464,52 @@ export default function HomeScreen() {
             <Pressable
               style={styles.addEntryButton}
               accessibilityLabel="Add entry"
-              onPress={() => router.push("/journal")}
+              onPress={() => router.push("/write-entry")}
             >
               <Ionicons name="add" size={30} color="#FFFFFF" />
             </Pressable>
           </View>
         </View>
 
-        <View style={styles.supportRow}>
-          {SUPPORT_CARDS.map((card) => (
-            <Pressable key={card.id} style={[styles.supportCard, { backgroundColor: card.backgroundColor }]}>
-              <View style={styles.supportIconCircle}>
-                {card.icon ? <Ionicons name={card.icon as any} size={24} color="#5B6162" /> : null}
-              </View>
-
-              <Text style={styles.supportTitle}>{card.title}</Text>
-              <Text style={styles.supportDescription}>{card.description}</Text>
-            </Pressable>
-          ))}
-        </View>
       </ScrollView>
+
+      {showConsultOverlay ? (
+        <View style={styles.consultOverlay} pointerEvents="box-none">
+          <View style={styles.consultOverlayBackdrop} />
+
+          <View style={styles.consultOverlayCard}>
+            <View style={styles.consultAvatarPlaceholder} />
+
+            <Text style={styles.consultOverlayTitle}>Appointment Confirmed!</Text>
+            <Text style={styles.consultOverlaySubtitle}>
+              Your session with Ms. Janicka Akim is scheduled
+            </Text>
+
+            <View style={styles.consultInfoCard}>
+              <Text style={styles.consultInfoText}>
+                <Text style={styles.consultInfoLabel}>Date:</Text> February 27, Wednesday
+              </Text>
+              <Text style={styles.consultInfoText}>
+                <Text style={styles.consultInfoLabel}>Time:</Text> 10:00 AM
+              </Text>
+              <Text style={styles.consultInfoText}>
+                <Text style={styles.consultInfoLabel}>Concern:</Text> Anxiety/Stress
+              </Text>
+              <Text style={styles.consultInfoText}>
+                <Text style={styles.consultInfoLabel}>Location:</Text> Guidance Office, 2nd Floor
+              </Text>
+            </View>
+
+            <Text style={styles.consultOverlayFootnote}>
+              A confirmation has been sent. Please arrive 5 minutes early.
+            </Text>
+
+            <Pressable style={styles.consultOverlayButton} onPress={closeConsultOverlay}>
+              <Text style={styles.consultOverlayButtonText}>Done</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
 
       <HomeBottomNav activeTab="home" />
     </SafeAreaView>
@@ -463,7 +604,7 @@ const styles = StyleSheet.create({
   userTextScrolled: {
     color: "#2E5722",
   },
-  calendarButton: {
+  headerActionButton: {
     padding: 6,
     marginRight: 2,
     marginTop: 2,
@@ -511,126 +652,225 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     maxWidth: 290,
   },
-  quickRow: {
-    width: "100%",
-    flexDirection: "row",
-    columnGap: 6,
-    marginBottom: 12,
-  },
-  quickCard: {
-    flex: 1,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#A9C98F",
-    backgroundColor: "#C5E7D6",
-    alignItems: "center",
-    paddingHorizontal: 8,
-    paddingTop: 12,
-    paddingBottom: 10,
-  },
-  quickCardLeft: {
-    backgroundColor: "#BFDCCD",
-  },
-  quickArtTala: {
-    width: 76,
-    height: 76,
-    marginBottom: 2,
-    marginTop: -4,
-  },
-  quickArtPet: {
-    width: 82,
-    height: 82,
-    marginBottom: -4,
-    marginTop: -8,
-  },
-  quickTitle: {
-    textAlign: "center",
-    color: "#1D1D1D",
-    fontSize: 33 / 2,
-    lineHeight: 20,
-    fontWeight: "700",
-    marginTop: 3,
-    marginBottom: 3,
-  },
-  quickDescription: {
-    textAlign: "center",
-    color: "#3D3D3D",
-    fontSize: 12 / 2 * 2,
-    lineHeight: 17,
-    marginBottom: 9,
-  },
-  quickButton: {
-    height: 24,
-    minWidth: 122,
-    borderRadius: 999,
-    backgroundColor: "#70C33E",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 12,
-  },
-  quickButtonText: {
-    color: "#FFFFFF",
-    fontSize: 11,
-    fontWeight: "700",
-  },
   moodCard: {
-    borderRadius: 12,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: "#BFBFBF",
-    backgroundColor: "#F6F6F6",
-    paddingHorizontal: 12,
-    paddingTop: 8,
-    paddingBottom: 10,
+    backgroundColor: "#F4F4F4",
+    paddingHorizontal: 10,
+    paddingTop: 10,
+    paddingBottom: 12,
     shadowColor: "#888888",
     shadowOpacity: 0.16,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
     marginBottom: 10,
+  },
+  moodHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  moodPetArt: {
+    width: 86,
+    height: 86,
+    marginLeft: -8,
+    marginRight: 4,
+  },
+  moodHeaderTextWrap: {
+    flex: 1,
+    paddingRight: 4,
   },
   moodHeading: {
     color: "#2F3946",
-    fontSize: 33 / 2,
-    lineHeight: 20,
+    fontSize: 43 / 2,
+    lineHeight: 28,
     fontWeight: "700",
     marginBottom: 2,
   },
   moodSubHeading: {
-    color: "#353535",
-    fontSize: 31 / 2,
-    lineHeight: 23,
-    marginBottom: 8,
+    color: "#374A5D",
+    fontSize: 36 / 2,
+    lineHeight: 24,
   },
   moodRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    marginBottom: 10,
   },
   moodItem: {
     alignItems: "center",
+    flex: 1,
   },
   moodFace: {
-    width: 46,
-    height: 46,
-    borderRadius: 10,
+    width: 50,
+    height: 50,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 3,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: "#A6B3BC",
   },
   moodFaceActive: {
     borderWidth: 2,
     borderColor: "#2F6F25",
   },
   moodEmoji: {
-    fontSize: 27,
-    lineHeight: 30,
+    fontSize: 30,
+    lineHeight: 34,
   },
   moodLabel: {
     color: "#4A4A4A",
-    fontSize: 13,
-    lineHeight: 16,
+    fontSize: 15,
+    lineHeight: 18,
   },
   moodLabelActive: {
     color: "#2F6F25",
+    fontWeight: "700",
+  },
+  moodHistoryButton: {
+    height: 40,
+    borderRadius: 999,
+    backgroundColor: "#70C943",
+    alignItems: "center",
+    justifyContent: "center",
+    marginHorizontal: "20%",
+    shadowColor: "#6D6D6D",
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  moodHistoryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: "700",
+  },
+  dailyCheckinCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#CFD2D5",
+    backgroundColor: "#F6F7F6",
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 14,
+    shadowColor: "#888888",
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+    marginBottom: 10,
+  },
+  dailyCheckinHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  dailyCheckinTitle: {
+    color: "#34465A",
+    fontSize: 25 / 2 * 2,
+    lineHeight: 32,
+    fontWeight: "700",
+  },
+  dailyTalaPill: {
+    minWidth: 124,
+    height: 40,
+    borderRadius: 999,
+    backgroundColor: "#E4E180",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 14,
+  },
+  dailyTalaPillIcon: {
+    width: 18,
+    height: 18,
+    marginRight: 4,
+  },
+  dailyTalaPillText: {
+    color: "#A58E26",
+    fontSize: 21 / 2 * 2,
+    lineHeight: 26,
+    fontWeight: "700",
+  },
+  dailyRewardsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    columnGap: 4,
+    marginBottom: 10,
+  },
+  dailyRewardBox: {
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexShrink: 0,
+    borderWidth: 1,
+    paddingTop: 8,
+    paddingBottom: 6,
+  },
+  dailyRewardBoxDone: {
+    backgroundColor: "#F1F2F1",
+    borderColor: "#BFC5C6",
+  },
+  dailyRewardBoxActive: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#1F2328",
+  },
+  dailyRewardBoxLocked: {
+    backgroundColor: "#BFE5CB",
+    borderColor: "#A7CDB5",
+  },
+  dailyRewardDoneCircle: {
+    backgroundColor: "#A1C4B3",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dailyRewardTalaIcon: {
+    marginTop: 2,
+  },
+  dailyRewardValue: {
+    fontSize: 30 / 2,
+    lineHeight: 20,
+    fontWeight: "700",
+  },
+  dailyRewardValueDone: {
+    color: "#BAC1C1",
+  },
+  dailyRewardValueActive: {
+    color: "#1E1E1E",
+  },
+  dailyRewardValueLocked: {
+    color: "#2E503C",
+  },
+  dailyCheckinSubText: {
+    textAlign: "center",
+    color: "#44566A",
+    fontSize: 17 / 1.5 * 1.5,
+    lineHeight: 24,
+    marginBottom: 8,
+  },
+  dailyCheckinButton: {
+    height: 44,
+    borderRadius: 999,
+    backgroundColor: "#70C943",
+    alignItems: "center",
+    justifyContent: "center",
+    marginHorizontal: "16%",
+    shadowColor: "#6D6D6D",
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  dailyCheckinButtonText: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    lineHeight: 24,
     fontWeight: "700",
   },
   recentCard: {
@@ -725,38 +965,144 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 4,
   },
-  supportRow: {
-    flexDirection: "row",
-    columnGap: 7,
-  },
-  supportCard: {
-    flex: 1,
-    borderRadius: 12,
-    minHeight: 138,
-    paddingHorizontal: 6,
-    paddingTop: 8,
-    paddingBottom: 8,
-  },
-  supportIconCircle: {
-    width: 54,
-    height: 54,
-    borderRadius: 999,
-    backgroundColor: "#EDEFEF",
-    alignItems: "center",
-    justifyContent: "center",
+  supportWrapCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#C9CFCC",
+    backgroundColor: "#F3F5F4",
+    paddingHorizontal: 10,
+    paddingVertical: 10,
     marginBottom: 10,
   },
+  supportGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    rowGap: 10,
+  },
+  supportCard: {
+    width: "48.5%",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#A9CEA2",
+    minHeight: 182,
+    paddingHorizontal: 10,
+    paddingTop: 10,
+    paddingBottom: 8,
+  },
+  supportPetIcon: {
+    width: 58,
+    height: 58,
+    marginBottom: 8,
+    marginLeft: -3,
+  },
   supportTitle: {
-    color: "#FFFFFF",
-    fontSize: 27 / 2,
-    lineHeight: 18,
+    color: "#2A3A2C",
+    fontSize: 36 / 2,
+    lineHeight: 25,
     fontWeight: "700",
-    marginBottom: 6,
-    minHeight: 36,
+    marginBottom: 2,
   },
   supportDescription: {
-    color: "#E8F7E5",
-    fontSize: 11,
-    lineHeight: 14,
+    color: "#2F4531",
+    fontSize: 14,
+    lineHeight: 24,
+  },
+  consultOverlay: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 120,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    paddingBottom: 64,
+  },
+  consultOverlayBackdrop: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: "rgba(26, 30, 34, 0.28)",
+  },
+  consultOverlayCard: {
+    width: "100%",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#D3D4D4",
+    backgroundColor: "#F5F5F5",
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 14,
+    shadowColor: "#6E6E6E",
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+    alignItems: "center",
+  },
+  consultAvatarPlaceholder: {
+    width: 88,
+    height: 88,
+    borderRadius: 999,
+    backgroundColor: "#D0D2D3",
+    marginBottom: 12,
+  },
+  consultOverlayTitle: {
+    color: "#32475B",
+    fontSize: 44 / 2,
+    lineHeight: 30,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 4,
+  },
+  consultOverlaySubtitle: {
+    color: "#3D5165",
+    fontSize: 15,
+    lineHeight: 20,
+    textAlign: "center",
+    marginBottom: 10,
+  },
+  consultInfoCard: {
+    width: "100%",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#B5D8A7",
+    backgroundColor: "#CDE6C3",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 10,
+  },
+  consultInfoText: {
+    color: "#2F4356",
+    fontSize: 15 / 1.02,
+    lineHeight: 22,
+  },
+  consultInfoLabel: {
+    fontWeight: "700",
+  },
+  consultOverlayFootnote: {
+    color: "#68737E",
+    fontSize: 12,
+    lineHeight: 16,
+    textAlign: "center",
+    marginBottom: 10,
+  },
+  consultOverlayButton: {
+    width: "92%",
+    height: 44,
+    borderRadius: 999,
+    backgroundColor: "#70C943",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  consultOverlayButtonText: {
+    color: "#FFFFFF",
+    fontSize: 33 / 2,
+    lineHeight: 22,
+    fontWeight: "700",
   },
 });

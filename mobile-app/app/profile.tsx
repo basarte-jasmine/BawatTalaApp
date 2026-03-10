@@ -99,7 +99,7 @@ function SettingRowItem({ row }: { row: SettingRow }) {
   return (
     <Pressable style={styles.rowItem}>
       <Text style={styles.rowLabel}>{row.label}</Text>
-      {row.showChevron ? <Ionicons name="chevron-forward" size={20} color="#6B6E75" /> : null}
+      {row.showChevron ? <Ionicons name="chevron-forward" size={18} color="#7E8490" /> : null}
     </Pressable>
   );
 }
@@ -107,7 +107,7 @@ function SettingRowItem({ row }: { row: SettingRow }) {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#ECECEC",
+    backgroundColor: "#D9D9D9",
   },
   topBar: {
     height: 52,
@@ -175,38 +175,36 @@ const styles = StyleSheet.create({
     textDecorationLine: "underline",
   },
   groupCard: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#E2E0EE",
-    backgroundColor: "#EFEDF8",
+    borderRadius: 14,
+    backgroundColor: "#EEEDF7",
     overflow: "hidden",
-    marginBottom: 8,
+    marginBottom: 6,
   },
   groupTitle: {
-    color: "#324254",
+    color: "#2E3F54",
     fontSize: 33 / 2,
     lineHeight: 22,
-    fontWeight: "600",
-    paddingHorizontal: 12,
-    paddingTop: 10,
-    paddingBottom: 8,
+    fontWeight: "500",
+    paddingHorizontal: 10,
+    paddingTop: 8,
+    paddingBottom: 6,
   },
   rowItem: {
-    minHeight: 42,
+    minHeight: 44,
     paddingHorizontal: 18,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "#EFEDF8",
+    backgroundColor: "#EEEDF7",
   },
   rowLabel: {
-    color: "#36475B",
-    fontSize: 33 / 2,
+    color: "#34475D",
+    fontSize: 17,
     lineHeight: 22,
   },
   rowDivider: {
     height: 1,
-    backgroundColor: "#F7F6FB",
+    backgroundColor: "#F5F4FA",
   },
   signOutButton: {
     height: 46,
