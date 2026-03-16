@@ -2,7 +2,11 @@ const express = require("express");
 const cors = require("cors");
 const cookieSession = require("cookie-session");
 const authRoutes = require("./api/auth.routes");
+const appointmentRoutes = require("./api/appointment.routes");
 const { adminRouter } = require("./api/admin.routes");
+const checkinRoutes = require("./api/checkin.routes");
+const journalRoutes = require("./api/journal.routes");
+const moodRoutes = require("./api/mood.routes");
 const ocrRoutes = require("./api/ocr.routes");
 
 const app = express();
@@ -40,6 +44,10 @@ app.get("/health", (_req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/appointments", appointmentRoutes);
+app.use("/api/checkins", checkinRoutes);
+app.use("/api/journal", journalRoutes);
+app.use("/api/moods", moodRoutes);
 app.use("/api/admin", adminRouter);
 app.use("/api/ocr", ocrRoutes);
 
