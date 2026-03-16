@@ -78,7 +78,7 @@ export default function Index() {
     }
 
     hasNavigatedRef.current = true;
-    router.replace("/home");
+    router.replace("/login");
   };
 
   const totalSpan =
@@ -169,7 +169,7 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: "#20242A",
     letterSpacing: 0.8,
-    fontFamily: "Fraunces-Regular",
+    fontFamily: "Outfit",
   },
   image: {
     width: Math.min(330, width * 0.84),

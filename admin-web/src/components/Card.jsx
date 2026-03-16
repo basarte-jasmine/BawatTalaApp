@@ -7,7 +7,7 @@ export default function Card({
 }) {
   return (
     <div
-      className={`rounded-xl border border-admin-border bg-white p-6 shadow-sm transition hover:shadow-md ${className}`}
+      className={`rounded-xl border border-gray-100 bg-white p-6 shadow-sm transition hover:border-emerald-200 ${className}`}
     >
       {(title || icon) && (
         <div className="mb-4 flex items-start gap-3">

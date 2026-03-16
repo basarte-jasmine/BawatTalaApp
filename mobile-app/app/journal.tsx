@@ -1,94 +1,203 @@
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { Image, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
+import { useCallback, useMemo, useState } from "react";
+import { Image, Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
+import { fetchJournalCalendar, fetchJournalEntriesByDate } from "../lib/backend-api";
+import { useAuthSession } from "../lib/auth-session";
+import { getManilaTodayParts } from "../lib/manila-date";
 
-type CalendarDay = {
-  active?: boolean;
+type WeekDayItem = {
   date: number;
+  hasEntries: boolean;
   id: string;
+  isoDate: string;
+  isFuture: boolean;
+  isToday: boolean;
   label: string;
 };
 
 const PET_IMAGE = require("../assets/images/pet_sample.png");
 const BOOK_IMAGE = require("../assets/images/book_sample.png");
+const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
-const CALENDAR_DAYS: CalendarDay[] = [
-  { id: "su", label: "Su", date: 1 },
-  { id: "mo", label: "Mo", date: 2 },
-  { id: "tu", label: "Tu", date: 3, active: true },
-  { id: "we", label: "We", date: 4 },
-  { id: "th", label: "Th", date: 5 },
-  { id: "fr", label: "Fr", date: 6 },
-  { id: "sa", label: "Sa", date: 7 },
-];
+function buildIsoDate(year: number, monthIndex: number, day: number) {
+  return `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function buildWeekDates(isoDate: string, writtenDays: Set<number>) {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  const baseDate = new Date(year, month - 1, day);
+  const weekday = baseDate.getDay();
+  const startDate = new Date(baseDate);
+  startDate.setDate(baseDate.getDate() - weekday);
+  const todayIso = getManilaTodayParts().isoDate;
+
+  return Array.from({ length: 7 }, (_, index) => {
+    const current = new Date(startDate);
+    current.setDate(startDate.getDate() + index);
+    const currentYear = current.getFullYear();
+    const currentMonth = current.getMonth();
+    const currentDay = current.getDate();
+    const currentIso = buildIsoDate(currentYear, currentMonth, currentDay);
+    return {
+      id: `${currentIso}-${index}`,
+      label: WEEKDAY_LABELS[index],
+      date: currentDay,
+      isoDate: currentIso,
+      isToday: currentIso === todayIso,
+      isFuture: currentIso > todayIso,
+      hasEntries:
+        currentYear === year &&
+        currentMonth === month - 1 &&
+        writtenDays.has(currentDay),
+    };
+  });
+}
+
+function formatLongDate(isoDate: string) {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  return new Date(year, month - 1, day).toLocaleString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
 
 export default function JournalScreen() {
+  const { user } = useAuthSession();
   const { height } = useWindowDimensions();
   const compact = height < 760;
   const veryCompact = height < 700;
-  const openCalendarCheckIn = () => {
-    router.push("/calendar-checkin");
-  };
+  const manilaToday = getManilaTodayParts();
+  const [calendarDays, setCalendarDays] = useState<WeekDayItem[]>([]);
+  const [weekAnchorDate, setWeekAnchorDate] = useState(manilaToday.isoDate);
+  const [insightText, setInsightText] = useState(
+    "There are no journal insights for this date yet.",
+  );
+  const [showFullInsightModal, setShowFullInsightModal] = useState(false);
+
+  const selectedDay = useMemo(
+    () => calendarDays.find((day) => day.isoDate === weekAnchorDate) ?? null,
+    [calendarDays, weekAnchorDate],
+  );
+
+  const loadWeekData = useCallback(async (targetIsoDate: string) => {
+    if (!user?.studentNumber) {
+      setCalendarDays([]);
+      setInsightText("There are no journal insights for this date yet.");
+      return;
+    }
+
+    const [year, month] = targetIsoDate.split("-").map(Number);
+    const calendarResult = await fetchJournalCalendar(user.studentNumber, year);
+    const monthIndex = month - 1;
+    const writtenDays = new Set<number>(calendarResult.writtenDaysByMonth?.[String(monthIndex)] ?? []);
+    const builtWeek = buildWeekDates(targetIsoDate, writtenDays);
+    setCalendarDays(builtWeek);
+
+    const dateResult = await fetchJournalEntriesByDate(user.studentNumber, targetIsoDate);
+    const combinedInsights = (dateResult.entries ?? [])
+      .flatMap((entry) => entry.insights ?? [])
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+
+    const uniqueInsights = [...new Set(combinedInsights)];
+
+    setInsightText(
+      uniqueInsights.length > 0
+        ? uniqueInsights.join(" ")
+        : "There are no journal insights for this date yet.",
+    );
+  }, [user?.studentNumber]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadWeekData(weekAnchorDate);
+    }, [loadWeekData, weekAnchorDate]),
+  );
+
+  const handleMoveWeek = useCallback((direction: -1 | 1) => {
+    const [year, month, day] = weekAnchorDate.split("-").map(Number);
+    const nextDate = new Date(year, month - 1, day);
+    nextDate.setDate(nextDate.getDate() + direction * 7);
+    const nextIso = buildIsoDate(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate());
+    setWeekAnchorDate(nextIso);
+    void loadWeekData(nextIso);
+  }, [loadWeekData, weekAnchorDate]);
+
+  const handleSelectDay = useCallback((isoDate: string, isFuture: boolean) => {
+    if (isFuture) {
+      return;
+    }
+    setWeekAnchorDate(isoDate);
+    void loadWeekData(isoDate);
+  }, [loadWeekData]);
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <View style={[styles.content, compact && styles.contentCompact, veryCompact && styles.contentVeryCompact]}>
         <View style={[styles.topSection, compact && styles.topSectionCompact]}>
-          <Pressable
-            style={[styles.calendarCard, compact && styles.calendarCardCompact]}
-            onPress={openCalendarCheckIn}
-          >
+          <View style={[styles.calendarCard, compact && styles.calendarCardCompact]}>
             <View style={[styles.calendarHeader, compact && styles.calendarHeaderCompact]}>
-              <Text style={[styles.calendarTitle, compact && styles.calendarTitleCompact]}>February 3, 2026</Text>
-              <Ionicons name="chevron-forward" size={22} color="#3A4A5B" />
+              <Pressable onPress={() => handleMoveWeek(-1)} style={styles.weekArrowButton}>
+                <Ionicons name="chevron-back" size={22} color="#3A4A5B" />
+              </Pressable>
+
+              <Text style={[styles.calendarTitle, compact && styles.calendarTitleCompact]}>
+                {formatLongDate(weekAnchorDate)}
+              </Text>
+
+              <Pressable onPress={() => handleMoveWeek(1)} style={styles.weekArrowButton}>
+                <Ionicons name="chevron-forward" size={22} color="#3A4A5B" />
+              </Pressable>
             </View>
 
             <View style={styles.calendarRow}>
-              {CALENDAR_DAYS.map((day) => (
+              {calendarDays.map((day) => (
                 <View key={day.id} style={[styles.dayItem, compact && styles.dayItemCompact]}>
-                  {(() => {
-                    const done = day.date <= 2;
-                    const active = day.date === 3;
-                    const outlined = !done && !active;
-                    return (
-                      <>
-                        <Text style={[styles.dayLabel, compact && styles.dayLabelCompact]}>{day.label}</Text>
-                        <View
-                          style={[
-                            styles.dayCircle,
-                            compact && styles.dayCircleCompact,
-                            done && styles.dayCircleDone,
-                            active && styles.dayCircleActive,
-                            outlined && styles.dayCircleOutline,
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.dayNumber,
-                              compact && styles.dayNumberCompact,
-                              done && styles.dayNumberDone,
-                              active && styles.dayNumberActive,
-                              outlined && styles.dayNumberOutline,
-                            ]}
-                          >
-                            {day.date}
-                          </Text>
-                        </View>
-                      </>
-                    );
-                  })()}
+                  <Text style={[styles.dayLabel, compact && styles.dayLabelCompact]}>{day.label}</Text>
+                  <Pressable
+                    onPress={() => handleSelectDay(day.isoDate, day.isFuture)}
+                    disabled={day.isFuture}
+                    style={[
+                      styles.dayCircle,
+                      compact && styles.dayCircleCompact,
+                      !day.isFuture && styles.dayCircleEmpty,
+                      day.hasEntries && styles.dayCircleDone,
+                      day.isToday && day.hasEntries && styles.dayCircleActive,
+                      day.isFuture && styles.dayCircleFuture,
+                      selectedDay?.isoDate === day.isoDate && !day.hasEntries && !day.isFuture && styles.dayCircleSelected,
+                      selectedDay?.isoDate === day.isoDate && day.hasEntries && styles.dayCircleSelectedFilled,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.dayNumber,
+                        compact && styles.dayNumberCompact,
+                        day.hasEntries && styles.dayNumberDone,
+                        day.isToday && day.hasEntries && styles.dayNumberActive,
+                        !day.isFuture && !day.hasEntries && styles.dayNumberOutline,
+                        day.isFuture && styles.dayNumberFuture,
+                        selectedDay?.isoDate === day.isoDate && !day.isFuture && styles.dayNumberSelected,
+                      ]}
+                    >
+                      {day.date}
+                    </Text>
+                  </Pressable>
                 </View>
               ))}
             </View>
-          </Pressable>
+          </View>
 
           <View style={[styles.reflectionCard, compact && styles.reflectionCardCompact]}>
-            <Text style={[styles.reflectionText, compact && styles.reflectionTextCompact]} numberOfLines={veryCompact ? 4 : 5}>
-              Yesterday, you kept replaying a conversation and worrying about how you were perceived. But in the end, you
-              realized there was no clear evidence of conflict and chose to let the thought pass rather than feed it.
-            </Text>
+            <Pressable onPress={() => setShowFullInsightModal(true)}>
+              <Text style={[styles.reflectionText, compact && styles.reflectionTextCompact]} numberOfLines={veryCompact ? 4 : 5}>
+                {insightText}
+              </Text>
+            </Pressable>
 
             <View style={[styles.reflectionFooterRow, compact && styles.reflectionFooterRowCompact]}>
               <View style={[styles.companionWrap, compact && styles.companionWrapCompact]}>
@@ -96,7 +205,7 @@ export default function JournalScreen() {
               </View>
 
               <Text style={[styles.reflectionFootnote, compact && styles.reflectionFootnoteCompact]} numberOfLines={3}>
-                Summary by Lumi, your virtual companion. Bawat Tala is not a substitute for professional mental health
+                Insights by Lumi, your virtual companion. Bawat Tala is not a substitute for professional mental health
                 care.
               </Text>
             </View>
@@ -110,7 +219,7 @@ export default function JournalScreen() {
 
           <Pressable
             style={[styles.addEntryButton, compact && styles.addEntryButtonCompact]}
-            onPress={() => router.push("/write-entry")}
+            onPress={() => router.push("/write-entry?mode=new")}
           >
             <Text style={[styles.addEntryText, compact && styles.addEntryTextCompact]}>Add Entry</Text>
           </Pressable>
@@ -124,6 +233,24 @@ export default function JournalScreen() {
         </View>
       </View>
 
+      <Modal
+        visible={showFullInsightModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowFullInsightModal(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>{formatLongDate(weekAnchorDate)}</Text>
+            <Text style={styles.modalInsightText}>{insightText}</Text>
+
+            <Pressable style={styles.modalCloseButton} onPress={() => setShowFullInsightModal(false)}>
+              <Text style={styles.modalCloseButtonText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
       <HomeBottomNav activeTab="journal" />
     </SafeAreaView>
   );
@@ -132,7 +259,7 @@ export default function JournalScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#ECECEC",
+    backgroundColor: "#FFFFFF",
   },
   content: {
     flex: 1,
@@ -156,12 +283,10 @@ const styles = StyleSheet.create({
   },
   calendarCard: {
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#C6CBD0",
-    backgroundColor: "#F4F5F4",
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: 16,
     paddingVertical: 12,
-    shadowColor: "#777777",
+    shadowColor: "#5C6570",
     shadowOpacity: 0.15,
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
@@ -180,6 +305,12 @@ const styles = StyleSheet.create({
   },
   calendarHeaderCompact: {
     marginBottom: 8,
+  },
+  weekArrowButton: {
+    width: 26,
+    height: 26,
+    alignItems: "center",
+    justifyContent: "center",
   },
   calendarTitle: {
     color: "#34475A",
@@ -223,16 +354,31 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
   },
+  dayCircleEmpty: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: "#86C74F",
+  },
   dayCircleDone: {
     backgroundColor: "#AFE77D",
+    borderWidth: 1.5,
+    borderColor: "#AFE77D",
   },
   dayCircleActive: {
     backgroundColor: "#3E8F24",
+    borderWidth: 1.5,
+    borderColor: "#3E8F24",
   },
-  dayCircleOutline: {
-    backgroundColor: "#F6F7F6",
-    borderWidth: 1,
-    borderColor: "#3E4D5E",
+  dayCircleFuture: {
+    backgroundColor: "#D7DDE2",
+  },
+  dayCircleSelected: {
+    borderWidth: 2,
+    borderColor: "#2F6F25",
+  },
+  dayCircleSelectedFilled: {
+    borderWidth: 2,
+    borderColor: "#285F20",
   },
   dayNumber: {
     color: "#3F4F60",
@@ -253,15 +399,19 @@ const styles = StyleSheet.create({
   dayNumberOutline: {
     color: "#3E4D5E",
   },
+  dayNumberFuture: {
+    color: "#7A8793",
+  },
+  dayNumberSelected: {
+    fontWeight: "700",
+  },
   reflectionCard: {
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#C8CDD1",
-    backgroundColor: "#F4F5F4",
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 14,
-    shadowColor: "#777777",
+    shadowColor: "#5C6570",
     shadowOpacity: 0.15,
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
@@ -332,11 +482,19 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   journalArtWrap: {
+    width: 222,
+    height: 222,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
     marginTop: 0,
     marginBottom: 16,
   },
   journalArtWrapCompact: {
+    width: 206,
+    height: 206,
     marginBottom: 10,
   },
   bookImage: {
@@ -354,14 +512,12 @@ const styles = StyleSheet.create({
   addEntryButton: {
     height: 46,
     borderRadius: 999,
-    backgroundColor: "#B8EC93",
-    borderWidth: 1,
-    borderColor: "#9CCE78",
+    backgroundColor: "#7BCB45",
     alignItems: "center",
     justifyContent: "center",
     marginHorizontal: 18,
     marginBottom: 10,
-    shadowColor: "#707070",
+    shadowColor: "#5C6570",
     shadowOpacity: 0.2,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
@@ -372,7 +528,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   addEntryText: {
-    color: "#33465B",
+    color: "#FFFFFF",
     fontSize: 18,
     lineHeight: 22,
     fontWeight: "700",
@@ -384,18 +540,21 @@ const styles = StyleSheet.create({
   viewEntriesButton: {
     height: 42,
     borderRadius: 999,
-    backgroundColor: "#E8E8E8",
-    borderWidth: 1,
-    borderColor: "#AAB0B6",
+    backgroundColor: "#9FBE8F",
     alignItems: "center",
     justifyContent: "center",
     marginHorizontal: 18,
+    shadowColor: "#5C6570",
+    shadowOpacity: 0.14,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
   viewEntriesButtonCompact: {
     height: 40,
   },
   viewEntriesText: {
-    color: "#33465B",
+    color: "#FFFFFF",
     fontSize: 17,
     lineHeight: 22,
     fontWeight: "700",
@@ -403,5 +562,53 @@ const styles = StyleSheet.create({
   viewEntriesTextCompact: {
     fontSize: 15,
     lineHeight: 19,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(21, 27, 24, 0.34)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 22,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 340,
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 16,
+    shadowColor: "#525C67",
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  modalTitle: {
+    color: "#32465C",
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "700",
+    marginBottom: 10,
+    textAlign: "center",
+  },
+  modalInsightText: {
+    color: "#33485B",
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  modalCloseButton: {
+    marginTop: 14,
+    minHeight: 40,
+    borderRadius: 999,
+    backgroundColor: "#79C943",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalCloseButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: "700",
   },
 });

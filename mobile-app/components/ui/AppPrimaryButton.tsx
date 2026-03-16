@@ -16,22 +16,23 @@ export function AppPrimaryButton({ label, containerStyle, labelStyle, ...props }
 
 const styles = StyleSheet.create({
   button: {
-    width: 290,
-    height: 28,
+    width: "100%",
+    maxWidth: 320,
+    minHeight: 36,
     borderRadius: 999,
-    backgroundColor: "#7A9EBA",
+    backgroundColor: "#79C943",
     alignSelf: "center",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#5E7D95",
-    shadowOpacity: 0.34,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 5,
+    shadowColor: "#4B8F22",
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
   label: {
     color: "#FFFFFF",
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: "700",
   },
 });

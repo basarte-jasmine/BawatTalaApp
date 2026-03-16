@@ -1,66 +1,152 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Swipeable } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
-
-type ProgressItem = {
-  id: string;
-  label: string;
-  value: string;
-};
-
-type EntryItem = {
-  id: string;
-  text: string;
-  time: string;
-};
-
-type EntryGroup = {
-  id: string;
-  dayLabel: string;
-  dayOfMonth: string;
-  monthLabel: string;
-  subLabel: string;
-  entries: EntryItem[];
-};
+import { ConfirmationModal } from "../components/ui/ConfirmationModal";
+import { deleteJournalEntry, fetchRecentJournalEntries } from "../lib/backend-api";
+import { useAuthSession } from "../lib/auth-session";
+import { getManilaTodayParts } from "../lib/manila-date";
 
 const BOOK_IMAGE = require("../assets/images/book_sample.png");
 
-const PROGRESS_ITEMS: ProgressItem[] = [
-  { id: "today", value: "5", label: "Today's Entries" },
-  { id: "monthly", value: "23", label: "Monthly Entries" },
-  { id: "total", value: "25", label: "Total Entries" },
-];
+type RecentEntryItem = {
+  createdAt: string;
+  entryDate: string;
+  id: string;
+  preview: string;
+  summary: string;
+  title: string;
+};
 
-const ENTRY_GROUPS: EntryGroup[] = [
-  {
-    id: "group-25",
-    dayLabel: "Today",
-    dayOfMonth: "25",
-    monthLabel: "FEB",
-    subLabel: "WEDNESDAY",
-    entries: [
-      { id: "g25-1", time: "5:00 PM", text: "Today I finally noticed the small buds blooming on the plants in our balcony." },
-      { id: "g25-2", time: "12:00 PM", text: "Today I finally noticed the small buds blooming on the plants in our balcony." },
-      { id: "g25-3", time: "3:00 AM", text: "Today I finally noticed the small buds blooming on the plants in our balcony." },
-    ],
-  },
-  {
-    id: "group-23",
-    dayLabel: "Monday",
-    dayOfMonth: "23",
-    monthLabel: "FEB",
-    subLabel: "2 DAYS AGO",
-    entries: [
-      { id: "g23-1", time: "5:00 PM", text: "Today I finally noticed the small buds blooming on the plants in our balcony." },
-      { id: "g23-2", time: "12:00 PM", text: "Today I finally noticed the small buds blooming on the plants in our balcony." },
-      { id: "g23-3", time: "3:00 AM", text: "Today I finally noticed the small buds blooming on the plants in our balcony." },
-    ],
-  },
-];
+function formatDateBox(entryDate: string) {
+  const [year, month, day] = entryDate.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  return {
+    dayNumber: String(day),
+    monthLabel: date.toLocaleString("en-US", { month: "short" }).toUpperCase(),
+  };
+}
+
+function shiftIsoDate(isoDate: string, deltaDays: number) {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() + deltaDays);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function buildDateGroups() {
+  const today = getManilaTodayParts().isoDate;
+  const yesterday = shiftIsoDate(today, -1);
+  const dayBeforeYesterday = shiftIsoDate(today, -2);
+  const [year, month, day] = dayBeforeYesterday.split("-").map(Number);
+  const olderDate = new Date(year, month - 1, day);
+  return [
+    { id: "today" as const, date: today, label: "Today" },
+    { id: "yesterday" as const, date: yesterday, label: "Yesterday" },
+    {
+      id: "two_days_ago" as const,
+      date: dayBeforeYesterday,
+      label: olderDate.toLocaleString("en-US", {
+        month: "long",
+        day: "numeric",
+      }),
+    },
+  ];
+}
+
+function formatGroupSubLabel(entryDate: string) {
+  const [year, month, day] = entryDate.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.toLocaleString("en-US", { weekday: "long" }).toUpperCase();
+}
+
+function formatCreatedAtTime(createdAt: string) {
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return date.toLocaleString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
 
 export default function JournalEntriesScreen() {
+  const { user } = useAuthSession();
+  const [entries, setEntries] = useState<RecentEntryItem[]>([]);
+  const [progress, setProgress] = useState({
+    monthlyCount: 0,
+    todayCount: 0,
+    totalCount: 0,
+  });
+  const [pendingDeleteEntryId, setPendingDeleteEntryId] = useState<string | null>(null);
+
+  const loadEntries = useCallback(async () => {
+    if (!user?.studentNumber) {
+      setEntries([]);
+      setProgress({ monthlyCount: 0, todayCount: 0, totalCount: 0 });
+      return;
+    }
+
+    const result = await fetchRecentJournalEntries(user.studentNumber, 3);
+    if (!result.ok) {
+      setEntries([]);
+      setProgress({ monthlyCount: 0, todayCount: 0, totalCount: 0 });
+      return;
+    }
+
+    setEntries(result.entries ?? []);
+    setProgress(
+      result.progress ?? {
+        monthlyCount: 0,
+        todayCount: 0,
+        totalCount: 0,
+      },
+    );
+  }, [user?.studentNumber]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadEntries();
+    }, [loadEntries]),
+  );
+
+  const progressItems = [
+    { id: "today", value: String(progress.todayCount), label: "Today's Entries" },
+    { id: "monthly", value: String(progress.monthlyCount), label: "Monthly Entries" },
+    { id: "total", value: String(progress.totalCount), label: "Total Entries" },
+  ];
+
+  const dayGroups = useMemo(() => buildDateGroups(), []);
+
+  const groupedEntries = useMemo(() => {
+    const source = new Map<string, RecentEntryItem[]>();
+    for (const entry of entries) {
+      const current = source.get(entry.entryDate) || [];
+      current.push(entry);
+      source.set(entry.entryDate, current);
+    }
+
+    return dayGroups.map((group) => ({
+      ...group,
+      entries: source.get(group.date) ?? [],
+    }));
+  }, [dayGroups, entries]);
+
+  const handleConfirmDelete = async () => {
+    if (!user?.studentNumber || !pendingDeleteEntryId) return;
+    const result = await deleteJournalEntry(user.studentNumber, pendingDeleteEntryId);
+    setPendingDeleteEntryId(null);
+    if (result.ok) {
+      void loadEntries();
+    }
+  };
+
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <View style={styles.topBar}>
@@ -85,7 +171,7 @@ export default function JournalEntriesScreen() {
           </View>
 
           <View style={styles.progressRow}>
-            {PROGRESS_ITEMS.map((item) => (
+            {progressItems.map((item) => (
               <View key={item.id} style={styles.progressItem}>
                 <Text style={styles.progressValue}>{item.value}</Text>
                 <Text style={styles.progressLabel}>{item.label}</Text>
@@ -96,42 +182,77 @@ export default function JournalEntriesScreen() {
 
         <View style={styles.recentHeader}>
           <Text style={styles.recentTitle}>Recent Entries</Text>
-          <Ionicons name="list" size={18} color="#3E4A56" />
         </View>
 
-        {ENTRY_GROUPS.map((group) => (
-          <View key={group.id} style={styles.entryGroup}>
-            <View style={styles.groupHeadRow}>
-              <View style={styles.groupDateBox}>
-                <Text style={styles.groupDayNumber}>{group.dayOfMonth}</Text>
-                <Text style={styles.groupMonth}>{group.monthLabel}</Text>
-              </View>
+        {groupedEntries.map((group) => {
+          const dateBox = formatDateBox(group.date);
 
-              <View style={styles.groupTextWrap}>
-                <Text style={styles.groupDayLabel}>{group.dayLabel}</Text>
-                <Text style={styles.groupSubLabel}>{group.subLabel}</Text>
-              </View>
-            </View>
-
-            <View style={styles.groupEntriesList}>
-              {group.entries.map((entry) => (
-                <View key={entry.id} style={styles.entryCard}>
-                  <View style={styles.entryIconWrap}>
-                    <Image source={BOOK_IMAGE} style={styles.entryIconImage} resizeMode="contain" />
-                  </View>
-
-                  <View style={styles.entryTextWrap}>
-                    <Text style={styles.entryTime}>{entry.time}</Text>
-                    <Text style={styles.entryBody} numberOfLines={2}>
-                      {entry.text}
-                    </Text>
-                  </View>
+          return (
+            <View key={group.id} style={styles.entryGroup}>
+              <View style={styles.groupHeadRow}>
+                <View style={styles.groupDateBox}>
+                  <Text style={styles.groupDayNumber}>{dateBox.dayNumber}</Text>
+                  <Text style={styles.groupMonth}>{dateBox.monthLabel}</Text>
                 </View>
-              ))}
+
+                <View style={styles.groupTextWrap}>
+                  <Text style={styles.groupDayLabel}>{group.label}</Text>
+                  <Text style={styles.groupSubLabel}>{formatGroupSubLabel(group.date)}</Text>
+                </View>
+              </View>
+
+              {group.entries.length === 0 ? (
+                <View style={styles.emptyDayCard}>
+                  <Text style={styles.emptyDayText}>There are no entries for that day.</Text>
+                </View>
+              ) : (
+                <View style={styles.groupEntriesList}>
+                  {group.entries.map((entry) => (
+                    <Swipeable
+                      key={entry.id}
+                      overshootRight={false}
+                      renderRightActions={() => (
+                        <Pressable style={styles.deleteSwipeAction} onPress={() => setPendingDeleteEntryId(entry.id)}>
+                          <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
+                          <Text style={styles.deleteSwipeText}>Delete</Text>
+                        </Pressable>
+                      )}
+                    >
+                      <Pressable
+                        style={styles.entryCard}
+                        onPress={() => router.push(`/journal-entry-view?entryId=${entry.id}`)}
+                      >
+                        <View style={styles.entryIconWrap}>
+                          <Image source={BOOK_IMAGE} style={styles.entryIconImage} resizeMode="contain" />
+                        </View>
+
+                        <View style={styles.entryTextWrap}>
+                          <Text style={styles.entryTime}>{formatCreatedAtTime(entry.createdAt)}</Text>
+                          <Text style={styles.entryBody} numberOfLines={2}>
+                            {entry.preview || entry.summary || entry.title || "Journal entry"}
+                          </Text>
+                        </View>
+                      </Pressable>
+                    </Swipeable>
+                  ))}
+                </View>
+              )}
             </View>
-          </View>
-        ))}
+          );
+        })}
       </ScrollView>
+
+      <ConfirmationModal
+        visible={Boolean(pendingDeleteEntryId)}
+        message="Delete this journal entry?"
+        cancelLabel="Cancel"
+        confirmLabel="Delete"
+        confirmTone="danger"
+        onCancel={() => setPendingDeleteEntryId(null)}
+        onConfirm={() => {
+          void handleConfirmDelete();
+        }}
+      />
 
       <HomeBottomNav activeTab="journal" />
     </SafeAreaView>
@@ -141,7 +262,7 @@ export default function JournalEntriesScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#ECECEC",
+    backgroundColor: "#FFFFFF",
   },
   topBar: {
     height: 52,
@@ -152,7 +273,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 4,
-    shadowColor: "#6E6E6E",
+    shadowColor: "#5C6570",
     shadowOpacity: 0.12,
     shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 },
@@ -166,7 +287,7 @@ const styles = StyleSheet.create({
   },
   topBarTitle: {
     color: "#2F4155",
-    fontSize: 34 / 2,
+    fontSize: 17,
     lineHeight: 22,
     fontWeight: "700",
   },
@@ -184,13 +305,11 @@ const styles = StyleSheet.create({
   },
   progressCard: {
     borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#C5CBD0",
-    backgroundColor: "#F4F5F4",
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: 10,
     paddingTop: 8,
     paddingBottom: 8,
-    shadowColor: "#777777",
+    shadowColor: "#5C6570",
     shadowOpacity: 0.14,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
@@ -226,20 +345,20 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#A9D08F",
-    backgroundColor: "#BDE7A6",
+    backgroundColor: "#C9FFA0",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 4,
   },
   progressValue: {
     color: "#32465C",
-    fontSize: 48 / 2,
+    fontSize: 24,
     lineHeight: 30,
     fontWeight: "700",
   },
   progressLabel: {
     color: "#465B6E",
-    fontSize: 14 / 1.05,
+    fontSize: 13,
     lineHeight: 16,
     textAlign: "center",
   },
@@ -257,7 +376,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   entryGroup: {
-    marginBottom: 14,
+    marginBottom: 16,
   },
   groupHeadRow: {
     flexDirection: "row",
@@ -269,19 +388,19 @@ const styles = StyleSheet.create({
     width: 48,
     height: 54,
     borderRadius: 4,
-    backgroundColor: "#DFECD9",
+    backgroundColor: "#F0FFE9",
     alignItems: "center",
     justifyContent: "center",
   },
   groupDayNumber: {
     color: "#2F4256",
-    fontSize: 34 / 2,
+    fontSize: 17,
     lineHeight: 21,
     fontWeight: "700",
   },
   groupMonth: {
     color: "#3D5669",
-    fontSize: 28 / 2,
+    fontSize: 14,
     lineHeight: 18,
     fontWeight: "600",
     marginTop: -1,
@@ -292,7 +411,7 @@ const styles = StyleSheet.create({
   },
   groupDayLabel: {
     color: "#344A61",
-    fontSize: 19 / 1.02,
+    fontSize: 18,
     lineHeight: 23,
     fontWeight: "700",
   },
@@ -304,22 +423,53 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
     marginTop: 1,
   },
+  emptyDayCard: {
+    borderRadius: 10,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    shadowColor: "#5C6570",
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  emptyDayText: {
+    color: "#677784",
+    fontSize: 14,
+    lineHeight: 19,
+  },
   groupEntriesList: {
     rowGap: 4,
   },
   entryCard: {
     borderRadius: 4,
-    backgroundColor: "#DFECD9",
+    backgroundColor: "#F0FFE9",
     flexDirection: "row",
     paddingHorizontal: 8,
     paddingVertical: 6,
     columnGap: 8,
   },
+  deleteSwipeAction: {
+    width: 92,
+    borderRadius: 8,
+    backgroundColor: "#D85B5B",
+    alignItems: "center",
+    justifyContent: "center",
+    rowGap: 4,
+    marginLeft: 8,
+  },
+  deleteSwipeText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
   entryIconWrap: {
     width: 48,
     height: 48,
     borderRadius: 999,
-    backgroundColor: "#EDEFEA",
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -333,10 +483,9 @@ const styles = StyleSheet.create({
   },
   entryTime: {
     color: "#2E4155",
-    fontSize: 17 / 1.05,
+    fontSize: 16,
     lineHeight: 20,
     fontWeight: "700",
-    marginBottom: 0,
   },
   entryBody: {
     color: "#304459",

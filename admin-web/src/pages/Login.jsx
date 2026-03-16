@@ -17,10 +17,16 @@ export default function Login({ onLogin }) {
   useEffect(() => {
     const oauthStatus = searchParams.get("oauth");
     const oauthEmail = searchParams.get("email");
+    const oauthName = searchParams.get("name");
+    const oauthPicture = searchParams.get("picture");
     const oauthMessage = searchParams.get("message");
 
     if (oauthStatus === "success" && oauthEmail) {
-      onLogin({ email: oauthEmail });
+      onLogin({
+        email: oauthEmail,
+        name: oauthName || "",
+        pictureUrl: oauthPicture || "",
+      });
       navigate("/dashboard", { replace: true });
       return;
     }
@@ -49,6 +55,8 @@ export default function Login({ onLogin }) {
 
       onLogin({
         email: data?.admin?.email || email.trim(),
+        name: data?.admin?.name || "",
+        pictureUrl: data?.admin?.pictureUrl || "",
       });
       navigate("/dashboard");
     } catch (requestError) {

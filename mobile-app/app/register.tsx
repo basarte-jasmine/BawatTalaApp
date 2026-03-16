@@ -29,8 +29,10 @@ import { parseIdText } from "../lib/ocr-parse";
 import {
   BARANGAY_OPTIONS,
   FIXED_ADDRESS,
+  GENDER_OPTIONS,
   PROGRAM_OPTIONS,
 } from "../lib/register-data";
+import { useAuthSession } from "../lib/auth-session";
 import {
   isLikelySchoolId,
   isValidBirthdate,
@@ -113,10 +115,12 @@ For data privacy concerns, correction requests, or account-related concerns, con
 `;
 
 export default function RegisterScreen() {
+  const { setUser } = useAuthSession();
   const [step, setStep] = useState(1);
   const [fullName, setFullName] = useState("");
   const [studentNumber, setStudentNumber] = useState("");
   const [program, setProgram] = useState("");
+  const [gender, setGender] = useState("");
   const [barangay, setBarangay] = useState("");
   const [street, setStreet] = useState("");
   const [email, setEmail] = useState("");
@@ -148,9 +152,10 @@ export default function RegisterScreen() {
     return (
       isValidName(fullName) &&
       isValidStudentNumber(studentNumber) &&
-      Boolean(program)
+      Boolean(program) &&
+      Boolean(gender)
     );
-  }, [fullName, studentNumber, program]);
+  }, [fullName, studentNumber, program, gender]);
 
   const canProceedStepThree = useMemo(() => {
     return Boolean(barangay) && Boolean(street.trim());
@@ -301,6 +306,7 @@ export default function RegisterScreen() {
       fullName: fullName.trim(),
       studentNumber: normalizeStudentNumber(studentNumber),
       program: program.trim(),
+      gender: gender.trim(),
       region: FIXED_ADDRESS.region,
       province: FIXED_ADDRESS.province,
       city: FIXED_ADDRESS.city,
@@ -317,14 +323,25 @@ export default function RegisterScreen() {
       return;
     }
 
-    router.replace("/home");
+    const normalizedFullName = fullName
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+
+    setUser({
+      studentNumber: normalizeStudentNumber(studentNumber),
+      fullName: normalizedFullName,
+      firstName: normalizedFullName.split(" ")[0] || "User",
+      email: email.trim().toLowerCase(),
+    });
+    router.replace("/studio");
   };
 
   const openCalendar = () => {
     if (Platform.OS === "web") {
-      setErrorMessage(
-        "Calendar picker is available on mobile. Enter birthdate on device build.",
-      );
       return;
     }
 
@@ -371,6 +388,19 @@ export default function RegisterScreen() {
         </Pressable>
 
         <View style={styles.formArea}>
+          {step === 1 && (
+            <>
+              <Image
+                source={require("../assets/images/logo_sampleIMG.png")}
+                style={styles.logo}
+                contentFit="contain"
+              />
+              <Text style={styles.title}>Welcome!</Text>
+              <Text style={styles.subtitle}>
+                Create your account to start journaling{"\n"}and track your progress.
+              </Text>
+            </>
+          )}
           <StepProgress
             total={TOTAL_STEPS}
             current={step}
@@ -379,11 +409,6 @@ export default function RegisterScreen() {
 
           {step === 1 && (
             <>
-              <Text style={styles.title}>Welcome!</Text>
-              <Text style={styles.subtitle}>
-                Create your account to start journaling{"\n"}and track your
-                progress.
-              </Text>
               <Text style={styles.sectionTitle}>Upload your school ID</Text>
 
               <Pressable style={styles.uploadWrap} onPress={handleScanId}>
@@ -454,7 +479,7 @@ export default function RegisterScreen() {
           {step === 2 && (
             <>
               <Text style={styles.headerBody}>
-                Review the extracted details from your ID.
+                Does this look right?{"\n"}Review the details we found.
               </Text>
               <FormTextInput
                 label="Full Name"
@@ -481,36 +506,21 @@ export default function RegisterScreen() {
                 onSelect={(value) => setProgram(value)}
                 labelStyle={styles.label}
               />
+              <SelectField
+                label="Gender"
+                value={gender}
+                options={GENDER_OPTIONS}
+                onSelect={(value) => setGender(value)}
+                labelStyle={styles.label}
+              />
             </>
           )}
 
           {step === 3 && (
             <>
-              <Text style={styles.headerBody}>Address details</Text>
-              <SelectField
-                label="Region"
-                value={FIXED_ADDRESS.region}
-                options={[FIXED_ADDRESS.region]}
-                onSelect={() => undefined}
-                disabled
-                labelStyle={styles.label}
-              />
-              <SelectField
-                label="Province"
-                value={FIXED_ADDRESS.province}
-                options={[FIXED_ADDRESS.province]}
-                onSelect={() => undefined}
-                disabled
-                labelStyle={styles.label}
-              />
-              <SelectField
-                label="City"
-                value={FIXED_ADDRESS.city}
-                options={[FIXED_ADDRESS.city]}
-                onSelect={() => undefined}
-                disabled
-                labelStyle={styles.label}
-              />
+              <Text style={styles.headerBody}>
+                Where are you writing from?{"\n"}Add your address to help us tailor your experience.
+              </Text>
               <SelectField
                 label="Barangay"
                 value={barangay}
@@ -522,6 +532,8 @@ export default function RegisterScreen() {
                 label="Street"
                 value={street}
                 onChangeText={setStreet}
+                placeholder={`${FIXED_ADDRESS.city}, ${FIXED_ADDRESS.province}`}
+                placeholderTextColor="#8D8D8D"
                 labelStyle={styles.label}
                 inputStyle={styles.input}
               />
@@ -531,7 +543,7 @@ export default function RegisterScreen() {
           {step === 4 && (
             <>
               <Text style={styles.headerBody}>
-                Set up your account security.
+                Secure your journal. Add a few more details{"\n"}to keep your entries safe.
               </Text>
               <FormTextInput
                 label="Email Address"
@@ -544,20 +556,36 @@ export default function RegisterScreen() {
                 labelStyle={styles.label}
                 inputStyle={styles.input}
               />
-              <Pressable onPress={openCalendar}>
-                <View pointerEvents="none">
-                  <FormTextInput
-                    label="Birthdate"
-                    value={birthdate}
-                    editable={false}
-                    showSoftInputOnFocus={false}
-                    placeholder="MM/DD/YYYY"
-                    placeholderTextColor="#8D8D8D"
-                    labelStyle={styles.label}
-                    inputStyle={styles.input}
-                  />
-                </View>
-              </Pressable>
+              {Platform.OS === "web" ? (
+                <FormTextInput
+                  label="Birthdate"
+                  value={birthdate}
+                  onChangeText={(value) => {
+                    setBirthdate(value);
+                    setPassword(value);
+                    setErrorMessage("");
+                  }}
+                  placeholder="MM/DD/YYYY"
+                  placeholderTextColor="#8D8D8D"
+                  labelStyle={styles.label}
+                  inputStyle={styles.input}
+                />
+              ) : (
+                <Pressable onPress={openCalendar}>
+                  <View pointerEvents="none">
+                    <FormTextInput
+                      label="Birthdate"
+                      value={birthdate}
+                      editable={false}
+                      showSoftInputOnFocus={false}
+                      placeholder="MM/DD/YYYY"
+                      placeholderTextColor="#8D8D8D"
+                      labelStyle={styles.label}
+                      inputStyle={styles.input}
+                    />
+                  </View>
+                </Pressable>
+              )}
               <FormTextInput
                 label="Password"
                 value={password}
@@ -590,7 +618,7 @@ export default function RegisterScreen() {
           {step === 5 && (
             <>
               <Text style={styles.headerBody}>
-                Enter the OTP sent to your email.
+                Verify your email to finish your account setup.
               </Text>
               <Text style={styles.otpLabel}>Verification Code</Text>
               <OtpCodeInput
@@ -661,6 +689,7 @@ export default function RegisterScreen() {
                 if (!canProceedStepTwo) {
                   setErrorMessage(
                     "Please enter a valid name, student number, and program.",
+                    "Please select a gender.",
                   );
                   return;
                 }
@@ -726,14 +755,15 @@ const styles = StyleSheet.create({
   },
   content: {
     flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 26,
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 24,
     alignItems: "center",
+    backgroundColor: "#FFFFFF",
   },
   backButton: {
     alignSelf: "flex-start",
-    marginBottom: 18,
+    marginBottom: 12,
     paddingRight: 6,
   },
   formArea: {
@@ -742,41 +772,45 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 320,
   },
+  logo: {
+    width: 64,
+    height: 64,
+    alignSelf: "center",
+    marginBottom: 8,
+  },
   title: {
     textAlign: "center",
-    fontSize: 28,
-    lineHeight: 36,
+    fontSize: 23,
+    lineHeight: 30,
     color: "#111111",
-    fontFamily: "Fraunces-Regular",
-    marginBottom: 10,
+    fontFamily: "Outfit",
+    fontWeight: "700",
+    marginBottom: 4,
   },
   subtitle: {
     textAlign: "center",
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 18,
     color: "#1A1A1A",
-    marginBottom: 14,
+    marginBottom: 12,
   },
   consentCard: {
-    borderWidth: 1,
-    borderColor: "#D2DCE5",
-    backgroundColor: "#F4F8FB",
+    backgroundColor: "#FFFFFF",
     borderRadius: 8,
-    padding: 12,
-    marginTop: 10,
-    marginBottom: 20,
-  },
-  consentTitle: {
-    color: "#1B2C3A",
-    fontSize: 12,
-    fontWeight: "700",
-    marginBottom: 6,
+    padding: 10,
+    marginTop: 8,
+    marginBottom: 16,
+    shadowColor: "#5C6570",
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
   consentBody: {
-    color: "#2F3F4C",
+    color: "#4E4E4E",
     fontSize: 10,
     lineHeight: 14,
-    marginTop: 10,
+    marginTop: 8,
   },
   checkboxRow: {
     flexDirection: "row",
@@ -784,47 +818,46 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   checkbox: {
-    width: 18,
-    height: 18,
+    width: 16,
+    height: 16,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: "#6E8295",
+    borderColor: "#6E6E6E",
     marginTop: 1,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#FFFFFF",
   },
   checkboxChecked: {
-    backgroundColor: "#5E7D98",
-    borderColor: "#5E7D98",
+    backgroundColor: "#79C943",
+    borderColor: "#79C943",
   },
   checkboxText: {
     flex: 1,
-    color: "#233442",
-    fontSize: 11,
-    lineHeight: 16,
+    color: "#222222",
+    fontSize: 10,
+    lineHeight: 14,
   },
   linkText: {
     color: "#2C7DB0",
-    textDecorationLine: "underline",
     fontWeight: "600",
   },
   progressRow: {
-    marginBottom: 32,
+    marginBottom: 20,
   },
   sectionTitle: {
     textAlign: "center",
     color: "#111111",
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "600",
-    marginBottom: 16,
+    marginBottom: 18,
   },
   uploadWrap: {
     borderWidth: 1,
     borderStyle: "dashed",
-    borderColor: "#6A7F93",
+    borderColor: "#98A0A6",
     borderRadius: 6,
-    minHeight: 180,
+    minHeight: 140,
     justifyContent: "flex-end",
     overflow: "hidden",
   },
@@ -836,75 +869,76 @@ const styles = StyleSheet.create({
   },
   preview: {
     width: "100%",
-    height: 140,
+    height: 104,
   },
   fileButton: {
     width: "100%",
-    marginTop: 12,
-    height: 28,
+    marginTop: 8,
+    height: 30,
     borderTopWidth: 1,
-    borderColor: "#5B6A78",
-    backgroundColor: "#D9DEE3",
+    borderColor: "#7D8790",
+    backgroundColor: "#E7EAEC",
     alignItems: "center",
     justifyContent: "center",
   },
   fileButtonText: {
     color: "#111111",
-    fontSize: 15,
+    fontSize: 12,
     fontWeight: "600",
   },
   headerBody: {
     textAlign: "center",
     color: "#111111",
     fontSize: 12,
-    lineHeight: 20,
+    lineHeight: 17,
     fontWeight: "600",
-    marginBottom: 18,
+    marginBottom: 16,
   },
   label: {
     color: "#111111",
-    fontSize: 10,
+    fontSize: 12,
     marginBottom: 6,
   },
   otpLabel: {
     color: "#111111",
-    fontSize: 10,
+    fontSize: 12,
     marginBottom: 8,
   },
   input: {
-    paddingVertical: 10,
-    marginBottom: 14,
+    fontSize: 13,
+    marginBottom: 10,
   },
   passwordInputWrap: {
-    marginBottom: 14,
-    height: 44,
+    marginBottom: 10,
+    minHeight: 38,
   },
   passwordInputText: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#111111",
-    paddingVertical: 0,
+    paddingVertical: 8,
     textAlignVertical: "center",
   },
   helperText: {
-    color: "#4A4A4A",
-    fontSize: 12,
+    color: "#5A5A5A",
+    fontSize: 10,
     marginTop: 2,
     marginBottom: 12,
+    textAlign: "left",
   },
   errorText: {
     color: "#C31A1A",
-    fontSize: 12,
-    marginBottom: 8,
+    fontSize: 11,
+    marginBottom: 10,
   },
   actionButton: {
-    marginTop: 20,
+    marginTop: 14,
   },
   secondaryButton: {
     marginTop: 8,
-    backgroundColor: "#E4EDF5",
+    backgroundColor: "#EDF4E7",
   },
   secondaryButtonText: {
-    color: "#2D3F4E",
+    color: "#476223",
   },
   disabledButton: {
     opacity: 0.7,
@@ -928,6 +962,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: "#FFFFFF",
     padding: 12,
+    shadowColor: "#525C67",
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
   },
   modalHeader: {
     flexDirection: "row",
@@ -941,12 +980,15 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   modalBody: {
-    borderWidth: 1,
-    borderColor: "#D4DFE8",
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 8,
-    backgroundColor: "#F8FBFD",
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#919AA4",
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
   },
   modalBodyText: {
     color: "#2F3F4C",

@@ -113,21 +113,22 @@ const styles = StyleSheet.create({
   title: {
     textAlign: "center",
     color: "#111111",
-    fontSize: 40 / 2,
-    lineHeight: 26,
-    fontFamily: "Fraunces-Regular",
+    fontSize: 20,
+    lineHeight: 28,
+    fontFamily: "Outfit",
+    fontWeight: "700",
     marginBottom: 8,
   },
   subtitle: {
     textAlign: "center",
     color: "#1A1A1A",
-    fontSize: 13,
-    lineHeight: 20,
-    marginBottom: 30,
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 24,
   },
   label: {
     color: "#111111",
-    fontSize: 14,
+    fontSize: 12,
   },
   passwordContainer: {
     marginBottom: 0,
@@ -136,16 +137,16 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   passwordInput: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#111111",
   },
   actionButton: {
-    marginTop: 24,
-    marginBottom: 16,
+    marginTop: 18,
+    marginBottom: 14,
   },
   errorText: {
     color: "#C31A1A",
-    fontSize: 12,
+    fontSize: 11,
     marginBottom: 12,
   },
   backToLogin: {
@@ -153,7 +154,7 @@ const styles = StyleSheet.create({
   },
   backText: {
     color: "#111111",
-    fontSize: 13,
+    fontSize: 11,
   },
   backLink: {
     color: "#2C7DB0",

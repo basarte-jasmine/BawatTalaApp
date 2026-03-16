@@ -24,14 +24,14 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   pill: {
-    width: 30,
-    height: 7,
+    width: 20,
+    height: 4,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#111111",
+    borderColor: "#6F7A57",
     backgroundColor: "#FFFFFF",
   },
   pillActive: {
-    backgroundColor: "#111111",
+    backgroundColor: "#334E16",
   },
 });

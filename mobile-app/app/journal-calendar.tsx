@@ -1,7 +1,21 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { fetchJournalCalendar, fetchJournalEntriesByDate } from "../lib/backend-api";
+import { useAuthSession } from "../lib/auth-session";
+import { getManilaTodayParts } from "../lib/manila-date";
+
+type CalendarEntryItem = {
+  createdAt: string;
+  entryDate: string;
+  id: string;
+  preview: string;
+  summary: string;
+  title: string;
+};
 
 type MonthMeta = {
   daysInMonth: number;
@@ -10,7 +24,7 @@ type MonthMeta = {
   name: string;
 };
 
-const YEAR = 2026;
+const MIN_YEAR = 2026;
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const MONTH_NAMES = [
   "January",
@@ -27,29 +41,120 @@ const MONTH_NAMES = [
   "December",
 ];
 
-// Sample written-entry days for 2026 (can be replaced with backend data later).
-const WRITTEN_DAYS_BY_MONTH: Record<number, number[]> = {
-  0: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 20, 22, 23, 24, 25, 26, 27],
-  1: [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 17, 18, 19, 20, 24, 25],
-  2: [3, 8, 12],
-  3: [4, 6, 10],
-  4: [2, 7],
-  5: [1, 9],
-  6: [5, 12],
-  7: [2, 13, 27],
-  8: [4, 14],
-  9: [1, 8, 15, 22],
-  10: [3, 11],
-  11: [1, 9, 16, 24],
-};
+function buildMonths(year: number): MonthMeta[] {
+  return MONTH_NAMES.map((name, monthIndex) => {
+    const firstDay = new Date(year, monthIndex, 1).getDay();
+    const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+    return { monthIndex, name, firstDay, daysInMonth };
+  });
+}
 
-const MONTHS: MonthMeta[] = MONTH_NAMES.map((name, monthIndex) => {
-  const firstDay = new Date(YEAR, monthIndex, 1).getDay();
-  const daysInMonth = new Date(YEAR, monthIndex + 1, 0).getDate();
-  return { monthIndex, name, firstDay, daysInMonth };
-});
+function buildIsoDate(year: number, monthIndex: number, day: number) {
+  return `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function formatDateHeading(isoDate: string) {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.toLocaleString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatEntryTime(createdAt: string) {
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return date.toLocaleString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
 
 export default function JournalCalendarScreen() {
+  const { user } = useAuthSession();
+  const manilaToday = getManilaTodayParts();
+  const [selectedYear, setSelectedYear] = useState(Math.max(MIN_YEAR, manilaToday.year));
+  const [entryCountsByMonth, setEntryCountsByMonth] = useState<Record<number, Record<number, number>>>({});
+  const [selectedDate, setSelectedDate] = useState(manilaToday.isoDate);
+  const [selectedEntries, setSelectedEntries] = useState<CalendarEntryItem[]>([]);
+  const [showEntriesModal, setShowEntriesModal] = useState(false);
+
+  const months = useMemo(() => buildMonths(selectedYear), [selectedYear]);
+
+  const loadCalendar = useCallback(async (year: number) => {
+    if (!user?.studentNumber) {
+      setEntryCountsByMonth({});
+      return;
+    }
+
+    const result = await fetchJournalCalendar(user.studentNumber, year);
+    if (!result.ok) {
+      setEntryCountsByMonth({});
+      return;
+    }
+
+    const mapped: Record<number, Record<number, number>> = {};
+    for (const [monthKey, value] of Object.entries(result.entryCountsByMonth ?? {})) {
+      const parsedMonth = Number(monthKey);
+      mapped[parsedMonth] = {};
+      for (const [dayKey, count] of Object.entries(value ?? {})) {
+        mapped[parsedMonth][Number(dayKey)] = Number(count);
+      }
+    }
+    setEntryCountsByMonth(mapped);
+  }, [user?.studentNumber]);
+
+  const loadEntriesForDate = useCallback(async (isoDate: string) => {
+    if (!user?.studentNumber) {
+      setSelectedEntries([]);
+      return;
+    }
+
+    const result = await fetchJournalEntriesByDate(user.studentNumber, isoDate);
+    if (!result.ok) {
+      setSelectedEntries([]);
+      return;
+    }
+    setSelectedEntries(result.entries ?? []);
+  }, [user?.studentNumber]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadCalendar(selectedYear);
+      void loadEntriesForDate(selectedDate);
+    }, [loadCalendar, loadEntriesForDate, selectedDate, selectedYear]),
+  );
+
+  const handleChangeYear = useCallback((nextYear: number) => {
+    if (nextYear < MIN_YEAR) {
+      return;
+    }
+    setSelectedYear(nextYear);
+
+    const nextSelectedDate =
+      nextYear === manilaToday.year
+        ? manilaToday.isoDate
+        : `${nextYear}-01-01`;
+    setSelectedDate(nextSelectedDate);
+    void loadCalendar(nextYear);
+    void loadEntriesForDate(nextSelectedDate);
+  }, [loadCalendar, loadEntriesForDate, manilaToday.isoDate, manilaToday.year]);
+
+  const handleSelectDate = useCallback((isoDate: string, isFuture: boolean) => {
+    if (isFuture) {
+      return;
+    }
+    setSelectedDate(isoDate);
+    void loadEntriesForDate(isoDate).then(() => {
+      setShowEntriesModal(true);
+    });
+  }, [loadEntriesForDate]);
+
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <View style={styles.topBar}>
@@ -61,10 +166,27 @@ export default function JournalCalendarScreen() {
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <Text style={styles.yearLabel}>{YEAR}</Text>
+        <View style={styles.yearControlRow}>
+          <Pressable
+            style={[styles.yearArrowButton, selectedYear <= MIN_YEAR && styles.yearArrowButtonDisabled]}
+            disabled={selectedYear <= MIN_YEAR}
+            onPress={() => handleChangeYear(selectedYear - 1)}
+          >
+            <Ionicons name="chevron-up" size={22} color={selectedYear <= MIN_YEAR ? "#A3ABB4" : "#3D4B59"} />
+          </Pressable>
 
-        {MONTHS.map((month) => {
-          const writtenDays = new Set(WRITTEN_DAYS_BY_MONTH[month.monthIndex] ?? []);
+          <Text style={styles.yearLabel}>{selectedYear}</Text>
+
+          <Pressable
+            style={styles.yearArrowButton}
+            onPress={() => handleChangeYear(selectedYear + 1)}
+          >
+            <Ionicons name="chevron-down" size={22} color="#3D4B59" />
+          </Pressable>
+        </View>
+
+        {months.map((month) => {
+          const entryCounts = entryCountsByMonth[month.monthIndex] ?? {};
           const totalCells = month.firstDay + month.daysInMonth;
           const trailingSpacers = (7 - (totalCells % 7)) % 7;
           const cells = Array.from({ length: totalCells + trailingSpacers }, (_, index) => {
@@ -76,7 +198,7 @@ export default function JournalCalendarScreen() {
           });
 
           return (
-            <View key={month.name} style={styles.monthSection}>
+            <View key={`${selectedYear}-${month.name}`} style={styles.monthSection}>
               <Text style={styles.monthTitle}>{month.name}</Text>
 
               <View style={styles.weekHeaderRow}>
@@ -93,28 +215,38 @@ export default function JournalCalendarScreen() {
                     return <View key={cell.key} style={styles.dayCell} />;
                   }
 
-                  const isWritten = writtenDays.has(cell.dayNumber);
-                  const isFocusedDay = month.monthIndex === 1 && cell.dayNumber === 25;
+                  const isoDate = buildIsoDate(selectedYear, month.monthIndex, cell.dayNumber);
+                  const isFuture = isoDate > manilaToday.isoDate;
+                  const hasEntries = Number(entryCounts[cell.dayNumber] || 0) > 0;
+                  const isToday = isoDate === manilaToday.isoDate;
+                  const isSelected = isoDate === selectedDate;
 
                   return (
                     <View key={cell.key} style={styles.dayCell}>
-                      <View
+                      <Pressable
                         style={[
                           styles.dayCircle,
-                          isWritten && styles.dayCircleWritten,
-                          isFocusedDay && styles.dayCircleFocused,
+                          !isFuture && styles.dayCircleEmpty,
+                          hasEntries && styles.dayCircleHasEntry,
+                          isToday && hasEntries && styles.dayCircleTodayHasEntry,
+                          isFuture && styles.dayCircleFuture,
+                          isSelected && !isFuture && !hasEntries && styles.dayCircleSelectedEmpty,
+                          isSelected && hasEntries && styles.dayCircleSelectedFilled,
                         ]}
+                        onPress={() => handleSelectDate(isoDate, isFuture)}
                       >
                         <Text
                           style={[
                             styles.dayNumber,
-                            isWritten && styles.dayNumberWritten,
-                            isFocusedDay && styles.dayNumberFocused,
+                            !isFuture && styles.dayNumberEmpty,
+                            hasEntries && styles.dayNumberHasEntry,
+                            isFuture && styles.dayNumberFuture,
+                            isSelected && !isFuture && styles.dayNumberSelected,
                           ]}
                         >
                           {cell.dayNumber}
                         </Text>
-                      </View>
+                      </Pressable>
                     </View>
                   );
                 })}
@@ -123,6 +255,45 @@ export default function JournalCalendarScreen() {
           );
         })}
       </ScrollView>
+
+      <Modal
+        visible={showEntriesModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowEntriesModal(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.selectedEntriesCard}>
+            <Text style={styles.selectedEntriesTitle}>{formatDateHeading(selectedDate)}</Text>
+
+            {selectedEntries.length === 0 ? (
+              <Text style={styles.emptyEntriesText}>There are no entries for that day.</Text>
+            ) : (
+              <View style={styles.selectedEntriesList}>
+                {selectedEntries.map((entry) => (
+                  <Pressable
+                    key={entry.id}
+                    style={styles.entryCard}
+                    onPress={() => {
+                      setShowEntriesModal(false);
+                      router.push(`/journal-entry-view?entryId=${entry.id}`);
+                    }}
+                  >
+                    <Text style={styles.entryTime}>{formatEntryTime(entry.createdAt)}</Text>
+                    <Text style={styles.entryPreview} numberOfLines={2}>
+                      {entry.preview || entry.summary || entry.title || "Journal entry"}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+
+            <Pressable style={styles.closeModalButton} onPress={() => setShowEntriesModal(false)}>
+              <Text style={styles.closeModalButtonText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -130,7 +301,7 @@ export default function JournalCalendarScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#ECECEC",
+    backgroundColor: "#FFFFFF",
   },
   topBar: {
     height: 52,
@@ -141,7 +312,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 4,
-    shadowColor: "#6E6E6E",
+    shadowColor: "#5C6570",
     shadowOpacity: 0.12,
     shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 },
@@ -155,7 +326,7 @@ const styles = StyleSheet.create({
   },
   topBarTitle: {
     color: "#2F4155",
-    fontSize: 34 / 2,
+    fontSize: 17,
     lineHeight: 22,
     fontWeight: "700",
   },
@@ -168,17 +339,34 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 10,
-    paddingTop: 8,
-    paddingBottom: 24,
+    paddingTop: 10,
+    paddingBottom: 32,
+  },
+  yearControlRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    columnGap: 6,
+    marginBottom: 4,
+  },
+  yearArrowButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  yearArrowButtonDisabled: {
+    opacity: 0.45,
   },
   yearLabel: {
-    textAlign: "right",
     color: "#3B4A5A",
     fontSize: 18,
     lineHeight: 24,
     fontWeight: "700",
-    marginBottom: 4,
-    paddingRight: 2,
+    minWidth: 56,
+    textAlign: "center",
   },
   monthSection: {
     marginBottom: 18,
@@ -186,7 +374,7 @@ const styles = StyleSheet.create({
   monthTitle: {
     textAlign: "center",
     color: "#3F4E5E",
-    fontSize: 22 / 2 * 2,
+    fontSize: 22,
     lineHeight: 28,
     fontWeight: "600",
     marginBottom: 8,
@@ -216,29 +404,121 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   dayCircle: {
-    width: 31,
-    height: 31,
+    width: 39,
+    height: 39,
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
   },
-  dayCircleWritten: {
-    backgroundColor: "#B8E889",
+  dayCircleEmpty: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: "#86C74F",
   },
-  dayCircleFocused: {
-    backgroundColor: "#3E8F24",
+  dayCircleHasEntry: {
+    backgroundColor: "#BDE69B",
+    borderWidth: 1.5,
+    borderColor: "#BDE69B",
+  },
+  dayCircleTodayHasEntry: {
+    backgroundColor: "#8FCE61",
+    borderColor: "#7ABD4D",
+  },
+  dayCircleFuture: {
+    backgroundColor: "#D7DDE2",
+  },
+  dayCircleSelectedEmpty: {
+    borderWidth: 2,
+    borderColor: "#2F6F25",
+  },
+  dayCircleSelectedFilled: {
+    borderWidth: 2,
+    borderColor: "#2F6F25",
   },
   dayNumber: {
-    color: "#4A5968",
-    fontSize: 14,
-    lineHeight: 18,
+    fontSize: 16,
+    lineHeight: 20,
     fontWeight: "600",
   },
-  dayNumberWritten: {
-    color: "#4C6356",
+  dayNumberEmpty: {
+    color: "#4A5968",
+  },
+  dayNumberHasEntry: {
+    color: "#406152",
     fontWeight: "700",
   },
-  dayNumberFocused: {
+  dayNumberFuture: {
+    color: "#7A8793",
+  },
+  dayNumberSelected: {
+    color: "#2F4257",
+    fontWeight: "700",
+  },
+  selectedEntriesCard: {
+    width: "100%",
+    maxWidth: 340,
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    shadowColor: "#525C67",
+    shadowOpacity: 0.16,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+  },
+  selectedEntriesTitle: {
+    color: "#2F4257",
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "700",
+    marginBottom: 10,
+  },
+  selectedEntriesList: {
+    rowGap: 8,
+  },
+  entryCard: {
+    borderRadius: 10,
+    backgroundColor: "#F0FFE9",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  entryTime: {
+    color: "#32465C",
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+  entryPreview: {
+    color: "#425566",
+    fontSize: 14,
+    lineHeight: 19,
+  },
+  emptyEntriesText: {
+    color: "#70808D",
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(21, 27, 24, 0.34)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 22,
+  },
+  closeModalButton: {
+    marginTop: 12,
+    minHeight: 40,
+    borderRadius: 999,
+    backgroundColor: "#79C943",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  closeModalButtonText: {
     color: "#FFFFFF",
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: "700",
   },
 });

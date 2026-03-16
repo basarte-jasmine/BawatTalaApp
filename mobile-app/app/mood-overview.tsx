@@ -1,7 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
+import { useCallback, useMemo, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useAuthSession } from "../lib/auth-session";
+import { fetchMonthlyMoods } from "../lib/backend-api";
+import { getManilaTodayParts } from "../lib/manila-date";
 
 type MoodStat = {
   color: string;
@@ -10,66 +15,68 @@ type MoodStat = {
   id: string;
 };
 
-type CalendarMood =
-  | "blue"
-  | "yellow"
-  | "red"
-  | "orange"
-  | "purple"
-  | "outlined-green"
-  | "selected-blue"
-  | "none";
+type CalendarDay = {
+  isOutsideMonth?: boolean;
+  dayNumber: number | null;
+  moodId: string | null;
+  state: "empty" | "future" | "mood";
+};
 
 const SLEEPY_PET_IMAGE = require("../assets/images/pet-idle_sample.png");
 
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
-const MOOD_STATS: MoodStat[] = [
-  { id: "happy", emoji: "\uD83D\uDE42", color: "#F8D330", count: 2 },
-  { id: "calm", emoji: "\uD83D\uDE0C", color: "#97CFDA", count: 1 },
-  { id: "sad", emoji: "\uD83D\uDE22", color: "#7EA9D9", count: 0 },
-  { id: "stressed", emoji: "\uD83D\uDE23", color: "#F19137", count: 0 },
-  { id: "angry", emoji: "\uD83D\uDE21", color: "#E86686", count: 0 },
-  { id: "anxious", emoji: "\uD83D\uDE30", color: "#B895C8", count: 0 },
-];
-
-const MONTH_CALENDAR_STYLES: Record<number, CalendarMood> = {
-  1: "blue",
-  2: "yellow",
-  3: "red",
-  4: "purple",
-  5: "purple",
-  6: "red",
-  7: "orange",
-  8: "blue",
-  9: "purple",
-  10: "outlined-green",
-  11: "yellow",
-  12: "red",
-  13: "orange",
-  14: "yellow",
-  15: "blue",
-  16: "outlined-green",
-  17: "purple",
-  18: "blue",
-  19: "yellow",
-  20: "orange",
-  21: "outlined-green",
-  22: "outlined-green",
-  23: "outlined-green",
-  24: "yellow",
-  25: "selected-blue",
-  26: "none",
-  27: "none",
-  28: "none",
-};
-
-const DAYS = Array.from({ length: 28 }, (_, index) => index + 1);
-
 const INSIGHT_TEXT = "You've been checking in regularly! Your most common mood this month has been \"Good\".";
 const INSIGHT_FOOTNOTE = "Summary by Lumi, your virtual companion. Bawat Tala is not a substitute for professional mental health care.";
 
+const MOOD_META: Record<string, { color: string; emoji: string; label: string }> = {
+  angry: { color: "#E86686", emoji: "\uD83D\uDE21", label: "Angry" },
+  anxious: { color: "#B895C8", emoji: "\uD83D\uDE30", label: "Anxious" },
+  calm: { color: "#97CFDA", emoji: "\uD83D\uDE0C", label: "Calm" },
+  happy: { color: "#F8D330", emoji: "\uD83D\uDE42", label: "Happy" },
+  sad: { color: "#7EA9D9", emoji: "\uD83D\uDE22", label: "Sad" },
+  stressed: { color: "#F19137", emoji: "\uD83D\uDE23", label: "Stressed" },
+};
+
+const MIN_YEAR = 2026;
+const MIN_MONTH_INDEX = 0;
+
+function getMonthName(monthIndex: number) {
+  return new Date(2026, monthIndex, 1).toLocaleString("en-US", { month: "long" });
+}
+
+function getDayFromMoodDate(value: string) {
+  const match = String(value || "").match(/(\d{4})-(\d{2})-(\d{2})/);
+  return match ? Number(match[3]) : 0;
+}
+
 export default function MoodOverviewScreen() {
+  const { user } = useAuthSession();
+  const [now, setNow] = useState(() => getManilaTodayParts());
+  const initialMonth = useMemo(() => {
+    const currentYear = now.year;
+    const currentMonthIndex = now.monthIndex;
+
+    if (currentYear < MIN_YEAR) {
+      return { monthIndex: MIN_MONTH_INDEX, year: MIN_YEAR };
+    }
+
+    return { monthIndex: currentMonthIndex, year: currentYear };
+  }, [now]);
+  const [displayYear, setDisplayYear] = useState(initialMonth.year);
+  const [displayMonthIndex, setDisplayMonthIndex] = useState(initialMonth.monthIndex);
+  const [monthlyEntries, setMonthlyEntries] = useState<{ moodDate: string; moodId: string; moodLabel: string }[]>([]);
+  const [monthlyCounts, setMonthlyCounts] = useState<Record<string, number>>({
+    angry: 0,
+    anxious: 0,
+    calm: 0,
+    happy: 0,
+    sad: 0,
+    stressed: 0,
+  });
+  const [mostCommonMoodId, setMostCommonMoodId] = useState<string | null>(null);
+  const [totalCheckIns, setTotalCheckIns] = useState(0);
+
   const handleBack = () => {
     if (router.canGoBack()) {
       router.back();
@@ -77,6 +84,136 @@ export default function MoodOverviewScreen() {
     }
     router.replace("/home");
   };
+
+  const loadMonth = useCallback(async () => {
+    if (!user?.studentNumber) {
+      setMonthlyEntries([]);
+      setMostCommonMoodId(null);
+      setTotalCheckIns(0);
+      setMonthlyCounts({
+        angry: 0,
+        anxious: 0,
+        calm: 0,
+        happy: 0,
+        sad: 0,
+        stressed: 0,
+      });
+      return;
+    }
+
+    const result = await fetchMonthlyMoods(user.studentNumber, displayYear, displayMonthIndex + 1);
+    if (!result.ok) {
+      return;
+    }
+
+    setMonthlyEntries(result.entries ?? []);
+    setMonthlyCounts({
+      angry: result.counts?.angry ?? 0,
+      anxious: result.counts?.anxious ?? 0,
+      calm: result.counts?.calm ?? 0,
+      happy: result.counts?.happy ?? 0,
+      sad: result.counts?.sad ?? 0,
+      stressed: result.counts?.stressed ?? 0,
+    });
+    setMostCommonMoodId(result.mostCommonMoodId ?? null);
+    setTotalCheckIns(result.totalCheckIns ?? 0);
+  }, [displayMonthIndex, displayYear, user?.studentNumber]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setNow(getManilaTodayParts());
+      void loadMonth();
+    }, [loadMonth]),
+  );
+
+  const moodStats: MoodStat[] = useMemo(
+    () =>
+      Object.entries(MOOD_META).map(([id, meta]) => ({
+        id,
+        emoji: meta.emoji,
+        color: meta.color,
+        count: monthlyCounts[id] ?? 0,
+      })),
+    [monthlyCounts],
+  );
+
+  const todayMonthKey = `${now.year}-${now.monthIndex}`;
+  const viewedMonthKey = `${displayYear}-${displayMonthIndex}`;
+  const todayDay = now.day;
+  const isFutureMonth =
+    displayYear > now.year ||
+    (displayYear === now.year && displayMonthIndex > now.monthIndex);
+
+  const entriesByDay = useMemo(() => {
+    const map = new Map<number, string>();
+    monthlyEntries.forEach((entry) => {
+      const day = getDayFromMoodDate(entry.moodDate);
+      if (day) {
+        map.set(day, entry.moodId);
+      }
+    });
+    return map;
+  }, [monthlyEntries]);
+
+  const calendarDays = useMemo(() => {
+    const firstDayIndex = new Date(displayYear, displayMonthIndex, 1).getDay();
+    const totalDaysInMonth = new Date(displayYear, displayMonthIndex + 1, 0).getDate();
+    const days: CalendarDay[] = [];
+
+    for (let index = 0; index < firstDayIndex; index += 1) {
+      days.push({ dayNumber: null, moodId: null, state: "empty" });
+    }
+
+    for (let dayNumber = 1; dayNumber <= totalDaysInMonth; dayNumber += 1) {
+      const moodId = entriesByDay.get(dayNumber) ?? null;
+      const isFutureDay = viewedMonthKey === todayMonthKey && dayNumber > todayDay;
+      days.push({
+        dayNumber,
+        isOutsideMonth: false,
+        moodId,
+        state: moodId ? "mood" : isFutureMonth || isFutureDay ? "future" : "empty",
+      });
+    }
+
+    const trailingDays = (7 - (days.length % 7)) % 7;
+    for (let dayNumber = 1; dayNumber <= trailingDays; dayNumber += 1) {
+      days.push({
+        dayNumber,
+        isOutsideMonth: true,
+        moodId: null,
+        state: "future",
+      });
+    }
+
+    return days;
+  }, [displayMonthIndex, displayYear, entriesByDay, isFutureMonth, todayDay, todayMonthKey, viewedMonthKey]);
+
+  const canGoPrevious = displayYear > MIN_YEAR || (displayYear === MIN_YEAR && displayMonthIndex > MIN_MONTH_INDEX);
+  const goPreviousMonth = () => {
+    if (!canGoPrevious) {
+      return;
+    }
+
+    if (displayMonthIndex === 0) {
+      setDisplayMonthIndex(11);
+      setDisplayYear((prev) => prev - 1);
+      return;
+    }
+
+    setDisplayMonthIndex((prev) => prev - 1);
+  };
+
+  const goNextMonth = () => {
+    if (displayMonthIndex === 11) {
+      setDisplayMonthIndex(0);
+      setDisplayYear((prev) => prev + 1);
+      return;
+    }
+
+    setDisplayMonthIndex((prev) => prev + 1);
+  };
+
+  const mostCommonMood = mostCommonMoodId ? MOOD_META[mostCommonMoodId] : null;
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
@@ -92,20 +229,20 @@ export default function MoodOverviewScreen() {
         <View style={styles.summaryCard}>
           <View style={styles.summaryHeader}>
             <View>
-              <Text style={styles.summaryMonth}>February 2026</Text>
-              <Text style={styles.summarySub}>3 Check-ins</Text>
+              <Text style={styles.summaryMonth}>{`${getMonthName(displayMonthIndex)} ${displayYear}`}</Text>
+              <Text style={styles.summarySub}>{`${totalCheckIns} Check-ins`}</Text>
             </View>
 
             <View style={styles.commonMoodWrap}>
-              <View style={styles.commonMoodFace}>
-                <Text style={styles.commonMoodEmoji}>{"\uD83D\uDE42"}</Text>
+              <View style={[styles.commonMoodFace, mostCommonMood && { backgroundColor: mostCommonMood.color }]}>
+                <Text style={styles.commonMoodEmoji}>{mostCommonMood?.emoji ?? "-"}</Text>
               </View>
-              <Text style={styles.commonMoodLabel}>Most Common</Text>
+              <Text style={styles.commonMoodLabel}>{mostCommonMood?.label ?? "No mood yet"}</Text>
             </View>
           </View>
 
           <View style={styles.statsRow}>
-            {MOOD_STATS.map((item) => (
+            {moodStats.map((item) => (
               <View key={item.id} style={styles.statItem}>
                 <View style={[styles.statFace, { backgroundColor: item.color }]}>
                   <Text style={styles.statEmoji}>{item.emoji}</Text>
@@ -117,9 +254,13 @@ export default function MoodOverviewScreen() {
         </View>
 
         <View style={styles.monthHeader}>
-          <Ionicons name="chevron-back" size={20} color="#384A5D" />
-          <Text style={styles.monthLabel}>February</Text>
-          <Ionicons name="chevron-forward" size={20} color="#384A5D" />
+          <Pressable onPress={goPreviousMonth} disabled={!canGoPrevious} style={styles.monthArrowButton}>
+            <Ionicons name="chevron-back" size={20} color={canGoPrevious ? "#384A5D" : "#B4BCC5"} />
+          </Pressable>
+          <Text style={styles.monthLabel}>{getMonthName(displayMonthIndex)}</Text>
+          <Pressable onPress={goNextMonth} style={styles.monthArrowButton}>
+            <Ionicons name="chevron-forward" size={20} color="#384A5D" />
+          </Pressable>
         </View>
 
         <View style={styles.weekHeaderRow}>
@@ -131,35 +272,39 @@ export default function MoodOverviewScreen() {
         </View>
 
         <View style={styles.calendarGrid}>
-          {DAYS.map((day) => {
-            const moodStyle = MONTH_CALENDAR_STYLES[day];
-            const isPlain = moodStyle === "none";
+          {calendarDays.map((day, index) => {
+            const moodMeta = day.moodId ? MOOD_META[day.moodId] : null;
+            const isToday =
+              !day.isOutsideMonth &&
+              viewedMonthKey === todayMonthKey &&
+              day.dayNumber === todayDay;
 
             return (
-              <View key={day} style={styles.dayCell}>
+              <View key={`${day.dayNumber ?? "blank"}-${index}`} style={styles.dayCell}>
+                {day.dayNumber === null ? <View style={styles.dayCircleBlank} /> : (
                 <View
                   style={[
                     styles.dayCircle,
-                    moodStyle === "blue" && styles.dayCircleBlue,
-                    moodStyle === "yellow" && styles.dayCircleYellow,
-                    moodStyle === "red" && styles.dayCircleRed,
-                    moodStyle === "orange" && styles.dayCircleOrange,
-                    moodStyle === "purple" && styles.dayCirclePurple,
-                    moodStyle === "outlined-green" && styles.dayCircleOutlinedGreen,
-                    moodStyle === "selected-blue" && styles.dayCircleSelectedBlue,
-                    isPlain && styles.dayCirclePlain,
+                    day.isOutsideMonth && styles.dayCircleOutsideMonth,
+                    day.state === "mood" && moodMeta && { backgroundColor: moodMeta.color },
+                    day.state === "future" && styles.dayCircleFuture,
+                    day.state === "empty" && styles.dayCircleEmpty,
+                    day.state === "empty" && styles.dayCircleEmptyBorder,
+                    isToday && styles.dayCircleToday,
                   ]}
                 >
                   <Text
                     style={[
                       styles.dayNumber,
-                      isPlain && styles.dayNumberPlain,
-                      moodStyle === "selected-blue" && styles.dayNumberSelected,
+                      day.isOutsideMonth && styles.dayNumberOutsideMonth,
+                      day.state === "future" && styles.dayNumberFuture,
+                      day.state === "mood" && styles.dayNumberMood,
                     ]}
                   >
-                    {day}
+                    {day.dayNumber}
                   </Text>
                 </View>
+                )}
               </View>
             );
           })}
@@ -183,22 +328,20 @@ export default function MoodOverviewScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#ECECEC",
+    backgroundColor: "#FFFFFF",
   },
   topBar: {
     height: 52,
-    borderBottomWidth: 1,
-    borderBottomColor: "#D0D2D4",
     backgroundColor: "#FFFFFF",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 4,
-    shadowColor: "#737373",
-    shadowOpacity: 0.12,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 2,
+    shadowColor: "#525C67",
+    shadowOpacity: 0.16,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
   backButton: {
     width: 36,
@@ -226,18 +369,16 @@ const styles = StyleSheet.create({
   },
   summaryCard: {
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#C5CACF",
-    backgroundColor: "#F6F7F6",
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: 10,
     paddingTop: 8,
     paddingBottom: 10,
     marginBottom: 12,
-    shadowColor: "#777777",
-    shadowOpacity: 0.14,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    shadowColor: "#525C67",
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
   },
   summaryHeader: {
     flexDirection: "row",
@@ -311,6 +452,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     paddingHorizontal: 8,
   },
+  monthArrowButton: {
+    width: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   monthLabel: {
     color: "#33475B",
     fontSize: 35 / 2,
@@ -343,41 +489,35 @@ const styles = StyleSheet.create({
     width: "13.6%",
     alignItems: "center",
   },
+  dayCircleBlank: {
+    width: 33,
+    height: 33,
+  },
   dayCircle: {
     width: 33,
     height: 33,
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
-  },
-  dayCircleBlue: {
-    backgroundColor: "#7FA7D7",
-  },
-  dayCircleYellow: {
-    backgroundColor: "#F8D330",
-  },
-  dayCircleRed: {
-    backgroundColor: "#E86884",
-  },
-  dayCircleOrange: {
-    backgroundColor: "#F19137",
-  },
-  dayCirclePurple: {
-    backgroundColor: "#B895C8",
-  },
-  dayCircleOutlinedGreen: {
-    backgroundColor: "#F8FBF7",
     borderWidth: 1,
-    borderColor: "#82C866",
+    borderColor: "#8BCB68",
   },
-  dayCircleSelectedBlue: {
-    backgroundColor: "#8EC7E8",
+  dayCircleFuture: {
+    backgroundColor: "#D7DADF",
+    borderColor: "#C5CBD2",
+  },
+  dayCircleOutsideMonth: {
+    opacity: 0.72,
+  },
+  dayCircleEmpty: {
+    backgroundColor: "#FFFFFF",
+  },
+  dayCircleEmptyBorder: {
+    borderColor: "#8BCB68",
+  },
+  dayCircleToday: {
     borderWidth: 2,
-    borderColor: "#8BCB5A",
-  },
-  dayCirclePlain: {
-    backgroundColor: "transparent",
-    borderWidth: 0,
+    borderColor: "#5FAD38",
   },
   dayNumber: {
     color: "#4B5F73",
@@ -385,27 +525,28 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: "700",
   },
-  dayNumberSelected: {
-    color: "#FFFFFF",
+  dayNumberMood: {
+    color: "#3D4450",
   },
-  dayNumberPlain: {
-    color: "#5E725F",
+  dayNumberFuture: {
+    color: "#7B848E",
     fontWeight: "600",
+  },
+  dayNumberOutsideMonth: {
+    color: "#8D96A0",
   },
   insightCard: {
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#C9CED2",
-    backgroundColor: "#F5F6F5",
+    backgroundColor: "#FFFFFF",
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 10,
     paddingVertical: 10,
-    shadowColor: "#777777",
-    shadowOpacity: 0.12,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 2,
+    shadowColor: "#525C67",
+    shadowOpacity: 0.16,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
     marginBottom: 4,
   },
   insightImageWrap: {

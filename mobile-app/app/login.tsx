@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { FormTextInput } from "../components/forms/FormTextInput";
 import { PasswordField } from "../components/forms/PasswordField";
 import { AuthCardLayout } from "../components/layout/AuthCardLayout";
@@ -11,8 +11,10 @@ import {
   isValidStudentId,
   normalizeStudentIdInput,
 } from "../lib/auth-validation";
+import { useAuthSession } from "../lib/auth-session";
 
 export default function LoginScreen() {
+  const { setUser } = useAuthSession();
   const [studentId, setStudentId] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -50,11 +52,15 @@ export default function LoginScreen() {
       return;
     }
 
-    router.replace("/home");
+    if (result.user) {
+      setUser(result.user);
+    }
+    router.replace("/studio");
   };
 
   return (
     <AuthCardLayout contentContainerStyle={styles.scrollContent} cardStyle={styles.card}>
+      <Image source={require("../assets/images/logo_sampleIMG.png")} style={styles.logo} resizeMode="contain" />
       <Text style={styles.title}>Welcome!</Text>
       <Text style={styles.subtitle}>
         Log in to your account to start journaling{"\n"}and track your progress.
@@ -115,65 +121,69 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   scrollContent: {
     justifyContent: "center",
-    paddingHorizontal: 16,
+    paddingHorizontal: 26,
     paddingVertical: 28,
   },
   card: {
     maxWidth: 320,
   },
+  logo: {
+    width: 72,
+    height: 72,
+    alignSelf: "center",
+    marginBottom: 12,
+  },
   title: {
     textAlign: "center",
-    fontSize: 38 / 2,
-    lineHeight: 24,
+    fontSize: 23,
+    lineHeight: 30,
     color: "#111111",
-    fontFamily: "Fraunces-Regular",
-    marginBottom: 8,
+    fontFamily: "Outfit",
+    fontWeight: "700",
+    marginBottom: 4,
   },
   subtitle: {
     textAlign: "center",
-    fontSize: 22 / 2,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 18,
     color: "#1B1B1B",
-    marginBottom: 26,
+    marginBottom: 18,
   },
   label: {
-    fontSize: 22 / 2,
+    fontSize: 12,
     lineHeight: 16,
     color: "#1A1A1A",
   },
   input: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#111111",
-    marginBottom: 8,
+    marginBottom: 10,
   },
   passwordContainer: {
     marginBottom: 0,
   },
   passwordWrap: {
-    height: 42,
-    borderRadius: 6,
+    minHeight: 38,
+    borderRadius: 7,
     marginBottom: 0,
   },
   passwordInput: {
-    paddingHorizontal: 10,
-    fontSize: 14,
+    fontSize: 13,
     color: "#111111",
-    paddingVertical: 0,
+    paddingVertical: 8,
     textAlignVertical: "center",
   },
   forgotWrap: {
     alignSelf: "flex-start",
-    marginBottom: 16,
+    marginBottom: 18,
+    marginTop: -2,
   },
   forgotText: {
     color: "#2C7DB0",
     fontSize: 11,
   },
   loginButton: {
-    height: 25,
-    marginBottom: 12,
-    shadowRadius: 3,
-    elevation: 4,
+    marginBottom: 10,
   },
   loginButtonText: {
     fontSize: 13,
@@ -182,7 +192,7 @@ const styles = StyleSheet.create({
   errorText: {
     color: "#C31A1A",
     fontSize: 11,
-    marginBottom: 8,
+    marginBottom: 10,
   },
   orRow: {
     flexDirection: "row",
@@ -197,7 +207,7 @@ const styles = StyleSheet.create({
   orText: {
     marginHorizontal: 10,
     color: "#555555",
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: "600",
   },
   registerWrap: {

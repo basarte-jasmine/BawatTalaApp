@@ -45,15 +45,15 @@ const styles = StyleSheet.create({
   },
   content: {
     flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingVertical: 24,
+    paddingHorizontal: 26,
+    paddingVertical: 28,
   },
   centeredContent: {
     justifyContent: "center",
-    alignItems: "center",
   },
   card: {
     width: "100%",
     maxWidth: 320,
+    alignSelf: "center",
   },
 });

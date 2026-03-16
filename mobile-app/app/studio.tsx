@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
 
 export default function StudioScreen() {
   useEffect(() => {
@@ -12,14 +12,7 @@ export default function StudioScreen() {
   return (
     <SafeAreaView style={styles.studioScreen}>
       <View style={styles.centeredScreen}>
-        <Image
-          source={require("../assets/images/logo_sampleIMG.png")}
-          style={styles.studioGif}
-          resizeMode="contain"
-        />
-        <Pressable style={styles.skipButton} onPress={() => router.replace("/home")}>
-          <Text style={styles.skipButtonText}>Skip</Text>
-        </Pressable>
+        <ActivityIndicator size="large" color="#6FCB43" />
       </View>
     </SafeAreaView>
   );
@@ -35,21 +28,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 24,
-  },
-  studioGif: {
-    width: 260,
-    height: 260,
-  },
-  skipButton: {
-    marginTop: 20,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#b1894f",
-  },
-  skipButtonText: {
-    color: "#6f5a44",
-    fontWeight: "600",
   },
 });
