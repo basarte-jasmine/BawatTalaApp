@@ -9,7 +9,7 @@ const router = express.Router();
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const STRONG_PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
 const LOGIN_ATTEMPTS_LIMIT = 3;
-const LOGIN_LOCK_DURATION_MS = 10 * 60 * 1000;
+const LOGIN_LOCK_DURATION_MS = 5 * 60 * 1000;
 const OTP_COOLDOWN_MS = 30 * 1000;
 const OTP_VALIDITY_MS = 60 * 1000;
 const RESET_SESSION_MS = 10 * 60 * 1000;
@@ -77,23 +77,116 @@ function clearResetSession(email) {
   adminResetSessions.delete(email);
 }
 
+async function writeAdminActivityLog({
+  actionType,
+  actorEmail = "",
+  actorName = "",
+  actorRole = "",
+  description = "",
+  entityType,
+  metadata = {},
+  title,
+}) {
+  await query(
+    `
+      insert into public.admin_activity_logs (
+        actor_email,
+        actor_name,
+        actor_role,
+        action_type,
+        entity_type,
+        title,
+        description,
+        metadata
+      )
+      values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+    `,
+    [
+      actorEmail || null,
+      actorName || null,
+      actorRole || null,
+      actionType,
+      entityType,
+      title,
+      description,
+      JSON.stringify(metadata || {}),
+    ],
+  );
+}
+
 async function ensureDefaultAdminAccount() {
   const defaultEmail = normalizeEmail(
     process.env.ADMIN_DEFAULT_EMAIL || "basartejasmine@gmail.com",
   );
   const defaultPassword = String(process.env.ADMIN_DEFAULT_PASSWORD || "DemoAdmin123*");
+  const defaultFullName = String(process.env.ADMIN_DEFAULT_FULL_NAME || "Jasmine Batumbakal");
+  const defaultRole = "HEAD_COUNSELOR";
+  const defaultGender = String(process.env.ADMIN_DEFAULT_GENDER || "Female");
 
   const existing = await query("select id from public.admin_accounts where email = $1", [defaultEmail]);
-  if (existing.rowCount > 0) return;
+  if (existing.rowCount > 0) {
+    await query(
+      `
+        update public.admin_accounts
+        set
+          full_name = $2,
+          role = $3,
+          gender = $4,
+          updated_at = now()
+        where email = $1
+      `,
+      [defaultEmail, defaultFullName, defaultRole, defaultGender],
+    );
+  } else {
+    await query(
+      `
+        insert into public.admin_accounts (email, password_hash, full_name, role, gender, is_active)
+        values ($1, $2, $3, $4, $5, true)
+        on conflict (email) do nothing
+      `,
+      [defaultEmail, hashPassword(defaultPassword), defaultFullName, defaultRole, defaultGender],
+    );
+  }
 
-  await query(
-    `
-      insert into public.admin_accounts (email, password_hash, is_active)
-      values ($1, $2, true)
-      on conflict (email) do nothing
-    `,
-    [defaultEmail, hashPassword(defaultPassword)],
-  );
+  const counselorSeeds = [
+    {
+      email: "minchiekim0807@gmail.com",
+      password: "SecondAdmin_123*",
+      fullName: "Maria Isabel Santos",
+      gender: "Female",
+      role: "COUNSELOR",
+    },
+    {
+      email: "ismeniah2704@gmail.com",
+      password: "ThirdAdmin_123!",
+      fullName: "Jonathan Paul Fernandez",
+      gender: "Male",
+      role: "COUNSELOR",
+    },
+  ];
+
+  for (const counselor of counselorSeeds) {
+    await query(
+      `
+        insert into public.admin_accounts (email, password_hash, full_name, role, gender, is_active)
+        values ($1, $2, $3, $4, $5, true)
+        on conflict (email)
+        do update set
+          full_name = excluded.full_name,
+          role = excluded.role,
+          gender = excluded.gender,
+          is_active = true,
+          updated_at = now()
+      `,
+      [
+        counselor.email,
+        hashPassword(counselor.password),
+        counselor.fullName,
+        counselor.role,
+        counselor.gender,
+      ],
+    );
+  }
 }
 
 function toMonthlyBuckets(rows, dateKey) {
@@ -109,6 +202,364 @@ function toMonthlyBuckets(rows, dateKey) {
   return [...bucketMap.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([label, value]) => ({ label, value }));
+}
+
+function normalizeDisplayLabel(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => {
+      if (part.length <= 4) return part.toUpperCase();
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    })
+    .join(" ");
+}
+
+function inferYearLevelFromStudentNumber(studentNumber) {
+  const match = String(studentNumber || "").trim().match(/^(\d{2})-/);
+  if (!match) return "Unknown";
+  const entryYear = Number(match[1]);
+  const currentYear = Number(String(getManilaDateParts().year).slice(-2));
+  const computed = Math.max(1, Math.min(4, currentYear - entryYear + 1));
+  return `${computed}${computed === 1 ? "st" : computed === 2 ? "nd" : computed === 3 ? "rd" : "th"} Year`;
+}
+
+function buildCurrentMonthJournalSeries(rows, dateKey) {
+  const now = getManilaDateParts();
+  const monthPrefix = `${now.year}-${String(now.month).padStart(2, "0")}-`;
+  const bucketMap = new Map();
+
+  for (const row of rows || []) {
+    const isoDate = normalizeDateValue(row?.[dateKey]);
+    if (!isoDate || !isoDate.startsWith(monthPrefix)) continue;
+    const day = Number(isoDate.slice(-2));
+    if (!day) continue;
+    const weekIndex = Math.floor((day - 1) / 7) + 1;
+    const key = `Week ${weekIndex}`;
+    bucketMap.set(key, (bucketMap.get(key) || 0) + 1);
+  }
+
+  const totalWeeks = Math.max(1, Math.ceil(now.day / 7));
+  return Array.from({ length: totalWeeks }, (_, index) => {
+    const label = `Week ${index + 1}`;
+    return { label, value: bucketMap.get(label) || 0 };
+  });
+}
+
+function normalizeConcernTheme(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return "";
+
+  if (normalized === "academic stress" || normalized === "academic") return "Academic Stress";
+  if (normalized === "anxiety / stress" || normalized === "anxiety/stress" || normalized === "anxiety" || normalized === "stress") {
+    return "Anxiety / Stress";
+  }
+  if (normalized === "relationships" || normalized === "relationship") return "Relationships";
+  if (normalized === "family issues" || normalized === "family") return "Family Issues";
+  if (normalized === "career guidance" || normalized === "career") return "Career Guidance";
+  if (normalized === "financial concerns" || normalized === "financial") return "Financial Concerns";
+  if (normalized === "burnout / exhaustion" || normalized === "burnout/exhaustion" || normalized === "burnout") {
+    return "Burnout / Exhaustion";
+  }
+  if (normalized === "bullying") return "Bullying";
+  if (normalized === "others" || normalized === "other") return "Others";
+  return "";
+}
+
+function inferConcernThemeFromText(text) {
+  const value = String(text || "").toLowerCase();
+  if (!value) return "Others";
+  if (/(school|exam|grades|class|academic|study|professor|subject|assignment)/.test(value)) return "Academic Stress";
+  if (/(anxiety|panic|stress|hopeless|self-harm|suicide|depressed|depression|mental)/.test(value)) return "Anxiety / Stress";
+  if (/(relationship|friend|boyfriend|girlfriend|friendship|social)/.test(value)) return "Relationships";
+  if (/(mother|father|parent|family|home|sibling)/.test(value)) return "Family Issues";
+  if (/(career|course shift|future|profession|job|internship)/.test(value)) return "Career Guidance";
+  if (/(money|financial|tuition|budget|allowance)/.test(value)) return "Financial Concerns";
+  if (/(burnout|exhaustion|drained|tired)/.test(value)) return "Burnout / Exhaustion";
+  if (/(bully|bullied|harass|harassment)/.test(value)) return "Bullying";
+  return "Others";
+}
+
+const MANILA_TIME_ZONE = "Asia/Manila";
+
+function getManilaDateParts(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: MANILA_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value || "1970";
+  const month = parts.find((part) => part.type === "month")?.value || "01";
+  const day = parts.find((part) => part.type === "day")?.value || "01";
+  return {
+    year: Number(year),
+    month: Number(month),
+    day: Number(day),
+    isoDate: `${year}-${month}-${day}`,
+  };
+}
+
+function getRelativeManilaIsoDate(daysOffset) {
+  const now = new Date();
+  const shifted = new Date(now.getTime() + daysOffset * 24 * 60 * 60 * 1000);
+  return getManilaDateParts(shifted).isoDate;
+}
+
+function normalizeDateValue(value) {
+  if (!value) return "";
+  if (value instanceof Date) {
+    return getManilaDateParts(value).isoDate;
+  }
+
+  const raw = String(value).trim();
+  if (raw.includes("T")) {
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      return getManilaDateParts(parsed).isoDate;
+    }
+  }
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : "";
+}
+
+function countRowsOnDate(rows, dateKey, isoDate) {
+  return (rows || []).filter((row) => normalizeDateValue(row?.[dateKey]) === isoDate).length;
+}
+
+function countRowsBetweenDates(rows, dateKey, startIsoDate, endIsoDateExclusive) {
+  return (rows || []).filter((row) => {
+    const date = normalizeDateValue(row?.[dateKey]);
+    return date && date >= startIsoDate && date < endIsoDateExclusive;
+  }).length;
+}
+
+function buildDelta(currentValue, previousValue) {
+  if (!previousValue) {
+    if (!currentValue) {
+      return { direction: "neutral", percentageText: "0%" };
+    }
+    return { direction: "up", percentageText: "100%" };
+  }
+
+  const rawDelta = ((currentValue - previousValue) / previousValue) * 100;
+  if (rawDelta > 0) {
+    return { direction: "up", percentageText: `${rawDelta.toFixed(rawDelta >= 10 ? 0 : 1)}%` };
+  }
+  if (rawDelta < 0) {
+    return { direction: "down", percentageText: `${Math.abs(rawDelta).toFixed(Math.abs(rawDelta) >= 10 ? 0 : 1)}%` };
+  }
+  return { direction: "neutral", percentageText: "0%" };
+}
+
+function toCounselorRoleLabel(value) {
+  return String(value || "").toUpperCase() === "HEAD_COUNSELOR" ? "Head Counselor" : "Counselor";
+}
+
+function toRoleManagementLabel(value) {
+  return String(value || "").toUpperCase() === "HEAD_COUNSELOR" ? "Super Admin" : "School Counselor";
+}
+
+function normalizeAdminSettings(rawValue) {
+  const source = rawValue && typeof rawValue === "object" && !Array.isArray(rawValue) ? rawValue : {};
+  const notifications = source.notifications && typeof source.notifications === "object" ? source.notifications : {};
+  const appearance = source.appearance && typeof source.appearance === "object" ? source.appearance : {};
+  const privacy = source.privacy && typeof source.privacy === "object" ? source.privacy : {};
+
+  return {
+    notifications: {
+      appointmentUpdates: notifications.appointmentUpdates !== false,
+      cancellationAlerts: notifications.cancellationAlerts !== false,
+      dailyDigest: Boolean(notifications.dailyDigest),
+      emailAlerts: notifications.emailAlerts !== false,
+      mobilePush: notifications.mobilePush !== false,
+    },
+    appearance: {
+      compactCards: Boolean(appearance.compactCards),
+      highlightUnread: appearance.highlightUnread !== false,
+      reduceMotion: Boolean(appearance.reduceMotion),
+      theme: "light",
+    },
+    privacy: {
+      maskStudentNumbers: Boolean(privacy.maskStudentNumbers),
+      requireCancelReason: privacy.requireCancelReason !== false,
+    },
+  };
+}
+
+function normalizeSpecialties(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => normalizeCompactSpaces(item))
+    .filter(Boolean)
+    .slice(0, 12);
+}
+
+function normalizeStringArray(value) {
+  return Array.isArray(value)
+    ? value.map((item) => normalizeCompactSpaces(item)).filter(Boolean)
+    : [];
+}
+
+function toStudentStatus(row) {
+  const flaggedCount = Number(row?.flagged_entries || 0);
+  const totalEntries = Number(row?.total_entries || 0);
+  if (flaggedCount > 0) return "Flagged";
+  if (totalEntries === 0) return "Inactive";
+  return "Active";
+}
+
+function addDaysToIsoDate(isoDate, days) {
+  const base = new Date(`${isoDate}T00:00:00Z`);
+  if (Number.isNaN(base.getTime())) return isoDate;
+  base.setUTCDate(base.getUTCDate() + days);
+  return base.toISOString().slice(0, 10);
+}
+
+function getDaysBetweenInclusive(startIsoDate, endIsoDate) {
+  const start = new Date(`${startIsoDate}T00:00:00Z`);
+  const end = new Date(`${endIsoDate}T00:00:00Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 1;
+  return Math.max(1, Math.round((end - start) / (24 * 60 * 60 * 1000)) + 1);
+}
+
+function enumerateIsoDates(startIsoDate, endIsoDate) {
+  const totalDays = getDaysBetweenInclusive(startIsoDate, endIsoDate);
+  return Array.from({ length: totalDays }, (_, index) => addDaysToIsoDate(startIsoDate, index));
+}
+
+function formatShortLabel(isoDate) {
+  const date = new Date(`${isoDate}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return isoDate;
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function resolveAnalyticsRange(queryValue, customStartRaw, customEndRaw) {
+  const todayIso = getRelativeManilaIsoDate(0);
+  const normalized = String(queryValue || "30d").trim().toLowerCase();
+
+  if (normalized === "custom") {
+    const customStart = normalizeDateValue(customStartRaw);
+    const customEnd = normalizeDateValue(customEndRaw);
+    if (customStart && customEnd && customStart <= customEnd) {
+      return {
+        rangeKey: "custom",
+        startDate: customStart,
+        endDate: customEnd,
+      };
+    }
+  }
+
+  const days = normalized === "7d" ? 7 : normalized === "90d" ? 90 : 30;
+  return {
+    rangeKey: normalized === "7d" || normalized === "90d" ? normalized : "30d",
+    startDate: addDaysToIsoDate(todayIso, -(days - 1)),
+    endDate: todayIso,
+  };
+}
+
+function buildWindowBuckets(startIsoDate, endIsoDate, bucketCount = 4) {
+  const dates = enumerateIsoDates(startIsoDate, endIsoDate);
+  const size = Math.max(1, Math.ceil(dates.length / bucketCount));
+  const buckets = [];
+
+  for (let index = 0; index < dates.length; index += size) {
+    const bucketDates = dates.slice(index, index + size);
+    if (!bucketDates.length) continue;
+    buckets.push({
+      startDate: bucketDates[0],
+      endDate: bucketDates[bucketDates.length - 1],
+      label:
+        bucketDates.length === 1
+          ? formatShortLabel(bucketDates[0])
+          : `${formatShortLabel(bucketDates[0])} - ${formatShortLabel(bucketDates[bucketDates.length - 1])}`,
+    });
+  }
+
+  return buckets;
+}
+
+function buildDailyTrend(rows, startIsoDate, endIsoDate, dateKey) {
+  const counts = new Map();
+  for (const row of rows || []) {
+    const isoDate = normalizeDateValue(row?.[dateKey]);
+    if (!isoDate || isoDate < startIsoDate || isoDate > endIsoDate) continue;
+    counts.set(isoDate, (counts.get(isoDate) || 0) + 1);
+  }
+
+  return enumerateIsoDates(startIsoDate, endIsoDate).map((isoDate) => ({
+    isoDate,
+    label: formatShortLabel(isoDate),
+    value: counts.get(isoDate) || 0,
+  }));
+}
+
+function calculateAverageEntriesPerStudent(totalEntries, totalStudents) {
+  if (!totalStudents) return 0;
+  return Number((Number(totalEntries || 0) / Number(totalStudents || 0)).toFixed(1));
+}
+
+function getResponseTimeHours(row) {
+  if (!row?.support_response_at || !row?.created_at) return Number.POSITIVE_INFINITY;
+  const createdAt = new Date(row.created_at);
+  const respondedAt = new Date(row.support_response_at);
+  if (Number.isNaN(createdAt.getTime()) || Number.isNaN(respondedAt.getTime())) return Number.POSITIVE_INFINITY;
+  return (respondedAt.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
+}
+
+function buildResolutionRate(rows, label, predicate, targetHours, color) {
+  const scopedRows = (rows || []).filter(predicate);
+  const resolvedWithinTarget = scopedRows.filter(
+    (row) => String(row.support_response || "").toUpperCase() === "CONTACTED" && getResponseTimeHours(row) <= targetHours,
+  ).length;
+
+  const percentage = scopedRows.length
+    ? Math.round((resolvedWithinTarget / scopedRows.length) * 100)
+    : 0;
+
+  return {
+    label,
+    value: percentage,
+    targetLabel: `Target: ${targetHours}h`,
+    color,
+  };
+}
+
+function generateTemporaryPassword() {
+  return `BtRole_${randomBytes(4).toString("hex")}A1!`;
+}
+
+async function getScheduledEventCounts() {
+  const todayIso = getRelativeManilaIsoDate(0);
+  const yesterdayIso = getRelativeManilaIsoDate(-1);
+
+  const result = await query(
+    `
+      select appointment_date, count(*)::int as total
+      from public.counselor_appointments
+      where appointment_date in ($1::date, $2::date)
+        and status = 'CONFIRMED'
+      group by appointment_date
+    `,
+    [todayIso, yesterdayIso],
+  );
+
+  return result.rows.reduce(
+    (acc, row) => {
+      const isoDate = normalizeDateValue(row.appointment_date);
+      if (isoDate === todayIso) acc.todayCount = Number(row.total || 0);
+      if (isoDate === yesterdayIso) acc.yesterdayCount = Number(row.total || 0);
+      return acc;
+    },
+    { todayCount: 0, yesterdayCount: 0, unavailable: false },
+  );
 }
 
 function getOAuthClient(req) {
@@ -164,7 +615,7 @@ router.post("/login", async (req, res) => {
   }
 
   const result = await query(
-    `select id, email, password_hash, is_active
+    `select id, email, password_hash, is_active, coalesce(role, 'COUNSELOR') as role
      from public.admin_accounts
      where email = $1
      limit 1`,
@@ -184,6 +635,17 @@ router.post("/login", async (req, res) => {
   }
 
   adminLoginAttempts.delete(loginKey);
+  const roleLabel = admin.role === "HEAD_COUNSELOR" ? "Head Counselor" : "Counselor";
+  await writeAdminActivityLog({
+    actionType: "ADMIN_LOGIN",
+    actorEmail: admin.email,
+    actorName: admin.email,
+    actorRole: roleLabel,
+    entityType: "AUTH",
+    title: `${admin.email} signed in`,
+    description: "Admin login recorded from the admin panel.",
+    metadata: { loginMethod: "password" },
+  });
   return res.json({
     message: "Login successful.",
     admin: {
@@ -254,9 +716,20 @@ router.get("/oauth/google/callback", async (req, res) => {
       );
     }
 
-    return res.redirect(
-      `${webBaseUrl}/login?oauth=success&email=${encodeURIComponent(admin.email)}`,
-    );
+    const query = new URLSearchParams({
+      oauth: "success",
+      email: admin.email,
+    });
+
+    if (data?.name) {
+      query.set("name", String(data.name));
+    }
+
+    if (data?.picture) {
+      query.set("picture", String(data.picture));
+    }
+
+    return res.redirect(`${webBaseUrl}/login?${query.toString()}`);
   } catch {
     return res.redirect(
       `${webBaseUrl}/login?oauth=error&message=${encodeURIComponent("Google sign-in failed. Please try again.")}`,
@@ -406,17 +879,87 @@ router.post("/forgot-password/reset", async (req, res) => {
   return res.json({ message: "Password updated successfully" });
 });
 
-router.get("/dashboard/summary", async (_req, res) => {
+router.get("/dashboard/summary", async (req, res) => {
+  const manilaNow = getManilaDateParts();
+  const currentMonthStartIso = `${manilaNow.year}-${String(manilaNow.month).padStart(2, "0")}-01`;
   const [{ data: profiles, error: profilesError }, { data: journals, error: journalsError }] =
     await Promise.all([
       supabaseAdminClient
         .from("student_profiles")
-        .select("id, gender, program, barangay, created_at"),
-      supabaseAdminClient.from("journal_entries").select("id, created_at"),
+        .select("id, gender, program, barangay, created_at, student_number"),
+      supabaseAdminClient
+        .from("journal_entries")
+        .select("id, created_at, entry_date, summary, insights, admin_flag_reason, risk_level, student_number, primary_concern, concern_tags"),
     ]);
+
+  const [{ rows: flaggedRows }, { rows: moodRows }, scheduledEvents, { rows: caseAssignmentRows }] = await Promise.all([
+    query(
+      `
+        select id, student_number, entry_date, created_at, risk_level, support_response
+        from public.journal_entries
+        where risk_level = 'HIGH' or support_response = 'DECLINED'
+      `,
+    ),
+    query(
+      `
+        select mood_id, mood_date
+        from public.student_moods
+        where mood_date >= $1::date
+        order by mood_date asc
+      `,
+      [currentMonthStartIso],
+    ),
+    getScheduledEventCounts(),
+    query(
+      `
+        select
+          je.id,
+          je.student_number,
+          je.entry_date,
+          je.created_at,
+          je.summary,
+          je.admin_flag_reason,
+          je.primary_concern,
+          je.concern_tags,
+          coalesce(sp.full_name, je.student_number) as student_name,
+          coalesce(case_assignment.counselor_name, '') as counselor_name,
+          coalesce(case_assignment.counselor_role, '') as counselor_role
+        from public.journal_entries je
+        left join public.student_profiles sp on sp.student_number = je.student_number
+        left join lateral (
+          select
+            coalesce(nullif(aa.full_name, ''), split_part(aa.email, '@', 1)) as counselor_name,
+            coalesce(aa.role, 'COUNSELOR') as counselor_role,
+            ca.appointment_date,
+            ca.created_at
+          from public.counselor_appointments ca
+          join public.admin_accounts aa on aa.id = ca.counselor_id
+          where ca.student_number = je.student_number
+            and ca.status = 'CONFIRMED'
+          order by ca.appointment_date desc, ca.created_at desc
+          limit 1
+        ) case_assignment on true
+        where je.risk_level = 'HIGH'
+           or je.support_response in ('DECLINED', 'CONTACTED')
+        order by coalesce(je.support_response_at, je.created_at) desc
+        limit 4
+      `,
+    ),
+  ]);
 
   const safeProfiles = profilesError ? [] : profiles || [];
   const safeJournals = journalsError ? [] : journals || [];
+  const safeFlaggedRows = flaggedRows || [];
+  const safeMoodRows = moodRows || [];
+
+  const todayIso = getRelativeManilaIsoDate(0);
+  const yesterdayIso = getRelativeManilaIsoDate(-1);
+  const last7StartIso = getRelativeManilaIsoDate(-6);
+  const previous7StartIso = getRelativeManilaIsoDate(-13);
+  const previous7EndIso = getRelativeManilaIsoDate(-6);
+  const current30StartIso = getRelativeManilaIsoDate(-29);
+  const previous30StartIso = getRelativeManilaIsoDate(-59);
+  const previous30EndIso = getRelativeManilaIsoDate(-29);
 
   const genderCounts = safeProfiles.reduce((acc, row) => {
     const key = String(row.gender || "UNSPECIFIED").toUpperCase();
@@ -436,27 +979,1308 @@ router.get("/dashboard/summary", async (_req, res) => {
     return acc;
   }, {});
 
+  const totalStudents = safeProfiles.length;
+  const totalFlaggedEntries = new Set(
+    safeFlaggedRows
+      .map((row) => String(row.student_number || "").trim())
+      .filter(Boolean),
+  ).size;
+  const entriesToday = countRowsOnDate(safeJournals, "created_at", todayIso);
+  const studentsThis30Days = countRowsBetweenDates(safeProfiles, "created_at", current30StartIso, getRelativeManilaIsoDate(1));
+  const studentsPrevious30Days = countRowsBetweenDates(safeProfiles, "created_at", previous30StartIso, previous30EndIso);
+  const flaggedThis7Days = new Set(
+    safeFlaggedRows
+      .filter((row) => {
+        const date = normalizeDateValue(row.entry_date);
+        return date && date >= last7StartIso && date < getRelativeManilaIsoDate(1);
+      })
+      .map((row) => String(row.student_number || "").trim())
+      .filter(Boolean),
+  ).size;
+  const flaggedPrevious7Days = new Set(
+    safeFlaggedRows
+      .filter((row) => {
+        const date = normalizeDateValue(row.entry_date);
+        return date && date >= previous7StartIso && date < previous7EndIso;
+      })
+      .map((row) => String(row.student_number || "").trim())
+      .filter(Boolean),
+  ).size;
+  const entriesYesterday = countRowsOnDate(safeJournals, "created_at", yesterdayIso);
+
   const activeUsageSeries = toMonthlyBuckets(safeProfiles, "created_at");
-  const journalEntriesSeries = toMonthlyBuckets(safeJournals, "created_at");
+  const journalEntriesSeries = buildCurrentMonthJournalSeries(safeJournals, "created_at");
+  const moodCountsByDate = new Map();
+
+  for (const row of safeMoodRows) {
+    const date = normalizeDateValue(row.mood_date);
+    if (!date) continue;
+    const current = moodCountsByDate.get(date) || {
+      happy: 0,
+      calm: 0,
+      sad: 0,
+      stressed: 0,
+      angry: 0,
+      anxious: 0,
+    };
+    const moodId = String(row.mood_id || "").trim().toLowerCase();
+    if (moodId === "happy") current.happy += 1;
+    else if (moodId === "calm") current.calm += 1;
+    else if (moodId === "sad") current.sad += 1;
+    else if (moodId === "stressed") current.stressed += 1;
+    else if (moodId === "angry") current.angry += 1;
+    else if (moodId === "anxious") current.anxious += 1;
+    moodCountsByDate.set(date, current);
+  }
+
+  const sortedBarangays = Object.entries(barangayCounts)
+    .map(([label, value]) => ({ label: normalizeDisplayLabel(label), value: Number(value || 0) }))
+    .sort((a, b) => b.value - a.value);
+
+  const topBarangayConcerns = new Map();
+  for (const journal of safeJournals) {
+    const profile = safeProfiles.find(
+      (item) => String(item.student_number || "").trim() === String(journal.student_number || "").trim(),
+    );
+    const barangay = normalizeDisplayLabel(profile?.barangay || "Unspecified");
+    const text = [
+      journal.summary,
+      journal.admin_flag_reason,
+      ...(Array.isArray(journal.insights) ? journal.insights : []),
+    ].join(" ");
+    const current = topBarangayConcerns.get(barangay) || 0;
+    topBarangayConcerns.set(barangay, current + (text ? 1 : 0));
+  }
+
+  const demographicRows = sortedBarangays.slice(0, 6).map((item) => ({
+    label: item.label,
+    value: item.value,
+  }));
+
+  const demographicSplit = [
+    { label: "Female", value: Number(genderCounts.FEMALE || 0) },
+    { label: "Male", value: Number(genderCounts.MALE || 0) },
+    { label: "Prefer not to say", value: Number(genderCounts["PREFER NOT TO SAY"] || genderCounts.UNSPECIFIED || 0) },
+  ].filter((item) => item.value > 0);
+
+  const programTotals = safeProfiles.reduce((acc, row) => {
+    const program = normalizeDisplayLabel(row.program || "Unspecified");
+    acc[program] = (acc[program] || 0) + 1;
+    return acc;
+  }, {});
+
+  const topPrograms = Object.entries(programTotals)
+    .map(([label, value]) => ({ label, value: Number(value || 0) }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 4);
+
+  const activeUsageGroupsMap = new Map();
+  for (const profile of safeProfiles) {
+    const yearLevel = inferYearLevelFromStudentNumber(profile.student_number);
+    if (yearLevel === "Unknown") continue;
+    const current = activeUsageGroupsMap.get(yearLevel) || { label: yearLevel };
+    const program = normalizeDisplayLabel(profile.program || "Unspecified");
+    if (topPrograms.some((item) => item.label === program)) {
+      current[program] = (current[program] || 0) + 1;
+    }
+    activeUsageGroupsMap.set(yearLevel, current);
+  }
+
+  const yearOrder = ["1st Year", "2nd Year", "3rd Year", "4th Year"];
+  const activeUsageGroups = yearOrder
+    .map((label) => activeUsageGroupsMap.get(label) || { label })
+    .map((group) => ({
+      ...group,
+      ...Object.fromEntries(topPrograms.map((item) => [item.label, Number(group[item.label] || 0)])),
+    }));
+
+  const concernCounts = safeJournals.reduce((acc, row) => {
+    const storedConcern = normalizeConcernTheme(row.primary_concern);
+    const storedTags = Array.isArray(row.concern_tags)
+      ? row.concern_tags.map((item) => normalizeConcernTheme(item)).filter(Boolean)
+      : [];
+    const text = [
+      row.summary,
+      row.admin_flag_reason,
+      ...(Array.isArray(row.insights) ? row.insights : []),
+    ].join(" ");
+    const concern = storedConcern || storedTags[0] || inferConcernThemeFromText(text);
+    acc[concern] = (acc[concern] || 0) + 1;
+    return acc;
+  }, {});
+
+  const primaryConcerns = [
+    "Academic Stress",
+    "Anxiety / Stress",
+    "Relationships",
+    "Family Issues",
+    "Career Guidance",
+    "Financial Concerns",
+    "Burnout / Exhaustion",
+    "Bullying",
+    "Others",
+  ].map((label) => ({
+    label,
+    value: Number(concernCounts[label] || 0),
+  })).filter((item) => item.value > 0);
+
+  const currentMonthLabels = [];
+  const moodSeries = {
+    happy: [],
+    calm: [],
+    sad: [],
+    stressed: [],
+    angry: [],
+    anxious: [],
+  };
+
+  for (let bucketEndDay = 5; bucketEndDay <= manilaNow.day; bucketEndDay += 5) {
+    const bucketStartDay = Math.max(1, bucketEndDay - 4);
+    const labelIsoDate = `${manilaNow.year}-${String(manilaNow.month).padStart(2, "0")}-${String(bucketEndDay).padStart(2, "0")}`;
+    const label = new Date(`${labelIsoDate}T00:00:00Z`).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone: MANILA_TIME_ZONE,
+    });
+    currentMonthLabels.push(label);
+    let happy = 0;
+    let calm = 0;
+    let sad = 0;
+    let stressed = 0;
+    let angry = 0;
+    let anxious = 0;
+
+    for (let day = bucketStartDay; day <= bucketEndDay; day += 1) {
+      const isoDate = `${manilaNow.year}-${String(manilaNow.month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      const counts = moodCountsByDate.get(isoDate);
+      if (!counts) continue;
+      happy += counts.happy;
+      calm += counts.calm;
+      sad += counts.sad;
+      stressed += counts.stressed;
+      angry += counts.angry;
+      anxious += counts.anxious;
+    }
+
+    moodSeries.happy.push(happy);
+    moodSeries.calm.push(calm);
+    moodSeries.sad.push(sad);
+    moodSeries.stressed.push(stressed);
+    moodSeries.angry.push(angry);
+    moodSeries.anxious.push(anxious);
+  }
+
+  if (manilaNow.day % 5 !== 0) {
+    const bucketStartDay = Math.floor(manilaNow.day / 5) * 5 + 1;
+    const bucketEndDay = manilaNow.day;
+    const labelIsoDate = `${manilaNow.year}-${String(manilaNow.month).padStart(2, "0")}-${String(bucketEndDay).padStart(2, "0")}`;
+    const label = new Date(`${labelIsoDate}T00:00:00Z`).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone: MANILA_TIME_ZONE,
+    });
+    currentMonthLabels.push(label);
+
+    let happy = 0;
+    let calm = 0;
+    let sad = 0;
+    let stressed = 0;
+    let angry = 0;
+    let anxious = 0;
+
+    for (let day = bucketStartDay; day <= bucketEndDay; day += 1) {
+      const isoDate = `${manilaNow.year}-${String(manilaNow.month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      const counts = moodCountsByDate.get(isoDate);
+      if (!counts) continue;
+      happy += counts.happy;
+      calm += counts.calm;
+      sad += counts.sad;
+      stressed += counts.stressed;
+      angry += counts.angry;
+      anxious += counts.anxious;
+    }
+
+    moodSeries.happy.push(happy);
+    moodSeries.calm.push(calm);
+    moodSeries.sad.push(sad);
+    moodSeries.stressed.push(stressed);
+    moodSeries.angry.push(angry);
+    moodSeries.anxious.push(anxious);
+  }
+
+  const caseAssignments = (caseAssignmentRows || []).map((row) => {
+    const concernFromPrimary = normalizeConcernTheme(row.primary_concern);
+    const concernFromTags = Array.isArray(row.concern_tags)
+      ? row.concern_tags.map((item) => normalizeConcernTheme(item)).find(Boolean)
+      : "";
+    const concern =
+      concernFromPrimary ||
+      concernFromTags ||
+      inferConcernThemeFromText([row.summary, row.admin_flag_reason].filter(Boolean).join(" ")) ||
+      "Others";
+    const counselorName = String(row.counselor_name || "").trim();
+    const initials = counselorName ? counselorName.charAt(0).toUpperCase() : "?";
+
+    return {
+      concern,
+      counselor: counselorName || "Unassigned",
+      initials,
+      role: counselorName ? toCounselorRoleLabel(row.counselor_role) : "Needs Assignment",
+      status: counselorName ? "assigned" : "pending",
+      student: row.student_name || row.student_number,
+      studentNumber: row.student_number,
+    };
+  });
 
   return res.json({
     cards: {
-      totalUsers: safeProfiles.length,
+      flaggedEntries: {
+        value: totalFlaggedEntries,
+        ...buildDelta(flaggedThis7Days, flaggedPrevious7Days),
+      },
+      totalStudents: {
+        value: totalStudents,
+        ...buildDelta(studentsThis30Days, studentsPrevious30Days),
+      },
+      totalEntries: {
+        value: safeJournals.length,
+        ...buildDelta(safeJournals.length, Math.max(0, safeJournals.length - entriesToday)),
+      },
+      scheduledToday: {
+        value: scheduledEvents.todayCount,
+        ...buildDelta(scheduledEvents.todayCount, scheduledEvents.yesterdayCount),
+      },
       gender: genderCounts,
       course: courseCounts,
     },
     charts: {
       activeUsage: activeUsageSeries,
       journalEntries: journalEntriesSeries,
-      barangay: Object.entries(barangayCounts).map(([label, value]) => ({
-        label,
-        value,
-      })),
+      barangay: sortedBarangays.slice(0, 4),
+      genderDistribution: [
+        { label: "Male", value: Number(genderCounts.MALE || 0) },
+        { label: "Female", value: Number(genderCounts.FEMALE || 0) },
+        { label: "Prefer not to say", value: Number(genderCounts["PREFER NOT TO SAY"] || genderCounts.UNSPECIFIED || 0) },
+      ].filter((item) => item.value > 0),
+      studentDemographics: {
+        locations: demographicRows,
+        genderSplit: demographicSplit,
+      },
+      activeUsageByCourseYear: {
+        groups: activeUsageGroups,
+        series: topPrograms,
+      },
+      primaryConcerns,
+      topConcernsByBarangay: sortedBarangays
+        .slice(0, 4)
+        .map((item) => ({
+          label: item.label,
+          value: Number(topBarangayConcerns.get(item.label) || item.value),
+        })),
+      moodTrends: {
+        labels: currentMonthLabels,
+        series: [
+          { key: "happy", label: "Happy", values: moodSeries.happy },
+          { key: "calm", label: "Calm", values: moodSeries.calm },
+          { key: "sad", label: "Sad", values: moodSeries.sad },
+          { key: "stressed", label: "Stressed", values: moodSeries.stressed },
+          { key: "angry", label: "Angry", values: moodSeries.angry },
+          { key: "anxious", label: "Anxious", values: moodSeries.anxious },
+        ],
+      },
     },
     warnings: {
       journalEntriesUnavailable: Boolean(journalsError),
+      profilesUnavailable: Boolean(profilesError),
+      scheduledTodayUnavailable: scheduledEvents.unavailable,
+    },
+    caseAssignments,
+  });
+});
+
+router.get("/dashboard/risk-flags", async (_req, res) => {
+  const result = await query(
+    `
+      select
+        je.id,
+        je.student_number,
+        je.entry_date,
+        je.title,
+        je.summary,
+        je.insights,
+        je.risk_level,
+        je.admin_flag_reason,
+        je.primary_concern,
+        je.concern_tags,
+        je.support_response,
+        je.support_response_at,
+        je.created_at,
+        coalesce(sp.full_name, '') as full_name,
+        coalesce(sp.program, '') as program,
+        coalesce(sp.email, '') as email
+      from public.journal_entries je
+      left join public.student_profiles sp on sp.student_number = je.student_number
+      where (
+        upper(coalesce(je.risk_level, 'NONE')) in ('HIGH', 'CRITICAL')
+        or upper(coalesce(je.support_response, '')) = 'DECLINED'
+      )
+        and je.deleted_by_student_at is null
+      order by je.entry_date desc, je.created_at desc
+      limit 100
+    `,
+  );
+
+  return res.json({
+    entries: result.rows.map((row) => ({
+      adminFlagReason: row.admin_flag_reason || null,
+      concernTags: Array.isArray(row.concern_tags) ? row.concern_tags : [],
+      createdAt: row.created_at,
+      entryDate: row.entry_date,
+      email: row.email || "",
+      fullName: row.full_name || "",
+      id: row.id,
+      insights: Array.isArray(row.insights) ? row.insights : [],
+      primaryConcern: row.primary_concern || null,
+      program: row.program || "",
+      riskLevel: row.risk_level,
+      supportResponse: row.support_response || null,
+      supportResponseAt: row.support_response_at || null,
+      studentNumber: row.student_number,
+      summary: row.summary || "",
+      title: row.title || "",
+    })),
+  });
+});
+
+router.post("/students/:studentNumber/notify", async (req, res) => {
+  const studentNumber = normalizeCompactSpaces(req.params.studentNumber || "");
+  const title = normalizeCompactSpaces(req.body.title || "");
+  const message = normalizeCompactSpaces(req.body.message || "");
+  const actorEmail = normalizeEmail(req.body.actorEmail || "");
+  const actorName = normalizeCompactSpaces(req.body.actorName || "");
+  const actorRole = normalizeCompactSpaces(req.body.actorRole || "");
+
+  if (!studentNumber) {
+    return res.status(400).json({ message: "Student number is required." });
+  }
+  if (!title) {
+    return res.status(400).json({ message: "Notification title is required." });
+  }
+  if (!message) {
+    return res.status(400).json({ message: "Notification message is required." });
+  }
+
+  await query(
+    `
+      insert into public.student_notifications (
+        student_number,
+        kind,
+        title,
+        message,
+        metadata
+      )
+      values ($1, 'ADMIN_MESSAGE', $2, $3, $4::jsonb)
+    `,
+    [
+      studentNumber,
+      title,
+      message,
+      JSON.stringify({
+        actorEmail: actorEmail || null,
+        actorName: actorName || null,
+        actorRole: actorRole || null,
+      }),
+    ],
+  );
+
+  await writeAdminActivityLog({
+    actionType: "FLAGGED_ENTRY_MESSAGE_SENT",
+    actorEmail,
+    actorName,
+    actorRole,
+    entityType: "STUDENT_NOTIFICATION",
+    title: `Message sent to ${studentNumber}`,
+    description: `Admin sent a flagged-entry follow-up notification to ${studentNumber}.`,
+    metadata: {
+      studentNumber,
+      notificationTitle: title,
     },
   });
+
+  return res.json({ message: "Notification sent to student." });
+});
+
+router.get("/analytics", async (req, res) => {
+  const { rangeKey, startDate, endDate } = resolveAnalyticsRange(
+    req.query.range,
+    req.query.startDate,
+    req.query.endDate,
+  );
+  const manilaToday = getManilaDateParts();
+  const currentMonthStart = `${manilaToday.year}-${String(manilaToday.month).padStart(2, "0")}-01`;
+  const currentMonthEnd = getRelativeManilaIsoDate(0);
+
+  const [studentsResult, journalRowsResult, currentMonthJournalRowsResult, appointmentsResult, counselorsResult] = await Promise.all([
+    query("select count(*)::int as total from public.student_profiles"),
+    query(
+      `
+        select
+          student_number,
+          entry_date,
+          created_at,
+          primary_concern,
+          concern_tags,
+          summary,
+          admin_flag_reason,
+          risk_level,
+          support_response,
+          support_response_at
+        from public.journal_entries
+        where entry_date between $1::date and $2::date
+        order by entry_date asc, created_at asc
+      `,
+      [startDate, endDate],
+    ),
+    query(
+      `
+        select entry_date, created_at
+        from public.journal_entries
+        where entry_date between $1::date and $2::date
+        order by entry_date asc, created_at asc
+      `,
+      [currentMonthStart, currentMonthEnd],
+    ),
+    query(
+      `
+        select
+          ca.appointment_date,
+          ca.status,
+          ca.student_number,
+          aa.full_name as counselor_name,
+          aa.role as counselor_role
+        from public.counselor_appointments ca
+        left join public.admin_accounts aa on aa.id = ca.counselor_id
+        where ca.appointment_date between $1::date and $2::date
+        order by ca.appointment_date asc
+      `,
+      [startDate, endDate],
+    ),
+    query(
+      `
+        select
+          aa.id,
+          coalesce(nullif(aa.full_name, ''), split_part(aa.email, '@', 1)) as full_name,
+          coalesce(aa.role, 'COUNSELOR') as role
+        from public.admin_accounts aa
+        where aa.is_active = true
+          and coalesce(aa.role, 'COUNSELOR') in ('HEAD_COUNSELOR', 'COUNSELOR')
+        order by case when coalesce(aa.role, 'COUNSELOR') = 'HEAD_COUNSELOR' then 0 else 1 end, full_name asc
+      `,
+    ),
+  ]);
+
+  const totalStudents = Number(studentsResult.rows[0]?.total || 0);
+  const journalRows = journalRowsResult.rows || [];
+  const currentMonthJournalRows = currentMonthJournalRowsResult.rows || [];
+  const appointmentRows = appointmentsResult.rows || [];
+  const counselors = counselorsResult.rows || [];
+  const rangeDays = getDaysBetweenInclusive(startDate, endDate);
+  const previousStartDate = addDaysToIsoDate(startDate, -rangeDays);
+  const previousEndDate = addDaysToIsoDate(startDate, -1);
+
+  const [previousJournalCountResult, previousAppointmentCountResult] = await Promise.all([
+    query(
+      `
+        select count(*)::int as total
+        from public.journal_entries
+        where entry_date between $1::date and $2::date
+      `,
+      [previousStartDate, previousEndDate],
+    ),
+    query(
+      `
+        select count(*)::int as total
+        from public.counselor_appointments
+        where appointment_date between $1::date and $2::date
+          and status in ('CONFIRMED', 'COMPLETED')
+      `,
+      [previousStartDate, previousEndDate],
+    ),
+  ]);
+
+  const journalCount = journalRows.length;
+  const previousJournalCount = Number(previousJournalCountResult.rows[0]?.total || 0);
+  const activeStudents = new Set(
+    journalRows.map((row) => String(row.student_number || "").trim()).filter(Boolean),
+  ).size;
+  const previousActiveStudents = new Set(
+    (
+      await query(
+        `
+          select distinct student_number
+          from public.journal_entries
+          where entry_date between $1::date and $2::date
+        `,
+        [previousStartDate, previousEndDate],
+      )
+    ).rows.map((row) => String(row.student_number || "").trim()).filter(Boolean),
+  ).size;
+  const counselingSessions = appointmentRows.filter((row) =>
+    ["CONFIRMED", "COMPLETED"].includes(String(row.status || "").toUpperCase()),
+  ).length;
+  const previousCounselingSessions = Number(previousAppointmentCountResult.rows[0]?.total || 0);
+
+  const metricCards = {
+    totalStudents: {
+      label: "Total Students",
+      value: totalStudents,
+      ...buildDelta(totalStudents, Math.max(0, totalStudents - previousActiveStudents)),
+    },
+    activeInRange: {
+      label: rangeKey === "7d" ? "Active This Week" : rangeKey === "90d" ? "Active This Quarter" : "Active This Month",
+      value: activeStudents,
+      ...buildDelta(activeStudents, previousActiveStudents),
+    },
+    averageEntriesPerStudent: {
+      label: "Avg Entries/Student",
+      value: calculateAverageEntriesPerStudent(journalCount, totalStudents),
+      deltaValue:
+        calculateAverageEntriesPerStudent(journalCount, totalStudents) -
+        calculateAverageEntriesPerStudent(previousJournalCount, totalStudents),
+    },
+    counselingSessions: {
+      label: "Counseling Sessions",
+      value: counselingSessions,
+      ...buildDelta(counselingSessions, previousCounselingSessions),
+    },
+  };
+
+  const journalEntryVolume = buildCurrentMonthJournalSeries(currentMonthJournalRows, "entry_date");
+  const windowBuckets = buildWindowBuckets(startDate, endDate, rangeDays <= 30 ? 4 : 6);
+  const concernTotals = new Map();
+  const rowConcernTags = journalRows.map((row) => {
+    const normalizedTags = Array.isArray(row.concern_tags)
+      ? row.concern_tags.map((item) => normalizeConcernTheme(item)).filter(Boolean)
+      : [];
+    const fallbackConcern =
+      normalizeConcernTheme(row.primary_concern) ||
+      inferConcernThemeFromText([row.summary, row.admin_flag_reason].filter(Boolean).join(" "));
+    const tags = normalizedTags.length ? normalizedTags : fallbackConcern ? [fallbackConcern] : [];
+
+    for (const tag of tags) {
+      concernTotals.set(tag, (concernTotals.get(tag) || 0) + 1);
+    }
+
+    return {
+      entryDate: normalizeDateValue(row.entry_date),
+      tags,
+    };
+  });
+
+  const topConcernNames = [...concernTotals.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4)
+    .map(([label]) => label);
+
+  const concernSeriesMap = new Map(
+    topConcernNames.map((name) => [
+      name,
+      { key: name.toLowerCase().replace(/[^a-z]+/g, "-"), label: name, values: Array(windowBuckets.length).fill(0) },
+    ]),
+  );
+
+  for (const row of rowConcernTags) {
+    const bucketIndex = windowBuckets.findIndex((bucket) => row.entryDate >= bucket.startDate && row.entryDate <= bucket.endDate);
+    if (bucketIndex < 0) continue;
+
+    for (const tag of row.tags) {
+      if (!concernSeriesMap.has(tag)) continue;
+      concernSeriesMap.get(tag).values[bucketIndex] += 1;
+    }
+  }
+
+  const workloadCounts = appointmentRows.reduce((acc, row) => {
+    if (!["CONFIRMED", "COMPLETED"].includes(String(row.status || "").toUpperCase())) return acc;
+    const counselorName = normalizeCompactSpaces(row.counselor_name || "Unassigned");
+    if (!counselorName) return acc;
+    acc[counselorName] = (acc[counselorName] || 0) + 1;
+    return acc;
+  }, {});
+
+  const counselorWorkload = counselors.map((counselor) => ({
+    label: counselor.full_name,
+    role: toCounselorRoleLabel(counselor.role),
+    value: Number(workloadCounts[counselor.full_name] || 0),
+  }));
+
+  const weeklyBuckets = buildWindowBuckets(startDate, endDate, 4);
+  const highRiskSeries = Array(weeklyBuckets.length).fill(0);
+  const criticalRiskSeries = Array(weeklyBuckets.length).fill(0);
+
+  for (const row of journalRows) {
+    const riskLevel = String(row.risk_level || "").trim().toUpperCase();
+    const entryDate = normalizeDateValue(row.entry_date);
+    const bucketIndex = weeklyBuckets.findIndex((bucket) => entryDate >= bucket.startDate && entryDate <= bucket.endDate);
+    if (bucketIndex < 0) continue;
+
+    if (riskLevel === "CRITICAL") {
+      criticalRiskSeries[bucketIndex] += 1;
+    } else if (riskLevel === "HIGH") {
+      highRiskSeries[bucketIndex] += 1;
+    }
+  }
+
+  const resolutionRates = [
+    buildResolutionRate(journalRows, "Critical Cases", (row) => String(row.risk_level || "").toUpperCase() === "CRITICAL", 24, "emerald"),
+    buildResolutionRate(journalRows, "High Risk Cases", (row) => String(row.risk_level || "").toUpperCase() === "HIGH", 48, "emerald"),
+    buildResolutionRate(
+      journalRows,
+      "Medium Risk Cases",
+      (row) => ["MEDIUM", "MODERATE"].includes(String(row.risk_level || "").toUpperCase()),
+      120,
+      "amber",
+    ),
+  ];
+
+  return res.json({
+    filters: {
+      rangeKey,
+      startDate,
+      endDate,
+    },
+    cards: metricCards,
+    charts: {
+      journalEntryVolume,
+      concernTrends: {
+        labels: windowBuckets.map((bucket) => bucket.label),
+        series: [...concernSeriesMap.values()],
+      },
+      counselorWorkload,
+      atRiskStudentTrends: {
+        labels: weeklyBuckets.map((_, index) => `W${index + 1}`),
+        series: [
+          { key: "critical", label: "Critical", values: criticalRiskSeries },
+          { key: "high", label: "High Risk", values: highRiskSeries },
+        ],
+      },
+      resolutionRates,
+    },
+  });
+});
+
+router.get("/roles", async (_req, res) => {
+  const membersResult = await query(
+    `
+      select
+        aa.id,
+        aa.email,
+        coalesce(nullif(aa.full_name, ''), split_part(aa.email, '@', 1)) as full_name,
+        coalesce(aa.role, 'COUNSELOR') as role,
+        coalesce(aa.gender, 'Prefer not to say') as gender,
+        coalesce(aa.specialties, '[]'::jsonb) as specialties,
+        aa.is_active,
+        aa.created_at,
+        coalesce(stats.assigned_students, 0) as assigned_students
+      from public.admin_accounts aa
+      left join lateral (
+        select count(distinct ca.student_number)::int as assigned_students
+        from public.counselor_appointments ca
+        where ca.counselor_id = aa.id
+          and ca.status = 'CONFIRMED'
+      ) stats on true
+      where coalesce(aa.role, 'COUNSELOR') in ('HEAD_COUNSELOR', 'COUNSELOR')
+      order by case when coalesce(aa.role, 'COUNSELOR') = 'HEAD_COUNSELOR' then 0 else 1 end, full_name asc
+    `,
+  );
+
+  const members = membersResult.rows.map((row) => ({
+    id: row.id,
+    email: row.email,
+    fullName: row.full_name,
+    role: row.role,
+    roleLabel: toRoleManagementLabel(row.role),
+    department: row.role === "HEAD_COUNSELOR" ? "Administration" : "Counseling Office",
+    assignedStudents: Number(row.assigned_students || 0),
+    status: row.is_active ? "Active" : "Inactive",
+    isActive: Boolean(row.is_active),
+    gender: row.gender,
+    specialties: Array.isArray(row.specialties) ? row.specialties : [],
+    createdAt: row.created_at,
+  }));
+
+  return res.json({
+    members,
+    summary: {
+      superAdminCount: members.filter((item) => item.role === "HEAD_COUNSELOR" && item.isActive).length,
+      counselorCount: members.filter((item) => item.role === "COUNSELOR" && item.isActive).length,
+      peerAdvisorCount: 0,
+    },
+  });
+});
+
+router.get("/students", async (req, res) => {
+  const search = normalizeCompactSpaces(req.query.search || "");
+  const program = normalizeCompactSpaces(req.query.program || "");
+
+  const values = [];
+  const conditions = [];
+
+  if (search) {
+    values.push(`%${search}%`);
+    const searchIndex = values.length;
+    conditions.push(
+      `(coalesce(sp.full_name, '') ilike $${searchIndex} or sp.student_number ilike $${searchIndex} or coalesce(sp.program, '') ilike $${searchIndex})`,
+    );
+  }
+
+  if (program) {
+    values.push(program);
+    const programIndex = values.length;
+    conditions.push(`coalesce(sp.program, '') = $${programIndex}`);
+  }
+
+  const whereClause = conditions.length ? `where ${conditions.join(" and ")}` : "";
+  const result = await query(
+    `
+      select
+        sp.student_number,
+        coalesce(nullif(sp.full_name, ''), sp.student_number) as full_name,
+        coalesce(sp.email, '') as email,
+        coalesce(sp.program, '') as program,
+        coalesce(sp.region, '') as region,
+        coalesce(sp.province, '') as province,
+        coalesce(sp.city, '') as city,
+        coalesce(sp.barangay, '') as barangay,
+        coalesce(sp.street, '') as street,
+        sp.birthdate,
+        sp.created_at,
+        coalesce(stats.total_entries, 0) as total_entries,
+        stats.last_entry_at,
+        coalesce(stats.flagged_entries, 0) as flagged_entries
+      from public.student_profiles sp
+      left join lateral (
+        select
+          count(*)::int as total_entries,
+          max(je.created_at) as last_entry_at,
+          count(*) filter (
+            where upper(coalesce(je.risk_level, 'NONE')) in ('HIGH', 'CRITICAL')
+              or upper(coalesce(je.support_response, '')) = 'DECLINED'
+          )::int as flagged_entries
+        from public.journal_entries je
+        where je.student_number = sp.student_number
+          and je.deleted_by_student_at is null
+      ) stats on true
+      ${whereClause}
+      order by
+        case
+          when coalesce(stats.flagged_entries, 0) > 0 then 0
+          when coalesce(stats.total_entries, 0) = 0 then 2
+          else 1
+        end,
+        full_name asc
+    `,
+    values,
+  );
+
+  const students = result.rows.map((row) => ({
+    studentNumber: row.student_number,
+    fullName: row.full_name,
+    email: row.email,
+    program: normalizeDisplayLabel(row.program || "Unspecified"),
+    region: row.region || "",
+    province: row.province || "",
+    city: row.city || "",
+    barangay: row.barangay || "",
+    street: row.street || "",
+    birthdate: row.birthdate || null,
+    createdAt: row.created_at,
+    totalEntries: Number(row.total_entries || 0),
+    lastEntryAt: row.last_entry_at || null,
+    flaggedEntries: Number(row.flagged_entries || 0),
+    status: toStudentStatus(row),
+  }));
+
+  const programs = [...new Set(students.map((item) => item.program).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+
+  return res.json({ students, programs });
+});
+
+router.get("/students/:studentNumber", async (req, res) => {
+  const studentNumber = normalizeCompactSpaces(req.params.studentNumber || "");
+  if (!studentNumber) {
+    return res.status(400).json({ message: "Student number is required." });
+  }
+
+  const profileResult = await query(
+    `
+      select
+        sp.student_number,
+        coalesce(nullif(sp.full_name, ''), sp.student_number) as full_name,
+        coalesce(sp.email, '') as email,
+        coalesce(sp.program, '') as program,
+        coalesce(sp.region, '') as region,
+        coalesce(sp.province, '') as province,
+        coalesce(sp.city, '') as city,
+        coalesce(sp.barangay, '') as barangay,
+        coalesce(sp.street, '') as street,
+        sp.birthdate,
+        sp.created_at
+      from public.student_profiles sp
+      where sp.student_number = $1
+      limit 1
+    `,
+    [studentNumber],
+  );
+
+  if (profileResult.rowCount === 0) {
+    return res.status(404).json({ message: "Student profile not found." });
+  }
+
+  const entriesResult = await query(
+    `
+      select
+        je.id,
+        je.entry_date,
+        je.title,
+        je.summary,
+        je.insights,
+        je.risk_level,
+        je.admin_flag_reason,
+        je.primary_concern,
+        je.concern_tags,
+        je.support_response,
+        je.support_response_at,
+        je.created_at,
+        je.updated_at,
+        coalesce(
+          jsonb_agg(
+            jsonb_build_object(
+              'id', jem.id,
+              'role', jem.role,
+              'text', jem.message_text,
+              'createdAt', jem.created_at
+            )
+            order by jem.created_at asc, jem.id asc
+          ) filter (where jem.id is not null),
+          '[]'::jsonb
+        ) as messages
+      from public.journal_entries je
+      left join public.journal_entry_messages jem on jem.entry_id = je.id
+      where je.student_number = $1
+        and je.deleted_by_student_at is null
+      group by je.id
+      order by je.entry_date desc, je.created_at desc
+    `,
+    [studentNumber],
+  );
+
+  const entries = entriesResult.rows.map((row) => ({
+    id: row.id,
+    entryDate: normalizeDateValue(row.entry_date),
+    title: row.title || "",
+    summary: row.summary || "",
+    insights: normalizeStringArray(row.insights),
+    riskLevel: String(row.risk_level || "NONE"),
+    adminFlagReason: row.admin_flag_reason || null,
+    primaryConcern: row.primary_concern || null,
+    concernTags: normalizeStringArray(row.concern_tags),
+    supportResponse: row.support_response || null,
+    supportResponseAt: row.support_response_at || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    messages: Array.isArray(row.messages)
+      ? row.messages.map((message) => ({
+          id: message.id,
+          role: message.role,
+          text: message.text,
+          createdAt: message.createdAt,
+        }))
+      : [],
+  }));
+
+  const profile = profileResult.rows[0];
+  return res.json({
+    profile: {
+      studentNumber: profile.student_number,
+      fullName: profile.full_name,
+      email: profile.email,
+      program: normalizeDisplayLabel(profile.program || "Unspecified"),
+      region: profile.region || "",
+      province: profile.province || "",
+      city: profile.city || "",
+      barangay: profile.barangay || "",
+      street: profile.street || "",
+      birthdate: profile.birthdate || null,
+      createdAt: profile.created_at,
+      totalEntries: entries.length,
+      flaggedEntries: entries.filter((entry) => ["HIGH", "CRITICAL"].includes(String(entry.riskLevel || "").toUpperCase())).length,
+      status: toStudentStatus({
+        total_entries: entries.length,
+        flagged_entries: entries.filter((entry) => ["HIGH", "CRITICAL"].includes(String(entry.riskLevel || "").toUpperCase())).length,
+      }),
+    },
+    entries,
+  });
+});
+
+router.get("/settings", async (req, res) => {
+  const email = normalizeEmail(req.query.email || "");
+  if (!email) {
+    return res.status(400).json({ message: "Admin email is required." });
+  }
+
+  const result = await query(
+    `
+      select
+        id,
+        email,
+        coalesce(nullif(full_name, ''), split_part(email, '@', 1)) as full_name,
+        coalesce(role, 'COUNSELOR') as role,
+        coalesce(gender, 'Prefer not to say') as gender,
+        coalesce(profile_picture_url, '') as profile_picture_url,
+        coalesce(specialties, '[]'::jsonb) as specialties,
+        coalesce(settings, '{}'::jsonb) as settings,
+        is_active,
+        created_at,
+        updated_at
+      from public.admin_accounts
+      where email = $1
+      limit 1
+    `,
+    [email],
+  );
+
+  if (result.rowCount === 0) {
+    return res.status(404).json({ message: "Admin account not found." });
+  }
+
+  const admin = result.rows[0];
+  const settings = normalizeAdminSettings(admin.settings);
+
+  return res.json({
+    profile: {
+      id: admin.id,
+      email: admin.email,
+      fullName: admin.full_name,
+      role: admin.role,
+      roleLabel: toCounselorRoleLabel(admin.role),
+      gender: admin.gender,
+      profilePictureUrl: admin.profile_picture_url,
+      specialties: Array.isArray(admin.specialties) ? admin.specialties : [],
+      isActive: Boolean(admin.is_active),
+      createdAt: admin.created_at,
+      updatedAt: admin.updated_at,
+    },
+    preferences: settings,
+  });
+});
+
+router.patch("/settings", async (req, res) => {
+  const email = normalizeEmail(req.body.email || "");
+  const fullName = normalizeCompactSpaces(req.body.fullName || "");
+  const gender = normalizeCompactSpaces(req.body.gender || "Prefer not to say");
+  const profilePictureUrl = normalizeCompactSpaces(req.body.profilePictureUrl || "");
+  const specialties = normalizeSpecialties(req.body.specialties);
+  const preferences = normalizeAdminSettings(req.body.preferences);
+
+  if (!email) {
+    return res.status(400).json({ message: "Admin email is required." });
+  }
+  if (!fullName) {
+    return res.status(400).json({ message: "Full name is required." });
+  }
+  if (!["Male", "Female", "Prefer not to say"].includes(gender)) {
+    return res.status(400).json({ message: "Invalid gender value." });
+  }
+
+  const existing = await query(
+    `
+      select id, email, coalesce(role, 'COUNSELOR') as role, is_active
+      from public.admin_accounts
+      where email = $1
+      limit 1
+    `,
+    [email],
+  );
+
+  if (existing.rowCount === 0) {
+    return res.status(404).json({ message: "Admin account not found." });
+  }
+
+  const updated = await query(
+    `
+      update public.admin_accounts
+      set
+        full_name = $2,
+        gender = $3,
+        profile_picture_url = $4,
+        specialties = $5::jsonb,
+        settings = $6::jsonb,
+        updated_at = now()
+      where email = $1
+      returning
+        id,
+        email,
+        coalesce(nullif(full_name, ''), split_part(email, '@', 1)) as full_name,
+        coalesce(role, 'COUNSELOR') as role,
+        coalesce(gender, 'Prefer not to say') as gender,
+        coalesce(profile_picture_url, '') as profile_picture_url,
+        coalesce(specialties, '[]'::jsonb) as specialties,
+        coalesce(settings, '{}'::jsonb) as settings,
+        is_active,
+        created_at,
+        updated_at
+    `,
+    [
+      email,
+      fullName,
+      gender,
+      profilePictureUrl || null,
+      JSON.stringify(specialties),
+      JSON.stringify(preferences),
+    ],
+  );
+
+  const admin = updated.rows[0];
+  await writeAdminActivityLog({
+    actionType: "ADMIN_SETTINGS_UPDATED",
+    actorEmail: admin.email,
+    actorName: admin.full_name,
+    actorRole: toCounselorRoleLabel(admin.role),
+    entityType: "SETTINGS",
+    title: `${admin.full_name} updated system settings`,
+    description: "Admin account profile and preference settings were updated.",
+    metadata: {
+      specialtiesCount: specialties.length,
+      notifications: preferences.notifications,
+      appearance: preferences.appearance,
+      privacy: preferences.privacy,
+    },
+  });
+
+  return res.json({
+    message: "Settings saved successfully.",
+    profile: {
+      id: admin.id,
+      email: admin.email,
+      fullName: admin.full_name,
+      role: admin.role,
+      roleLabel: toCounselorRoleLabel(admin.role),
+      gender: admin.gender,
+      profilePictureUrl: admin.profile_picture_url,
+      specialties: Array.isArray(admin.specialties) ? admin.specialties : [],
+      isActive: Boolean(admin.is_active),
+      createdAt: admin.created_at,
+      updatedAt: admin.updated_at,
+    },
+    preferences: normalizeAdminSettings(admin.settings),
+  });
+});
+
+router.post("/roles", async (req, res) => {
+  const email = normalizeEmail(req.body.email || "");
+  const fullName = normalizeCompactSpaces(req.body.fullName || "");
+  const gender = normalizeCompactSpaces(req.body.gender || "Prefer not to say");
+  const role = String(req.body.role || "COUNSELOR").trim().toUpperCase();
+
+  if (!email || !EMAIL_PATTERN.test(email)) {
+    return res.status(400).json({ message: "A valid email is required." });
+  }
+  if (!fullName) {
+    return res.status(400).json({ message: "Full name is required." });
+  }
+  if (!["HEAD_COUNSELOR", "COUNSELOR"].includes(role)) {
+    return res.status(400).json({ message: "Selected role is not available yet." });
+  }
+  if (!["Male", "Female", "Prefer not to say"].includes(gender)) {
+    return res.status(400).json({ message: "Invalid gender value." });
+  }
+
+  const existing = await query("select id from public.admin_accounts where email = $1 limit 1", [email]);
+  if (existing.rowCount > 0) {
+    return res.status(409).json({ message: "That email is already registered." });
+  }
+
+  const temporaryPassword = generateTemporaryPassword();
+  const insertResult = await query(
+    `
+      insert into public.admin_accounts (
+        email,
+        password_hash,
+        full_name,
+        role,
+        gender,
+        is_active
+      )
+      values ($1, $2, $3, $4, $5, true)
+      returning id, email, full_name, role, gender, is_active, created_at
+    `,
+    [email, hashPassword(temporaryPassword), fullName, role, gender],
+  );
+
+  const member = insertResult.rows[0];
+  await writeAdminActivityLog({
+    actionType: "ROLE_MEMBER_CREATED",
+    actorEmail: email,
+    actorName: fullName,
+    actorRole: toRoleManagementLabel(role),
+    entityType: "ROLE_ASSIGNMENT",
+    title: `${fullName} added to the counseling team`,
+    description: `${fullName} was added as ${toRoleManagementLabel(role)}.`,
+    metadata: {
+      memberId: member.id,
+      role,
+    },
+  });
+
+  return res.status(201).json({
+    message: "Team member created.",
+    temporaryPassword,
+    member: {
+      id: member.id,
+      email: member.email,
+      fullName: member.full_name,
+      role: member.role,
+      roleLabel: toRoleManagementLabel(member.role),
+      department: member.role === "HEAD_COUNSELOR" ? "Administration" : "Counseling Office",
+      assignedStudents: 0,
+      status: "Active",
+      isActive: true,
+      gender: member.gender,
+      specialties: [],
+      createdAt: member.created_at,
+    },
+  });
+});
+
+router.patch("/roles/:memberId", async (req, res) => {
+  const memberId = String(req.params.memberId || "").trim();
+  const fullName = normalizeCompactSpaces(req.body.fullName || "");
+  const gender = normalizeCompactSpaces(req.body.gender || "Prefer not to say");
+  const role = String(req.body.role || "").trim().toUpperCase();
+  const isActive = typeof req.body.isActive === "boolean" ? req.body.isActive : null;
+
+  if (!memberId) {
+    return res.status(400).json({ message: "Member id is required." });
+  }
+  if (!fullName) {
+    return res.status(400).json({ message: "Full name is required." });
+  }
+  if (!["HEAD_COUNSELOR", "COUNSELOR"].includes(role)) {
+    return res.status(400).json({ message: "Selected role is not available yet." });
+  }
+  if (!["Male", "Female", "Prefer not to say"].includes(gender)) {
+    return res.status(400).json({ message: "Invalid gender value." });
+  }
+  if (isActive === null) {
+    return res.status(400).json({ message: "Active status is required." });
+  }
+
+  const existing = await query(
+    `
+      select id, email
+      from public.admin_accounts
+      where id = $1::uuid
+      limit 1
+    `,
+    [memberId],
+  );
+  if (existing.rowCount === 0) {
+    return res.status(404).json({ message: "Member not found." });
+  }
+
+  const updateResult = await query(
+    `
+      update public.admin_accounts
+      set
+        full_name = $2,
+        role = $3,
+        gender = $4,
+        is_active = $5,
+        updated_at = now()
+      where id = $1::uuid
+      returning id, email, full_name, role, gender, is_active, created_at
+    `,
+    [memberId, fullName, role, gender, isActive],
+  );
+
+  const member = updateResult.rows[0];
+  await writeAdminActivityLog({
+    actionType: "ROLE_MEMBER_UPDATED",
+    actorEmail: member.email,
+    actorName: member.full_name,
+    actorRole: toRoleManagementLabel(member.role),
+    entityType: "ROLE_ASSIGNMENT",
+    title: `${member.full_name} role details updated`,
+    description: `${member.full_name} is now ${toRoleManagementLabel(member.role)} and marked ${member.is_active ? "active" : "inactive"}.`,
+    metadata: {
+      memberId: member.id,
+      role: member.role,
+      isActive: member.is_active,
+    },
+  });
+
+  return res.json({
+    message: "Member updated.",
+    member: {
+      id: member.id,
+      email: member.email,
+      fullName: member.full_name,
+      role: member.role,
+      roleLabel: toRoleManagementLabel(member.role),
+      department: member.role === "HEAD_COUNSELOR" ? "Administration" : "Counseling Office",
+      status: member.is_active ? "Active" : "Inactive",
+      isActive: Boolean(member.is_active),
+      gender: member.gender,
+      createdAt: member.created_at,
+    },
+  });
+});
+
+router.delete("/roles/:memberId", async (req, res) => {
+  const memberId = String(req.params.memberId || "").trim();
+  if (!memberId) {
+    return res.status(400).json({ message: "Member id is required." });
+  }
+
+  const existing = await query(
+    `
+      select id, email, coalesce(nullif(full_name, ''), split_part(email, '@', 1)) as full_name, coalesce(role, 'COUNSELOR') as role
+      from public.admin_accounts
+      where id = $1::uuid
+      limit 1
+    `,
+    [memberId],
+  );
+  if (existing.rowCount === 0) {
+    return res.status(404).json({ message: "Member not found." });
+  }
+
+  const member = existing.rows[0];
+  await query(
+    `
+      update public.admin_accounts
+      set is_active = false, updated_at = now()
+      where id = $1::uuid
+    `,
+    [memberId],
+  );
+
+  await writeAdminActivityLog({
+    actionType: "ROLE_MEMBER_DEACTIVATED",
+    actorEmail: member.email,
+    actorName: member.full_name,
+    actorRole: toRoleManagementLabel(member.role),
+    entityType: "ROLE_ASSIGNMENT",
+    title: `${member.full_name} removed from active team`,
+    description: `${member.full_name} was marked inactive from role assignments.`,
+    metadata: {
+      memberId,
+      role: member.role,
+    },
+  });
+
+  return res.json({ message: "Member removed from active team." });
 });
 
 router.get("/appointments/google/auth-url", (req, res) => {

@@ -24,6 +24,15 @@ function normalizeEmail(value) {
   return normalizeCompactSpaces(value).toLowerCase();
 }
 
+function toTitleCase(value) {
+  return normalizeCompactSpaces(value)
+    .toLowerCase()
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 function normalizeStudentNumber(value) {
   const compact = normalizeCompactSpaces(value).replace(/\s+/g, "");
   const match = compact.match(/^(\d{2})[- ]?(\d{4})$/);
@@ -88,6 +97,43 @@ function clearResetSession(studentNumber) {
   resetPasswordSessions.delete(studentNumber);
 }
 
+async function deleteStaleAuthUsersByEmail(email) {
+  let page = 1;
+  let removedAny = false;
+
+  while (true) {
+    const { data, error } = await supabaseAdminClient.auth.admin.listUsers({
+      page,
+      perPage: 200,
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    const users = data?.users || [];
+    const matchingUsers = users.filter(
+      (user) => normalizeEmail(user.email || "") === email,
+    );
+
+    for (const user of matchingUsers) {
+      const { error: deleteError } = await supabaseAdminClient.auth.admin.deleteUser(user.id);
+      if (deleteError) {
+        throw deleteError;
+      }
+      removedAny = true;
+    }
+
+    if (users.length < 200) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return removedAny;
+}
+
 router.post("/login", async (req, res) => {
   const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
   const password = String(req.body.password || "").trim();
@@ -119,7 +165,7 @@ router.post("/login", async (req, res) => {
 
   const { data, error } = await supabaseAdminClient
     .from("student_profiles")
-    .select("student_number, password_hash, birthdate, is_email_verified, is_id_verified")
+    .select("student_number, full_name, email, password_hash, birthdate, is_email_verified, is_id_verified")
     .eq("student_number", studentNumber)
     .maybeSingle();
 
@@ -146,7 +192,18 @@ router.post("/login", async (req, res) => {
   }
 
   loginAttempts.delete(loginKey);
-  return res.json({ message: "Login successful." });
+  const fullName = toTitleCase(data.full_name || "");
+  const firstName = fullName.split(" ").filter(Boolean)[0] || "User";
+
+  return res.json({
+    message: "Login successful.",
+    user: {
+      studentNumber: data.student_number,
+      fullName,
+      firstName,
+      email: normalizeEmail(data.email || ""),
+    },
+  });
 });
 
 router.post("/send-otp", async (req, res) => {
@@ -170,6 +227,14 @@ router.post("/send-otp", async (req, res) => {
   if (existingProfile) {
     return res.status(409).json({
       message: "This email is already registered. Please log in instead.",
+    });
+  }
+
+  try {
+    await deleteStaleAuthUsersByEmail(email);
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message || "Unable to prepare email verification.",
     });
   }
 
