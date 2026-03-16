@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Animated, Easing, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Animated, Easing, Image, ImageSourcePropType, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
@@ -20,8 +20,8 @@ import { getManilaTodayParts } from "../lib/manila-date";
 
 type MoodItem = {
   color: string;
-  emoji: string;
   id: string;
+  image: ImageSourcePropType;
   label: string;
 };
 
@@ -39,12 +39,12 @@ type SupportCardItem = {
 };
 
 const MOODS: MoodItem[] = [
-  { color: "#FFD616", emoji: "\uD83D\uDE42", id: "happy", label: "Happy" },
-  { color: "#97CFDA", emoji: "\uD83D\uDE0C", id: "calm", label: "Calm" },
-  { color: "#7EA9D9", emoji: "\uD83D\uDE22", id: "sad", label: "Sad" },
-  { color: "#F19137", emoji: "\uD83D\uDE23", id: "stressed", label: "Stressed" },
-  { color: "#E86686", emoji: "\uD83D\uDE21", id: "angry", label: "Angry" },
-  { color: "#B895C8", emoji: "\uD83D\uDE30", id: "anxious", label: "Anxious" },
+  { color: "#FFD616", id: "happy", image: require("../assets/images/Moods/happy.gif"), label: "Happy" },
+  { color: "#97CFDA", id: "calm", image: require("../assets/images/Moods/calm.gif"), label: "Calm" },
+  { color: "#7EA9D9", id: "sad", image: require("../assets/images/Moods/sad.gif"), label: "Sad" },
+  { color: "#F19137", id: "stressed", image: require("../assets/images/Moods/stressed.gif"), label: "Stressed" },
+  { color: "#E86686", id: "angry", image: require("../assets/images/Moods/angry.gif"), label: "Angry" },
+  { color: "#B895C8", id: "anxious", image: require("../assets/images/Moods/anxious.gif"), label: "Anxious" },
 ];
 
 const DAILY_CHECKIN_REWARDS: DailyCheckinReward[] = [
@@ -93,9 +93,8 @@ const SUPPORT_CARDS: SupportCardItem[] = [
   },
 ];
 
-const TALA_IMAGE = require("../assets/images/tala_sample.png");
-const PET_AWAKE_IMAGE = require("../assets/images/pet-awake_sample.png");
-const PET_IDLE_IMAGE = require("../assets/images/pet-idle_sample.png");
+const TALA_IMAGE = require("../assets/images/Tala_Star.png");
+const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
 
 export default function HomeScreen() {
   const { user } = useAuthSession();
@@ -492,7 +491,7 @@ export default function HomeScreen() {
 
         <View style={styles.moodCard}>
           <View style={styles.moodHeaderRow}>
-            <Image source={PET_AWAKE_IMAGE} style={styles.moodPetArt} resizeMode="contain" />
+            <Image source={MUNI_IMAGE} style={styles.moodPetArt} resizeMode="contain" />
             <View style={styles.moodHeaderTextWrap}>
               <Text style={styles.moodHeading}>How are you feeling?</Text>
               <Text style={styles.moodSubHeading}>Track your mood to understand patterns</Text>
@@ -512,7 +511,6 @@ export default function HomeScreen() {
                   <Animated.View
                     style={[
                       styles.moodFace,
-                      { backgroundColor: mood.color },
                       selectedMoodId === mood.id && styles.moodFaceActive,
                       {
                         transform: [
@@ -527,7 +525,7 @@ export default function HomeScreen() {
                       },
                     ]}
                   >
-                    <Text style={styles.moodEmoji}>{mood.emoji}</Text>
+                    <Image source={mood.image} style={styles.moodIcon} resizeMode="contain" />
                   </Animated.View>
                 </Pressable>
                 <Text style={[styles.moodLabel, selectedMoodId === mood.id && styles.moodLabelActive]} numberOfLines={1}>
@@ -638,7 +636,7 @@ export default function HomeScreen() {
                   }
                 }}
               >
-                <Image source={PET_IDLE_IMAGE} style={styles.supportPetIcon} resizeMode="contain" />
+                <Image source={MUNI_IMAGE} style={styles.supportPetIcon} resizeMode="contain" />
                 <Text style={styles.supportTitle}>{card.title}</Text>
                 <Text style={styles.supportDescription}>{card.description}</Text>
               </Pressable>
@@ -1059,9 +1057,10 @@ const styles = StyleSheet.create({
     opacity: 0.42,
   },
   moodFace: {
-    width: 50,
-    height: 50,
+    width: 54,
+    height: 54,
     borderRadius: 14,
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 4,
@@ -1072,9 +1071,9 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#2F6F25",
   },
-  moodEmoji: {
-    fontSize: 30,
-    lineHeight: 34,
+  moodIcon: {
+    width: 42,
+    height: 42,
   },
   moodLabel: {
     color: "#4A4A4A",

@@ -7,7 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { fetchJournalEntryById, JournalEntry, JournalMessage } from "../lib/backend-api";
 import { useAuthSession } from "../lib/auth-session";
 
-const LUMI_IMAGE = require("../assets/images/pet_sample.png");
+const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
 const NOTEBOOK_RINGS = Array.from({ length: 12 }, (_, index) => index);
 const PAPER_RULES = Array.from({ length: 24 }, (_, index) => index);
 
@@ -155,11 +155,11 @@ export default function JournalEntryViewScreen() {
 
               <View style={styles.footnoteWrap}>
                 <Text style={styles.footnoteText}>
-                  Read-only journal view. This entry was created with Lumi and can no longer be edited.
+                  Read-only journal view. This entry was created with Muni and can no longer be edited.
                 </Text>
 
-                <View style={styles.lumiBadge}>
-                  <Image source={LUMI_IMAGE} style={styles.lumiBadgeImage} resizeMode="contain" />
+                <View style={styles.muniBadge}>
+                  <Image source={MUNI_IMAGE} style={styles.muniBadgeImage} resizeMode="contain" />
                 </View>
               </View>
             </View>
@@ -388,7 +388,7 @@ const styles = StyleSheet.create({
     lineHeight: 12,
     textAlign: "center",
   },
-  lumiBadge: {
+  muniBadge: {
     position: "absolute",
     right: 1,
     bottom: 1,
@@ -401,7 +401,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  lumiBadgeImage: {
+  muniBadgeImage: {
     width: 24,
     height: 24,
   },
@@ -464,3 +464,5 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
 });
+
+

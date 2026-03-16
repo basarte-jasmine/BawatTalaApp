@@ -19,7 +19,7 @@ type WeekDayItem = {
   label: string;
 };
 
-const PET_IMAGE = require("../assets/images/pet_sample.png");
+const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
 const BOOK_IMAGE = require("../assets/images/book_sample.png");
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
@@ -201,11 +201,11 @@ export default function JournalScreen() {
 
             <View style={[styles.reflectionFooterRow, compact && styles.reflectionFooterRowCompact]}>
               <View style={[styles.companionWrap, compact && styles.companionWrapCompact]}>
-                <Image source={PET_IMAGE} style={[styles.companionImage, compact && styles.companionImageCompact]} resizeMode="contain" />
+                <Image source={MUNI_IMAGE} style={[styles.companionImage, compact && styles.companionImageCompact]} resizeMode="contain" />
               </View>
 
               <Text style={[styles.reflectionFootnote, compact && styles.reflectionFootnoteCompact]} numberOfLines={3}>
-                Insights by Lumi, your virtual companion. Bawat Tala is not a substitute for professional mental health
+                Insights by Muni, your virtual companion. Bawat Tala is not a substitute for professional mental health
                 care.
               </Text>
             </View>
@@ -612,3 +612,4 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 });
+

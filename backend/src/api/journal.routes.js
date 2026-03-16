@@ -283,12 +283,40 @@ async function removeOrSoftDeleteEntry({ studentNumber, entryId, requireOpen }) 
   };
 }
 
+async function cleanupStaleEmptyDrafts(studentNumber) {
+  if (!studentNumber) {
+    return 0;
+  }
+
+  const result = await query(
+    `
+      delete from public.journal_entries je
+      where je.student_number = $1
+        and je.is_finished = false
+        and je.deleted_by_student_at is null
+        and not exists (
+          select 1
+          from public.journal_entry_messages jem
+          where jem.entry_id = je.id
+            and jem.role = 'user'
+            and btrim(coalesce(jem.message_text, '')) <> ''
+        )
+      returning je.id
+    `,
+    [studentNumber],
+  );
+
+  return result.rowCount || 0;
+}
+
 router.get("/entries/recent", asyncHandler(async (req, res) => {
   const studentNumber = normalizeStudentNumber(req.query.studentNumber);
   const windowDays = Math.max(1, Math.min(30, Number(req.query.windowDays || 20)));
   if (!studentNumber) {
     return res.status(400).json({ message: "Student number is required." });
   }
+
+  await cleanupStaleEmptyDrafts(studentNumber);
 
   const today = getManilaDateParts();
   const monthStart = `${today.year}-${String(today.month).padStart(2, "0")}-01`;
@@ -320,6 +348,7 @@ router.get("/entries/recent", asyncHandler(async (req, res) => {
         ) last_user on true
         where je.student_number = $1
           and je.entry_date >= $2::date
+          and je.is_finished = true
           and je.deleted_by_student_at is null
         order by je.entry_date desc, je.created_at desc
         limit 100
@@ -329,11 +358,12 @@ router.get("/entries/recent", asyncHandler(async (req, res) => {
     query(
       `
         select
-          count(*) filter (where entry_date = $2)::int as today_count,
-          count(*) filter (where entry_date >= $3 and entry_date < $4)::int as monthly_count,
+          count(*) filter (where is_finished = true and entry_date = $2)::int as today_count,
+          count(*) filter (where is_finished = true and entry_date >= $3 and entry_date < $4)::int as monthly_count,
           count(*)::int as total_count
         from public.journal_entries
         where student_number = $1
+          and is_finished = true
           and deleted_by_student_at is null
       `,
       [studentNumber, today.isoDate, monthStart, nextMonthStart],
@@ -371,6 +401,8 @@ router.get("/entries/by-date", asyncHandler(async (req, res) => {
     return res.status(400).json({ message: "Date is required." });
   }
 
+  await cleanupStaleEmptyDrafts(studentNumber);
+
   const result = await query(
     `
       select je.id, je.entry_date, je.created_at, je.summary, je.title, je.insights, je.is_finished,
@@ -385,6 +417,7 @@ router.get("/entries/by-date", asyncHandler(async (req, res) => {
       ) last_user on true
       where je.student_number = $1
         and je.entry_date = $2::date
+        and je.is_finished = true
         and je.deleted_by_student_at is null
       order by je.created_at desc
     `,
@@ -417,6 +450,8 @@ router.get("/entries/calendar", asyncHandler(async (req, res) => {
     return res.status(400).json({ message: "Year is required." });
   }
 
+  await cleanupStaleEmptyDrafts(studentNumber);
+
   const result = await query(
     `
       select
@@ -424,7 +459,10 @@ router.get("/entries/calendar", asyncHandler(async (req, res) => {
         extract(day from entry_date)::int as day_number,
         count(*)::int as entry_count
       from public.journal_entries
-      where student_number = $1 and extract(year from entry_date) = $2 and deleted_by_student_at is null
+      where student_number = $1
+        and extract(year from entry_date) = $2
+        and is_finished = true
+        and deleted_by_student_at is null
       group by extract(month from entry_date), extract(day from entry_date)
       order by month_index asc, day_number asc
     `,
@@ -453,6 +491,8 @@ router.get("/session/today", asyncHandler(async (req, res) => {
   if (!studentNumber) {
     return res.status(400).json({ message: "Student number is required." });
   }
+
+  await cleanupStaleEmptyDrafts(studentNumber);
 
   const today = getManilaDateParts().isoDate;
   const entry = await getOpenEntryByStudentAndDate(studentNumber, today);
@@ -532,6 +572,8 @@ router.post("/session/create", asyncHandler(async (req, res) => {
   if (!studentNumber) {
     return res.status(400).json({ message: "Student number is required." });
   }
+
+  await cleanupStaleEmptyDrafts(studentNumber);
 
   const today = getManilaDateParts().isoDate;
   const existingEntry = forceNew ? null : await getOpenEntryByStudentAndDate(studentNumber, today);

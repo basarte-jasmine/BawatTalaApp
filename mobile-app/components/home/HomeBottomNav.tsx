@@ -2,21 +2,21 @@ import { router, usePathname } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
-type TabKey = "home" | "journal" | "lumi" | "profile";
+type TabKey = "home" | "journal" | "muni" | "profile";
 
 type NavItem = {
   iconActive: string;
   iconInactive: string;
   label: string;
   key: TabKey;
-  route?: "/home" | "/journal" | "/profile" | "/consult" | "/lumi-avatar";
+  route?: "/home" | "/journal" | "/profile" | "/consult" | "/muni-avatar";
 };
 
 const NAV_ITEMS: NavItem[] = [
   { key: "home", iconActive: "home", iconInactive: "home-outline", label: "Home", route: "/home" },
   { key: "journal", iconActive: "book", iconInactive: "book-outline", label: "Journal", route: "/journal" },
   { key: "profile", iconActive: "people", iconInactive: "people-outline", label: "Consult", route: "/consult" },
-  { key: "lumi", iconActive: "chatbox-ellipses", iconInactive: "chatbox-ellipses-outline", label: "Lumi", route: "/lumi-avatar" },
+  { key: "muni", iconActive: "chatbox-ellipses", iconInactive: "chatbox-ellipses-outline", label: "Muni", route: "/muni-avatar" },
 ];
 
 const MICROPHONE_IMAGE = require("../../assets/images/microphone_sample.png");
@@ -31,8 +31,8 @@ export function HomeBottomNav({ activeTab }: HomeBottomNavProps) {
     activeTab ??
     (pathname.startsWith("/journal")
       ? "journal"
-      : pathname.startsWith("/lumi-avatar")
-        ? "lumi"
+      : pathname.startsWith("/muni-avatar")
+        ? "muni"
       : pathname.startsWith("/consult")
         ? "profile"
       : pathname.startsWith("/home")
@@ -142,3 +142,5 @@ const styles = StyleSheet.create({
     height: 28,
   },
 });
+
+

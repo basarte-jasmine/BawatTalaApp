@@ -1,31 +1,32 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import * as Haptics from "expo-haptics";
 import { useFocusEffect } from "@react-navigation/native";
-import { useCallback, useState } from "react";
+import { router } from "expo-router";
+import { useCallback, useEffect, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { useAuthSession } from "../lib/auth-session";
 import { fetchCheckInStatus } from "../lib/backend-api";
+import {
+  areMuniLoadoutsEqual,
+  COLLECTION_SECTIONS,
+  getEyeAccessoryStyle,
+  getHeadAccessoryStyle,
+  getMuniCollectionSource,
+  getSavedMuniLoadout,
+  MUNI_IMAGE,
+  MuniLoadout,
+  saveMuniLoadout,
+  TALA_IMAGE,
+  useSavedMuniLoadout,
+} from "../lib/muni-wardrobe";
 
-type CollectionSection = {
-  id: string;
-  label: string;
-  selectedIndexes?: number[];
-};
-
-const COLLECTION_SECTIONS: CollectionSection[] = [
-  { id: "background", label: "Background", selectedIndexes: [0, 1] },
-  { id: "face", label: "Face" },
-  { id: "outfit", label: "Outfit" },
-];
-
-const TALA_IMAGE = require("../assets/images/tala_sample.png");
-const LUMI_IMAGE = require("../assets/images/pet_sample.png");
-
-export default function LumiAvatarScreen() {
+export default function MuniAvatarScreen() {
   const { user } = useAuthSession();
   const [totalTala, setTotalTala] = useState(0);
+  const savedItems = useSavedMuniLoadout();
+  const [equippedItems, setEquippedItems] = useState<MuniLoadout>(() => getSavedMuniLoadout());
 
   const loadTotalTala = useCallback(async () => {
     if (!user?.studentNumber) {
@@ -53,6 +54,22 @@ export default function LumiAvatarScreen() {
     router.replace("/home");
   };
 
+  useEffect(() => {
+    setEquippedItems(savedItems);
+  }, [savedItems]);
+
+  const equippedBackgroundSource = getMuniCollectionSource("background", equippedItems.background);
+  const equippedHeadSource = getMuniCollectionSource("head", equippedItems.head);
+  const equippedEyeSource = getMuniCollectionSource("eye", equippedItems.eye);
+  const equippedOutfitSource = getMuniCollectionSource("outfit", equippedItems.outfit);
+  const equippedHeadStyle = getHeadAccessoryStyle(equippedItems.head);
+  const equippedEyeStyle = getEyeAccessoryStyle(equippedItems.eye);
+  const hasUnsavedChanges = !areMuniLoadoutsEqual(equippedItems, savedItems);
+
+  const handleSaveLoadout = useCallback(() => {
+    saveMuniLoadout(equippedItems);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+  }, [equippedItems]);
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <View style={styles.topBar}>
@@ -63,30 +80,78 @@ export default function LumiAvatarScreen() {
         <View style={styles.topBarSpacer} />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <View style={styles.previewSection}>
         <View style={styles.heroCard}>
+          {equippedBackgroundSource ? (
+            <View style={styles.heroBackgroundFrame}>
+              <Image source={equippedBackgroundSource} style={styles.heroBackgroundImage} resizeMode="cover" />
+            </View>
+          ) : null}
+          <View style={styles.heroOverlay} />
+
           <View style={styles.talaPill}>
             <Image source={TALA_IMAGE} style={styles.talaIcon} resizeMode="contain" />
             <Text style={styles.talaText}>{totalTala.toLocaleString("en-US")}</Text>
           </View>
 
-          <View style={styles.circleBadge} />
+          <Pressable
+            style={[styles.circleBadge, hasUnsavedChanges && styles.circleBadgeActive]}
+            accessibilityLabel="Save outfit"
+            onPress={handleSaveLoadout}
+          >
+            <Ionicons name="checkmark" size={24} color="#FFFFFF" />
+          </Pressable>
 
-          <Image source={LUMI_IMAGE} style={styles.lumiImage} resizeMode="contain" />
+          <View style={styles.muniPreviewWrap}>
+            <Image source={MUNI_IMAGE} style={styles.muniBaseImage} resizeMode="contain" />
+            {equippedOutfitSource ? (
+              <Image source={equippedOutfitSource} style={styles.muniAccessoryImage} resizeMode="contain" />
+            ) : null}
+            {equippedEyeSource ? (
+              <Image
+                source={equippedEyeSource}
+                style={[styles.muniAccessoryImage, equippedEyeStyle]}
+                resizeMode="contain"
+              />
+            ) : null}
+            {equippedHeadSource ? (
+              <Image
+                source={equippedHeadSource}
+                style={[styles.muniAccessoryImage, equippedHeadStyle]}
+                resizeMode="contain"
+              />
+            ) : null}
+          </View>
         </View>
 
         <View style={styles.collectionBadgeWrap}>
           <Text style={styles.collectionBadge}>Your Collection</Text>
         </View>
+      </View>
 
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {COLLECTION_SECTIONS.map((section) => (
           <View key={section.id} style={styles.sectionBlock}>
             <Text style={styles.sectionTitle}>{section.label}</Text>
             <View style={styles.optionRow}>
-              {[0, 1, 2, 3].map((index) => {
-                const selected = section.selectedIndexes?.includes(index);
+              {section.options.map((option) => {
+                const selected = equippedItems[section.id] === option.id;
                 return (
-                  <Pressable key={`${section.id}-${index}`} style={[styles.optionCard, selected && styles.optionCardSelected]}>
+                  <Pressable
+                    key={option.id}
+                    style={[styles.optionCard, selected && styles.optionCardSelected]}
+                    onPress={() =>
+                      setEquippedItems((current) => ({
+                        ...current,
+                        [section.id]: option.id,
+                      } as MuniLoadout))
+                    }
+                  >
+                    <Image
+                      source={option.source}
+                      style={section.id === "background" ? styles.backgroundOptionImage : styles.optionImage}
+                      resizeMode="contain"
+                    />
                     {selected ? (
                       <View style={styles.checkBadge}>
                         <Ionicons name="checkmark" size={16} color="#FFFFFF" />
@@ -100,7 +165,7 @@ export default function LumiAvatarScreen() {
         ))}
       </ScrollView>
 
-      <HomeBottomNav activeTab="lumi" />
+      <HomeBottomNav activeTab="muni" />
     </SafeAreaView>
   );
 }
@@ -147,15 +212,39 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 96,
   },
+  previewSection: {
+    backgroundColor: "#FFFFFF",
+  },
   heroCard: {
     height: 260,
-    backgroundColor: "#B9E19F",
+    backgroundColor: "#FFFFFF",
     borderBottomWidth: 3,
     borderBottomColor: "#7B5A4C",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 12,
     position: "relative",
+    overflow: "hidden",
+  },
+  heroBackgroundFrame: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 0,
+    overflow: "hidden",
+  },
+  heroBackgroundImage: {
+    width: "100%",
+    height: "100%",
+  },
+  heroOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    zIndex: 1,
   },
   talaPill: {
     position: "absolute",
@@ -188,12 +277,37 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 999,
+    backgroundColor: "#7CCB58",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 3,
+  },
+  circleBadgeActive: {
     backgroundColor: "#69C642",
   },
-  lumiImage: {
-    width: 206,
-    height: 206,
+  muniPreviewWrap: {
+    width: 180,
+    height: 180,
     marginTop: 28,
+    position: "relative",
+    alignSelf: "center",
+    zIndex: 2,
+  },
+  muniBaseImage: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: 180,
+    height: 180,
+    zIndex: 2,
+  },
+  muniAccessoryImage: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: 180,
+    height: 180,
+    zIndex: 3,
   },
   collectionBadgeWrap: {
     alignItems: "center",
@@ -229,20 +343,33 @@ const styles = StyleSheet.create({
   },
   optionRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    flexWrap: "wrap",
+    rowGap: 10,
+    columnGap: 8,
     paddingHorizontal: 5,
   },
   optionCard: {
-    width: "23.6%",
+    width: "23%",
     aspectRatio: 0.95,
     borderRadius: 14,
     borderWidth: 2,
     borderColor: "#4A6C2B",
     backgroundColor: "#F2F2F2",
     position: "relative",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
   },
   optionCardSelected: {
     borderColor: "#68AD3B",
+  },
+  optionImage: {
+    width: "76%",
+    height: "76%",
+  },
+  backgroundOptionImage: {
+    width: "200%",
+    height: "150%",
   },
   checkBadge: {
     position: "absolute",

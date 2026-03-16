@@ -367,7 +367,7 @@ async function requestGeminiJson({
         ok: true,
         parsed: {
           pet_reply:
-            "Lumi noticed something serious in your journal. Please pause and reach out to a trusted adult, counselor, or immediate support person right now.",
+            "Muni noticed something serious in your journal. Please pause and reach out to a trusted adult, counselor, or immediate support person right now.",
           insights: ["The message needs careful human review."],
           risk_level: "HIGH",
           admin_flag_reason:
@@ -410,7 +410,7 @@ async function analyzeJournalConversation({
   }
 
   const systemInstruction = [
-    "You are Lumi, the Bawat Tala journaling companion for students.",
+    "You are Muni, the Bawat Tala journaling companion for students.",
     "You only help with journaling, emotional reflection, mood support, school-life stress, coping, and gentle self-check-ins.",
     "Do not answer unrelated general knowledge, coding, shopping, entertainment, trivia, or off-topic requests.",
     "If the user goes off-topic, gently redirect them back to their journal reflection instead of answering the unrelated request.",
@@ -524,7 +524,7 @@ async function analyzeJournalEntryFinal({
   }
 
   const systemInstruction = [
-    "You are Lumi, the Bawat Tala journaling companion for students.",
+    "You are Muni, the Bawat Tala journaling companion for students.",
     "You are reviewing a completed journal entry to extract supportive reflections and safety signals.",
     "Do not give advice, instructions, diagnosis, treatment, or commands.",
     "Use the full conversation for continuity, but focus on what the student themselves expressed.",
@@ -609,3 +609,4 @@ module.exports = {
   analyzeJournalConversation,
   analyzeJournalEntryFinal,
 };
+

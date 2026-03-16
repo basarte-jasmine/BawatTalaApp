@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, ImageSourcePropType, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuthSession } from "../lib/auth-session";
 import { fetchMonthlyMoods } from "../lib/backend-api";
@@ -11,8 +11,8 @@ import { getManilaTodayParts } from "../lib/manila-date";
 type MoodStat = {
   color: string;
   count: number;
-  emoji: string;
   id: string;
+  image: ImageSourcePropType;
 };
 
 type CalendarDay = {
@@ -22,20 +22,19 @@ type CalendarDay = {
   state: "empty" | "future" | "mood";
 };
 
-const SLEEPY_PET_IMAGE = require("../assets/images/pet-idle_sample.png");
-
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
 
 const INSIGHT_TEXT = "You've been checking in regularly! Your most common mood this month has been \"Good\".";
-const INSIGHT_FOOTNOTE = "Summary by Lumi, your virtual companion. Bawat Tala is not a substitute for professional mental health care.";
+const INSIGHT_FOOTNOTE = "Summary by Muni, your virtual companion. Bawat Tala is not a substitute for professional mental health care.";
 
-const MOOD_META: Record<string, { color: string; emoji: string; label: string }> = {
-  angry: { color: "#E86686", emoji: "\uD83D\uDE21", label: "Angry" },
-  anxious: { color: "#B895C8", emoji: "\uD83D\uDE30", label: "Anxious" },
-  calm: { color: "#97CFDA", emoji: "\uD83D\uDE0C", label: "Calm" },
-  happy: { color: "#F8D330", emoji: "\uD83D\uDE42", label: "Happy" },
-  sad: { color: "#7EA9D9", emoji: "\uD83D\uDE22", label: "Sad" },
-  stressed: { color: "#F19137", emoji: "\uD83D\uDE23", label: "Stressed" },
+const MOOD_META: Record<string, { color: string; image: ImageSourcePropType; label: string }> = {
+  angry: { color: "#E86686", image: require("../assets/images/Moods/angry.gif"), label: "Angry" },
+  anxious: { color: "#B895C8", image: require("../assets/images/Moods/anxious.gif"), label: "Anxious" },
+  calm: { color: "#97CFDA", image: require("../assets/images/Moods/calm.gif"), label: "Calm" },
+  happy: { color: "#F8D330", image: require("../assets/images/Moods/happy.gif"), label: "Happy" },
+  sad: { color: "#7EA9D9", image: require("../assets/images/Moods/sad.gif"), label: "Sad" },
+  stressed: { color: "#F19137", image: require("../assets/images/Moods/stressed.gif"), label: "Stressed" },
 };
 
 const MIN_YEAR = 2026;
@@ -130,9 +129,9 @@ export default function MoodOverviewScreen() {
     () =>
       Object.entries(MOOD_META).map(([id, meta]) => ({
         id,
-        emoji: meta.emoji,
         color: meta.color,
         count: monthlyCounts[id] ?? 0,
+        image: meta.image,
       })),
     [monthlyCounts],
   );
@@ -234,8 +233,12 @@ export default function MoodOverviewScreen() {
             </View>
 
             <View style={styles.commonMoodWrap}>
-              <View style={[styles.commonMoodFace, mostCommonMood && { backgroundColor: mostCommonMood.color }]}>
-                <Text style={styles.commonMoodEmoji}>{mostCommonMood?.emoji ?? "-"}</Text>
+              <View style={styles.commonMoodFace}>
+                {mostCommonMood ? (
+                  <Image source={mostCommonMood.image} style={styles.commonMoodImage} resizeMode="contain" />
+                ) : (
+                  <Text style={styles.commonMoodFallback}>-</Text>
+                )}
               </View>
               <Text style={styles.commonMoodLabel}>{mostCommonMood?.label ?? "No mood yet"}</Text>
             </View>
@@ -244,8 +247,8 @@ export default function MoodOverviewScreen() {
           <View style={styles.statsRow}>
             {moodStats.map((item) => (
               <View key={item.id} style={styles.statItem}>
-                <View style={[styles.statFace, { backgroundColor: item.color }]}>
-                  <Text style={styles.statEmoji}>{item.emoji}</Text>
+                <View style={styles.statFace}>
+                  <Image source={item.image} style={styles.statImage} resizeMode="contain" />
                 </View>
                 <Text style={styles.statCount}>{item.count}</Text>
               </View>
@@ -312,7 +315,7 @@ export default function MoodOverviewScreen() {
 
         <View style={styles.insightCard}>
           <View style={styles.insightImageWrap}>
-            <Image source={SLEEPY_PET_IMAGE} style={styles.insightImage} resizeMode="contain" />
+            <Image source={MUNI_IMAGE} style={styles.insightImage} resizeMode="contain" />
           </View>
 
           <View style={styles.insightTextWrap}>
@@ -403,17 +406,24 @@ const styles = StyleSheet.create({
     marginTop: -2,
   },
   commonMoodFace: {
-    width: 38,
-    height: 38,
+    width: 42,
+    height: 42,
     borderRadius: 11,
-    backgroundColor: "#F8D330",
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 1,
+    borderWidth: 1,
+    borderColor: "#D8DEE5",
   },
-  commonMoodEmoji: {
-    fontSize: 23,
-    lineHeight: 26,
+  commonMoodImage: {
+    width: 33,
+    height: 33,
+  },
+  commonMoodFallback: {
+    color: "#3F4F61",
+    fontSize: 19,
+    lineHeight: 22,
   },
   commonMoodLabel: {
     color: "#3F4F61",
@@ -432,13 +442,16 @@ const styles = StyleSheet.create({
     width: 47,
     height: 41,
     borderRadius: 10,
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 3,
+    borderWidth: 1,
+    borderColor: "#D8DEE5",
   },
-  statEmoji: {
-    fontSize: 28,
-    lineHeight: 30,
+  statImage: {
+    width: 37,
+    height: 37,
   },
   statCount: {
     color: "#5E6771",
@@ -574,3 +587,4 @@ const styles = StyleSheet.create({
     lineHeight: 14,
   },
 });
+

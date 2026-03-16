@@ -31,7 +31,7 @@ import {
 } from "../lib/backend-api";
 import { getManilaTodayParts } from "../lib/manila-date";
 
-const LUMI_IMAGE = require("../assets/images/pet_sample.png");
+const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
 const NOTEBOOK_RINGS = Array.from({ length: 12 }, (_, index) => index);
 const PAPER_RULES = Array.from({ length: 24 }, (_, index) => index);
 const CONCERN_OPTIONS = [
@@ -474,21 +474,21 @@ export default function WriteEntryScreen() {
 
                 <View style={styles.footnoteWrap}>
                   <Text style={styles.footnoteText}>
-                    Lumi is on. Replies stay brief, specific, and focused on
+                    Muni is on. Replies stay brief, specific, and focused on
                     reflection inside Bawat Tala.
                   </Text>
 
                   <Pressable
-                    style={styles.lumiBadge}
+                    style={styles.muniBadge}
                     onPress={() => {
                       if (isEntryFinished) return;
                       setAiEnabled(false);
                     }}
-                    accessibilityLabel="Turn off Lumi AI"
+                    accessibilityLabel="Turn off Muni AI"
                   >
                     <Image
-                      source={LUMI_IMAGE}
-                      style={styles.lumiBadgeImage}
+                      source={MUNI_IMAGE}
+                      style={styles.muniBadgeImage}
                       resizeMode="contain"
                     />
                     <View style={styles.badgeStatusDot} />
@@ -504,16 +504,16 @@ export default function WriteEntryScreen() {
                 {formatJournalHeaderDate(entry?.entryDate)}
               </Text>
               <Pressable
-                style={[styles.lumiBadge, styles.lumiBadgeOffInline]}
+                style={[styles.muniBadge, styles.muniBadgeOffInline]}
                 onPress={() => {
                   if (isEntryFinished) return;
                   setAiEnabled(true);
                 }}
-                accessibilityLabel="Turn on Lumi AI"
+                accessibilityLabel="Turn on Muni AI"
               >
                 <Image
-                  source={LUMI_IMAGE}
-                  style={styles.lumiBadgeImage}
+                  source={MUNI_IMAGE}
+                  style={styles.muniBadgeImage}
                   resizeMode="contain"
                 />
                 <View
@@ -551,8 +551,8 @@ export default function WriteEntryScreen() {
             </ScrollView>
 
             <Text style={styles.plainFootnote}>
-              Lumi is off. Your journal will be saved without AI replies.
-              Insights will still be generated when you finish the entry.
+              Muni is off. Your journal will be saved without Muni&apos;s replies.
+              Muni will still provide insights when you finish your entry.
             </Text>
           </View>
         )}
@@ -651,7 +651,7 @@ export default function WriteEntryScreen() {
           <View style={styles.modalBackdrop}>
             <View style={styles.modalCard}>
               <Text style={styles.modalBody}>
-                Lumi noticed that this entry may need immediate human support.
+                Muni noticed that this entry may need immediate human support.
                 Would you like to contact a counselor now?
               </Text>
 
@@ -1017,7 +1017,7 @@ const styles = StyleSheet.create({
     lineHeight: 12,
     textAlign: "center",
   },
-  lumiBadge: {
+  muniBadge: {
     position: "absolute",
     right: 1,
     bottom: 1,
@@ -1030,11 +1030,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  lumiBadgeOff: {
+  muniBadgeOff: {
     backgroundColor: "#E7ECE3",
     borderColor: "#9AA2A8",
   },
-  lumiBadgeImage: {
+  muniBadgeImage: {
     width: 24,
     height: 24,
   },
@@ -1078,7 +1078,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.2,
   },
-  lumiBadgeOffInline: {
+  muniBadgeOffInline: {
     position: "relative",
     right: 0,
     bottom: 0,
@@ -1375,3 +1375,5 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 });
+
+
