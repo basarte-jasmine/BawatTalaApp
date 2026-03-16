@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_ADMIN_API_BASE_URL || "http://localhost:4001";
+const API_BASE_URL = import.meta.env.VITE_ADMIN_API_BASE_URL || "http://localhost:4002";
 
 async function request(path, options = {}) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -56,14 +56,156 @@ export async function fetchAdminDashboardSummary() {
   return request("/api/admin/dashboard/summary");
 }
 
+export async function fetchAdminAnalytics(params = {}) {
+  const searchParams = new URLSearchParams();
+  if (params.range) {
+    searchParams.set("range", params.range);
+  }
+  if (params.startDate) {
+    searchParams.set("startDate", params.startDate);
+  }
+  if (params.endDate) {
+    searchParams.set("endDate", params.endDate);
+  }
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+  return request(`/api/admin/analytics${suffix}`);
+}
+
+export async function fetchAdminRiskFlags() {
+  return request("/api/admin/dashboard/risk-flags");
+}
+
+export async function fetchAdminStudents(params = {}) {
+  const searchParams = new URLSearchParams();
+  if (params.search) {
+    searchParams.set("search", params.search);
+  }
+  if (params.program) {
+    searchParams.set("program", params.program);
+  }
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+  return request(`/api/admin/students${suffix}`);
+}
+
+export async function fetchAdminStudentProfile(studentNumber) {
+  return request(`/api/admin/students/${encodeURIComponent(studentNumber)}`);
+}
+
+export async function sendAdminStudentNotification(studentNumber, payload) {
+  return request(`/api/admin/students/${encodeURIComponent(studentNumber)}/notify`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchAdminRoleAssignments() {
+  return request("/api/admin/roles");
+}
+
+export async function fetchAdminSettings(email) {
+  const params = new URLSearchParams();
+  if (email) {
+    params.set("email", email);
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return request(`/api/admin/settings${suffix}`);
+}
+
+export async function updateAdminSettings(payload) {
+  return request("/api/admin/settings", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createAdminRoleMember(payload) {
+  return request("/api/admin/roles", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateAdminRoleMember(memberId, payload) {
+  return request(`/api/admin/roles/${memberId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteAdminRoleMember(memberId) {
+  return request(`/api/admin/roles/${memberId}`, {
+    method: "DELETE",
+  });
+}
+
 export async function fetchGoogleCalendarAuthUrl() {
   return request("/api/admin/appointments/google/auth-url");
 }
 
-export async function fetchGoogleCalendarEvents() {
-  return request("/api/admin/appointments/events");
-}
+
 
 export async function fetchAdminGoogleOAuthUrl() {
   return request("/api/admin/oauth/google/start");
+}
+
+export async function fetchAdminAppointmentsOverview(date) {
+  const params = new URLSearchParams();
+  if (date) {
+    params.set("date", date);
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return request(`/api/appointments/admin/overview${suffix}`);
+}
+
+export async function updateAdminAvailability(payload) {
+  return request("/api/appointments/admin/availability", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateAdminDayAvailability(payload) {
+  return request("/api/appointments/admin/availability/day", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createAdminAppointment(payload) {
+  return request("/api/appointments/book", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function bookAdminAppointment(payload) {
+  return request("/api/appointments/book", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateAdminAppointment(appointmentId, payload) {
+  return request(`/api/appointments/admin/${appointmentId}/update`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function cancelAdminAppointment(appointmentId, payload) {
+  return request(`/api/appointments/admin/${appointmentId}/cancel`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteAdminAppointment(appointmentId, actorEmail) {
+  const params = new URLSearchParams();
+  if (actorEmail) {
+    params.set("actorEmail", actorEmail);
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return request(`/api/appointments/admin/${appointmentId}${suffix}`, {
+    method: "DELETE",
+  });
 }

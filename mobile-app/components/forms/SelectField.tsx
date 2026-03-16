@@ -77,24 +77,24 @@ export function SelectField({
 const styles = StyleSheet.create({
   label: {
     color: "#111111",
-    fontSize: 10,
+    fontSize: 13,
     marginBottom: 6,
   },
   trigger: {
-    minHeight: 44,
+    minHeight: 38,
     borderWidth: 1,
-    borderColor: "#1A1A1A",
-    borderRadius: 8,
+    borderColor: "#535353",
+    borderRadius: 7,
     backgroundColor: "#FFFFFF",
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     justifyContent: "center",
-    marginBottom: 14,
+    marginBottom: 12,
   },
   triggerDisabled: {
     backgroundColor: "#F3F3F3",
   },
   value: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#111111",
   },
   placeholder: {

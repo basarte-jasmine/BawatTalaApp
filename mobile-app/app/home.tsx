@@ -1,14 +1,27 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useRef, useState } from "react";
-import { Animated, Easing, Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Animated, Easing, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
+import { useAuthSession } from "../lib/auth-session";
+import {
+  claimDailyCheckIn,
+  fetchCheckInStatus,
+  fetchDailyMood,
+  fetchRecentJournalEntries,
+  fetchStudentAppointments,
+  fetchStudentNotifications,
+  saveDailyMood,
+} from "../lib/backend-api";
+import { getManilaTodayParts } from "../lib/manila-date";
 
 type MoodItem = {
   color: string;
   emoji: string;
+  id: string;
   label: string;
 };
 
@@ -26,56 +39,37 @@ type SupportCardItem = {
 };
 
 const MOODS: MoodItem[] = [
-  { color: "#FFD616", emoji: "\uD83D\uDE42", label: "Happy" },
-  { color: "#97CFDA", emoji: "\uD83D\uDE0C", label: "Calm" },
-  { color: "#7EA9D9", emoji: "\uD83D\uDE22", label: "Sad" },
-  { color: "#F19137", emoji: "\uD83D\uDE23", label: "Stressed" },
-  { color: "#E86686", emoji: "\uD83D\uDE21", label: "Angry" },
-  { color: "#B895C8", emoji: "\uD83D\uDE30", label: "Anxious" },
+  { color: "#FFD616", emoji: "\uD83D\uDE42", id: "happy", label: "Happy" },
+  { color: "#97CFDA", emoji: "\uD83D\uDE0C", id: "calm", label: "Calm" },
+  { color: "#7EA9D9", emoji: "\uD83D\uDE22", id: "sad", label: "Sad" },
+  { color: "#F19137", emoji: "\uD83D\uDE23", id: "stressed", label: "Stressed" },
+  { color: "#E86686", emoji: "\uD83D\uDE21", id: "angry", label: "Angry" },
+  { color: "#B895C8", emoji: "\uD83D\uDE30", id: "anxious", label: "Anxious" },
 ];
 
 const DAILY_CHECKIN_REWARDS: DailyCheckinReward[] = [
-  { id: "r10", value: "+10", state: "done" },
-  { id: "r20", value: "+20", state: "done" },
-  { id: "r30", value: "+30", state: "active" },
+  { id: "r10", value: "+10", state: "locked" },
+  { id: "r20", value: "+20", state: "locked" },
+  { id: "r30", value: "+30", state: "locked" },
   { id: "r50", value: "+50", state: "locked" },
   { id: "r70", value: "+70", state: "locked" },
   { id: "r100", value: "+100", state: "locked" },
   { id: "r150", value: "+150", state: "locked" },
 ];
 
-const RECENT_ENTRY_PLACEHOLDERS = [
-  {
-    id: "r1",
-    meta: "February 25, 5:30PM",
-    preview: "Today I finally noticed the small buds blooming on the plants in our balcony.",
-  },
-  {
-    id: "r2",
-    meta: "February 25, 3:00AM",
-    preview: "I felt quite overwhelmed with my schoolwork but I managed to finish my work on time.",
-  },
-  {
-    id: "r3",
-    meta: "February 24, 1:30PM",
-    preview: "Today I finally noticed the small buds blooming on the plants in our balcony.",
-  },
-  {
-    id: "r4",
-    meta: "February 23, 5:00PM",
-    preview: "Today I finally noticed the small buds blooming on the plants in our balcony.",
-  },
-  {
-    id: "r5",
-    meta: "February 22, 10:40PM",
-    preview: "Small wins today. I slowed down and gave myself enough rest before tomorrow.",
-  },
-];
+type RecentEntryCard = {
+  createdAt: string;
+  id: string;
+  meta: string;
+  preview: string;
+};
+
+type HomeRecentFilter = "newest" | "oldest";
 
 const SUPPORT_CARDS: SupportCardItem[] = [
   {
     id: "support-1",
-    title: "Style Lumi",
+    title: "Quick Journal",
     description: "Write your entry for today",
     backgroundColor: "#B1DEB3",
   },
@@ -104,8 +98,9 @@ const PET_AWAKE_IMAGE = require("../assets/images/pet-awake_sample.png");
 const PET_IDLE_IMAGE = require("../assets/images/pet-idle_sample.png");
 
 export default function HomeScreen() {
+  const { user } = useAuthSession();
   const { height, width } = useWindowDimensions();
-  const { consultConfirmed } = useLocalSearchParams<{ consultConfirmed?: string }>();
+  const { consultConfirmed, appointmentId } = useLocalSearchParams<{ consultConfirmed?: string; appointmentId?: string }>();
   const compact = height < 760;
   const tiny = height < 680;
   const frameWidth = Math.min(width, 412);
@@ -114,9 +109,22 @@ export default function HomeScreen() {
   const rewardTileHeight = rewardTileWidth + 30;
   const rewardTileIconSize = Math.max(24, Math.floor(rewardTileWidth * 0.7));
   const rewardTileLabelSize = rewardTileWidth <= 41 ? 26 / 2 : 30 / 2;
-  const [selectedMood, setSelectedMood] = useState("Happy");
+  const [checkInRewards, setCheckInRewards] = useState<DailyCheckinReward[]>(DAILY_CHECKIN_REWARDS);
+  const [hasCheckedInToday, setHasCheckedInToday] = useState(false);
+  const [isClaimingCheckIn, setIsClaimingCheckIn] = useState(false);
+  const [showCheckInResultModal, setShowCheckInResultModal] = useState(false);
+  const [checkInResultMessage, setCheckInResultMessage] = useState("");
+  const [totalTala, setTotalTala] = useState(0);
+  const [selectedMoodId, setSelectedMoodId] = useState<string | null>(null);
+  const [pendingMoodId, setPendingMoodId] = useState<string | null>(null);
+  const [showMoodConfirmModal, setShowMoodConfirmModal] = useState(false);
+  const [recentEntries, setRecentEntries] = useState<RecentEntryCard[]>([]);
+  const [recentEntriesSort, setRecentEntriesSort] = useState<HomeRecentFilter>("newest");
+  const [showRecentEntriesFilterModal, setShowRecentEntriesFilterModal] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
   const [showConsultOverlay, setShowConsultOverlay] = useState(false);
+  const [upcomingAppointment, setUpcomingAppointment] = useState<Awaited<ReturnType<typeof fetchStudentAppointments>>["upcomingAppointment"]>(null);
+  const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
   const headerSwitchOn = 120;
   const headerSwitchOff = 120;
   const idleValues = useRef(MOODS.map(() => new Animated.Value(0))).current;
@@ -182,6 +190,162 @@ export default function HomeScreen() {
     }
   }, [consultConfirmed]);
 
+  const loadTodayMood = useCallback(async () => {
+    if (!user?.studentNumber) {
+      setSelectedMoodId(null);
+      return;
+    }
+
+    const result = await fetchDailyMood(user.studentNumber, getManilaTodayParts().isoDate);
+    if (result.ok) {
+      setSelectedMoodId(result.entry?.moodId ?? null);
+    }
+  }, [user?.studentNumber]);
+
+  const buildCheckInRewards = useCallback((completedDays: number, activeDay: number, todayCheckedIn: boolean) => {
+    setCheckInRewards(
+      DAILY_CHECKIN_REWARDS.map((reward, index) => {
+        const day = index + 1;
+        if (day <= completedDays) {
+          return { ...reward, state: "done" };
+        }
+        if (!todayCheckedIn && day === activeDay) {
+          return { ...reward, state: "active" };
+        }
+        return { ...reward, state: "locked" };
+      }),
+    );
+  }, []);
+
+  const loadCheckInStatus = useCallback(async () => {
+    if (!user?.studentNumber) {
+      setTotalTala(0);
+      setCheckInRewards(DAILY_CHECKIN_REWARDS);
+      return;
+    }
+
+    const result = await fetchCheckInStatus(user.studentNumber);
+    if (!result.ok) {
+      return;
+    }
+
+    setTotalTala(result.totalTala ?? 0);
+    setHasCheckedInToday(Boolean(result.todayCheckedIn));
+    buildCheckInRewards(
+      result.completedDays ?? 0,
+      result.activeDay ?? 1,
+      Boolean(result.todayCheckedIn),
+    );
+  }, [buildCheckInRewards, user?.studentNumber]);
+
+  const loadRecentEntries = useCallback(async () => {
+    if (!user?.studentNumber) {
+      setRecentEntries([]);
+      return;
+    }
+
+    const result = await fetchRecentJournalEntries(user.studentNumber, 1);
+    if (!result.ok) {
+      setRecentEntries([]);
+      return;
+    }
+
+    setRecentEntries(
+      (result.entries ?? []).map((entry) => ({
+        createdAt: entry.createdAt,
+        id: entry.id,
+        meta: new Date(entry.createdAt).toLocaleString("en-US", {
+          month: "long",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+          hour12: true,
+        }),
+        preview: entry.preview || entry.summary || entry.title || "Journal entry",
+      })),
+    );
+  }, [user?.studentNumber]);
+
+  const loadUpcomingAppointment = useCallback(async () => {
+    if (!user?.studentNumber) {
+      setUpcomingAppointment(null);
+      return;
+    }
+
+    const result = await fetchStudentAppointments(user.studentNumber);
+    if (!result.ok) {
+      setUpcomingAppointment(null);
+      return;
+    }
+
+    const appointments = Array.isArray(result.appointments) ? result.appointments : [];
+    const matchedAppointment =
+      appointmentId && appointments.length ? appointments.find((item) => item.id === appointmentId) || null : null;
+    setUpcomingAppointment(matchedAppointment || result.upcomingAppointment || null);
+  }, [appointmentId, user?.studentNumber]);
+
+  const loadNotifications = useCallback(async () => {
+    if (!user?.studentNumber) {
+      setHasUnreadNotifications(false);
+      return;
+    }
+
+    const result = await fetchStudentNotifications(user.studentNumber);
+    if (!result.ok) {
+      setHasUnreadNotifications(false);
+      return;
+    }
+
+    setHasUnreadNotifications((result.unreadCount ?? 0) > 0);
+  }, [user?.studentNumber]);
+
+  const displayedRecentEntries =
+    recentEntriesSort === "newest" ? recentEntries : [...recentEntries].reverse();
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadTodayMood();
+      void loadCheckInStatus();
+      void loadRecentEntries();
+      void loadUpcomingAppointment();
+      void loadNotifications();
+    }, [loadCheckInStatus, loadNotifications, loadRecentEntries, loadTodayMood, loadUpcomingAppointment]),
+  );
+
+  const isMoodLocked = Boolean(selectedMoodId);
+
+  const handleMoodSelect = (moodId: string) => {
+    if (!user?.studentNumber || isMoodLocked) {
+      return;
+    }
+
+    setPendingMoodId(moodId);
+    setShowMoodConfirmModal(true);
+  };
+
+  const handleConfirmMood = async () => {
+    if (!user?.studentNumber || !pendingMoodId) {
+      setShowMoodConfirmModal(false);
+      setPendingMoodId(null);
+      return;
+    }
+
+    const result = await saveDailyMood(user.studentNumber, pendingMoodId, getManilaTodayParts().isoDate);
+    if (result.ok) {
+      setSelectedMoodId(result.entry?.moodId ?? pendingMoodId);
+    } else {
+      void loadTodayMood();
+    }
+
+    setShowMoodConfirmModal(false);
+    setPendingMoodId(null);
+  };
+
+  const handleCancelMoodConfirm = () => {
+    setShowMoodConfirmModal(false);
+    setPendingMoodId(null);
+  };
+
   const handleMoodPressIn = (index: number) => {
     Animated.spring(pressScales[index], {
       toValue: 0.9,
@@ -212,6 +376,36 @@ export default function HomeScreen() {
     router.replace("/home");
   };
 
+  const handleCheckInToday = async () => {
+    if (!user?.studentNumber || isClaimingCheckIn) {
+      return;
+    }
+
+    setIsClaimingCheckIn(true);
+    const result = await claimDailyCheckIn(user.studentNumber);
+    setIsClaimingCheckIn(false);
+
+    if (!result.ok) {
+      setCheckInResultMessage(result.message ?? "Unable to claim daily check-in.");
+      setShowCheckInResultModal(true);
+      void loadCheckInStatus();
+      return;
+    }
+
+    setTotalTala(result.totalTala ?? 0);
+    setHasCheckedInToday(Boolean(result.todayCheckedIn));
+    buildCheckInRewards(
+      result.completedDays ?? 0,
+      result.activeDay ?? 1,
+      Boolean(result.todayCheckedIn),
+    );
+
+    const bonusMessage =
+      (result.bonusReward ?? 0) > 0 ? ` Bonus reward: +${result.bonusReward} Tala.` : "";
+    setCheckInResultMessage(`You earned +${result.totalReward ?? result.todayReward ?? 0} Tala today.${bonusMessage}`);
+    setShowCheckInResultModal(true);
+  };
+
   const waveTranslateX = waveDrift.interpolate({
     inputRange: [0, 1],
     outputRange: [-22, 22],
@@ -233,7 +427,7 @@ export default function HomeScreen() {
             <Ionicons name="person-outline" size={18} color="#5D5D5D" />
           </View>
           <Text style={[styles.greetingText, hasScrolled ? styles.greetingTextScrolled : styles.greetingTextTop]}>
-            Hello, <Text style={[styles.userText, hasScrolled ? styles.userTextScrolled : styles.userTextTop]}>User</Text>
+            Hello, <Text style={[styles.userText, hasScrolled ? styles.userTextScrolled : styles.userTextTop]}>{user?.firstName || "User"}</Text>
           </Text>
         </Pressable>
 
@@ -243,6 +437,7 @@ export default function HomeScreen() {
           onPress={() => router.push("/notifications")}
         >
           <Ionicons name="notifications-outline" size={22} color={hasScrolled ? "#2D3034" : "#2E4A39"} />
+          {hasUnreadNotifications ? <View style={styles.notificationDot} /> : null}
         </Pressable>
       </View>
 
@@ -267,7 +462,7 @@ export default function HomeScreen() {
             <Svg width="100%" height="96" viewBox="0 0 412 96" preserveAspectRatio="none">
               <Path
                 d="M0,66 C68,94 132,8 198,26 C278,46 336,92 412,62 L412,96 L0,96 Z"
-                fill="#ECECEC"
+                fill="#FFFFFF"
               />
             </Svg>
           </Animated.View>
@@ -308,15 +503,17 @@ export default function HomeScreen() {
             {MOODS.map((mood, index) => (
               <View key={mood.label} style={styles.moodItem}>
                 <Pressable
-                  onPress={() => setSelectedMood(mood.label)}
+                  disabled={isMoodLocked && selectedMoodId !== mood.id}
+                  onPress={() => handleMoodSelect(mood.id)}
                   onPressIn={() => handleMoodPressIn(index)}
                   onPressOut={() => handleMoodPressOut(index)}
+                  style={isMoodLocked && selectedMoodId !== mood.id ? styles.moodButtonDisabled : undefined}
                 >
                   <Animated.View
                     style={[
                       styles.moodFace,
                       { backgroundColor: mood.color },
-                      selectedMood === mood.label && styles.moodFaceActive,
+                      selectedMoodId === mood.id && styles.moodFaceActive,
                       {
                         transform: [
                           {
@@ -333,7 +530,7 @@ export default function HomeScreen() {
                     <Text style={styles.moodEmoji}>{mood.emoji}</Text>
                   </Animated.View>
                 </Pressable>
-                <Text style={[styles.moodLabel, selectedMood === mood.label && styles.moodLabelActive]} numberOfLines={1}>
+                <Text style={[styles.moodLabel, selectedMoodId === mood.id && styles.moodLabelActive]} numberOfLines={1}>
                   {mood.label}
                 </Text>
               </View>
@@ -350,12 +547,12 @@ export default function HomeScreen() {
             <Text style={styles.dailyCheckinTitle}>Daily Check-in</Text>
             <View style={styles.dailyTalaPill}>
               <Image source={TALA_IMAGE} style={styles.dailyTalaPillIcon} resizeMode="contain" />
-              <Text style={styles.dailyTalaPillText}>10,000</Text>
+              <Text style={styles.dailyTalaPillText}>{totalTala.toLocaleString("en-US")}</Text>
             </View>
           </View>
 
           <View style={styles.dailyRewardsRow}>
-            {DAILY_CHECKIN_REWARDS.map((reward) => (
+            {checkInRewards.map((reward, index) => (
               <View
                 key={reward.id}
                 style={[
@@ -397,14 +594,31 @@ export default function HomeScreen() {
                 >
                   {reward.value}
                 </Text>
+                <Text
+                  style={[
+                    styles.dailyRewardDayLabel,
+                    reward.state === "done" && styles.dailyRewardDayLabelDone,
+                  ]}
+                >
+                  {`Day ${index + 1}`}
+                </Text>
               </View>
             ))}
           </View>
 
-          <Text style={styles.dailyCheckinSubText}>Earn a Tala for each check-in.</Text>
-
-          <Pressable style={styles.dailyCheckinButton} onPress={() => router.push("/calendar-checkin")}>
-            <Text style={styles.dailyCheckinButtonText}>Check-in today</Text>
+          <Pressable
+            disabled={isClaimingCheckIn || hasCheckedInToday}
+            style={[
+              styles.dailyCheckinButton,
+              (isClaimingCheckIn || hasCheckedInToday) && styles.dailyCheckinButtonDisabled,
+            ]}
+            onPress={() => {
+              void handleCheckInToday();
+            }}
+          >
+            <Text style={styles.dailyCheckinButtonText}>
+              {isClaimingCheckIn ? "Checking in..." : hasCheckedInToday ? "Checked in today" : "Check-in today"}
+            </Text>
           </Pressable>
         </View>
 
@@ -419,8 +633,8 @@ export default function HomeScreen() {
                     router.push("/wellness-tools");
                     return;
                   }
-                  if (card.title === "Style Lumi") {
-                    router.push("/write-entry");
+                  if (card.title === "Quick Journal") {
+                    router.push("/write-entry?mode=new");
                   }
                 }}
               >
@@ -435,7 +649,9 @@ export default function HomeScreen() {
         <View style={styles.recentCard}>
           <View style={styles.recentHeader}>
             <Text style={styles.recentTitle}>Recent Entries</Text>
-            <Ionicons name="list" size={22} color="#3F4A56" />
+            <Pressable onPress={() => setShowRecentEntriesFilterModal(true)} accessibilityLabel="Sort today's entries">
+              <Ionicons name="list" size={22} color="#3F4A56" />
+            </Pressable>
           </View>
 
           <View style={styles.recentListWrap}>
@@ -445,26 +661,41 @@ export default function HomeScreen() {
               showsVerticalScrollIndicator={false}
               nestedScrollEnabled
             >
-              {RECENT_ENTRY_PLACEHOLDERS.map((entry) => (
-                <Pressable key={entry.id} style={styles.entryItem}>
+              {displayedRecentEntries.length > 0 ? (
+                displayedRecentEntries.map((entry) => (
+                  <Pressable key={entry.id} style={styles.entryItem} onPress={() => router.push(`/journal-entry-view?entryId=${entry.id}`)}>
+                    <View style={styles.entryIconWrap}>
+                      <Text style={styles.entryIcon}>{"\uD83D\uDCD6"}</Text>
+                    </View>
+
+                    <View style={styles.entryTextWrap}>
+                      <Text style={styles.entryMeta}>{entry.meta}</Text>
+                      <Text style={styles.entryPreview} numberOfLines={2}>
+                        {entry.preview}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))
+              ) : (
+                <View style={styles.entryItem}>
                   <View style={styles.entryIconWrap}>
                     <Text style={styles.entryIcon}>{"\uD83D\uDCD6"}</Text>
                   </View>
 
                   <View style={styles.entryTextWrap}>
-                    <Text style={styles.entryMeta}>{entry.meta}</Text>
+                    <Text style={styles.entryMeta}>No entries for today</Text>
                     <Text style={styles.entryPreview} numberOfLines={2}>
-                      {entry.preview}
+                      Today&apos;s journal entries will appear here.
                     </Text>
                   </View>
-                </Pressable>
-              ))}
+                </View>
+              )}
             </ScrollView>
 
             <Pressable
               style={styles.addEntryButton}
               accessibilityLabel="Add entry"
-              onPress={() => router.push("/write-entry")}
+              onPress={() => router.push("/write-entry?mode=new")}
             >
               <Ionicons name="add" size={30} color="#FFFFFF" />
             </Pressable>
@@ -473,30 +704,140 @@ export default function HomeScreen() {
 
       </ScrollView>
 
+      <Modal
+        visible={showCheckInResultModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCheckInResultModal(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalBody}>{checkInResultMessage}</Text>
+
+            <View style={styles.modalActions}>
+              <Pressable style={styles.modalPrimaryButtonSingle} onPress={() => setShowCheckInResultModal(false)}>
+                <Text style={styles.modalPrimaryText}>OK</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showMoodConfirmModal}
+        transparent
+        animationType="fade"
+        onRequestClose={handleCancelMoodConfirm}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalBody}>Save this as your mood for today?</Text>
+
+            <View style={styles.modalActions}>
+              <Pressable style={styles.modalSecondaryButton} onPress={handleCancelMoodConfirm}>
+                <Text style={styles.modalSecondaryText}>Cancel</Text>
+              </Pressable>
+
+              <Pressable
+                style={styles.modalPrimaryButton}
+                onPress={() => {
+                  void handleConfirmMood();
+                }}
+              >
+                <Text style={styles.modalPrimaryText}>Confirm</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showRecentEntriesFilterModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowRecentEntriesFilterModal(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalBody}>Sort today&apos;s entries</Text>
+
+            <View style={styles.filterModalList}>
+              <Pressable
+                style={[
+                  styles.filterModalOption,
+                  recentEntriesSort === "newest" && styles.filterModalOptionActive,
+                ]}
+                onPress={() => {
+                  setRecentEntriesSort("newest");
+                  setShowRecentEntriesFilterModal(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.filterModalOptionText,
+                    recentEntriesSort === "newest" && styles.filterModalOptionTextActive,
+                  ]}
+                >
+                  Newest First
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={[
+                  styles.filterModalOption,
+                  recentEntriesSort === "oldest" && styles.filterModalOptionActive,
+                ]}
+                onPress={() => {
+                  setRecentEntriesSort("oldest");
+                  setShowRecentEntriesFilterModal(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.filterModalOptionText,
+                    recentEntriesSort === "oldest" && styles.filterModalOptionTextActive,
+                  ]}
+                >
+                  Oldest First
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {showConsultOverlay ? (
         <View style={styles.consultOverlay} pointerEvents="box-none">
           <View style={styles.consultOverlayBackdrop} />
 
           <View style={styles.consultOverlayCard}>
-            <View style={styles.consultAvatarPlaceholder} />
+            {upcomingAppointment?.counselor?.pictureUrl ? (
+              <Image source={{ uri: upcomingAppointment.counselor.pictureUrl }} style={styles.consultAvatarImage} />
+            ) : (
+              <View style={styles.consultAvatarPlaceholder} />
+            )}
 
             <Text style={styles.consultOverlayTitle}>Appointment Confirmed!</Text>
             <Text style={styles.consultOverlaySubtitle}>
-              Your session with Ms. Janicka Akim is scheduled
+              {upcomingAppointment
+                ? `Your session with ${upcomingAppointment.counselor.fullName} is scheduled`
+                : "Your counseling session is scheduled"}
             </Text>
 
             <View style={styles.consultInfoCard}>
               <Text style={styles.consultInfoText}>
-                <Text style={styles.consultInfoLabel}>Date:</Text> February 27, Wednesday
+                <Text style={styles.consultInfoLabel}>Date:</Text>{" "}
+                {upcomingAppointment?.appointmentDateLabel || "Pending schedule"}
               </Text>
               <Text style={styles.consultInfoText}>
-                <Text style={styles.consultInfoLabel}>Time:</Text> 10:00 AM
+                <Text style={styles.consultInfoLabel}>Time:</Text> {upcomingAppointment?.slotLabel || "--"}
               </Text>
               <Text style={styles.consultInfoText}>
-                <Text style={styles.consultInfoLabel}>Concern:</Text> Anxiety/Stress
+                <Text style={styles.consultInfoLabel}>Concern:</Text> {upcomingAppointment?.concern || "--"}
               </Text>
               <Text style={styles.consultInfoText}>
-                <Text style={styles.consultInfoLabel}>Location:</Text> Guidance Office, 2nd Floor
+                <Text style={styles.consultInfoLabel}>Counselor:</Text>{" "}
+                {upcomingAppointment?.counselor?.fullName || "Guidance Counselor"}
               </Text>
             </View>
 
@@ -519,7 +860,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#ECECEC",
+    backgroundColor: "#FFFFFF",
   },
   stickyHeader: {
     flexDirection: "row",
@@ -608,6 +949,18 @@ const styles = StyleSheet.create({
     padding: 6,
     marginRight: 2,
     marginTop: 2,
+    position: "relative",
+  },
+  notificationDot: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    width: 9,
+    height: 9,
+    borderRadius: 999,
+    backgroundColor: "#F44343",
+    borderWidth: 1.5,
+    borderColor: "#FFFFFF",
   },
   quoteHeroBody: {
     alignItems: "center",
@@ -621,7 +974,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     height: 40,
-    backgroundColor: "#ECECEC",
+    backgroundColor: "#FFFFFF",
   },
   quoteWaveWrap: {
     position: "absolute",
@@ -654,17 +1007,15 @@ const styles = StyleSheet.create({
   },
   moodCard: {
     borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#BFBFBF",
-    backgroundColor: "#F4F4F4",
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: 10,
     paddingTop: 10,
     paddingBottom: 12,
-    shadowColor: "#888888",
-    shadowOpacity: 0.16,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
+    shadowColor: "#525C67",
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
     marginBottom: 10,
   },
   moodHeaderRow: {
@@ -703,6 +1054,9 @@ const styles = StyleSheet.create({
   moodItem: {
     alignItems: "center",
     flex: 1,
+  },
+  moodButtonDisabled: {
+    opacity: 0.42,
   },
   moodFace: {
     width: 50,
@@ -750,19 +1104,119 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     fontWeight: "700",
   },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(21, 27, 24, 0.34)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 22,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 320,
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 16,
+    shadowColor: "#525C67",
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  modalBody: {
+    color: "#52606C",
+    fontSize: 17,
+    lineHeight: 24,
+    fontWeight: "600",
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  modalActions: {
+    flexDirection: "row",
+    columnGap: 10,
+  },
+  modalSecondaryButton: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#CDD5C7",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalSecondaryText: {
+    color: "#566271",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  modalPrimaryButton: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 999,
+    backgroundColor: "#79C943",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#60704F",
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  modalPrimaryButtonSingle: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 999,
+    backgroundColor: "#79C943",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#60704F",
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  modalPrimaryText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  filterModalList: {
+    rowGap: 8,
+  },
+  filterModalOption: {
+    minHeight: 40,
+    borderRadius: 12,
+    backgroundColor: "#F6F8F5",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterModalOptionActive: {
+    backgroundColor: "#DFF3CF",
+  },
+  filterModalOptionText: {
+    color: "#566271",
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: "600",
+  },
+  filterModalOptionTextActive: {
+    color: "#2F6F25",
+    fontWeight: "700",
+  },
   dailyCheckinCard: {
     borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#CFD2D5",
-    backgroundColor: "#F6F7F6",
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: 12,
     paddingTop: 10,
     paddingBottom: 14,
-    shadowColor: "#888888",
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
+    shadowColor: "#525C67",
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
     marginBottom: 10,
   },
   dailyCheckinHeader: {
@@ -814,8 +1268,8 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
   },
   dailyRewardBoxDone: {
-    backgroundColor: "#F1F2F1",
-    borderColor: "#BFC5C6",
+    backgroundColor: "#EEF1ED",
+    borderColor: "transparent",
   },
   dailyRewardBoxActive: {
     backgroundColor: "#FFFFFF",
@@ -847,12 +1301,14 @@ const styles = StyleSheet.create({
   dailyRewardValueLocked: {
     color: "#2E503C",
   },
-  dailyCheckinSubText: {
-    textAlign: "center",
-    color: "#44566A",
-    fontSize: 17 / 1.5 * 1.5,
-    lineHeight: 24,
-    marginBottom: 8,
+  dailyRewardDayLabel: {
+    color: "#526373",
+    fontSize: 8,
+    lineHeight: 10,
+    fontWeight: "600",
+  },
+  dailyRewardDayLabelDone: {
+    color: "#A0A8AA",
   },
   dailyCheckinButton: {
     height: 44,
@@ -861,11 +1317,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginHorizontal: "16%",
-    shadowColor: "#6D6D6D",
+    shadowColor: "#5C6570",
     shadowOpacity: 0.2,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
     elevation: 3,
+  },
+  dailyCheckinButtonDisabled: {
+    backgroundColor: "#A8C99C",
   },
   dailyCheckinButtonText: {
     color: "#FFFFFF",
@@ -875,17 +1334,15 @@ const styles = StyleSheet.create({
   },
   recentCard: {
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#C8CCCE",
-    backgroundColor: "#F4F5F4",
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: 12,
     paddingTop: 10,
     paddingBottom: 10,
-    shadowColor: "#888888",
-    shadowOpacity: 0.12,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
+    shadowColor: "#525C67",
+    shadowOpacity: 0.16,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
     marginBottom: 10,
   },
   recentHeader: {
@@ -914,7 +1371,7 @@ const styles = StyleSheet.create({
   },
   entryItem: {
     borderRadius: 9,
-    backgroundColor: "#DFECD9",
+    backgroundColor: "#F0FFE9",
     flexDirection: "row",
     alignItems: "flex-start",
     paddingHorizontal: 12,
@@ -959,7 +1416,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#74B255",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#5E5E5E",
+    shadowColor: "#5C6570",
     shadowOpacity: 0.2,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
@@ -967,12 +1424,15 @@ const styles = StyleSheet.create({
   },
   supportWrapCard: {
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#C9CFCC",
-    backgroundColor: "#F3F5F4",
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: 10,
     paddingVertical: 10,
     marginBottom: 10,
+    shadowColor: "#525C67",
+    shadowOpacity: 0.16,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
   },
   supportGrid: {
     flexDirection: "row",
@@ -1037,7 +1497,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 18,
     paddingBottom: 14,
-    shadowColor: "#6E6E6E",
+    shadowColor: "#5C6570",
     shadowOpacity: 0.2,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
@@ -1050,6 +1510,13 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "#D0D2D3",
     marginBottom: 12,
+  },
+  consultAvatarImage: {
+    width: 88,
+    height: 88,
+    borderRadius: 999,
+    marginBottom: 12,
+    backgroundColor: "#D0D2D3",
   },
   consultOverlayTitle: {
     color: "#32475B",

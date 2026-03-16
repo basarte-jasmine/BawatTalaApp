@@ -128,20 +128,21 @@ const styles = StyleSheet.create({
     textAlign: "center",
     color: "#111111",
     fontSize: 20,
-    lineHeight: 26,
-    fontFamily: "Fraunces-Regular",
+    lineHeight: 28,
+    fontFamily: "Outfit",
+    fontWeight: "700",
     marginBottom: 8,
   },
   subtitle: {
     textAlign: "center",
     color: "#1A1A1A",
-    fontSize: 13,
-    lineHeight: 20,
+    fontSize: 12,
+    lineHeight: 18,
     marginBottom: 24,
   },
   label: {
     color: "#111111",
-    fontSize: 14,
+    fontSize: 12,
     marginBottom: 8,
   },
   otpRow: {
@@ -164,7 +165,7 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: "#C31A1A",
-    fontSize: 12,
+    fontSize: 11,
     marginBottom: 12,
   },
   linkButton: {
@@ -172,7 +173,7 @@ const styles = StyleSheet.create({
   },
   linkText: {
     color: "#111111",
-    fontSize: 13,
+    fontSize: 11,
   },
   linkAccent: {
     color: "#2C7DB0",

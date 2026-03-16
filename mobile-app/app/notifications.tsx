@@ -1,45 +1,25 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
-import { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Swipeable } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
-
-type NotificationItem = {
-  id: string;
-  message: string;
-  time: string;
-  title: string;
-};
-
-const NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: "n1",
-    title: "Data Safety",
-    message: "Don't lose your memories.",
-    time: "2m",
-  },
-  {
-    id: "n2",
-    title: "You're 80% there!",
-    message: "Finish setting up your account.",
-    time: "2m",
-  },
-  {
-    id: "n3",
-    title: "Lock your journal",
-    message: "Setup a Passcode to keep your ...",
-    time: "2m",
-  },
-  {
-    id: "n4",
-    title: "Welcome, Jasmine Mae!",
-    message: "Thank you for choosing our app...",
-    time: "2m",
-  },
-];
+import { ConfirmationModal } from "../components/ui/ConfirmationModal";
+import { useAuthSession } from "../lib/auth-session";
+import {
+  AppNotification,
+  deleteStudentNotification,
+  fetchStudentNotifications,
+  markAllStudentNotificationsRead,
+  markStudentNotificationRead,
+} from "../lib/backend-api";
 
 export default function NotificationsScreen() {
-  const [readIds, setReadIds] = useState<string[]>([]);
+  const { user } = useAuthSession();
+  const [items, setItems] = useState<AppNotification[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [pendingDeleteNotificationId, setPendingDeleteNotificationId] = useState<string | null>(null);
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -49,8 +29,59 @@ export default function NotificationsScreen() {
     router.replace("/home");
   };
 
-  const handleMarkAllAsRead = () => {
-    setReadIds(NOTIFICATIONS.map((item) => item.id));
+  const loadNotifications = useCallback(async () => {
+    if (!user?.studentNumber) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const result = await fetchStudentNotifications(user.studentNumber);
+    setItems(Array.isArray(result.notifications) ? result.notifications : []);
+    setLoading(false);
+  }, [user?.studentNumber]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadNotifications();
+    }, [loadNotifications]),
+  );
+
+  const handleMarkAllAsRead = async () => {
+    if (!user?.studentNumber) return;
+    const result = await markAllStudentNotificationsRead(user.studentNumber);
+    if (result.ok) {
+      setItems((current) => current.map((item) => ({ ...item, isRead: true })));
+    }
+  };
+
+  const handleOpenNotification = async (item: AppNotification) => {
+    if (!user?.studentNumber) return;
+    if (!item.isRead) {
+      const result = await markStudentNotificationRead(user.studentNumber, item.id);
+      if (result.ok) {
+        setItems((current) => current.map((entry) => (entry.id === item.id ? { ...entry, isRead: true } : entry)));
+      }
+    }
+    router.push({
+      pathname: "/notification-view",
+      params: {
+        createdAt: item.createdAt,
+        message: item.message,
+        timeLabel: item.timeLabel,
+        title: item.title,
+      },
+    });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!user?.studentNumber || !pendingDeleteNotificationId) return;
+    const result = await deleteStudentNotification(user.studentNumber, pendingDeleteNotificationId);
+    if (result.ok) {
+      setItems((current) => current.filter((item) => item.id !== pendingDeleteNotificationId));
+    }
+    setPendingDeleteNotificationId(null);
   };
 
   return (
@@ -64,29 +95,58 @@ export default function NotificationsScreen() {
       </View>
 
       <View style={styles.dayRow}>
-        <Text style={styles.dayLabel}>Today</Text>
-        <Pressable style={styles.markAsReadButton} onPress={handleMarkAllAsRead}>
+        <Text style={styles.dayLabel}>Recent</Text>
+        <Pressable style={styles.markAsReadButton} onPress={() => void handleMarkAllAsRead()}>
           <Ionicons name="checkbox-outline" size={15} color="#49555F" />
           <Text style={styles.markAsReadText}>Mark All as Read</Text>
         </Pressable>
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {NOTIFICATIONS.map((item) => {
-          const isRead = readIds.includes(item.id);
-          return (
-            <Pressable
-              key={item.id}
-              style={[styles.itemCard, isRead && styles.itemCardRead]}
-              onPress={() => setReadIds((current) => (current.includes(item.id) ? current : [...current, item.id]))}
-            >
-            <Text style={styles.itemTime}>{item.time}</Text>
-            <Text style={[styles.itemTitle, isRead && styles.itemTextRead]}>{item.title}</Text>
-            <Text style={[styles.itemMessage, isRead && styles.itemTextRead]}>{item.message}</Text>
-          </Pressable>
-          );
-        })}
-      </ScrollView>
+      {loading ? (
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator color="#6FAE46" />
+        </View>
+      ) : (
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          {items.length ? (
+            items.map((item) => (
+              <Swipeable
+                key={item.id}
+                overshootRight={false}
+                renderRightActions={() => (
+                  <Pressable style={styles.deleteSwipeAction} onPress={() => setPendingDeleteNotificationId(item.id)}>
+                    <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
+                    <Text style={styles.deleteSwipeText}>Delete</Text>
+                  </Pressable>
+                )}
+              >
+                <Pressable
+                  style={[styles.itemCard, item.isRead && styles.itemCardRead]}
+                  onPress={() => void handleOpenNotification(item)}
+                >
+                  <Text style={styles.itemTime}>{item.timeLabel}</Text>
+                  <Text style={[styles.itemTitle, item.isRead && styles.itemTextRead]}>{item.title}</Text>
+                  <Text style={[styles.itemMessage, item.isRead && styles.itemTextRead]}>{item.message}</Text>
+                </Pressable>
+              </Swipeable>
+            ))
+          ) : (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyText}>No notifications yet.</Text>
+            </View>
+          )}
+        </ScrollView>
+      )}
+
+      <ConfirmationModal
+        visible={Boolean(pendingDeleteNotificationId)}
+        message="Delete this notification?"
+        cancelLabel="Cancel"
+        confirmLabel="Delete"
+        confirmTone="danger"
+        onCancel={() => setPendingDeleteNotificationId(null)}
+        onConfirm={() => void handleConfirmDelete()}
+      />
     </SafeAreaView>
   );
 }
@@ -153,6 +213,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
   },
+  loadingWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   scroll: {
     flex: 1,
   },
@@ -164,8 +229,8 @@ const styles = StyleSheet.create({
   itemCard: {
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: "#E2E0EB",
-    backgroundColor: "#EFEDF8",
+    borderColor: "#D5E7C8",
+    backgroundColor: "#EAF6E0",
     paddingHorizontal: 18,
     paddingTop: 8,
     paddingBottom: 9,
@@ -173,6 +238,22 @@ const styles = StyleSheet.create({
   },
   itemCardRead: {
     backgroundColor: "#F6F5FA",
+    borderColor: "#E2E0EB",
+  },
+  deleteSwipeAction: {
+    width: 92,
+    borderRadius: 8,
+    backgroundColor: "#D85B5B",
+    alignItems: "center",
+    justifyContent: "center",
+    rowGap: 4,
+    marginLeft: 8,
+  },
+  deleteSwipeText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
   },
   itemTime: {
     position: "absolute",
@@ -184,19 +265,30 @@ const styles = StyleSheet.create({
   },
   itemTitle: {
     color: "#33475B",
-    fontSize: 34 / 2,
+    fontSize: 17,
     lineHeight: 23,
     fontWeight: "700",
-    paddingRight: 28,
+    paddingRight: 100,
     marginBottom: 2,
   },
   itemMessage: {
     color: "#384A5E",
     fontSize: 16.5,
     lineHeight: 22,
-    paddingRight: 30,
+    paddingRight: 24,
   },
   itemTextRead: {
     color: "#647280",
+  },
+  emptyCard: {
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    padding: 18,
+    alignItems: "center",
+  },
+  emptyText: {
+    color: "#647280",
+    fontSize: 15,
+    lineHeight: 20,
   },
 });

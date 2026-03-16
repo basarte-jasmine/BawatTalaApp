@@ -1,8 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
+import { useCallback, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
+import { useAuthSession } from "../lib/auth-session";
+import { fetchCheckInStatus } from "../lib/backend-api";
 
 type CollectionSection = {
   id: string;
@@ -20,6 +24,27 @@ const TALA_IMAGE = require("../assets/images/tala_sample.png");
 const LUMI_IMAGE = require("../assets/images/pet_sample.png");
 
 export default function LumiAvatarScreen() {
+  const { user } = useAuthSession();
+  const [totalTala, setTotalTala] = useState(0);
+
+  const loadTotalTala = useCallback(async () => {
+    if (!user?.studentNumber) {
+      setTotalTala(0);
+      return;
+    }
+
+    const result = await fetchCheckInStatus(user.studentNumber);
+    if (result.ok) {
+      setTotalTala(result.totalTala ?? 0);
+    }
+  }, [user?.studentNumber]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadTotalTala();
+    }, [loadTotalTala]),
+  );
+
   const handleBack = () => {
     if (router.canGoBack()) {
       router.back();
@@ -42,7 +67,7 @@ export default function LumiAvatarScreen() {
         <View style={styles.heroCard}>
           <View style={styles.talaPill}>
             <Image source={TALA_IMAGE} style={styles.talaIcon} resizeMode="contain" />
-            <Text style={styles.talaText}>10,000</Text>
+            <Text style={styles.talaText}>{totalTala.toLocaleString("en-US")}</Text>
           </View>
 
           <View style={styles.circleBadge} />
@@ -83,7 +108,7 @@ export default function LumiAvatarScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#ECECEC",
+    backgroundColor: "#FFFFFF",
   },
   topBar: {
     height: 52,
@@ -94,7 +119,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 4,
-    shadowColor: "#777777",
+    shadowColor: "#5C6570",
     shadowOpacity: 0.12,
     shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 },

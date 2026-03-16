@@ -53,6 +53,12 @@ export const BARANGAY_OPTIONS = [
   "Wawang Pulo",
 ];
 
+export const GENDER_OPTIONS = [
+  "Male",
+  "Female",
+  "Prefer not to say",
+];
+
 export const FIXED_ADDRESS = {
   region: "NCR",
   province: "Metro Manila",

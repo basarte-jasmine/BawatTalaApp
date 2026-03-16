@@ -1,13 +1,14 @@
 import { useMemo, useState } from "react";
 import { BrowserRouter as Router, Navigate, Route, Routes } from "react-router-dom";
-import Dashboard from "./pages/Dashboard";
+import AnalyticsReports from "./pages/AnalyticsReports";
+import CalendarScheduling from "./pages/CalendarScheduling";
 import ForgotPassword from "./pages/ForgotPassword";
+import FlaggedEntries from "./pages/FlaggedEntries";
 import Login from "./pages/Login";
-import Appointments from "./pages/Appointments";
-import Users from "./pages/Users";
-import Journals from "./pages/Journals";
-import Reports from "./pages/Reports";
+import Overview from "./pages/Overview";
+import RoleAssignments from "./pages/RoleAssignments";
 import Settings from "./pages/Settings";
+import StudentDirectory from "./pages/StudentDirectory";
 
 const SESSION_KEY = "bt_admin_session";
 
@@ -49,20 +50,14 @@ export default function App() {
       <Routes>
         <Route
           path="/login"
-          element={
-            session ? (
-              <Navigate to="/dashboard" replace />
-            ) : (
-              <Login onLogin={authActions.login} />
-            )
-          }
+          element={session ? <Navigate to="/dashboard" replace /> : <Login onLogin={authActions.login} />}
         />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route
           path="/dashboard"
           element={
             <ProtectedRoute session={session}>
-              <Dashboard session={session} onLogout={authActions.logout} />
+              <Overview session={session} onLogout={authActions.logout} />
             </ProtectedRoute>
           }
         />
@@ -70,7 +65,15 @@ export default function App() {
           path="/appointments"
           element={
             <ProtectedRoute session={session}>
-              <Appointments session={session} onLogout={authActions.logout} />
+              <CalendarScheduling session={session} onLogout={authActions.logout} />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/flagged"
+          element={
+            <ProtectedRoute session={session}>
+              <FlaggedEntries session={session} onLogout={authActions.logout} />
             </ProtectedRoute>
           }
         />
@@ -78,15 +81,7 @@ export default function App() {
           path="/users"
           element={
             <ProtectedRoute session={session}>
-              <Users session={session} onLogout={authActions.logout} />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/journals"
-          element={
-            <ProtectedRoute session={session}>
-              <Journals session={session} onLogout={authActions.logout} />
+              <StudentDirectory session={session} onLogout={authActions.logout} />
             </ProtectedRoute>
           }
         />
@@ -94,7 +89,15 @@ export default function App() {
           path="/reports"
           element={
             <ProtectedRoute session={session}>
-              <Reports session={session} onLogout={authActions.logout} />
+              <AnalyticsReports session={session} onLogout={authActions.logout} />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/roles"
+          element={
+            <ProtectedRoute session={session}>
+              <RoleAssignments session={session} onLogout={authActions.logout} />
             </ProtectedRoute>
           }
         />
@@ -106,10 +109,7 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/"
-          element={<Navigate to={session ? "/dashboard" : "/login"} replace />}
-        />
+        <Route path="*" element={<Navigate to={session ? "/dashboard" : "/login"} replace />} />
       </Routes>
     </Router>
   );

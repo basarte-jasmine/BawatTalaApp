@@ -16,8 +16,8 @@ html {
 
 body {
   font-family: "Plus Jakarta Sans", system-ui, sans-serif;
-  background-color: #eceff3;
-  color: #141414;
+  background-color: #e8fccf;
+  color: #134611;
   line-height: 1.5;
 }
 
@@ -28,16 +28,16 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #e5e9f0;
+  background: #dff3ca;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #160078;
+  background: #3e8914;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #100030;
+  background: #134611;
 }
 
 /* Smooth transitions */
@@ -53,6 +53,6 @@ textarea {
 button:focus-visible,
 a:focus-visible,
 input:focus-visible {
-  outline: 2px solid #7226ff;
+  outline: 2px solid #3e8914;
   outline-offset: 2px;
 }
