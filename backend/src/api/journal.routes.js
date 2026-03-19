@@ -309,6 +309,24 @@ async function cleanupStaleEmptyDrafts(studentNumber) {
   return result.rowCount || 0;
 }
 
+function buildVisibleEntriesWhereClause(alias = "je") {
+  return `
+    ${alias}.deleted_by_student_at is null
+    and (
+      ${alias}.is_finished = true
+      or exists (
+        select 1
+        from public.journal_entry_messages visible_messages
+        where visible_messages.entry_id = ${alias}.id
+          and visible_messages.role = 'user'
+          and btrim(coalesce(visible_messages.message_text, '')) <> ''
+      )
+      or btrim(coalesce(${alias}.summary, '')) <> ''
+      or btrim(coalesce(${alias}.title, '')) <> ''
+    )
+  `;
+}
+
 router.get("/entries/recent", asyncHandler(async (req, res) => {
   const studentNumber = normalizeStudentNumber(req.query.studentNumber);
   const windowDays = Math.max(1, Math.min(30, Number(req.query.windowDays || 20)));
@@ -348,8 +366,7 @@ router.get("/entries/recent", asyncHandler(async (req, res) => {
         ) last_user on true
         where je.student_number = $1
           and je.entry_date >= $2::date
-          and je.is_finished = true
-          and je.deleted_by_student_at is null
+          and ${buildVisibleEntriesWhereClause("je")}
         order by je.entry_date desc, je.created_at desc
         limit 100
       `,
@@ -358,13 +375,19 @@ router.get("/entries/recent", asyncHandler(async (req, res) => {
     query(
       `
         select
-          count(*) filter (where is_finished = true and entry_date = $2)::int as today_count,
-          count(*) filter (where is_finished = true and entry_date >= $3 and entry_date < $4)::int as monthly_count,
+          count(*) filter (
+            where entry_date = $2
+              and ${buildVisibleEntriesWhereClause("public.journal_entries")}
+          )::int as today_count,
+          count(*) filter (
+            where entry_date >= $3
+              and entry_date < $4
+              and ${buildVisibleEntriesWhereClause("public.journal_entries")}
+          )::int as monthly_count,
           count(*)::int as total_count
         from public.journal_entries
         where student_number = $1
-          and is_finished = true
-          and deleted_by_student_at is null
+          and ${buildVisibleEntriesWhereClause("public.journal_entries")}
       `,
       [studentNumber, today.isoDate, monthStart, nextMonthStart],
     ),
@@ -417,8 +440,7 @@ router.get("/entries/by-date", asyncHandler(async (req, res) => {
       ) last_user on true
       where je.student_number = $1
         and je.entry_date = $2::date
-        and je.is_finished = true
-        and je.deleted_by_student_at is null
+        and ${buildVisibleEntriesWhereClause("je")}
       order by je.created_at desc
     `,
     [studentNumber, entryDate],
@@ -461,8 +483,7 @@ router.get("/entries/calendar", asyncHandler(async (req, res) => {
       from public.journal_entries
       where student_number = $1
         and extract(year from entry_date) = $2
-        and is_finished = true
-        and deleted_by_student_at is null
+        and ${buildVisibleEntriesWhereClause("public.journal_entries")}
       group by extract(month from entry_date), extract(day from entry_date)
       order by month_index asc, day_number asc
     `,

@@ -24,7 +24,7 @@ type MonthMeta = {
   name: string;
 };
 
-const MIN_YEAR = 2026;
+const MIN_YEAR = 2020;
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const MONTH_NAMES = [
   "January",
