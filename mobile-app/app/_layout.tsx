@@ -4,6 +4,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import { AuthSessionProvider } from "../lib/auth-session";
+import { warmBackend } from "../lib/backend-api";
 
 const APP_MAX_WIDTH = 412;
 
@@ -36,6 +37,10 @@ export default function RootLayout() {
     applyGlobalTypography();
     void SplashScreen.hideAsync();
   }, [fontError, fontsLoaded]);
+
+  useEffect(() => {
+    void warmBackend();
+  }, []);
 
   if (!fontsLoaded) return null;
 

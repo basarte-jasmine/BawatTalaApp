@@ -1,6 +1,7 @@
 const express = require("express");
 
 const router = express.Router();
+const OCR_REQUEST_TIMEOUT_MS = 15000;
 
 function normalizeText(value) {
   return value.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
@@ -42,6 +43,7 @@ router.post("/scan-id", async (req, res) => {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: requestBody.toString(),
+      signal: AbortSignal.timeout(OCR_REQUEST_TIMEOUT_MS),
     });
 
     const data = await response.json();
@@ -66,7 +68,13 @@ router.post("/scan-id", async (req, res) => {
         ? "ID scanned successfully. Review the extracted details."
         : "Uploaded image does not appear to be a valid ID.",
     });
-  } catch {
+  } catch (error) {
+    if (error?.name === "TimeoutError") {
+      return res.status(504).json({
+        message: "OCR request timed out. Please try again with a clearer or smaller image.",
+      });
+    }
+
     return res.status(500).json({ message: "Failed to process OCR scan." });
   }
 });

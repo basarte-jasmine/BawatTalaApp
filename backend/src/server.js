@@ -5,26 +5,27 @@ const { ensureDefaultAdminAccount } = require("./api/admin.routes");
 
 const port = Number(process.env.PORT || 4000);
 
-async function bootstrap() {
-  await ensureDatabaseSchema();
-  await ensureDefaultAdminAccount();
-
-  const server = app.listen(port, () => {
-    console.log(`Backend running on port ${port}`);
-  });
-
-  server.on("error", (error) => {
-    if (error?.code === "EADDRINUSE") {
-      console.error(`Port ${port} is already in use. Another app is already listening there.`);
-      process.exit(1);
-    }
-
-    console.error("Failed to start backend:", error?.message || error);
-    process.exit(1);
-  });
+async function runStartupTasks() {
+  try {
+    await ensureDatabaseSchema();
+    await ensureDefaultAdminAccount();
+    console.log("Backend startup tasks completed.");
+  } catch (error) {
+    console.error("Backend startup tasks failed:", error?.message || error);
+  }
 }
 
-bootstrap().catch((error) => {
+const server = app.listen(port, () => {
+  console.log(`Backend running on port ${port}`);
+  void runStartupTasks();
+});
+
+server.on("error", (error) => {
+  if (error?.code === "EADDRINUSE") {
+    console.error(`Port ${port} is already in use. Another app is already listening there.`);
+    process.exit(1);
+  }
+
   console.error("Failed to start backend:", error?.message || error);
   process.exit(1);
 });

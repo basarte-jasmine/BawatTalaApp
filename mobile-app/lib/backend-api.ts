@@ -94,11 +94,30 @@ function normalizeApiBaseUrl(rawUrl: string) {
 const API_BASE_URL = normalizeApiBaseUrl(
   process.env.EXPO_PUBLIC_API_BASE_URL ?? getDefaultApiBaseUrl(),
 );
+let backendWarmupPromise: Promise<void> | null = null;
 
 type ApiResult = {
   ok: boolean;
   message?: string;
 };
+
+function shouldWarmBackend() {
+  return API_BASE_URL.includes(".onrender.com");
+}
+
+export async function warmBackend(): Promise<void> {
+  if (!shouldWarmBackend()) {
+    return;
+  }
+
+  if (!backendWarmupPromise) {
+    backendWarmupPromise = fetch(`${API_BASE_URL}/health`)
+      .then(() => undefined)
+      .catch(() => undefined);
+  }
+
+  await backendWarmupPromise;
+}
 
 async function get(path: string) {
   const response = await fetch(`${API_BASE_URL}${path}`);
