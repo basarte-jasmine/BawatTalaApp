@@ -16,17 +16,26 @@ import {
   getMuniCollectionSource,
   getSavedMuniLoadout,
   MUNI_IMAGE,
+  MuniCollectionOption,
   MuniLoadout,
+  purchaseMuniItem,
   saveMuniLoadout,
   TALA_IMAGE,
+  useOwnedMuniItems,
   useSavedMuniLoadout,
+  useSpentMuniTala,
 } from "../lib/muni-wardrobe";
+
+type AvatarMode = "wardrobe" | "shop";
 
 export default function MuniAvatarScreen() {
   const { user } = useAuthSession();
   const [totalTala, setTotalTala] = useState(0);
   const savedItems = useSavedMuniLoadout();
+  const ownedItems = useOwnedMuniItems();
+  const spentTala = useSpentMuniTala();
   const [equippedItems, setEquippedItems] = useState<MuniLoadout>(() => getSavedMuniLoadout());
+  const [activeMode, setActiveMode] = useState<AvatarMode>("wardrobe");
 
   const loadTotalTala = useCallback(async () => {
     if (!user?.studentNumber) {
@@ -65,11 +74,38 @@ export default function MuniAvatarScreen() {
   const equippedHeadStyle = getHeadAccessoryStyle(equippedItems.head);
   const equippedEyeStyle = getEyeAccessoryStyle(equippedItems.eye);
   const hasUnsavedChanges = !areMuniLoadoutsEqual(equippedItems, savedItems);
+  const availableTala = Math.max(0, totalTala - spentTala);
 
   const handleSaveLoadout = useCallback(() => {
     saveMuniLoadout(equippedItems);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
   }, [equippedItems]);
+
+  const handleEquipItem = useCallback((sectionId: keyof MuniLoadout, optionId: string) => {
+    setEquippedItems((current) => ({
+      ...current,
+      [sectionId]: optionId,
+    }));
+    void Haptics.selectionAsync().catch(() => undefined);
+  }, []);
+
+  const handleBuyItem = useCallback(
+    (sectionId: keyof MuniLoadout, option: MuniCollectionOption) => {
+      if (availableTala < option.price) {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
+        return;
+      }
+
+      const purchased = purchaseMuniItem(sectionId, option.id);
+      if (!purchased) {
+        return;
+      }
+
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+    },
+    [availableTala],
+  );
+
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <View style={styles.topBar}>
@@ -91,7 +127,7 @@ export default function MuniAvatarScreen() {
 
           <View style={styles.talaPill}>
             <Image source={TALA_IMAGE} style={styles.talaIcon} resizeMode="contain" />
-            <Text style={styles.talaText}>{totalTala.toLocaleString("en-US")}</Text>
+            <Text style={styles.talaText}>{availableTala.toLocaleString("en-US")}</Text>
           </View>
 
           <Pressable
@@ -125,7 +161,31 @@ export default function MuniAvatarScreen() {
         </View>
 
         <View style={styles.collectionBadgeWrap}>
-          <Text style={styles.collectionBadge}>Your Collection</Text>
+          <Text style={styles.collectionBadge}>{activeMode === "wardrobe" ? "Your Wardrobe" : "Muni Shop"}</Text>
+        </View>
+
+        <View style={styles.modeSwitchWrap}>
+          <View style={styles.modeSwitch}>
+            <Pressable
+              style={[styles.modeButton, activeMode === "wardrobe" && styles.modeButtonActive]}
+              onPress={() => setActiveMode("wardrobe")}
+            >
+              <Text style={[styles.modeButtonText, activeMode === "wardrobe" && styles.modeButtonTextActive]}>
+                Wardrobe
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.modeButton, activeMode === "shop" && styles.modeButtonActive]}
+              onPress={() => setActiveMode("shop")}
+            >
+              <Text style={[styles.modeButtonText, activeMode === "shop" && styles.modeButtonTextActive]}>Shop</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.modeHelperText}>
+            {activeMode === "wardrobe"
+              ? "Equip the pieces you already own."
+              : "Use Tala to unlock new looks for Muni."}
+          </Text>
         </View>
       </View>
 
@@ -133,34 +193,85 @@ export default function MuniAvatarScreen() {
         {COLLECTION_SECTIONS.map((section) => (
           <View key={section.id} style={styles.sectionBlock}>
             <Text style={styles.sectionTitle}>{section.label}</Text>
-            <View style={styles.optionRow}>
-              {section.options.map((option) => {
-                const selected = equippedItems[section.id] === option.id;
-                return (
-                  <Pressable
-                    key={option.id}
-                    style={[styles.optionCard, selected && styles.optionCardSelected]}
-                    onPress={() =>
-                      setEquippedItems((current) => ({
-                        ...current,
-                        [section.id]: option.id,
-                      } as MuniLoadout))
-                    }
-                  >
-                    <Image
-                      source={option.source}
-                      style={section.id === "background" ? styles.backgroundOptionImage : styles.optionImage}
-                      resizeMode="contain"
-                    />
-                    {selected ? (
-                      <View style={styles.checkBadge}>
-                        <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+            {activeMode === "wardrobe" ? (
+              <View style={styles.optionRow}>
+                {section.options
+                  .filter((option) => ownedItems[section.id].includes(option.id))
+                  .map((option) => {
+                    const selected = equippedItems[section.id] === option.id;
+                    return (
+                      <Pressable
+                        key={option.id}
+                        style={[styles.optionCard, selected && styles.optionCardSelected]}
+                        onPress={() => handleEquipItem(section.id, option.id)}
+                      >
+                        <Image
+                          source={option.source}
+                          style={section.id === "background" ? styles.backgroundOptionImage : styles.optionImage}
+                          resizeMode="contain"
+                        />
+                        {selected ? (
+                          <View style={styles.checkBadge}>
+                            <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                          </View>
+                        ) : null}
+                      </Pressable>
+                    );
+                  })}
+              </View>
+            ) : (
+              <View style={styles.shopGrid}>
+                {section.options.map((option) => {
+                  const owned = ownedItems[section.id].includes(option.id);
+                  const selected = equippedItems[section.id] === option.id;
+                  const canAfford = availableTala >= option.price;
+                  return (
+                    <View
+                      key={option.id}
+                      style={[
+                        styles.shopCard,
+                        owned && styles.shopCardOwned,
+                        selected && owned && styles.shopCardSelected,
+                      ]}
+                    >
+                      <View style={styles.shopImageWrap}>
+                        <Image
+                          source={option.source}
+                          style={section.id === "background" ? styles.shopBackgroundImage : styles.shopOptionImage}
+                          resizeMode="contain"
+                        />
                       </View>
-                    ) : null}
-                  </Pressable>
-                );
-              })}
-            </View>
+                      <Text style={styles.shopLabel} numberOfLines={2}>
+                        {option.label ?? option.id}
+                      </Text>
+                      {owned ? (
+                        <View style={[styles.shopStatusChip, selected && styles.shopStatusChipActive]}>
+                          <Text style={[styles.shopStatusText, selected && styles.shopStatusTextActive]}>
+                            {selected ? "Equipped" : "Owned"}
+                          </Text>
+                        </View>
+                      ) : (
+                        <>
+                          <View style={styles.priceRow}>
+                            <Image source={TALA_IMAGE} style={styles.shopPriceIcon} resizeMode="contain" />
+                            <Text style={styles.shopPriceText}>{option.price}</Text>
+                          </View>
+                          <Pressable
+                            style={[styles.buyButton, !canAfford && styles.buyButtonDisabled]}
+                            disabled={!canAfford}
+                            onPress={() => handleBuyItem(section.id, option)}
+                          >
+                            <Text style={[styles.buyButtonText, !canAfford && styles.buyButtonTextDisabled]}>
+                              {canAfford ? "Buy Now" : "Not enough Tala"}
+                            </Text>
+                          </Pressable>
+                        </>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
           </View>
         ))}
       </ScrollView>
@@ -330,8 +441,52 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     overflow: "hidden",
   },
+  modeSwitchWrap: {
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+  },
+  modeSwitch: {
+    height: 48,
+    borderRadius: 18,
+    backgroundColor: "#EFF5EA",
+    borderWidth: 1,
+    borderColor: "#D7E7C7",
+    padding: 4,
+    flexDirection: "row",
+    columnGap: 6,
+  },
+  modeButton: {
+    flex: 1,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modeButtonActive: {
+    backgroundColor: "#7CCB58",
+    shadowColor: "#74B451",
+    shadowOpacity: 0.14,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  modeButtonText: {
+    color: "#62746A",
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "700",
+  },
+  modeButtonTextActive: {
+    color: "#FFFFFF",
+  },
+  modeHelperText: {
+    marginTop: 8,
+    color: "#6D7E74",
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: "center",
+  },
   sectionBlock: {
-    marginBottom: 8,
+    marginBottom: 16,
   },
   sectionTitle: {
     color: "#324254",
@@ -370,6 +525,114 @@ const styles = StyleSheet.create({
   backgroundOptionImage: {
     width: "200%",
     height: "150%",
+  },
+  shopGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    rowGap: 12,
+    columnGap: 10,
+    paddingHorizontal: 6,
+  },
+  shopCard: {
+    width: "48%",
+    minHeight: 176,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#D7E7C7",
+    backgroundColor: "#FFFFFF",
+    padding: 10,
+    shadowColor: "#6C7D6D",
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  shopCardOwned: {
+    backgroundColor: "#F7FBF2",
+  },
+  shopCardSelected: {
+    borderColor: "#7CCB58",
+  },
+  shopImageWrap: {
+    height: 84,
+    borderRadius: 14,
+    backgroundColor: "#F7F7F7",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    marginBottom: 10,
+  },
+  shopOptionImage: {
+    width: "76%",
+    height: "76%",
+  },
+  shopBackgroundImage: {
+    width: "180%",
+    height: "140%",
+  },
+  shopLabel: {
+    minHeight: 36,
+    color: "#33475C",
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  priceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 4,
+    marginTop: "auto",
+    marginBottom: 8,
+  },
+  shopPriceIcon: {
+    width: 14,
+    height: 14,
+  },
+  shopPriceText: {
+    color: "#4A5C4B",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
+  },
+  buyButton: {
+    height: 32,
+    borderRadius: 999,
+    backgroundColor: "#7CCB58",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  buyButtonDisabled: {
+    backgroundColor: "#E4ECD9",
+  },
+  buyButtonText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
+  buyButtonTextDisabled: {
+    color: "#8A9583",
+  },
+  shopStatusChip: {
+    marginTop: "auto",
+    height: 30,
+    borderRadius: 999,
+    backgroundColor: "#E8F4DF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  shopStatusChipActive: {
+    backgroundColor: "#7CCB58",
+  },
+  shopStatusText: {
+    color: "#5C7257",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
+  shopStatusTextActive: {
+    color: "#FFFFFF",
   },
   checkBadge: {
     position: "absolute",

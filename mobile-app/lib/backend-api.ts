@@ -7,6 +7,19 @@ export type AuthUser = {
   studentNumber: string;
 };
 
+export type StudentProfile = {
+  barangay: string;
+  birthdate: string;
+  city: string;
+  email: string;
+  fullName: string;
+  program: string;
+  province: string;
+  region: string;
+  street: string;
+  studentNumber: string;
+};
+
 export type JournalMessage = {
   createdAt: string;
   id: string;
@@ -158,6 +171,19 @@ export async function loginWithStudentId(
     password,
   });
   return { ok: response.ok, message: data?.message, user: data?.user };
+}
+
+export async function fetchStudentProfile(
+  studentNumber: string,
+): Promise<ApiResult & { profile?: StudentProfile | null }> {
+  const params = new URLSearchParams({ studentNumber });
+  const { response, data } = await get(`/api/auth/profile?${params.toString()}`);
+
+  return {
+    ok: response.ok,
+    message: data?.message,
+    profile: data?.profile ?? null,
+  };
 }
 
 export async function forgotPasswordSendCode(

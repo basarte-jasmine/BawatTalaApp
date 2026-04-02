@@ -98,18 +98,29 @@ export default function WellnessBreathingScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.selectedToolCard}>
+        <View style={styles.heroCard}>
+          <View style={styles.heroBadge}>
+            <Ionicons name="leaf-outline" size={16} color="#4B7C2E" />
+            <Text style={styles.heroBadgeText}>Wellness Tool</Text>
+          </View>
           <Text style={styles.selectedToolTitle}>Diaphragmatic Breathing</Text>
           <Text style={styles.selectedToolDesc}>
-            Regulate heart rate and reduce physiological stress responses through breathing patterns.
+            Regulate your nervous system through a slower, steadier breathing rhythm.
           </Text>
         </View>
 
-        <Text style={styles.instructions}>
-          Follow the visual guide below to lower your heart rate and reduce physiological stress.
-        </Text>
+        <View style={styles.instructionsCard}>
+          <Text style={styles.instructionsEyebrow}>Guided Rhythm</Text>
+          <Text style={styles.instructions}>
+            Follow the circle as it expands and softens. Let your breath match the motion.
+          </Text>
+        </View>
 
-        <View style={styles.circleWrap}>
+        <View style={styles.breathCard}>
+          <View style={styles.phasePill}>
+            <Text style={styles.phasePillText}>{phase === "INHALE" ? "Breathe In" : "Breathe Out"}</Text>
+          </View>
+          <View style={styles.circleWrap}>
           <Animated.View
             style={[
               styles.outerRing,
@@ -146,13 +157,17 @@ export default function WellnessBreathingScreen() {
                 <Text style={styles.phaseText}>{phase}</Text>
                 <Text style={styles.secondsText}>{secondsLeft} Seconds</Text>
               </Animated.View>
+              </Animated.View>
             </Animated.View>
-          </Animated.View>
+          </View>
         </View>
 
-        <Text style={styles.tipText}>
-          Tip: Focus on expanding your stomach as you breathe in, keeping your shoulders relaxed.
-        </Text>
+        <View style={styles.tipCard}>
+          <Ionicons name="bulb-outline" size={18} color="#5B8B35" />
+          <Text style={styles.tipText}>
+            Tip: let your stomach expand as you inhale, and keep your shoulders soft instead of lifting them.
+          </Text>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -161,12 +176,12 @@ export default function WellnessBreathingScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#ECECEC",
+    backgroundColor: "#F7FAF6",
   },
   topBar: {
     height: 52,
     borderBottomWidth: 1,
-    borderBottomColor: "#D3D5D7",
+    borderBottomColor: "#E6ECF1",
     backgroundColor: "#FFFFFF",
     flexDirection: "row",
     alignItems: "center",
@@ -198,44 +213,113 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 6,
-    paddingTop: 10,
-    paddingBottom: 22,
+    paddingHorizontal: 12,
+    paddingTop: 14,
+    paddingBottom: 28,
   },
-  selectedToolCard: {
-    borderRadius: 12,
+  heroCard: {
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: "#B8DFAB",
-    backgroundColor: "#C9EEB8",
+    borderColor: "#CFE7B2",
+    backgroundColor: "#DDF3C0",
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 16,
+    marginBottom: 12,
+    shadowColor: "#66737E",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  heroBadge: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 6,
     paddingHorizontal: 10,
-    paddingTop: 6,
-    paddingBottom: 8,
-    marginBottom: 42,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.74)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.86)",
+    marginBottom: 10,
+  },
+  heroBadgeText: {
+    color: "#4B7C2E",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
   },
   selectedToolTitle: {
     color: "#33495D",
-    fontSize: 16.5,
-    lineHeight: 23,
+    fontSize: 21,
+    lineHeight: 27,
     fontWeight: "700",
-    textAlign: "center",
-    marginBottom: 3,
+    marginBottom: 6,
   },
   selectedToolDesc: {
-    color: "#31485B",
-    fontSize: 15,
-    lineHeight: 21,
+    color: "#496158",
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  instructionsCard: {
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E6EEE7",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 16,
+  },
+  instructionsEyebrow: {
+    color: "#6E875A",
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    marginBottom: 4,
   },
   instructions: {
     color: "#33475C",
-    fontSize: 31 / 2,
-    lineHeight: 22,
-    marginBottom: 34,
-    paddingHorizontal: 4,
+    fontSize: 15,
+    lineHeight: 21,
+  },
+  breathCard: {
+    borderRadius: 28,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E6EEE7",
+    paddingHorizontal: 10,
+    paddingTop: 18,
+    paddingBottom: 18,
+    marginBottom: 16,
+    shadowColor: "#66737E",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  phasePill: {
+    alignSelf: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#EEF8E5",
+    borderWidth: 1,
+    borderColor: "#D8EBC7",
+    marginBottom: 16,
+  },
+  phasePillText: {
+    color: "#4B7C2E",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
   },
   circleWrap: {
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 18,
   },
   outerRing: {
     borderWidth: 12,
@@ -252,7 +336,7 @@ const styles = StyleSheet.create({
   innerRing: {
     borderWidth: 9,
     borderColor: "#3D8E1A",
-    backgroundColor: "#ECECEC",
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -269,11 +353,21 @@ const styles = StyleSheet.create({
     lineHeight: 27 / 1.1,
     fontWeight: "700",
   },
+  tipCard: {
+    borderRadius: 18,
+    backgroundColor: "#F8FCF3",
+    borderWidth: 1,
+    borderColor: "#E0ECD5",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    columnGap: 10,
+  },
   tipText: {
-    color: "#2F4156",
+    flex: 1,
+    color: "#4D6072",
     fontSize: 13,
     lineHeight: 19,
-    textAlign: "center",
-    paddingHorizontal: 28,
   },
 });

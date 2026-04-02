@@ -4,6 +4,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import { AuthSessionProvider } from "../lib/auth-session";
+import { AppLockOverlay, AppPreferencesProvider } from "../lib/app-preferences";
 import { warmBackend } from "../lib/backend-api";
 
 const APP_MAX_WIDTH = 412;
@@ -47,15 +48,18 @@ export default function RootLayout() {
   return (
     <View style={styles.root}>
       <View style={styles.frame}>
-        <AuthSessionProvider>
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              animation: "fade_from_bottom",
-              animationDuration: 160,
-            }}
-          />
-        </AuthSessionProvider>
+        <AppPreferencesProvider>
+          <AuthSessionProvider>
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                animation: "fade_from_bottom",
+                animationDuration: 160,
+              }}
+            />
+            <AppLockOverlay />
+          </AuthSessionProvider>
+        </AppPreferencesProvider>
       </View>
     </View>
   );

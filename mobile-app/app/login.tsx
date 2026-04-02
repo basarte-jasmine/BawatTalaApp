@@ -55,12 +55,12 @@ export default function LoginScreen() {
     if (result.user) {
       setUser(result.user);
     }
-    router.replace("/studio");
+    router.replace({ pathname: "/studio", params: { welcome: "1" } });
   };
 
   return (
     <AuthCardLayout contentContainerStyle={styles.scrollContent} cardStyle={styles.card}>
-      <Image source={require("../assets/images/logo_sampleIMG.png")} style={styles.logo} resizeMode="contain" />
+      <Image source={require("../assets/images/BT_Logo.png")} style={styles.logo} resizeMode="contain" />
       <Text style={styles.title}>Welcome!</Text>
       <Text style={styles.subtitle}>
         Log in to your account to start journaling{"\n"}and track your progress.

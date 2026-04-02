@@ -55,6 +55,7 @@ const DEFAULT_CONCERNS = [
   "Others",
 ];
 const GENDER_PREFERENCE = ["No Preference", "Female Counselor", "Male Counselor"];
+const STEP_LABELS = ["Concern", "Preference", "Counselor", "Date & Time"];
 
 function toMonthKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
@@ -236,6 +237,7 @@ export default function ConsultScreen() {
   const selectedDayAvailability = getDayFromAvailability(availableDays, selectedDay);
   const availableTimeSlots = selectedDayAvailability?.availableSlots || [];
   const calendarCells = useMemo(() => buildCalendarCells(selectedMonth), [selectedMonth]);
+  const currentStepLabel = STEP_LABELS[step - 1] ?? "Schedule";
 
   useEffect(() => {
     if (!availableTimeSlots.some((slot) => slot.time === selectedTime)) {
@@ -337,17 +339,33 @@ export default function ConsultScreen() {
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <Text style={styles.introText}>
-          Choose a guidance counselor schedule that fits your availability. Peer counseling booking will be added later.
-        </Text>
+        <View style={styles.introCard}>
+          <View style={styles.introHeaderRow}>
+            <View style={styles.introIconWrap}>
+              <Ionicons name="calendar-clear-outline" size={22} color="#4E7E2D" />
+            </View>
+            <View style={styles.introTextWrap}>
+              <Text style={styles.introEyebrow}>Guidance Support</Text>
+              <Text style={styles.introTitle}>Schedule a consultation that fits your day</Text>
+              <Text style={styles.introText}>
+                We&apos;ll guide you through four quick steps to find the right counselor and an open time slot.
+              </Text>
+            </View>
+          </View>
 
-        <View style={styles.progressRow}>
-          {Array.from({ length: TOTAL_STEPS }).map((_, index) => {
-            const stepIndex = index + 1;
-            return (
-              <View key={`step-${stepIndex}`} style={[styles.progressDot, stepIndex <= step && styles.progressDotActive]} />
-            );
-          })}
+          <View style={styles.progressMetaRow}>
+            <Text style={styles.progressStepText}>{`Step ${step} of ${TOTAL_STEPS}`}</Text>
+            <Text style={styles.progressStepLabel}>{currentStepLabel}</Text>
+          </View>
+
+          <View style={styles.progressRow}>
+            {Array.from({ length: TOTAL_STEPS }).map((_, index) => {
+              const stepIndex = index + 1;
+              return (
+                <View key={`step-${stepIndex}`} style={[styles.progressDot, stepIndex <= step && styles.progressDotActive]} />
+              );
+            })}
+          </View>
         </View>
 
         {errorMessage ? <Text style={styles.errorBanner}>{errorMessage}</Text> : null}
@@ -481,7 +499,7 @@ export default function ConsultScreen() {
           {!loadingCounselors && step === 4 ? (
             <>
               <Text style={styles.stepTitle}>Choose Date & Time</Text>
-              <Text style={styles.stepSubTitle}>Only open slots from the counselor's schedule can be booked.</Text>
+              <Text style={styles.stepSubTitle}>Only open slots from the counselor&apos;s schedule can be booked.</Text>
 
               <View style={styles.monthHeaderRow}>
                 <Pressable onPress={() => setSelectedMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>
@@ -603,12 +621,12 @@ export default function ConsultScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#ECECEC",
+    backgroundColor: "#F7FAF6",
   },
   topBar: {
     height: 52,
     borderBottomWidth: 1,
-    borderBottomColor: "#D1D3D4",
+    borderBottomColor: "#E6ECF1",
     backgroundColor: "#FFFFFF",
     flexDirection: "row",
     alignItems: "center",
@@ -641,39 +659,102 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingTop: 14,
+    paddingHorizontal: 12,
     paddingBottom: 116,
   },
-  introText: {
-    textAlign: "center",
-    color: "#34485D",
-    fontSize: 16.5,
-    lineHeight: 26,
-    marginHorizontal: 24,
+  introCard: {
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E6EEE7",
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 14,
     marginBottom: 14,
+    shadowColor: "#66737E",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  introHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    columnGap: 12,
+    marginBottom: 12,
+  },
+  introIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: "#EFF9E7",
+    borderWidth: 1,
+    borderColor: "#DCEBCF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  introTextWrap: {
+    flex: 1,
+  },
+  introEyebrow: {
+    color: "#6C8756",
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  introTitle: {
+    color: "#304558",
+    fontSize: 20,
+    lineHeight: 25,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  introText: {
+    color: "#5E7080",
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  progressMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+    columnGap: 12,
+  },
+  progressStepText: {
+    color: "#6C8756",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
+  progressStepLabel: {
+    color: "#34495E",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "600",
   },
   progressRow: {
     flexDirection: "row",
-    alignSelf: "center",
-    columnGap: 3,
-    marginBottom: 14,
+    columnGap: 6,
   },
   progressDot: {
-    width: 30,
-    height: 6,
+    flex: 1,
+    height: 7,
     borderRadius: 999,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#262D33",
+    backgroundColor: "#EDF1F3",
   },
   progressDotActive: {
-    backgroundColor: "#000000",
-    borderColor: "#000000",
+    backgroundColor: "#79C943",
   },
   errorBanner: {
-    marginHorizontal: 16,
     marginBottom: 12,
-    borderRadius: 12,
+    borderRadius: 14,
     backgroundColor: "#FFF0F0",
+    borderWidth: 1,
+    borderColor: "#F1D2D2",
     color: "#B43333",
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -682,15 +763,19 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   stepCard: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: "#C9CDCF",
-    backgroundColor: "#F6F6F6",
-    paddingHorizontal: 12,
+    borderColor: "#E6EEE7",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 14,
     paddingTop: 16,
     paddingBottom: 22,
-    minHeight: 500,
+    marginBottom: 16,
+    shadowColor: "#66737E",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
   },
   loadingCard: {
     alignItems: "center",
@@ -705,13 +790,13 @@ const styles = StyleSheet.create({
   },
   stepTitle: {
     color: "#34495E",
-    fontSize: 17,
+    fontSize: 19,
     lineHeight: 24,
     fontWeight: "700",
-    marginBottom: 2,
+    marginBottom: 4,
   },
   stepSubTitle: {
-    color: "#34495E",
+    color: "#617282",
     fontSize: 14,
     lineHeight: 20,
     marginBottom: 14,
@@ -720,22 +805,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
-    rowGap: 10,
-    marginBottom: 10,
+    rowGap: 12,
+    marginBottom: 12,
   },
   concernChip: {
     width: "48.5%",
-    minHeight: 66,
-    borderRadius: 12,
+    minHeight: 70,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#C9CED2",
+    borderColor: "#DDE5EA",
     backgroundColor: "#FFFFFF",
     justifyContent: "center",
     paddingHorizontal: 12,
+    shadowColor: "#9FAAB4",
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
   },
   concernChipActive: {
     borderColor: "#78C74A",
-    backgroundColor: "#F2FAEE",
+    backgroundColor: "#F3FAEE",
   },
   concernChipText: {
     color: "#33475C",
@@ -749,9 +838,9 @@ const styles = StyleSheet.create({
   },
   otherInput: {
     minHeight: 42,
-    borderRadius: 10,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#C9CED2",
+    borderColor: "#DDE5EA",
     backgroundColor: "#FFFFFF",
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -760,7 +849,7 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     color: "#35495D",
-    fontSize: 15,
+    fontSize: 14,
     lineHeight: 22,
     fontWeight: "700",
     marginBottom: 8,
@@ -771,9 +860,9 @@ const styles = StyleSheet.create({
   },
   preferenceCard: {
     minHeight: 56,
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#C9CED2",
+    borderColor: "#DDE5EA",
     backgroundColor: "#FFFFFF",
     justifyContent: "center",
     alignItems: "center",
@@ -811,12 +900,16 @@ const styles = StyleSheet.create({
     rowGap: 12,
   },
   counselorCard: {
-    borderRadius: 14,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#D0D4D6",
+    borderColor: "#DDE5EA",
     backgroundColor: "#FFFFFF",
     paddingHorizontal: 14,
     paddingVertical: 12,
+    shadowColor: "#9FAAB4",
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
   },
   selectedCounselorCard: {
     borderColor: "#6DC23C",
@@ -871,8 +964,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 10,
-    paddingHorizontal: 8,
+    marginBottom: 12,
+    paddingHorizontal: 4,
   },
   monthLabel: {
     color: "#36495D",
@@ -883,7 +976,7 @@ const styles = StyleSheet.create({
   weekHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 3,
+    marginBottom: 6,
     paddingHorizontal: 2,
   },
   weekHeaderText: {
@@ -898,12 +991,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     marginBottom: 14,
+    borderRadius: 18,
+    backgroundColor: "#F9FBFC",
+    paddingVertical: 6,
   },
   dayCell: {
     width: `${100 / 7}%`,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 4,
+    paddingVertical: 5,
   },
   dayBubble: {
     width: 34,
@@ -913,10 +1009,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   dayBubbleOpen: {
-    backgroundColor: "#E5F5DC",
+    backgroundColor: "#EDF8E6",
   },
   dayBubbleDisabled: {
-    backgroundColor: "#EEF0F2",
+    backgroundColor: "#F1F4F6",
   },
   dayBubbleActive: {
     backgroundColor: "#70C943",
@@ -938,7 +1034,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   selectedDateLabel: {
-    color: "#44576B",
+    color: "#526476",
     fontSize: 13,
     lineHeight: 18,
     fontWeight: "600",
@@ -948,14 +1044,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
-    rowGap: 8,
+    rowGap: 10,
   },
   timeChip: {
     width: "32%",
-    minHeight: 34,
-    borderRadius: 7,
+    minHeight: 38,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#9CA4AA",
+    borderColor: "#CBD4DB",
     backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
@@ -976,9 +1072,9 @@ const styles = StyleSheet.create({
   },
   noteInput: {
     minHeight: 80,
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#C9CED2",
+    borderColor: "#DDE5EA",
     backgroundColor: "#FFFFFF",
     marginTop: 14,
     paddingHorizontal: 12,
@@ -995,16 +1091,21 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
   },
   continueInlineWrap: {
-    paddingHorizontal: 18,
-    marginTop: 18,
+    paddingHorizontal: 6,
+    marginTop: 2,
     marginBottom: 10,
   },
   continueButton: {
-    minHeight: 48,
+    minHeight: 50,
     borderRadius: 999,
     backgroundColor: "#70C943",
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#5F7A55",
+    shadowOpacity: 0.16,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
   },
   continueButtonDisabled: {
     opacity: 0.7,

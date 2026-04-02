@@ -1,0 +1,1299 @@
+import { Ionicons } from "@expo/vector-icons";
+import { router, useLocalSearchParams } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Linking,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useAppPreferences } from "../lib/app-preferences";
+import {
+  AppNotification,
+  CounselorAppointment,
+  fetchRecentJournalEntries,
+  fetchStudentAppointments,
+  fetchStudentNotifications,
+  fetchStudentProfile,
+  StudentProfile,
+} from "../lib/backend-api";
+import { useAuthSession } from "../lib/auth-session";
+import { getManilaTodayParts } from "../lib/manila-date";
+
+type SettingsSection =
+  | "schedule"
+  | "personal-details"
+  | "privacy-security"
+  | "recent-activity"
+  | "help-support"
+  | "feedback"
+  | "app-lock";
+
+type RecentEntryItem = {
+  createdAt: string;
+  id: string;
+  preview: string;
+  title: string;
+};
+
+const SCREEN_COPY: Record<SettingsSection, { subtitle: string; title: string }> = {
+  schedule: {
+    title: "My Schedule",
+    subtitle: "See your counseling schedule and jump back into booking when needed.",
+  },
+  "app-lock": {
+    title: "App Lock",
+    subtitle: "Protect the current session with a simple 4-digit PIN.",
+  },
+  feedback: {
+    title: "Feedback",
+    subtitle: "Tell us what to improve and what already feels good.",
+  },
+  "help-support": {
+    title: "Help & Support",
+    subtitle: "Quick ways to get support and answers inside Bawat Tala.",
+  },
+  "personal-details": {
+    title: "Personal Details",
+    subtitle: "Your account information and who to contact if something needs updating.",
+  },
+  "privacy-security": {
+    title: "Privacy & Security",
+    subtitle: "Choose how private the app feels when youâ€™re using it around other people.",
+  },
+  "recent-activity": {
+    title: "Recent Activity",
+    subtitle: "A short summary of your latest entries, alerts, and support activity.",
+  },
+};
+
+const FEEDBACK_CATEGORIES = ["Bug", "Suggestion", "Question", "Support"] as const;
+const SUPPORT_EMAIL = "team@bawattalapro.online";
+const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+
+function isSection(value: string | undefined): value is SettingsSection {
+  return Boolean(value && value in SCREEN_COPY);
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "Not available";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "Not available";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function getMonthName(monthIndex: number, year: number) {
+  return new Date(year, monthIndex, 1).toLocaleString("en-US", { month: "long" });
+}
+
+function parseIsoDate(value?: string | null) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return {
+    day: Number(match[3]),
+    isoDate: `${match[1]}-${match[2]}-${match[3]}`,
+    monthIndex: Number(match[2]) - 1,
+    year: Number(match[1]),
+  };
+}
+
+export default function ProfileSettingsScreen() {
+  const { section } = useLocalSearchParams<{ section?: string }>();
+  const activeSection: SettingsSection = isSection(section) ? section : "personal-details";
+  const { title, subtitle } = SCREEN_COPY[activeSection];
+  const { user } = useAuthSession();
+  const {
+    appLockAutoLock,
+    appLockEnabled,
+    disableAppLock,
+    enableAppLock,
+    lockAppNow,
+    notificationPreviewsEnabled,
+    privateJournalModeEnabled,
+    setAppLockAutoLock,
+    setNotificationPreviewsEnabled,
+    setPrivateJournalModeEnabled,
+    updateAppLockPin,
+  } = useAppPreferences();
+
+  const [profile, setProfile] = useState<StudentProfile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [recentEntries, setRecentEntries] = useState<RecentEntryItem[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [appointments, setAppointments] = useState<CounselorAppointment[]>([]);
+  const [appointment, setAppointment] = useState<CounselorAppointment | null>(null);
+  const [feedbackCategory, setFeedbackCategory] = useState<(typeof FEEDBACK_CATEGORIES)[number]>("Suggestion");
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [pin, setPin] = useState("");
+  const [pinConfirm, setPinConfirm] = useState("");
+  const [pinError, setPinError] = useState("");
+  const [showPinEditor, setShowPinEditor] = useState(false);
+  const [draftAutoLock, setDraftAutoLock] = useState(appLockAutoLock);
+  const todayParts = useMemo(() => getManilaTodayParts(), []);
+  const [scheduleMonthIndex, setScheduleMonthIndex] = useState(todayParts.monthIndex);
+  const [scheduleYear, setScheduleYear] = useState(todayParts.year);
+
+  useEffect(() => {
+    setDraftAutoLock(appLockAutoLock);
+  }, [appLockAutoLock]);
+
+  useEffect(() => {
+    if (activeSection !== "personal-details" || !user?.studentNumber) return;
+    let mounted = true;
+    setProfileLoading(true);
+    void fetchStudentProfile(user.studentNumber)
+      .then((result) => {
+        if (!mounted) return;
+        setProfile(result.ok ? result.profile ?? null : null);
+      })
+      .finally(() => {
+        if (mounted) setProfileLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [activeSection, user?.studentNumber]);
+
+  useEffect(() => {
+    if ((activeSection !== "recent-activity" && activeSection !== "schedule") || !user?.studentNumber) return;
+    let mounted = true;
+    setActivityLoading(true);
+    void Promise.all([
+      fetchRecentJournalEntries(user.studentNumber, 14),
+      fetchStudentNotifications(user.studentNumber),
+      fetchStudentAppointments(user.studentNumber),
+    ])
+      .then(([entriesResult, notificationsResult, appointmentsResult]) => {
+        if (!mounted) return;
+        setRecentEntries(
+          (entriesResult.entries ?? []).slice(0, 3).map((entry) => ({
+            createdAt: entry.createdAt,
+            id: entry.id,
+            preview: entry.preview || entry.summary || "Journal entry",
+            title: entry.title || "Journal entry",
+          })),
+        );
+        setNotifications((notificationsResult.notifications ?? []).slice(0, 3));
+        setAppointments(appointmentsResult.appointments ?? []);
+        setAppointment(appointmentsResult.upcomingAppointment ?? null);
+      })
+      .finally(() => {
+        if (mounted) setActivityLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [activeSection, user?.studentNumber]);
+
+  const address = useMemo(() => {
+    if (!profile) return "Not available";
+    return [profile.street, profile.barangay, profile.city, profile.province, profile.region].filter(Boolean).join(", ");
+  }, [profile]);
+
+  const scheduledAppointments = useMemo(
+    () => appointments.filter((item) => item.status !== "CANCELLED"),
+    [appointments],
+  );
+
+  const appointmentsTodayCount = useMemo(
+    () => scheduledAppointments.filter((item) => item.appointmentDate === todayParts.isoDate).length,
+    [scheduledAppointments, todayParts.isoDate],
+  );
+
+  const appointmentsThisMonthCount = useMemo(
+    () =>
+      scheduledAppointments.filter((item) => {
+        const parsed = parseIsoDate(item.appointmentDate);
+        return parsed?.year === todayParts.year && parsed?.monthIndex === todayParts.monthIndex;
+      }).length,
+    [scheduledAppointments, todayParts.monthIndex, todayParts.year],
+  );
+
+  const scheduleCalendarDays = useMemo(() => {
+    const firstDayIndex = new Date(scheduleYear, scheduleMonthIndex, 1).getDay();
+    const totalDays = new Date(scheduleYear, scheduleMonthIndex + 1, 0).getDate();
+    const appointmentDays = new Set(
+      scheduledAppointments
+        .map((item) => parseIsoDate(item.appointmentDate))
+        .filter((item) => item && item.year === scheduleYear && item.monthIndex === scheduleMonthIndex)
+        .map((item) => item!.day),
+    );
+
+    const cells: { day: number | null; hasAppointment: boolean; isToday: boolean }[] = [];
+
+    for (let index = 0; index < firstDayIndex; index += 1) {
+      cells.push({ day: null, hasAppointment: false, isToday: false });
+    }
+
+    for (let day = 1; day <= totalDays; day += 1) {
+      cells.push({
+        day,
+        hasAppointment: appointmentDays.has(day),
+        isToday:
+          scheduleYear === todayParts.year &&
+          scheduleMonthIndex === todayParts.monthIndex &&
+          day === todayParts.day,
+      });
+    }
+
+    while (cells.length % 7 !== 0) {
+      cells.push({ day: null, hasAppointment: false, isToday: false });
+    }
+
+    return cells;
+  }, [scheduleMonthIndex, scheduleYear, scheduledAppointments, todayParts.day, todayParts.monthIndex, todayParts.year]);
+
+  const goToPreviousScheduleMonth = () => {
+    if (scheduleMonthIndex === 0) {
+      setScheduleMonthIndex(11);
+      setScheduleYear((prev) => prev - 1);
+      return;
+    }
+    setScheduleMonthIndex((prev) => prev - 1);
+  };
+
+  const goToNextScheduleMonth = () => {
+    if (scheduleMonthIndex === 11) {
+      setScheduleMonthIndex(0);
+      setScheduleYear((prev) => prev + 1);
+      return;
+    }
+    setScheduleMonthIndex((prev) => prev + 1);
+  };
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace("/profile");
+  };
+
+  const openSupportEmail = useCallback(async (subject: string, body: string) => {
+    const url = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    const supported = await Linking.canOpenURL(url);
+    if (!supported) {
+      Alert.alert("Mail App Needed", `Please email us at ${SUPPORT_EMAIL}.`);
+      return;
+    }
+    await Linking.openURL(url);
+  }, []);
+
+  const handleFeedback = async () => {
+    if (!feedbackMessage.trim()) {
+      Alert.alert("Add your feedback", "Write a short note first so we know what you want us to improve.");
+      return;
+    }
+    await openSupportEmail(
+      `Bawat Tala Feedback - ${feedbackCategory}`,
+      `Category: ${feedbackCategory}\nStudent: ${user?.studentNumber || "Unknown"}\n\n${feedbackMessage.trim()}`,
+    );
+    Alert.alert("Feedback Ready", "Your mail app is open. Send it there and weâ€™ll take it from there.");
+  };
+
+  const handleSavePin = () => {
+    if (pin.length !== 4) {
+      setPinError("Use exactly 4 digits for the PIN.");
+      return;
+    }
+    if (pin !== pinConfirm) {
+      setPinError("PIN entries do not match yet.");
+      return;
+    }
+    if (appLockEnabled) {
+      updateAppLockPin(pin);
+      setAppLockAutoLock(draftAutoLock);
+    } else {
+      enableAppLock(pin, draftAutoLock);
+    }
+    setPin("");
+    setPinConfirm("");
+    setPinError("");
+    setShowPinEditor(false);
+    Alert.alert("App Lock Updated", "Your session PIN is ready.");
+  };
+
+  const infoRows = [
+    { label: "Full Name", value: profile?.fullName || user?.fullName || "User" },
+    { label: "First Name", value: user?.firstName || "User" },
+    { label: "Student ID", value: profile?.studentNumber || user?.studentNumber || "Not available" },
+    { label: "Email", value: profile?.email || user?.email || "Not available" },
+    { label: "Program", value: profile?.program || "Not available" },
+    { label: "Birthdate", value: formatDate(profile?.birthdate) },
+    { label: "Address", value: address },
+  ];
+
+  return (
+    <SafeAreaView style={styles.screen} edges={["top"]}>
+      <View style={styles.topBar}>
+        <Pressable style={styles.backButton} accessibilityLabel="Go back" onPress={handleBack}>
+          <Ionicons name="chevron-back" size={30} color="#3D3F43" />
+        </Pressable>
+        <Text style={styles.topTitle}>{title}</Text>
+        <View style={styles.topBarSpacer} />
+      </View>
+
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {activeSection !== "schedule" ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+
+        {activeSection === "personal-details" ? (
+          <>
+            {profileLoading ? <ActivityIndicator color="#70C943" style={styles.loader} /> : null}
+            <Card>
+              {infoRows.map((item, index) => (
+                <Row key={item.label} bordered={index > 0} label={item.label} value={item.value} />
+              ))}
+            </Card>
+            <TipCard
+              title="Need a correction?"
+              body="If your student details changed, send a quick request and weâ€™ll help you update the account safely."
+            />
+            <PrimaryButton label="Reset Password" onPress={() => router.push("/reset-password")} />
+            <SecondaryButton
+              label="Contact Support"
+              onPress={() =>
+                void openSupportEmail(
+                  "Account Details Update Request",
+                  `Student ID: ${user?.studentNumber || ""}\n\nPlease help me update my account details.\n\nRequested change: `,
+                )
+              }
+            />
+          </>
+        ) : null}
+
+        {activeSection === "schedule" ? (
+          <>
+            {activityLoading ? <ActivityIndicator color="#70C943" style={styles.loader} /> : null}
+            <View style={styles.scheduleOverviewBlock}>
+              <Text style={styles.scheduleOverviewTitle}>Overview</Text>
+              <Text style={styles.scheduleOverviewBody}>
+                {appointmentsTodayCount === 1
+                  ? "You have 1 scheduled consultation today."
+                  : `You have ${appointmentsTodayCount} scheduled consultations today.`}
+              </Text>
+            </View>
+
+            <View style={styles.scheduleStatsRow}>
+              <ScheduleStatCard label="Today" value={appointmentsTodayCount} />
+              <ScheduleStatCard label="This Month" value={appointmentsThisMonthCount} />
+            </View>
+
+            <View style={styles.scheduleCalendarCard}>
+              <Text style={styles.scheduleCalendarYear}>{scheduleYear}</Text>
+              <View style={styles.scheduleMonthBar}>
+                <Pressable style={styles.scheduleMonthArrow} onPress={goToPreviousScheduleMonth}>
+                  <Ionicons name="chevron-back" size={24} color="#384B5F" />
+                </Pressable>
+
+                <Text style={styles.scheduleMonthLabel}>{getMonthName(scheduleMonthIndex, scheduleYear)}</Text>
+
+                <Pressable style={styles.scheduleMonthArrow} onPress={goToNextScheduleMonth}>
+                  <Ionicons name="chevron-forward" size={24} color="#384B5F" />
+                </Pressable>
+              </View>
+
+              <View style={styles.scheduleWeekRow}>
+                {WEEKDAY_LABELS.map((day) => (
+                  <Text key={day} style={styles.scheduleWeekText}>
+                    {day}
+                  </Text>
+                ))}
+              </View>
+
+              <View style={styles.scheduleGrid}>
+                {scheduleCalendarDays.map((cell, index) => (
+                  <View key={`${cell.day ?? "blank"}-${index}`} style={styles.scheduleGridCell}>
+                    {cell.day === null ? (
+                      <View style={styles.scheduleDayBlank} />
+                    ) : (
+                      <View
+                        style={[
+                          styles.scheduleDayCircle,
+                          cell.hasAppointment && styles.scheduleDayCircleBooked,
+                          cell.isToday && styles.scheduleDayCircleToday,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.scheduleDayText,
+                            cell.hasAppointment && styles.scheduleDayTextBooked,
+                            cell.isToday && styles.scheduleDayTextToday,
+                          ]}
+                        >
+                          {cell.day}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                ))}
+              </View>
+
+              <View style={styles.scheduleLegendRow}>
+                <View style={styles.scheduleLegendMarker} />
+                <Text style={styles.scheduleLegendText}>Outlined dates are scheduled consultations.</Text>
+              </View>
+            </View>
+
+            {appointment ? (
+              <View style={styles.scheduleUpcomingShell}>
+                <View style={styles.scheduleUpcomingIcon}>
+                  <Ionicons name="calendar-outline" size={20} color="#5A8A36" />
+                </View>
+                <View style={styles.scheduleUpcomingContent}>
+                  <View style={styles.scheduleUpcomingHeaderRow}>
+                    <Text style={styles.scheduleUpcomingEyebrow}>Upcoming Appointment</Text>
+                    <Text style={styles.scheduleUpcomingStatus}>{appointment.status}</Text>
+                  </View>
+                  <Text style={styles.scheduleUpcomingName}>{appointment.counselor.fullName}</Text>
+                  <Text style={styles.scheduleUpcomingMeta}>
+                    {appointment.appointmentDateLabel} • {appointment.slotLabel}
+                  </Text>
+                  <Text style={styles.scheduleUpcomingMeta}>{appointment.concern}</Text>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.scheduleEmptyCard}>
+                <Text style={styles.scheduleEmptyTitle}>No consultation booked yet</Text>
+                <Text style={styles.scheduleEmptyText}>
+                  When you confirm a schedule, it will appear here and on the calendar above.
+                </Text>
+              </View>
+            )}
+
+            <PrimaryButton label={appointment ? "Manage Consultation" : "Book a Consultation"} onPress={() => router.push("/consult")} />
+          </>
+        ) : null}
+
+        {activeSection === "privacy-security" ? (
+          <>
+            <Card title="Privacy Controls">
+              <ToggleItem
+                title="Notification Previews"
+                description="Show preview text when alerts come in."
+                value={notificationPreviewsEnabled}
+                onValueChange={setNotificationPreviewsEnabled}
+              />
+              <ToggleItem
+                title="Private Journal Mode"
+                description="Hide detailed journal previews on profile-related screens."
+                value={privateJournalModeEnabled}
+                onValueChange={setPrivateJournalModeEnabled}
+                bordered
+              />
+            </Card>
+            <Card title="Security">
+              <ToggleItem
+                title="Auto-lock in background"
+                description={appLockEnabled ? "Lock the app whenever it leaves the foreground." : "Turn on App Lock first to use this."}
+                value={draftAutoLock}
+                onValueChange={(value) => {
+                  setDraftAutoLock(value);
+                  if (appLockEnabled) setAppLockAutoLock(value);
+                }}
+              />
+            </Card>
+            <TipCard
+              title={appLockEnabled ? "App Lock is on" : "App Lock is off"}
+              body={
+                appLockEnabled
+                  ? "Your session can be protected with a 4-digit PIN whenever you leave the app."
+                  : "You can add a quick PIN if you often hand your phone to someone else."
+              }
+            />
+            <PrimaryButton label="Manage App Lock" onPress={() => router.push("/profile-settings?section=app-lock")} />
+            <SecondaryButton label="Change Password" onPress={() => router.push("/reset-password")} />
+          </>
+        ) : null}
+
+        {activeSection === "recent-activity" ? (
+          <>
+            {activityLoading ? <ActivityIndicator color="#70C943" style={styles.loader} /> : null}
+            <View style={styles.statsRow}>
+              <StatBox label="Entries" value={String(recentEntries.length)} />
+              <StatBox label="Unread" value={String(notifications.filter((item) => !item.isRead).length)} />
+              <StatBox label="Support" value={appointment ? "1" : "0"} />
+            </View>
+            <Card title="Latest Journal Activity">
+              {recentEntries.length ? (
+                recentEntries.map((entry, index) => (
+                  <ActionRow
+                    key={entry.id}
+                    bordered={index > 0}
+                    title={entry.title}
+                    meta={formatDateTime(entry.createdAt)}
+                    body={privateJournalModeEnabled ? "Journal entry saved. Open it to read the full details." : entry.preview}
+                    onPress={() => router.push(`/journal-entry-view?entryId=${entry.id}`)}
+                  />
+                ))
+              ) : (
+                <EmptyText text="No recent journal activity yet." />
+              )}
+            </Card>
+            <Card title="Recent Notifications">
+              {notifications.length ? (
+                notifications.map((item, index) => (
+                  <ActionRow
+                    key={item.id}
+                    bordered={index > 0}
+                    title={item.title}
+                    meta={item.timeLabel}
+                    body={notificationPreviewsEnabled ? item.message : "Preview hidden. Open notifications to read it."}
+                    onPress={() => router.push("/notifications")}
+                  />
+                ))
+              ) : (
+                <EmptyText text="No recent notifications yet." />
+              )}
+            </Card>
+            <Card title="Upcoming Support">
+              {appointment ? (
+                <View style={styles.summaryBlock}>
+                  <Text style={styles.summaryTitle}>{appointment.counselor.fullName}</Text>
+                  <Text style={styles.summaryText}>{appointment.concern}</Text>
+                  <Text style={styles.summaryText}>
+                    {appointment.appointmentDateLabel} â€¢ {appointment.slotLabel}
+                  </Text>
+                </View>
+              ) : (
+                <EmptyText text="No upcoming consultation right now." />
+              )}
+            </Card>
+          </>
+        ) : null}
+
+        {activeSection === "help-support" ? (
+          <>
+            <Card title="Quick Actions">
+              <ActionRow
+                title="Schedule Consultation"
+                body="Set up a private session with a counselor or peer listener."
+                onPress={() => router.push("/consult")}
+              />
+              <ActionRow
+                title="Open Wellness Tools"
+                body="Use guided exercises when you need a calmer reset."
+                onPress={() => router.push("/wellness-tools")}
+                bordered
+              />
+              <ActionRow
+                title="View Notifications"
+                body="Catch reminders, follow-ups, and updates in one place."
+                onPress={() => router.push("/notifications")}
+                bordered
+              />
+            </Card>
+            <Card title="Common Questions">
+              <Faq question="How do I continue a journal entry?" answer="Open Journal, tap View Entries, and choose the entry you want to read." />
+              <Faq
+                question="What if I need support right away?"
+                answer="Use Consult for counseling support, or Talk to Peer when you want a lighter first step."
+                bordered
+              />
+              <Faq
+                question="Will Muni read my entries automatically?"
+                answer="Muni responds inside journaling flows and insights. You stay in control of what you write and finish."
+                bordered
+              />
+            </Card>
+            <PrimaryButton
+              label="Email Support"
+              onPress={() =>
+                void openSupportEmail(
+                  "Bawat Tala Help Request",
+                  `Student ID: ${user?.studentNumber || ""}\n\nHi team,\n\nI need help with: `,
+                )
+              }
+            />
+          </>
+        ) : null}
+
+        {activeSection === "feedback" ? (
+          <>
+            <Card title="Feedback Type">
+              <View style={styles.chips}>
+                {FEEDBACK_CATEGORIES.map((category) => (
+                  <Pressable
+                    key={category}
+                    style={[styles.chip, feedbackCategory === category && styles.chipActive]}
+                    onPress={() => setFeedbackCategory(category)}
+                  >
+                    <Text style={[styles.chipText, feedbackCategory === category && styles.chipTextActive]}>{category}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </Card>
+            <Card title="Tell us more">
+              <TextInput
+                value={feedbackMessage}
+                onChangeText={setFeedbackMessage}
+                placeholder="What happened, what you expected, or what youâ€™d love to see improved."
+                placeholderTextColor="#97A1AA"
+                multiline
+                textAlignVertical="top"
+                style={styles.feedbackInput}
+              />
+            </Card>
+            <PrimaryButton label="Send Feedback" onPress={() => void handleFeedback()} />
+            <SecondaryButton label="Open Help & Support" onPress={() => router.push("/profile-settings?section=help-support")} />
+          </>
+        ) : null}
+
+        {activeSection === "app-lock" ? (
+          <>
+            <TipCard
+              title={appLockEnabled ? "Session PIN is active" : "Protect this session"}
+              body={
+                appLockEnabled
+                  ? "Your app can lock with a 4-digit PIN whenever it leaves the screen or whenever you lock it manually."
+                  : "Set a quick 4-digit PIN to protect Bawat Tala while this app session stays open."
+              }
+            />
+            <Card title="Lock Preferences">
+              <ToggleItem
+                title="Lock when app goes to background"
+                description="Useful when you switch apps often or share your phone."
+                value={draftAutoLock}
+                onValueChange={setDraftAutoLock}
+              />
+            </Card>
+            {!appLockEnabled || showPinEditor ? (
+              <Card title={appLockEnabled ? "Change PIN" : "Create PIN"}>
+                <TextInput
+                  value={pin}
+                  onChangeText={(value) => {
+                    setPin(value.replace(/[^0-9]/g, "").slice(0, 4));
+                    if (pinError) setPinError("");
+                  }}
+                  keyboardType="number-pad"
+                  secureTextEntry
+                  maxLength={4}
+                  placeholder="Enter 4-digit PIN"
+                  placeholderTextColor="#97A1AA"
+                  style={styles.textInput}
+                />
+                <TextInput
+                  value={pinConfirm}
+                  onChangeText={(value) => {
+                    setPinConfirm(value.replace(/[^0-9]/g, "").slice(0, 4));
+                    if (pinError) setPinError("");
+                  }}
+                  keyboardType="number-pad"
+                  secureTextEntry
+                  maxLength={4}
+                  placeholder="Confirm PIN"
+                  placeholderTextColor="#97A1AA"
+                  style={[styles.textInput, styles.inputGap]}
+                />
+                {!!pinError && <Text style={styles.errorText}>{pinError}</Text>}
+                <PrimaryButton label={appLockEnabled ? "Save New PIN" : "Enable App Lock"} onPress={handleSavePin} />
+              </Card>
+            ) : null}
+            {appLockEnabled ? (
+              <>
+                <PrimaryButton
+                  label="Lock Now"
+                  onPress={() => {
+                    setAppLockAutoLock(draftAutoLock);
+                    lockAppNow();
+                  }}
+                />
+                <SecondaryButton
+                  label="Change PIN"
+                  onPress={() => {
+                    setShowPinEditor(true);
+                    setPin("");
+                    setPinConfirm("");
+                    setPinError("");
+                  }}
+                />
+                <Pressable
+                  style={styles.dangerButton}
+                  onPress={() => {
+                    disableAppLock();
+                    setPin("");
+                    setPinConfirm("");
+                    setPinError("");
+                    setShowPinEditor(false);
+                  }}
+                >
+                  <Text style={styles.dangerText}>Turn Off App Lock</Text>
+                </Pressable>
+              </>
+            ) : null}
+          </>
+        ) : null}
+
+        <Pressable
+          style={styles.shareFooter}
+          onPress={() =>
+            void Share.share({
+              message:
+                "Iâ€™ve been using Bawat Tala to journal, check in with my mood, and reach support when I need it. You can check it out at https://bawattalapro.online/",
+              title: "Share Bawat Tala",
+            })
+          }
+        >
+          <Ionicons name="share-social-outline" size={18} color="#4A5F72" />
+          <Text style={styles.shareFooterText}>Refer a friend from here too</Text>
+        </Pressable>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+function Card({ children, title }: { children: React.ReactNode; title?: string }) {
+  return (
+    <View style={styles.card}>
+      {title ? <Text style={styles.cardTitle}>{title}</Text> : null}
+      {children}
+    </View>
+  );
+}
+
+function Row({ bordered = false, label, value }: { bordered?: boolean; label: string; value: string }) {
+  return (
+    <View style={[styles.row, bordered && styles.rowBorder]}>
+      <Text style={styles.rowLabel}>{label}</Text>
+      <Text style={styles.rowValue}>{value}</Text>
+    </View>
+  );
+}
+
+function ToggleItem({
+  bordered = false,
+  description,
+  onValueChange,
+  title,
+  value,
+}: {
+  bordered?: boolean;
+  description: string;
+  onValueChange: (value: boolean) => void;
+  title: string;
+  value: boolean;
+}) {
+  return (
+    <View style={[styles.row, bordered && styles.rowBorder, styles.toggleRow]}>
+      <View style={styles.toggleText}>
+        <Text style={styles.rowValue}>{title}</Text>
+        <Text style={styles.helperText}>{description}</Text>
+      </View>
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        trackColor={{ false: "#D3D8DE", true: "#AADD8D" }}
+        thumbColor={value ? "#69BF3B" : "#F6F7F8"}
+      />
+    </View>
+  );
+}
+
+function ActionRow({
+  body,
+  bordered = false,
+  meta,
+  onPress,
+  title,
+}: {
+  body: string;
+  bordered?: boolean;
+  meta?: string;
+  onPress: () => void;
+  title: string;
+}) {
+  return (
+    <Pressable style={[styles.row, bordered && styles.rowBorder, styles.actionRow]} onPress={onPress}>
+      <View style={styles.actionText}>
+        <Text style={styles.rowValue}>{title}</Text>
+        {meta ? <Text style={styles.metaText}>{meta}</Text> : null}
+        <Text style={styles.helperText}>{body}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color="#7A8290" />
+    </Pressable>
+  );
+}
+
+function Faq({ answer, bordered = false, question }: { answer: string; bordered?: boolean; question: string }) {
+  return (
+    <View style={[styles.row, bordered && styles.rowBorder]}>
+      <Text style={styles.rowValue}>{question}</Text>
+      <Text style={styles.helperText}>{answer}</Text>
+    </View>
+  );
+}
+
+function TipCard({ body, title }: { body: string; title: string }) {
+  return (
+    <View style={styles.tipCard}>
+      <Text style={styles.tipTitle}>{title}</Text>
+      <Text style={styles.helperText}>{body}</Text>
+    </View>
+  );
+}
+
+function StatBox({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.statBox}>
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function ScheduleStatCard({ label, value }: { label: string; value: number }) {
+  return (
+    <View style={styles.scheduleStatCard}>
+      <Text style={styles.scheduleStatValue}>{value}</Text>
+      <View style={styles.scheduleStatFooter}>
+        <Text style={styles.scheduleStatLabel}>{label}</Text>
+        <Ionicons name="chevron-forward" size={16} color="#5E7164" />
+      </View>
+    </View>
+  );
+}
+
+function EmptyText({ text }: { text: string }) {
+  return <Text style={styles.helperText}>{text}</Text>;
+}
+
+function PrimaryButton({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <Pressable style={styles.primaryButton} onPress={onPress}>
+      <Text style={styles.primaryText}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function SecondaryButton({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <Pressable style={styles.secondaryButton} onPress={onPress}>
+      <Text style={styles.secondaryText}>{label}</Text>
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: "#FFFFFF" },
+  topBar: {
+    height: 52,
+    backgroundColor: "#FFFFFF",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 6,
+    shadowColor: "#777777",
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+  },
+  backButton: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
+  topTitle: { color: "#314258", fontSize: 17, lineHeight: 23, fontWeight: "700" },
+  topBarSpacer: { width: 38, height: 38 },
+  scroll: { flex: 1 },
+  scrollContent: { paddingHorizontal: 12, paddingTop: 16, paddingBottom: 28 },
+  subtitle: { color: "#5A6B7A", fontSize: 14, lineHeight: 20, marginBottom: 14 },
+  loader: { marginBottom: 14 },
+  card: {
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E9EDF2",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 12,
+    shadowColor: "#66737E",
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  cardTitle: { color: "#304558", fontSize: 16, lineHeight: 22, fontWeight: "700", marginBottom: 8 },
+  row: { paddingVertical: 10 },
+  rowBorder: { borderTopWidth: 1, borderTopColor: "#EEF2F5" },
+  rowLabel: { color: "#68807C", fontSize: 12, lineHeight: 16, fontWeight: "600", marginBottom: 3 },
+  rowValue: { color: "#2D4053", fontSize: 15, lineHeight: 20, fontWeight: "700" },
+  helperText: { color: "#566878", fontSize: 13, lineHeight: 18, marginTop: 2 },
+  tipCard: {
+    borderRadius: 16,
+    backgroundColor: "#F8FBF4",
+    borderWidth: 1,
+    borderColor: "#DDEAD2",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 12,
+  },
+  tipTitle: { color: "#304558", fontSize: 16, lineHeight: 22, fontWeight: "700", marginBottom: 4 },
+  primaryButton: {
+    minHeight: 46,
+    borderRadius: 999,
+    backgroundColor: "#79C943",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  primaryText: { color: "#FFFFFF", fontSize: 16, lineHeight: 20, fontWeight: "700" },
+  secondaryButton: {
+    minHeight: 46,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#DDE4EB",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  secondaryText: { color: "#3D5569", fontSize: 16, lineHeight: 20, fontWeight: "700" },
+  dangerButton: {
+    minHeight: 46,
+    borderRadius: 999,
+    backgroundColor: "#FFF2F3",
+    borderWidth: 1,
+    borderColor: "#F3C5CB",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  dangerText: { color: "#D54A5B", fontSize: 16, lineHeight: 20, fontWeight: "700" },
+  toggleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", columnGap: 12 },
+  toggleText: { flex: 1, paddingRight: 8 },
+  scheduleOverviewTitle: {
+    color: "#324254",
+    fontSize: 19,
+    lineHeight: 25,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  scheduleOverviewBody: {
+    color: "#4C5F72",
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 14,
+  },
+  scheduleOverviewBlock: {
+    marginBottom: 2,
+  },
+  scheduleStatsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  scheduleStatCard: {
+    width: "48.3%",
+    minHeight: 94,
+    borderRadius: 18,
+    backgroundColor: "#E4FBBC",
+    borderWidth: 1,
+    borderColor: "#D2F1B0",
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 10,
+    justifyContent: "space-between",
+    shadowColor: "#6B7781",
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  scheduleStatValue: {
+    color: "#314258",
+    fontSize: 44,
+    lineHeight: 48,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  scheduleStatFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  scheduleStatLabel: {
+    color: "#5B6A57",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "600",
+  },
+  scheduleCalendarCard: {
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E5ECF2",
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 14,
+    marginBottom: 14,
+    shadowColor: "#66737E",
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  scheduleCalendarYear: {
+    color: "#324254",
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+  scheduleMonthBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 4,
+  },
+  scheduleMonthArrow: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scheduleMonthLabel: {
+    color: "#33475B",
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "700",
+  },
+  scheduleWeekRow: {
+    flexDirection: "row",
+    justifyContent: "flex-start",
+    marginBottom: 10,
+  },
+  scheduleWeekText: {
+    width: "14.2857%",
+    textAlign: "center",
+    color: "#3F5264",
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: "700",
+  },
+  scheduleGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-start",
+    rowGap: 10,
+  },
+  scheduleGridCell: {
+    width: "14.2857%",
+    alignItems: "center",
+  },
+  scheduleDayBlank: {
+    width: 34,
+    height: 34,
+  },
+  scheduleDayCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  scheduleDayCircleBooked: {
+    borderColor: "#738B68",
+    backgroundColor: "#FFFFFF",
+  },
+  scheduleDayCircleToday: {
+    borderColor: "#6FCB43",
+    borderWidth: 2,
+    backgroundColor: "#F7FFE9",
+  },
+  scheduleDayText: {
+    color: "#728469",
+    fontSize: 15,
+    lineHeight: 18,
+    fontWeight: "600",
+  },
+  scheduleDayTextBooked: {
+    color: "#4D5F51",
+    fontWeight: "700",
+  },
+  scheduleDayTextToday: {
+    color: "#2E5232",
+  },
+  scheduleLegendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 8,
+    marginTop: 14,
+  },
+  scheduleLegendMarker: {
+    width: 12,
+    height: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#738B68",
+    backgroundColor: "#FFFFFF",
+  },
+  scheduleLegendText: {
+    color: "#6B7B89",
+    fontSize: 12,
+    lineHeight: 16,
+    flex: 1,
+  },
+  scheduleUpcomingShell: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    columnGap: 12,
+    borderRadius: 18,
+    backgroundColor: "#F7FDEB",
+    borderWidth: 1,
+    borderColor: "#DBEDC6",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 12,
+  },
+  scheduleUpcomingIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#D7E8C2",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+  scheduleUpcomingContent: {
+    flex: 1,
+  },
+  scheduleUpcomingHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    columnGap: 10,
+    marginBottom: 4,
+  },
+  scheduleUpcomingEyebrow: {
+    color: "#6D8648",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
+  scheduleUpcomingName: {
+    color: "#31475B",
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: "700",
+    marginBottom: 3,
+  },
+  scheduleUpcomingMeta: {
+    color: "#556676",
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 2,
+  },
+  scheduleUpcomingStatus: {
+    color: "#5F8A42",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
+  scheduleEmptyCard: {
+    borderRadius: 18,
+    backgroundColor: "#FAFCFE",
+    borderWidth: 1,
+    borderColor: "#E3EAF0",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    marginBottom: 12,
+  },
+  scheduleEmptyTitle: {
+    color: "#324254",
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  scheduleEmptyText: {
+    color: "#627484",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  statsRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
+  statBox: {
+    width: "31.5%",
+    borderRadius: 16,
+    backgroundColor: "#F8FBF4",
+    borderWidth: 1,
+    borderColor: "#DDEAD2",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+  },
+  statValue: { color: "#304558", fontSize: 24, lineHeight: 28, fontWeight: "700", marginBottom: 2 },
+  statLabel: { color: "#60727B", fontSize: 12, lineHeight: 16, textAlign: "center" },
+  actionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", columnGap: 12 },
+  actionText: { flex: 1 },
+  metaText: { color: "#7C8792", fontSize: 12, lineHeight: 16, marginTop: 2 },
+  summaryBlock: {
+    borderRadius: 14,
+    backgroundColor: "#F5FBEE",
+    borderWidth: 1,
+    borderColor: "#DDEACF",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  summaryTitle: { color: "#31475B", fontSize: 15, lineHeight: 20, fontWeight: "700", marginBottom: 2 },
+  summaryText: { color: "#556676", fontSize: 13, lineHeight: 18, marginBottom: 2 },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#D8E3D0",
+    backgroundColor: "#FFFFFF",
+  },
+  chipActive: { borderColor: "#79C943", backgroundColor: "#EDF8E6" },
+  chipText: { color: "#566879", fontSize: 13, lineHeight: 18, fontWeight: "600" },
+  chipTextActive: { color: "#2E6D25", fontWeight: "700" },
+  feedbackInput: {
+    minHeight: 156,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#DDE4EB",
+    backgroundColor: "#FAFCFD",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#2D4053",
+  },
+  textInput: {
+    minHeight: 46,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#DDE4EB",
+    backgroundColor: "#FAFCFD",
+    paddingHorizontal: 12,
+    fontSize: 15,
+    color: "#2D4053",
+  },
+  inputGap: { marginTop: 10 },
+  errorText: { color: "#D24C59", fontSize: 13, lineHeight: 18, marginTop: 8, marginBottom: 10 },
+  shareFooter: { flexDirection: "row", alignItems: "center", justifyContent: "center", columnGap: 8, marginTop: 8 },
+  shareFooterText: { color: "#4A5F72", fontSize: 13, lineHeight: 18, fontWeight: "600" },
+});

@@ -24,6 +24,7 @@ type CalendarDay = {
 
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
+const MOOD_ORDER = ["happy", "calm", "sad", "stressed", "angry", "anxious"] as const;
 
 const INSIGHT_TEXT = "You've been checking in regularly! Your most common mood this month has been \"Good\".";
 const INSIGHT_FOOTNOTE = "Summary by Muni, your virtual companion. Bawat Tala is not a substitute for professional mental health care.";
@@ -66,12 +67,12 @@ export default function MoodOverviewScreen() {
   const [displayMonthIndex, setDisplayMonthIndex] = useState(initialMonth.monthIndex);
   const [monthlyEntries, setMonthlyEntries] = useState<{ moodDate: string; moodId: string; moodLabel: string }[]>([]);
   const [monthlyCounts, setMonthlyCounts] = useState<Record<string, number>>({
-    angry: 0,
-    anxious: 0,
-    calm: 0,
     happy: 0,
+    calm: 0,
     sad: 0,
     stressed: 0,
+    angry: 0,
+    anxious: 0,
   });
   const [mostCommonMoodId, setMostCommonMoodId] = useState<string | null>(null);
   const [totalCheckIns, setTotalCheckIns] = useState(0);
@@ -90,12 +91,12 @@ export default function MoodOverviewScreen() {
       setMostCommonMoodId(null);
       setTotalCheckIns(0);
       setMonthlyCounts({
-        angry: 0,
-        anxious: 0,
-        calm: 0,
         happy: 0,
+        calm: 0,
         sad: 0,
         stressed: 0,
+        angry: 0,
+        anxious: 0,
       });
       return;
     }
@@ -107,12 +108,12 @@ export default function MoodOverviewScreen() {
 
     setMonthlyEntries(result.entries ?? []);
     setMonthlyCounts({
-      angry: result.counts?.angry ?? 0,
-      anxious: result.counts?.anxious ?? 0,
-      calm: result.counts?.calm ?? 0,
       happy: result.counts?.happy ?? 0,
+      calm: result.counts?.calm ?? 0,
       sad: result.counts?.sad ?? 0,
       stressed: result.counts?.stressed ?? 0,
+      angry: result.counts?.angry ?? 0,
+      anxious: result.counts?.anxious ?? 0,
     });
     setMostCommonMoodId(result.mostCommonMoodId ?? null);
     setTotalCheckIns(result.totalCheckIns ?? 0);
@@ -127,11 +128,11 @@ export default function MoodOverviewScreen() {
 
   const moodStats: MoodStat[] = useMemo(
     () =>
-      Object.entries(MOOD_META).map(([id, meta]) => ({
+      MOOD_ORDER.map((id) => ({
         id,
-        color: meta.color,
+        color: MOOD_META[id].color,
         count: monthlyCounts[id] ?? 0,
-        image: meta.image,
+        image: MOOD_META[id].image,
       })),
     [monthlyCounts],
   );

@@ -206,6 +206,43 @@ router.post("/login", async (req, res) => {
   });
 });
 
+router.get("/profile", async (req, res) => {
+  const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
+
+  if (!studentNumber) {
+    return res.status(400).json({ message: "Student ID is required." });
+  }
+
+  const { data, error } = await supabaseAdminClient
+    .from("student_profiles")
+    .select("student_number, full_name, email, program, region, province, city, barangay, street, birthdate")
+    .eq("student_number", studentNumber)
+    .maybeSingle();
+
+  if (error) {
+    return res.status(400).json({ message: error.message });
+  }
+
+  if (!data) {
+    return res.status(404).json({ message: "Student profile not found." });
+  }
+
+  return res.json({
+    profile: {
+      barangay: data.barangay || "",
+      birthdate: data.birthdate || "",
+      city: data.city || "",
+      email: normalizeEmail(data.email || ""),
+      fullName: toTitleCase(data.full_name || ""),
+      program: data.program || "",
+      province: data.province || "",
+      region: data.region || "",
+      street: data.street || "",
+      studentNumber: data.student_number,
+    },
+  });
+});
+
 router.post("/send-otp", async (req, res) => {
   const email = normalizeEmail(req.body.email || "");
   if (!email) {

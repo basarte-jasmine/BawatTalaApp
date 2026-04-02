@@ -1,10 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
 import { Animated, Easing, Image, ImageSourcePropType, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Svg, { Path } from "react-native-svg";
+import Svg, { Defs, Ellipse, LinearGradient, Path, Rect, Stop } from "react-native-svg";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { useAuthSession } from "../lib/auth-session";
 import {
@@ -32,8 +32,10 @@ type DailyCheckinReward = {
 };
 
 type SupportCardItem = {
+  accentColor: string;
   backgroundColor: string;
   description: string;
+  icon: ComponentProps<typeof Ionicons>["name"];
   id: string;
   title: string;
 };
@@ -68,29 +70,45 @@ type HomeRecentFilter = "newest" | "oldest";
 
 const SUPPORT_CARDS: SupportCardItem[] = [
   {
+    accentColor: "#4B8C35",
     id: "support-1",
     title: "Quick Journal",
     description: "Write your entry for today",
+    icon: "create-outline",
     backgroundColor: "#B1DEB3",
   },
   {
+    accentColor: "#5A8A36",
     id: "support-2",
     title: "Wellness Tools",
     description: "Calm your mind and body with exercises.",
+    icon: "leaf-outline",
     backgroundColor: "#BDE0AA",
   },
   {
+    accentColor: "#4C7C64",
     id: "support-3",
     title: "Talk to Peer",
     description: "Connect with a trained student listener today.",
+    icon: "people-outline",
     backgroundColor: "#BDE0AA",
   },
   {
+    accentColor: "#4E6F88",
     id: "support-4",
     title: "Counseling",
     description: "Set up a private and safe session with guidance counselors.",
+    icon: "chatbubbles-outline",
     backgroundColor: "#B1DEB3",
   },
+];
+
+const HOME_QUOTES = [
+  "It's okay to not have it all figured out.",
+  "You do not need to rush your healing to deserve peace.",
+  "Small steps still count, especially on heavy days.",
+  "You are allowed to rest and begin again gently.",
+  "Even quiet progress is still progress worth honoring.",
 ];
 
 const TALA_IMAGE = require("../assets/images/Tala_Star.png");
@@ -99,10 +117,15 @@ const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
 export default function HomeScreen() {
   const { user } = useAuthSession();
   const { height, width } = useWindowDimensions();
-  const { consultConfirmed, appointmentId } = useLocalSearchParams<{ consultConfirmed?: string; appointmentId?: string }>();
+  const { consultConfirmed, appointmentId, welcome } = useLocalSearchParams<{
+    consultConfirmed?: string;
+    appointmentId?: string;
+    welcome?: string;
+  }>();
   const compact = height < 760;
   const tiny = height < 680;
   const frameWidth = Math.min(width, 412);
+  const headerHeight = tiny ? 58 : 62;
   const rewardGap = 4;
   const rewardTileWidth = Math.floor((frameWidth - 44 - rewardGap * 6) / 7);
   const rewardTileHeight = rewardTileWidth + 30;
@@ -122,13 +145,26 @@ export default function HomeScreen() {
   const [showRecentEntriesFilterModal, setShowRecentEntriesFilterModal] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
   const [showConsultOverlay, setShowConsultOverlay] = useState(false);
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+  const [quoteIndex, setQuoteIndex] = useState(0);
   const [upcomingAppointment, setUpcomingAppointment] = useState<Awaited<ReturnType<typeof fetchStudentAppointments>>["upcomingAppointment"]>(null);
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
-  const headerSwitchOn = 120;
-  const headerSwitchOff = 120;
+  const headerSwitchOn = tiny ? 188 : compact ? 208 : 236;
+  const headerSwitchOff = tiny ? 154 : compact ? 174 : 202;
   const idleValues = useRef(MOODS.map(() => new Animated.Value(0))).current;
   const pressScales = useRef(MOODS.map(() => new Animated.Value(1))).current;
   const waveDrift = useRef(new Animated.Value(0)).current;
+  const welcomeOpacity = useRef(new Animated.Value(0)).current;
+  const welcomeScale = useRef(new Animated.Value(0.92)).current;
+  const welcomeTranslateY = useRef(new Animated.Value(22)).current;
+  const welcomeStarMotion = useRef(new Animated.Value(0)).current;
+  const welcomeHandledRef = useRef(false);
+  const quoteOpacity = useRef(new Animated.Value(1)).current;
+  const quoteTranslateY = useRef(new Animated.Value(0)).current;
+  const quoteScale = useRef(new Animated.Value(1)).current;
+  const quoteAuraDrift = useRef(new Animated.Value(0)).current;
+  const quoteAuraPulse = useRef(new Animated.Value(0)).current;
+  const supportShortcuts = SUPPORT_CARDS.filter((card) => card.id !== "support-1");
 
   useEffect(() => {
     const loops = idleValues.map((value, index) => {
@@ -184,10 +220,201 @@ export default function HomeScreen() {
   }, [waveDrift]);
 
   useEffect(() => {
+    const driftLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(quoteAuraDrift, {
+          toValue: 1,
+          duration: 5600,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(quoteAuraDrift, {
+          toValue: 0,
+          duration: 5600,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(quoteAuraPulse, {
+          toValue: 1,
+          duration: 3200,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(quoteAuraPulse, {
+          toValue: 0,
+          duration: 3200,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+
+    driftLoop.start();
+    pulseLoop.start();
+
+    return () => {
+      driftLoop.stop();
+      pulseLoop.stop();
+    };
+  }, [quoteAuraDrift, quoteAuraPulse]);
+
+  useEffect(() => {
+    if (HOME_QUOTES.length <= 1) {
+      return;
+    }
+
+    const cycleQuote = () => {
+      Animated.parallel([
+        Animated.timing(quoteOpacity, {
+          toValue: 0,
+          duration: 240,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(quoteTranslateY, {
+          toValue: -14,
+          duration: 240,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(quoteScale, {
+          toValue: 0.97,
+          duration: 240,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        setQuoteIndex((prev) => (prev + 1) % HOME_QUOTES.length);
+        quoteOpacity.setValue(0);
+        quoteTranslateY.setValue(18);
+        quoteScale.setValue(0.96);
+
+        Animated.parallel([
+          Animated.timing(quoteOpacity, {
+            toValue: 1,
+            duration: 320,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.spring(quoteTranslateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            speed: 15,
+            bounciness: 8,
+          }),
+          Animated.spring(quoteScale, {
+            toValue: 1,
+            useNativeDriver: true,
+            speed: 16,
+            bounciness: 7,
+          }),
+        ]).start();
+      });
+    };
+
+    const interval = setInterval(cycleQuote, 5600);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [quoteOpacity, quoteScale, quoteTranslateY]);
+
+  useEffect(() => {
     if (consultConfirmed === "1") {
       setShowConsultOverlay(true);
     }
   }, [consultConfirmed]);
+
+  const clearWelcomeParam = useCallback(() => {
+    if (consultConfirmed === "1" || appointmentId) {
+      const params: { appointmentId?: string; consultConfirmed?: string } = {};
+      if (consultConfirmed === "1") {
+        params.consultConfirmed = "1";
+      }
+      if (appointmentId) {
+        params.appointmentId = appointmentId;
+      }
+      router.replace({ pathname: "/home", params });
+      return;
+    }
+
+    router.replace("/home");
+  }, [appointmentId, consultConfirmed]);
+
+  useEffect(() => {
+    if (welcome === "1" && !welcomeHandledRef.current) {
+      welcomeHandledRef.current = true;
+      setShowWelcomeModal(true);
+      clearWelcomeParam();
+      return;
+    }
+
+    if (welcome !== "1") {
+      welcomeHandledRef.current = false;
+    }
+  }, [clearWelcomeParam, welcome]);
+
+  useEffect(() => {
+    if (!showWelcomeModal) {
+      return;
+    }
+
+    welcomeOpacity.setValue(0);
+    welcomeScale.setValue(0.92);
+    welcomeTranslateY.setValue(22);
+    welcomeStarMotion.setValue(0);
+
+    const introAnimation = Animated.parallel([
+      Animated.timing(welcomeOpacity, {
+        toValue: 1,
+        duration: 240,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.spring(welcomeScale, {
+        toValue: 1,
+        useNativeDriver: true,
+        speed: 14,
+        bounciness: 8,
+      }),
+      Animated.timing(welcomeTranslateY, {
+        toValue: 0,
+        duration: 300,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]);
+
+    const starLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(welcomeStarMotion, {
+          toValue: 1,
+          duration: 1250,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(welcomeStarMotion, {
+          toValue: 0,
+          duration: 1250,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+
+    introAnimation.start();
+    starLoop.start();
+
+    return () => {
+      introAnimation.stop();
+      starLoop.stop();
+    };
+  }, [showWelcomeModal, welcomeOpacity, welcomeScale, welcomeStarMotion, welcomeTranslateY]);
 
   const loadTodayMood = useCallback(async () => {
     if (!user?.studentNumber) {
@@ -300,6 +527,10 @@ export default function HomeScreen() {
 
   const displayedRecentEntries =
     recentEntriesSort === "newest" ? recentEntries : [...recentEntries].reverse();
+  const recentListHeight =
+    displayedRecentEntries.length === 0
+      ? 148
+      : Math.min(displayedRecentEntries.length * 104 + 20, compact ? 300 : 372);
 
   useFocusEffect(
     useCallback(() => {
@@ -375,6 +606,24 @@ export default function HomeScreen() {
     router.replace("/home");
   };
 
+  const handleDismissWelcomeModal = () => {
+    setShowWelcomeModal(false);
+  };
+
+  const handleSupportCardPress = (cardId: string) => {
+    if (cardId === "support-1") {
+      router.push("/write-entry?mode=new");
+      return;
+    }
+    if (cardId === "support-2") {
+      router.push("/wellness-tools");
+      return;
+    }
+    if (cardId === "support-3" || cardId === "support-4") {
+      router.push("/consult");
+    }
+  };
+
   const handleCheckInToday = async () => {
     if (!user?.studentNumber || isClaimingCheckIn) {
       return;
@@ -413,6 +662,50 @@ export default function HomeScreen() {
     inputRange: [0, 1],
     outputRange: [16, -16],
   });
+  const welcomeBigTranslateY = welcomeStarMotion.interpolate({
+    inputRange: [0, 1],
+    outputRange: [6, -8],
+  });
+  const welcomeBigScale = welcomeStarMotion.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [0.97, 1.05, 1],
+  });
+  const welcomeSmallTranslateY = welcomeStarMotion.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-4, 5],
+  });
+  const welcomeSmallScale = welcomeStarMotion.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [0.95, 1.06, 1],
+  });
+  const quoteAuraOneX = quoteAuraDrift.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-34, 26],
+  });
+  const quoteAuraOneY = quoteAuraPulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -10],
+  });
+  const quoteAuraOneScale = quoteAuraPulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 1.12],
+  });
+  const quoteAuraTwoX = quoteAuraDrift.interpolate({
+    inputRange: [0, 1],
+    outputRange: [20, -28],
+  });
+  const quoteAuraTwoY = quoteAuraPulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 12],
+  });
+  const quoteAuraTwoScale = quoteAuraPulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1.04, 0.94],
+  });
+  const quoteTextShadowDrift = quoteAuraDrift.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-3, 3],
+  });
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
@@ -448,8 +741,76 @@ export default function HomeScreen() {
         onScroll={(event) => handleHomeScroll(event.nativeEvent.contentOffset.y)}
       >
         <View style={[styles.quoteHero, compact && styles.quoteHeroCompact, tiny && styles.quoteHeroTiny]}>
+          <View style={styles.quoteHeroAtmosphere} pointerEvents="none">
+            <Svg width="100%" height="100%" viewBox="0 0 412 260" preserveAspectRatio="none" style={styles.quoteHeroGradient}>
+              <Defs>
+                <LinearGradient id="quoteBg" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <Stop offset="0%" stopColor="#D8F6AF" />
+                  <Stop offset="32%" stopColor="#C8EEA7" />
+                  <Stop offset="68%" stopColor="#AAD991" />
+                  <Stop offset="100%" stopColor="#87C8A1" />
+                </LinearGradient>
+                <LinearGradient id="quoteShine" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <Stop offset="0%" stopColor="rgba(255,255,255,0)" />
+                  <Stop offset="52%" stopColor="rgba(255,255,255,0.34)" />
+                  <Stop offset="100%" stopColor="rgba(255,255,255,0)" />
+                </LinearGradient>
+              </Defs>
+              <Rect x="0" y="0" width="412" height="260" fill="url(#quoteBg)" />
+              <Path d="M0,56 C66,18 118,90 188,58 C270,22 332,8 412,40 L412,0 L0,0 Z" fill="rgba(255,255,255,0.18)" />
+              <Rect x="-40" y="26" width="492" height="70" fill="url(#quoteShine)" opacity={0.42} transform="rotate(-7 206 61)" />
+            </Svg>
+
+            <Animated.View
+              style={[
+                styles.quoteAuraBlob,
+                styles.quoteAuraBlobOne,
+                { transform: [{ translateX: quoteAuraOneX }, { translateY: quoteAuraOneY }, { scale: quoteAuraOneScale }] },
+              ]}
+            >
+              <Svg width="100%" height="100%" viewBox="0 0 230 230">
+                <Defs>
+                  <LinearGradient id="auraOne" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <Stop offset="0%" stopColor="rgba(255,255,255,0.58)" />
+                    <Stop offset="100%" stopColor="rgba(255,255,255,0)" />
+                  </LinearGradient>
+                </Defs>
+                <Ellipse cx="115" cy="115" rx="115" ry="92" fill="url(#auraOne)" />
+              </Svg>
+            </Animated.View>
+
+            <Animated.View
+              style={[
+                styles.quoteAuraBlob,
+                styles.quoteAuraBlobTwo,
+                { transform: [{ translateX: quoteAuraTwoX }, { translateY: quoteAuraTwoY }, { scale: quoteAuraTwoScale }] },
+              ]}
+            >
+              <Svg width="100%" height="100%" viewBox="0 0 250 250">
+                <Defs>
+                  <LinearGradient id="auraTwo" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <Stop offset="0%" stopColor="rgba(255,247,187,0.58)" />
+                    <Stop offset="100%" stopColor="rgba(255,255,255,0)" />
+                  </LinearGradient>
+                </Defs>
+                <Ellipse cx="125" cy="125" rx="118" ry="100" fill="url(#auraTwo)" />
+              </Svg>
+            </Animated.View>
+          </View>
+
           <View style={styles.quoteHeroBody}>
-            <Text style={styles.quoteText}>It&apos;s okay to not have it all figured out.</Text>
+            <View style={{ height: headerHeight }} />
+            <Animated.View
+              style={[
+                styles.quoteTextWrap,
+                {
+                opacity: quoteOpacity,
+                transform: [{ translateY: quoteTranslateY }, { translateX: quoteTextShadowDrift }, { scale: quoteScale }],
+                },
+              ]}
+            >
+              <Text style={styles.quoteText}>{HOME_QUOTES[quoteIndex]}</Text>
+            </Animated.View>
           </View>
 
           <View style={styles.quoteWaveBase} pointerEvents="none" />
@@ -490,9 +851,11 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.moodCard}>
+          <View style={styles.surfaceGlow} />
           <View style={styles.moodHeaderRow}>
             <Image source={MUNI_IMAGE} style={styles.moodPetArt} resizeMode="contain" />
             <View style={styles.moodHeaderTextWrap}>
+              <Text style={styles.sectionEyebrow}>Mood Check</Text>
               <Text style={styles.moodHeading}>How are you feeling?</Text>
               <Text style={styles.moodSubHeading}>Track your mood to understand patterns</Text>
             </View>
@@ -541,6 +904,7 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.dailyCheckinCard}>
+          <View style={styles.surfaceGlow} />
           <View style={styles.dailyCheckinHeader}>
             <Text style={styles.dailyCheckinTitle}>Daily Check-in</Text>
             <View style={styles.dailyTalaPill}>
@@ -621,24 +985,28 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.supportWrapCard}>
-          <View style={styles.supportGrid}>
-            {SUPPORT_CARDS.map((card) => (
+          <View style={styles.supportHeader}>
+            <Text style={styles.sectionEyebrow}>Support Space</Text>
+            <Text style={styles.supportSectionTitle}>Choose what would help most today</Text>
+            <Text style={styles.supportSectionBody}>Quick paths for journaling, calming down, or reaching support.</Text>
+          </View>
+          <View style={styles.supportList}>
+            {supportShortcuts.map((card) => (
               <Pressable
                 key={card.id}
-                style={[styles.supportCard, { backgroundColor: card.backgroundColor }]}
-                onPress={() => {
-                  if (card.title === "Wellness Tools") {
-                    router.push("/wellness-tools");
-                    return;
-                  }
-                  if (card.title === "Quick Journal") {
-                    router.push("/write-entry?mode=new");
-                  }
-                }}
+                style={styles.supportListCard}
+                onPress={() => handleSupportCardPress(card.id)}
               >
-                <Image source={MUNI_IMAGE} style={styles.supportPetIcon} resizeMode="contain" />
-                <Text style={styles.supportTitle}>{card.title}</Text>
-                <Text style={styles.supportDescription}>{card.description}</Text>
+                <View style={[styles.supportListIconWrap, { backgroundColor: card.backgroundColor, borderColor: `${card.accentColor}22` }]}>
+                  <Ionicons name={card.icon} size={20} color={card.accentColor} />
+                </View>
+                <View style={styles.supportListTextWrap}>
+                  <Text style={styles.supportListTitle}>{card.title}</Text>
+                  <Text style={styles.supportListDescription}>{card.description}</Text>
+                </View>
+                <View style={styles.supportListArrow}>
+                  <Ionicons name="chevron-forward" size={18} color="#4B5F4C" />
+                </View>
               </Pressable>
             ))}
           </View>
@@ -646,13 +1014,17 @@ export default function HomeScreen() {
 
         <View style={styles.recentCard}>
           <View style={styles.recentHeader}>
-            <Text style={styles.recentTitle}>Recent Entries</Text>
-            <Pressable onPress={() => setShowRecentEntriesFilterModal(true)} accessibilityLabel="Sort today's entries">
-              <Ionicons name="list" size={22} color="#3F4A56" />
+            <View style={styles.recentHeaderTextWrap}>
+              <Text style={styles.sectionEyebrow}>Journal</Text>
+              <Text style={styles.recentTitle}>Recent Entries</Text>
+              <Text style={styles.recentSubtitle}>A quick look at the moments you captured most recently.</Text>
+            </View>
+            <Pressable style={styles.recentFilterButton} onPress={() => setShowRecentEntriesFilterModal(true)} accessibilityLabel="Sort today's entries">
+              <Ionicons name="funnel-outline" size={16} color="#3F4A56" />
             </Pressable>
           </View>
 
-          <View style={styles.recentListWrap}>
+          <View style={[styles.recentListWrap, { height: recentListHeight }]}>
             <ScrollView
               style={styles.recentList}
               contentContainerStyle={styles.recentListContent}
@@ -701,6 +1073,56 @@ export default function HomeScreen() {
         </View>
 
       </ScrollView>
+
+      <Modal
+        visible={showWelcomeModal}
+        transparent
+        animationType="none"
+        onRequestClose={handleDismissWelcomeModal}
+      >
+        <View style={styles.welcomeBackdrop}>
+          <Animated.View
+            style={[
+              styles.welcomeCard,
+              {
+                opacity: welcomeOpacity,
+                transform: [{ translateY: welcomeTranslateY }, { scale: welcomeScale }],
+              },
+            ]}
+          >
+            <Text style={styles.welcomeTitle}>
+              The talas are always here{"\n"}when you are ready.{"\n"}Welcome back.
+            </Text>
+
+            <View style={styles.welcomeArtWrap}>
+              <Animated.Image
+                source={TALA_IMAGE}
+                resizeMode="contain"
+                style={[
+                  styles.welcomeTalaLarge,
+                  {
+                    transform: [{ translateY: welcomeBigTranslateY }, { scale: welcomeBigScale }],
+                  },
+                ]}
+              />
+              <Animated.Image
+                source={TALA_IMAGE}
+                resizeMode="contain"
+                style={[
+                  styles.welcomeTalaSmall,
+                  {
+                    transform: [{ translateY: welcomeSmallTranslateY }, { scale: welcomeSmallScale }],
+                  },
+                ]}
+              />
+            </View>
+
+            <Pressable style={styles.welcomeButton} onPress={handleDismissWelcomeModal}>
+              <Text style={styles.welcomeButtonText}>Continue</Text>
+            </Pressable>
+          </Animated.View>
+        </View>
+      </Modal>
 
       <Modal
         visible={showCheckInResultModal}
@@ -858,7 +1280,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#F7FAF6",
   },
   stickyHeader: {
     flexDirection: "row",
@@ -868,9 +1290,13 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 8,
     zIndex: 20,
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
   },
   stickyHeaderTop: {
-    backgroundColor: "#B4D89A",
+    backgroundColor: "transparent",
     borderBottomWidth: 0,
   },
   stickyHeaderScrolled: {
@@ -882,25 +1308,49 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingTop: 0,
-    paddingBottom: 112,
+    paddingBottom: 120,
   },
   quoteHero: {
     backgroundColor: "#B4D89A",
-    paddingTop: 10,
+    paddingTop: 16,
     paddingHorizontal: 16,
-    paddingBottom: 66,
+    paddingBottom: 104,
     position: "relative",
     overflow: "hidden",
-    marginHorizontal: -10,
-    marginBottom: 10,
+    marginHorizontal: -12,
+    marginBottom: 14,
+  },
+  sectionEyebrow: {
+    color: "#6E875A",
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  surfaceGlow: {
+    position: "absolute",
+    top: -26,
+    right: -18,
+    width: 120,
+    height: 120,
+    borderRadius: 999,
+    backgroundColor: "rgba(210, 243, 178, 0.34)",
   },
   quoteHeroCompact: {
-    paddingBottom: 60,
+    paddingBottom: 92,
   },
   quoteHeroTiny: {
-    paddingBottom: 54,
+    paddingBottom: 80,
+  },
+  quoteHeroAtmosphere: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  quoteHeroGradient: {
+    ...StyleSheet.absoluteFillObject,
   },
   headerLeft: {
     flexDirection: "row",
@@ -963,8 +1413,14 @@ const styles = StyleSheet.create({
   quoteHeroBody: {
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 112,
+    minHeight: 212,
     paddingHorizontal: 24,
+    zIndex: 2,
+  },
+  quoteTextWrap: {
+    minHeight: 112,
+    alignItems: "center",
+    justifyContent: "center",
   },
   quoteWaveBase: {
     position: "absolute",
@@ -998,28 +1454,50 @@ const styles = StyleSheet.create({
   quoteText: {
     textAlign: "center",
     color: "#2F4257",
-    fontSize: 33 / 2,
-    lineHeight: 23,
+    fontSize: 20,
+    lineHeight: 30,
     fontWeight: "700",
-    maxWidth: 290,
+    maxWidth: 312,
+    textShadowColor: "rgba(255,255,255,0.34)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 10,
+  },
+  quoteAuraBlob: {
+    position: "absolute",
+    opacity: 0.88,
+  },
+  quoteAuraBlobOne: {
+    width: 232,
+    height: 210,
+    top: 20,
+    left: -26,
+  },
+  quoteAuraBlobTwo: {
+    width: 248,
+    height: 224,
+    top: 8,
+    right: -38,
   },
   moodCard: {
-    borderRadius: 20,
+    borderRadius: 24,
     backgroundColor: "#FFFFFF",
-    paddingHorizontal: 10,
-    paddingTop: 10,
-    paddingBottom: 12,
-    shadowColor: "#525C67",
-    shadowOpacity: 0.2,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 14,
+    shadowColor: "#66737E",
+    shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-    marginBottom: 10,
+    elevation: 2,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#E6EEE7",
+    overflow: "hidden",
   },
   moodHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 12,
     paddingHorizontal: 4,
   },
   moodPetArt: {
@@ -1037,7 +1515,7 @@ const styles = StyleSheet.create({
     fontSize: 43 / 2,
     lineHeight: 28,
     fontWeight: "700",
-    marginBottom: 2,
+    marginBottom: 3,
   },
   moodSubHeading: {
     color: "#374A5D",
@@ -1090,9 +1568,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#70C943",
     alignItems: "center",
     justifyContent: "center",
-    marginHorizontal: "20%",
+    marginHorizontal: "18%",
     shadowColor: "#6D6D6D",
-    shadowOpacity: 0.18,
+    shadowOpacity: 0.16,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
     elevation: 3,
@@ -1109,6 +1587,75 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 22,
+  },
+  welcomeBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(17, 22, 19, 0.38)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    paddingBottom: 48,
+  },
+  welcomeCard: {
+    width: "100%",
+    maxWidth: 350,
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 18,
+    paddingTop: 26,
+    paddingBottom: 24,
+    alignItems: "center",
+    shadowColor: "#48535B",
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
+  },
+  welcomeTitle: {
+    color: "#1E1E1E",
+    fontSize: 22,
+    lineHeight: 31,
+    fontFamily: "Outfit",
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  welcomeArtWrap: {
+    width: 228,
+    height: 206,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  welcomeTalaLarge: {
+    width: 168,
+    height: 168,
+  },
+  welcomeTalaSmall: {
+    width: 74,
+    height: 74,
+    position: "absolute",
+    top: 20,
+    right: 24,
+  },
+  welcomeButton: {
+    width: "100%",
+    minHeight: 46,
+    borderRadius: 999,
+    backgroundColor: "#70C943",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#60704F",
+    shadowOpacity: 0.18,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+  },
+  welcomeButtonText: {
+    color: "#FFFFFF",
+    fontSize: 19,
+    lineHeight: 24,
+    fontWeight: "700",
   },
   modalCard: {
     width: "100%",
@@ -1206,17 +1753,20 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   dailyCheckinCard: {
-    borderRadius: 20,
+    borderRadius: 24,
     backgroundColor: "#FFFFFF",
     paddingHorizontal: 12,
-    paddingTop: 10,
+    paddingTop: 12,
     paddingBottom: 14,
-    shadowColor: "#525C67",
-    shadowOpacity: 0.2,
+    shadowColor: "#66737E",
+    shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-    marginBottom: 10,
+    elevation: 2,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#E6EEE7",
+    overflow: "hidden",
   },
   dailyCheckinHeader: {
     flexDirection: "row",
@@ -1234,7 +1784,9 @@ const styles = StyleSheet.create({
     minWidth: 124,
     height: 40,
     borderRadius: 999,
-    backgroundColor: "#E4E180",
+    backgroundColor: "#FFF4A7",
+    borderWidth: 1,
+    borderColor: "#F1E595",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -1275,8 +1827,8 @@ const styles = StyleSheet.create({
     borderColor: "#1F2328",
   },
   dailyRewardBoxLocked: {
-    backgroundColor: "#BFE5CB",
-    borderColor: "#A7CDB5",
+    backgroundColor: "#FFFFFF",
+    borderColor: "#A6B3BC",
   },
   dailyRewardDoneCircle: {
     backgroundColor: "#A1C4B3",
@@ -1316,8 +1868,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginHorizontal: "16%",
+    marginTop: 2,
     shadowColor: "#5C6570",
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.16,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
     elevation: 3,
@@ -1332,30 +1885,53 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   recentCard: {
-    borderRadius: 16,
+    borderRadius: 24,
     backgroundColor: "#FFFFFF",
     paddingHorizontal: 12,
-    paddingTop: 10,
+    paddingTop: 12,
     paddingBottom: 10,
-    shadowColor: "#525C67",
-    shadowOpacity: 0.16,
-    shadowRadius: 6,
+    shadowColor: "#66737E",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
-    marginBottom: 10,
+    elevation: 2,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#E6EEE7",
   },
   recentHeader: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
-    marginBottom: 10,
+    marginBottom: 12,
     paddingHorizontal: 2,
+  },
+  recentHeaderTextWrap: {
+    flex: 1,
+    paddingRight: 12,
   },
   recentTitle: {
     color: "#324254",
     fontSize: 37 / 2,
     lineHeight: 24,
     fontWeight: "700",
+  },
+  recentSubtitle: {
+    color: "#607181",
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 3,
+  },
+  recentFilterButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    backgroundColor: "#F5F8FB",
+    borderWidth: 1,
+    borderColor: "#E0E7EE",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
   },
   recentListWrap: {
     position: "relative",
@@ -1369,19 +1945,23 @@ const styles = StyleSheet.create({
     rowGap: 10,
   },
   entryItem: {
-    borderRadius: 9,
-    backgroundColor: "#F0FFE9",
+    borderRadius: 14,
+    backgroundColor: "#F6FFF0",
     flexDirection: "row",
     alignItems: "flex-start",
     paddingHorizontal: 12,
     paddingVertical: 14,
     columnGap: 12,
+    borderWidth: 1,
+    borderColor: "#E1EED9",
   },
   entryIconWrap: {
     width: 68,
     height: 68,
     borderRadius: 999,
-    backgroundColor: "#EDEFEA",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E5EBE0",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1422,50 +2002,80 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   supportWrapCard: {
-    borderRadius: 16,
+    borderRadius: 24,
     backgroundColor: "#FFFFFF",
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    marginBottom: 10,
-    shadowColor: "#525C67",
-    shadowOpacity: 0.16,
-    shadowRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginBottom: 12,
+    shadowColor: "#66737E",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: "#E6EEE7",
   },
-  supportGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
+  supportHeader: {
+    marginBottom: 12,
+    paddingHorizontal: 2,
+  },
+  supportSectionTitle: {
+    color: "#304558",
+    fontSize: 19,
+    lineHeight: 24,
+    fontWeight: "700",
+    marginBottom: 3,
+  },
+  supportSectionBody: {
+    color: "#607181",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  supportList: {
     rowGap: 10,
   },
-  supportCard: {
-    width: "48.5%",
-    borderRadius: 14,
+  supportListCard: {
+    minHeight: 76,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#A9CEA2",
-    minHeight: 182,
-    paddingHorizontal: 10,
-    paddingTop: 10,
-    paddingBottom: 8,
+    borderColor: "#D6E6CE",
+    backgroundColor: "#F8FBF5",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 12,
   },
-  supportPetIcon: {
-    width: 58,
-    height: 58,
-    marginBottom: 8,
-    marginLeft: -3,
+  supportListIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
   },
-  supportTitle: {
-    color: "#2A3A2C",
-    fontSize: 36 / 2,
-    lineHeight: 25,
+  supportListTextWrap: {
+    flex: 1,
+  },
+  supportListTitle: {
+    color: "#2F4257",
+    fontSize: 16,
+    lineHeight: 21,
     fontWeight: "700",
     marginBottom: 2,
   },
-  supportDescription: {
-    color: "#2F4531",
+  supportListDescription: {
+    color: "#506271",
     fontSize: 14,
-    lineHeight: 24,
+    lineHeight: 18,
+  },
+  supportListArrow: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.88)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   consultOverlay: {
     position: "absolute",

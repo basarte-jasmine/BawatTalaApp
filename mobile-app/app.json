@@ -4,7 +4,7 @@
     "slug": "mobile-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/logo_sampleIMG.png",
+    "icon": "./assets/images/BT_Logo.png",
     "scheme": "mobileapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -14,9 +14,9 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/logo_sampleIMG.png",
+        "foregroundImage": "./assets/images/BT_Logo.png",
         "backgroundImage": "./assets/images/bootup_sampleIMG.png",
-        "monochromeImage": "./assets/images/logo_sampleIMG.png"
+        "monochromeImage": "./assets/images/BT_Logo.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -24,7 +24,7 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/logo_sampleIMG.png"
+      "favicon": "./assets/images/BT_Logo.png"
     },
     "plugins": [
       "expo-router",

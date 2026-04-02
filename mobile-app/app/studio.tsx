@@ -1,13 +1,22 @@
 import { useEffect } from "react";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
 export default function StudioScreen() {
+  const { welcome } = useLocalSearchParams<{ welcome?: string }>();
+
   useEffect(() => {
-    const timer = setTimeout(() => router.replace("/home"), 2800);
+    const timer = setTimeout(() => {
+      if (welcome === "1") {
+        router.replace({ pathname: "/home", params: { welcome: "1" } });
+        return;
+      }
+
+      router.replace("/home");
+    }, 2800);
     return () => clearTimeout(timer);
-  }, []);
+  }, [welcome]);
 
   return (
     <SafeAreaView style={styles.studioScreen}>
