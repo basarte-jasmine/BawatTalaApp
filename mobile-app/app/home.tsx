@@ -899,7 +899,7 @@ export default function HomeScreen() {
           </View>
 
           <Pressable style={styles.moodHistoryButton} onPress={() => router.push("/mood-overview")}>
-            <Text style={styles.moodHistoryButtonText}>View Mood History</Text>
+            <Text style={styles.moodHistoryButtonText}>Mood History</Text>
           </Pressable>
         </View>
 

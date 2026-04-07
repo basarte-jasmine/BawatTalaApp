@@ -245,9 +245,14 @@ export default function MuniAvatarScreen() {
                         {option.label ?? option.id}
                       </Text>
                       {owned ? (
-                        <View style={[styles.shopStatusChip, selected && styles.shopStatusChipActive]}>
-                          <Text style={[styles.shopStatusText, selected && styles.shopStatusTextActive]}>
-                            {selected ? "Equipped" : "Owned"}
+                        <View style={styles.shopOwnedInfo}>
+                          <View style={[styles.shopStatusChip, selected && styles.shopStatusChipActive]}>
+                            <Text style={[styles.shopStatusText, selected && styles.shopStatusTextActive]}>
+                              {selected ? "Equipped" : "Owned"}
+                            </Text>
+                          </View>
+                          <Text style={styles.shopOwnedHint}>
+                            {selected ? "Currently on Muni" : "Ready in your wardrobe"}
                           </Text>
                         </View>
                       ) : (
@@ -535,12 +540,14 @@ const styles = StyleSheet.create({
   },
   shopCard: {
     width: "48%",
-    minHeight: 176,
+    alignSelf: "flex-start",
     borderRadius: 18,
     borderWidth: 1,
     borderColor: "#D7E7C7",
     backgroundColor: "#FFFFFF",
-    padding: 10,
+    paddingHorizontal: 10,
+    paddingTop: 10,
+    paddingBottom: 12,
     shadowColor: "#6C7D6D",
     shadowOpacity: 0.08,
     shadowRadius: 6,
@@ -554,13 +561,13 @@ const styles = StyleSheet.create({
     borderColor: "#7CCB58",
   },
   shopImageWrap: {
-    height: 84,
+    height: 72,
     borderRadius: 14,
     backgroundColor: "#F7F7F7",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
-    marginBottom: 10,
+    marginBottom: 8,
   },
   shopOptionImage: {
     width: "76%",
@@ -571,18 +578,16 @@ const styles = StyleSheet.create({
     height: "140%",
   },
   shopLabel: {
-    minHeight: 36,
     color: "#33475C",
     fontSize: 14,
     lineHeight: 18,
     fontWeight: "700",
-    marginBottom: 8,
+    marginBottom: 6,
   },
   priceRow: {
     flexDirection: "row",
     alignItems: "center",
     columnGap: 4,
-    marginTop: "auto",
     marginBottom: 8,
   },
   shopPriceIcon: {
@@ -614,13 +619,17 @@ const styles = StyleSheet.create({
   buyButtonTextDisabled: {
     color: "#8A9583",
   },
+  shopOwnedInfo: {
+    marginTop: 2,
+  },
   shopStatusChip: {
-    marginTop: "auto",
     height: 30,
     borderRadius: 999,
     backgroundColor: "#E8F4DF",
     alignItems: "center",
     justifyContent: "center",
+    alignSelf: "flex-start",
+    paddingHorizontal: 14,
   },
   shopStatusChipActive: {
     backgroundColor: "#7CCB58",
@@ -633,6 +642,12 @@ const styles = StyleSheet.create({
   },
   shopStatusTextActive: {
     color: "#FFFFFF",
+  },
+  shopOwnedHint: {
+    marginTop: 6,
+    color: "#71806F",
+    fontSize: 11,
+    lineHeight: 15,
   },
   checkBadge: {
     position: "absolute",

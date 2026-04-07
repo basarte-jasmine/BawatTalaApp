@@ -67,7 +67,7 @@ const SCREEN_COPY: Record<SettingsSection, { subtitle: string; title: string }> 
   },
   "privacy-security": {
     title: "Privacy & Security",
-    subtitle: "Choose how private the app feels when youâ€™re using it around other people.",
+    subtitle: "Choose how private the app feels when you're using it around other people.",
   },
   "recent-activity": {
     title: "Recent Activity",
@@ -310,7 +310,7 @@ export default function ProfileSettingsScreen() {
       `Bawat Tala Feedback - ${feedbackCategory}`,
       `Category: ${feedbackCategory}\nStudent: ${user?.studentNumber || "Unknown"}\n\n${feedbackMessage.trim()}`,
     );
-    Alert.alert("Feedback Ready", "Your mail app is open. Send it there and weâ€™ll take it from there.");
+    Alert.alert("Feedback Ready", "Your mail app is open. Send it there and we'll take it from there.");
   };
 
   const handleSavePin = () => {
@@ -368,7 +368,7 @@ export default function ProfileSettingsScreen() {
             </Card>
             <TipCard
               title="Need a correction?"
-              body="If your student details changed, send a quick request and weâ€™ll help you update the account safely."
+              body="If your student details changed, send a quick request and we'll help you update the account safely."
             />
             <PrimaryButton label="Reset Password" onPress={() => router.push("/reset-password")} />
             <SecondaryButton
@@ -468,7 +468,7 @@ export default function ProfileSettingsScreen() {
                   </View>
                   <Text style={styles.scheduleUpcomingName}>{appointment.counselor.fullName}</Text>
                   <Text style={styles.scheduleUpcomingMeta}>
-                    {appointment.appointmentDateLabel} • {appointment.slotLabel}
+                    {appointment.appointmentDateLabel} - {appointment.slotLabel}
                   </Text>
                   <Text style={styles.scheduleUpcomingMeta}>{appointment.concern}</Text>
                 </View>
@@ -573,7 +573,7 @@ export default function ProfileSettingsScreen() {
                   <Text style={styles.summaryTitle}>{appointment.counselor.fullName}</Text>
                   <Text style={styles.summaryText}>{appointment.concern}</Text>
                   <Text style={styles.summaryText}>
-                    {appointment.appointmentDateLabel} â€¢ {appointment.slotLabel}
+                    {appointment.appointmentDateLabel} - {appointment.slotLabel}
                   </Text>
                 </View>
               ) : (
@@ -648,7 +648,7 @@ export default function ProfileSettingsScreen() {
               <TextInput
                 value={feedbackMessage}
                 onChangeText={setFeedbackMessage}
-                placeholder="What happened, what you expected, or what youâ€™d love to see improved."
+                placeholder="What happened, what you expected, or what you'd love to see improved."
                 placeholderTextColor="#97A1AA"
                 multiline
                 textAlignVertical="top"
@@ -750,7 +750,7 @@ export default function ProfileSettingsScreen() {
           onPress={() =>
             void Share.share({
               message:
-                "Iâ€™ve been using Bawat Tala to journal, check in with my mood, and reach support when I need it. You can check it out at https://bawattalapro.online/",
+                "I've been using Bawat Tala to journal, check in with my mood, and reach support when I need it. You can check it out at https://bawattalapro.online/",
               title: "Share Bawat Tala",
             })
           }
@@ -1297,3 +1297,4 @@ const styles = StyleSheet.create({
   shareFooter: { flexDirection: "row", alignItems: "center", justifyContent: "center", columnGap: 8, marginTop: 8 },
   shareFooterText: { color: "#4A5F72", fontSize: 13, lineHeight: 18, fontWeight: "600" },
 });
+

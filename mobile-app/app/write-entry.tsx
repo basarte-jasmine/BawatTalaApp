@@ -4,7 +4,6 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -31,7 +30,6 @@ import {
 } from "../lib/backend-api";
 import { getManilaTodayParts } from "../lib/manila-date";
 
-const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
 const NOTEBOOK_RINGS = Array.from({ length: 12 }, (_, index) => index);
 const PAPER_RULES = Array.from({ length: 24 }, (_, index) => index);
 const CONCERN_OPTIONS = [
@@ -423,9 +421,41 @@ export default function WriteEntryScreen() {
 
                 <View style={styles.marginLine} />
 
-                <Text style={styles.dateText}>
-                  {formatJournalHeaderDate(entry?.entryDate)}
-                </Text>
+                <View style={styles.paperHeaderRow}>
+                  <Text style={styles.dateText}>
+                    {formatJournalHeaderDate(entry?.entryDate)}
+                  </Text>
+
+                  <Pressable
+                    style={[
+                      styles.muniToggle,
+                      aiEnabled ? styles.muniToggleOn : styles.muniToggleOff,
+                      isEntryFinished && styles.muniToggleDisabled,
+                    ]}
+                    onPress={() => {
+                      if (isEntryFinished) return;
+                      setAiEnabled(false);
+                    }}
+                    disabled={isEntryFinished}
+                    accessibilityLabel="Turn off Muni AI"
+                  >
+                    <View
+                      style={[
+                        styles.muniToggleIconBubble,
+                        aiEnabled
+                          ? styles.muniToggleIconBubbleOn
+                          : styles.muniToggleIconBubbleOff,
+                      ]}
+                    >
+                      <Ionicons
+                        name="sparkles"
+                        size={12}
+                        color="#2E6B23"
+                      />
+                    </View>
+                    <Text style={styles.muniToggleText}>Muni On</Text>
+                  </Pressable>
+                </View>
 
                 {entry?.summary ? (
                   <Text style={styles.summaryText}>{entry.summary}</Text>
@@ -447,18 +477,16 @@ export default function WriteEntryScreen() {
                     visibleMessages.map((line) =>
                       line.role === "assistant" ? (
                         <View key={line.id} style={styles.leftMessageRow}>
+                          <Text style={styles.messageRoleLabel}>Muni</Text>
                           <Text style={styles.leftMessageText}>
                             {line.text}
                           </Text>
-                          <Ionicons
-                            name="sparkles"
-                            size={12}
-                            color="#1C2430"
-                            style={styles.speakerIcon}
-                          />
                         </View>
                       ) : (
                         <View key={line.id} style={styles.rightMessageRow}>
+                          <Text style={[styles.messageRoleLabel, styles.messageRoleLabelSelf]}>
+                            You
+                          </Text>
                           <Text style={styles.rightMessageText}>
                             {line.text}
                           </Text>
@@ -477,22 +505,6 @@ export default function WriteEntryScreen() {
                     Muni is on. Replies stay brief, specific, and focused on
                     reflection inside Bawat Tala.
                   </Text>
-
-                  <Pressable
-                    style={styles.muniBadge}
-                    onPress={() => {
-                      if (isEntryFinished) return;
-                      setAiEnabled(false);
-                    }}
-                    accessibilityLabel="Turn off Muni AI"
-                  >
-                    <Image
-                      source={MUNI_IMAGE}
-                      style={styles.muniBadgeImage}
-                      resizeMode="contain"
-                    />
-                    <View style={styles.badgeStatusDot} />
-                  </Pressable>
                 </View>
               </View>
             </View>
@@ -500,25 +512,30 @@ export default function WriteEntryScreen() {
         ) : (
           <View style={styles.plainCard}>
             <View style={styles.plainHeaderRow}>
-              <Text style={styles.plainDateText}>
-                {formatJournalHeaderDate(entry?.entryDate)}
-              </Text>
+              <Text style={styles.plainDateText}>{formatJournalHeaderDate(entry?.entryDate)}</Text>
+
               <Pressable
-                style={[styles.muniBadge, styles.muniBadgeOffInline]}
+                style={[
+                  styles.muniToggle,
+                  styles.muniToggleOff,
+                  isEntryFinished && styles.muniToggleDisabled,
+                ]}
                 onPress={() => {
                   if (isEntryFinished) return;
                   setAiEnabled(true);
                 }}
+                disabled={isEntryFinished}
                 accessibilityLabel="Turn on Muni AI"
               >
-                <Image
-                  source={MUNI_IMAGE}
-                  style={styles.muniBadgeImage}
-                  resizeMode="contain"
-                />
                 <View
-                  style={[styles.badgeStatusDot, styles.badgeStatusDotOff]}
-                />
+                  style={[
+                    styles.muniToggleIconBubble,
+                    styles.muniToggleIconBubbleOff,
+                  ]}
+                >
+                  <Ionicons name="moon-outline" size={12} color="#687787" />
+                </View>
+                <Text style={styles.muniToggleTextOff}>Muni Off</Text>
               </Pressable>
             </View>
 
@@ -849,11 +866,11 @@ export default function WriteEntryScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#F5F9F2",
   },
   content: {
     flex: 1,
-    paddingTop: 8,
+    paddingTop: 4,
     paddingHorizontal: 10,
     paddingBottom: 18,
   },
@@ -863,10 +880,15 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     borderRadius: 24,
     overflow: "hidden",
+    shadowColor: "#5C6570",
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 4,
   },
   notebookShell: {
     flex: 1,
-    backgroundColor: "#73C94D",
+    backgroundColor: "#78C654",
     borderRadius: 24,
     padding: 5,
     flexDirection: "row",
@@ -875,7 +897,7 @@ const styles = StyleSheet.create({
     width: 30,
     borderTopLeftRadius: 20,
     borderBottomLeftRadius: 20,
-    backgroundColor: "#CDEAB2",
+    backgroundColor: "#D7EEBE",
     position: "relative",
   },
   ringItem: {
@@ -889,7 +911,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 999,
-    backgroundColor: "#EAEAEA",
+    backgroundColor: "#F7FAF5",
     marginLeft: 3,
   },
   ringArc: {
@@ -905,9 +927,11 @@ const styles = StyleSheet.create({
   },
   paperCard: {
     flex: 1,
-    backgroundColor: "#FAFCF8",
+    backgroundColor: "#FFFDF7",
     borderRadius: 18,
     borderTopLeftRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E6E9DD",
     paddingTop: 14,
     paddingHorizontal: 14,
     paddingBottom: 10,
@@ -925,7 +949,7 @@ const styles = StyleSheet.create({
     left: 10,
     right: 10,
     height: 1,
-    backgroundColor: "#DAE8D8",
+    backgroundColor: "#E2EEE0",
   },
   marginLine: {
     position: "absolute",
@@ -935,19 +959,72 @@ const styles = StyleSheet.create({
     width: 1,
     backgroundColor: "#E7BFC2",
   },
+  paperHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginLeft: 22,
+    marginBottom: 8,
+    columnGap: 8,
+  },
   dateText: {
     color: "#586B63",
     fontSize: 12,
     lineHeight: 16,
     fontWeight: "700",
     letterSpacing: 0.2,
-    marginBottom: 6,
-    marginLeft: 22,
+    flex: 1,
+  },
+  muniToggle: {
+    minHeight: 34,
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 6,
+    paddingHorizontal: 10,
+  },
+  muniToggleOn: {
+    backgroundColor: "#EFF8E8",
+    borderColor: "#CFE5C1",
+  },
+  muniToggleOff: {
+    backgroundColor: "#F3F4F5",
+    borderColor: "#D9DFE3",
+  },
+  muniToggleDisabled: {
+    opacity: 0.7,
+  },
+  muniToggleIconBubble: {
+    width: 18,
+    height: 18,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  muniToggleIconBubbleOn: {
+    backgroundColor: "#DFF2D1",
+  },
+  muniToggleIconBubbleOff: {
+    backgroundColor: "#E7EBEE",
+  },
+  muniToggleText: {
+    color: "#2E6B23",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
+  muniToggleTextOff: {
+    color: "#687787",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
   },
   summaryText: {
     marginLeft: 22,
     marginBottom: 8,
-    color: "#41515E",
+    color: "#5D6E65",
     fontSize: 11,
     lineHeight: 15,
     fontWeight: "600",
@@ -982,78 +1059,60 @@ const styles = StyleSheet.create({
   leftMessageRow: {
     maxWidth: "84%",
     alignSelf: "flex-start",
-    paddingLeft: 22,
+    marginLeft: 22,
+    marginBottom: 4,
   },
   leftMessageText: {
     color: "#2D3B4D",
     fontSize: 15,
-    lineHeight: 21,
+    lineHeight: 23,
     fontWeight: "700",
   },
-  speakerIcon: {
-    marginTop: 2,
-    marginLeft: 2,
+  messageRoleLabel: {
+    color: "#6E8D62",
+    fontSize: 10,
+    lineHeight: 13,
+    letterSpacing: 0.5,
+    fontWeight: "700",
+    marginBottom: 3,
+  },
+  messageRoleLabelSelf: {
+    color: "#7B8792",
+    textAlign: "right",
   },
   rightMessageRow: {
     maxWidth: "78%",
     alignSelf: "flex-end",
+    marginBottom: 4,
   },
   rightMessageText: {
     color: "#2D3B4D",
     fontSize: 15,
-    lineHeight: 21,
+    lineHeight: 23,
     textAlign: "right",
     fontWeight: "500",
   },
   footnoteWrap: {
     minHeight: 38,
     justifyContent: "center",
-    paddingRight: 44,
+    paddingHorizontal: 8,
     marginTop: 2,
+    borderTopWidth: 1,
+    borderTopColor: "#EBEFE5",
+    paddingTop: 8,
   },
   footnoteText: {
-    color: "#334256",
-    fontSize: 10,
-    lineHeight: 12,
+    color: "#5D6C76",
+    fontSize: 11,
+    lineHeight: 15,
     textAlign: "center",
-  },
-  muniBadge: {
-    position: "absolute",
-    right: 1,
-    bottom: 1,
-    width: 34,
-    height: 34,
-    borderRadius: 999,
-    borderWidth: 2,
-    borderColor: "#4B8F33",
-    backgroundColor: "#C2EDAA",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  muniBadgeOff: {
-    backgroundColor: "#E7ECE3",
-    borderColor: "#9AA2A8",
-  },
-  muniBadgeImage: {
-    width: 24,
-    height: 24,
-  },
-  badgeStatusDot: {
-    position: "absolute",
-    right: 2,
-    top: 2,
-    width: 8,
-    height: 8,
-    borderRadius: 999,
-    backgroundColor: "#54B638",
-  },
-  badgeStatusDotOff: {
-    backgroundColor: "#A6AFB5",
   },
   plainCard: {
     flex: 1,
-    borderRadius: 20,
-    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    backgroundColor: "#FFFDF7",
+    borderWidth: 1,
+    borderColor: "#E6E9DD",
     paddingHorizontal: 16,
     paddingTop: 14,
     paddingBottom: 12,
@@ -1068,6 +1127,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    columnGap: 8,
     marginBottom: 12,
   },
   plainDateText: {
@@ -1077,12 +1137,6 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     fontWeight: "700",
     letterSpacing: 0.2,
-  },
-  muniBadgeOffInline: {
-    position: "relative",
-    right: 0,
-    bottom: 0,
-    marginLeft: 12,
   },
   plainBody: {
     flex: 1,
@@ -1111,8 +1165,10 @@ const styles = StyleSheet.create({
   },
   inputCard: {
     minHeight: 72,
-    borderRadius: 18,
+    borderRadius: 20,
     backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2ECDD",
     shadowColor: "#5C6570",
     shadowOpacity: 0.14,
     shadowRadius: 6,
@@ -1146,7 +1202,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#A3C88F",
   },
   actionRow: {
-    marginHorizontal: 12,
+    marginHorizontal: 2,
     marginBottom: 8,
     flexDirection: "row",
     alignItems: "stretch",
@@ -1275,7 +1331,9 @@ const styles = StyleSheet.create({
     flex: 0.8,
     minHeight: 56,
     borderRadius: 999,
-    backgroundColor: "#99BF86",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#D8E5D0",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#6D6D6D",
@@ -1285,7 +1343,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   exitButtonText: {
-    color: "#FFFFFF",
+    color: "#53685A",
     fontSize: 16,
     lineHeight: 21,
     fontWeight: "700",

@@ -28,6 +28,7 @@ const EXTRA_ROWS: SettingRow[] = [
   { id: "refer-friend", icon: "share-social-outline", label: "Refer a friend" },
   { id: "app-lock", icon: "lock-closed-outline", label: "App Lock" },
 ];
+const APP_VERSION = "1.0.0";
 
 export default function ProfileScreen() {
   const { clearUser, user } = useAuthSession();
@@ -62,7 +63,7 @@ export default function ProfileScreen() {
       case "refer-friend":
         await Share.share({
           message:
-            "I’ve been using Bawat Tala to journal, check in with my mood, and reach support when I need it. You can check it out at https://bawattalapro.online/",
+            "I've been using Bawat Tala to journal, check in with my mood, and reach support when I need it. You can check it out at https://bawattalapro.online/",
           title: "Share Bawat Tala",
         });
         return;
@@ -148,6 +149,13 @@ export default function ProfileScreen() {
         <Pressable style={styles.signOutButton} onPress={() => setShowSignOutModal(true)}>
           <Text style={styles.signOutText}>Sign Out</Text>
         </Pressable>
+
+        <View style={styles.aboutFooter}>
+          <Text style={styles.aboutFooterBrand}>Bawat Tala</Text>
+          <Text style={styles.aboutFooterMeta}>Version {APP_VERSION}</Text>
+          <Text style={styles.aboutFooterMeta}>Built by FANTAFOUR</Text>
+          <Text style={styles.aboutFooterMeta}>Keepsake Studio</Text>
+        </View>
       </ScrollView>
 
       <Modal
@@ -443,6 +451,24 @@ const styles = StyleSheet.create({
     lineHeight: 26,
     fontWeight: "700",
   },
+  aboutFooter: {
+    alignItems: "center",
+    marginTop: 18,
+    paddingBottom: 8,
+    rowGap: 2,
+  },
+  aboutFooterBrand: {
+    color: "#516476",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
+  },
+  aboutFooterMeta: {
+    color: "#8A96A1",
+    fontSize: 11,
+    lineHeight: 15,
+    textAlign: "center",
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(21, 27, 24, 0.34)",
@@ -513,3 +539,4 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 });
+

@@ -2,7 +2,7 @@ import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useMemo, useState } from "react";
-import { Image, Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { fetchJournalCalendar, fetchJournalEntriesByDate } from "../lib/backend-api";
@@ -141,6 +141,7 @@ export default function JournalScreen() {
       <View style={[styles.content, compact && styles.contentCompact, veryCompact && styles.contentVeryCompact]}>
         <View style={[styles.topSection, compact && styles.topSectionCompact]}>
           <View style={[styles.calendarCard, compact && styles.calendarCardCompact]}>
+            <Text style={styles.cardEyebrow}>THIS WEEK</Text>
             <View style={[styles.calendarHeader, compact && styles.calendarHeaderCompact]}>
               <Pressable onPress={() => handleMoveWeek(-1)} style={styles.weekArrowButton}>
                 <Ionicons name="chevron-back" size={22} color="#3A4A5B" />
@@ -193,8 +194,19 @@ export default function JournalScreen() {
           </View>
 
           <View style={[styles.reflectionCard, compact && styles.reflectionCardCompact]}>
-            <Pressable onPress={() => setShowFullInsightModal(true)}>
-              <Text style={[styles.reflectionText, compact && styles.reflectionTextCompact]} numberOfLines={veryCompact ? 4 : 5}>
+            <View style={styles.reflectionHeader}>
+              <Text style={styles.cardEyebrow}>MUNI INSIGHT</Text>
+              <Pressable
+                style={styles.expandButton}
+                onPress={() => setShowFullInsightModal(true)}
+                accessibilityLabel="Open full insight"
+              >
+                <Ionicons name="expand-outline" size={16} color="#586C7F" />
+              </Pressable>
+            </View>
+
+            <Pressable style={styles.reflectionSnippetWrap} onPress={() => setShowFullInsightModal(true)}>
+              <Text style={[styles.reflectionText, compact && styles.reflectionTextCompact]} numberOfLines={veryCompact ? 3 : 4}>
                 {insightText}
               </Text>
             </Pressable>
@@ -213,6 +225,7 @@ export default function JournalScreen() {
         </View>
 
         <View style={[styles.bottomSection, compact && styles.bottomSectionCompact]}>
+          <Text style={styles.cardEyebrow}>WRITE AGAIN</Text>
           <View style={[styles.journalArtWrap, compact && styles.journalArtWrapCompact]}>
             <Image source={BOOK_IMAGE} style={[styles.bookImage, compact && styles.bookImageCompact, veryCompact && styles.bookImageVeryCompact]} resizeMode="contain" />
           </View>
@@ -241,8 +254,20 @@ export default function JournalScreen() {
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>{formatLongDate(weekAnchorDate)}</Text>
-            <Text style={styles.modalInsightText}>{insightText}</Text>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalHeaderCopy}>
+                <Text style={styles.modalEyebrow}>MUNI INSIGHT</Text>
+                <Text style={styles.modalTitle}>{formatLongDate(weekAnchorDate)}</Text>
+              </View>
+
+              <View style={styles.modalCompanionWrap}>
+                <Image source={MUNI_IMAGE} style={styles.modalCompanionImage} resizeMode="contain" />
+              </View>
+            </View>
+
+            <ScrollView style={styles.modalInsightScroll} contentContainerStyle={styles.modalInsightContent} showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalInsightText}>{insightText}</Text>
+            </ScrollView>
 
             <Pressable style={styles.modalCloseButton} onPress={() => setShowFullInsightModal(false)}>
               <Text style={styles.modalCloseButtonText}>Close</Text>
@@ -259,12 +284,12 @@ export default function JournalScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#F7FAF4",
   },
   content: {
     flex: 1,
-    paddingHorizontal: 8,
-    paddingTop: 10,
+    paddingHorizontal: 10,
+    paddingTop: 12,
     paddingBottom: 112,
   },
   contentCompact: {
@@ -282,15 +307,17 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   calendarCard: {
-    borderRadius: 14,
+    borderRadius: 22,
     backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E4EFE0",
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     shadowColor: "#5C6570",
-    shadowOpacity: 0.15,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
     marginBottom: 14,
   },
   calendarCardCompact: {
@@ -306,9 +333,19 @@ const styles = StyleSheet.create({
   calendarHeaderCompact: {
     marginBottom: 8,
   },
+  cardEyebrow: {
+    color: "#7B8D74",
+    fontSize: 10,
+    lineHeight: 14,
+    letterSpacing: 1,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
   weekArrowButton: {
-    width: 26,
-    height: 26,
+    width: 32,
+    height: 32,
+    borderRadius: 12,
+    backgroundColor: "#F2F7ED",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -406,21 +443,23 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   reflectionCard: {
-    borderRadius: 12,
+    borderRadius: 22,
     backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E4EFE0",
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 14,
     shadowColor: "#5C6570",
-    shadowOpacity: 0.15,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
     marginBottom: 10,
-    minHeight: 160,
+    height: 168,
   },
   reflectionCardCompact: {
-    minHeight: 142,
+    height: 150,
     paddingHorizontal: 14,
     paddingTop: 12,
     paddingBottom: 10,
@@ -430,6 +469,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     columnGap: 10,
+  },
+  reflectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  expandButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    backgroundColor: "#F4F8F1",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reflectionSnippetWrap: {
+    flex: 1,
   },
   reflectionFooterRowCompact: {
     columnGap: 8,
@@ -476,21 +532,28 @@ const styles = StyleSheet.create({
     height: 42,
   },
   bottomSection: {
-    marginTop: 4,
+    marginTop: 8,
   },
   bottomSectionCompact: {
-    marginTop: 2,
+    marginTop: 4,
   },
   journalArtWrap: {
     width: 222,
     height: 222,
-    borderRadius: 999,
-    backgroundColor: "#FFFFFF",
+    borderRadius: 40,
+    backgroundColor: "#F1F8EB",
+    borderWidth: 1,
+    borderColor: "#E3EFDA",
     alignItems: "center",
     justifyContent: "center",
     alignSelf: "center",
     marginTop: 0,
     marginBottom: 16,
+    shadowColor: "#5C6570",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
   },
   journalArtWrapCompact: {
     width: 206,
@@ -540,7 +603,9 @@ const styles = StyleSheet.create({
   viewEntriesButton: {
     height: 42,
     borderRadius: 999,
-    backgroundColor: "#9FBE8F",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#D9E7D1",
     alignItems: "center",
     justifyContent: "center",
     marginHorizontal: 18,
@@ -554,7 +619,7 @@ const styles = StyleSheet.create({
     height: 40,
   },
   viewEntriesText: {
-    color: "#FFFFFF",
+    color: "#4D6558",
     fontSize: 17,
     lineHeight: 22,
     fontWeight: "700",
@@ -573,8 +638,11 @@ const styles = StyleSheet.create({
   modalCard: {
     width: "100%",
     maxWidth: 340,
-    borderRadius: 18,
+    maxHeight: "76%",
+    borderRadius: 24,
     backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E0ECD7",
     paddingHorizontal: 18,
     paddingTop: 18,
     paddingBottom: 16,
@@ -584,13 +652,48 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 4,
   },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 12,
+    marginBottom: 12,
+  },
+  modalHeaderCopy: {
+    flex: 1,
+  },
+  modalEyebrow: {
+    color: "#7B8D74",
+    fontSize: 10,
+    lineHeight: 14,
+    letterSpacing: 1,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
   modalTitle: {
     color: "#32465C",
     fontSize: 18,
     lineHeight: 24,
     fontWeight: "700",
-    marginBottom: 10,
-    textAlign: "center",
+  },
+  modalCompanionWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: "#EFF7E8",
+    borderWidth: 1,
+    borderColor: "#D8E9CB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalCompanionImage: {
+    width: 34,
+    height: 34,
+  },
+  modalInsightScroll: {
+    maxHeight: 280,
+  },
+  modalInsightContent: {
+    paddingBottom: 4,
   },
   modalInsightText: {
     color: "#33485B",

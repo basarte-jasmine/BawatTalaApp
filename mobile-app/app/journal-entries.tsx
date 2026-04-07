@@ -40,22 +40,26 @@ function shiftIsoDate(isoDate: string, deltaDays: number) {
 
 function buildDateGroups() {
   const today = getManilaTodayParts().isoDate;
-  const yesterday = shiftIsoDate(today, -1);
-  const dayBeforeYesterday = shiftIsoDate(today, -2);
-  const [year, month, day] = dayBeforeYesterday.split("-").map(Number);
-  const olderDate = new Date(year, month - 1, day);
-  return [
-    { id: "today" as const, date: today, label: "Today" },
-    { id: "yesterday" as const, date: yesterday, label: "Yesterday" },
-    {
-      id: "two_days_ago" as const,
-      date: dayBeforeYesterday,
-      label: olderDate.toLocaleString("en-US", {
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = shiftIsoDate(today, -index);
+    if (index === 0) {
+      return { id: "today", date, label: "Today" };
+    }
+    if (index === 1) {
+      return { id: "yesterday", date, label: "Yesterday" };
+    }
+
+    const [year, month, day] = date.split("-").map(Number);
+    const displayDate = new Date(year, month - 1, day);
+    return {
+      id: `day-${index}`,
+      date,
+      label: displayDate.toLocaleString("en-US", {
         month: "long",
         day: "numeric",
       }),
-    },
-  ];
+    };
+  });
 }
 
 function formatGroupSubLabel(entryDate: string) {
@@ -93,7 +97,7 @@ export default function JournalEntriesScreen() {
       return;
     }
 
-    const result = await fetchRecentJournalEntries(user.studentNumber, 3);
+    const result = await fetchRecentJournalEntries(user.studentNumber, 20);
     if (!result.ok) {
       setEntries([]);
       setProgress({ monthlyCount: 0, todayCount: 0, totalCount: 0 });
@@ -160,7 +164,10 @@ export default function JournalEntriesScreen() {
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.progressCard}>
           <View style={styles.progressHeader}>
-            <Text style={styles.progressTitle}>Your Progress</Text>
+            <View>
+              <Text style={styles.progressEyebrow}>OVERVIEW</Text>
+              <Text style={styles.progressTitle}>Your Progress</Text>
+            </View>
             <Pressable
               style={styles.progressCalendarButton}
               onPress={() => router.push("/journal-calendar")}
@@ -232,6 +239,10 @@ export default function JournalEntriesScreen() {
                             {entry.preview || entry.summary || entry.title || "Journal entry"}
                           </Text>
                         </View>
+
+                        <View style={styles.entryChevronWrap}>
+                          <Ionicons name="chevron-forward" size={18} color="#6E7D89" />
+                        </View>
                       </Pressable>
                     </Swipeable>
                   ))}
@@ -262,12 +273,12 @@ export default function JournalEntriesScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#F6FAF3",
   },
   topBar: {
     height: 52,
     borderBottomWidth: 1,
-    borderBottomColor: "#D0D4D6",
+    borderBottomColor: "#D8E3D4",
     backgroundColor: "#FFFFFF",
     flexDirection: "row",
     alignItems: "center",
@@ -299,20 +310,22 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 10,
-    paddingTop: 10,
+    paddingHorizontal: 12,
+    paddingTop: 12,
     paddingBottom: 110,
   },
   progressCard: {
-    borderRadius: 10,
+    borderRadius: 22,
     backgroundColor: "#FFFFFF",
-    paddingHorizontal: 10,
-    paddingTop: 8,
-    paddingBottom: 8,
+    borderWidth: 1,
+    borderColor: "#E2ECD9",
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 12,
     shadowColor: "#5C6570",
-    shadowOpacity: 0.14,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
     elevation: 2,
     marginBottom: 14,
   },
@@ -323,11 +336,20 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   progressCalendarButton: {
-    width: 26,
-    height: 26,
-    borderRadius: 999,
+    width: 34,
+    height: 34,
+    borderRadius: 14,
+    backgroundColor: "#F2F7EE",
     alignItems: "center",
     justifyContent: "center",
+  },
+  progressEyebrow: {
+    color: "#7D8F78",
+    fontSize: 10,
+    lineHeight: 14,
+    letterSpacing: 1,
+    fontWeight: "700",
+    marginBottom: 2,
   },
   progressTitle: {
     color: "#31465A",
@@ -337,28 +359,28 @@ const styles = StyleSheet.create({
   },
   progressRow: {
     flexDirection: "row",
-    columnGap: 6,
+    columnGap: 8,
   },
   progressItem: {
     flex: 1,
-    minHeight: 58,
-    borderRadius: 8,
+    minHeight: 72,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#A9D08F",
-    backgroundColor: "#C9FFA0",
+    borderColor: "#DBE8D0",
+    backgroundColor: "#F3FBEA",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 4,
+    paddingVertical: 8,
   },
   progressValue: {
     color: "#32465C",
-    fontSize: 24,
-    lineHeight: 30,
+    fontSize: 26,
+    lineHeight: 32,
     fontWeight: "700",
   },
   progressLabel: {
-    color: "#465B6E",
-    fontSize: 13,
+    color: "#5B6E62",
+    fontSize: 12,
     lineHeight: 16,
     textAlign: "center",
   },
@@ -366,8 +388,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 10,
-    paddingHorizontal: 2,
+    marginBottom: 12,
+    paddingHorizontal: 4,
   },
   recentTitle: {
     color: "#324254",
@@ -376,19 +398,21 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   entryGroup: {
-    marginBottom: 16,
+    marginBottom: 20,
   },
   groupHeadRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 10,
-    columnGap: 8,
+    marginBottom: 12,
+    columnGap: 10,
   },
   groupDateBox: {
-    width: 48,
-    height: 54,
-    borderRadius: 4,
-    backgroundColor: "#F0FFE9",
+    width: 56,
+    height: 60,
+    borderRadius: 16,
+    backgroundColor: "#EEF8E5",
+    borderWidth: 1,
+    borderColor: "#D9EBCB",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -424,13 +448,15 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   emptyDayCard: {
-    borderRadius: 10,
+    borderRadius: 18,
     backgroundColor: "#FFFFFF",
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: "#E3ECD9",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
     shadowColor: "#5C6570",
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
@@ -440,19 +466,27 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   groupEntriesList: {
-    rowGap: 4,
+    rowGap: 8,
   },
   entryCard: {
-    borderRadius: 4,
-    backgroundColor: "#F0FFE9",
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2ECD9",
     flexDirection: "row",
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    columnGap: 8,
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    columnGap: 10,
+    shadowColor: "#5C6570",
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
   },
   deleteSwipeAction: {
     width: 92,
-    borderRadius: 8,
+    borderRadius: 18,
     backgroundColor: "#D85B5B",
     alignItems: "center",
     justifyContent: "center",
@@ -466,30 +500,40 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   entryIconWrap: {
-    width: 48,
-    height: 48,
+    width: 54,
+    height: 54,
     borderRadius: 999,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#F4FAEE",
+    borderWidth: 1,
+    borderColor: "#E0EBD8",
     alignItems: "center",
     justifyContent: "center",
   },
   entryIconImage: {
-    width: 38,
-    height: 38,
+    width: 40,
+    height: 40,
   },
   entryTextWrap: {
     flex: 1,
-    paddingTop: 2,
   },
   entryTime: {
     color: "#2E4155",
-    fontSize: 16,
+    fontSize: 15,
     lineHeight: 20,
     fontWeight: "700",
+    marginBottom: 2,
   },
   entryBody: {
-    color: "#304459",
+    color: "#526372",
     fontSize: 13,
-    lineHeight: 16,
+    lineHeight: 19,
+  },
+  entryChevronWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    backgroundColor: "#F5F8F2",
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

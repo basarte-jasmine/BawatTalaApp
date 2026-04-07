@@ -13,6 +13,7 @@ type MoodStat = {
   count: number;
   id: string;
   image: ImageSourcePropType;
+  label: string;
 };
 
 type CalendarDay = {
@@ -133,6 +134,7 @@ export default function MoodOverviewScreen() {
         color: MOOD_META[id].color,
         count: monthlyCounts[id] ?? 0,
         image: MOOD_META[id].image,
+        label: MOOD_META[id].label,
       })),
     [monthlyCounts],
   );
@@ -229,11 +231,13 @@ export default function MoodOverviewScreen() {
         <View style={styles.summaryCard}>
           <View style={styles.summaryHeader}>
             <View>
+              <Text style={styles.summaryEyebrow}>THIS MONTH</Text>
               <Text style={styles.summaryMonth}>{`${getMonthName(displayMonthIndex)} ${displayYear}`}</Text>
               <Text style={styles.summarySub}>{`${totalCheckIns} Check-ins`}</Text>
             </View>
 
             <View style={styles.commonMoodWrap}>
+              <Text style={styles.commonMoodMeta}>Most Common</Text>
               <View style={styles.commonMoodFace}>
                 {mostCommonMood ? (
                   <Image source={mostCommonMood.image} style={styles.commonMoodImage} resizeMode="contain" />
@@ -252,66 +256,69 @@ export default function MoodOverviewScreen() {
                   <Image source={item.image} style={styles.statImage} resizeMode="contain" />
                 </View>
                 <Text style={styles.statCount}>{item.count}</Text>
+                <Text style={styles.statLabel} numberOfLines={1}>{item.label}</Text>
               </View>
             ))}
           </View>
         </View>
 
-        <View style={styles.monthHeader}>
-          <Pressable onPress={goPreviousMonth} disabled={!canGoPrevious} style={styles.monthArrowButton}>
-            <Ionicons name="chevron-back" size={20} color={canGoPrevious ? "#384A5D" : "#B4BCC5"} />
-          </Pressable>
-          <Text style={styles.monthLabel}>{getMonthName(displayMonthIndex)}</Text>
-          <Pressable onPress={goNextMonth} style={styles.monthArrowButton}>
-            <Ionicons name="chevron-forward" size={20} color="#384A5D" />
-          </Pressable>
-        </View>
+        <View style={styles.calendarCard}>
+          <View style={styles.monthHeader}>
+            <Pressable onPress={goPreviousMonth} disabled={!canGoPrevious} style={styles.monthArrowButton}>
+              <Ionicons name="chevron-back" size={20} color={canGoPrevious ? "#384A5D" : "#B4BCC5"} />
+            </Pressable>
+            <Text style={styles.monthLabel}>{getMonthName(displayMonthIndex)}</Text>
+            <Pressable onPress={goNextMonth} style={styles.monthArrowButton}>
+              <Ionicons name="chevron-forward" size={20} color="#384A5D" />
+            </Pressable>
+          </View>
 
-        <View style={styles.weekHeaderRow}>
-          {WEEKDAY_LABELS.map((day) => (
-            <Text key={day} style={styles.weekdayText}>
-              {day}
-            </Text>
-          ))}
-        </View>
+          <View style={styles.weekHeaderRow}>
+            {WEEKDAY_LABELS.map((day) => (
+              <Text key={day} style={styles.weekdayText}>
+                {day}
+              </Text>
+            ))}
+          </View>
 
-        <View style={styles.calendarGrid}>
-          {calendarDays.map((day, index) => {
-            const moodMeta = day.moodId ? MOOD_META[day.moodId] : null;
-            const isToday =
-              !day.isOutsideMonth &&
-              viewedMonthKey === todayMonthKey &&
-              day.dayNumber === todayDay;
+          <View style={styles.calendarGrid}>
+            {calendarDays.map((day, index) => {
+              const moodMeta = day.moodId ? MOOD_META[day.moodId] : null;
+              const isToday =
+                !day.isOutsideMonth &&
+                viewedMonthKey === todayMonthKey &&
+                day.dayNumber === todayDay;
 
-            return (
-              <View key={`${day.dayNumber ?? "blank"}-${index}`} style={styles.dayCell}>
-                {day.dayNumber === null ? <View style={styles.dayCircleBlank} /> : (
-                <View
-                  style={[
-                    styles.dayCircle,
-                    day.isOutsideMonth && styles.dayCircleOutsideMonth,
-                    day.state === "mood" && moodMeta && { backgroundColor: moodMeta.color },
-                    day.state === "future" && styles.dayCircleFuture,
-                    day.state === "empty" && styles.dayCircleEmpty,
-                    day.state === "empty" && styles.dayCircleEmptyBorder,
-                    isToday && styles.dayCircleToday,
-                  ]}
-                >
-                  <Text
+              return (
+                <View key={`${day.dayNumber ?? "blank"}-${index}`} style={styles.dayCell}>
+                  {day.dayNumber === null ? <View style={styles.dayCircleBlank} /> : (
+                  <View
                     style={[
-                      styles.dayNumber,
-                      day.isOutsideMonth && styles.dayNumberOutsideMonth,
-                      day.state === "future" && styles.dayNumberFuture,
-                      day.state === "mood" && styles.dayNumberMood,
+                      styles.dayCircle,
+                      day.isOutsideMonth && styles.dayCircleOutsideMonth,
+                      day.state === "mood" && moodMeta && { backgroundColor: moodMeta.color },
+                      day.state === "future" && styles.dayCircleFuture,
+                      day.state === "empty" && styles.dayCircleEmpty,
+                      day.state === "empty" && styles.dayCircleEmptyBorder,
+                      isToday && styles.dayCircleToday,
                     ]}
                   >
-                    {day.dayNumber}
-                  </Text>
+                    <Text
+                      style={[
+                        styles.dayNumber,
+                        day.isOutsideMonth && styles.dayNumberOutsideMonth,
+                        day.state === "future" && styles.dayNumberFuture,
+                        day.state === "mood" && styles.dayNumberMood,
+                      ]}
+                    >
+                      {day.dayNumber}
+                    </Text>
+                  </View>
+                  )}
                 </View>
-                )}
-              </View>
-            );
-          })}
+              );
+            })}
+          </View>
         </View>
 
         <View style={styles.insightCard}>
@@ -332,11 +339,13 @@ export default function MoodOverviewScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#F6FAF3",
   },
   topBar: {
     height: 52,
     backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#DCE6D8",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -367,59 +376,76 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 6,
-    paddingTop: 10,
-    paddingBottom: 18,
+    paddingHorizontal: 10,
+    paddingTop: 12,
+    paddingBottom: 22,
   },
   summaryCard: {
-    borderRadius: 14,
+    borderRadius: 22,
     backgroundColor: "#FFFFFF",
-    paddingHorizontal: 10,
-    paddingTop: 8,
-    paddingBottom: 10,
-    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#E1EBD9",
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 14,
+    marginBottom: 14,
     shadowColor: "#525C67",
-    shadowOpacity: 0.18,
-    shadowRadius: 6,
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
+    elevation: 2,
   },
   summaryHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 8,
+    marginBottom: 12,
+  },
+  summaryEyebrow: {
+    color: "#7C8F77",
+    fontSize: 10,
+    lineHeight: 14,
+    letterSpacing: 1,
+    fontWeight: "700",
+    marginBottom: 4,
   },
   summaryMonth: {
     color: "#31465A",
-    fontSize: 35 / 2,
+    fontSize: 18,
     lineHeight: 24,
     fontWeight: "700",
   },
   summarySub: {
     color: "#6A7481",
-    fontSize: 14,
+    fontSize: 13,
     lineHeight: 18,
-    marginTop: 1,
+    marginTop: 2,
   },
   commonMoodWrap: {
     alignItems: "center",
-    marginTop: -2,
+    minWidth: 84,
+  },
+  commonMoodMeta: {
+    color: "#6E7E8B",
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: "700",
+    marginBottom: 4,
   },
   commonMoodFace: {
-    width: 42,
-    height: 42,
-    borderRadius: 11,
-    backgroundColor: "#FFFFFF",
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: "#F8FBF5",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 1,
+    marginBottom: 4,
     borderWidth: 1,
-    borderColor: "#D8DEE5",
+    borderColor: "#DCE5DB",
   },
   commonMoodImage: {
-    width: 33,
-    height: 33,
+    width: 38,
+    height: 38,
   },
   commonMoodFallback: {
     color: "#3F4F61",
@@ -430,6 +456,7 @@ const styles = StyleSheet.create({
     color: "#3F4F61",
     fontSize: 11,
     lineHeight: 14,
+    fontWeight: "600",
   },
   statsRow: {
     flexDirection: "row",
@@ -440,34 +467,59 @@ const styles = StyleSheet.create({
     width: "16%",
   },
   statFace: {
-    width: 47,
-    height: 41,
-    borderRadius: 10,
-    backgroundColor: "#FFFFFF",
+    width: 48,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: "#F9FBF7",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 3,
+    marginBottom: 4,
     borderWidth: 1,
-    borderColor: "#D8DEE5",
+    borderColor: "#DCE5DB",
   },
   statImage: {
-    width: 37,
-    height: 37,
+    width: 38,
+    height: 38,
   },
   statCount: {
-    color: "#5E6771",
+    color: "#4B5968",
     fontSize: 13,
     lineHeight: 16,
+    fontWeight: "700",
+  },
+  statLabel: {
+    color: "#7A8792",
+    fontSize: 9,
+    lineHeight: 12,
+    marginTop: 1,
+  },
+  calendarCard: {
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E1EBD9",
+    paddingHorizontal: 10,
+    paddingTop: 12,
+    paddingBottom: 12,
+    marginBottom: 14,
+    shadowColor: "#525C67",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
   },
   monthHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 8,
-    paddingHorizontal: 8,
+    marginBottom: 10,
+    paddingHorizontal: 4,
   },
   monthArrowButton: {
-    width: 28,
+    width: 32,
+    height: 32,
+    borderRadius: 12,
+    backgroundColor: "#F4F8F1",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -480,7 +532,7 @@ const styles = StyleSheet.create({
   weekHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingHorizontal: 6,
+    paddingHorizontal: 2,
     marginBottom: 6,
   },
   weekdayText: {
@@ -495,21 +547,20 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
-    rowGap: 6,
-    paddingHorizontal: 4,
-    marginBottom: 14,
+    rowGap: 7,
+    paddingHorizontal: 0,
   },
   dayCell: {
     width: "13.6%",
     alignItems: "center",
   },
   dayCircleBlank: {
-    width: 33,
-    height: 33,
+    width: 36,
+    height: 36,
   },
   dayCircle: {
-    width: 33,
-    height: 33,
+    width: 36,
+    height: 36,
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
@@ -550,41 +601,43 @@ const styles = StyleSheet.create({
     color: "#8D96A0",
   },
   insightCard: {
-    borderRadius: 16,
+    borderRadius: 22,
     backgroundColor: "#FFFFFF",
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: "#E1EBD9",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     shadowColor: "#525C67",
-    shadowOpacity: 0.16,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
     marginBottom: 4,
   },
   insightImageWrap: {
-    width: 104,
+    width: 92,
     alignItems: "center",
     justifyContent: "center",
   },
   insightImage: {
-    width: 96,
-    height: 76,
+    width: 72,
+    height: 72,
   },
   insightTextWrap: {
     flex: 1,
-    paddingRight: 4,
+    paddingRight: 6,
     rowGap: 6,
   },
   insightText: {
     color: "#33485B",
-    fontSize: 17,
-    lineHeight: 26,
+    fontSize: 15,
+    lineHeight: 22,
   },
   insightFootnote: {
     color: "#6F7B86",
-    fontSize: 10.5,
+    fontSize: 10,
     lineHeight: 14,
   },
 });

@@ -161,11 +161,21 @@ export default function JournalCalendarScreen() {
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={28} color="#37414A" />
         </Pressable>
-        <Text style={styles.topBarTitle}>Journal</Text>
+        <Text style={styles.topBarTitle}>Journal Calendar</Text>
         <View style={styles.topBarSpacer} />
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.heroCard}>
+          <View style={styles.heroCopy}>
+            <Text style={styles.heroEyebrow}>YEAR VIEW</Text>
+            <Text style={styles.heroTitle}>See every day you wrote and open entries straight from the calendar.</Text>
+          </View>
+          <View style={styles.heroIconBubble}>
+            <Ionicons name="calendar-outline" size={22} color="#5C9F3A" />
+          </View>
+        </View>
+
         <View style={styles.yearControlRow}>
           <Pressable
             style={[styles.yearArrowButton, selectedYear <= MIN_YEAR && styles.yearArrowButtonDisabled]}
@@ -199,7 +209,9 @@ export default function JournalCalendarScreen() {
 
           return (
             <View key={`${selectedYear}-${month.name}`} style={styles.monthSection}>
-              <Text style={styles.monthTitle}>{month.name}</Text>
+              <View style={styles.monthHeader}>
+                <Text style={styles.monthTitle}>{month.name}</Text>
+              </View>
 
               <View style={styles.weekHeaderRow}>
                 {WEEKDAY_LABELS.map((label) => (
@@ -301,12 +313,12 @@ export default function JournalCalendarScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#F6FAF3",
   },
   topBar: {
     height: 52,
     borderBottomWidth: 1,
-    borderBottomColor: "#D2D6D8",
+    borderBottomColor: "#D8E3D4",
     backgroundColor: "#FFFFFF",
     flexDirection: "row",
     alignItems: "center",
@@ -338,24 +350,78 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 10,
-    paddingTop: 10,
-    paddingBottom: 32,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 40,
+  },
+  heroCard: {
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2ECD9",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    marginBottom: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 14,
+    shadowColor: "#5C6570",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  heroCopy: {
+    flex: 1,
+  },
+  heroEyebrow: {
+    color: "#7D8F78",
+    fontSize: 10,
+    lineHeight: 14,
+    letterSpacing: 1,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  heroTitle: {
+    color: "#34475A",
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: "700",
+  },
+  heroIconBubble: {
+    width: 48,
+    height: 48,
+    borderRadius: 18,
+    backgroundColor: "#EBF6E2",
+    borderWidth: 1,
+    borderColor: "#D9ECC9",
+    alignItems: "center",
+    justifyContent: "center",
   },
   yearControlRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "flex-end",
-    columnGap: 6,
-    marginBottom: 4,
+    justifyContent: "space-between",
+    borderRadius: 20,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2ECD9",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 14,
+    shadowColor: "#5C6570",
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
   yearArrowButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 999,
+    width: 36,
+    height: 36,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#F2F7EE",
   },
   yearArrowButtonDisabled: {
     opacity: 0.45,
@@ -369,15 +435,28 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   monthSection: {
-    marginBottom: 18,
+    marginBottom: 16,
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2ECD9",
+    paddingHorizontal: 10,
+    paddingVertical: 14,
+    shadowColor: "#5C6570",
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  monthHeader: {
+    marginBottom: 8,
   },
   monthTitle: {
     textAlign: "center",
     color: "#3F4E5E",
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: "600",
-    marginBottom: 8,
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: "700",
   },
   weekHeaderRow: {
     flexDirection: "row",
@@ -401,11 +480,11 @@ const styles = StyleSheet.create({
     width: `${100 / 7}%`,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 4,
+    paddingVertical: 5,
   },
   dayCircle: {
-    width: 39,
-    height: 39,
+    width: 40,
+    height: 40,
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
@@ -413,12 +492,12 @@ const styles = StyleSheet.create({
   dayCircleEmpty: {
     backgroundColor: "#FFFFFF",
     borderWidth: 1.5,
-    borderColor: "#86C74F",
+    borderColor: "#9BC96F",
   },
   dayCircleHasEntry: {
-    backgroundColor: "#BDE69B",
+    backgroundColor: "#EFF8E7",
     borderWidth: 1.5,
-    borderColor: "#BDE69B",
+    borderColor: "#BDE09D",
   },
   dayCircleTodayHasEntry: {
     backgroundColor: "#8FCE61",
@@ -457,10 +536,12 @@ const styles = StyleSheet.create({
   selectedEntriesCard: {
     width: "100%",
     maxWidth: 340,
-    borderRadius: 18,
+    borderRadius: 22,
     backgroundColor: "#FFFFFF",
-    paddingHorizontal: 14,
-    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: "#E2ECD9",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     shadowColor: "#525C67",
     shadowOpacity: 0.16,
     shadowRadius: 6,
@@ -478,10 +559,12 @@ const styles = StyleSheet.create({
     rowGap: 8,
   },
   entryCard: {
-    borderRadius: 10,
-    backgroundColor: "#F0FFE9",
+    borderRadius: 16,
+    backgroundColor: "#F8FCF4",
+    borderWidth: 1,
+    borderColor: "#E2ECD9",
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 12,
   },
   entryTime: {
     color: "#32465C",

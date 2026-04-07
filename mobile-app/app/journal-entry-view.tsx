@@ -98,6 +98,24 @@ export default function JournalEntryViewScreen() {
         <View style={styles.topBarSpacer} />
       </View>
 
+      <View style={styles.heroCard}>
+        <View style={styles.heroCopy}>
+          <Text style={styles.heroEyebrow}>READ ONLY</Text>
+          <Text style={styles.heroTitle}>{formatEntryHeader(entry, createdAt)}</Text>
+        </View>
+
+        <View style={[styles.heroStatusPill, usedChatbot && styles.heroStatusPillActive]}>
+          <Ionicons
+            name={usedChatbot ? "sparkles" : "document-text-outline"}
+            size={14}
+            color={usedChatbot ? "#2E6B23" : "#5D6E7C"}
+          />
+          <Text style={[styles.heroStatusText, usedChatbot && styles.heroStatusTextActive]}>
+            {usedChatbot ? "With Muni" : "Manual Entry"}
+          </Text>
+        </View>
+      </View>
+
       {usedChatbot ? (
         <View style={styles.pageWrap}>
           <View style={styles.notebookShell}>
@@ -119,12 +137,6 @@ export default function JournalEntryViewScreen() {
 
               <View style={styles.marginLine} />
 
-              <View style={styles.chatHeaderRow}>
-                <Text style={styles.chatHeaderTitle} numberOfLines={1}>
-                  {formatEntryHeader(entry, createdAt)}
-                </Text>
-              </View>
-
               <ScrollView
                 style={styles.conversationScroll}
                 contentContainerStyle={styles.conversationContent}
@@ -135,11 +147,12 @@ export default function JournalEntryViewScreen() {
                 {messages.map((line) =>
                   line.role === "assistant" ? (
                     <View key={line.id} style={styles.leftMessageRow}>
+                      <Text style={styles.messageRoleLabel}>Muni</Text>
                       <Text style={styles.leftMessageText}>{line.text}</Text>
-                      <Ionicons name="sparkles" size={12} color="#1C2430" style={styles.speakerIcon} />
                     </View>
                   ) : (
                     <View key={line.id} style={styles.rightMessageRow}>
+                      <Text style={[styles.messageRoleLabel, styles.messageRoleLabelSelf]}>You</Text>
                       <Text style={styles.rightMessageText}>{line.text}</Text>
                     </View>
                   ),
@@ -167,12 +180,6 @@ export default function JournalEntryViewScreen() {
         </View>
       ) : (
         <View style={styles.card}>
-          <View style={styles.headerRow}>
-            <Text style={styles.headerTitle} numberOfLines={1}>
-              {formatEntryHeader(entry, createdAt)}
-            </Text>
-          </View>
-
           <ScrollView style={styles.bodyScroll} contentContainerStyle={styles.bodyContent} showsVerticalScrollIndicator={false}>
             {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
@@ -202,7 +209,7 @@ export default function JournalEntryViewScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#F5F9F2",
     paddingHorizontal: 12,
     paddingTop: 8,
     paddingBottom: 18,
@@ -240,14 +247,75 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
   },
+  heroCard: {
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E1EAD9",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 12,
+    shadowColor: "#5C6570",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  heroCopy: {
+    marginBottom: 10,
+  },
+  heroEyebrow: {
+    color: "#7D8F78",
+    fontSize: 10,
+    lineHeight: 14,
+    letterSpacing: 1,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  heroTitle: {
+    color: "#34475A",
+    fontSize: 17,
+    lineHeight: 23,
+    fontWeight: "700",
+  },
+  heroStatusPill: {
+    alignSelf: "flex-start",
+    minHeight: 32,
+    borderRadius: 999,
+    backgroundColor: "#F2F5F6",
+    borderWidth: 1,
+    borderColor: "#D7DEE3",
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 6,
+    paddingHorizontal: 10,
+  },
+  heroStatusPillActive: {
+    backgroundColor: "#EBF7E0",
+    borderColor: "#D0E7BF",
+  },
+  heroStatusText: {
+    color: "#5D6E7C",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
+  heroStatusTextActive: {
+    color: "#2E6B23",
+  },
   pageWrap: {
     flex: 1,
     borderRadius: 24,
     overflow: "hidden",
+    shadowColor: "#5C6570",
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 4,
   },
   notebookShell: {
     flex: 1,
-    backgroundColor: "#73C94D",
+    backgroundColor: "#78C654",
     borderRadius: 24,
     padding: 5,
     flexDirection: "row",
@@ -256,7 +324,7 @@ const styles = StyleSheet.create({
     width: 30,
     borderTopLeftRadius: 20,
     borderBottomLeftRadius: 20,
-    backgroundColor: "#CDEAB2",
+    backgroundColor: "#D7EEBE",
     position: "relative",
   },
   ringItem: {
@@ -270,7 +338,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 999,
-    backgroundColor: "#EAEAEA",
+    backgroundColor: "#F7FAF5",
     marginLeft: 3,
   },
   ringArc: {
@@ -286,9 +354,11 @@ const styles = StyleSheet.create({
   },
   paperCard: {
     flex: 1,
-    backgroundColor: "#FAFCF8",
+    backgroundColor: "#FFFDF7",
     borderRadius: 18,
     borderTopLeftRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E6E9DD",
     paddingTop: 14,
     paddingHorizontal: 14,
     paddingBottom: 10,
@@ -306,7 +376,7 @@ const styles = StyleSheet.create({
     left: 10,
     right: 10,
     height: 1,
-    backgroundColor: "#DAE8D8",
+    backgroundColor: "#E2EEE0",
   },
   marginLine: {
     position: "absolute",
@@ -315,15 +385,6 @@ const styles = StyleSheet.create({
     left: 30,
     width: 1,
     backgroundColor: "#E7BFC2",
-  },
-  chatHeaderRow: {
-    marginBottom: 8,
-  },
-  chatHeaderTitle: {
-    color: "#31465A",
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: "700",
   },
   conversationScroll: {
     flex: 1,
@@ -336,7 +397,8 @@ const styles = StyleSheet.create({
   leftMessageRow: {
     maxWidth: "84%",
     alignSelf: "flex-start",
-    paddingLeft: 22,
+    marginLeft: 22,
+    marginBottom: 4,
   },
   leftMessageText: {
     color: "#2D3B4D",
@@ -344,30 +406,44 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     fontWeight: "700",
   },
-  speakerIcon: {
-    marginTop: 2,
-    marginLeft: 2,
+  messageRoleLabel: {
+    color: "#6E8D62",
+    fontSize: 10,
+    lineHeight: 13,
+    letterSpacing: 0.5,
+    fontWeight: "700",
+    marginBottom: 3,
+  },
+  messageRoleLabelSelf: {
+    color: "#7B8792",
+    textAlign: "right",
   },
   rightMessageRow: {
     maxWidth: "78%",
     alignSelf: "flex-end",
+    marginBottom: 4,
   },
   rightMessageText: {
     color: "#2D3B4D",
     fontSize: 15,
-    lineHeight: 21,
+    lineHeight: 23,
     textAlign: "right",
     fontWeight: "500",
   },
   chatInsightBlock: {
-    marginTop: 12,
-    paddingLeft: 22,
-    paddingRight: 10,
+    marginTop: 14,
+    marginLeft: 22,
+    marginRight: 10,
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: "#F4F9EF",
+    borderWidth: 1,
+    borderColor: "#DEEBD3",
   },
   chatInsightHeading: {
     color: "#34475A",
-    fontSize: 18,
-    lineHeight: 24,
+    fontSize: 16,
+    lineHeight: 22,
     fontWeight: "700",
     marginBottom: 6,
   },
@@ -381,11 +457,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingRight: 42,
     marginTop: 2,
+    borderTopWidth: 1,
+    borderTopColor: "#EBEFE5",
+    paddingTop: 8,
   },
   footnoteText: {
-    color: "#334256",
-    fontSize: 10,
-    lineHeight: 12,
+    color: "#5D6C76",
+    fontSize: 11,
+    lineHeight: 15,
     textAlign: "center",
   },
   muniBadge: {
@@ -407,8 +486,10 @@ const styles = StyleSheet.create({
   },
   card: {
     flex: 1,
-    borderRadius: 18,
-    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    backgroundColor: "#FFFDF7",
+    borderWidth: 1,
+    borderColor: "#E6E9DD",
     paddingHorizontal: 14,
     paddingTop: 12,
     paddingBottom: 12,
@@ -417,15 +498,6 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
     elevation: 3,
-  },
-  headerRow: {
-    marginBottom: 12,
-  },
-  headerTitle: {
-    color: "#31465A",
-    fontSize: 17,
-    lineHeight: 22,
-    fontWeight: "700",
   },
   bodyScroll: {
     flex: 1,
@@ -441,20 +513,24 @@ const styles = StyleSheet.create({
   },
   paragraphText: {
     color: "#31465A",
-    fontSize: 14,
-    lineHeight: 22,
+    fontSize: 15,
+    lineHeight: 24,
     marginBottom: 18,
   },
   summaryWrap: {
     marginTop: 10,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#E6EBE2",
+    paddingTop: 14,
+    paddingHorizontal: 14,
+    paddingBottom: 14,
+    borderRadius: 18,
+    backgroundColor: "#F4F9EF",
+    borderWidth: 1,
+    borderColor: "#DEEBD3",
   },
   summaryHeading: {
     color: "#34475A",
-    fontSize: 22,
-    lineHeight: 28,
+    fontSize: 16,
+    lineHeight: 22,
     fontWeight: "700",
     marginBottom: 8,
   },
