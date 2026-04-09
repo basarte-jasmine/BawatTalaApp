@@ -43,6 +43,7 @@ const CONCERN_OPTIONS = [
   "Bullying",
   "Others",
 ];
+const AI_RETRY_LOCK_MS = 12000;
 
 function formatJournalHeaderDate(entryDate?: string) {
   const safeDate =
@@ -94,6 +95,7 @@ export default function WriteEntryScreen() {
   const [isDiscarding, setIsDiscarding] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
+  const [isAiRetryLocked, setIsAiRetryLocked] = useState(false);
   const [showRiskModal, setShowRiskModal] = useState(false);
   const [showExitModal, setShowExitModal] = useState(false);
   const [showConcernModal, setShowConcernModal] = useState(false);
@@ -166,6 +168,16 @@ export default function WriteEntryScreen() {
   useEffect(() => {
     setSelectedConcern(entry?.primaryConcern ?? null);
   }, [entry?.primaryConcern]);
+
+  useEffect(() => {
+    if (!isAiRetryLocked) return undefined;
+
+    const timer = setTimeout(() => {
+      setIsAiRetryLocked(false);
+    }, AI_RETRY_LOCK_MS);
+
+    return () => clearTimeout(timer);
+  }, [isAiRetryLocked]);
 
   const visibleMessages = useMemo(() => {
     if (messages.length > 0) return messages;
@@ -263,6 +275,10 @@ export default function WriteEntryScreen() {
     setEntry(result.entry ?? null);
     setMessages(result.messages ?? []);
     setStatusMessage(result.aiReply ? "" : result.message ?? "");
+    setIsAiRetryLocked(
+      !result.aiReply &&
+        result.message === "Muni is temporarily unavailable. Please try again in a bit.",
+    );
     if (result.entry?.riskLevel === "HIGH") {
       setShowRiskModal(true);
     }
@@ -594,11 +610,14 @@ export default function WriteEntryScreen() {
           />
 
           <Pressable
-            style={[styles.sendButton, isSending && styles.sendButtonDisabled]}
+            style={[
+              styles.sendButton,
+              (isSending || isAiRetryLocked || !canWrite) && styles.sendButtonDisabled,
+            ]}
             onPress={() => {
               void handleSendMessage();
             }}
-            disabled={isSending || !canWrite}
+            disabled={isSending || isAiRetryLocked || !canWrite}
           >
             {isSending ? (
               <ActivityIndicator color="#FFFFFF" size="small" />
