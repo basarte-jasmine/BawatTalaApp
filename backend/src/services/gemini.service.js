@@ -106,80 +106,33 @@ function pickMirrorLanguageTemplate(latestUserMessage) {
   };
 }
 
-function buildFallbackReply(latestUserMessage) {
-  const text = normalizeWhitespace(latestUserMessage);
-  const templates = pickMirrorLanguageTemplate(text);
-  const lower = text.toLowerCase();
+function unavailableConversationAnalysis(latestUserMessage = "", history = []) {
+  const heuristicRisk = riskFromSeverityWords(
+    [latestUserMessage, ...history.map((item) => item.text)].join("\n"),
+  );
 
-  if (!text) {
-    return `${templates.acknowledge} ${templates.reflect}`;
-  }
-
-  if (/[?]$/.test(text) && /\b(huh|ha|ano|what)\b/i.test(text)) {
-    return /[a-z]/i.test(text) && !/\b(ano|bakit)\b/i.test(text)
-      ? "I want to respond better to what you mean. Can you say a bit more about what felt off there?"
-      : "Gusto kong sumagot nang mas maayos sa ibig mong sabihin. Pwede mo bang linawin nang kaunti kung anong tumama sa'yo doon?";
-  }
-
-  if (/\b(repeating|ulit|inuulit|repeat)\b/i.test(lower)) {
-    return /[a-z]/i.test(text) && !/\b(ulit|inuulit)\b/i.test(text)
-      ? "You're right, that sounded repetitive. Tell me the part you want me to respond to more directly."
-      : "Tama ka, paulit-ulit ang dating nun. Sabihin mo kung anong part ang gusto mong sagutin ko nang mas direkta.";
-  }
-
-  if (/\b(wtf|bwisit|nakakainis|inis|naiinis)\b/i.test(lower)) {
-    return /[a-z]/i.test(text) && !/\b(nakakainis|naiinis)\b/i.test(text)
-      ? "That came off badly. Tell me what felt most annoying or off in that moment."
-      : "Gets ko kung bakit nakakainis ang dating nun. Anong part ang pinaka-off para sa'yo?";
-  }
-
-  if (/\b(natatae|jebs|poop|bathroom|cr|toilet)\b/i.test(lower)) {
-    return /\b(natatae|jebs)\b/i.test(lower)
-      ? "Mukhang ang hirap ngang makapag-focus kung ganyan ang pakiramdam. Gusto mo bang ikwento lang kung anong nangyayari ngayon?"
-      : "That sounds physically distracting right now. Do you want to talk through what’s going on first?";
-  }
-
-  if (/\b(friend|friends|kaibigan|best friend|barkada)\b/i.test(lower)) {
-    return /\b(ako|ko|mo|siya|naman|kasi|ewan|talaga)\b/i.test(text)
-      ? "Mukhang mabigat yung nangyari sa inyo ng friend mo. Anong part doon ang pinaka-masakit o pinaka-gulo para sa'yo ngayon?"
-      : "The part about your friend sounds especially heavy. What feels hardest about that situation right now?";
-  }
-
-  if (/\b(conflict|argument|fight|away|misunderstanding|gulo|tampo)\b/i.test(lower)) {
-    return /\b(ako|ko|mo|siya|naman|kasi|ewan|talaga)\b/i.test(text)
-      ? "Mukhang may tension talaga sa nangyari. Ano yung part na paulit-ulit bumabalik sa isip mo?"
-      : "That sounds like a lot of tension to carry. What part of the conflict keeps sticking with you most?";
-  }
-
-  if (
-    /\b(idk|i don't know|dont know|do not know|not sure|unsure|what do i do|di ko alam|hindi ko alam)\b/i.test(
-      lower,
-    )
-  ) {
-    return /\b(ako|ko|mo|siya|naman|kasi|ewan|talaga)\b/i.test(text)
-      ? "Gets ko yung pakiramdam na parang hindi mo alam ang next step. Anong part ang gusto mong malinawan muna?"
-      : "Not knowing what to do can make everything feel heavier. What part feels the most unclear right now?";
-  }
-
-  if (/\b(sad|hurt|pain|lungkot|iyak|cry|cried|upset|bigat)\b/i.test(lower)) {
-    return /\b(ako|ko|mo|siya|naman|kasi|ewan|talaga)\b/i.test(text)
-      ? "Mukhang mabigat talaga 'to para sa'yo. Saan mo pinaka-ramdam yung bigat ng nangyari?"
-      : "This sounds really heavy to sit with. Where do you feel the weight of it most right now?";
-  }
-
-  return `${templates.acknowledge} ${templates.reflect}`;
+  return {
+    pet_reply: null,
+    summary: "",
+    insights: [],
+    risk_level: heuristicRisk.risk_level,
+    admin_flag_reason: heuristicRisk.admin_flag_reason,
+    unavailable_reason: "ai_temporarily_unavailable",
+  };
 }
 
-function fallbackAnalysis(latestUserMessage = "") {
+function unavailableFinalAnalysis(latestUserMessage = "", history = []) {
+  const heuristicRisk = riskFromSeverityWords(
+    [latestUserMessage, ...history.map((item) => item.text)].join("\n"),
+  );
+
   return {
-    pet_reply: buildFallbackReply(latestUserMessage),
+    pet_reply: "",
     summary: "",
-    insights: [
-      "A clear emotional theme is present in the entry.",
-      "The entry highlights what felt most meaningful or heavy today.",
-    ],
-    risk_level: "NONE",
-    admin_flag_reason: null,
+    insights: [],
+    risk_level: heuristicRisk.risk_level,
+    admin_flag_reason: heuristicRisk.admin_flag_reason,
+    unavailable_reason: "ai_temporarily_unavailable",
   };
 }
 
@@ -225,12 +178,7 @@ function normalizePetReply(rawReply, latestUserMessage) {
     return cleanReply;
   }
 
-  const cleanLatest = normalizeWhitespace(latestUserMessage);
-  if (!cleanLatest) {
-    return fallbackAnalysis().pet_reply;
-  }
-
-  return `Salamat sa pag-share. Mukhang mahalaga sa'yo yung "${cleanLatest.slice(0, 80)}".`;
+  return "";
 }
 
 function riskFromSeverityWords(text) {
@@ -497,7 +445,7 @@ async function analyzeJournalConversation({
   history,
 }) {
   if (!GEMINI_API_KEY) {
-    return fallbackAnalysis(latestUserMessage);
+    return unavailableConversationAnalysis(latestUserMessage, history);
   }
 
   const systemInstruction = [
@@ -575,7 +523,7 @@ async function analyzeJournalConversation({
         latestUserMessage,
         reason: analysisResult.reason || geminiLastFailure?.reason || "unknown",
       });
-      return fallbackAnalysis(latestUserMessage);
+      return unavailableConversationAnalysis(latestUserMessage, history);
     }
 
     const parsedAnalysis = analysisResult.parsed || {};
@@ -591,8 +539,7 @@ async function analyzeJournalConversation({
 
     return {
       pet_reply: normalizePetReply(
-        String(parsedAnalysis?.pet_reply || "").trim() ||
-          fallbackAnalysis(latestUserMessage).pet_reply,
+        String(parsedAnalysis?.pet_reply || "").trim(),
         latestUserMessage,
       ),
       summary: "",
@@ -605,7 +552,7 @@ async function analyzeJournalConversation({
       error: error instanceof Error ? error.message : String(error),
       latestUserMessage,
     });
-    return fallbackAnalysis(latestUserMessage);
+    return unavailableConversationAnalysis(latestUserMessage, history);
   }
 }
 
@@ -615,7 +562,7 @@ async function analyzeJournalEntryFinal({
   history,
 }) {
   if (!GEMINI_API_KEY) {
-    return fallbackAnalysis(latestUserMessage);
+    return unavailableFinalAnalysis(latestUserMessage, history);
   }
 
   const systemInstruction = [
@@ -674,7 +621,7 @@ async function analyzeJournalEntryFinal({
         latestUserMessage,
         reason: analysisResult.reason || geminiLastFailure?.reason || "unknown",
       });
-      return fallbackAnalysis(latestUserMessage);
+      return unavailableFinalAnalysis(latestUserMessage, history);
     }
 
     const parsed = analysisResult.parsed || {};
@@ -700,7 +647,7 @@ async function analyzeJournalEntryFinal({
       error: error instanceof Error ? error.message : String(error),
       latestUserMessage,
     });
-    return fallbackAnalysis(latestUserMessage);
+    return unavailableFinalAnalysis(latestUserMessage, history);
   }
 }
 

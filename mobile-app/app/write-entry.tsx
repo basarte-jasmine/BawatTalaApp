@@ -93,6 +93,7 @@ export default function WriteEntryScreen() {
   const [isFinishing, setIsFinishing] = useState(false);
   const [isDiscarding, setIsDiscarding] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
   const [showRiskModal, setShowRiskModal] = useState(false);
   const [showExitModal, setShowExitModal] = useState(false);
   const [showConcernModal, setShowConcernModal] = useState(false);
@@ -110,6 +111,7 @@ export default function WriteEntryScreen() {
 
     setIsLoading(true);
     setErrorMessage("");
+    setStatusMessage("");
 
     if (mode === "new") {
       const createResult = await createJournalSession({
@@ -200,6 +202,7 @@ export default function WriteEntryScreen() {
 
     setIsDiscarding(true);
     setErrorMessage("");
+    setStatusMessage("");
 
     if (user?.studentNumber && entry?.id && !entry.isFinished) {
       const hasSavedUserMessages = messages.some(
@@ -240,6 +243,7 @@ export default function WriteEntryScreen() {
 
     setIsSending(true);
     setErrorMessage("");
+    setStatusMessage("");
 
     const result = await sendJournalMessage({
       aiEnabled,
@@ -258,6 +262,7 @@ export default function WriteEntryScreen() {
     setInputValue("");
     setEntry(result.entry ?? null);
     setMessages(result.messages ?? []);
+    setStatusMessage(result.aiReply ? "" : result.message ?? "");
     if (result.entry?.riskLevel === "HIGH") {
       setShowRiskModal(true);
     }
@@ -268,6 +273,7 @@ export default function WriteEntryScreen() {
 
     setIsLoading(true);
     setErrorMessage("");
+    setStatusMessage("");
     const result = await createJournalSession({
       aiEnabled,
       forceNew: true,
@@ -335,6 +341,7 @@ export default function WriteEntryScreen() {
 
     setIsFinishing(true);
     setErrorMessage("");
+    setStatusMessage("");
     const result = await finishJournalEntry({
       entryId: entry.id,
       studentNumber: user.studentNumber,
@@ -374,6 +381,7 @@ export default function WriteEntryScreen() {
     }
 
     setErrorMessage("");
+    setStatusMessage("");
     setShowFinishModal(true);
   };
 
@@ -638,6 +646,9 @@ export default function WriteEntryScreen() {
 
         {errorMessage ? (
           <Text style={styles.errorText}>{errorMessage}</Text>
+        ) : null}
+        {!errorMessage && statusMessage ? (
+          <Text style={styles.statusText}>{statusMessage}</Text>
         ) : null}
         {!isEntryFinished && finishValidationMessage ? (
           <Text style={styles.helperText}>{finishValidationMessage}</Text>
@@ -1288,6 +1299,14 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginHorizontal: 16,
     marginBottom: 8,
+  },
+  statusText: {
+    color: "#53685A",
+    fontSize: 12,
+    lineHeight: 16,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    textAlign: "center",
   },
   lockedText: {
     color: "#5B6774",

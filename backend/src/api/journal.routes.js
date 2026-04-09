@@ -899,6 +899,7 @@ router.post("/message", asyncHandler(async (req, res) => {
 
   const currentMessages = await listEntryMessages(entry.id);
   let aiReply = null;
+  let aiMessage = null;
   let summary = entry.summary || "";
   let insights = Array.isArray(entry.insights) ? entry.insights : [];
   let riskLevel = String(entry.risk_level || "NONE");
@@ -915,18 +916,21 @@ router.post("/message", asyncHandler(async (req, res) => {
     });
 
     aiReply = analysis.pet_reply;
+    aiMessage = analysis.unavailable_reason || null;
     summary = analysis.summary;
     insights = analysis.insights;
     riskLevel = analysis.risk_level;
     adminFlagReason = analysis.admin_flag_reason;
 
-    await query(
-      `
-        insert into public.journal_entry_messages (entry_id, student_number, role, message_text)
-        values ($1, $2, 'assistant', $3)
-      `,
-      [entry.id, studentNumber, aiReply],
-    );
+    if (aiReply) {
+      await query(
+        `
+          insert into public.journal_entry_messages (entry_id, student_number, role, message_text)
+          values ($1, $2, 'assistant', $3)
+        `,
+        [entry.id, studentNumber, aiReply],
+      );
+    }
   }
 
   const title = entry.title || buildEntryTitle(message);
@@ -956,6 +960,10 @@ router.post("/message", asyncHandler(async (req, res) => {
   return res.json({
     aiReply,
     entry: mapEntryRow(updatedEntry),
+    message:
+      aiMessage === "ai_temporarily_unavailable"
+        ? "Muni is temporarily unavailable. Please try again in a bit."
+        : undefined,
     messages,
   });
 }));
