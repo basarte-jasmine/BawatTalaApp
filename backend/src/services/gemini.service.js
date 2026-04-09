@@ -1,4 +1,5 @@
 const GEMINI_API_KEY = String(process.env.GEMINI_API_KEY || "").trim();
+const GROQ_API_KEY = String(process.env.GROQ_API_KEY || "").trim();
 
 function parseModelList(value, defaults) {
   const configured = String(value || "")
@@ -24,12 +25,21 @@ const GEMINI_INSIGHTS_MODELS = parseModelList(
   ["gemini-2.5-flash", "gemini-2.5-flash-lite"],
 );
 const GEMINI_RATE_LIMIT_COOLDOWN_MS = Math.max(
-  10000,
-  Number(process.env.GEMINI_RATE_LIMIT_COOLDOWN_MS || 45000),
+  8000,
+  Number(process.env.GEMINI_RATE_LIMIT_COOLDOWN_MS || 12000),
+);
+const GROQ_CHAT_MODELS = parseModelList(
+  process.env.GROQ_CHAT_MODELS || process.env.GROQ_CHAT_MODEL,
+  ["llama-3.1-8b-instant"],
+);
+const GROQ_INSIGHTS_MODELS = parseModelList(
+  process.env.GROQ_INSIGHTS_MODELS || process.env.GROQ_INSIGHTS_MODEL,
+  ["llama-3.1-8b-instant"],
 );
 
 let geminiCooldownUntil = 0;
 let geminiLastFailure = null;
+let groqLastFailure = null;
 
 function cleanJsonFence(value) {
   return String(value || "")
@@ -121,6 +131,10 @@ function unavailableConversationAnalysis(latestUserMessage = "", history = []) {
   };
 }
 
+function parseProviderJson(text) {
+  return parseGeminiJson(text);
+}
+
 function unavailableFinalAnalysis(latestUserMessage = "", history = []) {
   const heuristicRisk = riskFromSeverityWords(
     [latestUserMessage, ...history.map((item) => item.text)].join("\n"),
@@ -163,6 +177,10 @@ function markGeminiRateLimited(detail) {
 function clearGeminiFailureState() {
   geminiCooldownUntil = 0;
   geminiLastFailure = null;
+}
+
+function clearGroqFailureState() {
+  groqLastFailure = null;
 }
 
 function normalizePetReply(rawReply, latestUserMessage) {
@@ -439,15 +457,100 @@ async function requestGeminiJson({
   };
 }
 
+async function requestGroqJson({
+  models,
+  systemInstruction,
+  messages,
+  schemaLines,
+}) {
+  if (!GROQ_API_KEY) {
+    return { ok: false, parsed: null, reason: "groq_missing_key" };
+  }
+
+  let lastFailure = null;
+
+  for (const model of models) {
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${GROQ_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: systemInstruction },
+          ...messages,
+        ],
+        temperature: 0.5,
+        response_format: { type: "json_object" },
+      }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    const rawText = String(data?.choices?.[0]?.message?.content || "").trim();
+
+    if (response.ok && rawText) {
+      clearGroqFailureState();
+      try {
+        return { ok: true, parsed: parseProviderJson(rawText), provider: "groq" };
+      } catch (error) {
+        console.error("Failed to parse Groq JSON response.", {
+          error: error instanceof Error ? error.message : String(error),
+          model,
+          rawText,
+        });
+        throw new Error(
+          `Failed to parse Groq JSON for schema: ${schemaLines.join(" ")}`,
+        );
+      }
+    }
+
+    lastFailure = {
+      hasRawText: Boolean(rawText),
+      model,
+      status: response?.status,
+      statusText: response?.statusText,
+    };
+
+    if (response.status === 429) {
+      groqLastFailure = {
+        occurredAt: new Date().toISOString(),
+        reason: "rate_limit",
+        ...lastFailure,
+      };
+      console.warn("Groq rate limit hit, trying next model.", lastFailure);
+      continue;
+    }
+
+    groqLastFailure = {
+      occurredAt: new Date().toISOString(),
+      reason: "request_failed",
+      ...lastFailure,
+    };
+    console.error("Groq request failed.", {
+      data,
+      ...lastFailure,
+    });
+    return { ok: false, parsed: null, reason: "groq_request_failed" };
+  }
+
+  if (lastFailure) {
+    console.error("Groq request failed for all configured models.", lastFailure);
+  }
+
+  return {
+    ok: false,
+    parsed: null,
+    reason: lastFailure?.status === 429 ? "groq_rate_limited" : "groq_request_failed",
+  };
+}
+
 async function analyzeJournalConversation({
   firstName,
   latestUserMessage,
   history,
 }) {
-  if (!GEMINI_API_KEY) {
-    return unavailableConversationAnalysis(latestUserMessage, history);
-  }
-
   const systemInstruction = [
     "You are Muni, the Bawat Tala journaling companion for students.",
     "You only help with journaling, emotional reflection, mood support, school-life stress, coping, and gentle self-check-ins.",
@@ -509,24 +612,46 @@ async function analyzeJournalConversation({
       parts: [{ text: analysisPrompt }],
     },
   ];
+  const groqMessages = [
+    ...history.map((item) => ({
+      role: item.role === "assistant" ? "assistant" : "user",
+      content: String(item.text || ""),
+    })),
+    {
+      role: "user",
+      content: analysisPrompt,
+    },
+  ];
 
   try {
-    const analysisResult = await requestGeminiJson({
-      models: GEMINI_CHAT_MODELS,
-      systemInstruction,
-      contents: analysisContents,
-      schemaLines: ['"pet_reply"', '"insights"', '"risk_level"', '"admin_flag_reason"'],
-    });
+    const analysisResult = GEMINI_API_KEY
+      ? await requestGeminiJson({
+          models: GEMINI_CHAT_MODELS,
+          systemInstruction,
+          contents: analysisContents,
+          schemaLines: ['"pet_reply"', '"insights"', '"risk_level"', '"admin_flag_reason"'],
+        })
+      : { ok: false, parsed: null, reason: "gemini_missing_key" };
 
-    if (!analysisResult.ok) {
+    const providerResult = analysisResult.ok
+      ? analysisResult
+      : await requestGroqJson({
+          models: GROQ_CHAT_MODELS,
+          systemInstruction,
+          messages: groqMessages,
+          schemaLines: ['"pet_reply"', '"insights"', '"risk_level"', '"admin_flag_reason"'],
+        });
+
+    if (!providerResult.ok) {
       console.warn("Using journal conversation fallback.", {
         latestUserMessage,
-        reason: analysisResult.reason || geminiLastFailure?.reason || "unknown",
+        geminiReason: analysisResult.reason || geminiLastFailure?.reason || "unknown",
+        groqReason: providerResult.reason || groqLastFailure?.reason || "unknown",
       });
       return unavailableConversationAnalysis(latestUserMessage, history);
     }
 
-    const parsedAnalysis = analysisResult.parsed || {};
+    const parsedAnalysis = providerResult.parsed || {};
     const heuristicRisk = riskFromSeverityWords(
       [latestUserMessage, ...history.map((item) => item.text)].join("\n"),
     );
@@ -561,10 +686,6 @@ async function analyzeJournalEntryFinal({
   latestUserMessage,
   history,
 }) {
-  if (!GEMINI_API_KEY) {
-    return unavailableFinalAnalysis(latestUserMessage, history);
-  }
-
   const systemInstruction = [
     "You are Muni, the Bawat Tala journaling companion for students.",
     "You are reviewing a completed journal entry to extract supportive reflections and safety signals.",
@@ -607,24 +728,46 @@ async function analyzeJournalEntryFinal({
       parts: [{ text: finalPrompt }],
     },
   ];
+  const groqMessages = [
+    ...history.map((item) => ({
+      role: item.role === "assistant" ? "assistant" : "user",
+      content: String(item.text || ""),
+    })),
+    {
+      role: "user",
+      content: finalPrompt,
+    },
+  ];
 
   try {
-    const analysisResult = await requestGeminiJson({
-      models: GEMINI_INSIGHTS_MODELS,
-      systemInstruction,
-      contents,
-      schemaLines: ['"summary"', '"insights"', '"risk_level"', '"admin_flag_reason"'],
-    });
+    const analysisResult = GEMINI_API_KEY
+      ? await requestGeminiJson({
+          models: GEMINI_INSIGHTS_MODELS,
+          systemInstruction,
+          contents,
+          schemaLines: ['"summary"', '"insights"', '"risk_level"', '"admin_flag_reason"'],
+        })
+      : { ok: false, parsed: null, reason: "gemini_missing_key" };
 
-    if (!analysisResult.ok) {
+    const providerResult = analysisResult.ok
+      ? analysisResult
+      : await requestGroqJson({
+          models: GROQ_INSIGHTS_MODELS,
+          systemInstruction,
+          messages: groqMessages,
+          schemaLines: ['"summary"', '"insights"', '"risk_level"', '"admin_flag_reason"'],
+        });
+
+    if (!providerResult.ok) {
       console.warn("Using journal final-analysis fallback.", {
         latestUserMessage,
-        reason: analysisResult.reason || geminiLastFailure?.reason || "unknown",
+        geminiReason: analysisResult.reason || geminiLastFailure?.reason || "unknown",
+        groqReason: providerResult.reason || groqLastFailure?.reason || "unknown",
       });
       return unavailableFinalAnalysis(latestUserMessage, history);
     }
 
-    const parsed = analysisResult.parsed || {};
+    const parsed = providerResult.parsed || {};
     const heuristicRisk = riskFromSeverityWords(
       [latestUserMessage, ...history.map((item) => item.text)].join("\n"),
     );
