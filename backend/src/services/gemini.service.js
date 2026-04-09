@@ -23,6 +23,13 @@ const GEMINI_INSIGHTS_MODELS = parseModelList(
     process.env.GEMINI_MODEL,
   ["gemini-2.5-flash", "gemini-2.5-flash-lite"],
 );
+const GEMINI_RATE_LIMIT_COOLDOWN_MS = Math.max(
+  10000,
+  Number(process.env.GEMINI_RATE_LIMIT_COOLDOWN_MS || 45000),
+);
+
+let geminiCooldownUntil = 0;
+let geminiLastFailure = null;
 
 function cleanJsonFence(value) {
   return String(value || "")
@@ -132,6 +139,34 @@ function buildFallbackReply(latestUserMessage) {
       : "That sounds physically distracting right now. Do you want to talk through what’s going on first?";
   }
 
+  if (/\b(friend|friends|kaibigan|best friend|barkada)\b/i.test(lower)) {
+    return /\b(ako|ko|mo|siya|naman|kasi|ewan|talaga)\b/i.test(text)
+      ? "Mukhang mabigat yung nangyari sa inyo ng friend mo. Anong part doon ang pinaka-masakit o pinaka-gulo para sa'yo ngayon?"
+      : "The part about your friend sounds especially heavy. What feels hardest about that situation right now?";
+  }
+
+  if (/\b(conflict|argument|fight|away|misunderstanding|gulo|tampo)\b/i.test(lower)) {
+    return /\b(ako|ko|mo|siya|naman|kasi|ewan|talaga)\b/i.test(text)
+      ? "Mukhang may tension talaga sa nangyari. Ano yung part na paulit-ulit bumabalik sa isip mo?"
+      : "That sounds like a lot of tension to carry. What part of the conflict keeps sticking with you most?";
+  }
+
+  if (
+    /\b(idk|i don't know|dont know|do not know|not sure|unsure|what do i do|di ko alam|hindi ko alam)\b/i.test(
+      lower,
+    )
+  ) {
+    return /\b(ako|ko|mo|siya|naman|kasi|ewan|talaga)\b/i.test(text)
+      ? "Gets ko yung pakiramdam na parang hindi mo alam ang next step. Anong part ang gusto mong malinawan muna?"
+      : "Not knowing what to do can make everything feel heavier. What part feels the most unclear right now?";
+  }
+
+  if (/\b(sad|hurt|pain|lungkot|iyak|cry|cried|upset|bigat)\b/i.test(lower)) {
+    return /\b(ako|ko|mo|siya|naman|kasi|ewan|talaga)\b/i.test(text)
+      ? "Mukhang mabigat talaga 'to para sa'yo. Saan mo pinaka-ramdam yung bigat ng nangyari?"
+      : "This sounds really heavy to sit with. Where do you feel the weight of it most right now?";
+  }
+
   return `${templates.acknowledge} ${templates.reflect}`;
 }
 
@@ -152,6 +187,29 @@ function normalizeWhitespace(value) {
   return String(value || "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getGeminiCooldownRemainingMs() {
+  return Math.max(0, geminiCooldownUntil - Date.now());
+}
+
+function markGeminiRateLimited(detail) {
+  geminiCooldownUntil = Date.now() + GEMINI_RATE_LIMIT_COOLDOWN_MS;
+  geminiLastFailure = {
+    cooldownMs: GEMINI_RATE_LIMIT_COOLDOWN_MS,
+    occurredAt: new Date().toISOString(),
+    reason: "rate_limit",
+    ...detail,
+  };
+}
+
+function clearGeminiFailureState() {
+  geminiCooldownUntil = 0;
+  geminiLastFailure = null;
 }
 
 function normalizePetReply(rawReply, latestUserMessage) {
@@ -289,6 +347,16 @@ async function requestGeminiJson({
   contents,
   schemaLines,
 }) {
+  const cooldownRemainingMs = getGeminiCooldownRemainingMs();
+  if (cooldownRemainingMs > 0) {
+    console.warn("Gemini cooldown active, skipping request.", {
+      cooldownRemainingMs,
+      geminiLastFailure,
+      models,
+    });
+    return { ok: false, parsed: null, reason: "rate_limited_cooldown" };
+  }
+
   const requestBody = {
     systemInstruction: {
       parts: [{ text: systemInstruction }],
@@ -339,7 +407,19 @@ async function requestGeminiJson({
         break;
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 800 * (attempt + 1)));
+      markGeminiRateLimited({
+        attempt: attempt + 1,
+        model,
+        status: response?.status,
+        statusText: response?.statusText,
+      });
+      console.warn("Gemini quota hit, backing off before retry.", {
+        cooldownMs: GEMINI_RATE_LIMIT_COOLDOWN_MS,
+        model,
+        status: response?.status,
+        statusText: response?.statusText,
+      });
+      await wait(Math.min(GEMINI_RATE_LIMIT_COOLDOWN_MS, 1500 * (attempt + 1)));
     }
 
     const candidate = data?.candidates?.[0];
@@ -348,6 +428,7 @@ async function requestGeminiJson({
       candidate?.content?.parts?.map((part) => part?.text || "").join("") || "";
 
     if (response.ok && rawText) {
+      clearGeminiFailureState();
       try {
         return { ok: true, parsed: parseGeminiJson(rawText) };
       } catch (error) {
@@ -385,19 +466,29 @@ async function requestGeminiJson({
     };
 
     if (isQuotaError(response, data)) {
+      markGeminiRateLimited(lastFailure);
       console.warn("Gemini quota hit, trying next model.", lastFailure);
       continue;
     }
 
     console.error("Gemini request failed.", lastFailure);
-    return { ok: false, parsed: null };
+    geminiLastFailure = {
+      occurredAt: new Date().toISOString(),
+      reason: "request_failed",
+      ...lastFailure,
+    };
+    return { ok: false, parsed: null, reason: "request_failed" };
   }
 
   if (lastFailure) {
     console.error("Gemini request failed for all configured models.", lastFailure);
   }
 
-  return { ok: false, parsed: null };
+  return {
+    ok: false,
+    parsed: null,
+    reason: lastFailure?.status === 429 ? "rate_limited" : "request_failed",
+  };
 }
 
 async function analyzeJournalConversation({
@@ -480,6 +571,10 @@ async function analyzeJournalConversation({
     });
 
     if (!analysisResult.ok) {
+      console.warn("Using journal conversation fallback.", {
+        latestUserMessage,
+        reason: analysisResult.reason || geminiLastFailure?.reason || "unknown",
+      });
       return fallbackAnalysis(latestUserMessage);
     }
 
@@ -575,6 +670,10 @@ async function analyzeJournalEntryFinal({
     });
 
     if (!analysisResult.ok) {
+      console.warn("Using journal final-analysis fallback.", {
+        latestUserMessage,
+        reason: analysisResult.reason || geminiLastFailure?.reason || "unknown",
+      });
       return fallbackAnalysis(latestUserMessage);
     }
 
