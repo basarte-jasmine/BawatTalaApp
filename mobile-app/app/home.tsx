@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
-import { Animated, Easing, Image, ImageSourcePropType, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Animated, Easing, Image, ImageSourcePropType, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Defs, Ellipse, LinearGradient, Path, Rect, Stop } from "react-native-svg";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
@@ -68,6 +68,19 @@ type RecentEntryCard = {
 
 type HomeRecentFilter = "newest" | "oldest";
 
+type BottleDeliveryOption = {
+  days: number;
+  id: string;
+  label: string;
+};
+
+type ScheduledBottleNote = {
+  deliveryDateLabel: string;
+  deliveryId: string;
+  deliveryLabel: string;
+  message: string;
+};
+
 const SUPPORT_CARDS: SupportCardItem[] = [
   {
     accentColor: "#4B8C35",
@@ -111,8 +124,16 @@ const HOME_QUOTES = [
   "Even quiet progress is still progress worth honoring.",
 ];
 
+const BOTTLE_DELIVERY_OPTIONS: BottleDeliveryOption[] = [
+  { id: "one-week", label: "1 Week", days: 7 },
+  { id: "one-month", label: "1 Month", days: 30 },
+  { id: "three-months", label: "3 Months", days: 90 },
+  { id: "one-year", label: "1 Year", days: 365 },
+];
+
 const TALA_IMAGE = require("../assets/images/Tala_Star.png");
 const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
+const ISLAND_IMAGE = require("../assets/images/island_sample.png");
 
 export default function HomeScreen() {
   const { user } = useAuthSession();
@@ -126,6 +147,7 @@ export default function HomeScreen() {
   const tiny = height < 680;
   const frameWidth = Math.min(width, 412);
   const headerHeight = tiny ? 58 : 62;
+  const islandSceneHeight = tiny ? 218 : compact ? 238 : 256;
   const rewardGap = 4;
   const rewardTileWidth = Math.floor((frameWidth - 44 - rewardGap * 6) / 7);
   const rewardTileHeight = rewardTileWidth + 30;
@@ -146,6 +168,10 @@ export default function HomeScreen() {
   const [hasScrolled, setHasScrolled] = useState(false);
   const [showConsultOverlay, setShowConsultOverlay] = useState(false);
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+  const [showBottleModal, setShowBottleModal] = useState(false);
+  const [bottleDraft, setBottleDraft] = useState("");
+  const [selectedBottleDeliveryId, setSelectedBottleDeliveryId] = useState(BOTTLE_DELIVERY_OPTIONS[1].id);
+  const [scheduledBottleNote, setScheduledBottleNote] = useState<ScheduledBottleNote | null>(null);
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [upcomingAppointment, setUpcomingAppointment] = useState<Awaited<ReturnType<typeof fetchStudentAppointments>>["upcomingAppointment"]>(null);
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
@@ -610,6 +636,47 @@ export default function HomeScreen() {
     setShowWelcomeModal(false);
   };
 
+  const getBottleDeliveryDateLabel = (days: number) => {
+    const deliveryDate = new Date();
+    deliveryDate.setDate(deliveryDate.getDate() + days);
+    return deliveryDate.toLocaleDateString("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
+  const openBottleModal = () => {
+    if (scheduledBottleNote) {
+      setBottleDraft(scheduledBottleNote.message);
+      setSelectedBottleDeliveryId(scheduledBottleNote.deliveryId);
+    }
+    setShowBottleModal(true);
+  };
+
+  const closeBottleModal = () => {
+    setShowBottleModal(false);
+    setBottleDraft("");
+    setSelectedBottleDeliveryId(BOTTLE_DELIVERY_OPTIONS[1].id);
+  };
+
+  const handleSaveBottleNote = () => {
+    const trimmedMessage = bottleDraft.trim();
+    const selectedOption = BOTTLE_DELIVERY_OPTIONS.find((option) => option.id === selectedBottleDeliveryId);
+
+    if (!trimmedMessage || !selectedOption) {
+      return;
+    }
+
+    setScheduledBottleNote({
+      message: trimmedMessage,
+      deliveryId: selectedOption.id,
+      deliveryLabel: selectedOption.label,
+      deliveryDateLabel: getBottleDeliveryDateLabel(selectedOption.days),
+    });
+    closeBottleModal();
+  };
+
   const handleSupportCardPress = (cardId: string) => {
     if (cardId === "support-1") {
       router.push("/write-entry?mode=new");
@@ -706,6 +773,10 @@ export default function HomeScreen() {
     inputRange: [0, 1],
     outputRange: [-3, 3],
   });
+  const selectedBottleDeliveryOption =
+    BOTTLE_DELIVERY_OPTIONS.find((option) => option.id === selectedBottleDeliveryId) ?? BOTTLE_DELIVERY_OPTIONS[1];
+  const bottleDraftLength = bottleDraft.trim().length;
+  const isBottleDraftReady = bottleDraftLength > 0;
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
@@ -1072,7 +1143,185 @@ export default function HomeScreen() {
           </View>
         </View>
 
+        <View style={styles.futureBottleCard}>
+          <View style={[styles.futureBottleHero, { height: islandSceneHeight }]}>
+            <View style={styles.futureBottleSkyFill} />
+            <View style={styles.futureBottleSkyBlobOne} />
+            <View style={styles.futureBottleSkyBlobTwo} />
+            <View style={styles.futureBottleSeaBand} />
+            <View style={styles.futureBottleSeaRipple} />
+            <Image source={ISLAND_IMAGE} style={styles.futureBottleIslandArt} resizeMode="contain" />
+            <View style={styles.futureBottleTopGlow} />
+
+            <View style={styles.futureBottleHeroTextWrap}>
+              <Text style={[styles.sectionEyebrow, styles.futureBottleEyebrow]}>Future Self</Text>
+              <Text style={styles.futureBottleTitle}>Message in a Bottle</Text>
+              <Text style={styles.futureBottleSubtitle}>
+                Leave a note for the version of you waiting ahead, and choose when it should wash back in.
+              </Text>
+            </View>
+
+          </View>
+
+          <View style={styles.futureBottleBody}>
+            {scheduledBottleNote ? (
+              <View style={styles.futureBottlePreviewCard}>
+                <View style={styles.futureBottlePreviewHeader}>
+                  <View style={styles.futureBottlePreviewTextWrap}>
+                    <Text style={styles.futureBottlePreviewEyebrow}>Next bottle delivery</Text>
+                    <Text style={styles.futureBottlePreviewDate}>{scheduledBottleNote.deliveryDateLabel}</Text>
+                  </View>
+
+                  <View style={styles.futureBottleDeliveryPill}>
+                    <Ionicons name="time-outline" size={13} color="#5A7A50" />
+                    <Text style={styles.futureBottleDeliveryPillText}>{scheduledBottleNote.deliveryLabel}</Text>
+                  </View>
+                </View>
+
+                <Text style={styles.futureBottlePreviewMessage} numberOfLines={3}>
+                  {scheduledBottleNote.message}
+                </Text>
+
+                <View style={styles.futureBottlePreviewFooter}>
+                  <Text style={styles.futureBottlePreviewHint}>
+                    A little reminder from present-you, waiting at the shore.
+                  </Text>
+
+                  <Pressable style={styles.futureBottleEditButton} onPress={openBottleModal}>
+                    <Ionicons name="create-outline" size={14} color="#355468" />
+                    <Text style={styles.futureBottleEditButtonText}>Edit note</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.futureBottleEmptyState}>
+                <View style={styles.futureBottleEmptyCopy}>
+                  <Text style={styles.futureBottleEmptyTitle}>Set your first bottle note</Text>
+                  <Text style={styles.futureBottleEmptyBody}>
+                    Write something kind, brave, or honest for the future version of you who may need it.
+                  </Text>
+                </View>
+
+                <Pressable style={styles.futureBottlePrimaryButton} onPress={openBottleModal}>
+                  <Ionicons name="send-outline" size={16} color="#FFFFFF" />
+                  <Text style={styles.futureBottlePrimaryButtonText}>Write a bottle note</Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.memorySeaCard}>
+          <View style={styles.memorySeaHero}>
+            <View style={styles.memorySeaHeroGlow} />
+            <View style={styles.memorySeaHeroGlowTwo} />
+            <View style={styles.memorySeaWaterBand} />
+            <View style={styles.memorySeaWaveLine} />
+
+            <View style={styles.memorySeaHeroTextWrap}>
+              <Text style={[styles.sectionEyebrow, styles.memorySeaEyebrow]}>On the Way</Text>
+              <Text style={styles.memorySeaTitle}>Floating Memory Sea</Text>
+              <Text style={styles.memorySeaSubtitle}>
+                Meaningful moments drifting back to you.
+              </Text>
+            </View>
+
+          </View>
+
+          <View style={styles.memorySeaBody}>
+            <View style={styles.memorySeaComingSoonCard}>
+              <Ionicons name="sparkles-outline" size={16} color="#507067" />
+              <Text style={styles.memorySeaComingSoonText}>Coming soon</Text>
+            </View>
+          </View>
+        </View>
+
       </ScrollView>
+
+      <Modal
+        visible={showBottleModal}
+        transparent
+        animationType="fade"
+        onRequestClose={closeBottleModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.bottleModalCard}>
+            <View style={styles.bottleModalHeader}>
+              <View style={styles.bottleModalTextWrap}>
+                <Text style={styles.bottleModalEyebrow}>For future you</Text>
+                <Text style={styles.bottleModalTitle}>Set your bottle message</Text>
+                <Text style={styles.bottleModalDescription}>
+                  Write a note and choose when it should return to you.
+                </Text>
+              </View>
+
+              <Pressable style={styles.bottleModalCloseButton} onPress={closeBottleModal} accessibilityLabel="Close bottle note">
+                <Ionicons name="close" size={18} color="#52606C" />
+              </Pressable>
+            </View>
+
+            <View style={styles.bottleInputCard}>
+              <TextInput
+                multiline
+                maxLength={240}
+                placeholder="Write something your future self may need to hear..."
+                placeholderTextColor="#8DA0AF"
+                style={styles.bottleInput}
+                textAlignVertical="top"
+                value={bottleDraft}
+                onChangeText={setBottleDraft}
+              />
+              <Text style={styles.bottleCharacterCount}>{bottleDraftLength}/240</Text>
+            </View>
+
+            <Text style={styles.bottleOptionLabel}>When should it arrive?</Text>
+            <View style={styles.bottleOptionGrid}>
+              {BOTTLE_DELIVERY_OPTIONS.map((option) => (
+                <Pressable
+                  key={option.id}
+                  style={[
+                    styles.bottleOptionChip,
+                    selectedBottleDeliveryId === option.id && styles.bottleOptionChipActive,
+                  ]}
+                  onPress={() => setSelectedBottleDeliveryId(option.id)}
+                >
+                  <Text
+                    style={[
+                      styles.bottleOptionChipText,
+                      selectedBottleDeliveryId === option.id && styles.bottleOptionChipTextActive,
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <View style={styles.bottleArrivalCard}>
+              <Ionicons name="calendar-outline" size={16} color="#486151" />
+              <Text style={styles.bottleArrivalCardText}>
+                Arrives around <Text style={styles.bottleArrivalCardTextStrong}>{getBottleDeliveryDateLabel(selectedBottleDeliveryOption.days)}</Text>
+              </Text>
+            </View>
+
+            <View style={styles.modalActions}>
+              <Pressable style={styles.modalSecondaryButton} onPress={closeBottleModal}>
+                <Text style={styles.modalSecondaryText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.modalPrimaryButton,
+                  !isBottleDraftReady && styles.futureBottlePrimaryButtonDisabled,
+                ]}
+                onPress={handleSaveBottleNote}
+                disabled={!isBottleDraftReady}
+              >
+                <Text style={styles.modalPrimaryText}>Set Delivery</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={showWelcomeModal}
@@ -2076,6 +2325,472 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.88)",
     alignItems: "center",
     justifyContent: "center",
+  },
+  futureBottleCard: {
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+    marginBottom: 12,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#E6EEE7",
+    shadowColor: "#66737E",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  futureBottleHero: {
+    position: "relative",
+    justifyContent: "space-between",
+    overflow: "hidden",
+    backgroundColor: "#C8F0E8",
+  },
+  futureBottleSkyFill: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#C8F0E8",
+  },
+  futureBottleSkyBlobOne: {
+    position: "absolute",
+    width: 208,
+    height: 208,
+    borderRadius: 999,
+    backgroundColor: "rgba(241, 255, 210, 0.42)",
+    top: -84,
+    right: -12,
+  },
+  futureBottleSkyBlobTwo: {
+    position: "absolute",
+    width: 168,
+    height: 168,
+    borderRadius: 999,
+    backgroundColor: "rgba(143, 226, 209, 0.34)",
+    top: 16,
+    right: 46,
+  },
+  futureBottleSeaBand: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: "34%",
+    backgroundColor: "#59C3C9",
+  },
+  futureBottleSeaRipple: {
+    position: "absolute",
+    left: -16,
+    right: -16,
+    bottom: 56,
+    height: 34,
+    borderRadius: 999,
+    backgroundColor: "rgba(180, 241, 236, 0.22)",
+  },
+  futureBottleIslandArt: {
+    position: "absolute",
+    right: 10,
+    bottom: 38,
+    width: 228,
+    height: 122,
+  },
+  futureBottleTopGlow: {
+    position: "absolute",
+    top: -42,
+    right: -28,
+    width: 154,
+    height: 154,
+    borderRadius: 999,
+    backgroundColor: "rgba(248, 255, 196, 0.55)",
+  },
+  futureBottleHeroTextWrap: {
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingRight: 84,
+    maxWidth: 286,
+    zIndex: 2,
+  },
+  futureBottleEyebrow: {
+    color: "#5A7D53",
+  },
+  futureBottleTitle: {
+    color: "#2E465B",
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  futureBottleSubtitle: {
+    color: "#4A6476",
+    fontSize: 14,
+    lineHeight: 19,
+    maxWidth: 220,
+  },
+  futureBottleBody: {
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 16,
+  },
+  futureBottleEmptyState: {
+    rowGap: 14,
+  },
+  futureBottleEmptyCopy: {
+    rowGap: 4,
+  },
+  futureBottleEmptyTitle: {
+    color: "#304558",
+    fontSize: 18,
+    lineHeight: 23,
+    fontWeight: "700",
+  },
+  futureBottleEmptyBody: {
+    color: "#5D7080",
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  futureBottlePrimaryButton: {
+    minHeight: 44,
+    borderRadius: 999,
+    backgroundColor: "#70C943",
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    columnGap: 8,
+    shadowColor: "#5C6570",
+    shadowOpacity: 0.16,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  futureBottlePrimaryButtonDisabled: {
+    backgroundColor: "#A8C99C",
+  },
+  futureBottlePrimaryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: "700",
+  },
+  futureBottlePreviewCard: {
+    borderRadius: 18,
+    backgroundColor: "#F8FBF6",
+    borderWidth: 1,
+    borderColor: "#DCE9D9",
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 12,
+  },
+  futureBottlePreviewHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    columnGap: 12,
+    marginBottom: 10,
+  },
+  futureBottlePreviewTextWrap: {
+    flex: 1,
+  },
+  futureBottlePreviewEyebrow: {
+    color: "#6F845C",
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    marginBottom: 2,
+  },
+  futureBottlePreviewDate: {
+    color: "#304558",
+    fontSize: 18,
+    lineHeight: 23,
+    fontWeight: "700",
+  },
+  futureBottleDeliveryPill: {
+    borderRadius: 999,
+    backgroundColor: "#EDF6E7",
+    borderWidth: 1,
+    borderColor: "#D7E9CF",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 5,
+  },
+  futureBottleDeliveryPillText: {
+    color: "#5A7A50",
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: "700",
+  },
+  futureBottlePreviewMessage: {
+    color: "#2F4257",
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 12,
+  },
+  futureBottlePreviewFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    columnGap: 12,
+  },
+  futureBottlePreviewHint: {
+    flex: 1,
+    color: "#6B7B88",
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  futureBottleEditButton: {
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#D5E0E7",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 6,
+  },
+  futureBottleEditButtonText: {
+    color: "#355468",
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: "700",
+  },
+  memorySeaCard: {
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+    marginBottom: 12,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#E6EEE7",
+    shadowColor: "#66737E",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  memorySeaHero: {
+    minHeight: 194,
+    overflow: "hidden",
+    backgroundColor: "#D7F3EE",
+    position: "relative",
+  },
+  memorySeaHeroGlow: {
+    position: "absolute",
+    top: -34,
+    right: -18,
+    width: 164,
+    height: 164,
+    borderRadius: 999,
+    backgroundColor: "rgba(248,255,197,0.58)",
+  },
+  memorySeaHeroGlowTwo: {
+    position: "absolute",
+    top: 26,
+    right: 58,
+    width: 148,
+    height: 148,
+    borderRadius: 999,
+    backgroundColor: "rgba(115, 213, 203, 0.18)",
+  },
+  memorySeaWaterBand: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: "37%",
+    backgroundColor: "#66C5CB",
+  },
+  memorySeaWaveLine: {
+    position: "absolute",
+    left: -8,
+    right: -8,
+    bottom: 68,
+    height: 28,
+    borderRadius: 999,
+    backgroundColor: "rgba(198, 247, 241, 0.26)",
+  },
+  memorySeaHeroTextWrap: {
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingRight: 88,
+    maxWidth: 272,
+    zIndex: 2,
+  },
+  memorySeaEyebrow: {
+    color: "#5B7B59",
+  },
+  memorySeaTitle: {
+    color: "#304558",
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  memorySeaSubtitle: {
+    color: "#4E6778",
+    fontSize: 13,
+    lineHeight: 18,
+    maxWidth: 210,
+  },
+  memorySeaBody: {
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 14,
+  },
+  memorySeaComingSoonCard: {
+    borderRadius: 16,
+    backgroundColor: "#F5FBFF",
+    borderWidth: 1,
+    borderColor: "#DCEAF0",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 8,
+  },
+  memorySeaComingSoonText: {
+    color: "#365368",
+    fontSize: 15,
+    lineHeight: 19,
+    fontWeight: "700",
+  },
+  bottleModalCard: {
+    width: "100%",
+    maxWidth: 356,
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 16,
+    shadowColor: "#4F5963",
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
+  },
+  bottleModalHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    columnGap: 10,
+    marginBottom: 16,
+  },
+  bottleModalTextWrap: {
+    flex: 1,
+  },
+  bottleModalEyebrow: {
+    color: "#6D8758",
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  bottleModalTitle: {
+    color: "#304558",
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  bottleModalDescription: {
+    color: "#607181",
+    fontSize: 14,
+    lineHeight: 19,
+  },
+  bottleModalCloseButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    backgroundColor: "#F5F7F4",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#E2E8E0",
+  },
+  bottleInputCard: {
+    borderRadius: 18,
+    backgroundColor: "#FBFCF8",
+    borderWidth: 1,
+    borderColor: "#DEE7D8",
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 10,
+    marginBottom: 14,
+  },
+  bottleInput: {
+    minHeight: 118,
+    color: "#314456",
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  bottleCharacterCount: {
+    alignSelf: "flex-end",
+    color: "#91A0AB",
+    fontSize: 11,
+    lineHeight: 14,
+    marginTop: 8,
+  },
+  bottleOptionLabel: {
+    color: "#304558",
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "700",
+    marginBottom: 10,
+  },
+  bottleOptionGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 14,
+  },
+  bottleOptionChip: {
+    minWidth: 72,
+    borderRadius: 999,
+    backgroundColor: "#F6F8F5",
+    borderWidth: 1,
+    borderColor: "#D6E1D0",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bottleOptionChipActive: {
+    backgroundColor: "#E9F7DD",
+    borderColor: "#89C95F",
+  },
+  bottleOptionChipText: {
+    color: "#5E6F7E",
+    fontSize: 13,
+    lineHeight: 16,
+    fontWeight: "600",
+  },
+  bottleOptionChipTextActive: {
+    color: "#2F6F25",
+    fontWeight: "700",
+  },
+  bottleArrivalCard: {
+    borderRadius: 16,
+    backgroundColor: "#F3FAEF",
+    borderWidth: 1,
+    borderColor: "#D4E8CB",
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 8,
+    marginBottom: 16,
+  },
+  bottleArrivalCardText: {
+    flex: 1,
+    color: "#4F6473",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  bottleArrivalCardTextStrong: {
+    color: "#355368",
+    fontWeight: "700",
   },
   consultOverlay: {
     position: "absolute",

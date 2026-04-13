@@ -31,14 +31,14 @@ type CounselorCard = {
 };
 
 type AvailabilityDay = {
-  availableSlots: Array<{ available: boolean; booked: boolean; enabled: boolean; label: string; time: string }>;
+  availableSlots: { available: boolean; booked: boolean; enabled: boolean; label: string; time: string }[];
   blockedByStudentSchedule?: boolean;
   date: string;
   dayLabel: string;
   dayNumber: number;
   dayOfWeek: number;
   isPast: boolean;
-  slots: Array<{ available: boolean; booked: boolean; enabled: boolean; label: string; time: string }>;
+  slots: { available: boolean; booked: boolean; enabled: boolean; label: string; time: string }[];
 };
 
 const TOTAL_STEPS = 4;
@@ -73,7 +73,7 @@ function buildCalendarCells(date: Date) {
   const monthIndex = date.getMonth();
   const firstDay = new Date(year, monthIndex, 1).getDay();
   const totalDays = new Date(year, monthIndex + 1, 0).getDate();
-  const cells: Array<number | null> = [];
+  const cells: (number | null)[] = [];
   for (let index = 0; index < firstDay; index += 1) {
     cells.push(null);
   }
@@ -137,13 +137,11 @@ export default function ConsultScreen() {
         setCounselors(fetchedCounselors);
         if (Array.isArray(result.concernOptions) && result.concernOptions.length > 0) {
           setConcerns(result.concernOptions);
-          if (!result.concernOptions.includes(selectedConcern)) {
-            setSelectedConcern(result.concernOptions[0]);
-          }
+          setSelectedConcern((current) =>
+            result.concernOptions!.includes(current) ? current : result.concernOptions![0],
+          );
         }
-        if (!selectedCounselor && fetchedCounselors[0]?.id) {
-          setSelectedCounselor(fetchedCounselors[0].id);
-        }
+        setSelectedCounselor((current) => current || fetchedCounselors[0]?.id || "");
         setErrorMessage("");
       } catch (error) {
         if (!isMounted) return;
@@ -201,15 +199,18 @@ export default function ConsultScreen() {
         const days = Array.isArray(result.days) ? result.days : [];
         setAvailableDays(days);
         const nextAvailableDay = days.find((item) => item.availableSlots.length > 0);
+        let resolvedSelectedDay: number | null = null;
         setSelectedDay((current) => {
-          if (current && days.some((item) => item.dayNumber === current && item.availableSlots.length > 0)) {
-            return current;
-          }
-          return nextAvailableDay?.dayNumber || null;
+          const nextDay =
+            current && days.some((item) => item.dayNumber === current && item.availableSlots.length > 0)
+              ? current
+              : nextAvailableDay?.dayNumber || null;
+          resolvedSelectedDay = nextDay;
+          return nextDay;
         });
         setSelectedTime((current) => {
           if (!current) return "";
-          const selectedDayData = days.find((item) => item.dayNumber === selectedDay);
+          const selectedDayData = days.find((item) => item.dayNumber === resolvedSelectedDay);
           if (!selectedDayData?.availableSlots.some((slot) => slot.time === current)) {
             return "";
           }
@@ -234,8 +235,14 @@ export default function ConsultScreen() {
     };
   }, [selectedCounselor, selectedMonth, user?.studentNumber]);
 
-  const selectedDayAvailability = getDayFromAvailability(availableDays, selectedDay);
-  const availableTimeSlots = selectedDayAvailability?.availableSlots || [];
+  const selectedDayAvailability = useMemo(
+    () => getDayFromAvailability(availableDays, selectedDay),
+    [availableDays, selectedDay],
+  );
+  const availableTimeSlots = useMemo(
+    () => selectedDayAvailability?.availableSlots ?? [],
+    [selectedDayAvailability],
+  );
   const calendarCells = useMemo(() => buildCalendarCells(selectedMonth), [selectedMonth]);
   const currentStepLabel = STEP_LABELS[step - 1] ?? "Schedule";
 
