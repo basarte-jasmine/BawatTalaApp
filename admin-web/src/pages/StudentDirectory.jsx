@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
-  BookOpenText,
+  BookOpen,
   Calendar,
   Clock3,
   Mail,
   MapPin,
-  MessageSquareText,
-  NotebookPen,
+  MessageSquare,
+  PenSquare,
   Search,
   ShieldAlert,
   Sparkles,
@@ -165,7 +165,7 @@ function EntryConversation({ entry, studentName }) {
           <div key={message.id} className={`flex ${isAssistant ? "justify-end" : "justify-start"}`}>
             <div className={`flex max-w-[85%] flex-col gap-1 ${isAssistant ? "items-end" : "items-start"}`}>
               <div className="px-1 text-[11px] font-medium text-slate-400">
-                {isAssistant ? "Muni" : studentName} � {formatDateTime(message.createdAt)}
+                {isAssistant ? "Muni" : studentName} · {formatDateTime(message.createdAt)}
               </div>
               <div
                 className={`rounded-[22px] px-4 py-3 text-sm leading-6 shadow-sm ${
@@ -487,7 +487,7 @@ export default function StudentDirectory({ onLogout, session }) {
                       <div className="mt-1 text-sm text-slate-500">Complete journal history with summaries, tags, insights, and risk flags.</div>
                     </div>
                     <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm">
-                      <NotebookPen className="h-3.5 w-3.5" />
+                      <PenSquare className="h-3.5 w-3.5" />
                       {profileEntries.length} saved {profileEntries.length === 1 ? "entry" : "entries"}
                     </div>
                   </div>
@@ -531,7 +531,7 @@ export default function StudentDirectory({ onLogout, session }) {
                           <div className="space-y-4">
                             <section className="rounded-[22px] border border-slate-200 bg-slate-50/80 p-4">
                               <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                                <BookOpenText className="h-4 w-4" />
+                                <BookOpen className="h-4 w-4" />
                                 Summary
                               </div>
                               <div className="rounded-[18px] bg-white px-4 py-3 text-sm leading-6 text-slate-700 shadow-sm">
@@ -542,7 +542,7 @@ export default function StudentDirectory({ onLogout, session }) {
                             <section className="rounded-[22px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4">
                               <div className="mb-3 flex items-center justify-between gap-3">
                                 <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                                  <MessageSquareText className="h-4 w-4 text-indigo-500" />
+                                  <MessageSquare className="h-4 w-4 text-indigo-500" />
                                   {getEntryMode(entry) === "ai" ? "Conversation Thread" : "Journal Content"}
                                 </div>
                                 <div className="text-xs font-medium text-slate-400">{Array.isArray(entry.messages) ? entry.messages.length : 0} messages</div>
@@ -611,3 +611,4 @@ export default function StudentDirectory({ onLogout, session }) {
     </Layout>
   );
 }
+
