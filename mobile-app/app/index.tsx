@@ -1,6 +1,7 @@
 import { router } from "expo-router";
 import { useEffect, useRef } from "react";
 import { Animated, Dimensions, Easing, Pressable, StyleSheet, Text, View } from "react-native";
+import { useAuthSession } from "../lib/auth-session";
 
 const TITLE = "Bawat Tala";
 const LETTERS = TITLE.split("");
@@ -10,6 +11,7 @@ const LETTER_STEP = 9.4;
 const SPACE_STEP = 5.2;
 
 export default function Index() {
+  const { isHydrated, user } = useAuthSession();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const titleRiseAnim = useRef(new Animated.Value(14)).current;
   const titleScaleAnim = useRef(new Animated.Value(0.9)).current;
@@ -73,12 +75,12 @@ export default function Index() {
   }, [bookFloatAnim, bookScaleAnim, fadeAnim, titleRiseAnim, titleScaleAnim]);
 
   const handlePressAnywhere = () => {
-    if (hasNavigatedRef.current) {
+    if (hasNavigatedRef.current || !isHydrated) {
       return;
     }
 
     hasNavigatedRef.current = true;
-    router.replace("/login");
+    router.replace(user ? "/home" : "/login");
   };
 
   const totalSpan =
