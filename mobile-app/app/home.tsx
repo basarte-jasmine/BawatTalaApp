@@ -1011,6 +1011,10 @@ export default function HomeScreen() {
               </Defs>
               <Rect x="0" y="0" width="412" height="260" fill="url(#quoteBg)" />
               <Path d="M0,56 C66,18 118,90 188,58 C270,22 332,8 412,40 L412,0 L0,0 Z" fill="rgba(255,255,255,0.18)" />
+              <Path d="M-12,146 C56,104 118,104 188,136 C256,168 330,170 424,122 L424,260 L-12,260 Z" fill="rgba(121, 198, 130, 0.12)" />
+              <Path d="M-6,92 C58,70 126,116 190,92 C262,66 326,48 420,76" stroke="rgba(255,255,255,0.14)" strokeWidth={20} fill="none" />
+              <Path d="M-20,166 C52,146 126,150 202,172 C286,196 344,196 432,160" stroke="rgba(255,255,255,0.12)" strokeWidth={10} fill="none" />
+              <Path d="M18,122 C72,138 124,118 178,132 C232,146 282,168 342,156" stroke="rgba(121, 198, 130, 0.2)" strokeWidth={3} fill="none" />
               <Rect x="-40" y="26" width="492" height="70" fill="url(#quoteShine)" opacity={0.42} transform="rotate(-7 206 61)" />
             </Svg>
 
@@ -1057,8 +1061,8 @@ export default function HomeScreen() {
               style={[
                 styles.quoteTextWrap,
                 {
-                opacity: quoteOpacity,
-                transform: [{ translateY: quoteTranslateY }, { translateX: quoteTextShadowDrift }, { scale: quoteScale }],
+                  opacity: quoteOpacity,
+                  transform: [{ translateY: quoteTranslateY }, { translateX: quoteTextShadowDrift }, { scale: quoteScale }],
                 },
               ]}
             >
@@ -1335,34 +1339,35 @@ export default function HomeScreen() {
               <View style={styles.futureBottleSkyBlobOne} />
               <View style={styles.futureBottleSkyBlobTwo} />
               <View style={styles.futureBottleTopGlow} />
-              <Svg width="100%" height="100%" viewBox="0 0 412 240" preserveAspectRatio="none" style={styles.futureBottleSceneTopBlend}>
+              <Svg width="100%" height="100%" viewBox="0 0 412 112" preserveAspectRatio="none" style={styles.futureBottleSceneTopBlend}>
                 <Defs>
                   <LinearGradient id="shoreTopBlend" x1="0%" y1="0%" x2="0%" y2="100%">
                     <Stop offset="0%" stopColor="#F7FAF6" stopOpacity={1} />
+                    <Stop offset="78%" stopColor="#F7FAF6" stopOpacity={0.22} />
                     <Stop offset="100%" stopColor="#F7FAF6" stopOpacity={0} />
                   </LinearGradient>
                 </Defs>
-                <Rect x="0" y="0" width="412" height="240" fill="url(#shoreTopBlend)" />
+                <Path d="M0,0 H412 V16 C348,42 266,16 188,34 C108,52 44,48 0,28 Z" fill="#F7FAF6" />
+                <Path d="M0,0 H412 V74 C344,104 264,70 182,82 C104,94 38,92 0,80 Z" fill="url(#shoreTopBlend)" />
               </Svg>
 
-              <Pressable
-                style={styles.futureBottleInfoCard}
-                onPress={openBottleModal}
-                accessibilityLabel="Open future self message"
-              >
+              <View style={styles.futureBottleInfoCard}>
                 <Text style={[styles.sectionEyebrow, styles.futureBottleEyebrow]}>Future Self</Text>
                 <Text style={styles.futureBottleInfoTitle}>Message in a Bottle</Text>
                 <Text style={styles.futureBottleInfoSubtitle}>
                   Leave a note for later and let it drift back to you.
                 </Text>
-              </Pressable>
+              </View>
             </View>
 
-            <Image
-              source={ISLAND_IMAGE}
-              style={[styles.futureBottleIslandArt, { top: islandSceneHeight - 66 }]}
-              resizeMode="contain"
-            />
+            <Pressable
+              style={[styles.futureBottleIslandButton, { top: islandSceneHeight - 66 }]}
+              onPress={openBottleModal}
+              accessibilityLabel="Open future self message"
+            >
+              <Image source={ISLAND_IMAGE} style={styles.futureBottleIslandArt} resizeMode="contain" />
+            </Pressable>
+            
             {scheduledBottleNote ? <View style={[styles.futureBottleNoteGlow, { top: islandSceneHeight + 8 }]} /> : null}
 
             <View style={[styles.futureBottleWaterScene, { minHeight: waterSceneHeight }]}>
@@ -1815,7 +1820,7 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
   },
   quoteHero: {
-    backgroundColor: "#B4D89A",
+    backgroundColor: "#B6DBA0",
     paddingTop: 16,
     paddingHorizontal: 16,
     paddingBottom: 104,
@@ -1923,6 +1928,11 @@ const styles = StyleSheet.create({
     minHeight: 112,
     alignItems: "center",
     justifyContent: "center",
+    width: "100%",
+    maxWidth: 336,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    zIndex: 2,
   },
   quoteWaveBase: {
     position: "absolute",
@@ -1955,12 +1965,12 @@ const styles = StyleSheet.create({
   },
   quoteText: {
     textAlign: "center",
-    color: "#2F4257",
+    color: "#31455A",
     fontSize: 20,
     lineHeight: 30,
     fontWeight: "700",
     maxWidth: 312,
-    textShadowColor: "rgba(255,255,255,0.34)",
+    textShadowColor: "rgba(255,255,255,0.44)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 10,
   },
@@ -2586,6 +2596,7 @@ const styles = StyleSheet.create({
   },
   futureBottleScenePressable: {
     overflow: "hidden",
+    paddingTop: 0,
   },
   futureBottleSceneSky: {
     position: "relative",
@@ -2595,6 +2606,8 @@ const styles = StyleSheet.create({
   futureBottleSceneTopBlend: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 1,
+    top: 0,
+    height: 112,
   },
   futureBottleCard: {
     borderRadius: 24,
@@ -2637,12 +2650,16 @@ const styles = StyleSheet.create({
     top: 16,
     right: 46,
   },
-  futureBottleIslandArt: {
+  futureBottleIslandButton: {
     position: "absolute",
     alignSelf: "center",
     zIndex: 4,
     width: 256,
     height: 140,
+  },
+  futureBottleIslandArt: {
+    width: "100%",
+    height: "100%",
   },
   futureBottleTopGlow: {
     position: "absolute",
@@ -2654,7 +2671,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(248, 255, 196, 0.55)",
   },
   futureBottleInfoCard: {
-    marginTop: 18,
+    marginTop: 28,
     marginLeft: 16,
     width: 204,
     borderRadius: 20,

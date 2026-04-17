@@ -8,6 +8,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { ConfirmationModal } from "../components/ui/ConfirmationModal";
 import { deleteJournalEntry, fetchRecentJournalEntries } from "../lib/backend-api";
+import { JournalLockGate } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
 import { getManilaTodayParts } from "../lib/manila-date";
 
@@ -161,7 +162,8 @@ export default function JournalEntriesScreen() {
         <View style={styles.topBarSpacer} />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <JournalLockGate>
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.progressCard}>
           <View style={styles.progressHeader}>
             <View>
@@ -251,19 +253,20 @@ export default function JournalEntriesScreen() {
             </View>
           );
         })}
-      </ScrollView>
+        </ScrollView>
 
-      <ConfirmationModal
-        visible={Boolean(pendingDeleteEntryId)}
-        message="Delete this journal entry?"
-        cancelLabel="Cancel"
-        confirmLabel="Delete"
-        confirmTone="danger"
-        onCancel={() => setPendingDeleteEntryId(null)}
-        onConfirm={() => {
-          void handleConfirmDelete();
-        }}
-      />
+        <ConfirmationModal
+          visible={Boolean(pendingDeleteEntryId)}
+          message="Delete this journal entry?"
+          cancelLabel="Cancel"
+          confirmLabel="Delete"
+          confirmTone="danger"
+          onCancel={() => setPendingDeleteEntryId(null)}
+          onConfirm={() => {
+            void handleConfirmDelete();
+          }}
+        />
+      </JournalLockGate>
 
       <HomeBottomNav activeTab="journal" />
     </SafeAreaView>

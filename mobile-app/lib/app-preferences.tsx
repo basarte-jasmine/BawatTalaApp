@@ -1,3 +1,5 @@
+import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
@@ -67,7 +69,7 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
         setAppLockPin(pin);
         setAppLockAutoLock(autoLock);
         setAppLockEnabled(true);
-        setIsAppLocked(false);
+        setIsAppLocked(true);
       },
       isAppLocked,
       lockAppNow: () => {
@@ -91,7 +93,9 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
         setAppLockEnabled(Boolean(pin));
         if (!pin) {
           setIsAppLocked(false);
+          return;
         }
+        setIsAppLocked(true);
       },
     }),
     [
@@ -117,7 +121,7 @@ export function useAppPreferences() {
   return context;
 }
 
-export function AppLockOverlay() {
+export function JournalLockGate({ children }: PropsWithChildren) {
   const { appLockEnabled, isAppLocked, unlockApp } = useAppPreferences();
   const [pinInput, setPinInput] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -130,7 +134,7 @@ export function AppLockOverlay() {
   }, [isAppLocked]);
 
   if (!appLockEnabled || !isAppLocked) {
-    return null;
+    return <>{children}</>;
   }
 
   const handleUnlock = () => {
@@ -140,14 +144,32 @@ export function AppLockOverlay() {
       return;
     }
 
-    setErrorMessage("That PIN doesn’t match. Try again.");
+    setErrorMessage("That PIN doesn't match. Try again.");
+  };
+
+  const handleLeave = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace("/home");
   };
 
   return (
-    <View style={styles.overlay}>
-      <View style={styles.card}>
-        <Text style={styles.title}>App Locked</Text>
-        <Text style={styles.body}>Enter your 4-digit PIN to continue using Bawat Tala.</Text>
+    <View style={styles.journalLockWrap}>
+      <View style={styles.journalLockGlowLeft} />
+      <View style={styles.journalLockGlowRight} />
+
+      <View style={styles.journalLockCard}>
+        <View style={styles.journalLockIconWrap}>
+          <Ionicons name="book-outline" size={22} color="#4F9630" />
+        </View>
+
+        <Text style={styles.journalLockEyebrow}>JOURNAL LOCK</Text>
+        <Text style={styles.journalLockTitle}>Unlock your journal</Text>
+        <Text style={styles.journalLockBody}>
+          Your entries stay private here. Enter your 4-digit PIN to keep reading or writing.
+        </Text>
 
         <TextInput
           value={pinInput}
@@ -167,42 +189,94 @@ export function AppLockOverlay() {
 
         {!!errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
 
-        <Pressable
-          style={[styles.button, pinInput.length < 4 && styles.buttonDisabled]}
-          onPress={handleUnlock}
-          disabled={pinInput.length < 4}
-        >
-          <Text style={styles.buttonText}>Unlock</Text>
-        </Pressable>
+        <View style={styles.journalLockActions}>
+          <Pressable style={styles.journalLockSecondaryButton} onPress={handleLeave}>
+            <Text style={styles.journalLockSecondaryText}>Back</Text>
+          </Pressable>
+
+          <Pressable
+            style={[styles.button, pinInput.length < 4 && styles.buttonDisabled]}
+            onPress={handleUnlock}
+            disabled={pinInput.length < 4}
+          >
+            <Text style={styles.buttonText}>Unlock</Text>
+          </Pressable>
+        </View>
       </View>
     </View>
   );
 }
 
+export function AppLockOverlay() {
+  return null;
+}
+
 const styles = StyleSheet.create({
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 999,
-    backgroundColor: "rgba(18, 24, 21, 0.38)",
+  journalLockWrap: {
+    flex: 1,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 22,
+    backgroundColor: "#F5F9F2",
+    overflow: "hidden",
   },
-  card: {
+  journalLockGlowLeft: {
+    position: "absolute",
+    top: -28,
+    left: -24,
+    width: 148,
+    height: 148,
+    borderRadius: 999,
+    backgroundColor: "#DDF4C9",
+    opacity: 0.9,
+  },
+  journalLockGlowRight: {
+    position: "absolute",
+    right: -36,
+    bottom: 28,
+    width: 168,
+    height: 168,
+    borderRadius: 999,
+    backgroundColor: "#E7F4FF",
+    opacity: 0.8,
+  },
+  journalLockCard: {
     width: "100%",
     maxWidth: 332,
     borderRadius: 24,
     backgroundColor: "#FFFFFF",
     paddingHorizontal: 20,
-    paddingTop: 22,
+    paddingTop: 24,
     paddingBottom: 18,
     shadowColor: "#48535B",
     shadowOpacity: 0.18,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
     elevation: 4,
+    borderWidth: 1,
+    borderColor: "#E0ECD7",
+    alignItems: "center",
   },
-  title: {
+  journalLockIconWrap: {
+    width: 58,
+    height: 58,
+    borderRadius: 999,
+    backgroundColor: "#F2FBE7",
+    borderWidth: 1,
+    borderColor: "#DCECCC",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  journalLockEyebrow: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "800",
+    color: "#6D8264",
+    letterSpacing: 1.3,
+    marginBottom: 8,
+  },
+  journalLockTitle: {
     fontSize: 24,
     lineHeight: 30,
     fontWeight: "700",
@@ -210,7 +284,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 8,
   },
-  body: {
+  journalLockBody: {
     fontSize: 15,
     lineHeight: 21,
     color: "#4C5D6D",
@@ -228,6 +302,7 @@ const styles = StyleSheet.create({
     letterSpacing: 6,
     color: "#223341",
     marginBottom: 10,
+    width: "100%",
   },
   errorText: {
     color: "#D64C4C",
@@ -236,12 +311,34 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: 10,
   },
+  journalLockActions: {
+    width: "100%",
+    flexDirection: "row",
+    columnGap: 10,
+  },
   button: {
+    flex: 1,
     minHeight: 44,
     borderRadius: 999,
     backgroundColor: "#73CD44",
     alignItems: "center",
     justifyContent: "center",
+  },
+  journalLockSecondaryButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#D8E2E9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  journalLockSecondaryText: {
+    color: "#4E6070",
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: "700",
   },
   buttonDisabled: {
     backgroundColor: "#B5D8A6",

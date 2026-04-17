@@ -26,7 +26,7 @@ const APP_ROWS: SettingRow[] = [
 
 const EXTRA_ROWS: SettingRow[] = [
   { id: "refer-friend", icon: "share-social-outline", label: "Refer a friend" },
-  { id: "app-lock", icon: "lock-closed-outline", label: "App Lock" },
+  { id: "app-lock", icon: "lock-closed-outline", label: "Journal Lock" },
 ];
 const APP_VERSION = "1.0.0";
 
