@@ -23,9 +23,10 @@ const MICROPHONE_IMAGE = require("../../assets/images/microphone_sample.png");
 
 type HomeBottomNavProps = {
   activeTab?: TabKey;
+  transparent?: boolean;
 };
 
-export function HomeBottomNav({ activeTab }: HomeBottomNavProps) {
+export function HomeBottomNav({ activeTab, transparent = false }: HomeBottomNavProps) {
   const pathname = usePathname();
   const derivedActiveTab: TabKey =
     activeTab ??
@@ -55,7 +56,7 @@ export function HomeBottomNav({ activeTab }: HomeBottomNavProps) {
   };
 
   return (
-    <View style={styles.bottomNav}>
+    <View style={[styles.bottomNav, transparent && styles.bottomNavTransparent]}>
       <View style={styles.navGrid}>
         {renderTab(NAV_ITEMS[0])}
         {renderTab(NAV_ITEMS[1])}
@@ -89,6 +90,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 8,
     elevation: 8,
+  },
+  bottomNavTransparent: {
+    backgroundColor: "transparent",
+    borderTopWidth: 0,
+    elevation: 0,
+    shadowOpacity: 0,
   },
   navGrid: {
     flexDirection: "row",

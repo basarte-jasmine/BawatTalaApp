@@ -5,6 +5,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { fetchJournalEntryById, JournalEntry, JournalMessage } from "../lib/backend-api";
+import { JournalLockGate } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
 
 const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
@@ -98,110 +99,112 @@ export default function JournalEntryViewScreen() {
         <View style={styles.topBarSpacer} />
       </View>
 
-      <View style={styles.heroCard}>
-        <View style={styles.heroCopy}>
-          <Text style={styles.heroEyebrow}>READ ONLY</Text>
-          <Text style={styles.heroTitle}>{formatEntryHeader(entry, createdAt)}</Text>
+      <JournalLockGate>
+        <View style={styles.heroCard}>
+          <View style={styles.heroCopy}>
+            <Text style={styles.heroEyebrow}>READ ONLY</Text>
+            <Text style={styles.heroTitle}>{formatEntryHeader(entry, createdAt)}</Text>
+          </View>
+
+          <View style={[styles.heroStatusPill, usedChatbot && styles.heroStatusPillActive]}>
+            <Ionicons
+              name={usedChatbot ? "sparkles" : "document-text-outline"}
+              size={14}
+              color={usedChatbot ? "#2E6B23" : "#5D6E7C"}
+            />
+            <Text style={[styles.heroStatusText, usedChatbot && styles.heroStatusTextActive]}>
+              {usedChatbot ? "With Muni" : "Manual Entry"}
+            </Text>
+          </View>
         </View>
 
-        <View style={[styles.heroStatusPill, usedChatbot && styles.heroStatusPillActive]}>
-          <Ionicons
-            name={usedChatbot ? "sparkles" : "document-text-outline"}
-            size={14}
-            color={usedChatbot ? "#2E6B23" : "#5D6E7C"}
-          />
-          <Text style={[styles.heroStatusText, usedChatbot && styles.heroStatusTextActive]}>
-            {usedChatbot ? "With Muni" : "Manual Entry"}
-          </Text>
-        </View>
-      </View>
-
-      {usedChatbot ? (
-        <View style={styles.pageWrap}>
-          <View style={styles.notebookShell}>
-            <View style={styles.spineColumn}>
-              {NOTEBOOK_RINGS.map((ring) => (
-                <View key={`ring-${ring}`} style={[styles.ringItem, { top: 16 + ring * 44 }]}>
-                  <View style={styles.ringHole} />
-                  <View style={styles.ringArc} />
-                </View>
-              ))}
-            </View>
-
-            <View style={styles.paperCard}>
-              <View style={styles.ruleLayer} pointerEvents="none">
-                {PAPER_RULES.map((line) => (
-                  <View key={`rule-${line}`} style={[styles.ruleLine, { top: 52 + line * 26 }]} />
+        {usedChatbot ? (
+          <View style={styles.pageWrap}>
+            <View style={styles.notebookShell}>
+              <View style={styles.spineColumn}>
+                {NOTEBOOK_RINGS.map((ring) => (
+                  <View key={`ring-${ring}`} style={[styles.ringItem, { top: 16 + ring * 44 }]}>
+                    <View style={styles.ringHole} />
+                    <View style={styles.ringArc} />
+                  </View>
                 ))}
               </View>
 
-              <View style={styles.marginLine} />
+              <View style={styles.paperCard}>
+                <View style={styles.ruleLayer} pointerEvents="none">
+                  {PAPER_RULES.map((line) => (
+                    <View key={`rule-${line}`} style={[styles.ruleLine, { top: 52 + line * 26 }]} />
+                  ))}
+                </View>
 
-              <ScrollView
-                style={styles.conversationScroll}
-                contentContainerStyle={styles.conversationContent}
-                showsVerticalScrollIndicator={false}
-              >
-                {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+                <View style={styles.marginLine} />
 
-                {messages.map((line) =>
-                  line.role === "assistant" ? (
-                    <View key={line.id} style={styles.leftMessageRow}>
-                      <Text style={styles.messageRoleLabel}>Muni</Text>
-                      <Text style={styles.leftMessageText}>{line.text}</Text>
+                <ScrollView
+                  style={styles.conversationScroll}
+                  contentContainerStyle={styles.conversationContent}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+
+                  {messages.map((line) =>
+                    line.role === "assistant" ? (
+                      <View key={line.id} style={styles.leftMessageRow}>
+                        <Text style={styles.messageRoleLabel}>Muni</Text>
+                        <Text style={styles.leftMessageText}>{line.text}</Text>
+                      </View>
+                    ) : (
+                      <View key={line.id} style={styles.rightMessageRow}>
+                        <Text style={[styles.messageRoleLabel, styles.messageRoleLabelSelf]}>You</Text>
+                        <Text style={styles.rightMessageText}>{line.text}</Text>
+                      </View>
+                    ),
+                  )}
+
+                  {entry?.insights?.length ? (
+                    <View style={styles.chatInsightBlock}>
+                      <Text style={styles.chatInsightHeading}>Insights</Text>
+                      <Text style={styles.chatInsightText}>{combinedInsights}</Text>
                     </View>
-                  ) : (
-                    <View key={line.id} style={styles.rightMessageRow}>
-                      <Text style={[styles.messageRoleLabel, styles.messageRoleLabelSelf]}>You</Text>
-                      <Text style={styles.rightMessageText}>{line.text}</Text>
-                    </View>
-                  ),
-                )}
+                  ) : null}
+                </ScrollView>
 
-                {entry?.insights?.length ? (
-                  <View style={styles.chatInsightBlock}>
-                    <Text style={styles.chatInsightHeading}>Insights</Text>
-                    <Text style={styles.chatInsightText}>{combinedInsights}</Text>
+                <View style={styles.footnoteWrap}>
+                  <Text style={styles.footnoteText}>
+                    Read-only journal view. This entry was created with Muni and can no longer be edited.
+                  </Text>
+
+                  <View style={styles.muniBadge}>
+                    <Image source={MUNI_IMAGE} style={styles.muniBadgeImage} resizeMode="contain" />
                   </View>
-                ) : null}
-              </ScrollView>
-
-              <View style={styles.footnoteWrap}>
-                <Text style={styles.footnoteText}>
-                  Read-only journal view. This entry was created with Muni and can no longer be edited.
-                </Text>
-
-                <View style={styles.muniBadge}>
-                  <Image source={MUNI_IMAGE} style={styles.muniBadgeImage} resizeMode="contain" />
                 </View>
               </View>
             </View>
           </View>
-        </View>
-      ) : (
-        <View style={styles.card}>
-          <ScrollView style={styles.bodyScroll} contentContainerStyle={styles.bodyContent} showsVerticalScrollIndicator={false}>
-            {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+        ) : (
+          <View style={styles.card}>
+            <ScrollView style={styles.bodyScroll} contentContainerStyle={styles.bodyContent} showsVerticalScrollIndicator={false}>
+              {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
-            {paragraphs.length > 0 ? (
-              paragraphs.map((paragraph, index) => (
-                <Text key={`${index}-${paragraph.slice(0, 16)}`} style={styles.paragraphText}>
-                  {paragraph}
-                </Text>
-              ))
-            ) : (
-              <Text style={styles.paragraphText}>No saved journal content found for this entry.</Text>
-            )}
+              {paragraphs.length > 0 ? (
+                paragraphs.map((paragraph, index) => (
+                  <Text key={`${index}-${paragraph.slice(0, 16)}`} style={styles.paragraphText}>
+                    {paragraph}
+                  </Text>
+                ))
+              ) : (
+                <Text style={styles.paragraphText}>No saved journal content found for this entry.</Text>
+              )}
 
-            {entry?.insights?.length ? (
-              <View style={styles.summaryWrap}>
-                <Text style={styles.summaryHeading}>Insights</Text>
-                <Text style={styles.summaryText}>{combinedInsights}</Text>
-              </View>
-            ) : null}
-          </ScrollView>
-        </View>
-      )}
+              {entry?.insights?.length ? (
+                <View style={styles.summaryWrap}>
+                  <Text style={styles.summaryHeading}>Insights</Text>
+                  <Text style={styles.summaryText}>{combinedInsights}</Text>
+                </View>
+              ) : null}
+            </ScrollView>
+          </View>
+        )}
+      </JournalLockGate>
     </SafeAreaView>
   );
 }

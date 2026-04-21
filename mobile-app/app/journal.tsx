@@ -6,6 +6,7 @@ import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowD
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { fetchJournalCalendar, fetchJournalEntriesByDate } from "../lib/backend-api";
+import { JournalLockGate } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
 import { getManilaTodayParts } from "../lib/manila-date";
 
@@ -138,7 +139,8 @@ export default function JournalScreen() {
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
-      <View style={[styles.content, compact && styles.contentCompact, veryCompact && styles.contentVeryCompact]}>
+      <JournalLockGate>
+        <View style={[styles.content, compact && styles.contentCompact, veryCompact && styles.contentVeryCompact]}>
         <View style={[styles.topSection, compact && styles.topSectionCompact]}>
           <View style={[styles.calendarCard, compact && styles.calendarCardCompact]}>
             <Text style={styles.cardEyebrow}>THIS WEEK</Text>
@@ -206,7 +208,7 @@ export default function JournalScreen() {
             </View>
 
             <Pressable style={styles.reflectionSnippetWrap} onPress={() => setShowFullInsightModal(true)}>
-              <Text style={[styles.reflectionText, compact && styles.reflectionTextCompact]} numberOfLines={veryCompact ? 3 : 4}>
+              <Text style={[styles.reflectionText, compact && styles.reflectionTextCompact]} numberOfLines={compact ? 2 : 3}>
                 {insightText}
               </Text>
             </Pressable>
@@ -216,7 +218,7 @@ export default function JournalScreen() {
                 <Image source={MUNI_IMAGE} style={[styles.companionImage, compact && styles.companionImageCompact]} resizeMode="contain" />
               </View>
 
-              <Text style={[styles.reflectionFootnote, compact && styles.reflectionFootnoteCompact]} numberOfLines={3}>
+              <Text style={[styles.reflectionFootnote, compact && styles.reflectionFootnoteCompact]} numberOfLines={2}>
                 Insights by Muni, your virtual companion. Bawat Tala is not a substitute for professional mental health
                 care.
               </Text>
@@ -244,37 +246,38 @@ export default function JournalScreen() {
             <Text style={[styles.viewEntriesText, compact && styles.viewEntriesTextCompact]}>View Entries</Text>
           </Pressable>
         </View>
-      </View>
-
-      <Modal
-        visible={showFullInsightModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowFullInsightModal(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <View style={styles.modalHeaderCopy}>
-                <Text style={styles.modalEyebrow}>MUNI INSIGHT</Text>
-                <Text style={styles.modalTitle}>{formatLongDate(weekAnchorDate)}</Text>
-              </View>
-
-              <View style={styles.modalCompanionWrap}>
-                <Image source={MUNI_IMAGE} style={styles.modalCompanionImage} resizeMode="contain" />
-              </View>
-            </View>
-
-            <ScrollView style={styles.modalInsightScroll} contentContainerStyle={styles.modalInsightContent} showsVerticalScrollIndicator={false}>
-              <Text style={styles.modalInsightText}>{insightText}</Text>
-            </ScrollView>
-
-            <Pressable style={styles.modalCloseButton} onPress={() => setShowFullInsightModal(false)}>
-              <Text style={styles.modalCloseButtonText}>Close</Text>
-            </Pressable>
-          </View>
         </View>
-      </Modal>
+
+        <Modal
+          visible={showFullInsightModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowFullInsightModal(false)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <View style={styles.modalHeaderCopy}>
+                  <Text style={styles.modalEyebrow}>MUNI INSIGHT</Text>
+                  <Text style={styles.modalTitle}>{formatLongDate(weekAnchorDate)}</Text>
+                </View>
+
+                <View style={styles.modalCompanionWrap}>
+                  <Image source={MUNI_IMAGE} style={styles.modalCompanionImage} resizeMode="contain" />
+                </View>
+              </View>
+
+              <ScrollView style={styles.modalInsightScroll} contentContainerStyle={styles.modalInsightContent} showsVerticalScrollIndicator={false}>
+                <Text style={styles.modalInsightText}>{insightText}</Text>
+              </ScrollView>
+
+              <Pressable style={styles.modalCloseButton} onPress={() => setShowFullInsightModal(false)}>
+                <Text style={styles.modalCloseButtonText}>Close</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+      </JournalLockGate>
 
       <HomeBottomNav activeTab="journal" />
     </SafeAreaView>
@@ -457,6 +460,7 @@ const styles = StyleSheet.create({
     elevation: 3,
     marginBottom: 10,
     height: 168,
+    overflow: "hidden",
   },
   reflectionCardCompact: {
     height: 150,
@@ -467,8 +471,10 @@ const styles = StyleSheet.create({
   },
   reflectionFooterRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-end",
     columnGap: 10,
+    minHeight: 48,
+    marginTop: "auto",
   },
   reflectionHeader: {
     flexDirection: "row",
@@ -486,6 +492,8 @@ const styles = StyleSheet.create({
   },
   reflectionSnippetWrap: {
     flex: 1,
+    overflow: "hidden",
+    marginBottom: 8,
   },
   reflectionFooterRowCompact: {
     columnGap: 8,
@@ -494,7 +502,7 @@ const styles = StyleSheet.create({
     color: "#33485B",
     fontSize: 15,
     lineHeight: 21,
-    marginBottom: 10,
+    marginBottom: 0,
   },
   reflectionTextCompact: {
     fontSize: 13,
@@ -503,6 +511,7 @@ const styles = StyleSheet.create({
   },
   reflectionFootnote: {
     flex: 1,
+    flexShrink: 1,
     color: "#7B858E",
     fontSize: 10,
     lineHeight: 13,

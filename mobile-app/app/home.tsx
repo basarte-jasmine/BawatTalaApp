@@ -81,6 +81,21 @@ type ScheduledBottleNote = {
   message: string;
 };
 
+type DriftingBottleNote = {
+  baseRotate: string;
+  delay: number;
+  duration: number;
+  endOffset: number;
+  id: string;
+  initialProgress: number;
+  message: string;
+  opacity: number;
+  scale: number;
+  sender: string;
+  startOffset: number;
+  top: number;
+};
+
 const SUPPORT_CARDS: SupportCardItem[] = [
   {
     accentColor: "#4B8C35",
@@ -134,6 +149,94 @@ const BOTTLE_DELIVERY_OPTIONS: BottleDeliveryOption[] = [
 const TALA_IMAGE = require("../assets/images/Tala_Star.png");
 const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
 const ISLAND_IMAGE = require("../assets/images/island_sample.png");
+const BOTTLE_IMAGE = require("../assets/images/bottle_sample.png");
+
+const DRIFTING_BOTTLE_NOTES: DriftingBottleNote[] = [
+  {
+    baseRotate: "-18deg",
+    delay: 0,
+    duration: 12800,
+    endOffset: -124,
+    id: "shore-note-1",
+    initialProgress: 0.18,
+    opacity: 0.94,
+    scale: 1,
+    startOffset: 36,
+    top: 132,
+    sender: "From another shore",
+    message: "You do not have to feel ready to begin again. Starting gently is enough.",
+  },
+  {
+    baseRotate: "14deg",
+    delay: 2100,
+    duration: 15200,
+    endOffset: -146,
+    id: "shore-note-2",
+    initialProgress: 0.61,
+    opacity: 0.72,
+    scale: 0.86,
+    startOffset: 112,
+    top: 214,
+    sender: "A drifting note",
+    message: "I wrote this on a hard day. If you found it, I hope tomorrow feels softer for you.",
+  },
+  {
+    baseRotate: "-28deg",
+    delay: 4700,
+    duration: 17600,
+    endOffset: -96,
+    id: "shore-note-3",
+    initialProgress: 0.33,
+    opacity: 0.58,
+    scale: 0.74,
+    startOffset: 74,
+    top: 312,
+    sender: "From a quiet wave",
+    message: "Small wins count. I made tea, breathed, and stayed. That became my brave thing today.",
+  },
+  {
+    baseRotate: "22deg",
+    delay: 1200,
+    duration: 14200,
+    endOffset: -138,
+    id: "shore-note-4",
+    initialProgress: 0.82,
+    opacity: 0.88,
+    scale: 0.92,
+    startOffset: 148,
+    top: 166,
+    sender: "A note from the tide",
+    message: "Rest counted today too. I hope whoever finds this remembers that softness is still strength.",
+  },
+  {
+    baseRotate: "-10deg",
+    delay: 3600,
+    duration: 16600,
+    endOffset: -110,
+    id: "shore-note-5",
+    initialProgress: 0.49,
+    opacity: 0.64,
+    scale: 0.8,
+    startOffset: 12,
+    top: 262,
+    sender: "Across the sea",
+    message: "You are allowed to outgrow the version of you that only knew how to survive.",
+  },
+  {
+    baseRotate: "28deg",
+    delay: 6200,
+    duration: 18800,
+    endOffset: -154,
+    id: "shore-note-6",
+    initialProgress: 0.08,
+    opacity: 0.5,
+    scale: 0.7,
+    startOffset: 196,
+    top: 388,
+    sender: "From another player",
+    message: "I wrote this after a long day: I am still here, and that is already something worth keeping.",
+  },
+];
 
 export default function HomeScreen() {
   const { user } = useAuthSession();
@@ -148,6 +251,7 @@ export default function HomeScreen() {
   const frameWidth = Math.min(width, 412);
   const headerHeight = tiny ? 58 : 62;
   const islandSceneHeight = tiny ? 218 : compact ? 238 : 256;
+  const waterSceneHeight = Math.max(520, Math.round(height * 0.95));
   const rewardGap = 4;
   const rewardTileWidth = Math.floor((frameWidth - 44 - rewardGap * 6) / 7);
   const rewardTileHeight = rewardTileWidth + 30;
@@ -166,12 +270,15 @@ export default function HomeScreen() {
   const [recentEntriesSort, setRecentEntriesSort] = useState<HomeRecentFilter>("newest");
   const [showRecentEntriesFilterModal, setShowRecentEntriesFilterModal] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
+  const [bottomNavTransparent, setBottomNavTransparent] = useState(false);
   const [showConsultOverlay, setShowConsultOverlay] = useState(false);
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
   const [showBottleModal, setShowBottleModal] = useState(false);
+  const [selectedDriftingBottle, setSelectedDriftingBottle] = useState<DriftingBottleNote | null>(null);
   const [bottleDraft, setBottleDraft] = useState("");
   const [selectedBottleDeliveryId, setSelectedBottleDeliveryId] = useState(BOTTLE_DELIVERY_OPTIONS[1].id);
   const [scheduledBottleNote, setScheduledBottleNote] = useState<ScheduledBottleNote | null>(null);
+  const [waterZoneStartY, setWaterZoneStartY] = useState<number | null>(null);
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [upcomingAppointment, setUpcomingAppointment] = useState<Awaited<ReturnType<typeof fetchStudentAppointments>>["upcomingAppointment"]>(null);
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
@@ -185,11 +292,20 @@ export default function HomeScreen() {
   const welcomeTranslateY = useRef(new Animated.Value(22)).current;
   const welcomeStarMotion = useRef(new Animated.Value(0)).current;
   const welcomeHandledRef = useRef(false);
+  const scrollOffsetYRef = useRef(0);
   const quoteOpacity = useRef(new Animated.Value(1)).current;
   const quoteTranslateY = useRef(new Animated.Value(0)).current;
   const quoteScale = useRef(new Animated.Value(1)).current;
   const quoteAuraDrift = useRef(new Animated.Value(0)).current;
   const quoteAuraPulse = useRef(new Animated.Value(0)).current;
+  const driftingBottleProgressRef = useRef<Animated.Value[]>([]);
+  while (driftingBottleProgressRef.current.length < DRIFTING_BOTTLE_NOTES.length) {
+    driftingBottleProgressRef.current.push(new Animated.Value(0));
+  }
+  if (driftingBottleProgressRef.current.length > DRIFTING_BOTTLE_NOTES.length) {
+    driftingBottleProgressRef.current = driftingBottleProgressRef.current.slice(0, DRIFTING_BOTTLE_NOTES.length);
+  }
+  const driftingBottleProgress = driftingBottleProgressRef.current;
   const supportShortcuts = SUPPORT_CARDS.filter((card) => card.id !== "support-1");
 
   useEffect(() => {
@@ -244,6 +360,36 @@ export default function HomeScreen() {
       driftLoop.stop();
     };
   }, [waveDrift]);
+
+  useEffect(() => {
+    const loops = driftingBottleProgress.map((value, index) => {
+      const note = DRIFTING_BOTTLE_NOTES[index];
+      value.setValue(note.initialProgress);
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.delay(note.delay),
+          Animated.timing(value, {
+            toValue: 1,
+            duration: note.duration,
+            easing: Easing.linear,
+            useNativeDriver: true,
+          }),
+          Animated.timing(value, {
+            toValue: 0,
+            duration: 0,
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+
+      loop.start();
+      return loop;
+    });
+
+    return () => {
+      loops.forEach((loop) => loop.stop());
+    };
+  }, [driftingBottleProgress]);
 
   useEffect(() => {
     const driftLoop = Animated.loop(
@@ -621,10 +767,21 @@ export default function HomeScreen() {
   };
 
   const handleHomeScroll = (offsetY: number) => {
+    scrollOffsetYRef.current = offsetY;
     setHasScrolled((currentHasScrolled) => {
       if (currentHasScrolled) return offsetY > headerSwitchOff;
       return offsetY > headerSwitchOn;
     });
+
+    setBottomNavTransparent(
+      waterZoneStartY !== null && offsetY + height - 64 >= waterZoneStartY,
+    );
+  };
+
+  const handleWaterSceneLayout = (sceneTopY: number) => {
+    const nextWaterZoneStartY = sceneTopY + islandSceneHeight;
+    setWaterZoneStartY(nextWaterZoneStartY);
+    setBottomNavTransparent(scrollOffsetYRef.current + height - 64 >= nextWaterZoneStartY);
   };
 
   const closeConsultOverlay = () => {
@@ -773,6 +930,31 @@ export default function HomeScreen() {
     inputRange: [0, 1],
     outputRange: [-3, 3],
   });
+  const seaWaveTranslate = waveDrift.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-44, 44],
+  });
+  const seaWaveTranslateReverse = waveDrift.interpolate({
+    inputRange: [0, 1],
+    outputRange: [28, -28],
+  });
+  const driftingBottleBob = waveDrift.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [0, -10, 0],
+  });
+  const driftingBottleBobReverse = waveDrift.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [0, 8, 0],
+  });
+  const driftingBottleTilt = waveDrift.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: ["-4deg", "3deg", "-4deg"],
+  });
+  const driftingBottleTiltReverse = waveDrift.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: ["3deg", "-3deg", "3deg"],
+  });
+  const driftingBottleTravelDistance = frameWidth + 168;
   const selectedBottleDeliveryOption =
     BOTTLE_DELIVERY_OPTIONS.find((option) => option.id === selectedBottleDeliveryId) ?? BOTTLE_DELIVERY_OPTIONS[1];
   const bottleDraftLength = bottleDraft.trim().length;
@@ -829,6 +1011,10 @@ export default function HomeScreen() {
               </Defs>
               <Rect x="0" y="0" width="412" height="260" fill="url(#quoteBg)" />
               <Path d="M0,56 C66,18 118,90 188,58 C270,22 332,8 412,40 L412,0 L0,0 Z" fill="rgba(255,255,255,0.18)" />
+              <Path d="M-12,146 C56,104 118,104 188,136 C256,168 330,170 424,122 L424,260 L-12,260 Z" fill="rgba(121, 198, 130, 0.12)" />
+              <Path d="M-6,92 C58,70 126,116 190,92 C262,66 326,48 420,76" stroke="rgba(255,255,255,0.14)" strokeWidth={20} fill="none" />
+              <Path d="M-20,166 C52,146 126,150 202,172 C286,196 344,196 432,160" stroke="rgba(255,255,255,0.12)" strokeWidth={10} fill="none" />
+              <Path d="M18,122 C72,138 124,118 178,132 C232,146 282,168 342,156" stroke="rgba(121, 198, 130, 0.2)" strokeWidth={3} fill="none" />
               <Rect x="-40" y="26" width="492" height="70" fill="url(#quoteShine)" opacity={0.42} transform="rotate(-7 206 61)" />
             </Svg>
 
@@ -875,8 +1061,8 @@ export default function HomeScreen() {
               style={[
                 styles.quoteTextWrap,
                 {
-                opacity: quoteOpacity,
-                transform: [{ translateY: quoteTranslateY }, { translateX: quoteTextShadowDrift }, { scale: quoteScale }],
+                  opacity: quoteOpacity,
+                  transform: [{ translateY: quoteTranslateY }, { translateX: quoteTextShadowDrift }, { scale: quoteScale }],
                 },
               ]}
             >
@@ -1143,100 +1329,172 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <View style={styles.futureBottleCard}>
-          <View style={[styles.futureBottleHero, { height: islandSceneHeight }]}>
-            <View style={styles.futureBottleSkyFill} />
-            <View style={styles.futureBottleSkyBlobOne} />
-            <View style={styles.futureBottleSkyBlobTwo} />
-            <View style={styles.futureBottleSeaBand} />
-            <View style={styles.futureBottleSeaRipple} />
-            <Image source={ISLAND_IMAGE} style={styles.futureBottleIslandArt} resizeMode="contain" />
-            <View style={styles.futureBottleTopGlow} />
+        <View
+          style={styles.futureBottleScene}
+          onLayout={(event) => handleWaterSceneLayout(event.nativeEvent.layout.y)}
+        >
+          <View style={styles.futureBottleScenePressable}>
+            <View style={[styles.futureBottleSceneSky, { minHeight: islandSceneHeight }]}>
+              <View style={styles.futureBottleSkyFill} />
+              <View style={styles.futureBottleSkyBlobOne} />
+              <View style={styles.futureBottleSkyBlobTwo} />
+              <View style={styles.futureBottleTopGlow} />
+              <Svg width="100%" height="100%" viewBox="0 0 412 112" preserveAspectRatio="none" style={styles.futureBottleSceneTopBlend}>
+                <Defs>
+                  <LinearGradient id="shoreTopBlend" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <Stop offset="0%" stopColor="#F7FAF6" stopOpacity={1} />
+                    <Stop offset="78%" stopColor="#F7FAF6" stopOpacity={0.22} />
+                    <Stop offset="100%" stopColor="#F7FAF6" stopOpacity={0} />
+                  </LinearGradient>
+                </Defs>
+                <Path d="M0,0 H412 V16 C348,42 266,16 188,34 C108,52 44,48 0,28 Z" fill="#F7FAF6" />
+                <Path d="M0,0 H412 V74 C344,104 264,70 182,82 C104,94 38,92 0,80 Z" fill="url(#shoreTopBlend)" />
+              </Svg>
 
-            <View style={styles.futureBottleHeroTextWrap}>
-              <Text style={[styles.sectionEyebrow, styles.futureBottleEyebrow]}>Future Self</Text>
-              <Text style={styles.futureBottleTitle}>Message in a Bottle</Text>
-              <Text style={styles.futureBottleSubtitle}>
-                Leave a note for the version of you waiting ahead, and choose when it should wash back in.
-              </Text>
-            </View>
-
-          </View>
-
-          <View style={styles.futureBottleBody}>
-            {scheduledBottleNote ? (
-              <View style={styles.futureBottlePreviewCard}>
-                <View style={styles.futureBottlePreviewHeader}>
-                  <View style={styles.futureBottlePreviewTextWrap}>
-                    <Text style={styles.futureBottlePreviewEyebrow}>Next bottle delivery</Text>
-                    <Text style={styles.futureBottlePreviewDate}>{scheduledBottleNote.deliveryDateLabel}</Text>
-                  </View>
-
-                  <View style={styles.futureBottleDeliveryPill}>
-                    <Ionicons name="time-outline" size={13} color="#5A7A50" />
-                    <Text style={styles.futureBottleDeliveryPillText}>{scheduledBottleNote.deliveryLabel}</Text>
-                  </View>
-                </View>
-
-                <Text style={styles.futureBottlePreviewMessage} numberOfLines={3}>
-                  {scheduledBottleNote.message}
+              <View style={styles.futureBottleInfoCard}>
+                <Text style={[styles.sectionEyebrow, styles.futureBottleEyebrow]}>Future Self</Text>
+                <Text style={styles.futureBottleInfoTitle}>Message in a Bottle</Text>
+                <Text style={styles.futureBottleInfoSubtitle}>
+                  Leave a note for later and let it drift back to you.
                 </Text>
-
-                <View style={styles.futureBottlePreviewFooter}>
-                  <Text style={styles.futureBottlePreviewHint}>
-                    A little reminder from present-you, waiting at the shore.
-                  </Text>
-
-                  <Pressable style={styles.futureBottleEditButton} onPress={openBottleModal}>
-                    <Ionicons name="create-outline" size={14} color="#355468" />
-                    <Text style={styles.futureBottleEditButtonText}>Edit note</Text>
-                  </Pressable>
-                </View>
               </View>
-            ) : (
-              <View style={styles.futureBottleEmptyState}>
-                <View style={styles.futureBottleEmptyCopy}>
-                  <Text style={styles.futureBottleEmptyTitle}>Set your first bottle note</Text>
-                  <Text style={styles.futureBottleEmptyBody}>
-                    Write something kind, brave, or honest for the future version of you who may need it.
-                  </Text>
-                </View>
-
-                <Pressable style={styles.futureBottlePrimaryButton} onPress={openBottleModal}>
-                  <Ionicons name="send-outline" size={16} color="#FFFFFF" />
-                  <Text style={styles.futureBottlePrimaryButtonText}>Write a bottle note</Text>
-                </Pressable>
-              </View>
-            )}
-          </View>
-        </View>
-
-        <View style={styles.memorySeaCard}>
-          <View style={styles.memorySeaHero}>
-            <View style={styles.memorySeaHeroGlow} />
-            <View style={styles.memorySeaHeroGlowTwo} />
-            <View style={styles.memorySeaWaterBand} />
-            <View style={styles.memorySeaWaveLine} />
-
-            <View style={styles.memorySeaHeroTextWrap}>
-              <Text style={[styles.sectionEyebrow, styles.memorySeaEyebrow]}>On the Way</Text>
-              <Text style={styles.memorySeaTitle}>Floating Memory Sea</Text>
-              <Text style={styles.memorySeaSubtitle}>
-                Meaningful moments drifting back to you.
-              </Text>
             </View>
 
-          </View>
+            <Pressable
+              style={[styles.futureBottleIslandButton, { top: islandSceneHeight - 66 }]}
+              onPress={openBottleModal}
+              accessibilityLabel="Open future self message"
+            >
+              <Image source={ISLAND_IMAGE} style={styles.futureBottleIslandArt} resizeMode="contain" />
+            </Pressable>
+            
+            {scheduledBottleNote ? <View style={[styles.futureBottleNoteGlow, { top: islandSceneHeight + 8 }]} /> : null}
 
-          <View style={styles.memorySeaBody}>
-            <View style={styles.memorySeaComingSoonCard}>
-              <Ionicons name="sparkles-outline" size={16} color="#507067" />
-              <Text style={styles.memorySeaComingSoonText}>Coming soon</Text>
+            <View style={[styles.futureBottleWaterScene, { minHeight: waterSceneHeight }]}>
+              <Svg width="100%" height="100%" viewBox="0 0 412 620" preserveAspectRatio="none" style={styles.futureBottleWaterGradient}>
+                <Defs>
+                  <LinearGradient id="shoreWater" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <Stop offset="0%" stopColor="#6DD1D9" />
+                    <Stop offset="34%" stopColor="#55B9C6" />
+                    <Stop offset="100%" stopColor="#377FA8" />
+                  </LinearGradient>
+                </Defs>
+                <Rect x="0" y="0" width="412" height="620" fill="url(#shoreWater)" />
+                <Ellipse cx="70" cy="112" rx="96" ry="38" fill="rgba(202, 248, 250, 0.16)" />
+                <Ellipse cx="314" cy="208" rx="132" ry="48" fill="rgba(205, 248, 251, 0.12)" />
+                <Ellipse cx="216" cy="436" rx="198" ry="78" fill="rgba(124, 214, 227, 0.12)" />
+              </Svg>
+
+              <Animated.View style={[styles.futureBottleWaterWaveFill, { transform: [{ translateX: seaWaveTranslate }] }]}>
+                <Svg width="100%" height="104" viewBox="0 0 412 104" preserveAspectRatio="none">
+                  <Path
+                    d="M0,42 C44,8 102,66 164,38 C226,10 288,8 348,28 C372,36 392,44 412,38 L412,104 L0,104 Z"
+                    fill="rgba(227, 252, 255, 0.32)"
+                  />
+                </Svg>
+              </Animated.View>
+
+              <Animated.View style={[styles.futureBottleWaterWaveLine, { transform: [{ translateX: seaWaveTranslateReverse }] }]}>
+                <Svg width="100%" height="70" viewBox="0 0 412 70" preserveAspectRatio="none">
+                  <Path
+                    d="M0,30 C54,6 118,48 188,24 C256,2 324,12 412,32"
+                    stroke="rgba(239,255,255,0.72)"
+                    strokeWidth={4}
+                    fill="none"
+                  />
+                </Svg>
+              </Animated.View>
+
+              <Animated.View style={[styles.futureBottleWaterWaveSoft, { transform: [{ translateX: seaWaveTranslate }] }]}>
+                <Svg width="100%" height="90" viewBox="0 0 412 90" preserveAspectRatio="none">
+                  <Path
+                    d="M0,40 C78,62 128,12 198,34 C272,56 336,60 412,40"
+                    stroke="rgba(255,255,255,0.22)"
+                    strokeWidth={12}
+                    fill="none"
+                  />
+                </Svg>
+              </Animated.View>
+
+              {DRIFTING_BOTTLE_NOTES.map((note, index) => (
+                <Animated.View
+                  key={note.id}
+                  style={[
+                    styles.driftingBottleWrap,
+                    {
+                      top: note.top,
+                      opacity: note.opacity,
+                      transform: [
+                        {
+                          translateX: driftingBottleProgress[index].interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [driftingBottleTravelDistance + note.startOffset, note.endOffset],
+                          }),
+                        },
+                        { rotate: note.baseRotate },
+                        { scale: note.scale },
+                      ],
+                    },
+                  ]}
+                >
+                  <Animated.View
+                    style={{
+                      transform: [
+                        { translateY: index % 2 === 0 ? driftingBottleBob : driftingBottleBobReverse },
+                        { rotate: index % 2 === 0 ? driftingBottleTilt : driftingBottleTiltReverse },
+                      ],
+                    }}
+                  >
+                    <Pressable
+                      style={styles.driftingBottleButton}
+                      onPress={() => setSelectedDriftingBottle(note)}
+                      accessibilityLabel={`Open drifting letter: ${note.sender}`}
+                    >
+                      <Image source={BOTTLE_IMAGE} style={styles.driftingBottleImage} resizeMode="contain" />
+                    </Pressable>
+                  </Animated.View>
+                </Animated.View>
+              ))}
             </View>
           </View>
         </View>
 
       </ScrollView>
+
+      <Modal
+        visible={Boolean(selectedDriftingBottle)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedDriftingBottle(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.driftingBottleModalCard}>
+            <View style={styles.driftingBottleModalHeader}>
+              <View style={styles.driftingBottleModalTitleWrap}>
+                <Text style={styles.driftingBottleModalEyebrow}>Shared letter</Text>
+                <Text style={styles.driftingBottleModalTitle}>
+                  {selectedDriftingBottle?.sender ?? "From another shore"}
+                </Text>
+              </View>
+
+              <Pressable
+                style={styles.bottleModalCloseButton}
+                onPress={() => setSelectedDriftingBottle(null)}
+                accessibilityLabel="Close drifting letter"
+              >
+                <Ionicons name="close" size={18} color="#52606C" />
+              </Pressable>
+            </View>
+
+            <View style={styles.driftingBottleModalBody}>
+              <Image source={BOTTLE_IMAGE} style={styles.driftingBottleModalImage} resizeMode="contain" />
+              <Text style={styles.driftingBottleModalMessage}>
+                {selectedDriftingBottle?.message ?? ""}
+              </Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={showBottleModal}
@@ -1521,7 +1779,7 @@ export default function HomeScreen() {
         </View>
       ) : null}
 
-      <HomeBottomNav activeTab="home" />
+      <HomeBottomNav activeTab="home" transparent={bottomNavTransparent} />
     </SafeAreaView>
   );
 }
@@ -1559,10 +1817,10 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 12,
     paddingTop: 0,
-    paddingBottom: 120,
+    paddingBottom: 0,
   },
   quoteHero: {
-    backgroundColor: "#B4D89A",
+    backgroundColor: "#B6DBA0",
     paddingTop: 16,
     paddingHorizontal: 16,
     paddingBottom: 104,
@@ -1670,6 +1928,11 @@ const styles = StyleSheet.create({
     minHeight: 112,
     alignItems: "center",
     justifyContent: "center",
+    width: "100%",
+    maxWidth: 336,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    zIndex: 2,
   },
   quoteWaveBase: {
     position: "absolute",
@@ -1702,12 +1965,12 @@ const styles = StyleSheet.create({
   },
   quoteText: {
     textAlign: "center",
-    color: "#2F4257",
+    color: "#31455A",
     fontSize: 20,
     lineHeight: 30,
     fontWeight: "700",
     maxWidth: 312,
-    textShadowColor: "rgba(255,255,255,0.34)",
+    textShadowColor: "rgba(255,255,255,0.44)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 10,
   },
@@ -2326,6 +2589,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  futureBottleScene: {
+    marginHorizontal: -12,
+    marginTop: 10,
+    overflow: "hidden",
+  },
+  futureBottleScenePressable: {
+    overflow: "hidden",
+    paddingTop: 0,
+  },
+  futureBottleSceneSky: {
+    position: "relative",
+    overflow: "hidden",
+    backgroundColor: "#C8F0E8",
+  },
+  futureBottleSceneTopBlend: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1,
+    top: 0,
+    height: 112,
+  },
   futureBottleCard: {
     borderRadius: 24,
     backgroundColor: "#FFFFFF",
@@ -2367,61 +2650,163 @@ const styles = StyleSheet.create({
     top: 16,
     right: 46,
   },
-  futureBottleSeaBand: {
+  futureBottleIslandButton: {
     position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: "34%",
-    backgroundColor: "#59C3C9",
-  },
-  futureBottleSeaRipple: {
-    position: "absolute",
-    left: -16,
-    right: -16,
-    bottom: 56,
-    height: 34,
-    borderRadius: 999,
-    backgroundColor: "rgba(180, 241, 236, 0.22)",
+    alignSelf: "center",
+    zIndex: 4,
+    width: 256,
+    height: 140,
   },
   futureBottleIslandArt: {
-    position: "absolute",
-    right: 10,
-    bottom: 38,
-    width: 228,
-    height: 122,
+    width: "100%",
+    height: "100%",
   },
   futureBottleTopGlow: {
     position: "absolute",
-    top: -42,
-    right: -28,
-    width: 154,
-    height: 154,
+    top: -36,
+    right: -22,
+    width: 168,
+    height: 168,
     borderRadius: 999,
     backgroundColor: "rgba(248, 255, 196, 0.55)",
   },
-  futureBottleHeroTextWrap: {
-    paddingHorizontal: 16,
-    paddingTop: 18,
-    paddingRight: 84,
-    maxWidth: 286,
+  futureBottleInfoCard: {
+    marginTop: 28,
+    marginLeft: 16,
+    width: 204,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.58)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.56)",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     zIndex: 2,
   },
   futureBottleEyebrow: {
     color: "#5A7D53",
   },
-  futureBottleTitle: {
-    color: "#2E465B",
-    fontSize: 24,
-    lineHeight: 30,
+  futureBottleInfoTitle: {
+    color: "#2F4257",
+    fontSize: 18,
+    lineHeight: 23,
     fontWeight: "700",
-    marginBottom: 6,
+    marginBottom: 2,
   },
-  futureBottleSubtitle: {
-    color: "#4A6476",
-    fontSize: 14,
-    lineHeight: 19,
-    maxWidth: 220,
+  futureBottleInfoSubtitle: {
+    color: "#5A6C7B",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  futureBottleNoteGlow: {
+    position: "absolute",
+    alignSelf: "center",
+    width: 164,
+    height: 42,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 250, 182, 0.28)",
+    zIndex: 3,
+  },
+  futureBottleWaterScene: {
+    position: "relative",
+    overflow: "hidden",
+    backgroundColor: "#5CBCCB",
+    marginTop: -2,
+  },
+  futureBottleWaterGradient: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  futureBottleWaterWaveFill: {
+    position: "absolute",
+    left: -52,
+    right: -52,
+    top: 6,
+    height: 104,
+  },
+  futureBottleWaterWaveLine: {
+    position: "absolute",
+    left: -44,
+    right: -44,
+    top: 14,
+    height: 70,
+  },
+  futureBottleWaterWaveSoft: {
+    position: "absolute",
+    left: -40,
+    right: -40,
+    top: 46,
+    height: 90,
+  },
+  driftingBottleWrap: {
+    position: "absolute",
+    left: -78,
+    zIndex: 5,
+  },
+  driftingBottleButton: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  driftingBottleImage: {
+    width: 62,
+    height: 62,
+  },
+  driftingBottleModalCard: {
+    width: "100%",
+    maxWidth: 340,
+    borderRadius: 24,
+    backgroundColor: "#FFFDF6",
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 16,
+    shadowColor: "#4F5963",
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
+  },
+  driftingBottleModalHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    columnGap: 10,
+    marginBottom: 14,
+  },
+  driftingBottleModalTitleWrap: {
+    flex: 1,
+  },
+  driftingBottleModalEyebrow: {
+    color: "#78916A",
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  driftingBottleModalTitle: {
+    color: "#304558",
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: "700",
+  },
+  driftingBottleModalBody: {
+    borderRadius: 20,
+    backgroundColor: "#FBFCF8",
+    borderWidth: 1,
+    borderColor: "#E7ECE2",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    alignItems: "center",
+  },
+  driftingBottleModalImage: {
+    width: 74,
+    height: 74,
+    marginBottom: 10,
+  },
+  driftingBottleModalMessage: {
+    color: "#344B5E",
+    fontSize: 15,
+    lineHeight: 23,
+    textAlign: "center",
   },
   futureBottleBody: {
     paddingHorizontal: 14,

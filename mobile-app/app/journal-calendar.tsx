@@ -5,6 +5,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { fetchJournalCalendar, fetchJournalEntriesByDate } from "../lib/backend-api";
+import { JournalLockGate } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
 import { getManilaTodayParts } from "../lib/manila-date";
 
@@ -165,7 +166,8 @@ export default function JournalCalendarScreen() {
         <View style={styles.topBarSpacer} />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <JournalLockGate>
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.heroCard}>
           <View style={styles.heroCopy}>
             <Text style={styles.heroEyebrow}>YEAR VIEW</Text>
@@ -266,46 +268,47 @@ export default function JournalCalendarScreen() {
             </View>
           );
         })}
-      </ScrollView>
+        </ScrollView>
 
-      <Modal
-        visible={showEntriesModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowEntriesModal(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.selectedEntriesCard}>
-            <Text style={styles.selectedEntriesTitle}>{formatDateHeading(selectedDate)}</Text>
+        <Modal
+          visible={showEntriesModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowEntriesModal(false)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.selectedEntriesCard}>
+              <Text style={styles.selectedEntriesTitle}>{formatDateHeading(selectedDate)}</Text>
 
-            {selectedEntries.length === 0 ? (
-              <Text style={styles.emptyEntriesText}>There are no entries for that day.</Text>
-            ) : (
-              <View style={styles.selectedEntriesList}>
-                {selectedEntries.map((entry) => (
-                  <Pressable
-                    key={entry.id}
-                    style={styles.entryCard}
-                    onPress={() => {
-                      setShowEntriesModal(false);
-                      router.push(`/journal-entry-view?entryId=${entry.id}`);
-                    }}
-                  >
-                    <Text style={styles.entryTime}>{formatEntryTime(entry.createdAt)}</Text>
-                    <Text style={styles.entryPreview} numberOfLines={2}>
-                      {entry.preview || entry.summary || entry.title || "Journal entry"}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            )}
+              {selectedEntries.length === 0 ? (
+                <Text style={styles.emptyEntriesText}>There are no entries for that day.</Text>
+              ) : (
+                <View style={styles.selectedEntriesList}>
+                  {selectedEntries.map((entry) => (
+                    <Pressable
+                      key={entry.id}
+                      style={styles.entryCard}
+                      onPress={() => {
+                        setShowEntriesModal(false);
+                        router.push(`/journal-entry-view?entryId=${entry.id}`);
+                      }}
+                    >
+                      <Text style={styles.entryTime}>{formatEntryTime(entry.createdAt)}</Text>
+                      <Text style={styles.entryPreview} numberOfLines={2}>
+                        {entry.preview || entry.summary || entry.title || "Journal entry"}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
 
-            <Pressable style={styles.closeModalButton} onPress={() => setShowEntriesModal(false)}>
-              <Text style={styles.closeModalButtonText}>Close</Text>
-            </Pressable>
+              <Pressable style={styles.closeModalButton} onPress={() => setShowEntriesModal(false)}>
+                <Text style={styles.closeModalButtonText}>Close</Text>
+              </Pressable>
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      </JournalLockGate>
     </SafeAreaView>
   );
 }

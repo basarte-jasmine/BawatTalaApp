@@ -50,8 +50,8 @@ const SCREEN_COPY: Record<SettingsSection, { subtitle: string; title: string }> 
     subtitle: "See your counseling schedule and jump back into booking when needed.",
   },
   "app-lock": {
-    title: "App Lock",
-    subtitle: "Protect the current session with a simple 4-digit PIN.",
+    title: "Journal Lock",
+    subtitle: "Protect your journal with a simple 4-digit PIN. Once enabled, the journal locks right away.",
   },
   feedback: {
     title: "Feedback",
@@ -332,7 +332,7 @@ export default function ProfileSettingsScreen() {
     setPinConfirm("");
     setPinError("");
     setShowPinEditor(false);
-    Alert.alert("App Lock Updated", "Your session PIN is ready.");
+    Alert.alert("Journal Lock Updated", "Your journal is now protected and will lock right away.");
   };
 
   const infoRows = [
@@ -503,10 +503,14 @@ export default function ProfileSettingsScreen() {
                 bordered
               />
             </Card>
-            <Card title="Security">
+            <Card title="Journal Privacy">
               <ToggleItem
-                title="Auto-lock in background"
-                description={appLockEnabled ? "Lock the app whenever it leaves the foreground." : "Turn on App Lock first to use this."}
+                title="Auto-lock journal in background"
+                description={
+                  appLockEnabled
+                    ? "Lock your journal whenever Bawat Tala leaves the foreground."
+                    : "Turn on Journal Lock first to use this."
+                }
                 value={draftAutoLock}
                 onValueChange={(value) => {
                   setDraftAutoLock(value);
@@ -515,14 +519,14 @@ export default function ProfileSettingsScreen() {
               />
             </Card>
             <TipCard
-              title={appLockEnabled ? "App Lock is on" : "App Lock is off"}
+              title={appLockEnabled ? "Journal Lock is on" : "Journal Lock is off"}
               body={
                 appLockEnabled
-                  ? "Your session can be protected with a 4-digit PIN whenever you leave the app."
-                  : "You can add a quick PIN if you often hand your phone to someone else."
+                  ? "Your journal can stay protected with a 4-digit PIN whenever you leave the app or lock it manually."
+                  : "Turn it on if you want your journal kept behind a PIN without locking the rest of the app."
               }
             />
-            <PrimaryButton label="Manage App Lock" onPress={() => router.push("/profile-settings?section=app-lock")} />
+            <PrimaryButton label="Manage Journal Lock" onPress={() => router.push("/profile-settings?section=app-lock")} />
             <SecondaryButton label="Change Password" onPress={() => router.push("/reset-password")} />
           </>
         ) : null}
@@ -662,24 +666,34 @@ export default function ProfileSettingsScreen() {
 
         {activeSection === "app-lock" ? (
           <>
-            <TipCard
-              title={appLockEnabled ? "Session PIN is active" : "Protect this session"}
-              body={
-                appLockEnabled
-                  ? "Your app can lock with a 4-digit PIN whenever it leaves the screen or whenever you lock it manually."
-                  : "Set a quick 4-digit PIN to protect Bawat Tala while this app session stays open."
-              }
-            />
+            <View style={styles.journalLockHero}>
+              <View style={styles.journalLockHeroIcon}>
+                <Ionicons name="lock-closed-outline" size={22} color="#5A9A35" />
+              </View>
+              <View style={styles.journalLockHeroCopy}>
+                <Text style={styles.journalLockHeroTitle}>
+                  {appLockEnabled ? "Your journal is protected" : "Keep your journal private"}
+                </Text>
+                <Text style={styles.journalLockHeroBody}>
+                  {appLockEnabled
+                    ? "Only the journal side of Bawat Tala will ask for your PIN. Everything else stays easy to reach."
+                    : "Add a 4-digit PIN so journal entries, archive pages, and writing screens stay private when you need them to."}
+                </Text>
+              </View>
+            </View>
             <Card title="Lock Preferences">
               <ToggleItem
-                title="Lock when app goes to background"
-                description="Useful when you switch apps often or share your phone."
+                title="Lock journal when app goes to background"
+                description="Useful if you switch apps often or hand your phone to someone else."
                 value={draftAutoLock}
                 onValueChange={setDraftAutoLock}
               />
             </Card>
             {!appLockEnabled || showPinEditor ? (
-              <Card title={appLockEnabled ? "Change PIN" : "Create PIN"}>
+              <Card title={appLockEnabled ? "Change Journal PIN" : "Create Journal PIN"}>
+                <Text style={styles.journalPinHint}>
+                  Use the same 4 digits both times. As soon as you save it, the journal will lock until you enter that PIN.
+                </Text>
                 <TextInput
                   value={pin}
                   onChangeText={(value) => {
@@ -707,13 +721,20 @@ export default function ProfileSettingsScreen() {
                   style={[styles.textInput, styles.inputGap]}
                 />
                 {!!pinError && <Text style={styles.errorText}>{pinError}</Text>}
-                <PrimaryButton label={appLockEnabled ? "Save New PIN" : "Enable App Lock"} onPress={handleSavePin} />
+                <View style={styles.pinEditorActionWrap}>
+                  <PrimaryButton label={appLockEnabled ? "Save New PIN" : "Enable Journal Lock"} onPress={handleSavePin} />
+                </View>
               </Card>
             ) : null}
             {appLockEnabled ? (
               <>
+                <Card title="Quick Actions">
+                  <Text style={styles.helperText}>
+                    Lock the journal right now, or update your PIN any time.
+                  </Text>
+                </Card>
                 <PrimaryButton
-                  label="Lock Now"
+                  label="Lock Journal Now"
                   onPress={() => {
                     setAppLockAutoLock(draftAutoLock);
                     lockAppNow();
@@ -738,7 +759,7 @@ export default function ProfileSettingsScreen() {
                     setShowPinEditor(false);
                   }}
                 >
-                  <Text style={styles.dangerText}>Turn Off App Lock</Text>
+                  <Text style={styles.dangerText}>Turn Off Journal Lock</Text>
                 </Pressable>
               </>
             ) : null}
@@ -1293,7 +1314,54 @@ const styles = StyleSheet.create({
     color: "#2D4053",
   },
   inputGap: { marginTop: 10 },
+  journalPinHint: {
+    color: "#5A6B7A",
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  pinEditorActionWrap: {
+    marginTop: 6,
+  },
   errorText: { color: "#D24C59", fontSize: 13, lineHeight: 18, marginTop: 8, marginBottom: 10 },
+  journalLockHero: {
+    borderRadius: 20,
+    backgroundColor: "#F5FBEE",
+    borderWidth: 1,
+    borderColor: "#DCEACB",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 12,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    columnGap: 12,
+  },
+  journalLockHeroIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#D6E7C5",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+  journalLockHeroCopy: {
+    flex: 1,
+  },
+  journalLockHeroTitle: {
+    color: "#31475B",
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  journalLockHeroBody: {
+    color: "#5A6B7A",
+    fontSize: 13,
+    lineHeight: 18,
+  },
   shareFooter: { flexDirection: "row", alignItems: "center", justifyContent: "center", columnGap: 8, marginTop: 8 },
   shareFooterText: { color: "#4A5F72", fontSize: 13, lineHeight: 18, fontWeight: "600" },
 });

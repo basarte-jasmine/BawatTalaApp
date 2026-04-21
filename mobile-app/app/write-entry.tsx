@@ -15,6 +15,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { JournalLockGate } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
 import {
   createJournalSession,
@@ -414,10 +415,11 @@ export default function WriteEntryScreen() {
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
-      <KeyboardAvoidingView
-        style={styles.content}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
+      <JournalLockGate>
+        <KeyboardAvoidingView
+          style={styles.content}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
         {aiEnabled ? (
           <View style={styles.pageWrap}>
             <View style={styles.notebookShell}>
@@ -888,7 +890,8 @@ export default function WriteEntryScreen() {
             </View>
           </View>
         </Modal>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </JournalLockGate>
     </SafeAreaView>
   );
 }
