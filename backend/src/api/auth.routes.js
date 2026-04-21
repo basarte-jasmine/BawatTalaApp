@@ -24,6 +24,14 @@ function normalizeEmail(value) {
   return normalizeCompactSpaces(value).toLowerCase();
 }
 
+function normalizeStudentGender(value) {
+  const normalized = normalizeCompactSpaces(value).toLowerCase();
+  if (normalized === "male") return "Male";
+  if (normalized === "female") return "Female";
+  if (normalized === "prefer not to say") return "Prefer not to say";
+  return "";
+}
+
 function toTitleCase(value) {
   return normalizeCompactSpaces(value)
     .toLowerCase()
@@ -153,7 +161,9 @@ async function ensureDefaultStudentAccount() {
     program: normalizeUpperText(
       process.env.DEFAULT_STUDENT_PROGRAM || "BS PSYCHOLOGY",
     ),
-    gender: normalizeUpperText(process.env.DEFAULT_STUDENT_GENDER || "MALE"),
+    gender: normalizeStudentGender(
+      process.env.DEFAULT_STUDENT_GENDER || "Male",
+    ),
     region: normalizeUpperText(process.env.DEFAULT_STUDENT_REGION || "NCR"),
     province: normalizeUpperText(
       process.env.DEFAULT_STUDENT_PROVINCE || "METRO MANILA",
@@ -523,7 +533,7 @@ router.post("/register-profile", async (req, res) => {
     full_name: normalizeUpperText(req.body.fullName || ""),
     student_number: normalizeStudentNumber(req.body.studentNumber || ""),
     program: normalizeUpperText(req.body.program || ""),
-    gender: normalizeUpperText(req.body.gender || ""),
+    gender: normalizeStudentGender(req.body.gender || ""),
     region: normalizeUpperText(req.body.region || ""),
     province: normalizeUpperText(req.body.province || ""),
     city: normalizeUpperText(req.body.city || ""),
@@ -538,6 +548,10 @@ router.post("/register-profile", async (req, res) => {
 
   if (!payload.full_name || !payload.student_number || !payload.email || !password) {
     return res.status(400).json({ message: "Missing required profile fields." });
+  }
+
+  if (!payload.gender) {
+    return res.status(400).json({ message: "Invalid gender value." });
   }
 
   const { data: existingProfile, error: existingProfileError } = await supabaseAdminClient
