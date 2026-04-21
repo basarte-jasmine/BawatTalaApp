@@ -134,6 +134,92 @@ async function deleteStaleAuthUsersByEmail(email) {
   return removedAny;
 }
 
+async function ensureDefaultStudentAccount() {
+  const defaultStudentNumber = normalizeStudentNumber(
+    process.env.DEFAULT_STUDENT_NUMBER || "23-0000",
+  );
+  const defaultEmail = normalizeEmail(
+    process.env.DEFAULT_STUDENT_EMAIL || "emersonang@gmail.com",
+  );
+  const defaultPassword = String(
+    process.env.DEFAULT_STUDENT_PASSWORD || "01/01/2004",
+  ).trim();
+
+  const payload = {
+    full_name: normalizeUpperText(
+      process.env.DEFAULT_STUDENT_FULL_NAME || "EMERSON C. ANG",
+    ),
+    student_number: defaultStudentNumber,
+    program: normalizeUpperText(
+      process.env.DEFAULT_STUDENT_PROGRAM || "BS PSYCHOLOGY",
+    ),
+    gender: normalizeUpperText(process.env.DEFAULT_STUDENT_GENDER || "MALE"),
+    region: normalizeUpperText(process.env.DEFAULT_STUDENT_REGION || "NCR"),
+    province: normalizeUpperText(
+      process.env.DEFAULT_STUDENT_PROVINCE || "METRO MANILA",
+    ),
+    city: normalizeUpperText(process.env.DEFAULT_STUDENT_CITY || "VALENZUELA"),
+    barangay: normalizeUpperText(
+      process.env.DEFAULT_STUDENT_BARANGAY || "MAYSAN",
+    ),
+    street: normalizeUpperText(
+      process.env.DEFAULT_STUDENT_STREET || "1234 TIONGCO",
+    ),
+    email: defaultEmail,
+    birthdate: normalizeCompactSpaces(
+      process.env.DEFAULT_STUDENT_BIRTHDATE || "01/01/2004",
+    ),
+    password_hash: hashPassword(defaultPassword),
+    is_email_verified: true,
+    is_id_verified: true,
+  };
+
+  const { data: existingProfile, error: existingProfileError } = await supabaseAdminClient
+    .from("student_profiles")
+    .select("id")
+    .eq("student_number", payload.student_number)
+    .maybeSingle();
+
+  if (existingProfileError) {
+    throw existingProfileError;
+  }
+
+  if (existingProfile?.id) {
+    const { error: updateError } = await supabaseAdminClient
+      .from("student_profiles")
+      .update({
+        full_name: payload.full_name,
+        program: payload.program,
+        gender: payload.gender,
+        region: payload.region,
+        province: payload.province,
+        city: payload.city,
+        barangay: payload.barangay,
+        street: payload.street,
+        email: payload.email,
+        birthdate: payload.birthdate,
+        password_hash: payload.password_hash,
+        is_email_verified: true,
+        is_id_verified: true,
+      })
+      .eq("student_number", payload.student_number);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return;
+  }
+
+  const { error: insertError } = await supabaseAdminClient
+    .from("student_profiles")
+    .insert(payload);
+
+  if (insertError) {
+    throw insertError;
+  }
+}
+
 router.post("/login", async (req, res) => {
   const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
   const password = String(req.body.password || "").trim();
@@ -437,6 +523,7 @@ router.post("/register-profile", async (req, res) => {
     full_name: normalizeUpperText(req.body.fullName || ""),
     student_number: normalizeStudentNumber(req.body.studentNumber || ""),
     program: normalizeUpperText(req.body.program || ""),
+    gender: normalizeUpperText(req.body.gender || ""),
     region: normalizeUpperText(req.body.region || ""),
     province: normalizeUpperText(req.body.province || ""),
     city: normalizeUpperText(req.body.city || ""),
@@ -533,3 +620,4 @@ router.post("/forgot-password/reset", async (req, res) => {
 });
 
 module.exports = router;
+module.exports.ensureDefaultStudentAccount = ensureDefaultStudentAccount;
