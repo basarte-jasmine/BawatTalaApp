@@ -1874,29 +1874,39 @@ router.get("/students/:studentNumber", async (req, res) => {
     [studentNumber],
   );
 
-  const entries = entriesResult.rows.map((row) => ({
-    id: row.id,
-    entryDate: normalizeDateValue(row.entry_date),
-    title: row.title || "",
-    summary: row.summary || "",
-    insights: normalizeStringArray(row.insights),
-    riskLevel: String(row.risk_level || "NONE"),
-    adminFlagReason: row.admin_flag_reason || null,
-    primaryConcern: row.primary_concern || null,
-    concernTags: normalizeStringArray(row.concern_tags),
-    supportResponse: row.support_response || null,
-    supportResponseAt: row.support_response_at || null,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    messages: Array.isArray(row.messages)
+  const entries = entriesResult.rows.map((row) => {
+    const riskLevel = String(row.risk_level || "NONE").toUpperCase();
+    const allMessages = Array.isArray(row.messages)
       ? row.messages.map((message) => ({
           id: message.id,
           role: message.role,
           text: message.text,
           createdAt: message.createdAt,
         }))
-      : [],
-  }));
+      : [];
+    const canViewConversation =
+      ["HIGH", "CRITICAL"].includes(riskLevel) || Boolean(row.admin_flag_reason);
+
+    return {
+      id: row.id,
+      entryDate: normalizeDateValue(row.entry_date),
+      title: row.title || "",
+      summary: row.summary || "",
+      insights: normalizeStringArray(row.insights),
+      riskLevel,
+      adminFlagReason: row.admin_flag_reason || null,
+      primaryConcern: row.primary_concern || null,
+      concernTags: normalizeStringArray(row.concern_tags),
+      supportResponse: row.support_response || null,
+      supportResponseAt: row.support_response_at || null,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      canViewConversation,
+      conversationHidden: !canViewConversation && allMessages.length > 0,
+      messageCount: allMessages.length,
+      messages: canViewConversation ? allMessages : [],
+    };
+  });
 
   const profile = profileResult.rows[0];
   return res.json({

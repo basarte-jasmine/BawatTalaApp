@@ -105,6 +105,10 @@ function getEntryMode(entry) {
   return messages.some((message) => message.role === "assistant") ? "ai" : "manual";
 }
 
+function canViewEntryConversation(entry) {
+  return Boolean(entry?.canViewConversation);
+}
+
 function ProfileStatCard({ label, tone = "slate", value }) {
   const toneClasses = {
     emerald: "border-emerald-100 bg-emerald-50/80 text-emerald-700",
@@ -132,6 +136,15 @@ function ProfileInfoTile({ label, value }) {
 
 function EntryConversation({ entry, studentName }) {
   const messages = Array.isArray(entry.messages) ? entry.messages : [];
+  const canViewConversation = canViewEntryConversation(entry);
+
+  if (!canViewConversation) {
+    return (
+      <div className="rounded-[18px] border border-dashed border-amber-200 bg-amber-50 px-4 py-5 text-sm leading-6 text-amber-800">
+        Journal content is hidden for privacy. Admins can only view the full conversation for high-risk or flagged entries.
+      </div>
+    );
+  }
 
   if (!messages.length) {
     return (
@@ -543,9 +556,19 @@ export default function StudentDirectory({ onLogout, session }) {
                               <div className="mb-3 flex items-center justify-between gap-3">
                                 <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                                   <MessageSquare className="h-4 w-4 text-indigo-500" />
-                                  {getEntryMode(entry) === "ai" ? "Conversation Thread" : "Journal Content"}
+                                  {canViewEntryConversation(entry)
+                                    ? getEntryMode(entry) === "ai"
+                                      ? "Conversation Thread"
+                                      : "Journal Content"
+                                    : "Journal Content Protected"}
                                 </div>
-                                <div className="text-xs font-medium text-slate-400">{Array.isArray(entry.messages) ? entry.messages.length : 0} messages</div>
+                                <div className="text-xs font-medium text-slate-400">
+                                  {typeof entry.messageCount === "number"
+                                    ? entry.messageCount
+                                    : Array.isArray(entry.messages)
+                                      ? entry.messages.length
+                                      : 0} messages
+                                </div>
                               </div>
                               <EntryConversation entry={entry} studentName={studentProfile.profile.fullName} />
                             </section>
