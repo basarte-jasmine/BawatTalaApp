@@ -908,20 +908,20 @@ router.get("/oauth/google/callback", async (req, res) => {
       );
     }
 
-    const query = new URLSearchParams({
+    const redirectParams = new URLSearchParams({
       oauth: "success",
       email: admin.email,
     });
 
     if (data?.name) {
-      query.set("name", String(data.name));
+      redirectParams.set("name", String(data.name));
     }
 
     if (effectivePictureUrl) {
-      query.set("picture", effectivePictureUrl);
+      redirectParams.set("picture", effectivePictureUrl);
     }
 
-    return res.redirect(`${webBaseUrl}/login?${query.toString()}`);
+    return res.redirect(`${webBaseUrl}/login?${redirectParams.toString()}`);
   } catch {
     return res.redirect(
       `${webBaseUrl}/login?oauth=error&message=${encodeURIComponent("Google sign-in failed. Please try again.")}`,
