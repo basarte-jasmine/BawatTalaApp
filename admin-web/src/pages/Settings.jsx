@@ -4,12 +4,16 @@ import Layout from "../components/Layout";
 import Modal from "../components/Modal";
 import { fetchAdminSettings, updateAdminSettings } from "../lib/admin-api";
 
+const PROFILE_PICTURE_LIMIT_BYTES = 5 * 1024 * 1024;
+
 const DEFAULT_FORM_STATE = {
   fullName: "",
   email: "",
   roleLabel: "",
   gender: "Prefer not to say",
   profilePictureUrl: "",
+  profilePictureSource: "NONE",
+  googleProfilePictureUrl: "",
   specialtiesInput: "",
   notifications: {
     appointmentUpdates: true,
@@ -46,6 +50,15 @@ function formatDateTime(value) {
   });
 }
 
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Failed to read the selected image."));
+    reader.readAsDataURL(file);
+  });
+}
+
 function ToggleRow({ label, description, checked, onChange, disabled = false }) {
   return (
     <label className={`flex items-start justify-between gap-4 rounded-2xl border px-4 py-4 ${disabled ? "border-slate-200 bg-slate-50" : "border-slate-200 bg-white"}`}>
@@ -74,6 +87,7 @@ export default function Settings({ onLogout, session }) {
   const [successMessage, setSuccessMessage] = useState("");
   const [formState, setFormState] = useState(DEFAULT_FORM_STATE);
   const [savedSnapshot, setSavedSnapshot] = useState("");
+  const [pendingProfilePictureUpload, setPendingProfilePictureUpload] = useState(null);
 
   const tabs = [
     { id: "profile", label: "Account Profile", icon: User },
@@ -99,6 +113,8 @@ export default function Settings({ onLogout, session }) {
           roleLabel: data?.profile?.roleLabel || "Counselor",
           gender: data?.profile?.gender || "Prefer not to say",
           profilePictureUrl: data?.profile?.profilePictureUrl || session?.pictureUrl || "",
+          profilePictureSource: data?.profile?.profilePictureSource || (data?.profile?.profilePictureUrl ? "UPLOAD" : "NONE"),
+          googleProfilePictureUrl: data?.profile?.googleProfilePictureUrl || session?.pictureUrl || "",
           specialtiesInput: Array.isArray(data?.profile?.specialties) ? data.profile.specialties.join(", ") : "",
           notifications: {
             appointmentUpdates: data?.preferences?.notifications?.appointmentUpdates !== false,
@@ -126,6 +142,7 @@ export default function Settings({ onLogout, session }) {
             fullName: data?.profile?.fullName || session?.name || "",
             gender: data?.profile?.gender || "Prefer not to say",
             profilePictureUrl: data?.profile?.profilePictureUrl || session?.pictureUrl || "",
+            profilePictureSource: data?.profile?.profilePictureSource || (data?.profile?.profilePictureUrl ? "UPLOAD" : "NONE"),
             specialtiesInput: Array.isArray(data?.profile?.specialties) ? data.profile.specialties.join(", ") : "",
             notifications: {
               appointmentUpdates: data?.preferences?.notifications?.appointmentUpdates !== false,
@@ -151,6 +168,7 @@ export default function Settings({ onLogout, session }) {
           name: data?.profile?.fullName || current?.name || "",
           pictureUrl: data?.profile?.profilePictureUrl || current?.pictureUrl || "",
         }));
+        setPendingProfilePictureUpload(null);
         setErrorMessage("");
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : "Failed to load settings.");
@@ -179,6 +197,7 @@ export default function Settings({ onLogout, session }) {
         fullName: formState.fullName,
         gender: formState.gender,
         profilePictureUrl: formState.profilePictureUrl,
+        profilePictureSource: formState.profilePictureSource,
         specialtiesInput: formState.specialtiesInput,
         notifications: formState.notifications,
         appearance: {
@@ -190,6 +209,62 @@ export default function Settings({ onLogout, session }) {
       }) !== savedSnapshot
     );
   }, [formState, isLoading, savedSnapshot]);
+
+  async function handleProfilePictureFileChange(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setErrorMessage("Please select a valid image file.");
+      return;
+    }
+
+    if (file.size > PROFILE_PICTURE_LIMIT_BYTES) {
+      setErrorMessage("Profile picture must be 5 MB or smaller.");
+      return;
+    }
+
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setPendingProfilePictureUpload({
+        contentType: file.type,
+        dataUrl,
+        fileName: file.name,
+      });
+      setFormState((current) => ({
+        ...current,
+        profilePictureUrl: dataUrl,
+        profilePictureSource: "UPLOAD",
+      }));
+      setErrorMessage("");
+      setSuccessMessage("");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to load the selected image.");
+    }
+  }
+
+  function handleUseGooglePhoto() {
+    setPendingProfilePictureUpload(null);
+    setFormState((current) => ({
+      ...current,
+      profilePictureUrl: current.googleProfilePictureUrl || "",
+      profilePictureSource: current.googleProfilePictureUrl ? "GOOGLE" : "NONE",
+    }));
+    setErrorMessage("");
+    setSuccessMessage("");
+  }
+
+  function handleRemoveProfilePhoto() {
+    setPendingProfilePictureUpload(null);
+    setFormState((current) => ({
+      ...current,
+      profilePictureUrl: "",
+      profilePictureSource: "NONE",
+    }));
+    setErrorMessage("");
+    setSuccessMessage("");
+  }
 
   function updateNestedState(section, key, value) {
     setFormState((current) => ({
@@ -209,6 +284,8 @@ export default function Settings({ onLogout, session }) {
         fullName: formState.fullName,
         gender: formState.gender,
         profilePictureUrl: formState.profilePictureUrl,
+        profilePictureSource: formState.profilePictureSource,
+        uploadedProfilePicture: pendingProfilePictureUpload,
         specialties: formState.specialtiesInput
           .split(",")
           .map((value) => value.trim())
@@ -232,16 +309,21 @@ export default function Settings({ onLogout, session }) {
       setFormState((current) => ({
         ...current,
         roleLabel: data?.profile?.roleLabel || current.roleLabel,
+        profilePictureUrl: data?.profile?.profilePictureUrl || current.profilePictureUrl,
+        profilePictureSource: data?.profile?.profilePictureSource || current.profilePictureSource,
+        googleProfilePictureUrl: data?.profile?.googleProfilePictureUrl || current.googleProfilePictureUrl,
         updatedAt: data?.profile?.updatedAt || current.updatedAt,
         createdAt: data?.profile?.createdAt || current.createdAt,
         isActive: Boolean(data?.profile?.isActive),
         specialtiesInput: Array.isArray(data?.profile?.specialties) ? data.profile.specialties.join(", ") : current.specialtiesInput,
       }));
+      setPendingProfilePictureUpload(null);
       setSavedSnapshot(
         JSON.stringify({
           fullName: data?.profile?.fullName || formState.fullName,
           gender: data?.profile?.gender || formState.gender,
           profilePictureUrl: data?.profile?.profilePictureUrl || formState.profilePictureUrl,
+          profilePictureSource: data?.profile?.profilePictureSource || formState.profilePictureSource,
           specialtiesInput: Array.isArray(data?.profile?.specialties) ? data.profile.specialties.join(", ") : formState.specialtiesInput,
           notifications: formState.notifications,
           appearance: {
@@ -401,14 +483,46 @@ export default function Settings({ onLogout, session }) {
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-700">Profile Picture URL</label>
-                    <input
-                      type="url"
-                      value={formState.profilePictureUrl}
-                      onChange={(event) => setFormState((current) => ({ ...current, profilePictureUrl: event.target.value }))}
-                      placeholder="https://example.com/photo.jpg"
-                      className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/20"
-                    />
+                    <label className="text-sm font-medium text-slate-700">Profile Picture</label>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <label className="inline-flex cursor-pointer items-center rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800">
+                          Upload Photo
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp"
+                            onChange={handleProfilePictureFileChange}
+                            className="hidden"
+                          />
+                        </label>
+                        {formState.googleProfilePictureUrl ? (
+                          <button
+                            type="button"
+                            onClick={handleUseGooglePhoto}
+                            className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-emerald-300 hover:text-emerald-700"
+                          >
+                            Use Google Photo
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={handleRemoveProfilePhoto}
+                          className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-rose-300 hover:text-rose-700"
+                        >
+                          Remove Photo
+                        </button>
+                      </div>
+                      <div className="mt-3 text-xs text-slate-500">
+                        Upload JPG, PNG, or WEBP images up to 5 MB. Uploaded photos override the Google account picture.
+                      </div>
+                      <div className="mt-2 text-xs font-medium text-slate-600">
+                        Current source: {formState.profilePictureSource === "UPLOAD"
+                          ? "Uploaded photo"
+                          : formState.profilePictureSource === "GOOGLE"
+                            ? "Google profile photo"
+                            : "No profile photo"}
+                      </div>
+                    </div>
                   </div>
 
                   <div className="space-y-2">

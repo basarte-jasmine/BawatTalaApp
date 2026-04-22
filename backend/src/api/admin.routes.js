@@ -13,6 +13,7 @@ const LOGIN_LOCK_DURATION_MS = 5 * 60 * 1000;
 const OTP_COOLDOWN_MS = 30 * 1000;
 const OTP_VALIDITY_MS = 60 * 1000;
 const RESET_SESSION_MS = 10 * 60 * 1000;
+const ADMIN_PROFILE_PICTURE_LIMIT_BYTES = 5 * 1024 * 1024;
 
 const adminLoginAttempts = new Map();
 const adminResetSessions = new Map();
@@ -368,6 +369,8 @@ function normalizeAdminSettings(rawValue) {
   const notifications = source.notifications && typeof source.notifications === "object" ? source.notifications : {};
   const appearance = source.appearance && typeof source.appearance === "object" ? source.appearance : {};
   const privacy = source.privacy && typeof source.privacy === "object" ? source.privacy : {};
+  const profilePicture = source.profilePicture && typeof source.profilePicture === "object" ? source.profilePicture : {};
+  const normalizedProfilePictureSource = String(profilePicture.source || "").toUpperCase();
 
   return {
     notifications: {
@@ -387,6 +390,141 @@ function normalizeAdminSettings(rawValue) {
       maskStudentNumbers: Boolean(privacy.maskStudentNumbers),
       requireCancelReason: privacy.requireCancelReason !== false,
     },
+    profilePicture: {
+      googlePictureUrl: normalizeCompactSpaces(profilePicture.googlePictureUrl || ""),
+      source: ["UPLOAD", "GOOGLE", "NONE"].includes(normalizedProfilePictureSource)
+        ? normalizedProfilePictureSource
+        : "NONE",
+      storagePath: normalizeCompactSpaces(profilePicture.storagePath || ""),
+    },
+  };
+}
+
+function getAdminProfilePictureBucket() {
+  return normalizeCompactSpaces(process.env.SUPABASE_ADMIN_AVATAR_BUCKET || "admin-profile-pictures");
+}
+
+async function ensureAdminProfilePictureBucket() {
+  const bucketName = getAdminProfilePictureBucket();
+  const { data: buckets, error: listError } = await supabaseAdminClient.storage.listBuckets();
+  if (listError) {
+    throw new Error(listError.message || "Unable to verify storage bucket.");
+  }
+
+  const exists = Array.isArray(buckets) && buckets.some((bucket) => bucket.name === bucketName);
+  if (exists) {
+    return bucketName;
+  }
+
+  const { error: createError } = await supabaseAdminClient.storage.createBucket(bucketName, {
+    public: true,
+    fileSizeLimit: `${ADMIN_PROFILE_PICTURE_LIMIT_BYTES}`,
+  });
+
+  if (createError && !String(createError.message || "").toLowerCase().includes("already exists")) {
+    throw new Error(createError.message || "Unable to create storage bucket.");
+  }
+
+  return bucketName;
+}
+
+function sanitizeFileName(value) {
+  const normalized = normalizeCompactSpaces(value || "")
+    .replace(/[^a-zA-Z0-9._-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return normalized || "profile-image";
+}
+
+function parseUploadedImagePayload(rawValue) {
+  if (!rawValue || typeof rawValue !== "object" || Array.isArray(rawValue)) {
+    return null;
+  }
+
+  const dataUrl = String(rawValue.dataUrl || "").trim();
+  const fileName = sanitizeFileName(rawValue.fileName || "profile-image");
+  const contentType = String(rawValue.contentType || "").trim().toLowerCase();
+  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) {
+    throw new Error("Invalid uploaded image format.");
+  }
+
+  const mimeType = match[1].toLowerCase();
+  if (!["image/jpeg", "image/jpg", "image/png", "image/webp"].includes(mimeType)) {
+    throw new Error("Only JPG, PNG, or WEBP profile pictures are allowed.");
+  }
+
+  const buffer = Buffer.from(match[2], "base64");
+  if (!buffer.length) {
+    throw new Error("Uploaded image is empty.");
+  }
+  if (buffer.length > ADMIN_PROFILE_PICTURE_LIMIT_BYTES) {
+    throw new Error("Profile picture must be 5 MB or smaller.");
+  }
+
+  const extension =
+    mimeType === "image/png"
+      ? "png"
+      : mimeType === "image/webp"
+        ? "webp"
+        : "jpg";
+
+  return {
+    buffer,
+    contentType: contentType || mimeType,
+    extension,
+    fileName,
+  };
+}
+
+async function removeStoredAdminProfilePicture(storagePath) {
+  const normalizedPath = normalizeCompactSpaces(storagePath || "");
+  if (!normalizedPath) return;
+
+  const bucketName = getAdminProfilePictureBucket();
+  const { error } = await supabaseAdminClient.storage.from(bucketName).remove([normalizedPath]);
+  if (error) {
+    console.warn("Failed to remove previous admin profile picture:", error.message || error);
+  }
+}
+
+async function uploadAdminProfilePicture({ adminId, uploadedImage }) {
+  const bucketName = await ensureAdminProfilePictureBucket();
+  const filePath = `${adminId}/${Date.now()}-${uploadedImage.fileName}.${uploadedImage.extension}`;
+  const { error: uploadError } = await supabaseAdminClient.storage
+    .from(bucketName)
+    .upload(filePath, uploadedImage.buffer, {
+      cacheControl: "3600",
+      contentType: uploadedImage.contentType,
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw new Error(uploadError.message || "Unable to upload profile picture.");
+  }
+
+  const { data } = supabaseAdminClient.storage.from(bucketName).getPublicUrl(filePath);
+  return {
+    publicUrl: data?.publicUrl || "",
+    storagePath: filePath,
+  };
+}
+
+function buildAdminProfilePayload(admin, settings) {
+  return {
+    id: admin.id,
+    email: admin.email,
+    fullName: admin.full_name,
+    role: admin.role,
+    roleLabel: toCounselorRoleLabel(admin.role),
+    gender: admin.gender,
+    profilePictureUrl: admin.profile_picture_url,
+    profilePictureSource: settings.profilePicture.source,
+    googleProfilePictureUrl: settings.profilePicture.googlePictureUrl,
+    specialties: Array.isArray(admin.specialties) ? admin.specialties : [],
+    isActive: Boolean(admin.is_active),
+    createdAt: admin.created_at,
+    updatedAt: admin.updated_at,
   };
 }
 
@@ -615,7 +753,9 @@ router.post("/login", async (req, res) => {
   }
 
   const result = await query(
-    `select id, email, password_hash, is_active, coalesce(role, 'COUNSELOR') as role
+    `select id, email, password_hash, is_active, coalesce(role, 'COUNSELOR') as role,
+            coalesce(nullif(full_name, ''), split_part(email, '@', 1)) as full_name,
+            coalesce(profile_picture_url, '') as profile_picture_url
      from public.admin_accounts
      where email = $1
      limit 1`,
@@ -651,6 +791,8 @@ router.post("/login", async (req, res) => {
     admin: {
       id: admin.id,
       email: admin.email,
+      name: admin.full_name,
+      pictureUrl: admin.profile_picture_url || "",
     },
   });
 });
@@ -706,13 +848,55 @@ router.get("/oauth/google/callback", async (req, res) => {
     }
 
     const result = await query(
-      "select id, email, is_active from public.admin_accounts where email = $1 limit 1",
+      `select
+         id,
+         email,
+         is_active,
+         coalesce(profile_picture_url, '') as profile_picture_url,
+         coalesce(settings, '{}'::jsonb) as settings
+       from public.admin_accounts
+       where email = $1
+       limit 1`,
       [email],
     );
     const admin = result.rows[0];
     if (!admin || !admin.is_active) {
       return res.redirect(
         `${webBaseUrl}/login?oauth=error&message=${encodeURIComponent("This Google account is not allowed for admin access.")}`,
+      );
+    }
+
+    const currentSettings = normalizeAdminSettings(admin.settings);
+    const googlePictureUrl = normalizeCompactSpaces(data?.picture || "");
+    let effectivePictureUrl = admin.profile_picture_url || "";
+
+    if (googlePictureUrl) {
+      const nextSettings = {
+        ...currentSettings,
+        profilePicture: {
+          googlePictureUrl,
+          source: currentSettings.profilePicture.source === "UPLOAD" ? "UPLOAD" : "GOOGLE",
+          storagePath:
+            currentSettings.profilePicture.source === "UPLOAD"
+              ? currentSettings.profilePicture.storagePath
+              : "",
+        },
+      };
+      effectivePictureUrl =
+        currentSettings.profilePicture.source === "UPLOAD" && admin.profile_picture_url
+          ? admin.profile_picture_url
+          : googlePictureUrl;
+
+      await query(
+        `
+          update public.admin_accounts
+          set
+            profile_picture_url = $2,
+            settings = $3::jsonb,
+            updated_at = now()
+          where id = $1
+        `,
+        [admin.id, effectivePictureUrl || null, JSON.stringify(nextSettings)],
       );
     }
 
@@ -725,8 +909,8 @@ router.get("/oauth/google/callback", async (req, res) => {
       query.set("name", String(data.name));
     }
 
-    if (data?.picture) {
-      query.set("picture", String(data.picture));
+    if (effectivePictureUrl) {
+      query.set("picture", effectivePictureUrl);
     }
 
     return res.redirect(`${webBaseUrl}/login?${query.toString()}`);
@@ -1968,19 +2152,7 @@ router.get("/settings", async (req, res) => {
   const settings = normalizeAdminSettings(admin.settings);
 
   return res.json({
-    profile: {
-      id: admin.id,
-      email: admin.email,
-      fullName: admin.full_name,
-      role: admin.role,
-      roleLabel: toCounselorRoleLabel(admin.role),
-      gender: admin.gender,
-      profilePictureUrl: admin.profile_picture_url,
-      specialties: Array.isArray(admin.specialties) ? admin.specialties : [],
-      isActive: Boolean(admin.is_active),
-      createdAt: admin.created_at,
-      updatedAt: admin.updated_at,
-    },
+    profile: buildAdminProfilePayload(admin, settings),
     preferences: settings,
   });
 });
@@ -1990,6 +2162,8 @@ router.patch("/settings", async (req, res) => {
   const fullName = normalizeCompactSpaces(req.body.fullName || "");
   const gender = normalizeCompactSpaces(req.body.gender || "Prefer not to say");
   const profilePictureUrl = normalizeCompactSpaces(req.body.profilePictureUrl || "");
+  const requestedProfilePictureSource = String(req.body.profilePictureSource || "").trim().toUpperCase();
+  const uploadedProfilePicture = parseUploadedImagePayload(req.body.uploadedProfilePicture);
   const specialties = normalizeSpecialties(req.body.specialties);
   const preferences = normalizeAdminSettings(req.body.preferences);
 
@@ -2005,7 +2179,13 @@ router.patch("/settings", async (req, res) => {
 
   const existing = await query(
     `
-      select id, email, coalesce(role, 'COUNSELOR') as role, is_active
+      select
+        id,
+        email,
+        coalesce(role, 'COUNSELOR') as role,
+        is_active,
+        coalesce(profile_picture_url, '') as profile_picture_url,
+        coalesce(settings, '{}'::jsonb) as settings
       from public.admin_accounts
       where email = $1
       limit 1
@@ -2015,6 +2195,78 @@ router.patch("/settings", async (req, res) => {
 
   if (existing.rowCount === 0) {
     return res.status(404).json({ message: "Admin account not found." });
+  }
+
+  const currentAdmin = existing.rows[0];
+  const currentSettings = normalizeAdminSettings(currentAdmin.settings);
+  const nextSettings = {
+    ...preferences,
+    profilePicture: {
+      ...currentSettings.profilePicture,
+      ...preferences.profilePicture,
+    },
+  };
+  let nextProfilePictureUrl = currentAdmin.profile_picture_url || "";
+
+  if (uploadedProfilePicture) {
+    const uploaded = await uploadAdminProfilePicture({
+      adminId: currentAdmin.id,
+      uploadedImage: uploadedProfilePicture,
+    });
+
+    if (
+      currentSettings.profilePicture.source === "UPLOAD" &&
+      currentSettings.profilePicture.storagePath &&
+      currentSettings.profilePicture.storagePath !== uploaded.storagePath
+    ) {
+      await removeStoredAdminProfilePicture(currentSettings.profilePicture.storagePath);
+    }
+
+    nextProfilePictureUrl = uploaded.publicUrl;
+    nextSettings.profilePicture = {
+      ...nextSettings.profilePicture,
+      source: "UPLOAD",
+      storagePath: uploaded.storagePath,
+    };
+  } else if (requestedProfilePictureSource === "GOOGLE") {
+    if (currentSettings.profilePicture.source === "UPLOAD" && currentSettings.profilePicture.storagePath) {
+      await removeStoredAdminProfilePicture(currentSettings.profilePicture.storagePath);
+    }
+    nextProfilePictureUrl = nextSettings.profilePicture.googlePictureUrl || "";
+    nextSettings.profilePicture = {
+      ...nextSettings.profilePicture,
+      source: nextProfilePictureUrl ? "GOOGLE" : "NONE",
+      storagePath: "",
+    };
+  } else if (requestedProfilePictureSource === "NONE") {
+    if (currentSettings.profilePicture.source === "UPLOAD" && currentSettings.profilePicture.storagePath) {
+      await removeStoredAdminProfilePicture(currentSettings.profilePicture.storagePath);
+    }
+    nextProfilePictureUrl = "";
+    nextSettings.profilePicture = {
+      ...nextSettings.profilePicture,
+      source: "NONE",
+      storagePath: "",
+    };
+  } else if (requestedProfilePictureSource === "UPLOAD") {
+    nextSettings.profilePicture = {
+      ...nextSettings.profilePicture,
+      source: "UPLOAD",
+    };
+  } else if (profilePictureUrl) {
+    nextProfilePictureUrl = profilePictureUrl;
+    nextSettings.profilePicture = {
+      ...nextSettings.profilePicture,
+      source: "UPLOAD",
+      storagePath: currentSettings.profilePicture.storagePath,
+    };
+  } else if (!nextProfilePictureUrl && nextSettings.profilePicture.googlePictureUrl) {
+    nextProfilePictureUrl = nextSettings.profilePicture.googlePictureUrl;
+    nextSettings.profilePicture = {
+      ...nextSettings.profilePicture,
+      source: "GOOGLE",
+      storagePath: "",
+    };
   }
 
   const updated = await query(
@@ -2045,9 +2297,9 @@ router.patch("/settings", async (req, res) => {
       email,
       fullName,
       gender,
-      profilePictureUrl || null,
+      nextProfilePictureUrl || null,
       JSON.stringify(specialties),
-      JSON.stringify(preferences),
+      JSON.stringify(nextSettings),
     ],
   );
 
@@ -2070,19 +2322,7 @@ router.patch("/settings", async (req, res) => {
 
   return res.json({
     message: "Settings saved successfully.",
-    profile: {
-      id: admin.id,
-      email: admin.email,
-      fullName: admin.full_name,
-      role: admin.role,
-      roleLabel: toCounselorRoleLabel(admin.role),
-      gender: admin.gender,
-      profilePictureUrl: admin.profile_picture_url,
-      specialties: Array.isArray(admin.specialties) ? admin.specialties : [],
-      isActive: Boolean(admin.is_active),
-      createdAt: admin.created_at,
-      updatedAt: admin.updated_at,
-    },
+    profile: buildAdminProfilePayload(admin, normalizeAdminSettings(admin.settings)),
     preferences: normalizeAdminSettings(admin.settings),
   });
 });
