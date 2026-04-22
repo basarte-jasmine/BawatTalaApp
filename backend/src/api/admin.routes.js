@@ -859,6 +859,8 @@ router.get("/oauth/google/callback", async (req, res) => {
       `select
          id,
          email,
+         coalesce(nullif(full_name, ''), split_part(email, '@', 1)) as full_name,
+         coalesce(role, 'COUNSELOR') as role,
          is_active,
          coalesce(profile_picture_url, '') as profile_picture_url,
          coalesce(settings, '{}'::jsonb) as settings
@@ -913,9 +915,7 @@ router.get("/oauth/google/callback", async (req, res) => {
       email: admin.email,
     });
 
-    if (data?.name) {
-      redirectParams.set("name", String(data.name));
-    }
+    redirectParams.set("name", String(admin.full_name || ""));
 
     if (effectivePictureUrl) {
       redirectParams.set("picture", effectivePictureUrl);
