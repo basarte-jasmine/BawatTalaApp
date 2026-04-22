@@ -69,7 +69,7 @@ export default function Login({ onLogin }) {
   function handleGoogleLogin() {
     setError("");
     setGoogleLoading(true);
-    window.location.href = getAdminApiUrl("/api/admin/oauth/google/start");
+    window.location.href = getAdminApiUrl("/api/admin/oauth/google/start?redirect=1");
   }
 
   return (

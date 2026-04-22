@@ -813,6 +813,14 @@ router.get("/oauth/google/start", (req, res) => {
     state,
   });
 
+  const shouldRedirect =
+    String(req.query.redirect || "").trim() === "1" ||
+    String(req.get("accept") || "").toLowerCase().includes("text/html");
+
+  if (shouldRedirect) {
+    return res.redirect(authUrl);
+  }
+
   return res.json({ authUrl });
 });
 

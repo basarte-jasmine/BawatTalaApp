@@ -12,6 +12,7 @@ const ocrRoutes = require("./api/ocr.routes");
 const app = express();
 const corsOrigin = process.env.CORS_ORIGIN || "*";
 const allowCredentials = true;
+const isProduction = String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
 
 const parsedCorsOrigin =
   corsOrigin === "*"
@@ -21,6 +22,7 @@ const parsedCorsOrigin =
         .map((item) => item.trim())
         .filter(Boolean);
 
+app.set("trust proxy", 1);
 app.use(
   cors({
     origin: parsedCorsOrigin,
@@ -33,8 +35,8 @@ app.use(
     keys: [process.env.COOKIE_SESSION_SECRET || "dev-cookie-secret"],
     maxAge: 24 * 60 * 60 * 1000,
     httpOnly: true,
-    sameSite: "lax",
-    secure: false,
+    sameSite: isProduction ? "none" : "lax",
+    secure: isProduction,
   }),
 );
 app.use(express.json({ limit: "15mb" }));
