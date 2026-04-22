@@ -109,6 +109,8 @@ export function getConcernClassName(concern) {
 
 export function getStatusClassName(status) {
   const normalized = String(status || "").toUpperCase();
+  if (normalized === "PENDING") return "bg-amber-100 text-amber-700";
+  if (normalized === "DECLINED") return "bg-rose-100 text-rose-700";
   if (normalized === "CANCELLED") return "bg-rose-100 text-rose-700";
   if (normalized === "COMPLETED") return "bg-slate-200 text-slate-700";
   return "bg-emerald-100 text-emerald-700";
@@ -136,7 +138,7 @@ export function getAvailableSlotsForDate({
           item.counselorId === counselorId &&
           item.appointmentDate === isoDate &&
           item.id !== ignoreAppointmentId &&
-          String(item.status || "").toUpperCase() === "CONFIRMED",
+          ["PENDING", "CONFIRMED"].includes(String(item.status || "").toUpperCase()),
       )
       .map((item) => `${item.appointmentDate}:${item.slotTime}`),
   );

@@ -400,7 +400,7 @@ async function ensureDatabaseSchema() {
       created_by_admin_email text,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now(),
-      constraint counselor_appointments_status_check check (status in ('CONFIRMED', 'COMPLETED', 'CANCELLED')),
+      constraint counselor_appointments_status_check check (status in ('PENDING', 'CONFIRMED', 'DECLINED', 'COMPLETED', 'CANCELLED')),
       constraint counselor_appointments_booking_source_check check (booking_source in ('MOBILE_APP', 'ADMIN_PANEL')),
       constraint counselor_appointments_gender_preference_check check (
         counselor_gender_preference is null
@@ -417,6 +417,17 @@ async function ensureDatabaseSchema() {
   await pool.query(`
     alter table public.counselor_appointments
     add column if not exists created_by_admin_email text;
+  `);
+
+  await pool.query(`
+    alter table public.counselor_appointments
+    drop constraint if exists counselor_appointments_status_check;
+  `);
+
+  await pool.query(`
+    alter table public.counselor_appointments
+    add constraint counselor_appointments_status_check
+    check (status in ('PENDING', 'CONFIRMED', 'DECLINED', 'COMPLETED', 'CANCELLED'));
   `);
 
   await pool.query(`

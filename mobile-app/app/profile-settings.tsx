@@ -213,7 +213,7 @@ export default function ProfileSettingsScreen() {
   }, [profile]);
 
   const scheduledAppointments = useMemo(
-    () => appointments.filter((item) => item.status !== "CANCELLED"),
+    () => appointments.filter((item) => !["CANCELLED", "DECLINED"].includes(item.status)),
     [appointments],
   );
 
@@ -477,7 +477,7 @@ export default function ProfileSettingsScreen() {
               <View style={styles.scheduleEmptyCard}>
                 <Text style={styles.scheduleEmptyTitle}>No consultation booked yet</Text>
                 <Text style={styles.scheduleEmptyText}>
-                  When you confirm a schedule, it will appear here and on the calendar above.
+                  When you request or confirm a schedule, it will appear here and on the calendar above.
                 </Text>
               </View>
             )}

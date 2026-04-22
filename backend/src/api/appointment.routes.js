@@ -4,8 +4,12 @@ const { query } = require("../config/db");
 const router = express.Router();
 
 const MANILA_TIME_ZONE = "Asia/Manila";
-const DEFAULT_SLOT_TIMES = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00"];
+const DEFAULT_SLOT_TIMES = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00"];
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const ACTIVE_APPOINTMENT_STATUSES = ["PENDING", "CONFIRMED"];
+const MOBILE_BOOKING_LEAD_DAYS = 2;
+const APPOINTMENT_DECISION_WINDOW_HOURS = 24;
+const APPOINTMENT_EXPIRY_CHECK_MS = 5 * 60 * 1000;
 const CONCERN_OPTIONS = [
   "Academic Stress",
   "Anxiety / Stress",
@@ -136,11 +140,101 @@ function formatRelativeDateTime(value) {
   }).format(date);
 }
 
+function addDaysToIsoDate(isoDate, days) {
+  const anchor = new Date(`${isoDate}T12:00:00+08:00`);
+  anchor.setUTCDate(anchor.getUTCDate() + days);
+  return getManilaDateParts(anchor).isoDate;
+}
+
+function getMinimumStudentBookingDate() {
+  return addDaysToIsoDate(getManilaDateParts().isoDate, MOBILE_BOOKING_LEAD_DAYS);
+}
+
+function getDecisionDeadlineIso(createdAt) {
+  if (!createdAt) return null;
+  const created = new Date(createdAt);
+  if (Number.isNaN(created.getTime())) return null;
+  return new Date(created.getTime() + APPOINTMENT_DECISION_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
+}
+
+function isActiveAppointmentStatus(status) {
+  return ACTIVE_APPOINTMENT_STATUSES.includes(String(status || "").toUpperCase());
+}
+
+function isPendingAppointment(status) {
+  return String(status || "").toUpperCase() === "PENDING";
+}
+
 function toStatusLabel(status) {
   const normalized = String(status || "").toUpperCase();
+  if (normalized === "PENDING") return "Pending";
+  if (normalized === "DECLINED") return "Declined";
   if (normalized === "CANCELLED") return "Cancelled";
   if (normalized === "COMPLETED") return "Completed";
   return "Confirmed";
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+async function sendAppointmentEmail({ to, subject, intro, appointment, ctaText = "" }) {
+  const apiKey = String(process.env.RESEND_API_KEY || "").trim();
+  const from = String(
+    process.env.APPOINTMENT_EMAIL_FROM || process.env.RESEND_FROM_EMAIL || "",
+  ).trim();
+  const recipient = String(to || "").trim();
+
+  if (!apiKey || !from || !recipient) {
+    return;
+  }
+
+  const lines = [
+    intro,
+    "",
+    `Date: ${formatDateLong(appointment.appointment_date)}`,
+    `Time: ${toReadableTime(appointment.slot_time)}`,
+    `Concern: ${appointment.concern}`,
+    `Counselor: ${appointment.counselor_name || appointment.counselor_full_name || "Guidance Counselor"}`,
+    ctaText ? `Note: ${ctaText}` : "",
+  ].filter(Boolean);
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; color: #243442; line-height: 1.6;">
+      <p>${escapeHtml(intro)}</p>
+      <div style="border: 1px solid #d8e7d1; background: #f6fbf3; border-radius: 12px; padding: 16px;">
+        <p><strong>Date:</strong> ${escapeHtml(formatDateLong(appointment.appointment_date))}</p>
+        <p><strong>Time:</strong> ${escapeHtml(toReadableTime(appointment.slot_time))}</p>
+        <p><strong>Concern:</strong> ${escapeHtml(appointment.concern)}</p>
+        <p><strong>Counselor:</strong> ${escapeHtml(appointment.counselor_name || appointment.counselor_full_name || "Guidance Counselor")}</p>
+      </div>
+      ${ctaText ? `<p>${escapeHtml(ctaText)}</p>` : ""}
+    </div>
+  `;
+
+  try {
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from,
+        to: [recipient],
+        subject,
+        text: lines.join("\n"),
+        html,
+      }),
+    });
+  } catch (error) {
+    console.error("Failed to send appointment email:", error);
+  }
 }
 
 async function findAdminByEmail(email) {
@@ -223,7 +317,24 @@ async function createStudentNotification({
   );
 }
 
-async function ensureStudentHasNoConfirmedAppointmentOnDate({
+async function findStudentProfileByStudentNumber(studentNumber) {
+  const result = await query(
+    `
+      select
+        student_number,
+        coalesce(full_name, student_number) as full_name,
+        coalesce(email, '') as email
+      from public.student_profiles
+      where student_number = $1
+      limit 1
+    `,
+    [studentNumber],
+  );
+
+  return result.rows[0] || null;
+}
+
+async function ensureStudentHasNoActiveAppointmentOnDate({
   studentNumber,
   appointmentDate,
   excludeAppointmentId = "",
@@ -234,16 +345,213 @@ async function ensureStudentHasNoConfirmedAppointmentOnDate({
       from public.counselor_appointments
       where student_number = $1
         and appointment_date = $2::date
-        and status = 'CONFIRMED'
-        and ($3::uuid is null or id <> $3::uuid)
+        and status = any($3::text[])
+        and ($4::uuid is null or id <> $4::uuid)
       limit 1
     `,
-    [studentNumber, appointmentDate, excludeAppointmentId || null],
+    [studentNumber, appointmentDate, ACTIVE_APPOINTMENT_STATUSES, excludeAppointmentId || null],
   );
 
   if (result.rowCount > 0) {
-    throw new Error("This student already has a confirmed appointment on that date.");
+    throw new Error("This student already has an appointment request on that date.");
   }
+}
+
+function canManageCounselorDecision(actorAdmin, appointment) {
+  if (!actorAdmin || !appointment) return false;
+  return actorAdmin.role === "HEAD_COUNSELOR" || actorAdmin.id === appointment.counselor_id;
+}
+
+async function expirePendingAppointments() {
+  const result = await query(
+    `
+      select
+        ca.id,
+        ca.student_number,
+        ca.concern,
+        ca.appointment_date,
+        ca.slot_time,
+        ca.created_at,
+        ca.counselor_id,
+        aa.email as counselor_email,
+        coalesce(nullif(aa.full_name, ''), split_part(aa.email, '@', 1)) as counselor_name,
+        coalesce(sp.full_name, ca.student_number) as student_name,
+        coalesce(sp.email, '') as student_email
+      from public.counselor_appointments ca
+      join public.admin_accounts aa on aa.id = ca.counselor_id
+      left join public.student_profiles sp on sp.student_number = ca.student_number
+      where ca.status = 'PENDING'
+        and ca.created_at <= now() - interval '24 hours'
+    `,
+  );
+
+  if (result.rowCount === 0) {
+    return 0;
+  }
+
+  const appointmentIds = result.rows.map((row) => row.id);
+  await query(
+    `
+      update public.counselor_appointments
+      set status = 'DECLINED', updated_at = now()
+      where id = any($1::uuid[])
+        and status = 'PENDING'
+    `,
+    [appointmentIds],
+  );
+
+  for (const row of result.rows) {
+    await writeAdminActivityLog({
+      actionType: "APPOINTMENT_AUTO_DECLINED",
+      actorEmail: "system@bawattala.local",
+      actorName: "System",
+      actorRole: "System",
+      entityType: "APPOINTMENT",
+      title: `System auto-declined ${toReadableTime(row.slot_time)}`,
+      description: `${row.student_name} was auto-declined for ${row.counselor_name} on ${formatDateLong(row.appointment_date)} after no response within 24 hours.`,
+      metadata: {
+        appointmentId: row.id,
+        appointmentDate: normalizeDateValue(row.appointment_date),
+        counselorId: row.counselor_id,
+        counselorName: row.counselor_name,
+        ownerCounselorId: row.counselor_id,
+        slotTime: row.slot_time,
+        studentNumber: row.student_number,
+      },
+    });
+
+    await createStudentNotification({
+      studentNumber: row.student_number,
+      kind: "APPOINTMENT_AUTO_DECLINED",
+      title: "Appointment request expired",
+      message: `Your appointment request for ${formatDateLong(row.appointment_date)} at ${toReadableTime(row.slot_time)} was automatically declined because no counselor response was recorded within 24 hours.`,
+      metadata: {
+        appointmentId: row.id,
+        counselorId: row.counselor_id,
+        counselorName: row.counselor_name,
+      },
+    });
+
+    await sendAppointmentEmail({
+      to: row.student_email,
+      subject: "Your counseling appointment request expired",
+      intro: `Your appointment request with ${row.counselor_name} was automatically declined because it was not confirmed within 24 hours.`,
+      appointment: row,
+      ctaText: "Please open the app to request a new schedule.",
+    });
+
+    await sendAppointmentEmail({
+      to: row.counselor_email,
+      subject: "A pending counseling appointment was auto-declined",
+      intro: `${row.student_name}'s pending appointment request was automatically declined after the 24-hour confirmation window expired.`,
+      appointment: row,
+      ctaText: "Open the admin scheduling panel if you want to offer the student a new slot.",
+    });
+  }
+
+  return result.rowCount;
+}
+
+let pendingAppointmentExpiryWorker = null;
+
+function startPendingAppointmentExpiryWorker() {
+  if (pendingAppointmentExpiryWorker) {
+    return pendingAppointmentExpiryWorker;
+  }
+
+  const run = async () => {
+    try {
+      await expirePendingAppointments();
+    } catch (error) {
+      console.error("Pending appointment expiry check failed:", error?.message || error);
+    }
+  };
+
+  void run();
+  pendingAppointmentExpiryWorker = setInterval(run, APPOINTMENT_EXPIRY_CHECK_MS);
+
+  if (typeof pendingAppointmentExpiryWorker?.unref === "function") {
+    pendingAppointmentExpiryWorker.unref();
+  }
+
+  return pendingAppointmentExpiryWorker;
+}
+
+async function loadAppointmentContext(appointmentId) {
+  const appointment = await findAppointmentById(appointmentId);
+  if (!appointment) return null;
+  const student = await findStudentProfileByStudentNumber(appointment.student_number);
+  return {
+    appointment,
+    student,
+  };
+}
+
+async function notifyStudentAboutAppointment({
+  appointment,
+  student,
+  title,
+  message,
+  kind,
+  emailSubject,
+  emailIntro,
+  emailCta = "",
+}) {
+  await createStudentNotification({
+    studentNumber: appointment.student_number,
+    kind,
+    title,
+    message,
+    metadata: {
+      appointmentId: appointment.id,
+      counselorId: appointment.counselor_id,
+      counselorName: appointment.counselor_name,
+    },
+  });
+
+  await sendAppointmentEmail({
+    to: student?.email,
+    subject: emailSubject,
+    intro: emailIntro,
+    appointment,
+    ctaText: emailCta,
+  });
+}
+
+async function notifyCounselorAboutPendingAppointment({ appointment, student }) {
+  await sendAppointmentEmail({
+    to: appointment.counselor_email,
+    subject: "New counseling appointment needs your response",
+    intro: `${student?.full_name || appointment.student_number} requested a counseling session and needs your confirmation within 24 hours.`,
+    appointment,
+    ctaText: "Please open the admin scheduling panel to confirm, decline, or reschedule this request.",
+  });
+}
+
+async function ensurePendingAppointmentStillOpen(appointment) {
+  if (!isPendingAppointment(appointment?.status)) {
+    return true;
+  }
+
+  const decisionDeadline = getDecisionDeadlineIso(appointment.created_at);
+  if (decisionDeadline && decisionDeadline <= new Date().toISOString()) {
+    await expirePendingAppointments();
+    return false;
+  }
+
+  return true;
+}
+
+async function ensureStudentHasNoConfirmedAppointmentOnDate({
+  studentNumber,
+  appointmentDate,
+  excludeAppointmentId = "",
+}) {
+  return ensureStudentHasNoActiveAppointmentOnDate({
+    studentNumber,
+    appointmentDate,
+    excludeAppointmentId,
+  });
 }
 
 async function findAppointmentById(appointmentId) {
@@ -264,7 +572,9 @@ async function findAppointmentById(appointmentId) {
         ca.created_at,
         ca.updated_at,
         coalesce(sp.full_name, ca.student_number) as student_name,
+        coalesce(sp.email, '') as student_email,
         coalesce(sp.program, '') as program,
+        aa.email as counselor_email,
         coalesce(nullif(aa.full_name, ''), split_part(aa.email, '@', 1)) as counselor_name,
         coalesce(aa.role, 'COUNSELOR') as counselor_role,
         coalesce(aa.gender, 'Prefer not to say') as counselor_gender,
@@ -297,6 +607,7 @@ function toAppointmentResponse(row) {
     bookingSource: row.booking_source || "MOBILE_APP",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    decisionDueAt: getDecisionDeadlineIso(row.created_at),
     counselor: {
       id: row.counselor_id,
       fullName: row.counselor_name,
@@ -413,10 +724,10 @@ async function getStudentBookedDateSet(studentNumber, startDate, endDate, exclud
       from public.counselor_appointments
       where student_number = $1
         and appointment_date between $2::date and $3::date
-        and status = 'CONFIRMED'
-        and ($4::uuid is null or id <> $4::uuid)
+        and status = any($4::text[])
+        and ($5::uuid is null or id <> $5::uuid)
     `,
-    [studentNumber, startDate, endDate, excludeAppointmentId || null],
+    [studentNumber, startDate, endDate, ACTIVE_APPOINTMENT_STATUSES, excludeAppointmentId || null],
   );
 
   return new Set(result.rows.map((row) => normalizeDateValue(row.appointment_date)));
@@ -462,9 +773,9 @@ async function getBookedSlotMap(counselorId, startDate, endDate) {
       where counselor_id = $1
         and appointment_date >= $2::date
         and appointment_date <= $3::date
-        and status = 'CONFIRMED'
+        and status = any($4::text[])
     `,
-    [counselorId, startDate, endDate],
+    [counselorId, startDate, endDate, ACTIVE_APPOINTMENT_STATUSES],
   );
 
   const booked = new Set();
@@ -520,6 +831,7 @@ router.get("/counselors", async (_req, res) => {
 });
 
 router.get("/availability", async (req, res) => {
+  await expirePendingAppointments();
   const counselorId = String(req.query.counselorId || "").trim();
   const month = normalizeMonth(req.query.month || "");
   const studentNumber = String(req.query.studentNumber || "").trim();
@@ -544,6 +856,7 @@ router.get("/availability", async (req, res) => {
   const bookedSlots = await getBookedSlotMap(counselorId, startIsoDate, endIsoDate);
   const studentBookedDates = await getStudentBookedDateSet(studentNumber, startIsoDate, endIsoDate);
   const todayIsoDate = getManilaDateParts().isoDate;
+  const minimumStudentBookingDate = studentNumber ? getMinimumStudentBookingDate() : todayIsoDate;
 
   const days = Array.from({ length: lastDay }, (_, index) => {
     const dayNumber = index + 1;
@@ -557,17 +870,20 @@ router.get("/availability", async (req, res) => {
         ? overrideMap.get(overrideKey) === true
         : availabilityMap.get(weeklyKey) === true;
       const isPast = isoDate < todayIsoDate;
+      const blockedByLeadTime = studentNumber ? isoDate < minimumStudentBookingDate : false;
       const booked = bookedSlots.has(`${isoDate}:${slotTime}`);
       return {
         time: slotTime,
         label: toReadableTime(slotTime),
-        available: enabled && !booked && !isPast && !studentHasAppointmentOnDate,
+        available: enabled && !booked && !isPast && !studentHasAppointmentOnDate && !blockedByLeadTime,
         booked,
+        blockedByLeadTime,
         enabled,
       };
     });
 
     return {
+      blockedByLeadTime: studentNumber ? isoDate < minimumStudentBookingDate : false,
       date: isoDate,
       dayNumber,
       dayOfWeek,
@@ -593,6 +909,7 @@ router.get("/availability", async (req, res) => {
 });
 
 router.post("/book", async (req, res) => {
+  await expirePendingAppointments();
   const studentNumber = String(req.body.studentNumber || "").trim();
   const counselorId = String(req.body.counselorId || "").trim();
   const appointmentDate = normalizeDate(req.body.appointmentDate || "");
@@ -617,6 +934,11 @@ router.post("/book", async (req, res) => {
   if (appointmentDate < todayIsoDate) {
     return res.status(400).json({ message: "You cannot book a past appointment date." });
   }
+  if (bookingSource === "MOBILE_APP" && appointmentDate < getMinimumStudentBookingDate()) {
+    return res.status(400).json({
+      message: `Appointments must be booked at least ${MOBILE_BOOKING_LEAD_DAYS} days ahead so counselors have 24 hours to respond.`,
+    });
+  }
 
   const counselor = await findCounselorById(counselorId);
   if (!counselor) {
@@ -636,10 +958,10 @@ router.post("/book", async (req, res) => {
       where counselor_id = $1
         and appointment_date = $2::date
         and slot_time = $3
-        and status = 'CONFIRMED'
+        and status = any($4::text[])
       limit 1
     `,
-    [counselorId, appointmentDate, slotTime],
+    [counselorId, appointmentDate, slotTime, ACTIVE_APPOINTMENT_STATUSES],
   );
 
   if (conflictResult.rowCount > 0) {
@@ -649,7 +971,7 @@ router.post("/book", async (req, res) => {
   const actorAdmin = bookingSource === "ADMIN_PANEL" ? await findAdminByEmail(actorEmail) : null;
 
   try {
-    await ensureStudentHasNoConfirmedAppointmentOnDate({
+    await ensureStudentHasNoActiveAppointmentOnDate({
       studentNumber,
       appointmentDate,
     });
@@ -671,7 +993,7 @@ router.post("/book", async (req, res) => {
         booking_source,
         created_by_admin_email
       )
-      values ($1, $2, $3, $4::date, $5, 'CONFIRMED', $6, $7, $8, $9)
+      values ($1, $2, $3, $4::date, $5, $6, $7, $8, $9, $10)
       returning id, student_number, concern, appointment_date, slot_time, status, student_note, counselor_gender_preference, booking_source, created_by_admin_email, created_at
     `,
     [
@@ -680,6 +1002,7 @@ router.post("/book", async (req, res) => {
       concern,
       appointmentDate,
       slotTime,
+      bookingSource === "ADMIN_PANEL" ? "CONFIRMED" : "PENDING",
       studentNote || null,
       counselorGenderPreference || null,
       bookingSource,
@@ -688,6 +1011,8 @@ router.post("/book", async (req, res) => {
   );
 
   const appointment = insertResult.rows[0];
+  const fullAppointment = await findAppointmentById(appointment.id);
+  const student = await findStudentProfileByStudentNumber(studentNumber);
   if (bookingSource === "ADMIN_PANEL") {
     await writeAdminActivityLog({
       actionType: "APPOINTMENT_CREATED",
@@ -710,21 +1035,38 @@ router.post("/book", async (req, res) => {
     });
   }
 
-  await createStudentNotification({
-    studentNumber,
-    kind: "APPOINTMENT_CREATED",
-    title: "Appointment confirmed",
-    message: `Your session with ${counselor.full_name} is set for ${formatDateLong(appointment.appointment_date)} at ${toReadableTime(appointment.slot_time)}.`,
-    metadata: {
-      appointmentId: appointment.id,
-      bookingSource,
-      counselorId,
-      counselorName: counselor.full_name,
-    },
-  });
+  if (bookingSource === "ADMIN_PANEL" && fullAppointment) {
+    await notifyStudentAboutAppointment({
+      appointment: fullAppointment,
+      student,
+      kind: "APPOINTMENT_CONFIRMED",
+      title: "Appointment confirmed",
+      message: `Your session with ${counselor.full_name} is set for ${formatDateLong(appointment.appointment_date)} at ${toReadableTime(appointment.slot_time)}.`,
+      emailSubject: "Your counseling appointment is confirmed",
+      emailIntro: `Your counseling appointment with ${counselor.full_name} has been confirmed.`,
+      emailCta: "Please arrive a few minutes early for your session.",
+    });
+  }
+
+  if (bookingSource === "MOBILE_APP" && fullAppointment) {
+    await notifyStudentAboutAppointment({
+      appointment: fullAppointment,
+      student,
+      kind: "APPOINTMENT_PENDING",
+      title: "Appointment request submitted",
+      message: `Your request with ${counselor.full_name} for ${formatDateLong(appointment.appointment_date)} at ${toReadableTime(appointment.slot_time)} is pending counselor confirmation within 24 hours.`,
+      emailSubject: "Your counseling appointment request is pending",
+      emailIntro: `Your counseling appointment request with ${counselor.full_name} is waiting for counselor confirmation.`,
+      emailCta: "You will receive another notification once the counselor confirms, declines, or reschedules it.",
+    });
+    await notifyCounselorAboutPendingAppointment({
+      appointment: fullAppointment,
+      student,
+    });
+  }
 
   return res.status(201).json({
-    message: "Appointment confirmed.",
+    message: bookingSource === "ADMIN_PANEL" ? "Appointment confirmed." : "Appointment request submitted.",
     appointment: {
       id: appointment.id,
       studentNumber: appointment.student_number,
@@ -744,11 +1086,13 @@ router.post("/book", async (req, res) => {
         gender: counselor.gender,
         pictureUrl: counselor.profile_picture_url || "",
       },
+      decisionDueAt: getDecisionDeadlineIso(appointment.created_at),
     },
   });
 });
 
 router.post("/admin/:appointmentId/update", async (req, res) => {
+  await expirePendingAppointments();
   const appointmentId = String(req.params.appointmentId || "").trim();
   const studentNumber = String(req.body.studentNumber || "").trim();
   const counselorId = String(req.body.counselorId || "").trim();
@@ -792,11 +1136,11 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
       where counselor_id = $1
         and appointment_date = $2::date
         and slot_time = $3
-        and status = 'CONFIRMED'
+        and status = any($5::text[])
         and id <> $4::uuid
       limit 1
     `,
-    [counselorId, appointmentDate, slotTime, appointmentId],
+    [counselorId, appointmentDate, slotTime, appointmentId, ACTIVE_APPOINTMENT_STATUSES],
   );
 
   if (conflictResult.rowCount > 0) {
@@ -804,7 +1148,7 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
   }
 
   try {
-    await ensureStudentHasNoConfirmedAppointmentOnDate({
+    await ensureStudentHasNoActiveAppointmentOnDate({
       studentNumber,
       appointmentDate,
       excludeAppointmentId: appointmentId,
@@ -814,6 +1158,13 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
   }
 
   const actorAdmin = await findAdminByEmail(actorEmail);
+  const actorCanManageDecision = canManageCounselorDecision(actorAdmin, existingAppointment);
+  const isRescheduledRequestState =
+    isPendingAppointment(existingAppointment.status) ||
+    String(existingAppointment.status || "").toUpperCase() === "DECLINED";
+  const nextStatus = isRescheduledRequestState && actorCanManageDecision
+    ? "CONFIRMED"
+    : existingAppointment.status;
   const updateResult = await query(
     `
       update public.counselor_appointments
@@ -823,8 +1174,9 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
         concern = $4,
         appointment_date = $5::date,
         slot_time = $6,
-        student_note = $7,
-        counselor_gender_preference = $8,
+        status = $7,
+        student_note = $8,
+        counselor_gender_preference = $9,
         updated_at = now()
       where id = $1::uuid
       returning id
@@ -836,6 +1188,7 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
       concern,
       appointmentDate,
       slotTime,
+      nextStatus,
       studentNote || null,
       counselorGenderPreference || null,
     ],
@@ -846,6 +1199,7 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
     return res.status(404).json({ message: "Appointment not found after update." });
   }
 
+  const student = await findStudentProfileByStudentNumber(studentNumber);
   await writeAdminActivityLog({
     actionType: "APPOINTMENT_UPDATED",
     actorEmail: actorAdmin?.email || actorEmail,
@@ -869,16 +1223,27 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
     },
   });
 
-  await createStudentNotification({
-    studentNumber,
-    kind: "APPOINTMENT_UPDATED",
-    title: "Appointment updated",
-    message: `Your session is now on ${formatDateLong(updatedAppointment.appointment_date)} at ${toReadableTime(updatedAppointment.slot_time)} with ${counselor.full_name}.`,
-    metadata: {
-      appointmentId,
-      counselorId,
-      counselorName: counselor.full_name,
-    },
+  await notifyStudentAboutAppointment({
+    appointment: updatedAppointment,
+    student,
+    kind: nextStatus === "CONFIRMED" && isRescheduledRequestState ? "APPOINTMENT_CONFIRMED" : "APPOINTMENT_UPDATED",
+    title: nextStatus === "CONFIRMED" && isRescheduledRequestState ? "Appointment rescheduled and confirmed" : "Appointment updated",
+    message:
+      nextStatus === "CONFIRMED" && isRescheduledRequestState
+        ? `Your counselor moved your session to ${formatDateLong(updatedAppointment.appointment_date)} at ${toReadableTime(updatedAppointment.slot_time)}. The new schedule is already confirmed.`
+        : `Your session is now on ${formatDateLong(updatedAppointment.appointment_date)} at ${toReadableTime(updatedAppointment.slot_time)} with ${counselor.full_name}.`,
+    emailSubject:
+      nextStatus === "CONFIRMED" && isRescheduledRequestState
+        ? "Your counseling appointment was rescheduled and confirmed"
+        : "Your counseling appointment was updated",
+    emailIntro:
+      nextStatus === "CONFIRMED" && isRescheduledRequestState
+        ? `${counselor.full_name} rescheduled your appointment and confirmed the new time.`
+        : `${counselor.full_name} updated your counseling appointment.`,
+    emailCta:
+      nextStatus === "CONFIRMED" && isRescheduledRequestState
+        ? "Please review the updated confirmed schedule in the app."
+        : "Please review the new schedule details in the app.",
   });
 
   return res.json({
@@ -887,7 +1252,152 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
   });
 });
 
+router.post("/admin/:appointmentId/confirm", async (req, res) => {
+  await expirePendingAppointments();
+  const appointmentId = String(req.params.appointmentId || "").trim();
+  const actorEmail = String(req.body.actorEmail || "").trim().toLowerCase();
+
+  if (!appointmentId || !actorEmail) {
+    return res.status(400).json({ message: "Appointment id and actor email are required." });
+  }
+
+  const context = await loadAppointmentContext(appointmentId);
+  if (!context?.appointment) {
+    return res.status(404).json({ message: "Appointment not found." });
+  }
+
+  const actorAdmin = await findAdminByEmail(actorEmail);
+  if (!canManageCounselorDecision(actorAdmin, context.appointment)) {
+    return res.status(403).json({ message: "Only the assigned counselor or head counselor can confirm this request." });
+  }
+  if (!(await ensurePendingAppointmentStillOpen(context.appointment))) {
+    return res.status(409).json({ message: "This appointment request already expired and was auto-declined." });
+  }
+  if (!isPendingAppointment(context.appointment.status)) {
+    return res.status(409).json({ message: "Only pending appointment requests can be confirmed." });
+  }
+
+  await query(
+    `
+      update public.counselor_appointments
+      set status = 'CONFIRMED', updated_at = now()
+      where id = $1::uuid
+    `,
+    [appointmentId],
+  );
+
+  const updatedAppointment = await findAppointmentById(appointmentId);
+  await writeAdminActivityLog({
+    actionType: "APPOINTMENT_CONFIRMED",
+    actorEmail: actorAdmin?.email || actorEmail,
+    actorName: actorAdmin?.full_name || actorEmail || "Counselor",
+    actorRole: toRoleLabel(actorAdmin?.role || "COUNSELOR"),
+    entityType: "APPOINTMENT",
+    title: `${actorAdmin?.full_name || "Counselor"} confirmed ${toReadableTime(context.appointment.slot_time)}`,
+    description: `${context.appointment.student_name} was confirmed with ${context.appointment.counselor_name} on ${formatDateLong(context.appointment.appointment_date)}`,
+    metadata: {
+      actorAdminId: actorAdmin?.id || null,
+      appointmentId,
+      appointmentDate: normalizeDateValue(context.appointment.appointment_date),
+      counselorId: context.appointment.counselor_id,
+      counselorName: context.appointment.counselor_name,
+      ownerCounselorId: context.appointment.counselor_id,
+      slotTime: context.appointment.slot_time,
+      studentNumber: context.appointment.student_number,
+    },
+  });
+
+  if (updatedAppointment) {
+    await notifyStudentAboutAppointment({
+      appointment: updatedAppointment,
+      student: context.student,
+      kind: "APPOINTMENT_CONFIRMED",
+      title: "Appointment confirmed",
+      message: `Your session with ${updatedAppointment.counselor_name} is confirmed for ${formatDateLong(updatedAppointment.appointment_date)} at ${toReadableTime(updatedAppointment.slot_time)}.`,
+      emailSubject: "Your counseling appointment is confirmed",
+      emailIntro: `${updatedAppointment.counselor_name} confirmed your counseling appointment.`,
+      emailCta: "Please arrive a few minutes early for your session.",
+    });
+  }
+
+  return res.json({
+    message: "Appointment confirmed.",
+    appointment: updatedAppointment ? toAppointmentResponse(updatedAppointment) : null,
+  });
+});
+
+router.post("/admin/:appointmentId/decline", async (req, res) => {
+  await expirePendingAppointments();
+  const appointmentId = String(req.params.appointmentId || "").trim();
+  const actorEmail = String(req.body.actorEmail || "").trim().toLowerCase();
+
+  if (!appointmentId || !actorEmail) {
+    return res.status(400).json({ message: "Appointment id and actor email are required." });
+  }
+
+  const context = await loadAppointmentContext(appointmentId);
+  if (!context?.appointment) {
+    return res.status(404).json({ message: "Appointment not found." });
+  }
+
+  const actorAdmin = await findAdminByEmail(actorEmail);
+  if (!canManageCounselorDecision(actorAdmin, context.appointment)) {
+    return res.status(403).json({ message: "Only the assigned counselor or head counselor can decline this request." });
+  }
+  if (!(await ensurePendingAppointmentStillOpen(context.appointment))) {
+    return res.status(409).json({ message: "This appointment request already expired and was auto-declined." });
+  }
+  if (!isPendingAppointment(context.appointment.status)) {
+    return res.status(409).json({ message: "Only pending appointment requests can be declined." });
+  }
+
+  await query(
+    `
+      update public.counselor_appointments
+      set status = 'DECLINED', updated_at = now()
+      where id = $1::uuid
+    `,
+    [appointmentId],
+  );
+
+  await writeAdminActivityLog({
+    actionType: "APPOINTMENT_DECLINED",
+    actorEmail: actorAdmin?.email || actorEmail,
+    actorName: actorAdmin?.full_name || actorEmail || "Counselor",
+    actorRole: toRoleLabel(actorAdmin?.role || "COUNSELOR"),
+    entityType: "APPOINTMENT",
+    title: `${actorAdmin?.full_name || "Counselor"} declined ${toReadableTime(context.appointment.slot_time)}`,
+    description: `${context.appointment.student_name}'s request with ${context.appointment.counselor_name} on ${formatDateLong(context.appointment.appointment_date)} was declined.`,
+    metadata: {
+      actorAdminId: actorAdmin?.id || null,
+      appointmentId,
+      appointmentDate: normalizeDateValue(context.appointment.appointment_date),
+      counselorId: context.appointment.counselor_id,
+      counselorName: context.appointment.counselor_name,
+      ownerCounselorId: context.appointment.counselor_id,
+      slotTime: context.appointment.slot_time,
+      studentNumber: context.appointment.student_number,
+    },
+  });
+
+  await notifyStudentAboutAppointment({
+    appointment: context.appointment,
+    student: context.student,
+    kind: "APPOINTMENT_DECLINED",
+    title: "Appointment declined",
+    message: `Your appointment request for ${formatDateLong(context.appointment.appointment_date)} at ${toReadableTime(context.appointment.slot_time)} was declined. Your counselor can still offer a different time later.`,
+    emailSubject: "Your counseling appointment request was declined",
+    emailIntro: `${context.appointment.counselor_name} declined your counseling appointment request.`,
+    emailCta: "Please open the app if you want to request a different schedule.",
+  });
+
+  return res.json({
+    message: "Appointment declined.",
+  });
+});
+
 router.post("/admin/:appointmentId/cancel", async (req, res) => {
+  await expirePendingAppointments();
   const appointmentId = String(req.params.appointmentId || "").trim();
   const actorEmail = String(req.body.actorEmail || "").trim().toLowerCase();
 
@@ -948,6 +1458,7 @@ router.post("/admin/:appointmentId/cancel", async (req, res) => {
 });
 
 router.delete("/admin/:appointmentId", async (req, res) => {
+  await expirePendingAppointments();
   const appointmentId = String(req.params.appointmentId || "").trim();
   const actorEmail = String(req.query.actorEmail || "").trim().toLowerCase();
 
@@ -1007,6 +1518,7 @@ router.delete("/admin/:appointmentId", async (req, res) => {
 });
 
 router.get("/student", async (req, res) => {
+  await expirePendingAppointments();
   const studentNumber = String(req.query.studentNumber || "").trim();
   if (!studentNumber) {
     return res.status(400).json({ message: "Student number is required." });
@@ -1047,6 +1559,7 @@ router.get("/student", async (req, res) => {
     studentNote: row.student_note || "",
     bookingSource: row.booking_source || "MOBILE_APP",
     createdAt: row.created_at,
+    decisionDueAt: getDecisionDeadlineIso(row.created_at),
     counselor: {
       fullName: row.counselor_name,
       role: toRoleLabel(row.counselor_role),
@@ -1056,7 +1569,11 @@ router.get("/student", async (req, res) => {
   }));
 
   const upcomingAppointment =
-    appointments.find((item) => item.status === "CONFIRMED" && item.appointmentDate >= getManilaDateParts().isoDate) || null;
+    appointments
+      .filter((item) => isActiveAppointmentStatus(item.status) && item.appointmentDate >= getManilaDateParts().isoDate)
+      .sort((a, b) =>
+        `${a.appointmentDate} ${a.slotTime}`.localeCompare(`${b.appointmentDate} ${b.slotTime}`),
+      )[0] || null;
 
   return res.json({
     appointments,
@@ -1065,6 +1582,7 @@ router.get("/student", async (req, res) => {
 });
 
 router.get("/admin/overview", async (req, res) => {
+  await expirePendingAppointments();
   const selectedDate = normalizeDate(req.query.date || "") || getManilaDateParts().isoDate;
   const monthKey = `${selectedDate.slice(0, 7)}`;
   const monthStart = `${monthKey}-01`;
@@ -1172,6 +1690,7 @@ router.get("/admin/overview", async (req, res) => {
     createdByAdminName: row.created_by_admin_name || "",
     createdByAdminRole: toRoleLabel(row.created_by_admin_role),
     createdAt: row.created_at,
+    decisionDueAt: getDecisionDeadlineIso(row.created_at),
   }));
 
   return res.json({
@@ -1215,8 +1734,14 @@ router.get("/admin/overview", async (req, res) => {
         .map((item) => ({
           id: `appointment-${item.id}`,
           kind: "mobile_booking",
-          title: `${item.studentName} booked ${item.slotLabel}`,
-          description: `${item.concern} with ${item.counselorName} on ${formatDateLong(item.appointmentDate)}`,
+          title:
+            String(item.status || "").toUpperCase() === "PENDING"
+              ? `${item.studentName} requested ${item.slotLabel}`
+              : `${item.studentName} booked ${item.slotLabel}`,
+          description:
+            String(item.status || "").toUpperCase() === "PENDING"
+              ? `${item.concern} with ${item.counselorName} on ${formatDateLong(item.appointmentDate)}. Response due within 24 hours.`
+              : `${item.concern} with ${item.counselorName} on ${formatDateLong(item.appointmentDate)}`,
           actorName: item.studentName,
           actorRole: "Student",
           counselorId: item.counselorId,
@@ -1334,6 +1859,7 @@ router.delete("/notifications/:notificationId", async (req, res) => {
 });
 
 router.post("/admin/availability/day", async (req, res) => {
+  await expirePendingAppointments();
   const counselorId = String(req.body.counselorId || "").trim();
   const targetDate = normalizeDate(req.body.targetDate || "");
   const dayOfWeek = Number(req.body.dayOfWeek);
@@ -1396,10 +1922,10 @@ router.post("/admin/availability/day", async (req, res) => {
         from public.counselor_appointments ca
         join public.admin_accounts aa on aa.id = ca.counselor_id
         where ca.counselor_id = $1::uuid
-          and ca.status = 'CONFIRMED'
+          and ca.status = any($3::text[])
           and ca.appointment_date = $2::date
       `,
-      [counselorId, targetDate],
+      [counselorId, targetDate, ACTIVE_APPOINTMENT_STATUSES],
     );
 
     if (appointmentsToCancel.rowCount > 0) {
@@ -1529,5 +2055,7 @@ router.post("/admin/availability", async (req, res) => {
     },
   });
 });
+
+router.startPendingAppointmentExpiryWorker = startPendingAppointmentExpiryWorker;
 
 module.exports = router;

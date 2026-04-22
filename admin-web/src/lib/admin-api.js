@@ -196,6 +196,20 @@ export async function updateAdminAppointment(appointmentId, payload) {
   });
 }
 
+export async function confirmAdminAppointment(appointmentId, payload) {
+  return request(`/api/appointments/admin/${appointmentId}/confirm`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function declineAdminAppointment(appointmentId, payload) {
+  return request(`/api/appointments/admin/${appointmentId}/decline`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function cancelAdminAppointment(appointmentId, payload) {
   return request(`/api/appointments/admin/${appointmentId}/cancel`, {
     method: "POST",

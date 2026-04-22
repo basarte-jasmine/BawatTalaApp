@@ -2,6 +2,7 @@ require("dotenv").config();
 const app = require("./app");
 const { ensureDatabaseSchema } = require("./config/db");
 const { ensureDefaultAdminAccount } = require("./api/admin.routes");
+const appointmentRoutes = require("./api/appointment.routes");
 
 const port = Number(process.env.PORT || 4000);
 
@@ -9,6 +10,9 @@ async function runStartupTasks() {
   try {
     await ensureDatabaseSchema();
     await ensureDefaultAdminAccount();
+    if (typeof appointmentRoutes.startPendingAppointmentExpiryWorker === "function") {
+      appointmentRoutes.startPendingAppointmentExpiryWorker();
+    }
     console.log("Backend startup tasks completed.");
   } catch (error) {
     console.error("Backend startup tasks failed:", error?.message || error);

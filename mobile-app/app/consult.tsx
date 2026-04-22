@@ -32,6 +32,7 @@ type CounselorCard = {
 
 type AvailabilityDay = {
   availableSlots: { available: boolean; booked: boolean; enabled: boolean; label: string; time: string }[];
+  blockedByLeadTime?: boolean;
   blockedByStudentSchedule?: boolean;
   date: string;
   dayLabel: string;
@@ -322,13 +323,13 @@ export default function ConsultScreen() {
       });
 
       if (!result.ok || !result.appointment) {
-        setErrorMessage(result.message || "Failed to confirm appointment.");
+        setErrorMessage(result.message || "Failed to submit appointment request.");
         return;
       }
 
       router.replace(`/home?consultConfirmed=1&appointmentId=${encodeURIComponent(result.appointment.id)}`);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to confirm appointment.");
+      setErrorMessage(error instanceof Error ? error.message : "Failed to submit appointment request.");
     } finally {
       setSubmitting(false);
     }
@@ -506,7 +507,9 @@ export default function ConsultScreen() {
           {!loadingCounselors && step === 4 ? (
             <>
               <Text style={styles.stepTitle}>Choose Date & Time</Text>
-              <Text style={styles.stepSubTitle}>Only open slots from the counselor&apos;s schedule can be booked.</Text>
+              <Text style={styles.stepSubTitle}>
+                Only open slots from the counselor&apos;s schedule can be booked. Same-day and next-day requests stay blocked so the counselor still has 24 hours to confirm.
+              </Text>
 
               <View style={styles.monthHeaderRow}>
                 <Pressable onPress={() => setSelectedMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>
@@ -575,7 +578,9 @@ export default function ConsultScreen() {
                   <Text style={styles.selectedDateLabel}>
                     {selectedDayAvailability?.date
                       ? selectedDayAvailability.blockedByStudentSchedule
-                        ? `You already have a confirmed schedule on ${formatSelectedDate(selectedDayAvailability.date)}. Only one appointment is allowed per day.`
+                        ? `You already have an appointment request or confirmed schedule on ${formatSelectedDate(selectedDayAvailability.date)}. Only one appointment is allowed per day.`
+                        : selectedDayAvailability.blockedByLeadTime
+                          ? `That date stays unavailable because appointment requests need a 24-hour counselor review window.`
                         : `Available times for ${formatSelectedDate(selectedDayAvailability.date)}`
                       : "Select a highlighted day to see open times."}
                   </Text>
@@ -615,7 +620,7 @@ export default function ConsultScreen() {
 
         <View style={styles.continueInlineWrap}>
           <Pressable style={[styles.continueButton, submitting && styles.continueButtonDisabled]} disabled={submitting} onPress={() => void handleContinue()}>
-            {submitting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.continueButtonText}>{step === TOTAL_STEPS ? "Confirm Appointment" : "Continue"}</Text>}
+            {submitting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.continueButtonText}>{step === TOTAL_STEPS ? "Submit Request" : "Continue"}</Text>}
           </Pressable>
         </View>
       </ScrollView>

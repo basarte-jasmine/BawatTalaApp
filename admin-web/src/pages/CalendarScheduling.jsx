@@ -19,8 +19,10 @@ import {
   WEEKDAY_HEADERS,
 } from "../lib/appointment-scheduling";
 import {
+  confirmAdminAppointment,
   cancelAdminAppointment,
   createAdminAppointment,
+  declineAdminAppointment,
   deleteAdminAppointment,
   fetchAdminAppointmentsOverview,
   updateAdminAvailability,
@@ -167,7 +169,7 @@ export default function CalendarScheduling({ onLogout, session }) {
 
   const appointmentCountByDate = useMemo(() => {
     const counts = new Map();
-    for (const item of monthAppointments.filter((entry) => String(entry.status || "").toUpperCase() === "CONFIRMED")) {
+    for (const item of monthAppointments.filter((entry) => ["PENDING", "CONFIRMED"].includes(String(entry.status || "").toUpperCase()))) {
       counts.set(item.appointmentDate, (counts.get(item.appointmentDate) || 0) + 1);
     }
     return counts;
@@ -385,6 +387,24 @@ export default function CalendarScheduling({ onLogout, session }) {
     }
   }
 
+  async function handleConfirmAppointment(appointmentId) {
+    try {
+      await confirmAdminAppointment(appointmentId, { actorEmail: session?.email || "" });
+      await refreshOverview();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to confirm appointment.");
+    }
+  }
+
+  async function handleDeclineAppointment(appointmentId) {
+    try {
+      await declineAdminAppointment(appointmentId, { actorEmail: session?.email || "" });
+      await refreshOverview();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to decline appointment.");
+    }
+  }
+
   async function handleDeleteAppointment(appointmentId) {
     try {
       await deleteAdminAppointment(appointmentId, session?.email || "");
@@ -521,7 +541,7 @@ export default function CalendarScheduling({ onLogout, session }) {
                                     .filter(
                                       (item) =>
                                         item.appointmentDate === cell.isoDate &&
-                                        String(item.status || "").toUpperCase() === "CONFIRMED",
+                                        ["PENDING", "CONFIRMED"].includes(String(item.status || "").toUpperCase()),
                                     )
                                     .map((item) => item.counselorId)
                                     .filter((value, index, array) => value && array.indexOf(value) === index)
@@ -633,6 +653,11 @@ export default function CalendarScheduling({ onLogout, session }) {
                             <div>
                               <div className="font-semibold text-slate-700">{appointment.studentName}</div>
                               <div className="mt-1">{appointment.program || appointment.studentNumber}</div>
+                              {String(appointment.status || "").toUpperCase() === "PENDING" && appointment.decisionDueAt ? (
+                                <div className="mt-1 text-xs font-semibold text-amber-700">
+                                  Respond by {formatDisplayDate(appointment.decisionDueAt.slice(0, 10))}
+                                </div>
+                              ) : null}
                             </div>
                             <div className="text-right">
                               <div className="font-medium text-slate-500">{appointment.counselorName}</div>
@@ -643,13 +668,31 @@ export default function CalendarScheduling({ onLogout, session }) {
                           </div>
 
                           <div className="mt-4 flex flex-wrap justify-end gap-2">
-                            {String(appointment.status || "").toUpperCase() === "CONFIRMED" ? (
+                            {["PENDING", "CONFIRMED", "DECLINED"].includes(String(appointment.status || "").toUpperCase()) ? (
                               <button
                                 type="button"
                                 onClick={() => handleOpenModal(appointment)}
                                 className="rounded-full bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-300"
                               >
-                                Edit
+                                {String(appointment.status || "").toUpperCase() === "PENDING" ? "Reschedule" : "Edit"}
+                              </button>
+                            ) : null}
+                            {String(appointment.status || "").toUpperCase() === "PENDING" ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleConfirmAppointment(appointment.id)}
+                                className="rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-200"
+                              >
+                                Confirm
+                              </button>
+                            ) : null}
+                            {String(appointment.status || "").toUpperCase() === "PENDING" ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleDeclineAppointment(appointment.id)}
+                                className="rounded-full bg-rose-100 px-3 py-1.5 text-xs font-semibold text-rose-800 transition hover:bg-rose-200"
+                              >
+                                Decline
                               </button>
                             ) : null}
                             {String(appointment.status || "").toUpperCase() === "CONFIRMED" ? (

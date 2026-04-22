@@ -1744,10 +1744,14 @@ export default function HomeScreen() {
               <View style={styles.consultAvatarPlaceholder} />
             )}
 
-            <Text style={styles.consultOverlayTitle}>Appointment Confirmed!</Text>
+            <Text style={styles.consultOverlayTitle}>
+              {String(upcomingAppointment?.status || "").toUpperCase() === "PENDING" ? "Appointment Request Sent!" : "Appointment Confirmed!"}
+            </Text>
             <Text style={styles.consultOverlaySubtitle}>
               {upcomingAppointment
-                ? `Your session with ${upcomingAppointment.counselor.fullName} is scheduled`
+                ? String(upcomingAppointment.status || "").toUpperCase() === "PENDING"
+                  ? `Your request with ${upcomingAppointment.counselor.fullName} is waiting for counselor confirmation`
+                  : `Your session with ${upcomingAppointment.counselor.fullName} is scheduled`
                 : "Your counseling session is scheduled"}
             </Text>
 
@@ -1769,7 +1773,9 @@ export default function HomeScreen() {
             </View>
 
             <Text style={styles.consultOverlayFootnote}>
-              A confirmation has been sent. Please arrive 5 minutes early.
+              {String(upcomingAppointment?.status || "").toUpperCase() === "PENDING"
+                ? "Your counselor has 24 hours to confirm, decline, or reschedule this request."
+                : "A confirmation has been sent. Please arrive 5 minutes early."}
             </Text>
 
             <Pressable style={styles.consultOverlayButton} onPress={closeConsultOverlay}>

@@ -58,10 +58,11 @@ export type CounselorAppointment = {
     role: string;
   };
   createdAt?: string;
+  decisionDueAt?: string | null;
   id: string;
   slotLabel: string;
   slotTime: string;
-  status: "CONFIRMED" | "COMPLETED" | "CANCELLED";
+  status: "PENDING" | "CONFIRMED" | "DECLINED" | "COMPLETED" | "CANCELLED";
   studentNote?: string;
 };
 
@@ -717,13 +718,14 @@ export async function fetchAppointmentAvailability(
     counselor?: CounselorDirectoryItem;
     days?: Array<{
       availableSlots: Array<{ available: boolean; booked: boolean; enabled: boolean; label: string; time: string }>;
+      blockedByLeadTime?: boolean;
       blockedByStudentSchedule?: boolean;
       date: string;
       dayLabel: string;
       dayNumber: number;
       dayOfWeek: number;
       isPast: boolean;
-      slots: Array<{ available: boolean; booked: boolean; enabled: boolean; label: string; time: string }>;
+      slots: Array<{ available: boolean; blockedByLeadTime?: boolean; booked: boolean; enabled: boolean; label: string; time: string }>;
     }>;
     month?: string;
   }
