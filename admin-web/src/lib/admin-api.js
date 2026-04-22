@@ -1,5 +1,9 @@
 const API_BASE_URL = import.meta.env.VITE_ADMIN_API_BASE_URL || "http://localhost:4002";
 
+export function getAdminApiUrl(path = "") {
+  return `${API_BASE_URL}${path}`;
+}
+
 async function request(path, options = {}) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {

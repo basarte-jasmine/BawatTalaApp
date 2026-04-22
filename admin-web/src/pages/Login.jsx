@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import AuthShell from "../components/auth/AuthShell";
-import { adminLogin, fetchAdminGoogleOAuthUrl } from "../lib/admin-api";
+import { adminLogin, getAdminApiUrl } from "../lib/admin-api";
 import { validateAdminLogin } from "../lib/admin-validation";
 
 export default function Login({ onLogin }) {
@@ -66,18 +66,10 @@ export default function Login({ onLogin }) {
     }
   }
 
-  async function handleGoogleLogin() {
+  function handleGoogleLogin() {
     setError("");
-    try {
-      setGoogleLoading(true);
-      const data = await fetchAdminGoogleOAuthUrl();
-      if (data?.authUrl) {
-        window.location.href = data.authUrl;
-      }
-    } catch (requestError) {
-      setError(requestError.message || "Google sign-in failed. Please try again.");
-      setGoogleLoading(false);
-    }
+    setGoogleLoading(true);
+    window.location.href = getAdminApiUrl("/api/admin/oauth/google/start");
   }
 
   return (
