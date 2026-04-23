@@ -55,10 +55,16 @@ function findNameLine(lines: string[], programLineIndex: number) {
 
 function isLikelyStudentName(line: string) {
   if (!line) return false;
-  if (!/^[A-Za-z .'-]{6,}$/.test(line)) return false;
+  if (!/^[\p{L}\p{M} .'-]{6,}$/u.test(line)) return false;
   if (/\d/.test(line)) return false;
 
-  const normalized = line.toLowerCase().replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim();
+  const normalized = line
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}+/gu, "")
+    .replace(/[^\p{L} ]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   const blockedWords = [
     "pamantasan",
     "lungsod",

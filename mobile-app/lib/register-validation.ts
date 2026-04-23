@@ -1,5 +1,5 @@
 export const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
-export const NAME_PATTERN = /^[A-Za-z][A-Za-z .'-]*$/;
+export const NAME_PATTERN = /^(?=.{2,}$)[\p{L}][\p{L}\p{M} .'-]*$/u;
 export const BIRTHDATE_PATTERN = /^(0[1-9]|1[0-2])\/(0[1-9]|[12]\d|3[01])\/\d{4}$/;
 
 function normalizeOcrText(value: string) {

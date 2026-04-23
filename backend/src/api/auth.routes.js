@@ -37,7 +37,10 @@ function toTitleCase(value) {
     .toLowerCase()
     .split(" ")
     .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .map((part) => {
+      const [first = "", ...rest] = Array.from(part);
+      return first.toUpperCase() + rest.join("");
+    })
     .join(" ");
 }
 
