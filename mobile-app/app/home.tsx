@@ -17,7 +17,7 @@ import {
   saveDailyMood,
 } from "../lib/backend-api";
 import { EMOTIONS } from "../lib/emotions";
-import { FEATURED_LIBRARY_BOOKS } from "../lib/library-data";
+import { FEATURED_LIBRARY_BOOKS, LIBRARY_BOOKS } from "../lib/library-data";
 import { getManilaTodayParts } from "../lib/manila-date";
 
 type DailyCheckinReward = {
@@ -234,6 +234,7 @@ export default function HomeScreen() {
   }>();
   const compact = height < 760;
   const tiny = height < 680;
+  const libraryCompact = width < 380;
   const frameWidth = Math.min(width, 412);
   const headerHeight = tiny ? 58 : 62;
   const islandSceneHeight = tiny ? 218 : compact ? 238 : 256;
@@ -1265,43 +1266,42 @@ export default function HomeScreen() {
 
         <View style={styles.libraryCard}>
           <View style={styles.surfaceGlow} />
-          <View style={styles.libraryHeroRow}>
-            <View style={styles.libraryHeroTextWrap}>
-              <Text style={styles.sectionEyebrow}>Library Quest</Text>
-              <Text style={styles.libraryTitle}>Open a gentle shelf when you want to read and reset.</Text>
-              <Text style={styles.librarySubtitle}>
-                A new pocket library for short wellness reads, reflective stories, and small reading wins.
+          <View style={styles.libraryAuraOne} />
+          <View style={styles.libraryAuraTwo} />
+          <View style={[styles.libraryHeroRow, libraryCompact && styles.libraryHeroRowStacked]}>
+            <View style={[styles.libraryHeroTextWrap, libraryCompact && styles.libraryHeroTextWrapStacked]}>
+              <Text style={styles.sectionEyebrow}>Reading Room</Text>
+              <Text style={[styles.libraryTitle, libraryCompact && styles.libraryTitleCompact]}>Slip into the library when you want something quieter.</Text>
+              <Text style={[styles.librarySubtitle, libraryCompact && styles.librarySubtitleCompact]}>
+                Short, calming reads with a page-by-page reader that feels closer to opening a real book.
               </Text>
             </View>
 
-            <View style={styles.libraryArtWrap}>
-              {FEATURED_LIBRARY_BOOKS[0]?.coverImage ? (
-                <Image source={FEATURED_LIBRARY_BOOKS[0].coverImage} style={styles.libraryArtImage} resizeMode="contain" />
-              ) : null}
+            <View style={[styles.libraryShelfScene, libraryCompact && styles.libraryShelfSceneStacked]}>
+              <View style={styles.libraryShelfLine} />
+              <View style={[styles.librarySpine, styles.librarySpineTall, { backgroundColor: "#D9B983" }]} />
+              <View style={[styles.librarySpine, styles.librarySpineMid, { backgroundColor: "#A8C79F" }]} />
+              <View style={[styles.librarySpine, styles.librarySpineShort, { backgroundColor: "#D4A5A5" }]} />
             </View>
           </View>
 
           <View style={styles.libraryMetaRow}>
             <View style={styles.libraryMetaPill}>
               <Ionicons name="book-outline" size={15} color="#4A7A33" />
-              <Text style={styles.libraryMetaPillText}>{`${FEATURED_LIBRARY_BOOKS.length}+ books ready`}</Text>
-            </View>
-            <View style={styles.libraryMetaPill}>
-              <Ionicons name="sparkles-outline" size={15} color="#4A7A33" />
-              <Text style={styles.libraryMetaPillText}>Gamified side feature</Text>
+              <Text style={styles.libraryMetaPillText}>{`${LIBRARY_BOOKS.length} books waiting`}</Text>
             </View>
           </View>
 
-          <View style={styles.libraryShelfRow}>
-            {FEATURED_LIBRARY_BOOKS.map((book) => (
+          <View style={[styles.libraryShelfRow, libraryCompact && styles.libraryShelfRowStacked]}>
+            {FEATURED_LIBRARY_BOOKS.slice(0, 2).map((book) => (
               <Pressable
                 key={book.id}
-                style={[styles.libraryBookChip, { backgroundColor: book.accentColor }]}
+                style={[styles.libraryBookChip, libraryCompact && styles.libraryBookChipStacked, { borderLeftColor: book.accentColor }]}
                 onPress={handleOpenLibrary}
               >
                 <Text style={styles.libraryBookChipCategory}>{book.category}</Text>
                 <Text style={styles.libraryBookChipTitle} numberOfLines={2}>{book.title}</Text>
-                <Text style={styles.libraryBookChipMeta}>{`${book.estimatedMinutes} min`}</Text>
+                <Text style={styles.libraryBookChipMeta}>{`${book.estimatedMinutes} min read`}</Text>
               </Pressable>
             ))}
           </View>
@@ -2455,7 +2455,7 @@ const styles = StyleSheet.create({
   },
   libraryCard: {
     borderRadius: 24,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#FFF9F0",
     paddingHorizontal: 12,
     paddingTop: 12,
     paddingBottom: 14,
@@ -2466,7 +2466,26 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     elevation: 2,
     borderWidth: 1,
-    borderColor: "#E6EEE7",
+    borderColor: "#EEE3D2",
+    overflow: "hidden",
+  },
+  libraryAuraOne: {
+    position: "absolute",
+    top: -36,
+    right: -14,
+    width: 126,
+    height: 126,
+    borderRadius: 999,
+    backgroundColor: "rgba(231, 214, 184, 0.34)",
+  },
+  libraryAuraTwo: {
+    position: "absolute",
+    left: -24,
+    bottom: -46,
+    width: 118,
+    height: 118,
+    borderRadius: 999,
+    backgroundColor: "rgba(181, 213, 197, 0.22)",
   },
   libraryHeroRow: {
     flexDirection: "row",
@@ -2475,9 +2494,15 @@ const styles = StyleSheet.create({
     columnGap: 12,
     marginBottom: 12,
   },
+  libraryHeroRowStacked: {
+    flexDirection: "column",
+  },
   libraryHeroTextWrap: {
     flex: 1,
     paddingRight: 4,
+  },
+  libraryHeroTextWrapStacked: {
+    paddingRight: 0,
   },
   libraryTitle: {
     color: "#304558",
@@ -2486,30 +2511,61 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: 4,
   },
+  libraryTitleCompact: {
+    fontSize: 16,
+    lineHeight: 21,
+  },
   librarySubtitle: {
-    color: "#607181",
+    color: "#6B7280",
     fontSize: 13,
     lineHeight: 18,
   },
-  libraryArtWrap: {
-    width: 80,
+  librarySubtitleCompact: {
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  libraryShelfScene: {
+    width: 86,
     height: 102,
-    borderRadius: 20,
-    backgroundColor: "#DDF2B8",
-    borderWidth: 1,
-    borderColor: "#C7E6A8",
     alignItems: "center",
     justifyContent: "center",
-    padding: 10,
   },
-  libraryArtImage: {
-    width: 52,
-    height: 70,
+  libraryShelfSceneStacked: {
+    alignSelf: "center",
+    marginTop: 4,
+  },
+  libraryShelfLine: {
+    position: "absolute",
+    bottom: 16,
+    left: 6,
+    right: 6,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: "#D8C7AE",
+  },
+  librarySpine: {
+    position: "absolute",
+    bottom: 24,
+    width: 20,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(85, 90, 76, 0.12)",
+  },
+  librarySpineTall: {
+    left: 14,
+    height: 62,
+  },
+  librarySpineMid: {
+    left: 34,
+    height: 52,
+  },
+  librarySpineShort: {
+    left: 55,
+    height: 44,
   },
   libraryMetaRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
     marginBottom: 12,
   },
   libraryMetaPill: {
@@ -2517,14 +2573,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     columnGap: 6,
     borderRadius: 999,
-    backgroundColor: "#F3F9EC",
+    backgroundColor: "rgba(255,255,255,0.76)",
     borderWidth: 1,
-    borderColor: "#DDEAD1",
+    borderColor: "#E8DCC8",
     paddingHorizontal: 10,
     paddingVertical: 7,
   },
   libraryMetaPillText: {
-    color: "#4F6B57",
+    color: "#5C675B",
     fontSize: 12,
     lineHeight: 15,
     fontWeight: "700",
@@ -2534,18 +2590,28 @@ const styles = StyleSheet.create({
     columnGap: 8,
     marginBottom: 12,
   },
+  libraryShelfRowStacked: {
+    flexDirection: "column",
+    rowGap: 8,
+  },
   libraryBookChip: {
     flex: 1,
-    minHeight: 112,
+    minHeight: 118,
     borderRadius: 18,
-    paddingHorizontal: 10,
-    paddingTop: 10,
+    backgroundColor: "rgba(255,255,255,0.82)",
+    paddingHorizontal: 12,
+    paddingTop: 12,
     paddingBottom: 12,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.5)",
+    borderColor: "#EEE2D2",
+    borderLeftWidth: 6,
+  },
+  libraryBookChipStacked: {
+    width: "100%",
+    flex: 0,
   },
   libraryBookChipCategory: {
-    color: "#556876",
+    color: "#6F845C",
     fontSize: 10,
     lineHeight: 13,
     fontWeight: "700",
@@ -2561,7 +2627,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   libraryBookChipMeta: {
-    color: "#5E7180",
+    color: "#7A7F73",
     fontSize: 11,
     lineHeight: 14,
     marginTop: "auto",
