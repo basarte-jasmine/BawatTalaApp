@@ -491,7 +491,11 @@ async function createAdminNotification({
 }
 
 async function markAppointmentReminderSent(appointmentId, columnName) {
-  const allowedColumns = new Set(["appointment_reminder_sent_at", "pending_expiry_warning_sent_at"]);
+  const allowedColumns = new Set([
+    "appointment_reminder_sent_at",
+    "admin_appointment_reminder_sent_at",
+    "pending_expiry_warning_sent_at",
+  ]);
   if (!allowedColumns.has(columnName)) {
     throw new Error("Invalid appointment reminder column.");
   }
@@ -556,6 +560,8 @@ async function processUpcomingConfirmedAppointmentReminders() {
         ca.concern,
         ca.appointment_date,
         ca.slot_time,
+        ca.appointment_reminder_sent_at,
+        ca.admin_appointment_reminder_sent_at,
         coalesce(sp.full_name, ca.student_number) as student_name,
         coalesce(sp.email, '') as student_email,
         aa.email as counselor_email,
@@ -567,7 +573,10 @@ async function processUpcomingConfirmedAppointmentReminders() {
       join public.admin_accounts aa on aa.id = ca.counselor_id
       left join public.student_profiles sp on sp.student_number = ca.student_number
       where ca.status = 'CONFIRMED'
-        and ca.appointment_reminder_sent_at is null
+        and (
+          ca.appointment_reminder_sent_at is null
+          or ca.admin_appointment_reminder_sent_at is null
+        )
         and (
           (ca.appointment_date::text || 'T' || ca.slot_time || ':00+08:00')::timestamptz
         ) > now()
@@ -584,24 +593,47 @@ async function processUpcomingConfirmedAppointmentReminders() {
       appointmentStartsAt: row.appointment_starts_at,
     });
 
-    await createStudentNotification({
-      studentNumber: row.student_number,
-      kind: "APPOINTMENT_REMINDER",
-      title: "Appointment starts in 10 minutes",
-      message: `Your session with ${row.counselor_name} is set for ${formatAppointmentDateTime(row.appointment_date, row.slot_time)}. Please be ready to meet your counselor.`,
-      metadata: reminderMetadata,
-    });
+    if (!row.appointment_reminder_sent_at) {
+      await createStudentNotification({
+        studentNumber: row.student_number,
+        kind: "APPOINTMENT_REMINDER",
+        title: "Appointment starts in 10 minutes",
+        message: `Your session with ${row.counselor_name} is set for ${formatAppointmentDateTime(row.appointment_date, row.slot_time)}. Please be ready to meet your counselor.`,
+        metadata: reminderMetadata,
+      });
 
-    await sendAppointmentEmail({
-      to: row.student_email,
-      subject: "Your counseling appointment starts in 10 minutes",
-      intro: `Your counseling session with ${row.counselor_name} starts in about 10 minutes.`,
-      appointment: row,
-      ctaText: "Please head to your scheduled session and arrive a few minutes early if possible.",
-      context: "student appointment reminder",
-    });
+      await sendAppointmentEmail({
+        to: row.student_email,
+        subject: "Your counseling appointment starts in 10 minutes",
+        intro: `Your counseling session with ${row.counselor_name} starts in about 10 minutes.`,
+        appointment: row,
+        ctaText: "Please head to your scheduled session and arrive a few minutes early if possible.",
+        context: "student appointment reminder",
+      });
 
-    await markAppointmentReminderSent(row.id, "appointment_reminder_sent_at");
+      await markAppointmentReminderSent(row.id, "appointment_reminder_sent_at");
+    }
+
+    if (!row.admin_appointment_reminder_sent_at) {
+      await createAdminNotification({
+        adminEmail: row.counselor_email,
+        kind: "APPOINTMENT_REMINDER",
+        title: "Appointment starts in 10 minutes",
+        message: `${row.student_name}'s counseling appointment starts at ${toReadableTime(row.slot_time)}. Please be ready for the scheduled session.`,
+        metadata: reminderMetadata,
+      });
+
+      await sendAppointmentEmail({
+        to: row.counselor_email,
+        subject: "A counseling appointment starts in 10 minutes",
+        intro: `${row.student_name}'s counseling session with you starts in about 10 minutes.`,
+        appointment: row,
+        ctaText: "Please prepare for the scheduled counseling session.",
+        context: "admin appointment reminder",
+      });
+
+      await markAppointmentReminderSent(row.id, "admin_appointment_reminder_sent_at");
+    }
   }
 
   return result.rowCount;

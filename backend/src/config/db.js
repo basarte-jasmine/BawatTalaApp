@@ -399,6 +399,7 @@ async function ensureDatabaseSchema() {
       booking_source text not null default 'MOBILE_APP',
       created_by_admin_email text,
       appointment_reminder_sent_at timestamptz,
+      admin_appointment_reminder_sent_at timestamptz,
       pending_expiry_warning_sent_at timestamptz,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now(),
@@ -424,6 +425,11 @@ async function ensureDatabaseSchema() {
   await pool.query(`
     alter table public.counselor_appointments
     add column if not exists appointment_reminder_sent_at timestamptz;
+  `);
+
+  await pool.query(`
+    alter table public.counselor_appointments
+    add column if not exists admin_appointment_reminder_sent_at timestamptz;
   `);
 
   await pool.query(`
