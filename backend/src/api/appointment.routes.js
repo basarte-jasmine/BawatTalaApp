@@ -183,15 +183,54 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
-async function sendAppointmentEmail({ to, subject, intro, appointment, ctaText = "" }) {
+function looksLikePlaceholderSecret(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return true;
+  return (
+    normalized === "your_resend_api_key" ||
+    normalized === "changeme" ||
+    normalized === "replace_me" ||
+    normalized.includes("your_") ||
+    normalized.includes("example")
+  );
+}
+
+function isLikelyEmailAddress(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+}
+
+async function sendAppointmentEmail({ to, subject, intro, appointment, ctaText = "", context = "appointment update" }) {
   const apiKey = String(process.env.RESEND_API_KEY || "").trim();
   const from = String(
     process.env.APPOINTMENT_EMAIL_FROM || process.env.RESEND_FROM_EMAIL || "",
   ).trim();
   const recipient = String(to || "").trim();
+  const appointmentId = String(appointment?.id || "").trim();
+  const logContext = appointmentId ? `${context} [appointment ${appointmentId}]` : context;
 
-  if (!apiKey || !from || !recipient) {
-    return;
+  if (!recipient) {
+    console.warn(`Appointment email skipped for ${logContext}: missing recipient address.`);
+    return { ok: false, skipped: true, reason: "missing-recipient" };
+  }
+
+  if (!isLikelyEmailAddress(recipient)) {
+    console.warn(`Appointment email skipped for ${logContext}: invalid recipient address "${recipient}".`);
+    return { ok: false, skipped: true, reason: "invalid-recipient" };
+  }
+
+  if (looksLikePlaceholderSecret(apiKey)) {
+    console.warn(`Appointment email skipped for ${logContext}: RESEND_API_KEY is missing or still a placeholder.`);
+    return { ok: false, skipped: true, reason: "invalid-api-key" };
+  }
+
+  if (!from) {
+    console.warn(`Appointment email skipped for ${logContext}: missing sender address.`);
+    return { ok: false, skipped: true, reason: "missing-sender" };
+  }
+
+  if (!isLikelyEmailAddress(from)) {
+    console.warn(`Appointment email skipped for ${logContext}: invalid sender address "${from}".`);
+    return { ok: false, skipped: true, reason: "invalid-sender" };
   }
 
   const lines = [
@@ -218,7 +257,7 @@ async function sendAppointmentEmail({ to, subject, intro, appointment, ctaText =
   `;
 
   try {
-    await fetch("https://api.resend.com/emails", {
+    const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -232,8 +271,18 @@ async function sendAppointmentEmail({ to, subject, intro, appointment, ctaText =
         html,
       }),
     });
+
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => "");
+      console.error(
+        `Appointment email failed for ${logContext} to ${recipient}: ${response.status} ${response.statusText}${errorBody ? ` - ${errorBody}` : ""}`,
+      );
+      return { ok: false, skipped: false, reason: "provider-error" };
+    }
+    return { ok: true };
   } catch (error) {
-    console.error("Failed to send appointment email:", error);
+    console.error(`Failed to send appointment email for ${logContext} to ${recipient}:`, error);
+    return { ok: false, skipped: false, reason: "request-error" };
   }
 }
 
@@ -438,6 +487,7 @@ async function expirePendingAppointments() {
       intro: `Your appointment request with ${row.counselor_name} was automatically declined because it was not confirmed within 24 hours.`,
       appointment: row,
       ctaText: "Please open the app to request a new schedule.",
+      context: "student expiry notification",
     });
 
     await sendAppointmentEmail({
@@ -446,6 +496,7 @@ async function expirePendingAppointments() {
       intro: `${row.student_name}'s pending appointment request was automatically declined after the 24-hour confirmation window expired.`,
       appointment: row,
       ctaText: "Open the admin scheduling panel if you want to offer the student a new slot.",
+      context: "counselor expiry notification",
     });
   }
 
@@ -515,6 +566,7 @@ async function notifyStudentAboutAppointment({
     intro: emailIntro,
     appointment,
     ctaText: emailCta,
+    context: `student notification (${kind})`,
   });
 }
 
@@ -525,6 +577,7 @@ async function notifyCounselorAboutPendingAppointment({ appointment, student }) 
     intro: `${student?.full_name || appointment.student_number} requested a counseling session and needs your confirmation within 24 hours.`,
     appointment,
     ctaText: "Please open the admin scheduling panel to confirm, decline, or reschedule this request.",
+    context: "counselor pending request notification",
   });
 }
 
