@@ -145,29 +145,29 @@ function DirectoryRow({ student, onViewProfile }) {
         : "bg-blue-100 text-blue-700";
 
   return (
-    <div className="rounded-[22px] border border-slate-200 bg-white px-5 py-4 shadow-sm transition hover:border-slate-300 hover:shadow-md">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex min-w-0 items-center gap-4">
-          <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-xl font-semibold ${avatarTone}`}>
+    <div className="rounded-[20px] border border-slate-200 bg-white px-4 py-3 shadow-sm transition hover:border-slate-300 hover:shadow-md">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-lg font-semibold ${avatarTone}`}>
             {getInitials(student.fullName)}
           </div>
 
           <div className="min-w-0 flex-1">
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+            <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
               <div className="min-w-0">
-                <h3 className="truncate text-lg font-semibold leading-tight text-slate-900">{student.fullName}</h3>
-                <p className="mt-1 text-sm text-slate-500">{student.studentNumber}</p>
+                <h3 className="truncate text-base font-semibold leading-tight text-slate-900">{student.fullName}</h3>
+                <p className="mt-0.5 text-xs text-slate-500">{student.studentNumber}</p>
               </div>
 
               <div className="flex flex-wrap gap-2 xl:justify-end">
-                <span className="inline-flex rounded-full bg-slate-100 px-3 py-1 text-[12px] font-medium text-slate-700">
+                <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700">
                   {student.program || "Unspecified"}
                 </span>
-                <span className={`inline-flex rounded-full border px-3 py-1 text-[12px] font-medium ${getStatusClasses(statusLabel)}`}>
+                <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium ${getStatusClasses(statusLabel)}`}>
                   {statusLabel}
                 </span>
                 {isFlagged ? (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-rose-100 bg-rose-50 px-3 py-1 text-[12px] font-medium text-rose-700">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-rose-100 bg-rose-50 px-2.5 py-1 text-[11px] font-medium text-rose-700">
                     <AlertTriangle className="h-3.5 w-3.5" />
                     {student.flaggedEntries || 1} flagged {student.flaggedEntries === 1 ? "entry" : "entries"}
                   </span>
@@ -175,35 +175,35 @@ function DirectoryRow({ student, onViewProfile }) {
               </div>
             </div>
 
-            <div className="mt-4 grid gap-x-6 gap-y-3 text-sm text-slate-600 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,0.8fr)]">
+            <div className="mt-3 grid gap-x-5 gap-y-2 text-sm text-slate-600 sm:grid-cols-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.75fr)_minmax(0,0.65fr)]">
               <div>
                 <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Course</div>
-                <div className="mt-1 text-base font-medium text-slate-800">{student.program || "Unspecified"}</div>
+                <div className="mt-0.5 text-sm font-medium text-slate-800">{student.program || "Unspecified"}</div>
               </div>
               <div>
                 <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Last Entry</div>
-                <div className="mt-1 text-base font-medium text-slate-800">{formatRelativeTime(student.lastEntryAt)}</div>
+                <div className="mt-0.5 text-sm font-medium text-slate-800">{formatRelativeTime(student.lastEntryAt)}</div>
               </div>
               <div>
                 <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Entries</div>
-                <div className="mt-1 text-base font-medium text-slate-800">{student.totalEntries} total</div>
+                <div className="mt-0.5 text-sm font-medium text-slate-800">{student.totalEntries} total</div>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="flex shrink-0 gap-3 xl:pl-6">
+        <div className="flex shrink-0 gap-2 xl:pl-4">
           <button
             type="button"
             disabled
-            className="min-w-[116px] rounded-xl border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-400"
+            className="min-w-[104px] rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-400"
           >
             Message
           </button>
           <button
             type="button"
             onClick={() => void onViewProfile(student.studentNumber)}
-            className="min-w-[116px] rounded-xl border border-emerald-500 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800 transition hover:bg-emerald-100"
+            className="min-w-[104px] rounded-lg border border-emerald-500 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 transition hover:bg-emerald-100"
           >
             View Profile
           </button>
