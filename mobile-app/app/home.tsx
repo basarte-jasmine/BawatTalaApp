@@ -1264,54 +1264,6 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <View style={styles.libraryCard}>
-          <View style={styles.surfaceGlow} />
-          <View style={styles.libraryAuraOne} />
-          <View style={styles.libraryAuraTwo} />
-          <View style={[styles.libraryHeroRow, libraryCompact && styles.libraryHeroRowStacked]}>
-            <View style={[styles.libraryHeroTextWrap, libraryCompact && styles.libraryHeroTextWrapStacked]}>
-              <Text style={styles.sectionEyebrow}>Reading Room</Text>
-              <Text style={[styles.libraryTitle, libraryCompact && styles.libraryTitleCompact]}>Slip into the library when you want something quieter.</Text>
-              <Text style={[styles.librarySubtitle, libraryCompact && styles.librarySubtitleCompact]}>
-                Short, calming reads with a page-by-page reader that feels closer to opening a real book.
-              </Text>
-            </View>
-
-            <View style={[styles.libraryShelfScene, libraryCompact && styles.libraryShelfSceneStacked]}>
-              <View style={styles.libraryShelfLine} />
-              <View style={[styles.librarySpine, styles.librarySpineTall, { backgroundColor: "#D9B983" }]} />
-              <View style={[styles.librarySpine, styles.librarySpineMid, { backgroundColor: "#A8C79F" }]} />
-              <View style={[styles.librarySpine, styles.librarySpineShort, { backgroundColor: "#D4A5A5" }]} />
-            </View>
-          </View>
-
-          <View style={styles.libraryMetaRow}>
-            <View style={styles.libraryMetaPill}>
-              <Ionicons name="book-outline" size={15} color="#4A7A33" />
-              <Text style={styles.libraryMetaPillText}>{`${LIBRARY_BOOKS.length} books waiting`}</Text>
-            </View>
-          </View>
-
-          <View style={[styles.libraryShelfRow, libraryCompact && styles.libraryShelfRowStacked]}>
-            {FEATURED_LIBRARY_BOOKS.slice(0, 2).map((book) => (
-              <Pressable
-                key={book.id}
-                style={[styles.libraryBookChip, libraryCompact && styles.libraryBookChipStacked, { borderLeftColor: book.accentColor }]}
-                onPress={handleOpenLibrary}
-              >
-                <Text style={styles.libraryBookChipCategory}>{book.category}</Text>
-                <Text style={styles.libraryBookChipTitle} numberOfLines={2}>{book.title}</Text>
-                <Text style={styles.libraryBookChipMeta}>{`${book.estimatedMinutes} min read`}</Text>
-              </Pressable>
-            ))}
-          </View>
-
-          <Pressable style={styles.libraryPrimaryButton} onPress={handleOpenLibrary}>
-            <Text style={styles.libraryPrimaryButtonText}>Open Library</Text>
-            <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
-          </Pressable>
-        </View>
-
         <View style={styles.recentCard}>
           <View style={styles.recentHeader}>
             <View style={styles.recentHeaderTextWrap}>
@@ -1370,6 +1322,54 @@ export default function HomeScreen() {
               <Ionicons name="add" size={30} color="#FFFFFF" />
             </Pressable>
           </View>
+        </View>
+
+        <View style={styles.libraryCard}>
+          <View style={styles.surfaceGlow} />
+          <View style={styles.libraryAuraOne} />
+          <View style={styles.libraryAuraTwo} />
+          <View style={[styles.libraryHeroRow, libraryCompact && styles.libraryHeroRowStacked]}>
+            <View style={[styles.libraryHeroTextWrap, libraryCompact && styles.libraryHeroTextWrapStacked]}>
+              <Text style={styles.sectionEyebrow}>Reading Room</Text>
+              <Text style={[styles.libraryTitle, libraryCompact && styles.libraryTitleCompact]}>Slip into the library when you want something quieter.</Text>
+              <Text style={[styles.librarySubtitle, libraryCompact && styles.librarySubtitleCompact]}>
+                Short, calming reads with a page-by-page reader that feels closer to opening a real book.
+              </Text>
+            </View>
+
+            <View style={[styles.libraryShelfScene, libraryCompact && styles.libraryShelfSceneStacked]}>
+              <View style={styles.libraryShelfLine} />
+              <View style={[styles.librarySpine, styles.librarySpineTall, { backgroundColor: "#D9B983" }]} />
+              <View style={[styles.librarySpine, styles.librarySpineMid, { backgroundColor: "#A8C79F" }]} />
+              <View style={[styles.librarySpine, styles.librarySpineShort, { backgroundColor: "#D4A5A5" }]} />
+            </View>
+          </View>
+
+          <View style={styles.libraryMetaRow}>
+            <View style={styles.libraryMetaPill}>
+              <Ionicons name="book-outline" size={15} color="#4A7A33" />
+              <Text style={styles.libraryMetaPillText}>{`${LIBRARY_BOOKS.length} books waiting`}</Text>
+            </View>
+          </View>
+
+          <View style={[styles.libraryShelfRow, libraryCompact && styles.libraryShelfRowStacked]}>
+            {FEATURED_LIBRARY_BOOKS.slice(0, 2).map((book) => (
+              <Pressable
+                key={book.id}
+                style={[styles.libraryBookChip, libraryCompact && styles.libraryBookChipStacked, { borderLeftColor: book.accentColor }]}
+                onPress={handleOpenLibrary}
+              >
+                <Text style={styles.libraryBookChipCategory}>{book.category}</Text>
+                <Text style={styles.libraryBookChipTitle} numberOfLines={2}>{book.title}</Text>
+                <Text style={styles.libraryBookChipMeta}>{`${book.estimatedMinutes} min read`}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <Pressable style={styles.libraryPrimaryButton} onPress={handleOpenLibrary}>
+            <Text style={styles.libraryPrimaryButtonText}>Open Library</Text>
+            <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+          </Pressable>
         </View>
 
         <View
