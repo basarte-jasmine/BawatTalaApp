@@ -226,7 +226,47 @@ function isLikelyEmailAddress(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
 }
 
-async function sendAppointmentEmail({ to, subject, intro, appointment, ctaText = "", context = "appointment update" }) {
+function getAppointmentCounselorName(appointment) {
+  return appointment?.counselor_name || appointment?.counselor_full_name || "Guidance Counselor";
+}
+
+function getFirstName(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  return normalized.split(/\s+/)[0] || normalized;
+}
+
+function getAppointmentNotificationMetadata(appointment, extra = {}) {
+  return {
+    appointmentId: appointment?.id || null,
+    counselorId: appointment?.counselor_id || null,
+    counselorName: getAppointmentCounselorName(appointment),
+    ...extra,
+  };
+}
+
+function buildAppointmentSummaryRows(appointment) {
+  return [
+    { label: "Client", value: appointment.student_name || appointment.student_full_name || appointment.student_number || "Student" },
+    { label: "Date", value: formatDateLong(appointment.appointment_date) },
+    { label: "Time", value: toReadableTime(appointment.slot_time) },
+    { label: "Concern", value: appointment.concern },
+    { label: "Assigned Counselor", value: getAppointmentCounselorName(appointment) },
+  ];
+}
+
+async function sendAppointmentEmail({
+  to,
+  subject,
+  intro,
+  appointment,
+  ctaText = "",
+  context = "appointment update",
+  greeting = "",
+  actionLabel = "",
+  actionUrl = "",
+  closingText = "",
+}) {
   const apiKey = String(process.env.RESEND_API_KEY || "").trim();
   const from = String(
     process.env.APPOINTMENT_EMAIL_FROM || process.env.RESEND_FROM_EMAIL || "",
@@ -261,21 +301,22 @@ async function sendAppointmentEmail({ to, subject, intro, appointment, ctaText =
   }
 
   const lines = [
+    greeting,
+    greeting ? "" : null,
     intro,
     "",
+    `Client: ${appointment.student_name || appointment.student_full_name || appointment.student_number || "Student"}`,
     `Date: ${formatDateLong(appointment.appointment_date)}`,
     `Time: ${toReadableTime(appointment.slot_time)}`,
     `Concern: ${appointment.concern}`,
-    `Counselor: ${appointment.counselor_name || appointment.counselor_full_name || "Guidance Counselor"}`,
+    `Assigned Counselor: ${getAppointmentCounselorName(appointment)}`,
     ctaText ? `Note: ${ctaText}` : "",
+    actionLabel && actionUrl ? `${actionLabel}: ${actionUrl}` : "",
+    closingText ? "" : null,
+    closingText || "",
   ].filter(Boolean);
 
-  const summaryRows = [
-    { label: "Date", value: formatDateLong(appointment.appointment_date) },
-    { label: "Time", value: toReadableTime(appointment.slot_time) },
-    { label: "Concern", value: appointment.concern },
-    { label: "Counselor", value: appointment.counselor_name || appointment.counselor_full_name || "Guidance Counselor" },
-  ];
+  const summaryRows = buildAppointmentSummaryRows(appointment);
 
   const html = `
     <div style="margin: 0; padding: 24px 12px; background: #eef6ea; font-family: Arial, sans-serif; color: #203126;">
@@ -288,6 +329,7 @@ async function sendAppointmentEmail({ to, subject, intro, appointment, ctaText =
         </tr>
         <tr>
           <td style="padding: 24px;">
+            ${greeting ? `<p style="margin: 0 0 16px; font-size: 16px; line-height: 1.7; color: #2b3d31;">${escapeHtml(greeting)}</p>` : ""}
             <p style="margin: 0 0 18px; font-size: 16px; line-height: 1.7; color: #2b3d31;">${escapeHtml(intro)}</p>
             <div style="margin: 0 0 18px; padding: 16px 18px; border-radius: 16px; background: #f6fbf3; border: 1px solid #dbead5;">
               <div style="font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #55785e; margin-bottom: 12px;">Appointment Summary</div>
@@ -303,6 +345,8 @@ async function sendAppointmentEmail({ to, subject, intro, appointment, ctaText =
                 .join("")}
             </div>
             ${ctaText ? `<div style="padding: 14px 16px; border-radius: 14px; background: #fff8df; border: 1px solid #f0e0a1; color: #5b4a16; font-size: 14px; line-height: 1.6;"><strong>Next step:</strong> ${escapeHtml(ctaText)}</div>` : ""}
+            ${actionLabel && actionUrl ? `<div style="margin-top: 18px;"><a href="${escapeHtml(actionUrl)}" style="display: inline-block; padding: 12px 18px; border-radius: 999px; background: #386641; color: #ffffff; font-size: 14px; font-weight: 700; text-decoration: none;">${escapeHtml(actionLabel)}</a></div>` : ""}
+            ${closingText ? `<p style="margin: 18px 0 0; font-size: 15px; line-height: 1.8; color: #465749; white-space: pre-line;">${escapeHtml(closingText)}</p>` : ""}
           </td>
         </tr>
       </table>
@@ -536,17 +580,16 @@ async function processUpcomingConfirmedAppointmentReminders() {
   );
 
   for (const row of result.rows) {
+    const reminderMetadata = getAppointmentNotificationMetadata(row, {
+      appointmentStartsAt: row.appointment_starts_at,
+    });
+
     await createStudentNotification({
       studentNumber: row.student_number,
       kind: "APPOINTMENT_REMINDER",
       title: "Appointment starts in 10 minutes",
       message: `Your session with ${row.counselor_name} is set for ${formatAppointmentDateTime(row.appointment_date, row.slot_time)}. Please be ready to meet your counselor.`,
-      metadata: {
-        appointmentId: row.id,
-        counselorId: row.counselor_id,
-        counselorName: row.counselor_name,
-        appointmentStartsAt: row.appointment_starts_at,
-      },
+      metadata: reminderMetadata,
     });
 
     await sendAppointmentEmail({
@@ -593,21 +636,20 @@ async function processPendingAppointmentExpiryWarnings() {
   );
 
   for (const row of result.rows) {
+    const warningMetadata = getAppointmentNotificationMetadata(row, {
+      appointmentDate: normalizeDateValue(row.appointment_date),
+      decisionDeadline: row.decision_deadline,
+      ownerCounselorId: row.counselor_id,
+      slotTime: row.slot_time,
+      studentNumber: row.student_number,
+    });
+
     await createAdminNotification({
       adminEmail: row.counselor_email,
       kind: "APPOINTMENT_PENDING_EXPIRY_WARNING",
       title: "Pending request expires in 10 minutes",
       message: `${row.student_name}'s request for ${formatAppointmentDateTime(row.appointment_date, row.slot_time)} will auto-decline in 10 minutes unless you respond now.`,
-      metadata: {
-        appointmentId: row.id,
-        appointmentDate: normalizeDateValue(row.appointment_date),
-        counselorId: row.counselor_id,
-        counselorName: row.counselor_name,
-        decisionDeadline: row.decision_deadline,
-        ownerCounselorId: row.counselor_id,
-        slotTime: row.slot_time,
-        studentNumber: row.student_number,
-      },
+      metadata: warningMetadata,
     });
 
     await sendAppointmentEmail({
@@ -669,6 +711,14 @@ async function expirePendingAppointments() {
   );
 
   for (const row of result.rows) {
+    const adminExpiryMetadata = getAppointmentNotificationMetadata(row, {
+      appointmentDate: normalizeDateValue(row.appointment_date),
+      ownerCounselorId: row.counselor_id,
+      slotTime: row.slot_time,
+      studentNumber: row.student_number,
+    });
+    const studentExpiryMetadata = getAppointmentNotificationMetadata(row);
+
     await writeAdminActivityLog({
       actionType: "APPOINTMENT_AUTO_DECLINED",
       actorEmail: "system@bawattala.local",
@@ -694,9 +744,7 @@ async function expirePendingAppointments() {
       title: "A pending appointment was auto-declined",
       message: `${row.student_name}'s request for ${toReadableTime(row.slot_time)} on ${formatDateLong(row.appointment_date)} expired after 24 hours without a response.`,
       metadata: {
-        appointmentId: row.id,
-        counselorId: row.counselor_id,
-        counselorName: row.counselor_name,
+        ...adminExpiryMetadata,
         studentNumber: row.student_number,
       },
     });
@@ -706,11 +754,7 @@ async function expirePendingAppointments() {
       kind: "APPOINTMENT_AUTO_DECLINED",
       title: "Appointment request expired",
       message: `Your appointment request for ${formatDateLong(row.appointment_date)} at ${toReadableTime(row.slot_time)} was automatically declined because no counselor response was recorded within 24 hours.`,
-      metadata: {
-        appointmentId: row.id,
-        counselorId: row.counselor_id,
-        counselorName: row.counselor_name,
-      },
+      metadata: studentExpiryMetadata,
     });
 
     await sendAppointmentEmail({
@@ -782,16 +826,14 @@ async function notifyStudentAboutAppointment({
   emailIntro,
   emailCta = "",
 }) {
+  const studentNotificationMetadata = getAppointmentNotificationMetadata(appointment);
+
   await createStudentNotification({
     studentNumber: appointment.student_number,
     kind,
     title,
     message,
-    metadata: {
-      appointmentId: appointment.id,
-      counselorId: appointment.counselor_id,
-      counselorName: appointment.counselor_name,
-    },
+    metadata: studentNotificationMetadata,
   });
 
   await sendAppointmentEmail({
@@ -805,25 +847,31 @@ async function notifyStudentAboutAppointment({
 }
 
 async function notifyCounselorAboutPendingAppointment({ appointment, student }) {
+  const adminWebUrl = String(process.env.ADMIN_WEB_URL || "https://bawattalapro.online/").trim();
+  const counselorFirstName = getFirstName(appointment.counselor_name);
+
+  const pendingReviewMetadata = getAppointmentNotificationMetadata(appointment, {
+    studentNumber: appointment.student_number,
+  });
+
   await createAdminNotification({
     adminEmail: appointment.counselor_email,
     kind: "APPOINTMENT_PENDING_REVIEW",
     title: "New counseling appointment needs your response",
     message: `${student?.full_name || appointment.student_number} requested ${toReadableTime(appointment.slot_time)} on ${formatDateLong(appointment.appointment_date)}. Please confirm, decline, or reschedule within 24 hours.`,
-    metadata: {
-      appointmentId: appointment.id,
-      counselorId: appointment.counselor_id,
-      counselorName: appointment.counselor_name,
-      studentNumber: appointment.student_number,
-    },
+    metadata: pendingReviewMetadata,
   });
 
   await sendAppointmentEmail({
     to: appointment.counselor_email,
     subject: "New counseling appointment needs your response",
-    intro: `${student?.full_name || appointment.student_number} requested a counseling session and needs your confirmation within 24 hours.`,
+    greeting: `Hi ${counselorFirstName || "Counselor"},`,
+    intro: "A new counseling session has been requested and is awaiting your response. Please note that this request will automatically expire if no action is taken within 24 hours.",
     appointment,
-    ctaText: "Please open the admin scheduling panel to confirm, decline, or reschedule this request.",
+    ctaText: "Please review the request and choose to confirm, reschedule, or decline the session.",
+    actionLabel: "View Request",
+    actionUrl: adminWebUrl,
+    closingText: "If you need any assistance, feel free to reach out.\n\nBest regards,\nBawattala Pro Team",
     context: "counselor pending request notification",
   });
 }

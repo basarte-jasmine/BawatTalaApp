@@ -7,6 +7,8 @@ import {
 } from "../lib/admin-api";
 import Modal from "./Modal";
 
+const NOTIFICATION_REFRESH_MS = 60000;
+
 function getAdminProfile(session) {
   const email = String(session?.email || "").trim().toLowerCase();
   if (email === "basartejasmine@gmail.com") {
@@ -52,23 +54,67 @@ function formatNotificationTime(value) {
   }).format(date);
 }
 
-export default function Header({
-  title = "Dashboard",
-  subtitle = "",
-  onMenuToggle,
-  session,
-}) {
-  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
-  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+function NotificationEmptyState({ children }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-[#d7e2d0] bg-[#f9fcf7] px-4 py-6 text-center text-sm text-[#73836f]">
+      {children}
+    </div>
+  );
+}
+
+function NotificationBellButton({ unreadCount, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="relative rounded-full p-2 transition-colors hover:bg-gray-100"
+      aria-label="Open notifications"
+    >
+      <Bell className="h-5 w-5 text-gray-600" />
+      {unreadCount > 0 ? (
+        <>
+          <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-amber-500" />
+          <span className="absolute -right-1 -top-1 min-w-[18px] rounded-full bg-admin-ink px-1.5 py-0.5 text-[10px] font-semibold text-white">
+            {unreadCount > 9 ? "9+" : unreadCount}
+          </span>
+        </>
+      ) : null}
+    </button>
+  );
+}
+
+function NotificationListItem({ item, onOpen }) {
+  const isRead = Boolean(item?.isRead);
+
+  return (
+    <button
+      type="button"
+      onClick={() => void onOpen(item)}
+      className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+        isRead
+          ? "border-[#edf2ea] bg-white hover:border-[#d6e2cf]"
+          : "border-[#dce9d3] bg-[#f6fbf3] shadow-[inset_0_0_0_1px_rgba(111,174,70,0.08)] hover:border-[#bfd5b2]"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className={`h-2.5 w-2.5 rounded-full ${isRead ? "bg-[#d0d9ca]" : "bg-[#6a994e]"}`} />
+            <p className="truncate text-sm font-semibold text-admin-ink">{item.title}</p>
+          </div>
+          <p className="mt-2 text-sm leading-6 text-[#516152]">{item.message}</p>
+        </div>
+        <span className="shrink-0 rounded-full bg-[#eef5e9] px-2.5 py-1 text-[11px] font-semibold text-[#63805f]">
+          {formatNotificationTime(item.createdAt)}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+function useAdminNotifications(adminEmail) {
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notifications, setNotifications] = useState([]);
-  const notificationPanelRef = useRef(null);
-  const adminProfile = getAdminProfile(session);
-  const adminEmail = String(session?.email || "").trim().toLowerCase();
-  const unreadCount = useMemo(
-    () => notifications.filter((item) => !item.isRead).length,
-    [notifications],
-  );
 
   useEffect(() => {
     if (!adminEmail) {
@@ -98,13 +144,37 @@ export default function Header({
     void loadNotifications();
     const intervalId = setInterval(() => {
       void loadNotifications();
-    }, 60000);
+    }, NOTIFICATION_REFRESH_MS);
 
     return () => {
       isMounted = false;
       clearInterval(intervalId);
     };
   }, [adminEmail]);
+
+  return {
+    notifications,
+    notificationsLoading,
+    setNotifications,
+  };
+}
+
+export default function Header({
+  title = "Dashboard",
+  subtitle = "",
+  onMenuToggle,
+  session,
+}) {
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const notificationPanelRef = useRef(null);
+  const adminProfile = getAdminProfile(session);
+  const adminEmail = String(session?.email || "").trim().toLowerCase();
+  const { notifications, notificationsLoading, setNotifications } = useAdminNotifications(adminEmail);
+  const unreadCount = useMemo(
+    () => notifications.filter((item) => !item.isRead).length,
+    [notifications],
+  );
 
   useEffect(() => {
     function handleOutsideClick(event) {
@@ -180,22 +250,7 @@ export default function Header({
 
             <div className="flex items-center gap-6 self-end md:self-auto">
               <div className="relative" ref={notificationPanelRef}>
-                <button
-                  type="button"
-                  onClick={() => setIsNotificationsOpen((current) => !current)}
-                  className="relative rounded-full p-2 transition-colors hover:bg-gray-100"
-                  aria-label="Open notifications"
-                >
-                  <Bell className="h-5 w-5 text-gray-600" />
-                  {unreadCount > 0 ? (
-                    <>
-                      <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-amber-500" />
-                      <span className="absolute -right-1 -top-1 min-w-[18px] rounded-full bg-admin-ink px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                        {unreadCount > 9 ? "9+" : unreadCount}
-                      </span>
-                    </>
-                  ) : null}
-                </button>
+                <NotificationBellButton unreadCount={unreadCount} onClick={() => setIsNotificationsOpen((current) => !current)} />
 
                 {isNotificationsOpen ? (
                   <div className="absolute right-0 z-20 mt-3 w-[22rem] overflow-hidden rounded-3xl border border-[#dbe5d4] bg-white shadow-[0_22px_55px_rgba(32,49,38,0.16)]">
@@ -221,41 +276,15 @@ export default function Header({
 
                     <div className="max-h-[24rem] overflow-y-auto px-3 py-3">
                       {notificationsLoading ? (
-                        <div className="rounded-2xl border border-dashed border-[#d7e2d0] bg-[#f9fcf7] px-4 py-6 text-center text-sm text-[#73836f]">
-                          Loading notifications...
-                        </div>
+                        <NotificationEmptyState>Loading notifications...</NotificationEmptyState>
                       ) : notifications.length ? (
                         <div className="space-y-2">
                           {notifications.map((item) => (
-                            <button
-                              key={item.id}
-                              type="button"
-                              onClick={() => void handleOpenNotification(item)}
-                              className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
-                                item.isRead
-                                  ? "border-[#edf2ea] bg-white hover:border-[#d6e2cf]"
-                                  : "border-[#dce9d3] bg-[#f6fbf3] shadow-[inset_0_0_0_1px_rgba(111,174,70,0.08)] hover:border-[#bfd5b2]"
-                              }`}
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <span className={`h-2.5 w-2.5 rounded-full ${item.isRead ? "bg-[#d0d9ca]" : "bg-[#6a994e]"}`} />
-                                    <p className="truncate text-sm font-semibold text-admin-ink">{item.title}</p>
-                                  </div>
-                                  <p className="mt-2 text-sm leading-6 text-[#516152]">{item.message}</p>
-                                </div>
-                                <span className="shrink-0 rounded-full bg-[#eef5e9] px-2.5 py-1 text-[11px] font-semibold text-[#63805f]">
-                                  {formatNotificationTime(item.createdAt)}
-                                </span>
-                              </div>
-                            </button>
+                            <NotificationListItem key={item.id} item={item} onOpen={handleOpenNotification} />
                           ))}
                         </div>
                       ) : (
-                        <div className="rounded-2xl border border-dashed border-[#d7e2d0] bg-[#f9fcf7] px-4 py-6 text-center text-sm text-[#73836f]">
-                          No notifications yet.
-                        </div>
+                        <NotificationEmptyState>No notifications yet.</NotificationEmptyState>
                       )}
                     </div>
                   </div>
