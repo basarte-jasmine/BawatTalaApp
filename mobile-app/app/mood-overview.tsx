@@ -6,13 +6,14 @@ import { Image, ImageSourcePropType, Pressable, ScrollView, StyleSheet, Text, Vi
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuthSession } from "../lib/auth-session";
 import { fetchMonthlyMoods } from "../lib/backend-api";
+import { EMOTION_META, EMOTION_ORDER, createEmotionCounts } from "../lib/emotions";
 import { getManilaTodayParts } from "../lib/manila-date";
 
 type MoodStat = {
   color: string;
   count: number;
   id: string;
-  image: ImageSourcePropType;
+  image: ImageSourcePropType | null;
   label: string;
 };
 
@@ -25,19 +26,7 @@ type CalendarDay = {
 
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
-const MOOD_ORDER = ["happy", "calm", "sad", "stressed", "angry", "anxious"] as const;
-
-const INSIGHT_TEXT = "You've been checking in regularly! Your most common mood this month has been \"Good\".";
 const INSIGHT_FOOTNOTE = "Summary by Muni, your virtual companion. Bawat Tala is not a substitute for professional mental health care.";
-
-const MOOD_META: Record<string, { color: string; image: ImageSourcePropType; label: string }> = {
-  angry: { color: "#E86686", image: require("../assets/images/Moods/angry.gif"), label: "Angry" },
-  anxious: { color: "#B895C8", image: require("../assets/images/Moods/anxious.gif"), label: "Anxious" },
-  calm: { color: "#97CFDA", image: require("../assets/images/Moods/calm.gif"), label: "Calm" },
-  happy: { color: "#F8D330", image: require("../assets/images/Moods/happy.gif"), label: "Happy" },
-  sad: { color: "#7EA9D9", image: require("../assets/images/Moods/sad.gif"), label: "Sad" },
-  stressed: { color: "#F19137", image: require("../assets/images/Moods/stressed.gif"), label: "Stressed" },
-};
 
 const MIN_YEAR = 2026;
 const MIN_MONTH_INDEX = 0;
@@ -67,14 +56,7 @@ export default function MoodOverviewScreen() {
   const [displayYear, setDisplayYear] = useState(initialMonth.year);
   const [displayMonthIndex, setDisplayMonthIndex] = useState(initialMonth.monthIndex);
   const [monthlyEntries, setMonthlyEntries] = useState<{ moodDate: string; moodId: string; moodLabel: string }[]>([]);
-  const [monthlyCounts, setMonthlyCounts] = useState<Record<string, number>>({
-    happy: 0,
-    calm: 0,
-    sad: 0,
-    stressed: 0,
-    angry: 0,
-    anxious: 0,
-  });
+  const [monthlyCounts, setMonthlyCounts] = useState<Record<string, number>>(() => createEmotionCounts());
   const [mostCommonMoodId, setMostCommonMoodId] = useState<string | null>(null);
   const [totalCheckIns, setTotalCheckIns] = useState(0);
 
@@ -91,14 +73,7 @@ export default function MoodOverviewScreen() {
       setMonthlyEntries([]);
       setMostCommonMoodId(null);
       setTotalCheckIns(0);
-      setMonthlyCounts({
-        happy: 0,
-        calm: 0,
-        sad: 0,
-        stressed: 0,
-        angry: 0,
-        anxious: 0,
-      });
+      setMonthlyCounts(createEmotionCounts());
       return;
     }
 
@@ -109,12 +84,8 @@ export default function MoodOverviewScreen() {
 
     setMonthlyEntries(result.entries ?? []);
     setMonthlyCounts({
-      happy: result.counts?.happy ?? 0,
-      calm: result.counts?.calm ?? 0,
-      sad: result.counts?.sad ?? 0,
-      stressed: result.counts?.stressed ?? 0,
-      angry: result.counts?.angry ?? 0,
-      anxious: result.counts?.anxious ?? 0,
+      ...createEmotionCounts(),
+      ...(result.counts ?? {}),
     });
     setMostCommonMoodId(result.mostCommonMoodId ?? null);
     setTotalCheckIns(result.totalCheckIns ?? 0);
@@ -129,12 +100,12 @@ export default function MoodOverviewScreen() {
 
   const moodStats: MoodStat[] = useMemo(
     () =>
-      MOOD_ORDER.map((id) => ({
+      EMOTION_ORDER.map((id) => ({
         id,
-        color: MOOD_META[id].color,
+        color: EMOTION_META[id].color,
         count: monthlyCounts[id] ?? 0,
-        image: MOOD_META[id].image,
-        label: MOOD_META[id].label,
+        image: EMOTION_META[id].image,
+        label: EMOTION_META[id].label,
       })),
     [monthlyCounts],
   );
@@ -215,7 +186,14 @@ export default function MoodOverviewScreen() {
     setDisplayMonthIndex((prev) => prev + 1);
   };
 
-  const mostCommonMood = mostCommonMoodId ? MOOD_META[mostCommonMoodId] : null;
+  const mostCommonMood = mostCommonMoodId ? EMOTION_META[mostCommonMoodId] ?? null : null;
+  const emotionCheckInLabel = `${totalCheckIns} emotion ${totalCheckIns === 1 ? "check-in" : "check-ins"}`;
+  const insightText =
+    totalCheckIns <= 0
+      ? "Start checking in with your emotions and your monthly patterns will appear here."
+      : mostCommonMood?.label
+        ? `You've been checking in regularly. Your most common emotion this month has been "${mostCommonMood.label}".`
+        : "You've been checking in regularly. Keep tracking your emotions to notice patterns.";
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
@@ -223,7 +201,7 @@ export default function MoodOverviewScreen() {
         <Pressable style={styles.backButton} onPress={handleBack} accessibilityLabel="Go back">
           <Ionicons name="chevron-back" size={27} color="#3B454F" />
         </Pressable>
-        <Text style={styles.topTitle}>Mood Overview</Text>
+        <Text style={styles.topTitle}>Emotion Overview</Text>
         <View style={styles.topBarSpacer} />
       </View>
 
@@ -233,19 +211,21 @@ export default function MoodOverviewScreen() {
             <View>
               <Text style={styles.summaryEyebrow}>THIS MONTH</Text>
               <Text style={styles.summaryMonth}>{`${getMonthName(displayMonthIndex)} ${displayYear}`}</Text>
-              <Text style={styles.summarySub}>{`${totalCheckIns} Check-ins`}</Text>
+              <Text style={styles.summarySub}>{emotionCheckInLabel}</Text>
             </View>
 
             <View style={styles.commonMoodWrap}>
               <Text style={styles.commonMoodMeta}>Most Common</Text>
               <View style={styles.commonMoodFace}>
-                {mostCommonMood ? (
+                {mostCommonMood?.image ? (
                   <Image source={mostCommonMood.image} style={styles.commonMoodImage} resizeMode="contain" />
+                ) : mostCommonMood ? (
+                  <View style={styles.commonMoodPlaceholder} />
                 ) : (
                   <Text style={styles.commonMoodFallback}>-</Text>
                 )}
               </View>
-              <Text style={styles.commonMoodLabel}>{mostCommonMood?.label ?? "No mood yet"}</Text>
+              <Text style={styles.commonMoodLabel}>{mostCommonMood?.label ?? "No emotion yet"}</Text>
             </View>
           </View>
 
@@ -253,10 +233,14 @@ export default function MoodOverviewScreen() {
             {moodStats.map((item) => (
               <View key={item.id} style={styles.statItem}>
                 <View style={styles.statFace}>
-                  <Image source={item.image} style={styles.statImage} resizeMode="contain" />
+                  {item.image ? (
+                    <Image source={item.image} style={styles.statImage} resizeMode="contain" />
+                  ) : (
+                    <View style={styles.statImagePlaceholder} />
+                  )}
                 </View>
                 <Text style={styles.statCount}>{item.count}</Text>
-                <Text style={styles.statLabel} numberOfLines={1}>{item.label}</Text>
+                <Text style={styles.statLabel} numberOfLines={2}>{item.label}</Text>
               </View>
             ))}
           </View>
@@ -283,7 +267,7 @@ export default function MoodOverviewScreen() {
 
           <View style={styles.calendarGrid}>
             {calendarDays.map((day, index) => {
-              const moodMeta = day.moodId ? MOOD_META[day.moodId] : null;
+              const moodMeta = day.moodId ? EMOTION_META[day.moodId] ?? null : null;
               const isToday =
                 !day.isOutsideMonth &&
                 viewedMonthKey === todayMonthKey &&
@@ -327,7 +311,7 @@ export default function MoodOverviewScreen() {
           </View>
 
           <View style={styles.insightTextWrap}>
-            <Text style={styles.insightText}>{INSIGHT_TEXT}</Text>
+            <Text style={styles.insightText}>{insightText}</Text>
             <Text style={styles.insightFootnote}>{INSIGHT_FOOTNOTE}</Text>
           </View>
         </View>
@@ -447,6 +431,10 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
   },
+  commonMoodPlaceholder: {
+    width: 38,
+    height: 38,
+  },
   commonMoodFallback: {
     color: "#3F4F61",
     fontSize: 19,
@@ -457,14 +445,18 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 14,
     fontWeight: "600",
+    maxWidth: 84,
+    textAlign: "center",
   },
   statsRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    flexWrap: "wrap",
+    rowGap: 12,
   },
   statItem: {
     alignItems: "center",
-    width: "16%",
+    paddingHorizontal: 2,
+    width: "20%",
   },
   statFace: {
     width: 48,
@@ -481,6 +473,10 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
   },
+  statImagePlaceholder: {
+    width: 38,
+    height: 38,
+  },
   statCount: {
     color: "#4B5968",
     fontSize: 13,
@@ -489,9 +485,11 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     color: "#7A8792",
-    fontSize: 9,
+    fontSize: 10,
     lineHeight: 12,
-    marginTop: 1,
+    marginTop: 2,
+    minHeight: 24,
+    textAlign: "center",
   },
   calendarCard: {
     borderRadius: 22,

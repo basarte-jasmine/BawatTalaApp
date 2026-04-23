@@ -3,8 +3,10 @@ const { randomBytes, scryptSync, timingSafeEqual } = require("crypto");
 const { google } = require("googleapis");
 const { supabaseAdminClient, supabaseAuthClient } = require("../config/supabase");
 const { query } = require("../config/db");
+const { EMOTION_OPTIONS, createEmotionCounts } = require("../constants/emotions");
 
 const router = express.Router();
+const EMOTION_IDS = EMOTION_OPTIONS.map((item) => item.id);
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const STRONG_PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
@@ -1284,21 +1286,11 @@ router.get("/dashboard/summary", async (req, res) => {
   for (const row of safeMoodRows) {
     const date = normalizeDateValue(row.mood_date);
     if (!date) continue;
-    const current = moodCountsByDate.get(date) || {
-      happy: 0,
-      calm: 0,
-      sad: 0,
-      stressed: 0,
-      angry: 0,
-      anxious: 0,
-    };
+    const current = moodCountsByDate.get(date) || createEmotionCounts();
     const moodId = String(row.mood_id || "").trim().toLowerCase();
-    if (moodId === "happy") current.happy += 1;
-    else if (moodId === "calm") current.calm += 1;
-    else if (moodId === "sad") current.sad += 1;
-    else if (moodId === "stressed") current.stressed += 1;
-    else if (moodId === "angry") current.angry += 1;
-    else if (moodId === "anxious") current.anxious += 1;
+    if (Object.prototype.hasOwnProperty.call(current, moodId)) {
+      current[moodId] += 1;
+    }
     moodCountsByDate.set(date, current);
   }
 
@@ -1394,17 +1386,9 @@ router.get("/dashboard/summary", async (req, res) => {
   })).filter((item) => item.value > 0);
 
   const currentMonthLabels = [];
-  const moodSeries = {
-    happy: [],
-    calm: [],
-    sad: [],
-    stressed: [],
-    angry: [],
-    anxious: [],
-  };
+  const moodSeries = Object.fromEntries(EMOTION_IDS.map((emotionId) => [emotionId, []]));
 
-  for (let bucketEndDay = 5; bucketEndDay <= manilaNow.day; bucketEndDay += 5) {
-    const bucketStartDay = Math.max(1, bucketEndDay - 4);
+  const appendMoodBucket = (bucketStartDay, bucketEndDay) => {
     const labelIsoDate = `${manilaNow.year}-${String(manilaNow.month).padStart(2, "0")}-${String(bucketEndDay).padStart(2, "0")}`;
     const label = new Date(`${labelIsoDate}T00:00:00Z`).toLocaleDateString("en-US", {
       month: "short",
@@ -1412,69 +1396,31 @@ router.get("/dashboard/summary", async (req, res) => {
       timeZone: MANILA_TIME_ZONE,
     });
     currentMonthLabels.push(label);
-    let happy = 0;
-    let calm = 0;
-    let sad = 0;
-    let stressed = 0;
-    let angry = 0;
-    let anxious = 0;
+    const bucketCounts = createEmotionCounts();
 
     for (let day = bucketStartDay; day <= bucketEndDay; day += 1) {
       const isoDate = `${manilaNow.year}-${String(manilaNow.month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
       const counts = moodCountsByDate.get(isoDate);
       if (!counts) continue;
-      happy += counts.happy;
-      calm += counts.calm;
-      sad += counts.sad;
-      stressed += counts.stressed;
-      angry += counts.angry;
-      anxious += counts.anxious;
+      for (const emotionId of EMOTION_IDS) {
+        bucketCounts[emotionId] += Number(counts[emotionId] || 0);
+      }
     }
 
-    moodSeries.happy.push(happy);
-    moodSeries.calm.push(calm);
-    moodSeries.sad.push(sad);
-    moodSeries.stressed.push(stressed);
-    moodSeries.angry.push(angry);
-    moodSeries.anxious.push(anxious);
+    for (const emotionId of EMOTION_IDS) {
+      moodSeries[emotionId].push(bucketCounts[emotionId]);
+    }
+  };
+
+  for (let bucketEndDay = 5; bucketEndDay <= manilaNow.day; bucketEndDay += 5) {
+    const bucketStartDay = Math.max(1, bucketEndDay - 4);
+    appendMoodBucket(bucketStartDay, bucketEndDay);
   }
 
   if (manilaNow.day % 5 !== 0) {
     const bucketStartDay = Math.floor(manilaNow.day / 5) * 5 + 1;
     const bucketEndDay = manilaNow.day;
-    const labelIsoDate = `${manilaNow.year}-${String(manilaNow.month).padStart(2, "0")}-${String(bucketEndDay).padStart(2, "0")}`;
-    const label = new Date(`${labelIsoDate}T00:00:00Z`).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      timeZone: MANILA_TIME_ZONE,
-    });
-    currentMonthLabels.push(label);
-
-    let happy = 0;
-    let calm = 0;
-    let sad = 0;
-    let stressed = 0;
-    let angry = 0;
-    let anxious = 0;
-
-    for (let day = bucketStartDay; day <= bucketEndDay; day += 1) {
-      const isoDate = `${manilaNow.year}-${String(manilaNow.month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-      const counts = moodCountsByDate.get(isoDate);
-      if (!counts) continue;
-      happy += counts.happy;
-      calm += counts.calm;
-      sad += counts.sad;
-      stressed += counts.stressed;
-      angry += counts.angry;
-      anxious += counts.anxious;
-    }
-
-    moodSeries.happy.push(happy);
-    moodSeries.calm.push(calm);
-    moodSeries.sad.push(sad);
-    moodSeries.stressed.push(stressed);
-    moodSeries.angry.push(angry);
-    moodSeries.anxious.push(anxious);
+    appendMoodBucket(bucketStartDay, bucketEndDay);
   }
 
   const caseAssignments = (caseAssignmentRows || []).map((row) => {
@@ -1548,14 +1494,7 @@ router.get("/dashboard/summary", async (req, res) => {
         })),
       moodTrends: {
         labels: currentMonthLabels,
-        series: [
-          { key: "happy", label: "Happy", values: moodSeries.happy },
-          { key: "calm", label: "Calm", values: moodSeries.calm },
-          { key: "sad", label: "Sad", values: moodSeries.sad },
-          { key: "stressed", label: "Stressed", values: moodSeries.stressed },
-          { key: "angry", label: "Angry", values: moodSeries.angry },
-          { key: "anxious", label: "Anxious", values: moodSeries.anxious },
-        ],
+        series: EMOTION_OPTIONS.map(({ id, label }) => ({ key: id, label, values: moodSeries[id] })),
       },
     },
     warnings: {

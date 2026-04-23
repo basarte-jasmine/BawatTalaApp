@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
-import { Animated, Easing, Image, ImageSourcePropType, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { Animated, Easing, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Defs, Ellipse, LinearGradient, Path, Rect, Stop } from "react-native-svg";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
@@ -16,14 +16,8 @@ import {
   fetchStudentNotifications,
   saveDailyMood,
 } from "../lib/backend-api";
+import { EMOTIONS } from "../lib/emotions";
 import { getManilaTodayParts } from "../lib/manila-date";
-
-type MoodItem = {
-  color: string;
-  id: string;
-  image: ImageSourcePropType;
-  label: string;
-};
 
 type DailyCheckinReward = {
   id: string;
@@ -39,15 +33,6 @@ type SupportCardItem = {
   id: string;
   title: string;
 };
-
-const MOODS: MoodItem[] = [
-  { color: "#FFD616", id: "happy", image: require("../assets/images/Moods/happy.gif"), label: "Happy" },
-  { color: "#97CFDA", id: "calm", image: require("../assets/images/Moods/calm.gif"), label: "Calm" },
-  { color: "#7EA9D9", id: "sad", image: require("../assets/images/Moods/sad.gif"), label: "Sad" },
-  { color: "#F19137", id: "stressed", image: require("../assets/images/Moods/stressed.gif"), label: "Stressed" },
-  { color: "#E86686", id: "angry", image: require("../assets/images/Moods/angry.gif"), label: "Angry" },
-  { color: "#B895C8", id: "anxious", image: require("../assets/images/Moods/anxious.gif"), label: "Anxious" },
-];
 
 const DAILY_CHECKIN_REWARDS: DailyCheckinReward[] = [
   { id: "r10", value: "+10", state: "locked" },
@@ -284,8 +269,8 @@ export default function HomeScreen() {
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
   const headerSwitchOn = tiny ? 188 : compact ? 208 : 236;
   const headerSwitchOff = tiny ? 154 : compact ? 174 : 202;
-  const idleValues = useRef(MOODS.map(() => new Animated.Value(0))).current;
-  const pressScales = useRef(MOODS.map(() => new Animated.Value(1))).current;
+  const idleValues = useRef(EMOTIONS.map(() => new Animated.Value(0))).current;
+  const pressScales = useRef(EMOTIONS.map(() => new Animated.Value(1))).current;
   const waveDrift = useRef(new Animated.Value(0)).current;
   const welcomeOpacity = useRef(new Animated.Value(0)).current;
   const welcomeScale = useRef(new Animated.Value(0.92)).current;
@@ -1112,14 +1097,14 @@ export default function HomeScreen() {
           <View style={styles.moodHeaderRow}>
             <Image source={MUNI_IMAGE} style={styles.moodPetArt} resizeMode="contain" />
             <View style={styles.moodHeaderTextWrap}>
-              <Text style={styles.sectionEyebrow}>Mood Check</Text>
-              <Text style={styles.moodHeading}>How are you feeling?</Text>
-              <Text style={styles.moodSubHeading}>Track your mood to understand patterns</Text>
+              <Text style={styles.sectionEyebrow}>Emotions</Text>
+              <Text style={styles.moodHeading}>What emotions are showing up today?</Text>
+              <Text style={styles.moodSubHeading}>Track your emotions to notice patterns</Text>
             </View>
           </View>
 
           <View style={styles.moodRow}>
-            {MOODS.map((mood, index) => (
+            {EMOTIONS.map((mood, index) => (
               <View key={mood.label} style={styles.moodItem}>
                 <Pressable
                   disabled={isMoodLocked && selectedMoodId !== mood.id}
@@ -1145,10 +1130,14 @@ export default function HomeScreen() {
                       },
                     ]}
                   >
-                    <Image source={mood.image} style={styles.moodIcon} resizeMode="contain" />
+                    {mood.image ? (
+                      <Image source={mood.image} style={styles.moodIcon} resizeMode="contain" />
+                    ) : (
+                      <View style={styles.moodIconPlaceholder} />
+                    )}
                   </Animated.View>
                 </Pressable>
-                <Text style={[styles.moodLabel, selectedMoodId === mood.id && styles.moodLabelActive]} numberOfLines={1}>
+                <Text style={[styles.moodLabel, selectedMoodId === mood.id && styles.moodLabelActive]} numberOfLines={2}>
                   {mood.label}
                 </Text>
               </View>
@@ -1156,7 +1145,7 @@ export default function HomeScreen() {
           </View>
 
           <Pressable style={styles.moodHistoryButton} onPress={() => router.push("/mood-overview")}>
-            <Text style={styles.moodHistoryButtonText}>Mood History</Text>
+            <Text style={styles.moodHistoryButtonText}>Emotion History</Text>
           </Pressable>
         </View>
 
@@ -1658,7 +1647,7 @@ export default function HomeScreen() {
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalBody}>Save this as your mood for today?</Text>
+            <Text style={styles.modalBody}>Save this as your emotion for today?</Text>
 
             <View style={styles.modalActions}>
               <Pressable style={styles.modalSecondaryButton} onPress={handleCancelMoodConfirm}>
@@ -2042,12 +2031,14 @@ const styles = StyleSheet.create({
   },
   moodRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    flexWrap: "wrap",
+    rowGap: 10,
     marginBottom: 10,
   },
   moodItem: {
     alignItems: "center",
-    flex: 1,
+    paddingHorizontal: 2,
+    width: "20%",
   },
   moodButtonDisabled: {
     opacity: 0.42,
@@ -2071,10 +2062,16 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
   },
+  moodIconPlaceholder: {
+    width: 42,
+    height: 42,
+  },
   moodLabel: {
     color: "#4A4A4A",
-    fontSize: 15,
-    lineHeight: 18,
+    fontSize: 13,
+    lineHeight: 16,
+    minHeight: 32,
+    textAlign: "center",
   },
   moodLabelActive: {
     color: "#2F6F25",

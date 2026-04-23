@@ -56,38 +56,62 @@ const MOOD_TREND_SERIES = [
   {
     key: "happy",
     label: "Happy",
-    color: "#0F9D58",
+    color: "#FFD616",
     values: [40, 36, 31, 27, 33, 46, 49],
   },
   {
     key: "calm",
     label: "Calm",
-    color: "#2E7D32",
+    color: "#97CFDA",
     values: [20, 22, 25, 18, 25, 19, 16],
   },
   {
     key: "sad",
     label: "Sad",
-    color: "#66BB6A",
+    color: "#7EA9D9",
     values: [14, 15, 20, 25, 18, 12, 10],
   },
   {
     key: "stressed",
     label: "Stressed",
-    color: "#7CB342",
+    color: "#F19137",
     values: [10, 12, 18, 23, 14, 10, 8],
   },
   {
     key: "angry",
     label: "Angry",
-    color: "#558B2F",
+    color: "#E86686",
     values: [8, 9, 11, 10, 9, 7, 6],
   },
   {
     key: "anxious",
     label: "Anxious",
-    color: "#8BC34A",
+    color: "#B895C8",
     values: [7, 8, 12, 16, 10, 8, 7],
+  },
+  {
+    key: "excited",
+    label: "Excited",
+    color: "#FDBA58",
+    values: [11, 13, 15, 12, 14, 18, 17],
+  },
+  {
+    key: "tired",
+    label: "Tired",
+    color: "#A7B4C6",
+    values: [9, 11, 15, 19, 13, 10, 9],
+  },
+  {
+    key: "lonely",
+    label: "Lonely",
+    color: "#8FA7DB",
+    values: [5, 6, 9, 10, 7, 5, 4],
+  },
+  {
+    key: "overwhelmed",
+    label: "Overwhelmed",
+    color: "#D68A5C",
+    values: [6, 8, 13, 17, 11, 8, 7],
   },
 ];
 
@@ -486,7 +510,7 @@ function MoodTrendsChart({ labels, series, onSelect }) {
                   stroke={item.color}
                   strokeWidth="3"
                   className={onSelect ? "cursor-pointer" : ""}
-                  onClick={onSelect ? () => onSelect(`Mood Trend: ${item.label} / ${point.label}`) : undefined}
+                  onClick={onSelect ? () => onSelect(`Emotion Trend: ${item.label} / ${point.label}`) : undefined}
                 >
                   <title>{`${item.label} on ${point.label}: ${point.value.toLocaleString()} check-ins`}</title>
                 </circle>
@@ -510,7 +534,7 @@ function MoodTrendsChart({ labels, series, onSelect }) {
           <button
             key={item.key}
             type="button"
-            onClick={onSelect ? () => onSelect(`Mood Trend: ${item.label}`) : undefined}
+            onClick={onSelect ? () => onSelect(`Emotion Trend: ${item.label}`) : undefined}
             title={item.label}
             className="flex items-center gap-2 rounded-full px-1 py-0.5 text-gray-600 hover:bg-gray-50"
           >
@@ -973,7 +997,10 @@ export default function Overview({ onLogout, session }) {
       : GENDER_DATA;
   const moodTrendData =
     dashboardSummary?.charts?.moodTrends?.series?.length > 0
-      ? withColors(dashboardSummary.charts.moodTrends.series, ["#0F9D58", "#2E7D32", "#66BB6A", "#7CB342", "#558B2F", "#8BC34A"])
+      ? withColors(
+          dashboardSummary.charts.moodTrends.series,
+          ["#FFD616", "#97CFDA", "#7EA9D9", "#F19137", "#E86686", "#B895C8", "#FDBA58", "#A7B4C6", "#8FA7DB", "#D68A5C"],
+        )
       : MOOD_TREND_SERIES;
   const moodTrendLabels =
     dashboardSummary?.charts?.moodTrends?.labels?.length > 0 ? dashboardSummary.charts.moodTrends.labels : MOOD_TREND_LABELS;
@@ -1069,7 +1096,7 @@ export default function Overview({ onLogout, session }) {
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr,1.9fr]">
-          <Card title="Student Mood Trends (Current Month)" subtitle="Daily mood check-ins recorded from the mobile app this month">
+          <Card title="Student Emotion Trends (Current Month)" subtitle="Daily emotion check-ins recorded from the mobile app this month">
             <MoodTrendsChart labels={moodTrendLabels} series={moodTrendData} />
           </Card>
 

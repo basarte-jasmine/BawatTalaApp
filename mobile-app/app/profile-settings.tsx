@@ -771,7 +771,7 @@ export default function ProfileSettingsScreen() {
           onPress={() =>
             void Share.share({
               message:
-                "I've been using Bawat Tala to journal, check in with my mood, and reach support when I need it. You can check it out at https://bawattalapro.online/",
+                "I've been using Bawat Tala to journal, check in with my emotions, and reach support when I need it. You can check it out at https://bawattalapro.online/",
               title: "Share Bawat Tala",
             })
           }

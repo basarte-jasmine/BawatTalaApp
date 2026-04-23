@@ -1,16 +1,9 @@
 const express = require("express");
 const { query } = require("../config/db");
+const { EMOTION_LABELS, createEmotionCounts } = require("../constants/emotions");
 
 const router = express.Router();
 const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
-const MOOD_LABELS = {
-  happy: "Happy",
-  calm: "Calm",
-  sad: "Sad",
-  stressed: "Stressed",
-  angry: "Angry",
-  anxious: "Anxious",
-};
 
 function normalizeCompactSpaces(value) {
   return String(value || "").trim().replace(/\s+/g, " ");
@@ -87,14 +80,7 @@ router.get("/month", async (req, res) => {
       [studentNumber, monthStart, nextMonth],
     );
 
-    const counts = {
-      happy: 0,
-      calm: 0,
-      sad: 0,
-      stressed: 0,
-      angry: 0,
-      anxious: 0,
-    };
+    const counts = createEmotionCounts();
 
     const entries = result.rows.map((row) => {
       const moodId = normalizeMoodId(row.mood_id);
@@ -118,10 +104,10 @@ router.get("/month", async (req, res) => {
       counts,
       totalCheckIns,
       mostCommonMoodId: mostCommonMoodCount > 0 ? mostCommonMoodId : null,
-      mostCommonMoodLabel: mostCommonMoodCount > 0 ? MOOD_LABELS[mostCommonMoodId] : null,
+      mostCommonMoodLabel: mostCommonMoodCount > 0 ? EMOTION_LABELS[mostCommonMoodId] : null,
     });
   } catch (error) {
-    return res.status(500).json({ message: error.message || "Failed to fetch mood entries." });
+    return res.status(500).json({ message: error.message || "Failed to fetch emotion entries." });
   }
 });
 
@@ -130,7 +116,7 @@ router.get("/today", async (req, res) => {
   const moodDate = normalizeMoodDate(req.query.moodDate || "") || getCurrentManilaMoodDate();
 
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber) || !moodDate) {
-    return res.status(400).json({ message: "Valid student number and mood date are required." });
+    return res.status(400).json({ message: "Valid student number and emotion date are required." });
   }
 
   try {
@@ -156,7 +142,7 @@ router.get("/today", async (req, res) => {
         : null,
     });
   } catch (error) {
-    return res.status(500).json({ message: error.message || "Failed to fetch today's mood." });
+    return res.status(500).json({ message: error.message || "Failed to fetch today's emotion." });
   }
 });
 
@@ -168,11 +154,11 @@ router.post("/", async (req, res) => {
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
     return res.status(400).json({ message: "Valid student number is required." });
   }
-  if (!MOOD_LABELS[moodId]) {
-    return res.status(400).json({ message: "Valid mood is required." });
+  if (!EMOTION_LABELS[moodId]) {
+    return res.status(400).json({ message: "Valid emotion is required." });
   }
   if (!moodDate) {
-    return res.status(400).json({ message: "Valid mood date is required." });
+    return res.status(400).json({ message: "Valid emotion date is required." });
   }
 
   try {
@@ -193,7 +179,7 @@ router.post("/", async (req, res) => {
           updated_at = now()
         returning mood_id, mood_label, to_char(mood_date, 'YYYY-MM-DD') as mood_date
       `,
-      [studentNumber, moodId, MOOD_LABELS[moodId], moodDate],
+      [studentNumber, moodId, EMOTION_LABELS[moodId], moodDate],
     );
 
     const row = result.rows[0];
@@ -203,10 +189,10 @@ router.post("/", async (req, res) => {
         moodLabel: row.mood_label,
         moodDate: formatMoodDateValue(row.mood_date),
       },
-      message: "Mood saved.",
+      message: "Emotion saved.",
     });
   } catch (error) {
-    return res.status(500).json({ message: error.message || "Failed to save mood." });
+    return res.status(500).json({ message: error.message || "Failed to save emotion." });
   }
 });
 
