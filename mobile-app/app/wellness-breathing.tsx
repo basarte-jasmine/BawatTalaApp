@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -24,43 +24,66 @@ export default function WellnessBreathingScreen() {
   const ringSize = Math.max(224, Math.min(frame - 54, 286));
   const middleRingSize = ringSize * 0.78;
   const innerRingSize = ringSize * 0.57;
-  const startedAt = useMemo(() => Date.now(), []);
+  const sessionStartedAtRef = useRef<number | null>(null);
   const [phase, setPhase] = useState<Phase>("INHALE");
   const [secondsLeft, setSecondsLeft] = useState(PHASE_SECONDS);
+  const [isSessionActive, setIsSessionActive] = useState(false);
   const breathPulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(breathPulse, {
-          toValue: 1,
-          duration: PHASE_SECONDS * 1000,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(breathPulse, {
-          toValue: 0,
-          duration: PHASE_SECONDS * 1000,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
+    let loop: Animated.CompositeAnimation | null = null;
 
-    loop.start();
-    return () => loop.stop();
-  }, [breathPulse]);
+    if (isSessionActive) {
+      breathPulse.setValue(0);
+      loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(breathPulse, {
+            toValue: 1,
+            duration: PHASE_SECONDS * 1000,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+          Animated.timing(breathPulse, {
+            toValue: 0,
+            duration: PHASE_SECONDS * 1000,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+      loop.start();
+    } else {
+      breathPulse.stopAnimation(() => {
+        breathPulse.setValue(0);
+      });
+    }
+
+    return () => {
+      loop?.stop();
+    };
+  }, [breathPulse, isSessionActive]);
 
   useEffect(() => {
+    if (!isSessionActive || sessionStartedAtRef.current === null) {
+      setPhase("INHALE");
+      setSecondsLeft(PHASE_SECONDS);
+      return;
+    }
+
     const sync = () => {
-      const cycle = getCycleState(startedAt);
+      if (sessionStartedAtRef.current === null) {
+        return;
+      }
+
+      const cycle = getCycleState(sessionStartedAtRef.current);
       setPhase(cycle.phase);
       setSecondsLeft(cycle.secondsLeft);
     };
+
     sync();
     const timer = setInterval(sync, 120);
     return () => clearInterval(timer);
-  }, [startedAt]);
+  }, [isSessionActive]);
 
   const outerScale = breathPulse.interpolate({
     inputRange: [0, 1],
@@ -81,6 +104,18 @@ export default function WellnessBreathingScreen() {
       return;
     }
     router.replace("/wellness-tools");
+  };
+
+  const handleStartSession = () => {
+    sessionStartedAtRef.current = Date.now();
+    setPhase("INHALE");
+    setSecondsLeft(PHASE_SECONDS);
+    setIsSessionActive(true);
+  };
+
+  const handleStopSession = () => {
+    sessionStartedAtRef.current = null;
+    setIsSessionActive(false);
   };
 
   return (
@@ -112,54 +147,73 @@ export default function WellnessBreathingScreen() {
         <View style={styles.instructionsCard}>
           <Text style={styles.instructionsEyebrow}>Guided Rhythm</Text>
           <Text style={styles.instructions}>
-            Follow the circle as it expands and softens. Let your breath match the motion.
+            Press start when you are ready, then follow the circle as it expands and softens.
           </Text>
         </View>
 
         <View style={styles.breathCard}>
           <View style={styles.phasePill}>
-            <Text style={styles.phasePillText}>{phase === "INHALE" ? "Breathe In" : "Breathe Out"}</Text>
+            <Text style={styles.phasePillText}>
+              {isSessionActive ? (phase === "INHALE" ? "Breathe In" : "Breathe Out") : "Press start when ready"}
+            </Text>
           </View>
           <View style={styles.circleWrap}>
-          <Animated.View
-            style={[
-              styles.outerRing,
-              {
-                width: ringSize,
-                height: ringSize,
-                borderRadius: ringSize / 2,
-                transform: [{ scale: outerScale }],
-              },
-            ]}
-          >
             <Animated.View
               style={[
-                styles.middleRing,
+                styles.outerRing,
                 {
-                  width: middleRingSize,
-                  height: middleRingSize,
-                  borderRadius: middleRingSize / 2,
-                  transform: [{ scale: middleScale }],
+                  width: ringSize,
+                  height: ringSize,
+                  borderRadius: ringSize / 2,
+                  transform: [{ scale: outerScale }],
                 },
               ]}
             >
               <Animated.View
                 style={[
-                  styles.innerRing,
+                  styles.middleRing,
                   {
-                    width: innerRingSize,
-                    height: innerRingSize,
-                    borderRadius: innerRingSize / 2,
-                    transform: [{ scale: innerScale }],
+                    width: middleRingSize,
+                    height: middleRingSize,
+                    borderRadius: middleRingSize / 2,
+                    transform: [{ scale: middleScale }],
                   },
                 ]}
               >
-                <Text style={styles.phaseText}>{phase}</Text>
-                <Text style={styles.secondsText}>{secondsLeft} Seconds</Text>
-              </Animated.View>
+                <Animated.View
+                  style={[
+                    styles.innerRing,
+                    {
+                      width: innerRingSize,
+                      height: innerRingSize,
+                      borderRadius: innerRingSize / 2,
+                      transform: [{ scale: innerScale }],
+                    },
+                  ]}
+                >
+                  <Text style={styles.phaseText}>{isSessionActive ? phase : "READY"}</Text>
+                  <Text style={styles.secondsText}>{isSessionActive ? `${secondsLeft} Seconds` : "Start to begin"}</Text>
+                </Animated.View>
               </Animated.View>
             </Animated.View>
           </View>
+          <Text style={styles.sessionHint}>
+            {isSessionActive
+              ? "You can stop the exercise any time if you need a pause."
+              : "The breathing guide will stay still until you choose to begin."}
+          </Text>
+          <Pressable
+            style={[styles.sessionButton, isSessionActive ? styles.stopButton : styles.startButton]}
+            accessibilityRole="button"
+            onPress={isSessionActive ? handleStopSession : handleStartSession}
+          >
+            <Ionicons
+              name={isSessionActive ? "stop-circle-outline" : "play-circle-outline"}
+              size={18}
+              color="#FFFFFF"
+            />
+            <Text style={styles.sessionButtonText}>{isSessionActive ? "Stop exercise" : "Start exercise"}</Text>
+          </Pressable>
         </View>
 
         <View style={styles.tipCard}>
@@ -351,6 +405,36 @@ const styles = StyleSheet.create({
     color: "#334254",
     fontSize: 21 / 1.1,
     lineHeight: 27 / 1.1,
+    fontWeight: "700",
+  },
+  sessionHint: {
+    color: "#61717F",
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: "center",
+    marginTop: 18,
+    marginBottom: 14,
+    paddingHorizontal: 10,
+  },
+  sessionButton: {
+    minHeight: 50,
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 8,
+  },
+  startButton: {
+    backgroundColor: "#5CBA36",
+  },
+  stopButton: {
+    backgroundColor: "#5C6F7E",
+  },
+  sessionButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    lineHeight: 20,
     fontWeight: "700",
   },
   tipCard: {
