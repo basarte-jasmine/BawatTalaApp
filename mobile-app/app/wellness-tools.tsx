@@ -26,9 +26,9 @@ const WELLNESS_TOOLS: ToolItem[] = [
   },
   {
     accentColor: "#537C68",
-    available: false,
+    available: true,
     id: "grounding",
-    label: "Coming soon",
+    label: "Open now",
     title: "5-4-3-2-1 Sensory Grounding",
     icon: "eye-outline",
     description: "Interrupt anxiety loops and reconnect with your present surroundings using your senses.",
@@ -97,6 +97,11 @@ export default function WellnessToolsScreen() {
                 onPress={() => {
                   if (item.id === "breathing") {
                     router.push("/wellness-breathing");
+                    return;
+                  }
+
+                  if (item.id === "grounding") {
+                    router.push("/wellness-grounding");
                   }
                 }}
               >
