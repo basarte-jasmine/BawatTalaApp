@@ -3,7 +3,7 @@ import * as Haptics from "expo-haptics";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { useAuthSession } from "../lib/auth-session";
@@ -27,6 +27,9 @@ import {
 } from "../lib/muni-wardrobe";
 
 type AvatarMode = "wardrobe" | "shop";
+type PurchaseNotice = {
+  itemLabel: string;
+};
 
 export default function MuniAvatarScreen() {
   const { user } = useAuthSession();
@@ -36,6 +39,7 @@ export default function MuniAvatarScreen() {
   const spentTala = useSpentMuniTala();
   const [equippedItems, setEquippedItems] = useState<MuniLoadout>(() => getSavedMuniLoadout());
   const [activeMode, setActiveMode] = useState<AvatarMode>("wardrobe");
+  const [purchaseNotice, setPurchaseNotice] = useState<PurchaseNotice | null>(null);
 
   const loadTotalTala = useCallback(async () => {
     if (!user?.studentNumber) {
@@ -101,6 +105,9 @@ export default function MuniAvatarScreen() {
         return;
       }
 
+      setPurchaseNotice({
+        itemLabel: option.label ?? option.id,
+      });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
     },
     [availableTala],
@@ -280,6 +287,31 @@ export default function MuniAvatarScreen() {
           </View>
         ))}
       </ScrollView>
+
+      <Modal
+        visible={Boolean(purchaseNotice)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPurchaseNotice(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.unlockModalCard}>
+            <View style={styles.unlockIconBadge}>
+              <Ionicons name="bag-check-outline" size={28} color="#FFFFFF" />
+            </View>
+            <Text style={styles.unlockTitle}>New item unlocked!</Text>
+            <Text style={styles.unlockBody}>
+              {purchaseNotice
+                ? `${purchaseNotice.itemLabel} is now unlocked and ready in your wardrobe.`
+                : ""}
+            </Text>
+
+            <Pressable style={styles.unlockButton} onPress={() => setPurchaseNotice(null)}>
+              <Text style={styles.unlockButtonText}>Nice</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       <HomeBottomNav activeTab="muni" />
     </SafeAreaView>
@@ -648,6 +680,68 @@ const styles = StyleSheet.create({
     color: "#71806F",
     fontSize: 11,
     lineHeight: 15,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(21, 27, 24, 0.34)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 22,
+  },
+  unlockModalCard: {
+    width: "100%",
+    maxWidth: 320,
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 22,
+    paddingTop: 22,
+    paddingBottom: 18,
+    alignItems: "center",
+    shadowColor: "#525C67",
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  unlockIconBadge: {
+    width: 58,
+    height: 58,
+    borderRadius: 999,
+    backgroundColor: "#7CCB58",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
+  },
+  unlockTitle: {
+    color: "#33475C",
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  unlockBody: {
+    marginTop: 8,
+    color: "#66776B",
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: "500",
+    textAlign: "center",
+  },
+  unlockButton: {
+    marginTop: 18,
+    minWidth: 140,
+    minHeight: 42,
+    borderRadius: 999,
+    backgroundColor: "#7CCB58",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 18,
+  },
+  unlockButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: "700",
   },
   checkBadge: {
     position: "absolute",
