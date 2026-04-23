@@ -800,7 +800,7 @@ function FlaggedEntriesModal({ entries, isOpen, onClose, onReviewAll }) {
                           ) : null}
                           {contactedSupport ? (
                             <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-emerald-700">
-                              Contacted counselor
+                              Contacted support
                             </span>
                           ) : null}
                         </div>

@@ -4,7 +4,9 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -45,6 +47,9 @@ const CONCERN_OPTIONS = [
   "Others",
 ];
 const AI_RETRY_LOCK_MS = 12000;
+const NCMH_HOTLINE_DIAL_URL = "tel:+639178998727";
+const NCMH_HOTLINE_DISPLAY = "0917-899-8727";
+const NCMH_HOTLINE_LANDLINE = "1553";
 
 function formatJournalHeaderDate(entryDate?: string) {
   const safeDate =
@@ -103,6 +108,7 @@ export default function WriteEntryScreen() {
   const [showFinishModal, setShowFinishModal] = useState(false);
   const [selectedConcern, setSelectedConcern] = useState<string | null>(null);
   const [isSavingConcern, setIsSavingConcern] = useState(false);
+  const [isSavingSupportResponse, setIsSavingSupportResponse] = useState(false);
 
   const loadJournalSession = useCallback(async () => {
     if (!user?.studentNumber) {
@@ -336,6 +342,100 @@ export default function WriteEntryScreen() {
 
     setEntry(result.entry ?? entry);
   };
+
+  const saveSupportDecision = useCallback(
+    async (response: "CONTACTED" | "DECLINED") => {
+      if (!user?.studentNumber || !entry?.id) {
+        return true;
+      }
+
+      setIsSavingSupportResponse(true);
+      const result = await saveJournalSupportResponse({
+        entryId: entry.id,
+        response,
+        studentNumber: user.studentNumber,
+      });
+      setIsSavingSupportResponse(false);
+
+      if (!result.ok) {
+        setErrorMessage(result.message ?? "Unable to save your support response.");
+        return false;
+      }
+
+      if (result.entry) {
+        setEntry(result.entry);
+      }
+
+      return true;
+    },
+    [entry?.id, user?.studentNumber],
+  );
+
+  const handleDismissRiskModal = useCallback(async () => {
+    if (isSavingSupportResponse) {
+      return;
+    }
+
+    const saved = await saveSupportDecision("DECLINED");
+    if (!saved) {
+      return;
+    }
+
+    setShowRiskModal(false);
+  }, [isSavingSupportResponse, saveSupportDecision]);
+
+  const handleCallHotline = useCallback(async () => {
+    if (isSavingSupportResponse) {
+      return;
+    }
+
+    try {
+      const canOpen = await Linking.canOpenURL(NCMH_HOTLINE_DIAL_URL);
+      if (!canOpen) {
+        Alert.alert(
+          "Call NCMH Hotline",
+          `Please call ${NCMH_HOTLINE_LANDLINE} or ${NCMH_HOTLINE_DISPLAY} for immediate support.`,
+        );
+        return;
+      }
+
+      const saved = await saveSupportDecision("CONTACTED");
+      if (!saved) {
+        return;
+      }
+
+      setShowRiskModal(false);
+      await Linking.openURL(NCMH_HOTLINE_DIAL_URL);
+    } catch {
+      Alert.alert(
+        "Call NCMH Hotline",
+        `Please call ${NCMH_HOTLINE_LANDLINE} or ${NCMH_HOTLINE_DISPLAY} for immediate support.`,
+      );
+    }
+  }, [isSavingSupportResponse, saveSupportDecision]);
+
+  const handleOpenCounseling = useCallback(async () => {
+    if (isSavingSupportResponse) {
+      return;
+    }
+
+    const saved = await saveSupportDecision("CONTACTED");
+    if (!saved) {
+      return;
+    }
+
+    setShowRiskModal(false);
+    router.push("/consult");
+  }, [isSavingSupportResponse, saveSupportDecision]);
+
+  const handleOpenWellnessTools = useCallback(() => {
+    if (isSavingSupportResponse) {
+      return;
+    }
+
+    setShowRiskModal(false);
+    router.push("/wellness-tools");
+  }, [isSavingSupportResponse]);
 
   const handleFinishEntry = async () => {
     if (!user?.studentNumber || !entry?.id || isFinishing) {
@@ -695,55 +795,111 @@ export default function WriteEntryScreen() {
           visible={showRiskModal}
           transparent
           animationType="fade"
-          onRequestClose={() => setShowRiskModal(false)}
+          onRequestClose={() => {
+            void handleDismissRiskModal();
+          }}
         >
           <View style={styles.modalBackdrop}>
-            <View style={styles.modalCard}>
-              <Text style={styles.modalBody}>
-                Muni noticed that this entry may need immediate human support.
-                Would you like to contact a counselor now?
-              </Text>
+            <View style={styles.riskModalCard}>
+              <Pressable
+                style={styles.riskCloseButton}
+                onPress={() => {
+                  void handleDismissRiskModal();
+                }}
+                disabled={isSavingSupportResponse}
+                accessibilityLabel="Dismiss support options"
+              >
+                <Ionicons name="close" size={18} color="#72808C" />
+              </Pressable>
 
-              <View style={styles.modalActions}>
+              <View style={styles.riskHeader}>
+                <View style={styles.riskIconBadge}>
+                  <Ionicons name="shield-outline" size={22} color="#FFFFFF" />
+                </View>
+                <Text style={styles.riskTitle}>Get support right now</Text>
+                <Text style={styles.riskBody}>
+                  Muni noticed language that may point to self-harm or suicide.
+                  Choose the fastest support option below.
+                </Text>
+                <Text style={styles.riskHotlineText}>
+                  24/7 NCMH Crisis Hotline: {NCMH_HOTLINE_LANDLINE} or{" "}
+                  {NCMH_HOTLINE_DISPLAY}
+                </Text>
+              </View>
+
+              <View style={styles.riskActionStack}>
                 <Pressable
-                  style={styles.modalSecondaryButton}
-                  onPress={async () => {
-                    if (user?.studentNumber && entry?.id) {
-                      const result = await saveJournalSupportResponse({
-                        entryId: entry.id,
-                        response: "DECLINED",
-                        studentNumber: user.studentNumber,
-                      });
-                      if (result.ok && result.entry) {
-                        setEntry(result.entry);
-                      }
-                    }
-                    setShowRiskModal(false);
+                  style={[
+                    styles.riskActionButton,
+                    styles.riskActionButtonHotline,
+                    isSavingSupportResponse && styles.riskActionButtonDisabled,
+                  ]}
+                  onPress={() => {
+                    void handleCallHotline();
                   }}
+                  disabled={isSavingSupportResponse}
                 >
-                  <Text style={styles.modalSecondaryText}>Not Now</Text>
+                  <View style={styles.riskActionIconWrap}>
+                    <Ionicons name="call-outline" size={20} color="#2E6B23" />
+                  </View>
+                  <View style={styles.riskActionCopy}>
+                    <Text style={styles.riskActionTitle}>Call hotline now</Text>
+                    <Text style={styles.riskActionHint}>
+                      Open your phone dialer for immediate crisis support.
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#68815F" />
                 </Pressable>
 
                 <Pressable
-                  style={styles.modalPrimaryButton}
-                  onPress={async () => {
-                    if (user?.studentNumber && entry?.id) {
-                      const result = await saveJournalSupportResponse({
-                        entryId: entry.id,
-                        response: "CONTACTED",
-                        studentNumber: user.studentNumber,
-                      });
-                      if (result.ok && result.entry) {
-                        setEntry(result.entry);
-                      }
-                    }
-                    setShowRiskModal(false);
-                    router.push("/consult");
+                  style={[
+                    styles.riskActionButton,
+                    styles.riskActionButtonCounseling,
+                    isSavingSupportResponse && styles.riskActionButtonDisabled,
+                  ]}
+                  onPress={() => {
+                    void handleOpenCounseling();
                   }}
+                  disabled={isSavingSupportResponse}
                 >
-                  <Text style={styles.modalPrimaryText}>Contact</Text>
+                  <View style={styles.riskActionIconWrap}>
+                    <Ionicons name="calendar-outline" size={20} color="#3B5B7A" />
+                  </View>
+                  <View style={styles.riskActionCopy}>
+                    <Text style={styles.riskActionTitle}>Schedule counseling</Text>
+                    <Text style={styles.riskActionHint}>
+                      Go straight to the counseling booking screen.
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#68815F" />
+                </Pressable>
+
+                <Pressable
+                  style={[
+                    styles.riskActionButton,
+                    styles.riskActionButtonWellness,
+                    isSavingSupportResponse && styles.riskActionButtonDisabled,
+                  ]}
+                  onPress={handleOpenWellnessTools}
+                  disabled={isSavingSupportResponse}
+                >
+                  <View style={styles.riskActionIconWrap}>
+                    <Ionicons name="leaf-outline" size={20} color="#4F7D38" />
+                  </View>
+                  <View style={styles.riskActionCopy}>
+                    <Text style={styles.riskActionTitle}>Use wellness tools</Text>
+                    <Text style={styles.riskActionHint}>
+                      Open guided calming exercises right away.
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#68815F" />
                 </Pressable>
               </View>
+
+              <Text style={styles.riskFooterText}>
+                If you are in immediate danger, contact local emergency services
+                now.
+              </Text>
             </View>
           </View>
         </Modal>
@@ -1424,6 +1580,126 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
     elevation: 4,
+  },
+  riskModalCard: {
+    width: "100%",
+    maxWidth: 360,
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 16,
+    shadowColor: "#525C67",
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  riskCloseButton: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 2,
+  },
+  riskHeader: {
+    alignItems: "center",
+    paddingTop: 8,
+    marginBottom: 14,
+  },
+  riskIconBadge: {
+    width: 46,
+    height: 46,
+    borderRadius: 999,
+    backgroundColor: "#79C943",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  riskTitle: {
+    color: "#33475C",
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  riskBody: {
+    marginTop: 8,
+    color: "#566675",
+    fontSize: 14,
+    lineHeight: 21,
+    fontWeight: "500",
+    textAlign: "center",
+  },
+  riskHotlineText: {
+    marginTop: 10,
+    color: "#2E6B23",
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  riskActionStack: {
+    rowGap: 10,
+  },
+  riskActionButton: {
+    minHeight: 70,
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 10,
+  },
+  riskActionButtonHotline: {
+    backgroundColor: "#F3FBEF",
+    borderColor: "#CFE7BE",
+  },
+  riskActionButtonCounseling: {
+    backgroundColor: "#F4F8FC",
+    borderColor: "#D7E2EE",
+  },
+  riskActionButtonWellness: {
+    backgroundColor: "#F8FAF3",
+    borderColor: "#E1E8D8",
+  },
+  riskActionButtonDisabled: {
+    opacity: 0.7,
+  },
+  riskActionIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  riskActionCopy: {
+    flex: 1,
+  },
+  riskActionTitle: {
+    color: "#31465A",
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "700",
+  },
+  riskActionHint: {
+    marginTop: 2,
+    color: "#667683",
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  riskFooterText: {
+    marginTop: 12,
+    color: "#7A8691",
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: "center",
   },
   modalBody: {
     color: "#52606C",
