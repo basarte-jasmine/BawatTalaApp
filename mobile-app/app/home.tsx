@@ -11,7 +11,7 @@ import {
   claimDailyCheckIn,
   fetchCheckInStatus,
   fetchDailyMood,
-  fetchRecentJournalEntries,
+  fetchJournalEntriesByDate,
   fetchStudentAppointments,
   fetchStudentNotifications,
   saveDailyMood,
@@ -629,7 +629,7 @@ export default function HomeScreen() {
       return;
     }
 
-    const result = await fetchRecentJournalEntries(user.studentNumber, 1);
+    const result = await fetchJournalEntriesByDate(user.studentNumber, getManilaTodayParts().isoDate);
     if (!result.ok) {
       setRecentEntries([]);
       return;
@@ -1268,8 +1268,8 @@ export default function HomeScreen() {
           <View style={styles.recentHeader}>
             <View style={styles.recentHeaderTextWrap}>
               <Text style={styles.sectionEyebrow}>Journal</Text>
-              <Text style={styles.recentTitle}>Recent Entries</Text>
-              <Text style={styles.recentSubtitle}>A quick look at the moments you captured most recently.</Text>
+              <Text style={styles.recentTitle}>Today&apos;s Entries</Text>
+              <Text style={styles.recentSubtitle}>Everything you wrote today appears here.</Text>
             </View>
             <Pressable style={styles.recentFilterButton} onPress={() => setShowRecentEntriesFilterModal(true)} accessibilityLabel="Sort today's entries">
               <Ionicons name="funnel-outline" size={16} color="#3F4A56" />
@@ -1313,14 +1313,6 @@ export default function HomeScreen() {
                 </View>
               )}
             </ScrollView>
-
-            <Pressable
-              style={styles.addEntryButton}
-              accessibilityLabel="Add entry"
-              onPress={() => router.push("/write-entry?mode=new")}
-            >
-              <Ionicons name="add" size={30} color="#FFFFFF" />
-            </Pressable>
           </View>
         </View>
 
@@ -2709,7 +2701,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   recentListContent: {
-    paddingBottom: 76,
+    paddingBottom: 8,
     rowGap: 10,
   },
   entryItem: {
@@ -2752,22 +2744,6 @@ const styles = StyleSheet.create({
     color: "#2F3F52",
     fontSize: 33 / 2,
     lineHeight: 22,
-  },
-  addEntryButton: {
-    position: "absolute",
-    right: 10,
-    bottom: 10,
-    width: 56,
-    height: 56,
-    borderRadius: 999,
-    backgroundColor: "#74B255",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#5C6570",
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
   },
   supportWrapCard: {
     borderRadius: 24,
