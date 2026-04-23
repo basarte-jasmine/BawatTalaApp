@@ -1,5 +1,4 @@
 import { Ionicons } from "@expo/vector-icons";
-import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -14,6 +13,11 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
+  setAmbientAudioModeAsync,
+  useAmbientAudioPlayer,
+  useAmbientAudioPlayerStatus,
+} from "../lib/ambient-audio";
+import {
   GROUNDING_AUDIO_TRACKS,
   GROUNDING_STEPS,
   GROUNDING_VIBES,
@@ -21,7 +25,7 @@ import {
 
 type PercentValue = `${number}%`;
 
-const RAIN_STREAKS: Array<{ left: PercentValue; top: number; height: number; opacity: number }> = [
+const RAIN_STREAKS: { left: PercentValue; top: number; height: number; opacity: number }[] = [
   { left: "8%", top: -18, height: 84, opacity: 0.28 },
   { left: "22%", top: 8, height: 70, opacity: 0.22 },
   { left: "36%", top: -4, height: 90, opacity: 0.26 },
@@ -30,13 +34,13 @@ const RAIN_STREAKS: Array<{ left: PercentValue; top: number; height: number; opa
   { left: "82%", top: 10, height: 74, opacity: 0.2 },
 ];
 
-const FLOAT_ORBS: Array<{ left: PercentValue; top: number; size: number; opacity: number }> = [
+const FLOAT_ORBS: { left: PercentValue; top: number; size: number; opacity: number }[] = [
   { left: "10%", top: 42, size: 74, opacity: 0.2 },
   { left: "62%", top: 88, size: 98, opacity: 0.16 },
   { left: "28%", top: 168, size: 58, opacity: 0.14 },
 ];
 
-const TWINKLES: Array<{ left: PercentValue; top: number; size: number; opacity: number }> = [
+const TWINKLES: { left: PercentValue; top: number; size: number; opacity: number }[] = [
   { left: "14%", top: 52, size: 7, opacity: 0.9 },
   { left: "30%", top: 98, size: 5, opacity: 0.72 },
   { left: "58%", top: 58, size: 6, opacity: 0.85 },
@@ -45,7 +49,7 @@ const TWINKLES: Array<{ left: PercentValue; top: number; size: number; opacity: 
   { left: "86%", top: 64, size: 5, opacity: 0.74 },
 ];
 
-const WAVE_BANDS: Array<{ width: PercentValue; height: number; left: PercentValue; bottom: number; opacity: number }> = [
+const WAVE_BANDS: { width: PercentValue; height: number; left: PercentValue; bottom: number; opacity: number }[] = [
   { width: "78%", height: 54, left: "-6%", bottom: 28, opacity: 0.28 },
   { width: "64%", height: 46, left: "20%", bottom: 54, opacity: 0.22 },
   { width: "72%", height: 60, left: "8%", bottom: -10, opacity: 0.3 },
@@ -201,15 +205,15 @@ export default function WellnessGroundingScreen() {
   const selectedVibe = GROUNDING_VIBES.find((item) => item.id === selectedVibeId) ?? GROUNDING_VIBES[0];
   const selectedAudio = GROUNDING_AUDIO_TRACKS.find((item) => item.id === selectedAudioId) ?? GROUNDING_AUDIO_TRACKS[0];
   const activeStep = GROUNDING_STEPS.find((step) => step.id === activeStepId) ?? GROUNDING_STEPS[0];
-  const audioPlayer = useAudioPlayer(null, { updateInterval: 250 });
-  const audioStatus = useAudioPlayerStatus(audioPlayer);
+  const audioPlayer = useAmbientAudioPlayer(null, { updateInterval: 250 });
+  const audioStatus = useAmbientAudioPlayerStatus(audioPlayer);
   const shouldResumeAfterSwitchRef = useRef(false);
   const drift = useRef(new Animated.Value(0)).current;
   const glow = useRef(new Animated.Value(0)).current;
   const rain = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    setAudioModeAsync({
+    setAmbientAudioModeAsync({
       interruptionMode: "mixWithOthers",
       playsInSilentMode: true,
     }).catch(() => undefined);
