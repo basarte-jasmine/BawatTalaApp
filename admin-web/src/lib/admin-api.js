@@ -161,6 +161,29 @@ export async function fetchAdminAppointmentsOverview(date) {
   return request(`/api/appointments/admin/overview${suffix}`);
 }
 
+export async function fetchAdminNotifications(email) {
+  const params = new URLSearchParams();
+  if (email) {
+    params.set("email", email);
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return request(`/api/admin/notifications${suffix}`);
+}
+
+export async function markAdminNotificationRead(notificationId, email) {
+  return request(`/api/admin/notifications/${notificationId}/read`, {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function markAllAdminNotificationsRead(email) {
+  return request("/api/admin/notifications/read-all", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
 export async function updateAdminAvailability(payload) {
   return request("/api/appointments/admin/availability", {
     method: "POST",

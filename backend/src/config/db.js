@@ -398,6 +398,8 @@ async function ensureDatabaseSchema() {
       counselor_gender_preference text,
       booking_source text not null default 'MOBILE_APP',
       created_by_admin_email text,
+      appointment_reminder_sent_at timestamptz,
+      pending_expiry_warning_sent_at timestamptz,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now(),
       constraint counselor_appointments_status_check check (status in ('PENDING', 'CONFIRMED', 'DECLINED', 'COMPLETED', 'CANCELLED')),
@@ -417,6 +419,16 @@ async function ensureDatabaseSchema() {
   await pool.query(`
     alter table public.counselor_appointments
     add column if not exists created_by_admin_email text;
+  `);
+
+  await pool.query(`
+    alter table public.counselor_appointments
+    add column if not exists appointment_reminder_sent_at timestamptz;
+  `);
+
+  await pool.query(`
+    alter table public.counselor_appointments
+    add column if not exists pending_expiry_warning_sent_at timestamptz;
   `);
 
   await pool.query(`
@@ -457,6 +469,21 @@ async function ensureDatabaseSchema() {
   `);
 
   await pool.query(`
+    create table if not exists public.admin_notifications (
+      id uuid primary key default gen_random_uuid(),
+      admin_email text not null,
+      kind text not null,
+      title text not null,
+      message text not null,
+      metadata jsonb not null default '{}'::jsonb,
+      is_read boolean not null default false,
+      read_at timestamptz,
+      deleted_at timestamptz,
+      created_at timestamptz not null default now()
+    );
+  `);
+
+  await pool.query(`
     create table if not exists public.student_notifications (
       id uuid primary key default gen_random_uuid(),
       student_number text not null,
@@ -473,6 +500,11 @@ async function ensureDatabaseSchema() {
 
   await pool.query(`
     alter table public.student_notifications
+    add column if not exists deleted_at timestamptz;
+  `);
+
+  await pool.query(`
+    alter table public.admin_notifications
     add column if not exists deleted_at timestamptz;
   `);
 
@@ -511,6 +543,11 @@ async function ensureDatabaseSchema() {
   await pool.query(`
     create index if not exists admin_activity_logs_created_at_idx
       on public.admin_activity_logs (created_at desc);
+  `);
+
+  await pool.query(`
+    create index if not exists admin_notifications_email_created_at_idx
+      on public.admin_notifications (admin_email, created_at desc);
   `);
 
   await pool.query(`

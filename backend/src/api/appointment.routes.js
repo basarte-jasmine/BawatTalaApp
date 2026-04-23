@@ -10,6 +10,7 @@ const ACTIVE_APPOINTMENT_STATUSES = ["PENDING", "CONFIRMED"];
 const MOBILE_BOOKING_LEAD_DAYS = 2;
 const APPOINTMENT_DECISION_WINDOW_HOURS = 24;
 const APPOINTMENT_EXPIRY_CHECK_MS = 5 * 60 * 1000;
+const APPOINTMENT_REMINDER_LEAD_MINUTES = 10;
 const CONCERN_OPTIONS = [
   "Academic Stress",
   "Anxiety / Stress",
@@ -140,6 +141,32 @@ function formatRelativeDateTime(value) {
   }).format(date);
 }
 
+function getAppointmentStartDateTime(appointmentDate, slotTime) {
+  const normalizedDate = normalizeDateValue(appointmentDate);
+  const normalizedSlot = normalizeSlotTime(slotTime);
+  if (!normalizedDate || !normalizedSlot) return null;
+  const parsed = new Date(`${normalizedDate}T${normalizedSlot}:00+08:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatAppointmentDateTime(appointmentDate, slotTime) {
+  const appointmentDateTime = getAppointmentStartDateTime(appointmentDate, slotTime);
+  if (!appointmentDateTime) {
+    return `${formatDateLong(appointmentDate)} at ${toReadableTime(slotTime)}`;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: MANILA_TIME_ZONE,
+    month: "long",
+    day: "numeric",
+    weekday: "long",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(appointmentDateTime);
+}
+
 function addDaysToIsoDate(isoDate, days) {
   const anchor = new Date(`${isoDate}T12:00:00+08:00`);
   anchor.setUTCDate(anchor.getUTCDate() + days);
@@ -243,16 +270,42 @@ async function sendAppointmentEmail({ to, subject, intro, appointment, ctaText =
     ctaText ? `Note: ${ctaText}` : "",
   ].filter(Boolean);
 
+  const summaryRows = [
+    { label: "Date", value: formatDateLong(appointment.appointment_date) },
+    { label: "Time", value: toReadableTime(appointment.slot_time) },
+    { label: "Concern", value: appointment.concern },
+    { label: "Counselor", value: appointment.counselor_name || appointment.counselor_full_name || "Guidance Counselor" },
+  ];
+
   const html = `
-    <div style="font-family: Arial, sans-serif; color: #243442; line-height: 1.6;">
-      <p>${escapeHtml(intro)}</p>
-      <div style="border: 1px solid #d8e7d1; background: #f6fbf3; border-radius: 12px; padding: 16px;">
-        <p><strong>Date:</strong> ${escapeHtml(formatDateLong(appointment.appointment_date))}</p>
-        <p><strong>Time:</strong> ${escapeHtml(toReadableTime(appointment.slot_time))}</p>
-        <p><strong>Concern:</strong> ${escapeHtml(appointment.concern)}</p>
-        <p><strong>Counselor:</strong> ${escapeHtml(appointment.counselor_name || appointment.counselor_full_name || "Guidance Counselor")}</p>
-      </div>
-      ${ctaText ? `<p>${escapeHtml(ctaText)}</p>` : ""}
+    <div style="margin: 0; padding: 24px 12px; background: #eef6ea; font-family: Arial, sans-serif; color: #203126;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 640px; margin: 0 auto; background: #ffffff; border: 1px solid #d7e6d0; border-radius: 18px; overflow: hidden;">
+        <tr>
+          <td style="padding: 20px 24px; background: linear-gradient(135deg, #386641 0%, #6a994e 100%); color: #ffffff;">
+            <div style="font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.88;">Bawat Tala Counseling</div>
+            <div style="margin-top: 8px; font-size: 24px; line-height: 1.3; font-weight: 700;">${escapeHtml(subject)}</div>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding: 24px;">
+            <p style="margin: 0 0 18px; font-size: 16px; line-height: 1.7; color: #2b3d31;">${escapeHtml(intro)}</p>
+            <div style="margin: 0 0 18px; padding: 16px 18px; border-radius: 16px; background: #f6fbf3; border: 1px solid #dbead5;">
+              <div style="font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #55785e; margin-bottom: 12px;">Appointment Summary</div>
+              ${summaryRows
+                .map(
+                  (row) => `
+                    <div style="padding: 10px 0; border-top: ${row.label === "Date" ? "none" : "1px solid #dfeadc"};">
+                      <div style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #6a7f70; margin-bottom: 4px;">${escapeHtml(row.label)}</div>
+                      <div style="font-size: 16px; font-weight: 700; color: #22352a;">${escapeHtml(row.value)}</div>
+                    </div>
+                  `,
+                )
+                .join("")}
+            </div>
+            ${ctaText ? `<div style="padding: 14px 16px; border-radius: 14px; background: #fff8df; border: 1px solid #f0e0a1; color: #5b4a16; font-size: 14px; line-height: 1.6;"><strong>Next step:</strong> ${escapeHtml(ctaText)}</div>` : ""}
+          </td>
+        </tr>
+      </table>
     </div>
   `;
 
@@ -366,6 +419,49 @@ async function createStudentNotification({
   );
 }
 
+async function createAdminNotification({
+  adminEmail,
+  kind,
+  title,
+  message,
+  metadata = {},
+}) {
+  const normalizedEmail = String(adminEmail || "").trim().toLowerCase();
+  if (!normalizedEmail) {
+    return;
+  }
+
+  await query(
+    `
+      insert into public.admin_notifications (
+        admin_email,
+        kind,
+        title,
+        message,
+        metadata
+      )
+      values ($1, $2, $3, $4, $5::jsonb)
+    `,
+    [normalizedEmail, kind, title, message, JSON.stringify(metadata || {})],
+  );
+}
+
+async function markAppointmentReminderSent(appointmentId, columnName) {
+  const allowedColumns = new Set(["appointment_reminder_sent_at", "pending_expiry_warning_sent_at"]);
+  if (!allowedColumns.has(columnName)) {
+    throw new Error("Invalid appointment reminder column.");
+  }
+
+  await query(
+    `
+      update public.counselor_appointments
+      set ${columnName} = coalesce(${columnName}, now()), updated_at = now()
+      where id = $1::uuid
+    `,
+    [appointmentId],
+  );
+}
+
 async function findStudentProfileByStudentNumber(studentNumber) {
   const result = await query(
     `
@@ -404,6 +500,129 @@ async function ensureStudentHasNoActiveAppointmentOnDate({
   if (result.rowCount > 0) {
     throw new Error("This student already has an appointment request on that date.");
   }
+}
+
+async function processUpcomingConfirmedAppointmentReminders() {
+  const result = await query(
+    `
+      select
+        ca.id,
+        ca.student_number,
+        ca.counselor_id,
+        ca.concern,
+        ca.appointment_date,
+        ca.slot_time,
+        coalesce(sp.full_name, ca.student_number) as student_name,
+        coalesce(sp.email, '') as student_email,
+        aa.email as counselor_email,
+        coalesce(nullif(aa.full_name, ''), split_part(aa.email, '@', 1)) as counselor_name,
+        (
+          (ca.appointment_date::text || 'T' || ca.slot_time || ':00+08:00')::timestamptz
+        ) as appointment_starts_at
+      from public.counselor_appointments ca
+      join public.admin_accounts aa on aa.id = ca.counselor_id
+      left join public.student_profiles sp on sp.student_number = ca.student_number
+      where ca.status = 'CONFIRMED'
+        and ca.appointment_reminder_sent_at is null
+        and (
+          (ca.appointment_date::text || 'T' || ca.slot_time || ':00+08:00')::timestamptz
+        ) > now()
+        and (
+          (ca.appointment_date::text || 'T' || ca.slot_time || ':00+08:00')::timestamptz
+        ) - ($1::int * interval '1 minute') <= now()
+      order by appointment_starts_at asc
+    `,
+    [APPOINTMENT_REMINDER_LEAD_MINUTES],
+  );
+
+  for (const row of result.rows) {
+    await createStudentNotification({
+      studentNumber: row.student_number,
+      kind: "APPOINTMENT_REMINDER",
+      title: "Appointment starts in 10 minutes",
+      message: `Your session with ${row.counselor_name} is set for ${formatAppointmentDateTime(row.appointment_date, row.slot_time)}. Please be ready to meet your counselor.`,
+      metadata: {
+        appointmentId: row.id,
+        counselorId: row.counselor_id,
+        counselorName: row.counselor_name,
+        appointmentStartsAt: row.appointment_starts_at,
+      },
+    });
+
+    await sendAppointmentEmail({
+      to: row.student_email,
+      subject: "Your counseling appointment starts in 10 minutes",
+      intro: `Your counseling session with ${row.counselor_name} starts in about 10 minutes.`,
+      appointment: row,
+      ctaText: "Please head to your scheduled session and arrive a few minutes early if possible.",
+      context: "student appointment reminder",
+    });
+
+    await markAppointmentReminderSent(row.id, "appointment_reminder_sent_at");
+  }
+
+  return result.rowCount;
+}
+
+async function processPendingAppointmentExpiryWarnings() {
+  const result = await query(
+    `
+      select
+        ca.id,
+        ca.student_number,
+        ca.counselor_id,
+        ca.concern,
+        ca.appointment_date,
+        ca.slot_time,
+        ca.created_at,
+        coalesce(sp.full_name, ca.student_number) as student_name,
+        coalesce(sp.email, '') as student_email,
+        aa.email as counselor_email,
+        coalesce(nullif(aa.full_name, ''), split_part(aa.email, '@', 1)) as counselor_name,
+        (ca.created_at + ($1::int * interval '1 hour')) as decision_deadline
+      from public.counselor_appointments ca
+      join public.admin_accounts aa on aa.id = ca.counselor_id
+      left join public.student_profiles sp on sp.student_number = ca.student_number
+      where ca.status = 'PENDING'
+        and ca.pending_expiry_warning_sent_at is null
+        and (ca.created_at + ($1::int * interval '1 hour')) > now()
+        and (ca.created_at + ($1::int * interval '1 hour')) - ($2::int * interval '1 minute') <= now()
+      order by decision_deadline asc
+    `,
+    [APPOINTMENT_DECISION_WINDOW_HOURS, APPOINTMENT_REMINDER_LEAD_MINUTES],
+  );
+
+  for (const row of result.rows) {
+    await createAdminNotification({
+      adminEmail: row.counselor_email,
+      kind: "APPOINTMENT_PENDING_EXPIRY_WARNING",
+      title: "Pending request expires in 10 minutes",
+      message: `${row.student_name}'s request for ${formatAppointmentDateTime(row.appointment_date, row.slot_time)} will auto-decline in 10 minutes unless you respond now.`,
+      metadata: {
+        appointmentId: row.id,
+        appointmentDate: normalizeDateValue(row.appointment_date),
+        counselorId: row.counselor_id,
+        counselorName: row.counselor_name,
+        decisionDeadline: row.decision_deadline,
+        ownerCounselorId: row.counselor_id,
+        slotTime: row.slot_time,
+        studentNumber: row.student_number,
+      },
+    });
+
+    await sendAppointmentEmail({
+      to: row.counselor_email,
+      subject: "Pending counseling request expires in 10 minutes",
+      intro: `${row.student_name}'s request will be automatically declined in 10 minutes unless it is confirmed, declined, or rescheduled now.`,
+      appointment: row,
+      ctaText: "Please open the admin scheduling panel now if you want to respond before the request expires.",
+      context: "counselor pending expiry warning",
+    });
+
+    await markAppointmentReminderSent(row.id, "pending_expiry_warning_sent_at");
+  }
+
+  return result.rowCount;
 }
 
 function canManageCounselorDecision(actorAdmin, appointment) {
@@ -469,6 +688,19 @@ async function expirePendingAppointments() {
       },
     });
 
+    await createAdminNotification({
+      adminEmail: row.counselor_email,
+      kind: "APPOINTMENT_AUTO_DECLINED",
+      title: "A pending appointment was auto-declined",
+      message: `${row.student_name}'s request for ${toReadableTime(row.slot_time)} on ${formatDateLong(row.appointment_date)} expired after 24 hours without a response.`,
+      metadata: {
+        appointmentId: row.id,
+        counselorId: row.counselor_id,
+        counselorName: row.counselor_name,
+        studentNumber: row.student_number,
+      },
+    });
+
     await createStudentNotification({
       studentNumber: row.student_number,
       kind: "APPOINTMENT_AUTO_DECLINED",
@@ -512,6 +744,8 @@ function startPendingAppointmentExpiryWorker() {
 
   const run = async () => {
     try {
+      await processPendingAppointmentExpiryWarnings();
+      await processUpcomingConfirmedAppointmentReminders();
       await expirePendingAppointments();
     } catch (error) {
       console.error("Pending appointment expiry check failed:", error?.message || error);
@@ -571,6 +805,19 @@ async function notifyStudentAboutAppointment({
 }
 
 async function notifyCounselorAboutPendingAppointment({ appointment, student }) {
+  await createAdminNotification({
+    adminEmail: appointment.counselor_email,
+    kind: "APPOINTMENT_PENDING_REVIEW",
+    title: "New counseling appointment needs your response",
+    message: `${student?.full_name || appointment.student_number} requested ${toReadableTime(appointment.slot_time)} on ${formatDateLong(appointment.appointment_date)}. Please confirm, decline, or reschedule within 24 hours.`,
+    metadata: {
+      appointmentId: appointment.id,
+      counselorId: appointment.counselor_id,
+      counselorName: appointment.counselor_name,
+      studentNumber: appointment.student_number,
+    },
+  });
+
   await sendAppointmentEmail({
     to: appointment.counselor_email,
     subject: "New counseling appointment needs your response",

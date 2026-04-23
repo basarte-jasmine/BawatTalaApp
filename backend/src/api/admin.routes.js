@@ -115,6 +115,20 @@ async function writeAdminActivityLog({
   );
 }
 
+async function listAdminNotifications(adminEmail) {
+  return query(
+    `
+      select id, kind, title, message, metadata, is_read, read_at, created_at
+      from public.admin_notifications
+      where admin_email = $1
+        and deleted_at is null
+      order by created_at desc
+      limit 20
+    `,
+    [adminEmail],
+  );
+}
+
 async function ensureDefaultAdminAccount() {
   const defaultEmail = normalizeEmail(
     process.env.ADMIN_DEFAULT_EMAIL || "basartejasmine@gmail.com",
@@ -1069,6 +1083,69 @@ router.post("/forgot-password/reset", async (req, res) => {
 
   clearResetSession(email);
   return res.json({ message: "Password updated successfully" });
+});
+
+router.get("/notifications", async (req, res) => {
+  const email = normalizeEmail(req.query.email || "");
+  if (!email) {
+    return res.status(400).json({ message: "Admin email is required." });
+  }
+
+  const result = await listAdminNotifications(email);
+  return res.json({
+    notifications: result.rows.map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      title: row.title,
+      message: row.message,
+      metadata: row.metadata || {},
+      isRead: Boolean(row.is_read),
+      readAt: row.read_at,
+      createdAt: row.created_at,
+    })),
+    unreadCount: result.rows.filter((row) => !row.is_read).length,
+  });
+});
+
+router.post("/notifications/:notificationId/read", async (req, res) => {
+  const notificationId = String(req.params.notificationId || "").trim();
+  const email = normalizeEmail(req.body.email || "");
+  if (!notificationId || !email) {
+    return res.status(400).json({ message: "Notification id and admin email are required." });
+  }
+
+  await query(
+    `
+      update public.admin_notifications
+      set is_read = true, read_at = now()
+      where id = $1::uuid
+        and admin_email = $2
+        and deleted_at is null
+    `,
+    [notificationId, email],
+  );
+
+  return res.json({ message: "Notification marked as read." });
+});
+
+router.post("/notifications/read-all", async (req, res) => {
+  const email = normalizeEmail(req.body.email || "");
+  if (!email) {
+    return res.status(400).json({ message: "Admin email is required." });
+  }
+
+  await query(
+    `
+      update public.admin_notifications
+      set is_read = true, read_at = now()
+      where admin_email = $1
+        and deleted_at is null
+        and is_read = false
+    `,
+    [email],
+  );
+
+  return res.json({ message: "Notifications marked as read." });
 });
 
 router.get("/dashboard/summary", async (req, res) => {

@@ -1,5 +1,10 @@
-import { Bell, Menu, Search } from "lucide-react";
-import { useState } from "react";
+import { Bell, CheckCheck, Menu, Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  fetchAdminNotifications,
+  markAdminNotificationRead,
+  markAllAdminNotificationsRead,
+} from "../lib/admin-api";
 import Modal from "./Modal";
 
 function getAdminProfile(session) {
@@ -30,6 +35,23 @@ function getAdminProfile(session) {
   };
 }
 
+function formatNotificationTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const minutesAgo = Math.round((Date.now() - date.getTime()) / 60000);
+  if (minutesAgo < 1) return "Just now";
+  if (minutesAgo < 60) return `${minutesAgo} min ago`;
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
 export default function Header({
   title = "Dashboard",
   subtitle = "",
@@ -37,7 +59,92 @@ export default function Header({
   session,
 }) {
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const notificationPanelRef = useRef(null);
   const adminProfile = getAdminProfile(session);
+  const adminEmail = String(session?.email || "").trim().toLowerCase();
+  const unreadCount = useMemo(
+    () => notifications.filter((item) => !item.isRead).length,
+    [notifications],
+  );
+
+  useEffect(() => {
+    if (!adminEmail) {
+      setNotifications([]);
+      return undefined;
+    }
+
+    let isMounted = true;
+    async function loadNotifications() {
+      try {
+        setNotificationsLoading(true);
+        const data = await fetchAdminNotifications(adminEmail);
+        if (isMounted) {
+          setNotifications(Array.isArray(data?.notifications) ? data.notifications : []);
+        }
+      } catch (_error) {
+        if (isMounted) {
+          setNotifications([]);
+        }
+      } finally {
+        if (isMounted) {
+          setNotificationsLoading(false);
+        }
+      }
+    }
+
+    void loadNotifications();
+    const intervalId = setInterval(() => {
+      void loadNotifications();
+    }, 60000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
+  }, [adminEmail]);
+
+  useEffect(() => {
+    function handleOutsideClick(event) {
+      if (!notificationPanelRef.current?.contains(event.target)) {
+        setIsNotificationsOpen(false);
+      }
+    }
+
+    if (isNotificationsOpen) {
+      document.addEventListener("mousedown", handleOutsideClick);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+    };
+  }, [isNotificationsOpen]);
+
+  async function handleOpenNotification(item) {
+    if (!item?.id || item.isRead || !adminEmail) {
+      return;
+    }
+
+    try {
+      await markAdminNotificationRead(item.id, adminEmail);
+      setNotifications((current) =>
+        current.map((entry) => (entry.id === item.id ? { ...entry, isRead: true } : entry)),
+      );
+    } catch (_error) {}
+  }
+
+  async function handleMarkAllNotificationsRead() {
+    if (!adminEmail || unreadCount === 0) {
+      return;
+    }
+
+    try {
+      await markAllAdminNotificationsRead(adminEmail);
+      setNotifications((current) => current.map((item) => ({ ...item, isRead: true })));
+    } catch (_error) {}
+  }
 
   return (
     <>
@@ -72,9 +179,87 @@ export default function Header({
             </div>
 
             <div className="flex items-center gap-6 self-end md:self-auto">
-              <div className="relative cursor-pointer rounded-full p-2 transition-colors hover:bg-gray-100">
-                <Bell className="h-5 w-5 text-gray-600" />
-                <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full border-2 border-white bg-amber-500" />
+              <div className="relative" ref={notificationPanelRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsNotificationsOpen((current) => !current)}
+                  className="relative rounded-full p-2 transition-colors hover:bg-gray-100"
+                  aria-label="Open notifications"
+                >
+                  <Bell className="h-5 w-5 text-gray-600" />
+                  {unreadCount > 0 ? (
+                    <>
+                      <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-amber-500" />
+                      <span className="absolute -right-1 -top-1 min-w-[18px] rounded-full bg-admin-ink px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                        {unreadCount > 9 ? "9+" : unreadCount}
+                      </span>
+                    </>
+                  ) : null}
+                </button>
+
+                {isNotificationsOpen ? (
+                  <div className="absolute right-0 z-20 mt-3 w-[22rem] overflow-hidden rounded-3xl border border-[#dbe5d4] bg-white shadow-[0_22px_55px_rgba(32,49,38,0.16)]">
+                    <div className="border-b border-[#e7eee2] bg-[linear-gradient(135deg,#f7fbf3_0%,#eef6ea_100%)] px-4 py-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#6d816d]">Notifications</p>
+                          <h3 className="mt-1 text-base font-semibold text-admin-ink">
+                            {unreadCount > 0 ? `${unreadCount} unread update${unreadCount === 1 ? "" : "s"}` : "All caught up"}
+                          </h3>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void handleMarkAllNotificationsRead()}
+                          className="inline-flex items-center gap-2 rounded-full border border-[#d3dfcb] bg-white px-3 py-1.5 text-xs font-semibold text-[#39563f] transition hover:border-[#b8cbaf] hover:bg-[#f8fbf6]"
+                          disabled={unreadCount === 0}
+                        >
+                          <CheckCheck className="h-4 w-4" />
+                          Mark all read
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="max-h-[24rem] overflow-y-auto px-3 py-3">
+                      {notificationsLoading ? (
+                        <div className="rounded-2xl border border-dashed border-[#d7e2d0] bg-[#f9fcf7] px-4 py-6 text-center text-sm text-[#73836f]">
+                          Loading notifications...
+                        </div>
+                      ) : notifications.length ? (
+                        <div className="space-y-2">
+                          {notifications.map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => void handleOpenNotification(item)}
+                              className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+                                item.isRead
+                                  ? "border-[#edf2ea] bg-white hover:border-[#d6e2cf]"
+                                  : "border-[#dce9d3] bg-[#f6fbf3] shadow-[inset_0_0_0_1px_rgba(111,174,70,0.08)] hover:border-[#bfd5b2]"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className={`h-2.5 w-2.5 rounded-full ${item.isRead ? "bg-[#d0d9ca]" : "bg-[#6a994e]"}`} />
+                                    <p className="truncate text-sm font-semibold text-admin-ink">{item.title}</p>
+                                  </div>
+                                  <p className="mt-2 text-sm leading-6 text-[#516152]">{item.message}</p>
+                                </div>
+                                <span className="shrink-0 rounded-full bg-[#eef5e9] px-2.5 py-1 text-[11px] font-semibold text-[#63805f]">
+                                  {formatNotificationTime(item.createdAt)}
+                                </span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-dashed border-[#d7e2d0] bg-[#f9fcf7] px-4 py-6 text-center text-sm text-[#73836f]">
+                          No notifications yet.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               <div className="flex items-center gap-3">
