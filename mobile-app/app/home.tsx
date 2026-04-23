@@ -17,6 +17,7 @@ import {
   saveDailyMood,
 } from "../lib/backend-api";
 import { EMOTIONS } from "../lib/emotions";
+import { FEATURED_LIBRARY_BOOKS } from "../lib/library-data";
 import { getManilaTodayParts } from "../lib/manila-date";
 
 type DailyCheckinReward = {
@@ -833,6 +834,10 @@ export default function HomeScreen() {
     }
   };
 
+  const handleOpenLibrary = () => {
+    router.push("/library");
+  };
+
   const handleCheckInToday = async () => {
     if (!user?.studentNumber || isClaimingCheckIn) {
       return;
@@ -1256,6 +1261,55 @@ export default function HomeScreen() {
               </Pressable>
             ))}
           </View>
+        </View>
+
+        <View style={styles.libraryCard}>
+          <View style={styles.surfaceGlow} />
+          <View style={styles.libraryHeroRow}>
+            <View style={styles.libraryHeroTextWrap}>
+              <Text style={styles.sectionEyebrow}>Library Quest</Text>
+              <Text style={styles.libraryTitle}>Open a gentle shelf when you want to read and reset.</Text>
+              <Text style={styles.librarySubtitle}>
+                A new pocket library for short wellness reads, reflective stories, and small reading wins.
+              </Text>
+            </View>
+
+            <View style={styles.libraryArtWrap}>
+              {FEATURED_LIBRARY_BOOKS[0]?.coverImage ? (
+                <Image source={FEATURED_LIBRARY_BOOKS[0].coverImage} style={styles.libraryArtImage} resizeMode="contain" />
+              ) : null}
+            </View>
+          </View>
+
+          <View style={styles.libraryMetaRow}>
+            <View style={styles.libraryMetaPill}>
+              <Ionicons name="book-outline" size={15} color="#4A7A33" />
+              <Text style={styles.libraryMetaPillText}>{`${FEATURED_LIBRARY_BOOKS.length}+ books ready`}</Text>
+            </View>
+            <View style={styles.libraryMetaPill}>
+              <Ionicons name="sparkles-outline" size={15} color="#4A7A33" />
+              <Text style={styles.libraryMetaPillText}>Gamified side feature</Text>
+            </View>
+          </View>
+
+          <View style={styles.libraryShelfRow}>
+            {FEATURED_LIBRARY_BOOKS.map((book) => (
+              <Pressable
+                key={book.id}
+                style={[styles.libraryBookChip, { backgroundColor: book.accentColor }]}
+                onPress={handleOpenLibrary}
+              >
+                <Text style={styles.libraryBookChipCategory}>{book.category}</Text>
+                <Text style={styles.libraryBookChipTitle} numberOfLines={2}>{book.title}</Text>
+                <Text style={styles.libraryBookChipMeta}>{`${book.estimatedMinutes} min`}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <Pressable style={styles.libraryPrimaryButton} onPress={handleOpenLibrary}>
+            <Text style={styles.libraryPrimaryButtonText}>Open Library</Text>
+            <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+          </Pressable>
         </View>
 
         <View style={styles.recentCard}>
@@ -2397,6 +2451,139 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 18,
     lineHeight: 24,
+    fontWeight: "700",
+  },
+  libraryCard: {
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 14,
+    marginBottom: 12,
+    shadowColor: "#66737E",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: "#E6EEE7",
+  },
+  libraryHeroRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    columnGap: 12,
+    marginBottom: 12,
+  },
+  libraryHeroTextWrap: {
+    flex: 1,
+    paddingRight: 4,
+  },
+  libraryTitle: {
+    color: "#304558",
+    fontSize: 18,
+    lineHeight: 23,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  librarySubtitle: {
+    color: "#607181",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  libraryArtWrap: {
+    width: 80,
+    height: 102,
+    borderRadius: 20,
+    backgroundColor: "#DDF2B8",
+    borderWidth: 1,
+    borderColor: "#C7E6A8",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 10,
+  },
+  libraryArtImage: {
+    width: 52,
+    height: 70,
+  },
+  libraryMetaRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 12,
+  },
+  libraryMetaPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 6,
+    borderRadius: 999,
+    backgroundColor: "#F3F9EC",
+    borderWidth: 1,
+    borderColor: "#DDEAD1",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  libraryMetaPillText: {
+    color: "#4F6B57",
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: "700",
+  },
+  libraryShelfRow: {
+    flexDirection: "row",
+    columnGap: 8,
+    marginBottom: 12,
+  },
+  libraryBookChip: {
+    flex: 1,
+    minHeight: 112,
+    borderRadius: 18,
+    paddingHorizontal: 10,
+    paddingTop: 10,
+    paddingBottom: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.5)",
+  },
+  libraryBookChipCategory: {
+    color: "#556876",
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+    marginBottom: 6,
+  },
+  libraryBookChipTitle: {
+    color: "#304558",
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  libraryBookChipMeta: {
+    color: "#5E7180",
+    fontSize: 11,
+    lineHeight: 14,
+    marginTop: "auto",
+  },
+  libraryPrimaryButton: {
+    minHeight: 44,
+    borderRadius: 999,
+    backgroundColor: "#70C943",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 8,
+    shadowColor: "#5C6570",
+    shadowOpacity: 0.16,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  libraryPrimaryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    lineHeight: 20,
     fontWeight: "700",
   },
   recentCard: {
