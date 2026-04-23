@@ -45,67 +45,86 @@ const OTP_LENGTH = 8;
 const OTP_EXPIRY_SECONDS = 60;
 const TERMS_AND_CONDITIONS_CONTENT = `Bawat Tala Terms and Conditions
 
-Effective Date: February 25, 2026
+Effective Date: April 23, 2026
+Last Updated: April 23, 2026
 
 1. Purpose of the Service
-Bawat Tala is a school-focused digital journaling and support platform. The registration process may request identity details to verify that each account belongs to a legitimate student user.
+Bawat Tala is a school-focused journaling, student support, and counseling platform. It may include registration, verification, journaling, Muni insights, counseling review workflows, and appointment scheduling.
 
 2. Account Registration
 You agree to provide truthful and complete information during registration, including your full name, student number, and other required details. You are responsible for keeping your account credentials confidential.
 
 3. ID Upload and OCR Processing
-When you upload a school ID image, we process the image through Optical Character Recognition (OCR) to extract text-based details such as your name, student number, and program. Extracted data may be used to prefill registration fields for convenience and accuracy.
+When you upload a school ID image, the image may be sent to an OCR service so text such as your name, student number, and program can be extracted for verification and registration autofill.
 
-4. Acceptable Use
-You agree not to use the service for impersonation, fraud, harassment, distribution of unlawful content, or misuse of school-related data.
+4. Journal Privacy and Safety Review
+Your full journal conversation is not routinely shown to admins or counselors. However, Bawat Tala may generate summaries, insights, concern labels, and risk flags from journal entries for student support workflows. If an entry is flagged by high-risk indicators, trigger words, or other safety signals, authorized counselors or admins may review the full conversation to assess whether counseling or safety follow-up is needed.
 
-5. Verification and Security
-We may require additional verification, including OTP validation, to protect your account and maintain system integrity.
+5. AI and Automated Processing
+Journal text may be processed by Bawat Tala's configured AI or automated review tools to generate Muni replies, summaries, insights, and safety flags.
 
-6. Service Availability
-We may update, modify, or temporarily suspend parts of the service for maintenance, security improvements, and feature updates.
+6. Email, Appointments, and Integrations
+Bawat Tala may send verification, password reset, and appointment-related messages through configured service providers. Google Calendar data is only used when an authorized admin connects Google for scheduling features.
 
-7. Limitation of Liability
-The service is provided on an as-available basis. While we implement reasonable safeguards, no digital system can guarantee absolute uninterrupted operation.
+7. Acceptable Use
+You agree not to use the service for impersonation, fraud, harassment, unlawful activity, or misuse of student or school-related data.
 
-8. Updates to Terms
+8. Service Availability and Security
+We may update, modify, or temporarily suspend parts of the service for maintenance, security improvements, and feature updates. While we implement reasonable safeguards, no digital system can guarantee absolute uninterrupted operation.
+
+9. Emergency Limitation
+Bawat Tala is not an emergency hotline or substitute for urgent medical or mental health care.
+
+10. Updates to Terms
 These terms may be updated as needed. Continued use of the platform after updates constitutes acceptance of the revised terms.
 `;
 
 const PRIVACY_POLICY_CONTENT = `Bawat Tala Privacy Policy
 
-Effective Date: February 25, 2026
+Effective Date: April 23, 2026
+Last Updated: April 23, 2026
 
 This policy is aligned with the Data Privacy Act of 2012 (Republic Act No. 10173) and its implementing rules and regulations.
 
 1. Personal Data We Collect
-During registration and verification, we may collect:
+We may collect:
 - Full name
 - Student number
 - Program/course
+- Gender
 - Address details
 - Email address
 - Birthdate
-- School ID image (for OCR and verification)
+- Journal messages, summaries, insights, concern tags, and risk labels
+- School ID image and OCR-extracted text
+- Appointment and support-follow-up records
 
-2. Why We Process Your Data
+2. Where Your Data May Go
+Your data may be stored or processed through:
+- Bawat Tala database and authentication systems, including PostgreSQL and Supabase-backed services
+- Supabase Auth or its configured email provider for OTP and password reset emails
+- OCR.Space for school ID text extraction
+- Google Gemini and/or Groq for Muni replies, summaries, insights, and safety flagging
+- Resend or another configured email provider for appointment-related emails
+- Google Calendar only when an authorized admin connects Google for scheduling
+
+3. Why We Process Your Data
 We process personal data to:
 - Verify identity and student legitimacy
 - Populate registration fields using OCR-extracted text
 - Secure accounts through authentication and OTP flows
-- Enable platform features and support operations
+- Operate journaling, Muni insights, counseling support, and appointments
+- Detect possible safety concerns, including trigger words or high-risk language
+- Contact users for verification, security, appointments, and support follow-up
 
-3. How ID Images Are Used
-Uploaded ID images are used only for verification and OCR extraction related to account setup and fraud prevention. We do not process your image for unrelated advertising or profiling purposes.
+4. Journal Privacy and Counselor Access
+Full journal conversations are private by default and are not routinely shown to admins or counselors. However, Bawat Tala may generate summaries, insights, concern tags, and risk labels for support workflows. Authorized counselors or admins may view the full conversation when an entry is flagged by high-risk indicators, trigger words, or other safety-review signals so they can assess whether counseling or welfare follow-up is needed.
 
-4. Data Protection Measures
+5. Sharing and Retention
+We do not sell personal data. We share data only with authorized support personnel and trusted service providers when needed to operate the platform. If a journal entry is identified as high-risk or under active safety review, Bawat Tala may retain that entry for counselor or admin review even if it is removed from the student's normal app view.
+
+6. Data Protection Measures
 We apply organizational and technical safeguards designed to protect personal data against unauthorized access, alteration, disclosure, or loss.
-
-5. Data Sharing
-Personal data is only shared with authorized personnel or service providers when necessary for legitimate operational, legal, or security purposes and subject to confidentiality safeguards.
-
-6. Retention
-Data is retained only for as long as reasonably necessary for verification, account administration, legal compliance, and legitimate platform operations.
 
 7. Your Rights as a Data Subject
 Under RA 10173, you may have rights including access, correction, objection, and other applicable rights, subject to lawful limitations and verification procedures.
@@ -469,8 +488,10 @@ export default function RegisterScreen() {
                   </Text>
                 </Pressable>
                 <Text style={styles.consentBody}>
-                  Your school ID photo is processed for verification and OCR
-                  autofill of registration details in accordance with RA 10173.
+                  Your school ID photo is sent for OCR verification and autofill.
+                  Journal conversations stay private by default, and only
+                  flagged safety-review entries can be opened to authorized
+                  counselors or admins.
                 </Text>
               </View>
             </>

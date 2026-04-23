@@ -220,7 +220,8 @@ function EntryConversation({ entry, studentName }) {
   if (!canViewConversation) {
     return (
       <div className="rounded-[18px] border border-dashed border-amber-200 bg-amber-50 px-4 py-5 text-sm leading-6 text-amber-800">
-        Journal content is hidden for privacy. Admins can only view the full conversation for high-risk or flagged entries.
+        Journal content is hidden for privacy. Only entries flagged for counseling review, such as high-risk or
+        trigger-word detections, allow the full conversation to be viewed by authorized staff.
       </div>
     );
   }
