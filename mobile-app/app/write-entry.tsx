@@ -425,7 +425,7 @@ export default function WriteEntryScreen() {
     }
 
     setShowRiskModal(false);
-    router.push("/consult");
+    router.push("/consult?track=professional&skipIntro=1");
   }, [isSavingSupportResponse, saveSupportDecision]);
 
   const handleOpenWellnessTools = useCallback(() => {

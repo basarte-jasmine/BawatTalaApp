@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -41,6 +41,8 @@ type AvailabilityDay = {
   isPast: boolean;
   slots: { available: boolean; booked: boolean; enabled: boolean; label: string; time: string }[];
 };
+
+type SupportTrack = "professional" | "peer";
 
 const TOTAL_STEPS = 4;
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
@@ -101,14 +103,31 @@ function formatSelectedDate(isoDate: string) {
   });
 }
 
+function normalizeSupportTrack(value: string | undefined): SupportTrack | null {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "professional") {
+    return "professional";
+  }
+  if (normalized === "peer") {
+    return "peer";
+  }
+  return null;
+}
+
 export default function ConsultScreen() {
+  const { track, skipIntro } = useLocalSearchParams<{ skipIntro?: string; track?: string }>();
   const { user } = useAuthSession();
+  const initialTrack = normalizeSupportTrack(track);
+  const opensWithChooser = initialTrack === null && skipIntro !== "1";
   const [step, setStep] = useState(1);
+  const [showChooser, setShowChooser] = useState(opensWithChooser);
   const [concerns, setConcerns] = useState<string[]>(DEFAULT_CONCERNS);
   const [selectedConcern, setSelectedConcern] = useState("Anxiety / Stress");
   const [otherConcern, setOtherConcern] = useState("");
   const [selectedGender, setSelectedGender] = useState("No Preference");
-  const [selectedCounselorType, setSelectedCounselorType] = useState("professional");
+  const [selectedTrack, setSelectedTrack] = useState<SupportTrack>(initialTrack ?? "professional");
   const [counselors, setCounselors] = useState<CounselorCard[]>([]);
   const [loadingCounselors, setLoadingCounselors] = useState(true);
   const [loadingAvailability, setLoadingAvailability] = useState(false);
@@ -161,15 +180,45 @@ export default function ConsultScreen() {
     };
   }, []);
 
+  const professionalCounselors = useMemo(
+    () =>
+      counselors.filter((item) => {
+        const role = String(item.role || "").toLowerCase();
+        return !role.includes("peer");
+      }),
+    [counselors],
+  );
+  const peerCounselors = useMemo(
+    () =>
+      counselors.filter((item) => {
+        const role = String(item.role || "").toLowerCase();
+        return role.includes("peer");
+      }),
+    [counselors],
+  );
+  const activeCounselors = useMemo(
+    () => (selectedTrack === "peer" ? peerCounselors : professionalCounselors),
+    [peerCounselors, professionalCounselors, selectedTrack],
+  );
   const filteredCounselors = useMemo(() => {
+    const counselorPool = activeCounselors;
     if (selectedGender === "Female Counselor") {
-      return counselors.filter((item) => item.gender === "Female");
+      return counselorPool.filter((item) => item.gender === "Female");
     }
     if (selectedGender === "Male Counselor") {
-      return counselors.filter((item) => item.gender === "Male");
+      return counselorPool.filter((item) => item.gender === "Male");
     }
-    return counselors;
-  }, [counselors, selectedGender]);
+    return counselorPool;
+  }, [activeCounselors, selectedGender]);
+  const hasPeerCounselors = peerCounselors.length > 0;
+  const supportsStepFlow = selectedTrack === "professional" || hasPeerCounselors;
+  const supportEyebrow = selectedTrack === "peer" ? "Peer Support" : "Guidance Support";
+  const supportTitle =
+    selectedTrack === "peer" ? "Find a calmer conversation with a peer counselor" : "Schedule a consultation that fits your day";
+  const supportDescription =
+    selectedTrack === "peer"
+      ? "Choose a trained peer listener when you want a gentler first step and a scheduled space to talk."
+      : "We'll guide you through four quick steps to find the right counselor and an open time slot.";
 
   useEffect(() => {
     if (!filteredCounselors.some((item) => item.id === selectedCounselor)) {
@@ -255,8 +304,20 @@ export default function ConsultScreen() {
 
   const handleBack = () => {
     setErrorMessage("");
+    if (showChooser) {
+      if (router.canGoBack()) {
+        router.back();
+        return;
+      }
+      router.replace("/home");
+      return;
+    }
     if (step > 1) {
       setStep((current) => current - 1);
+      return;
+    }
+    if (opensWithChooser) {
+      setShowChooser(true);
       return;
     }
     if (router.canGoBack()) {
@@ -283,10 +344,6 @@ export default function ConsultScreen() {
     }
 
     if (step === 2) {
-      if (selectedCounselorType !== "professional") {
-        setErrorMessage("Peer counseling scheduling is not available yet.");
-        return;
-      }
       setStep(3);
       return;
     }
@@ -335,6 +392,13 @@ export default function ConsultScreen() {
     }
   };
 
+  const handleChooseTrack = (nextTrack: SupportTrack) => {
+    setSelectedTrack(nextTrack);
+    setShowChooser(false);
+    setStep(1);
+    setErrorMessage("");
+  };
+
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <View style={styles.topBar}>
@@ -342,287 +406,408 @@ export default function ConsultScreen() {
           <Ionicons name="chevron-back" size={28} color="#3A434E" />
         </Pressable>
 
-        <Text style={styles.topTitle}>Schedule Consultation</Text>
+        <Text style={styles.topTitle}>Consult Support</Text>
         <View style={styles.topBarSpacer} />
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.introCard}>
-          <View style={styles.introHeaderRow}>
-            <View style={styles.introIconWrap}>
-              <Ionicons name="calendar-clear-outline" size={22} color="#4E7E2D" />
-            </View>
-            <View style={styles.introTextWrap}>
-              <Text style={styles.introEyebrow}>Guidance Support</Text>
-              <Text style={styles.introTitle}>Schedule a consultation that fits your day</Text>
-              <Text style={styles.introText}>
-                We&apos;ll guide you through four quick steps to find the right counselor and an open time slot.
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.progressMetaRow}>
-            <Text style={styles.progressStepText}>{`Step ${step} of ${TOTAL_STEPS}`}</Text>
-            <Text style={styles.progressStepLabel}>{currentStepLabel}</Text>
-          </View>
-
-          <View style={styles.progressRow}>
-            {Array.from({ length: TOTAL_STEPS }).map((_, index) => {
-              const stepIndex = index + 1;
-              return (
-                <View key={`step-${stepIndex}`} style={[styles.progressDot, stepIndex <= step && styles.progressDotActive]} />
-              );
-            })}
-          </View>
-        </View>
-
-        {errorMessage ? <Text style={styles.errorBanner}>{errorMessage}</Text> : null}
-
-        <View style={styles.stepCard}>
-          {loadingCounselors ? (
-            <View style={styles.loadingCard}>
-              <ActivityIndicator color="#70C943" />
-              <Text style={styles.loadingText}>Loading counselors...</Text>
-            </View>
-          ) : null}
-
-          {!loadingCounselors && step === 1 ? (
-            <>
-              <Text style={styles.stepTitle}>What brings you here today?</Text>
-              <Text style={styles.stepSubTitle}>Select your main concern so we can route you to the right counselor.</Text>
-
-              <View style={styles.concernGrid}>
-                {concerns.map((item) => {
-                  const isSelected = item === selectedConcern;
-                  return (
-                    <Pressable
-                      key={item}
-                      style={[styles.concernChip, isSelected && styles.concernChipActive]}
-                      onPress={() => setSelectedConcern(item)}
-                    >
-                      <Text style={[styles.concernChipText, isSelected && styles.concernChipTextActive]}>{item}</Text>
-                    </Pressable>
-                  );
-                })}
+        {showChooser ? (
+          <>
+            <View style={styles.welcomeHeroCard}>
+              <View style={styles.welcomeGlowOne} />
+              <View style={styles.welcomeGlowTwo} />
+              <View style={styles.welcomeHeroTopRow}>
+                <View style={styles.welcomeHeroIconWrap}>
+                  <Ionicons name="chatbubbles-outline" size={24} color="#447348" />
+                </View>
+                <View style={styles.welcomeHeroCopy}>
+                  <Text style={styles.welcomeEyebrow}>Support That Meets You Gently</Text>
+                  <Text style={styles.welcomeTitle}>Choose the kind of support that feels right today.</Text>
+                  <Text style={styles.welcomeText}>
+                    Start with a licensed professional counselor or a peer counselor. Both paths are meant to help you feel safer, heard, and supported.
+                  </Text>
+                </View>
               </View>
 
-              {selectedConcern === "Others" ? (
-                <TextInput
-                  style={styles.otherInput}
-                  value={otherConcern}
-                  onChangeText={setOtherConcern}
-                  placeholder="Please specify your concern"
-                  placeholderTextColor="#596878"
-                />
-              ) : null}
-            </>
-          ) : null}
+              <View style={styles.welcomePillRow}>
+                <View style={styles.welcomePill}>
+                  <Ionicons name="shield-checkmark-outline" size={14} color="#4B7A42" />
+                  <Text style={styles.welcomePillText}>Private support</Text>
+                </View>
+                <View style={styles.welcomePill}>
+                  <Ionicons name="leaf-outline" size={14} color="#4B7A42" />
+                  <Text style={styles.welcomePillText}>Calm first step</Text>
+                </View>
+              </View>
+            </View>
 
-          {!loadingCounselors && step === 2 ? (
-            <>
-              <Text style={styles.stepTitle}>Counselor Preference</Text>
-              <Text style={styles.stepSubTitle}>Peer counseling stays unavailable for now, so booking is limited to guidance counselors.</Text>
+            {errorMessage ? <Text style={styles.errorBanner}>{errorMessage}</Text> : null}
 
-              <Text style={styles.sectionLabel}>Gender Preference</Text>
-              {GENDER_PREFERENCE.map((item) => {
-                const selected = selectedGender === item;
-                return (
-                  <Pressable
-                    key={item}
-                    style={[styles.preferenceCard, selected && styles.preferenceCardActive]}
-                    onPress={() => setSelectedGender(item)}
-                  >
-                    <Text style={[styles.preferenceTitle, selected && styles.preferenceTitleActive]}>{item}</Text>
-                  </Pressable>
-                );
-              })}
+            <View style={styles.stepCard}>
+              <Text style={styles.stepTitle}>Who would you like to talk to?</Text>
+              <Text style={styles.stepSubTitle}>
+                Pick the kind of support you want first. You can always come back and choose the other option later.
+              </Text>
 
-              <Text style={[styles.sectionLabel, styles.typeSectionLabel]}>Type of Counseling</Text>
-              <Pressable
-                style={[styles.preferenceCard, styles.typeCard, styles.preferenceCardActive]}
-                onPress={() => setSelectedCounselorType("professional")}
-              >
-                <Text style={[styles.preferenceTitle, styles.preferenceTitleActive]}>Professional Counselor</Text>
-                <Text style={styles.typeSubText}>Licensed counselors and guidance staff</Text>
+              <Pressable style={styles.trackOptionCard} onPress={() => handleChooseTrack("professional")}>
+                <View style={styles.trackOptionIconWrap}>
+                  <Ionicons name="calendar-clear-outline" size={22} color="#4E7E2D" />
+                </View>
+                <View style={styles.trackOptionCopy}>
+                  <View style={styles.trackOptionHeaderRow}>
+                    <Text style={styles.trackOptionTitle}>Professional Counselor</Text>
+                    <View style={[styles.trackStatusPill, styles.trackStatusPillActive]}>
+                      <Text style={[styles.trackStatusText, styles.trackStatusTextActive]}>
+                        {professionalCounselors.length ? `${professionalCounselors.length} available` : "Book a session"}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.trackOptionBody}>
+                    Meet with guidance staff for deeper support, private counseling, and formal scheduled care.
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#6B8862" />
               </Pressable>
 
-              <View style={[styles.preferenceCard, styles.typeCard, styles.preferenceCardDisabled]}>
-                <Text style={styles.preferenceTitle}>Peer Counselor</Text>
-                <Text style={styles.typeSubText}>Scheduling coming soon</Text>
-              </View>
-            </>
-          ) : null}
-
-          {!loadingCounselors && step === 3 ? (
-            <>
-              <Text style={styles.stepTitle}>Select your Counselor</Text>
-              <Text style={styles.stepSubTitle}>Only active guidance counselors with real schedules appear here.</Text>
-
-              <View style={styles.counselorList}>
-                {filteredCounselors.length ? (
-                  filteredCounselors.map((item) => {
-                    const selected = selectedCounselor === item.id;
-                    return (
-                      <Pressable
-                        key={item.id}
-                        style={[styles.counselorCard, selected && styles.selectedCounselorCard]}
-                        onPress={() => setSelectedCounselor(item.id)}
+              <Pressable style={[styles.trackOptionCard, styles.trackOptionCardSoft]} onPress={() => handleChooseTrack("peer")}>
+                <View style={[styles.trackOptionIconWrap, styles.trackOptionIconWrapBlue]}>
+                  <Ionicons name="people-outline" size={22} color="#4E6F88" />
+                </View>
+                <View style={styles.trackOptionCopy}>
+                  <View style={styles.trackOptionHeaderRow}>
+                    <Text style={styles.trackOptionTitle}>Peer Counselor</Text>
+                    <View style={[styles.trackStatusPill, hasPeerCounselors ? styles.trackStatusPillBlue : styles.trackStatusPillMuted]}>
+                      <Text
+                        style={[
+                          styles.trackStatusText,
+                          hasPeerCounselors ? styles.trackStatusTextBlue : styles.trackStatusTextMuted,
+                        ]}
                       >
-                        <View style={styles.counselorRow}>
-                          {item.pictureUrl ? (
-                            <Image source={{ uri: item.pictureUrl }} style={styles.counselorAvatarImage} />
-                          ) : (
-                            <View style={styles.counselorAvatarFallback}>
-                              <Text style={styles.counselorAvatarText}>
-                                {item.fullName
-                                  .split(" ")
-                                  .slice(0, 2)
-                                  .map((part) => part.charAt(0))
-                                  .join("")
-                                  .toUpperCase()}
-                              </Text>
-                            </View>
-                          )}
-
-                          <View style={styles.counselorInfo}>
-                            <Text style={styles.counselorName}>{item.fullName}</Text>
-                            <Text style={styles.counselorRole}>{item.role}</Text>
-                            <Text style={styles.counselorFocus}>
-                              {item.specialties?.length ? item.specialties.join(", ") : "General guidance and student support"}
-                            </Text>
-                          </View>
-
-                          {selected ? <Ionicons name="checkmark-circle" size={24} color="#2E6F24" /> : null}
-                        </View>
-                      </Pressable>
-                    );
-                  })
-                ) : (
-                  <Text style={styles.emptyStateText}>No counselor matches that preference right now.</Text>
-                )}
-              </View>
-            </>
-          ) : null}
-
-          {!loadingCounselors && step === 4 ? (
-            <>
-              <Text style={styles.stepTitle}>Choose Date & Time</Text>
-              <Text style={styles.stepSubTitle}>
-                Only open slots from the counselor&apos;s schedule can be booked. Same-day and next-day requests stay blocked so the counselor still has 24 hours to confirm.
-              </Text>
-
-              <View style={styles.monthHeaderRow}>
-                <Pressable onPress={() => setSelectedMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>
-                  <Ionicons name="chevron-back" size={24} color="#3F4B58" />
-                </Pressable>
-                <Text style={styles.monthLabel}>{buildMonthTitle(selectedMonth)}</Text>
-                <Pressable onPress={() => setSelectedMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))}>
-                  <Ionicons name="chevron-forward" size={24} color="#3F4B58" />
-                </Pressable>
-              </View>
-
-              <View style={styles.weekHeaderRow}>
-                {WEEKDAY_LABELS.map((day) => (
-                  <Text key={day} style={styles.weekHeaderText}>
-                    {day}
+                        {hasPeerCounselors ? `${peerCounselors.length} available` : "Preparing schedules"}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.trackOptionBody}>
+                    Start with a trained student listener when you want a more relatable, lighter first conversation.
                   </Text>
-                ))}
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#6B7B87" />
+              </Pressable>
+            </View>
+          </>
+        ) : (
+          <>
+            <View style={styles.introCard}>
+              <View style={styles.introHeaderRow}>
+                <View style={[styles.introIconWrap, selectedTrack === "peer" && styles.introIconWrapBlue]}>
+                  <Ionicons
+                    name={selectedTrack === "peer" ? "people-outline" : "calendar-clear-outline"}
+                    size={22}
+                    color={selectedTrack === "peer" ? "#4E6F88" : "#4E7E2D"}
+                  />
+                </View>
+                <View style={styles.introTextWrap}>
+                  <Text style={styles.introEyebrow}>{supportEyebrow}</Text>
+                  <Text style={styles.introTitle}>{supportTitle}</Text>
+                  <Text style={styles.introText}>{supportDescription}</Text>
+                </View>
               </View>
 
-              {loadingAvailability ? (
+              {supportsStepFlow ? (
+                <>
+                  <View style={styles.progressMetaRow}>
+                    <Text style={styles.progressStepText}>{`Step ${step} of ${TOTAL_STEPS}`}</Text>
+                    <Text style={styles.progressStepLabel}>{currentStepLabel}</Text>
+                  </View>
+
+                  <View style={styles.progressRow}>
+                    {Array.from({ length: TOTAL_STEPS }).map((_, index) => {
+                      const stepIndex = index + 1;
+                      return (
+                        <View key={`step-${stepIndex}`} style={[styles.progressDot, stepIndex <= step && styles.progressDotActive]} />
+                      );
+                    })}
+                  </View>
+                </>
+              ) : (
+                <View style={styles.peerStatusBanner}>
+                  <Ionicons name="sparkles-outline" size={16} color="#5F7A8F" />
+                  <Text style={styles.peerStatusBannerText}>Peer counselor schedules are still being prepared.</Text>
+                </View>
+              )}
+            </View>
+
+            {errorMessage ? <Text style={styles.errorBanner}>{errorMessage}</Text> : null}
+
+            <View style={styles.stepCard}>
+              {loadingCounselors ? (
                 <View style={styles.loadingCard}>
                   <ActivityIndicator color="#70C943" />
-                  <Text style={styles.loadingText}>Loading available slots...</Text>
+                  <Text style={styles.loadingText}>Loading counselors...</Text>
                 </View>
-              ) : (
+              ) : null}
+
+              {!loadingCounselors && !supportsStepFlow ? (
+                <View style={styles.peerEmptyState}>
+                  <View style={styles.peerEmptyIconWrap}>
+                    <Ionicons name="people-outline" size={26} color="#5C7790" />
+                  </View>
+                  <Text style={styles.peerEmptyTitle}>Peer counseling will open here soon</Text>
+                  <Text style={styles.peerEmptyText}>
+                    We&apos;re getting peer listeners and schedules ready. For now, you can return to the welcome screen or continue with a professional counselor right away.
+                  </Text>
+
+                  <Pressable style={styles.peerPrimaryButton} onPress={() => handleChooseTrack("professional")}>
+                    <Text style={styles.peerPrimaryButtonText}>Continue with Professional Counselor</Text>
+                  </Pressable>
+
+                  {opensWithChooser ? (
+                    <Pressable
+                      style={styles.peerSecondaryButton}
+                      onPress={() => {
+                        setShowChooser(true);
+                        setErrorMessage("");
+                      }}
+                    >
+                      <Text style={styles.peerSecondaryButtonText}>Back to Support Options</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              ) : null}
+
+              {!loadingCounselors && supportsStepFlow && step === 1 ? (
                 <>
-                  <View style={styles.calendarGrid}>
-                    {calendarCells.map((day, index) => {
-                      const dayData = getDayFromAvailability(availableDays, day);
-                      const hasAvailableSlots = Boolean(dayData?.availableSlots.length);
-                      const isSelected = selectedDay === day;
+                  <Text style={styles.stepTitle}>What brings you here today?</Text>
+                  <Text style={styles.stepSubTitle}>
+                    Select your main concern so we can route you to the right {selectedTrack === "peer" ? "peer counselor" : "counselor"}.
+                  </Text>
+
+                  <View style={styles.concernGrid}>
+                    {concerns.map((item) => {
+                      const isSelected = item === selectedConcern;
                       return (
                         <Pressable
-                          key={`day-${String(day)}-${index}`}
-                          style={styles.dayCell}
-                          disabled={!day || !hasAvailableSlots}
-                          onPress={() => {
-                            setSelectedDay(day);
-                            setSelectedTime("");
-                          }}
+                          key={item}
+                          style={[styles.concernChip, isSelected && styles.concernChipActive]}
+                          onPress={() => setSelectedConcern(item)}
                         >
-                          <View
-                            style={[
-                              styles.dayBubble,
-                              hasAvailableSlots && styles.dayBubbleOpen,
-                              isSelected && styles.dayBubbleActive,
-                              !hasAvailableSlots && day && styles.dayBubbleDisabled,
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.dayText,
-                                hasAvailableSlots && styles.dayTextOpen,
-                                isSelected && styles.dayTextActive,
-                                !hasAvailableSlots && day && styles.dayTextDisabled,
-                              ]}
-                            >
-                              {day || ""}
-                            </Text>
-                          </View>
+                          <Text style={[styles.concernChipText, isSelected && styles.concernChipTextActive]}>{item}</Text>
                         </Pressable>
                       );
                     })}
                   </View>
 
-                  <Text style={styles.selectedDateLabel}>
-                    {selectedDayAvailability?.date
-                      ? selectedDayAvailability.blockedByStudentSchedule
-                        ? `You already have an appointment request or confirmed schedule on ${formatSelectedDate(selectedDayAvailability.date)}. Only one appointment is allowed per day.`
-                        : selectedDayAvailability.blockedByLeadTime
-                          ? `That date stays unavailable because appointment requests need a 24-hour counselor review window.`
-                        : `Available times for ${formatSelectedDate(selectedDayAvailability.date)}`
-                      : "Select a highlighted day to see open times."}
+                  {selectedConcern === "Others" ? (
+                    <TextInput
+                      style={styles.otherInput}
+                      value={otherConcern}
+                      onChangeText={setOtherConcern}
+                      placeholder="Please specify your concern"
+                      placeholderTextColor="#596878"
+                    />
+                  ) : null}
+                </>
+              ) : null}
+
+              {!loadingCounselors && supportsStepFlow && step === 2 ? (
+                <>
+                  <Text style={styles.stepTitle}>Counselor Preference</Text>
+                  <Text style={styles.stepSubTitle}>
+                    Let us know if you have a gender preference before we show your available {selectedTrack === "peer" ? "peer counselors" : "counselors"}.
                   </Text>
 
-                  <View style={styles.timeGrid}>
-                    {availableTimeSlots.length ? (
-                      availableTimeSlots.map((slot) => {
-                        const selected = selectedTime === slot.time;
+                  <Text style={styles.sectionLabel}>Gender Preference</Text>
+                  {GENDER_PREFERENCE.map((item) => {
+                    const selected = selectedGender === item;
+                    return (
+                      <Pressable
+                        key={item}
+                        style={[styles.preferenceCard, selected && styles.preferenceCardActive]}
+                        onPress={() => setSelectedGender(item)}
+                      >
+                        <Text style={[styles.preferenceTitle, selected && styles.preferenceTitleActive]}>{item}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </>
+              ) : null}
+
+              {!loadingCounselors && supportsStepFlow && step === 3 ? (
+                <>
+                  <Text style={styles.stepTitle}>Select your Counselor</Text>
+                  <Text style={styles.stepSubTitle}>
+                    Only active {selectedTrack === "peer" ? "peer counselors" : "guidance counselors"} with real schedules appear here.
+                  </Text>
+
+                  <View style={styles.counselorList}>
+                    {filteredCounselors.length ? (
+                      filteredCounselors.map((item) => {
+                        const selected = selectedCounselor === item.id;
                         return (
                           <Pressable
-                            key={slot.time}
-                            style={[styles.timeChip, selected && styles.timeChipActive]}
-                            onPress={() => setSelectedTime(slot.time)}
+                            key={item.id}
+                            style={[styles.counselorCard, selected && styles.selectedCounselorCard]}
+                            onPress={() => setSelectedCounselor(item.id)}
                           >
-                            <Text style={[styles.timeChipText, selected && styles.timeChipTextActive]}>{slot.label}</Text>
+                            <View style={styles.counselorRow}>
+                              {item.pictureUrl ? (
+                                <Image source={{ uri: item.pictureUrl }} style={styles.counselorAvatarImage} />
+                              ) : (
+                                <View style={styles.counselorAvatarFallback}>
+                                  <Text style={styles.counselorAvatarText}>
+                                    {item.fullName
+                                      .split(" ")
+                                      .slice(0, 2)
+                                      .map((part) => part.charAt(0))
+                                      .join("")
+                                      .toUpperCase()}
+                                  </Text>
+                                </View>
+                              )}
+
+                              <View style={styles.counselorInfo}>
+                                <Text style={styles.counselorName}>{item.fullName}</Text>
+                                <Text style={styles.counselorRole}>{item.role}</Text>
+                                <Text style={styles.counselorFocus}>
+                                  {item.specialties?.length ? item.specialties.join(", ") : "General guidance and student support"}
+                                </Text>
+                              </View>
+
+                              {selected ? <Ionicons name="checkmark-circle" size={24} color="#2E6F24" /> : null}
+                            </View>
                           </Pressable>
                         );
                       })
                     ) : (
-                      <Text style={styles.emptyStateText}>No available time slots for that day.</Text>
+                      <Text style={styles.emptyStateText}>No counselor matches that preference right now.</Text>
                     )}
                   </View>
-
-                  <TextInput
-                    style={styles.noteInput}
-                    value={studentNote}
-                    onChangeText={setStudentNote}
-                    placeholder="Optional note for the counselor"
-                    placeholderTextColor="#73808B"
-                    multiline
-                  />
                 </>
-              )}
-            </>
-          ) : null}
-        </View>
+              ) : null}
 
-        <View style={styles.continueInlineWrap}>
-          <Pressable style={[styles.continueButton, submitting && styles.continueButtonDisabled]} disabled={submitting} onPress={() => void handleContinue()}>
-            {submitting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.continueButtonText}>{step === TOTAL_STEPS ? "Submit Request" : "Continue"}</Text>}
-          </Pressable>
-        </View>
+              {!loadingCounselors && supportsStepFlow && step === 4 ? (
+                <>
+                  <Text style={styles.stepTitle}>Choose Date & Time</Text>
+                  <Text style={styles.stepSubTitle}>
+                    Only open slots from the counselor&apos;s schedule can be booked. Same-day and next-day requests stay blocked so the counselor still has 24 hours to confirm.
+                  </Text>
+
+                  <View style={styles.monthHeaderRow}>
+                    <Pressable onPress={() => setSelectedMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>
+                      <Ionicons name="chevron-back" size={24} color="#3F4B58" />
+                    </Pressable>
+                    <Text style={styles.monthLabel}>{buildMonthTitle(selectedMonth)}</Text>
+                    <Pressable onPress={() => setSelectedMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))}>
+                      <Ionicons name="chevron-forward" size={24} color="#3F4B58" />
+                    </Pressable>
+                  </View>
+
+                  <View style={styles.weekHeaderRow}>
+                    {WEEKDAY_LABELS.map((day) => (
+                      <Text key={day} style={styles.weekHeaderText}>
+                        {day}
+                      </Text>
+                    ))}
+                  </View>
+
+                  {loadingAvailability ? (
+                    <View style={styles.loadingCard}>
+                      <ActivityIndicator color="#70C943" />
+                      <Text style={styles.loadingText}>Loading available slots...</Text>
+                    </View>
+                  ) : (
+                    <>
+                      <View style={styles.calendarGrid}>
+                        {calendarCells.map((day, index) => {
+                          const dayData = getDayFromAvailability(availableDays, day);
+                          const hasAvailableSlots = Boolean(dayData?.availableSlots.length);
+                          const isSelected = selectedDay === day;
+                          return (
+                            <Pressable
+                              key={`day-${String(day)}-${index}`}
+                              style={styles.dayCell}
+                              disabled={!day || !hasAvailableSlots}
+                              onPress={() => {
+                                setSelectedDay(day);
+                                setSelectedTime("");
+                              }}
+                            >
+                              <View
+                                style={[
+                                  styles.dayBubble,
+                                  hasAvailableSlots && styles.dayBubbleOpen,
+                                  isSelected && styles.dayBubbleActive,
+                                  !hasAvailableSlots && day && styles.dayBubbleDisabled,
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.dayText,
+                                    hasAvailableSlots && styles.dayTextOpen,
+                                    isSelected && styles.dayTextActive,
+                                    !hasAvailableSlots && day && styles.dayTextDisabled,
+                                  ]}
+                                >
+                                  {day || ""}
+                                </Text>
+                              </View>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+
+                      <Text style={styles.selectedDateLabel}>
+                        {selectedDayAvailability?.date
+                          ? selectedDayAvailability.blockedByStudentSchedule
+                            ? `You already have an appointment request or confirmed schedule on ${formatSelectedDate(selectedDayAvailability.date)}. Only one appointment is allowed per day.`
+                            : selectedDayAvailability.blockedByLeadTime
+                              ? `That date stays unavailable because appointment requests need a 24-hour counselor review window.`
+                              : `Available times for ${formatSelectedDate(selectedDayAvailability.date)}`
+                          : "Select a highlighted day to see open times."}
+                      </Text>
+
+                      <View style={styles.timeGrid}>
+                        {availableTimeSlots.length ? (
+                          availableTimeSlots.map((slot) => {
+                            const selected = selectedTime === slot.time;
+                            return (
+                              <Pressable
+                                key={slot.time}
+                                style={[styles.timeChip, selected && styles.timeChipActive]}
+                                onPress={() => setSelectedTime(slot.time)}
+                              >
+                                <Text style={[styles.timeChipText, selected && styles.timeChipTextActive]}>{slot.label}</Text>
+                              </Pressable>
+                            );
+                          })
+                        ) : (
+                          <Text style={styles.emptyStateText}>No available time slots for that day.</Text>
+                        )}
+                      </View>
+
+                      <TextInput
+                        style={styles.noteInput}
+                        value={studentNote}
+                        onChangeText={setStudentNote}
+                        placeholder="Optional note for the counselor"
+                        placeholderTextColor="#73808B"
+                        multiline
+                      />
+                    </>
+                  )}
+                </>
+              ) : null}
+            </View>
+
+            {supportsStepFlow ? (
+              <View style={styles.continueInlineWrap}>
+                <Pressable style={[styles.continueButton, submitting && styles.continueButtonDisabled]} disabled={submitting} onPress={() => void handleContinue()}>
+                  {submitting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.continueButtonText}>{step === TOTAL_STEPS ? "Submit Request" : "Continue"}</Text>}
+                </Pressable>
+              </View>
+            ) : null}
+          </>
+        )}
       </ScrollView>
 
       <HomeBottomNav activeTab="profile" />
@@ -674,6 +859,103 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingBottom: 116,
   },
+  welcomeHeroCard: {
+    overflow: "hidden",
+    borderRadius: 28,
+    backgroundColor: "#F7F6EE",
+    borderWidth: 1,
+    borderColor: "#E1E8D9",
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 16,
+    marginBottom: 14,
+    shadowColor: "#66737E",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  welcomeGlowOne: {
+    position: "absolute",
+    width: 140,
+    height: 140,
+    borderRadius: 999,
+    backgroundColor: "#E7F4D1",
+    top: -34,
+    right: -22,
+  },
+  welcomeGlowTwo: {
+    position: "absolute",
+    width: 112,
+    height: 112,
+    borderRadius: 999,
+    backgroundColor: "#E8F1F5",
+    bottom: -44,
+    left: -34,
+  },
+  welcomeHeroTopRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    columnGap: 12,
+  },
+  welcomeHeroIconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+    backgroundColor: "#EEF7E5",
+    borderWidth: 1,
+    borderColor: "#DCEBCF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  welcomeHeroCopy: {
+    flex: 1,
+  },
+  welcomeEyebrow: {
+    color: "#6A8558",
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    marginBottom: 5,
+  },
+  welcomeTitle: {
+    color: "#304558",
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  welcomeText: {
+    color: "#5B6D7B",
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  welcomePillRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    columnGap: 10,
+    rowGap: 10,
+    marginTop: 14,
+  },
+  welcomePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 6,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2E9DA",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  welcomePillText: {
+    color: "#4B6653",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
   introCard: {
     borderRadius: 24,
     backgroundColor: "#FFFFFF",
@@ -704,6 +986,10 @@ const styles = StyleSheet.create({
     borderColor: "#DCEBCF",
     alignItems: "center",
     justifyContent: "center",
+  },
+  introIconWrapBlue: {
+    backgroundColor: "#EEF4F8",
+    borderColor: "#D5E3EC",
   },
   introTextWrap: {
     flex: 1,
@@ -761,6 +1047,25 @@ const styles = StyleSheet.create({
   progressDotActive: {
     backgroundColor: "#79C943",
   },
+  peerStatusBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 8,
+    borderRadius: 16,
+    backgroundColor: "#F1F5F8",
+    borderWidth: 1,
+    borderColor: "#DCE6ED",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 4,
+  },
+  peerStatusBannerText: {
+    flex: 1,
+    color: "#51697B",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "600",
+  },
   errorBanner: {
     marginBottom: 12,
     borderRadius: 14,
@@ -789,6 +1094,92 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     elevation: 2,
   },
+  trackOptionCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 12,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "#DFE8DD",
+    backgroundColor: "#FCFDF9",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginTop: 10,
+  },
+  trackOptionCardSoft: {
+    backgroundColor: "#F9FBFD",
+    borderColor: "#DEE8EF",
+  },
+  trackOptionIconWrap: {
+    width: 50,
+    height: 50,
+    borderRadius: 18,
+    backgroundColor: "#EFF9E7",
+    borderWidth: 1,
+    borderColor: "#DCEBCF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  trackOptionIconWrapBlue: {
+    backgroundColor: "#EEF4F8",
+    borderColor: "#D5E3EC",
+  },
+  trackOptionCopy: {
+    flex: 1,
+  },
+  trackOptionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    columnGap: 10,
+    rowGap: 6,
+    flexWrap: "wrap",
+    marginBottom: 4,
+  },
+  trackOptionTitle: {
+    flexShrink: 1,
+    color: "#31465A",
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: "700",
+  },
+  trackOptionBody: {
+    color: "#607180",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  trackStatusPill: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+  },
+  trackStatusPillActive: {
+    backgroundColor: "#EFF8E7",
+    borderColor: "#D7E9C8",
+  },
+  trackStatusPillBlue: {
+    backgroundColor: "#EEF4F8",
+    borderColor: "#D5E3EC",
+  },
+  trackStatusPillMuted: {
+    backgroundColor: "#F5F7F9",
+    borderColor: "#E2E8ED",
+  },
+  trackStatusText: {
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: "700",
+  },
+  trackStatusTextActive: {
+    color: "#44712F",
+  },
+  trackStatusTextBlue: {
+    color: "#45657D",
+  },
+  trackStatusTextMuted: {
+    color: "#768491",
+  },
   loadingCard: {
     alignItems: "center",
     justifyContent: "center",
@@ -812,6 +1203,69 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     marginBottom: 14,
+  },
+  peerEmptyState: {
+    alignItems: "center",
+    paddingTop: 8,
+  },
+  peerEmptyIconWrap: {
+    width: 62,
+    height: 62,
+    borderRadius: 22,
+    backgroundColor: "#EEF4F8",
+    borderWidth: 1,
+    borderColor: "#D9E5ED",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  peerEmptyTitle: {
+    color: "#31465A",
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 6,
+  },
+  peerEmptyText: {
+    color: "#617282",
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+    marginBottom: 18,
+  },
+  peerPrimaryButton: {
+    width: "100%",
+    minHeight: 52,
+    borderRadius: 999,
+    backgroundColor: "#6FBF44",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 18,
+  },
+  peerPrimaryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    lineHeight: 21,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  peerSecondaryButton: {
+    marginTop: 10,
+    minHeight: 44,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#D7E0E6",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 18,
+  },
+  peerSecondaryButtonText: {
+    color: "#526678",
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "700",
   },
   concernGrid: {
     flexDirection: "row",

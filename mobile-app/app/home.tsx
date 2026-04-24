@@ -830,7 +830,11 @@ export default function HomeScreen() {
       router.push("/wellness-tools");
       return;
     }
-    if (cardId === "support-3" || cardId === "support-4") {
+    if (cardId === "support-3") {
+      router.push("/consult?track=peer");
+      return;
+    }
+    if (cardId === "support-4") {
       router.push("/consult");
     }
   };
