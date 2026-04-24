@@ -195,9 +195,9 @@ function renderSceneDecorations(
 
 export default function WellnessGroundingScreen() {
   const { width } = useWindowDimensions();
+  const isNarrow = width < 420;
   const isCompact = width < 380;
-  const frameWidth = Math.min(width - 24, 460);
-  const sceneHeight = Math.max(320, Math.min(width * 0.86, 380));
+  const sceneHeight = Math.max(304, Math.min(width * (isCompact ? 0.96 : 0.86), 380));
   const [selectedVibeId, setSelectedVibeId] = useState(GROUNDING_VIBES[0].id);
   const [selectedAudioId, setSelectedAudioId] = useState(GROUNDING_AUDIO_TRACKS[0].id);
   const [activeStepId, setActiveStepId] = useState(GROUNDING_STEPS[0].id);
@@ -382,16 +382,20 @@ export default function WellnessGroundingScreen() {
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, isCompact && styles.scrollContentCompact]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={[styles.contentFrame, { width: frameWidth }]}>
+        <View style={styles.contentFrame}>
           <View style={[styles.sceneCard, { height: sceneHeight, borderColor: selectedVibe.edge }]}>
-            <ImageBackground source={selectedVibe.backgroundImage} style={styles.sceneImage} imageStyle={styles.sceneImageInner}>
+            <ImageBackground
+              source={selectedVibe.backgroundImage}
+              style={[styles.sceneImage, isCompact && styles.sceneImageCompact]}
+              imageStyle={styles.sceneImageInner}
+            >
               <View style={[styles.sceneOverlay, { backgroundColor: selectedVibe.overlay }]} />
               {renderSceneDecorations(selectedVibe.animation, selectedVibe.accent, drift, glow, rain)}
 
-              <View style={styles.sceneTopRow}>
+              <View style={[styles.sceneTopRow, isCompact && styles.sceneTopRowCompact]}>
                 <View style={styles.sceneBadge}>
                   <Ionicons name="sparkles-outline" size={15} color="#FFFFFF" />
                   <Text style={styles.sceneBadgeText}>Grounding Room</Text>
@@ -403,15 +407,15 @@ export default function WellnessGroundingScreen() {
               </View>
 
               <View style={styles.sceneBody}>
-                <Text style={styles.sceneTitle}>5-4-3-2-1 Sensory Grounding</Text>
-                <Text style={styles.sceneDescription}>
+                <Text style={[styles.sceneTitle, isCompact && styles.sceneTitleCompact]}>5-4-3-2-1 Sensory Grounding</Text>
+                <Text style={[styles.sceneDescription, isCompact && styles.sceneDescriptionCompact]}>
                   Set a calmer backdrop, pick your sound, and move through each sense at your own pace.
                 </Text>
-                <Text style={styles.sceneMoodLine}>{selectedVibe.moodLine}</Text>
+                <Text style={[styles.sceneMoodLine, isCompact && styles.sceneMoodLineCompact]}>{selectedVibe.moodLine}</Text>
               </View>
 
-              <View style={styles.nowPlayingCard}>
-                <View style={styles.nowPlayingTopRow}>
+              <View style={[styles.nowPlayingCard, isCompact && styles.nowPlayingCardCompact]}>
+                <View style={[styles.nowPlayingTopRow, isCompact && styles.nowPlayingTopRowCompact]}>
                   <View style={styles.nowPlayingTextWrap}>
                     <Text style={styles.nowPlayingEyebrow}>Now in the room</Text>
                     <Text style={styles.nowPlayingTitle}>{selectedAudio.title}</Text>
@@ -438,7 +442,7 @@ export default function WellnessGroundingScreen() {
             </ImageBackground>
           </View>
 
-          <View style={styles.sectionCard}>
+          <View style={[styles.sectionCard, isCompact && styles.sectionCardCompact]}>
             <Text style={styles.sectionTitle}>Choose your vibe</Text>
             <Text style={styles.sectionDescription}>
               Give the exercise a setting that feels safer, softer, or quieter for you right now.
@@ -453,7 +457,7 @@ export default function WellnessGroundingScreen() {
                     key={vibe.id}
                     style={[
                       styles.vibeCard,
-                      { width: isCompact ? "100%" : "48%" },
+                      { width: isCompact ? "100%" : "48.5%" },
                       isSelected && [styles.vibeCardSelected, { borderColor: vibe.edge, backgroundColor: `${vibe.accent}1C` }],
                     ]}
                     onPress={() => setSelectedVibeId(vibe.id)}
@@ -477,7 +481,7 @@ export default function WellnessGroundingScreen() {
             </View>
           </View>
 
-          <View style={styles.sectionCard}>
+          <View style={[styles.sectionCard, isCompact && styles.sectionCardCompact]}>
             <Text style={styles.sectionTitle}>Pick your audio</Text>
             <Text style={styles.sectionDescription}>
               Keep it silent if you want, or let one soundscape hold the room while you ground yourself.
@@ -493,6 +497,7 @@ export default function WellnessGroundingScreen() {
                     key={track.id}
                     style={[
                       styles.audioCard,
+                      isNarrow && styles.audioCardNarrow,
                       isSelected && [styles.audioCardSelected, { borderColor: selectedVibe.edge, backgroundColor: `${selectedVibe.accent}14` }],
                     ]}
                     onPress={() => handleChooseAudio(track.id)}
@@ -502,17 +507,23 @@ export default function WellnessGroundingScreen() {
                         <Ionicons name={track.icon} size={18} color={selectedVibe.accent} />
                       </View>
                       <View style={styles.audioTextWrap}>
-                        <View style={styles.audioTitleRow}>
-                          <Text style={styles.audioTitle}>{track.title}</Text>
-                          <Text style={styles.audioDuration}>{track.durationLabel}</Text>
+                        <Text style={styles.audioTitle}>{track.title}</Text>
+                        <View style={[styles.audioMetaRow, isCompact && styles.audioMetaRowCompact]}>
+                          <Text style={styles.audioTone}>{track.tone}</Text>
+                          <View style={styles.audioDurationPill}>
+                            <Text style={styles.audioDuration}>{track.durationLabel}</Text>
+                          </View>
                         </View>
-                        <Text style={styles.audioTone}>{track.tone}</Text>
                         <Text style={styles.audioNote}>{track.note}</Text>
                       </View>
                     </View>
 
                     <Pressable
-                      style={[styles.audioPlayButton, isPlayingThisTrack && { backgroundColor: selectedVibe.accent, borderColor: selectedVibe.accent }]}
+                      style={[
+                        styles.audioPlayButton,
+                        isNarrow && styles.audioPlayButtonNarrow,
+                        isPlayingThisTrack && { backgroundColor: selectedVibe.accent, borderColor: selectedVibe.accent },
+                      ]}
                       onPress={() => handlePlayTrack(track.id)}
                     >
                       <Ionicons
@@ -527,8 +538,8 @@ export default function WellnessGroundingScreen() {
             </View>
           </View>
 
-          <View style={styles.sectionCard}>
-            <View style={styles.groundingHeaderRow}>
+          <View style={[styles.sectionCard, isCompact && styles.sectionCardCompact]}>
+            <View style={[styles.groundingHeaderRow, isCompact && styles.groundingHeaderRowCompact]}>
               <View style={styles.groundingHeaderText}>
                 <Text style={styles.sectionTitle}>Move through your senses</Text>
                 <Text style={styles.sectionDescription}>
@@ -629,7 +640,7 @@ export default function WellnessGroundingScreen() {
             </View>
           </View>
 
-          <View style={styles.supportNote}>
+          <View style={[styles.supportNote, isCompact && styles.supportNoteCompact]}>
             <Ionicons name="heart-outline" size={16} color="#5A7D63" />
             <Text style={styles.supportNoteText}>
               This space is meant to slow the moment down. If you need more support after grounding, you can return to other wellness tools or counseling options.
@@ -681,15 +692,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
     paddingTop: 14,
-    paddingBottom: 36,
+    paddingBottom: 40,
     alignItems: "center",
   },
+  scrollContentCompact: {
+    paddingHorizontal: 12,
+  },
   contentFrame: {
+    width: "100%",
     maxWidth: 460,
+    alignSelf: "center",
   },
   sceneCard: {
+    width: "100%",
     borderRadius: 30,
     overflow: "hidden",
     borderWidth: 1,
@@ -707,6 +724,11 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 18,
     justifyContent: "space-between",
+  },
+  sceneImageCompact: {
+    paddingHorizontal: 14,
+    paddingTop: 16,
+    paddingBottom: 16,
   },
   sceneImageInner: {
     borderRadius: 30,
@@ -737,6 +759,11 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     columnGap: 12,
+    rowGap: 10,
+    flexWrap: "wrap",
+  },
+  sceneTopRowCompact: {
+    alignItems: "flex-start",
   },
   sceneBadge: {
     flexDirection: "row",
@@ -778,21 +805,34 @@ const styles = StyleSheet.create({
     fontSize: 27,
     lineHeight: 32,
     fontWeight: "800",
-    maxWidth: 280,
+    maxWidth: 292,
+  },
+  sceneTitleCompact: {
+    fontSize: 24,
+    lineHeight: 29,
   },
   sceneDescription: {
     color: "rgba(255,255,255,0.92)",
     fontSize: 14,
     lineHeight: 20,
-    maxWidth: 290,
+    maxWidth: 304,
+  },
+  sceneDescriptionCompact: {
+    fontSize: 13,
+    lineHeight: 19,
   },
   sceneMoodLine: {
     color: "rgba(255,255,255,0.84)",
     fontSize: 13,
     lineHeight: 18,
-    maxWidth: 272,
+    maxWidth: 292,
+  },
+  sceneMoodLineCompact: {
+    fontSize: 12,
+    lineHeight: 17,
   },
   nowPlayingCard: {
+    width: "100%",
     borderRadius: 22,
     backgroundColor: "rgba(255,255,255,0.92)",
     paddingHorizontal: 14,
@@ -801,10 +841,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.9)",
   },
+  nowPlayingCardCompact: {
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 10,
+  },
   nowPlayingTopRow: {
     flexDirection: "row",
     alignItems: "center",
     columnGap: 12,
+  },
+  nowPlayingTopRowCompact: {
+    flexDirection: "column",
+    alignItems: "flex-start",
+    rowGap: 10,
   },
   nowPlayingTextWrap: {
     flex: 1,
@@ -863,6 +913,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   sectionCard: {
+    width: "100%",
     borderRadius: 24,
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
@@ -876,6 +927,11 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
     elevation: 2,
+  },
+  sectionCardCompact: {
+    paddingHorizontal: 12,
+    paddingTop: 14,
+    paddingBottom: 16,
   },
   sectionTitle: {
     color: "#2F4458",
@@ -954,13 +1010,17 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     borderColor: "#E3ECE8",
-    backgroundColor: "#FBFCFC",
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    backgroundColor: "#FCFEFD",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     columnGap: 12,
+    overflow: "hidden",
+  },
+  audioCardNarrow: {
+    columnGap: 10,
   },
   audioCardSelected: {
     borderWidth: 1.5,
@@ -982,19 +1042,33 @@ const styles = StyleSheet.create({
   audioTextWrap: {
     flex: 1,
   },
-  audioTitleRow: {
+  audioMetaRow: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    columnGap: 10,
-    marginBottom: 3,
+    alignItems: "flex-start",
+    flexWrap: "wrap",
+    columnGap: 8,
+    rowGap: 6,
+    marginTop: 4,
+    marginBottom: 6,
+  },
+  audioMetaRowCompact: {
+    flexDirection: "column",
+    alignItems: "flex-start",
   },
   audioTitle: {
-    flex: 1,
     color: "#314758",
     fontSize: 16,
     lineHeight: 21,
     fontWeight: "700",
+  },
+  audioDurationPill: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "#F2F7F5",
+    borderWidth: 1,
+    borderColor: "#E0EBE6",
+    alignSelf: "flex-start",
   },
   audioDuration: {
     color: "#748692",
@@ -1006,7 +1080,7 @@ const styles = StyleSheet.create({
     color: "#536A7A",
     fontSize: 13,
     lineHeight: 18,
-    marginBottom: 3,
+    flexShrink: 1,
   },
   audioNote: {
     color: "#758693",
@@ -1014,6 +1088,7 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
   audioPlayButton: {
+    alignSelf: "center",
     width: 38,
     height: 38,
     borderRadius: 999,
@@ -1023,11 +1098,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  audioPlayButtonNarrow: {
+    marginTop: 2,
+  },
   groundingHeaderRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
     columnGap: 12,
+  },
+  groundingHeaderRowCompact: {
+    flexDirection: "column",
+    rowGap: 10,
   },
   groundingHeaderText: {
     flex: 1,
@@ -1259,6 +1341,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   supportNote: {
+    width: "100%",
     borderRadius: 18,
     backgroundColor: "#F7FBF8",
     borderWidth: 1,
@@ -1269,6 +1352,10 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     columnGap: 10,
     marginBottom: 6,
+  },
+  supportNoteCompact: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
   },
   supportNoteText: {
     flex: 1,
