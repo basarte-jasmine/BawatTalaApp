@@ -48,7 +48,8 @@ const CENTER_LOGO_IMAGE = require("../assets/images/guidancelogo_sample.png");
 
 export default function WellnessToolsScreen() {
   const { width } = useWindowDimensions();
-  const frameWidth = Math.min(width - 24, 420);
+  const compact = width < 390;
+  const narrow = width < 360;
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -68,60 +69,64 @@ export default function WellnessToolsScreen() {
         <View style={styles.topBarSpacer} />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={[styles.contentFrame, { width: frameWidth }]}>
-          <View style={styles.heroCard}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.scrollContent, compact && styles.scrollContentCompact]}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.contentFrame}>
+          <View style={[styles.heroCard, compact && styles.heroCardCompact]}>
             <View style={styles.heroGlowOne} />
             <View style={styles.heroGlowTwo} />
             <View style={styles.heroBadge}>
               <Ionicons name="sparkles-outline" size={16} color="#4C7E32" />
               <Text style={styles.heroBadgeText}>Wellness Space</Text>
             </View>
-            <Image source={CENTER_LOGO_IMAGE} style={styles.centerLogo} resizeMode="contain" />
-            <Text style={styles.sectionTitle}>Our wellness tools are here for you.</Text>
-            <Text style={styles.sectionDesc}>
+            <Image source={CENTER_LOGO_IMAGE} style={[styles.centerLogo, compact && styles.centerLogoCompact]} resizeMode="contain" />
+            <Text style={[styles.sectionTitle, compact && styles.sectionTitleCompact]}>Our wellness tools are here for you.</Text>
+            <Text style={[styles.sectionDesc, compact && styles.sectionDescCompact]}>
               Explore calming, self-guided exercises designed to help you reset, ground yourself, and return with a little more clarity.
             </Text>
           </View>
 
-          <View style={styles.listSection}>
+          <View style={[styles.listSection, compact && styles.listSectionCompact]}>
             <Text style={styles.listHeading}>Explore Wellness Interventions</Text>
             <Text style={styles.listSubHeading}>Choose a tool that matches what you need right now.</Text>
 
             <View style={styles.toolList}>
-            {WELLNESS_TOOLS.map((item) => (
-              <Pressable
-                key={item.id}
-                disabled={!item.available}
-                style={[styles.toolCard, !item.available && styles.toolCardDisabled]}
-                onPress={() => {
-                  if (item.id === "breathing") {
-                    router.push("/wellness-breathing");
-                    return;
-                  }
+              {WELLNESS_TOOLS.map((item) => (
+                <Pressable
+                  key={item.id}
+                  disabled={!item.available}
+                  style={[styles.toolCard, compact && styles.toolCardCompact, !item.available && styles.toolCardDisabled]}
+                  onPress={() => {
+                    if (item.id === "breathing") {
+                      router.push("/wellness-breathing");
+                      return;
+                    }
 
-                  if (item.id === "grounding") {
-                    router.push("/wellness-grounding");
-                  }
-                }}
-              >
-                <View style={styles.toolCardTopRow}>
-                  <View style={[styles.toolIconWrap, { backgroundColor: `${item.accentColor}14`, borderColor: `${item.accentColor}24` }]}>
-                    <Ionicons name={item.icon} size={20} color={item.accentColor} />
+                    if (item.id === "grounding") {
+                      router.push("/wellness-grounding");
+                    }
+                  }}
+                >
+                  <View style={[styles.toolCardTopRow, compact && styles.toolCardTopRowCompact]}>
+                    <View style={[styles.toolIconWrap, { backgroundColor: `${item.accentColor}14`, borderColor: `${item.accentColor}24` }]}>
+                      <Ionicons name={item.icon} size={20} color={item.accentColor} />
+                    </View>
+                    <View style={[styles.toolTag, !item.available && styles.toolTagMuted]}>
+                      <Text style={[styles.toolTagText, !item.available && styles.toolTagTextMuted]}>{item.label}</Text>
+                    </View>
                   </View>
-                  <View style={[styles.toolTag, !item.available && styles.toolTagMuted]}>
-                    <Text style={[styles.toolTagText, !item.available && styles.toolTagTextMuted]}>{item.label}</Text>
+                  <Text style={[styles.toolTitle, compact && styles.toolTitleCompact]}>{item.title}</Text>
+                  <View style={[styles.toolRow, narrow && styles.toolRowStacked]}>
+                    <Text style={styles.toolDesc}>{item.description}</Text>
+                    <View style={[styles.toolArrowWrap, narrow && styles.toolArrowWrapStacked]}>
+                      <Ionicons name={item.available ? "arrow-forward" : "time-outline"} size={18} color="#4A5966" />
+                    </View>
                   </View>
-                </View>
-                <Text style={styles.toolTitle}>{item.title}</Text>
-                <View style={styles.toolRow}>
-                  <Text style={styles.toolDesc}>{item.description}</Text>
-                  <View style={styles.toolArrowWrap}>
-                    <Ionicons name={item.available ? "arrow-forward" : "time-outline"} size={18} color="#4A5966" />
-                  </View>
-                </View>
-              </Pressable>
-            ))}
+                </Pressable>
+              ))}
             </View>
           </View>
         </View>
@@ -172,15 +177,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
     paddingTop: 14,
     paddingBottom: 92,
     alignItems: "center",
   },
+  scrollContentCompact: {
+    paddingHorizontal: 12,
+  },
   contentFrame: {
+    width: "100%",
     maxWidth: 420,
+    alignSelf: "center",
   },
   heroCard: {
+    width: "100%",
     borderRadius: 28,
     backgroundColor: "#D7F0B7",
     borderWidth: 1,
@@ -190,6 +201,11 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
     overflow: "hidden",
     marginBottom: 14,
+  },
+  heroCardCompact: {
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 16,
   },
   heroGlowOne: {
     position: "absolute",
@@ -235,6 +251,11 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     marginBottom: 8,
   },
+  centerLogoCompact: {
+    maxWidth: 260,
+    height: 118,
+    marginBottom: 6,
+  },
   sectionTitle: {
     color: "#2F4156",
     fontSize: 24,
@@ -242,12 +263,21 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: 8,
   },
+  sectionTitleCompact: {
+    fontSize: 22,
+    lineHeight: 27,
+  },
   sectionDesc: {
     color: "#446058",
     fontSize: 14,
     lineHeight: 20,
   },
+  sectionDescCompact: {
+    fontSize: 13,
+    lineHeight: 19,
+  },
   listSection: {
+    width: "100%",
     borderRadius: 24,
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
@@ -260,6 +290,11 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
     elevation: 2,
+  },
+  listSectionCompact: {
+    paddingHorizontal: 12,
+    paddingTop: 14,
+    paddingBottom: 16,
   },
   listHeading: {
     color: "#2F4156",
@@ -275,9 +310,11 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   toolList: {
+    width: "100%",
     rowGap: 10,
   },
   toolCard: {
+    width: "100%",
     borderRadius: 18,
     borderWidth: 1,
     borderColor: "#DDE8D6",
@@ -285,6 +322,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 12,
     paddingBottom: 12,
+  },
+  toolCardCompact: {
+    paddingHorizontal: 11,
+    paddingTop: 11,
+    paddingBottom: 11,
   },
   toolCardDisabled: {
     opacity: 0.78,
@@ -295,6 +337,11 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 10,
     columnGap: 10,
+    rowGap: 8,
+    flexWrap: "wrap",
+  },
+  toolCardTopRowCompact: {
+    justifyContent: "flex-start",
   },
   toolIconWrap: {
     width: 42,
@@ -332,10 +379,18 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: 6,
   },
+  toolTitleCompact: {
+    fontSize: 16,
+    lineHeight: 21,
+  },
   toolRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     columnGap: 10,
+  },
+  toolRowStacked: {
+    flexDirection: "column",
+    rowGap: 10,
   },
   toolDesc: {
     flex: 1,
@@ -353,5 +408,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginTop: 2,
+  },
+  toolArrowWrapStacked: {
+    marginTop: 0,
+    alignSelf: "flex-start",
   },
 });
