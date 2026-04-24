@@ -14,7 +14,6 @@ type ReaderPage = {
 
 export default function LibraryScreen() {
   const { width } = useWindowDimensions();
-  const frameWidth = Math.min(width - 24, 420);
   const compact = width < 390;
   const narrow = width < 360;
   const [books] = useState<LibraryBook[]>(LIBRARY_BOOKS);
@@ -78,7 +77,7 @@ export default function LibraryScreen() {
     const isFinished = finishedBookIds.includes(book.id);
 
     return (
-      <Pressable key={book.id} style={styles.bookCard} onPress={() => handleOpenBook(book.id)}>
+      <Pressable key={book.id} style={[styles.bookCard, compact && styles.bookCardCompact]} onPress={() => handleOpenBook(book.id)}>
         <View style={[styles.bookSpine, { backgroundColor: book.accentColor }]} />
 
         <View style={styles.bookCardTopRow}>
@@ -90,14 +89,21 @@ export default function LibraryScreen() {
           </Text>
         </View>
 
-        <View style={[styles.bookCardBody, narrow && styles.bookCardBodyStacked]}>
-          <View style={[styles.bookCoverWrap, narrow && styles.bookCoverWrapStacked, { backgroundColor: book.accentColor }]}>
+        <View style={[styles.bookCardBody, compact && styles.bookCardBodyStacked]}>
+          <View
+            style={[
+              styles.bookCoverWrap,
+              compact && styles.bookCoverWrapCompact,
+              compact && styles.bookCoverWrapStacked,
+              { backgroundColor: book.accentColor },
+            ]}
+          >
             {book.coverImage ? <Image source={book.coverImage} style={styles.bookCoverImage} resizeMode="contain" /> : null}
           </View>
 
           <View style={styles.bookInfoWrap}>
             <Text style={styles.bookCategory}>{book.category}</Text>
-            <Text style={styles.bookTitle}>{book.title}</Text>
+            <Text style={[styles.bookTitle, compact && styles.bookTitleCompact]}>{book.title}</Text>
             <Text style={styles.bookAuthor}>{book.author}</Text>
             <Text style={styles.bookBlurb}>{book.blurb}</Text>
 
@@ -127,9 +133,13 @@ export default function LibraryScreen() {
         <View style={styles.topBarSpacer} />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={[styles.contentFrame, { width: frameWidth }]}>
-          <View style={styles.heroCard}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.scrollContent, compact && styles.scrollContentCompact]}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.contentFrame}>
+          <View style={[styles.heroCard, compact && styles.heroCardCompact]}>
             <View style={styles.heroGlowOne} />
             <View style={styles.heroGlowTwo} />
 
@@ -150,22 +160,22 @@ export default function LibraryScreen() {
             </View>
 
             <View style={[styles.heroStatsRow, compact && styles.heroStatsRowWrap]}>
-              <View style={styles.heroStatPill}>
+              <View style={[styles.heroStatPill, compact && styles.heroStatPillCompact]}>
                 <Text style={styles.heroStatValue}>{books.length}</Text>
                 <Text style={styles.heroStatLabel}>Books on shelf</Text>
               </View>
-              <View style={styles.heroStatPill}>
+              <View style={[styles.heroStatPill, compact && styles.heroStatPillCompact]}>
                 <Text style={styles.heroStatValue}>{finishedCount}</Text>
                 <Text style={styles.heroStatLabel}>Books finished</Text>
               </View>
-              <View style={styles.heroStatPill}>
+              <View style={[styles.heroStatPill, compact && styles.heroStatPillCompact]}>
                 <Text style={styles.heroStatValue}>{readyCount}</Text>
                 <Text style={styles.heroStatLabel}>Still waiting</Text>
               </View>
             </View>
           </View>
 
-          <View style={styles.introCard}>
+          <View style={[styles.introCard, compact && styles.introCardCompact]}>
             <Text style={styles.introEyebrow}>Settle In</Text>
             <Text style={styles.introTitle}>Browse the shelf, then step into reader mode.</Text>
             <Text style={styles.introBody}>
@@ -189,7 +199,7 @@ export default function LibraryScreen() {
           <View style={styles.readerAuraOne} />
           <View style={styles.readerAuraTwo} />
 
-          <View style={[styles.readerTopBar, compact && styles.readerTopBarCompact]}>
+          <View style={[styles.readerTopBar, compact && styles.readerTopBarCompact, narrow && styles.readerTopBarStacked]}>
             <Pressable style={styles.readerTopButton} accessibilityLabel="Close reader" onPress={handleCloseBook}>
               <Ionicons name="chevron-back" size={22} color="#534D43" />
             </Pressable>
@@ -201,7 +211,7 @@ export default function LibraryScreen() {
               </Text>
             </View>
 
-            <View style={styles.readerPageBadge}>
+            <View style={[styles.readerPageBadge, narrow && styles.readerPageBadgeStacked]}>
               <Text style={styles.readerPageBadgeText}>
                 {readerPages.length > 0 ? `${readerPageIndex + 1}/${readerPages.length}` : "0/0"}
               </Text>
@@ -230,9 +240,9 @@ export default function LibraryScreen() {
             </View>
           </View>
 
-          <View style={[styles.readerFooter, narrow && styles.readerFooterStacked]}>
+          <View style={[styles.readerFooter, compact && styles.readerFooterStacked]}>
             <Pressable
-              style={[styles.readerNavButton, narrow && styles.readerFooterButtonFull, !canGoPreviousPage && styles.readerNavButtonDisabled]}
+              style={[styles.readerNavButton, compact && styles.readerFooterButtonFull, !canGoPreviousPage && styles.readerNavButtonDisabled]}
               disabled={!canGoPreviousPage}
               onPress={() => setReaderPageIndex((current) => Math.max(0, current - 1))}
             >
@@ -241,7 +251,7 @@ export default function LibraryScreen() {
             </Pressable>
 
             <Pressable
-              style={[styles.readerPrimaryButton, narrow && styles.readerFooterButtonFull]}
+              style={[styles.readerPrimaryButton, compact && styles.readerFooterButtonFull]}
               onPress={() => {
                 if (canGoNextPage) {
                   setReaderPageIndex((current) => current + 1);
@@ -308,15 +318,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
     paddingTop: 14,
     paddingBottom: 92,
     alignItems: "center",
   },
+  scrollContentCompact: {
+    paddingHorizontal: 12,
+  },
   contentFrame: {
+    width: "100%",
     maxWidth: 420,
+    alignSelf: "center",
   },
   heroCard: {
+    width: "100%",
     borderRadius: 30,
     backgroundColor: "#EFE2CB",
     borderWidth: 1,
@@ -326,6 +342,11 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
     overflow: "hidden",
     marginBottom: 14,
+  },
+  heroCardCompact: {
+    paddingHorizontal: 14,
+    paddingTop: 16,
+    paddingBottom: 16,
   },
   heroGlowOne: {
     position: "absolute",
@@ -350,6 +371,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     justifyContent: "space-between",
     columnGap: 12,
+    rowGap: 10,
   },
   heroHeaderRowStacked: {
     flexDirection: "column",
@@ -433,6 +455,7 @@ const styles = StyleSheet.create({
   heroStatsRowWrap: {
     flexWrap: "wrap",
     rowGap: 8,
+    justifyContent: "space-between",
   },
   heroStatPill: {
     flex: 1,
@@ -443,6 +466,9 @@ const styles = StyleSheet.create({
     borderColor: "rgba(228, 214, 195, 0.88)",
     paddingHorizontal: 10,
     paddingVertical: 10,
+  },
+  heroStatPillCompact: {
+    minWidth: "48%",
   },
   heroStatValue: {
     color: "#394B5A",
@@ -457,6 +483,7 @@ const styles = StyleSheet.create({
     lineHeight: 14,
   },
   introCard: {
+    width: "100%",
     borderRadius: 24,
     backgroundColor: "#FFFDF8",
     borderWidth: 1,
@@ -470,6 +497,11 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
     elevation: 2,
+  },
+  introCardCompact: {
+    paddingHorizontal: 13,
+    paddingTop: 13,
+    paddingBottom: 13,
   },
   introEyebrow: {
     color: "#7D715F",
@@ -510,6 +542,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   bookList: {
+    width: "100%",
     rowGap: 12,
   },
   bookCard: {
@@ -527,6 +560,11 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
     elevation: 2,
+  },
+  bookCardCompact: {
+    paddingHorizontal: 12,
+    paddingTop: 13,
+    paddingBottom: 13,
   },
   bookSpine: {
     position: "absolute",
@@ -577,6 +615,7 @@ const styles = StyleSheet.create({
   },
   bookCardBodyStacked: {
     flexDirection: "column",
+    rowGap: 8,
   },
   bookCoverWrap: {
     width: 92,
@@ -586,9 +625,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 10,
   },
+  bookCoverWrapCompact: {
+    width: 100,
+    height: 108,
+    borderRadius: 20,
+  },
   bookCoverWrapStacked: {
     alignSelf: "center",
-    marginBottom: 4,
+    marginBottom: 2,
   },
   bookCoverImage: {
     width: 64,
@@ -614,6 +658,10 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     fontWeight: "700",
     marginBottom: 2,
+  },
+  bookTitleCompact: {
+    fontSize: 18,
+    lineHeight: 23,
   },
   bookAuthor: {
     color: "#81776A",
@@ -652,7 +700,7 @@ const styles = StyleSheet.create({
   readerScreen: {
     flex: 1,
     backgroundColor: "#EDE3D3",
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingTop: 6,
     paddingBottom: 20,
   },
@@ -683,6 +731,11 @@ const styles = StyleSheet.create({
   },
   readerTopBarCompact: {
     columnGap: 8,
+  },
+  readerTopBarStacked: {
+    flexDirection: "column",
+    alignItems: "stretch",
+    rowGap: 10,
   },
   readerTopButton: {
     width: 38,
@@ -732,6 +785,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 10,
+    alignSelf: "center",
+  },
+  readerPageBadgeStacked: {
+    alignSelf: "flex-start",
   },
   readerPageBadgeText: {
     color: "#61584A",
@@ -743,6 +800,7 @@ const styles = StyleSheet.create({
     flex: 1,
     position: "relative",
     marginBottom: 14,
+    width: "100%",
   },
   readerBookShellCompact: {
     marginBottom: 12,
@@ -774,6 +832,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 5 },
     elevation: 5,
     marginLeft: 12,
+    alignSelf: "stretch",
   },
   readerPageCardCompact: {
     marginLeft: 8,
