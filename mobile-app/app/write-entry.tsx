@@ -695,7 +695,7 @@ export default function WriteEntryScreen() {
 
             <Text style={styles.plainFootnote}>
               Muni is off. Your journal will be saved without Muni&apos;s replies.
-              Muni will still provide insights when you finish your entry.
+              Muni will still provide a summary when you finish your entry.
             </Text>
           </View>
         )}

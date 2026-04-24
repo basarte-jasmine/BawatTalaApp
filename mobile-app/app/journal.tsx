@@ -76,7 +76,7 @@ export default function JournalScreen() {
   const [calendarDays, setCalendarDays] = useState<WeekDayItem[]>([]);
   const [weekAnchorDate, setWeekAnchorDate] = useState(manilaToday.isoDate);
   const [insightText, setInsightText] = useState(
-    "There are no journal insights for this date yet.",
+    "There is no journal summary for this date yet.",
   );
   const [showFullInsightModal, setShowFullInsightModal] = useState(false);
 
@@ -88,7 +88,7 @@ export default function JournalScreen() {
   const loadWeekData = useCallback(async (targetIsoDate: string) => {
     if (!user?.studentNumber) {
       setCalendarDays([]);
-      setInsightText("There are no journal insights for this date yet.");
+      setInsightText("There is no journal summary for this date yet.");
       return;
     }
 
@@ -110,7 +110,7 @@ export default function JournalScreen() {
     setInsightText(
       uniqueInsights.length > 0
         ? uniqueInsights.join(" ")
-        : "There are no journal insights for this date yet.",
+        : "There is no journal summary for this date yet.",
     );
   }, [user?.studentNumber]);
 
@@ -197,11 +197,11 @@ export default function JournalScreen() {
 
           <View style={[styles.reflectionCard, compact && styles.reflectionCardCompact]}>
             <View style={styles.reflectionHeader}>
-              <Text style={styles.cardEyebrow}>MUNI INSIGHT</Text>
+              <Text style={styles.cardEyebrow}>MUNI SUMMARY</Text>
               <Pressable
                 style={styles.expandButton}
                 onPress={() => setShowFullInsightModal(true)}
-                accessibilityLabel="Open full insight"
+                accessibilityLabel="Open full summary"
               >
                 <Ionicons name="expand-outline" size={16} color="#586C7F" />
               </Pressable>
@@ -219,7 +219,7 @@ export default function JournalScreen() {
               </View>
 
               <Text style={[styles.reflectionFootnote, compact && styles.reflectionFootnoteCompact]} numberOfLines={2}>
-                Insights by Muni, your virtual companion. Bawat Tala is not a substitute for professional mental health
+                Summary by Muni, your virtual companion. Bawat Tala is not a substitute for professional mental health
                 care.
               </Text>
             </View>
@@ -258,7 +258,7 @@ export default function JournalScreen() {
             <View style={styles.modalCard}>
               <View style={styles.modalHeader}>
                 <View style={styles.modalHeaderCopy}>
-                  <Text style={styles.modalEyebrow}>MUNI INSIGHT</Text>
+                  <Text style={styles.modalEyebrow}>MUNI SUMMARY</Text>
                   <Text style={styles.modalTitle}>{formatLongDate(weekAnchorDate)}</Text>
                 </View>
 

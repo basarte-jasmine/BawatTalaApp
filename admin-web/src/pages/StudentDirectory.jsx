@@ -528,7 +528,7 @@ export default function StudentDirectory({ onLogout, session }) {
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <div className="text-lg font-semibold text-slate-900">Journal Entries</div>
-                      <div className="mt-1 text-sm text-slate-500">Complete journal history with summaries, tags, insights, and risk flags.</div>
+                      <div className="mt-1 text-sm text-slate-500">Complete journal history with summaries, summary notes, tags, and risk flags.</div>
                     </div>
                     <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm">
                       <PenSquare className="h-3.5 w-3.5" />
@@ -622,7 +622,7 @@ export default function StudentDirectory({ onLogout, session }) {
                             <section className="rounded-[22px] border border-violet-100 bg-[linear-gradient(180deg,#f8f6ff_0%,#ffffff_100%)] p-4 shadow-sm">
                               <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-violet-700">
                                 <Sparkles className="h-4 w-4" />
-                                Muni Analysis
+                                Muni Summary Notes
                               </div>
                               {entry.insights.length ? (
                                 <ul className="space-y-2 text-sm leading-6 text-slate-700">
@@ -631,7 +631,7 @@ export default function StudentDirectory({ onLogout, session }) {
                                   ))}
                                 </ul>
                               ) : (
-                                <div className="rounded-2xl bg-white/90 px-4 py-3 text-sm text-slate-500 shadow-sm">No insights generated.</div>
+                                <div className="rounded-2xl bg-white/90 px-4 py-3 text-sm text-slate-500 shadow-sm">No summary notes generated.</div>
                               )}
                             </section>
 

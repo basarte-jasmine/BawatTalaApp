@@ -49,7 +49,7 @@ Effective Date: April 23, 2026
 Last Updated: April 23, 2026
 
 1. Purpose of the Service
-Bawat Tala is a school-focused journaling, student support, and counseling platform. It may include registration, verification, journaling, Muni insights, counseling review workflows, and appointment scheduling.
+Bawat Tala is a school-focused journaling, student support, and counseling platform. It may include registration, verification, journaling, Muni summaries, counseling review workflows, and appointment scheduling.
 
 2. Account Registration
 You agree to provide truthful and complete information during registration, including your full name, student number, and other required details. You are responsible for keeping your account credentials confidential.
@@ -58,10 +58,10 @@ You agree to provide truthful and complete information during registration, incl
 When you upload a school ID image, the image may be sent to an OCR service so text such as your name, student number, and program can be extracted for verification and registration autofill.
 
 4. Journal Privacy and Safety Review
-Your full journal conversation is not routinely shown to admins or counselors. However, Bawat Tala may generate summaries, insights, concern labels, and risk flags from journal entries for student support workflows. If an entry is flagged by high-risk indicators, trigger words, or other safety signals, authorized counselors or admins may review the full conversation to assess whether counseling or safety follow-up is needed.
+Your full journal conversation is not routinely shown to admins or counselors. However, Bawat Tala may generate summaries, summary notes, concern labels, and risk flags from journal entries for student support workflows. If an entry is flagged by high-risk indicators, trigger words, or other safety signals, authorized counselors or admins may review the full conversation to assess whether counseling or safety follow-up is needed.
 
 5. AI and Automated Processing
-Journal text may be processed by Bawat Tala's configured AI or automated review tools to generate Muni replies, summaries, insights, and safety flags.
+Journal text may be processed by Bawat Tala's configured AI or automated review tools to generate Muni replies, summaries, summary notes, and safety flags.
 
 6. Email, Appointments, and Integrations
 Bawat Tala may send verification, password reset, and appointment-related messages through configured service providers. Google Calendar data is only used when an authorized admin connects Google for scheduling features.
@@ -95,7 +95,7 @@ We may collect:
 - Address details
 - Email address
 - Birthdate
-- Journal messages, summaries, insights, concern tags, and risk labels
+- Journal messages, summaries, summary notes, concern tags, and risk labels
 - School ID image and OCR-extracted text
 - Appointment and support-follow-up records
 
@@ -104,7 +104,7 @@ Your data may be stored or processed through:
 - Bawat Tala database and authentication systems, including PostgreSQL and Supabase-backed services
 - Supabase Auth or its configured email provider for OTP and password reset emails
 - OCR.Space for school ID text extraction
-- Google Gemini and/or Groq for Muni replies, summaries, insights, and safety flagging
+- Google Gemini and/or Groq for Muni replies, summaries, summary notes, and safety flagging
 - Resend or another configured email provider for appointment-related emails
 - Google Calendar only when an authorized admin connects Google for scheduling
 
@@ -113,12 +113,12 @@ We process personal data to:
 - Verify identity and student legitimacy
 - Populate registration fields using OCR-extracted text
 - Secure accounts through authentication and OTP flows
-- Operate journaling, Muni insights, counseling support, and appointments
+- Operate journaling, Muni summaries, counseling support, and appointments
 - Detect possible safety concerns, including trigger words or high-risk language
 - Contact users for verification, security, appointments, and support follow-up
 
 4. Journal Privacy and Counselor Access
-Full journal conversations are private by default and are not routinely shown to admins or counselors. However, Bawat Tala may generate summaries, insights, concern tags, and risk labels for support workflows. Authorized counselors or admins may view the full conversation when an entry is flagged by high-risk indicators, trigger words, or other safety-review signals so they can assess whether counseling or welfare follow-up is needed.
+Full journal conversations are private by default and are not routinely shown to admins or counselors. However, Bawat Tala may generate summaries, summary notes, concern tags, and risk labels for support workflows. Authorized counselors or admins may view the full conversation when an entry is flagged by high-risk indicators, trigger words, or other safety-review signals so they can assess whether counseling or welfare follow-up is needed.
 
 5. Sharing and Retention
 We do not sell personal data. We share data only with authorized support personnel and trusted service providers when needed to operate the platform. If a journal entry is identified as high-risk or under active safety review, Bawat Tala may retain that entry for counselor or admin review even if it is removed from the student's normal app view.

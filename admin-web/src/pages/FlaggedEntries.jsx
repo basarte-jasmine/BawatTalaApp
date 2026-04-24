@@ -311,7 +311,7 @@ export default function FlaggedEntries({ onLogout, session }) {
                   </div>
 
                   <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                    <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Insights</div>
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">Summary Notes</div>
                     {Array.isArray(selectedEntry.insights) && selectedEntry.insights.length ? (
                       <ul className="space-y-2 text-sm leading-6 text-slate-700">
                         {selectedEntry.insights.map((insight, index) => (
@@ -319,7 +319,7 @@ export default function FlaggedEntries({ onLogout, session }) {
                         ))}
                       </ul>
                     ) : (
-                      <div className="text-sm text-slate-500">No insights generated.</div>
+                      <div className="text-sm text-slate-500">No summary notes generated.</div>
                     )}
                   </div>
                 </div>

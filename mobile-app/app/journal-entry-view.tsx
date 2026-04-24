@@ -162,7 +162,7 @@ export default function JournalEntryViewScreen() {
 
                   {entry?.insights?.length ? (
                     <View style={styles.chatInsightBlock}>
-                      <Text style={styles.chatInsightHeading}>Insights</Text>
+                      <Text style={styles.chatInsightHeading}>Summary</Text>
                       <Text style={styles.chatInsightText}>{combinedInsights}</Text>
                     </View>
                   ) : null}
@@ -197,7 +197,7 @@ export default function JournalEntryViewScreen() {
 
               {entry?.insights?.length ? (
                 <View style={styles.summaryWrap}>
-                  <Text style={styles.summaryHeading}>Insights</Text>
+                  <Text style={styles.summaryHeading}>Summary</Text>
                   <Text style={styles.summaryText}>{combinedInsights}</Text>
                 </View>
               ) : null}

@@ -617,7 +617,7 @@ export default function ProfileSettingsScreen() {
               />
               <Faq
                 question="Will Muni read my entries automatically?"
-                answer="Muni responds inside journaling flows and insights. You stay in control of what you write and finish."
+                answer="Muni responds inside journaling flows and summaries. You stay in control of what you write and finish."
                 bordered
               />
             </Card>
