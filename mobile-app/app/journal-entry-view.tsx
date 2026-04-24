@@ -4,7 +4,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { fetchJournalEntryById, JournalEntry, JournalMessage } from "../lib/backend-api";
+import { fetchJournalEntryById, JournalEntry, JournalMessage, rateJournalEntrySummary } from "../lib/backend-api";
 import { JournalLockGate } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
 
@@ -51,11 +51,14 @@ export default function JournalEntryViewScreen() {
   const [entry, setEntry] = useState<JournalEntry | null>(null);
   const [messages, setMessages] = useState<JournalMessage[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
+  const [summaryFeedbackError, setSummaryFeedbackError] = useState("");
+  const [isSavingSummaryRating, setIsSavingSummaryRating] = useState(false);
 
   const loadEntry = useCallback(async () => {
     if (!user?.studentNumber || !entryId) {
       setEntry(null);
       setMessages([]);
+      setSummaryFeedbackError("");
       return;
     }
 
@@ -64,12 +67,14 @@ export default function JournalEntryViewScreen() {
       setErrorMessage(result.message ?? "Unable to load this journal entry.");
       setEntry(null);
       setMessages([]);
+      setSummaryFeedbackError("");
       return;
     }
 
     setErrorMessage("");
     setEntry(result.entry ?? null);
     setMessages(result.messages ?? []);
+    setSummaryFeedbackError("");
   }, [entryId, user?.studentNumber]);
 
   useFocusEffect(
@@ -88,6 +93,100 @@ export default function JournalEntryViewScreen() {
     () => formatInsightsText(entry?.insights ?? []),
     [entry?.insights],
   );
+  const hasGeneratedSummary = Boolean(combinedInsights);
+  const summaryRating = entry?.summaryRating ?? null;
+
+  const handleRateSummary = useCallback(async (rating: "HELPFUL" | "NEEDS_WORK") => {
+    if (!user?.studentNumber || !entry?.id || isSavingSummaryRating) {
+      return;
+    }
+
+    setIsSavingSummaryRating(true);
+    setSummaryFeedbackError("");
+
+    const result = await rateJournalEntrySummary({
+      entryId: entry.id,
+      rating,
+      studentNumber: user.studentNumber,
+    });
+
+    if (!result.ok || !result.entry) {
+      setSummaryFeedbackError(result.message ?? "Unable to save your summary feedback right now.");
+      setIsSavingSummaryRating(false);
+      return;
+    }
+
+    setEntry(result.entry);
+    setIsSavingSummaryRating(false);
+  }, [entry?.id, isSavingSummaryRating, user?.studentNumber]);
+
+  const summaryFeedbackMessage = summaryFeedbackError
+    ? summaryFeedbackError
+    : isSavingSummaryRating
+      ? "Saving your feedback..."
+      : summaryRating === "HELPFUL"
+        ? "Thanks. You marked this summary as helpful."
+        : summaryRating === "NEEDS_WORK"
+          ? "Thanks. You marked this summary as needing work."
+          : "Your feedback helps Muni improve future summaries.";
+
+  const renderSummaryFeedback = hasGeneratedSummary ? (
+    <View style={styles.summaryFeedbackWrap}>
+      <Text style={styles.summaryFeedbackPrompt}>Did Muni get this summary right?</Text>
+
+      <View style={styles.summaryFeedbackRow}>
+        <Pressable
+          style={[
+            styles.summaryFeedbackButton,
+            summaryRating === "HELPFUL" && styles.summaryFeedbackButtonHelpful,
+          ]}
+          disabled={isSavingSummaryRating}
+          onPress={() => void handleRateSummary("HELPFUL")}
+        >
+          <Ionicons
+            name={summaryRating === "HELPFUL" ? "thumbs-up" : "thumbs-up-outline"}
+            size={16}
+            color={summaryRating === "HELPFUL" ? "#2F7A25" : "#4D6476"}
+          />
+          <Text
+            style={[
+              styles.summaryFeedbackButtonText,
+              summaryRating === "HELPFUL" && styles.summaryFeedbackButtonTextHelpful,
+            ]}
+          >
+            Helpful
+          </Text>
+        </Pressable>
+
+        <Pressable
+          style={[
+            styles.summaryFeedbackButton,
+            summaryRating === "NEEDS_WORK" && styles.summaryFeedbackButtonNeedsWork,
+          ]}
+          disabled={isSavingSummaryRating}
+          onPress={() => void handleRateSummary("NEEDS_WORK")}
+        >
+          <Ionicons
+            name={summaryRating === "NEEDS_WORK" ? "thumbs-down" : "thumbs-down-outline"}
+            size={16}
+            color={summaryRating === "NEEDS_WORK" ? "#A24B38" : "#4D6476"}
+          />
+          <Text
+            style={[
+              styles.summaryFeedbackButtonText,
+              summaryRating === "NEEDS_WORK" && styles.summaryFeedbackButtonTextNeedsWork,
+            ]}
+          >
+            Needs work
+          </Text>
+        </Pressable>
+      </View>
+
+      <Text style={[styles.summaryFeedbackNote, summaryFeedbackError && styles.summaryFeedbackNoteError]}>
+        {summaryFeedbackMessage}
+      </Text>
+    </View>
+  ) : null;
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
@@ -164,6 +263,7 @@ export default function JournalEntryViewScreen() {
                     <View style={styles.chatInsightBlock}>
                       <Text style={styles.chatInsightHeading}>Summary</Text>
                       <Text style={styles.chatInsightText}>{combinedInsights}</Text>
+                      {renderSummaryFeedback}
                     </View>
                   ) : null}
                 </ScrollView>
@@ -199,6 +299,7 @@ export default function JournalEntryViewScreen() {
                 <View style={styles.summaryWrap}>
                   <Text style={styles.summaryHeading}>Summary</Text>
                   <Text style={styles.summaryText}>{combinedInsights}</Text>
+                  {renderSummaryFeedback}
                 </View>
               ) : null}
             </ScrollView>
@@ -541,6 +642,65 @@ const styles = StyleSheet.create({
     color: "#31465A",
     fontSize: 14,
     lineHeight: 22,
+  },
+  summaryFeedbackWrap: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#DDE8D2",
+  },
+  summaryFeedbackPrompt: {
+    color: "#395167",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  summaryFeedbackRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    columnGap: 8,
+    rowGap: 8,
+  },
+  summaryFeedbackButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#D5E0D0",
+    backgroundColor: "#FCFEF9",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  summaryFeedbackButtonHelpful: {
+    borderColor: "#BBD9AE",
+    backgroundColor: "#EAF8DE",
+  },
+  summaryFeedbackButtonNeedsWork: {
+    borderColor: "#E9C5B8",
+    backgroundColor: "#FFF0EA",
+  },
+  summaryFeedbackButtonText: {
+    color: "#4D6476",
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: "700",
+  },
+  summaryFeedbackButtonTextHelpful: {
+    color: "#2F7A25",
+  },
+  summaryFeedbackButtonTextNeedsWork: {
+    color: "#A24B38",
+  },
+  summaryFeedbackNote: {
+    color: "#5E6F7B",
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 9,
+  },
+  summaryFeedbackNoteError: {
+    color: "#B04444",
   },
 });
 

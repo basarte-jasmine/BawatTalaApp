@@ -239,6 +239,16 @@ async function ensureDatabaseSchema() {
 
   await pool.query(`
     alter table public.journal_entries
+    add column if not exists summary_rating text;
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    add column if not exists summary_rated_at timestamptz;
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
     add column if not exists deleted_by_student_at timestamptz;
   `);
 

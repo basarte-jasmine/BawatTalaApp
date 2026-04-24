@@ -40,6 +40,8 @@ export type JournalEntry = {
   primaryConcern?: string | null;
   riskLevel: "HIGH" | "LOW" | "NONE";
   summary: string;
+  summaryRatedAt?: string | null;
+  summaryRating?: "HELPFUL" | "NEEDS_WORK" | null;
   supportPromptShownAt?: string | null;
   supportResponse?: "CONTACTED" | "DECLINED" | null;
   supportResponseAt?: string | null;
@@ -594,6 +596,21 @@ export async function fetchJournalEntryById(
     message: data?.message,
     entry: data?.entry ?? null,
     messages: data?.messages ?? [],
+  };
+}
+
+export async function rateJournalEntrySummary(payload: {
+  entryId: string;
+  rating: "HELPFUL" | "NEEDS_WORK";
+  studentNumber: string;
+}): Promise<ApiResult & { entry?: JournalEntry | null }> {
+  const { entryId, ...body } = payload;
+  const { response, data } = await post(`/api/journal/entries/${entryId}/summary-rating`, body);
+
+  return {
+    ok: response.ok,
+    message: data?.message,
+    entry: data?.entry ?? null,
   };
 }
 

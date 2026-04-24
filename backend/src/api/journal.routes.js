@@ -123,6 +123,14 @@ function normalizeConcernTags(value) {
   return deduped;
 }
 
+function normalizeSummaryRating(value) {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "HELPFUL" || normalized === "NEEDS_WORK") {
+    return normalized;
+  }
+  return "";
+}
+
 async function getStudentProfile(studentNumber) {
   const { data } = await supabaseAdminClient
     .from("student_profiles")
@@ -140,7 +148,7 @@ async function getStudentProfile(studentNumber) {
 async function getOpenEntryByStudentAndDate(studentNumber, entryDate) {
   const result = await query(
     `
-      select id, student_number, entry_date, title, summary, insights, risk_level, admin_flag_reason,
+      select id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
              primary_concern, concern_tags,
              ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
              created_at, updated_at
@@ -160,7 +168,7 @@ async function createEntry(studentNumber, entryDate, aiEnabled) {
     `
       insert into public.journal_entries (student_number, entry_date, ai_enabled)
       values ($1, $2, $3)
-      returning id, student_number, entry_date, title, summary, insights, risk_level, admin_flag_reason,
+      returning id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 created_at, updated_at
@@ -193,7 +201,7 @@ async function listEntryMessages(entryId) {
 async function getEntryById(studentNumber, entryId) {
   const result = await query(
     `
-      select id, student_number, entry_date, title, summary, insights, risk_level, admin_flag_reason,
+      select id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
              primary_concern, concern_tags,
              ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
              created_at, updated_at
@@ -221,6 +229,8 @@ function mapEntryRow(row) {
     primaryConcern: row.primary_concern || null,
     riskLevel: String(row.risk_level || "NONE"),
     summary: row.summary || "",
+    summaryRatedAt: row.summary_rated_at || null,
+    summaryRating: row.summary_rating || null,
     supportPromptShownAt: row.support_prompt_shown_at || null,
     supportResponse: row.support_response || null,
     supportResponseAt: row.support_response_at || null,
@@ -555,6 +565,47 @@ router.get("/entries/:entryId", asyncHandler(async (req, res) => {
   });
 }));
 
+router.post("/entries/:entryId/summary-rating", asyncHandler(async (req, res) => {
+  const studentNumber = normalizeStudentNumber(req.body.studentNumber);
+  const entryId = String(req.params.entryId || "").trim();
+  const summaryRating = normalizeSummaryRating(req.body.rating);
+
+  if (!studentNumber) {
+    return res.status(400).json({ message: "Student number is required." });
+  }
+  if (!entryId) {
+    return res.status(400).json({ message: "Entry id is required." });
+  }
+  if (!summaryRating) {
+    return res.status(400).json({ message: "A valid summary rating is required." });
+  }
+
+  const result = await query(
+    `
+      update public.journal_entries
+      set
+        summary_rating = $3,
+        summary_rated_at = now(),
+        updated_at = now()
+      where id = $1 and student_number = $2 and deleted_by_student_at is null
+      returning id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
+                primary_concern, concern_tags,
+                ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
+                created_at, updated_at
+    `,
+    [entryId, studentNumber, summaryRating],
+  );
+
+  if (result.rowCount === 0) {
+    return res.status(404).json({ message: "Journal entry not found." });
+  }
+
+  return res.json({
+    entry: mapEntryRow(result.rows[0]),
+    message: "Summary feedback saved.",
+  });
+}));
+
 router.delete("/entries/:entryId", asyncHandler(async (req, res) => {
   const studentNumber = normalizeStudentNumber(req.query.studentNumber);
   const entryId = String(req.params.entryId || "").trim();
@@ -677,7 +728,7 @@ router.post("/session/finish", asyncHandler(async (req, res) => {
       update public.journal_entries
       set is_finished = true, finished_at = now(), updated_at = now()
       where id = $1 and student_number = $2 and is_finished = false
-      returning id, student_number, entry_date, title, summary, insights, risk_level, admin_flag_reason,
+      returning id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 created_at, updated_at
@@ -760,12 +811,12 @@ router.post("/session/concerns", asyncHandler(async (req, res) => {
   const result = await query(
     `
       update public.journal_entries
-      set
-        primary_concern = $3,
-        concern_tags = $4::jsonb,
-        updated_at = now()
+        set
+          primary_concern = $3,
+          concern_tags = $4::jsonb,
+          updated_at = now()
       where id = $1 and student_number = $2
-      returning id, student_number, entry_date, title, summary, insights, risk_level, admin_flag_reason,
+      returning id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 created_at, updated_at
@@ -804,7 +855,7 @@ router.post("/session/support-response", asyncHandler(async (req, res) => {
         support_response_at = now(),
         updated_at = now()
       where id = $1 and student_number = $2
-      returning id, student_number, entry_date, title, summary, insights, risk_level, admin_flag_reason,
+      returning id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 created_at, updated_at
@@ -850,9 +901,9 @@ router.post("/message", asyncHandler(async (req, res) => {
   let entry = null;
 
   if (entryId) {
-    const entryResult = await query(
-      `
-        select id, student_number, entry_date, title, summary, insights, risk_level, admin_flag_reason,
+      const entryResult = await query(
+        `
+        select id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
                primary_concern, concern_tags,
                ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                created_at, updated_at
@@ -879,7 +930,7 @@ router.post("/message", asyncHandler(async (req, res) => {
         update public.journal_entries
         set ai_enabled = $2, updated_at = now()
         where id = $1
-        returning id, student_number, entry_date, title, summary, insights, risk_level, admin_flag_reason,
+        returning id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
                   primary_concern, concern_tags,
                   ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                   created_at, updated_at
@@ -946,7 +997,7 @@ router.post("/message", asyncHandler(async (req, res) => {
         ai_enabled = $7,
         updated_at = now()
       where id = $1
-      returning id, student_number, entry_date, title, summary, insights, risk_level, admin_flag_reason,
+      returning id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 created_at, updated_at
