@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, Easing, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Defs, Ellipse, LinearGradient, Path, Rect, Stop } from "react-native-svg";
@@ -24,15 +24,6 @@ type DailyCheckinReward = {
   id: string;
   state: "active" | "done" | "locked";
   value: string;
-};
-
-type SupportCardItem = {
-  accentColor: string;
-  backgroundColor: string;
-  description: string;
-  icon: ComponentProps<typeof Ionicons>["name"];
-  id: string;
-  title: string;
 };
 
 const DAILY_CHECKIN_REWARDS: DailyCheckinReward[] = [
@@ -81,41 +72,6 @@ type DriftingBottleNote = {
   startOffset: number;
   top: number;
 };
-
-const SUPPORT_CARDS: SupportCardItem[] = [
-  {
-    accentColor: "#4B8C35",
-    id: "support-1",
-    title: "Quick Journal",
-    description: "Write your entry for today",
-    icon: "create-outline",
-    backgroundColor: "#B1DEB3",
-  },
-  {
-    accentColor: "#5A8A36",
-    id: "support-2",
-    title: "Wellness Tools",
-    description: "Calm your mind and body with exercises.",
-    icon: "leaf-outline",
-    backgroundColor: "#BDE0AA",
-  },
-  {
-    accentColor: "#4C7C64",
-    id: "support-3",
-    title: "Talk to Peer",
-    description: "Connect with a trained student listener today.",
-    icon: "people-outline",
-    backgroundColor: "#BDE0AA",
-  },
-  {
-    accentColor: "#4E6F88",
-    id: "support-4",
-    title: "Counseling",
-    description: "Set up a private and safe session with guidance counselors.",
-    icon: "chatbubbles-outline",
-    backgroundColor: "#B1DEB3",
-  },
-];
 
 const HOME_QUOTES = [
   "It's okay to not have it all figured out.",
@@ -293,8 +249,6 @@ export default function HomeScreen() {
     driftingBottleProgressRef.current = driftingBottleProgressRef.current.slice(0, DRIFTING_BOTTLE_NOTES.length);
   }
   const driftingBottleProgress = driftingBottleProgressRef.current;
-  const supportShortcuts = SUPPORT_CARDS.filter((card) => card.id !== "support-1");
-
   useEffect(() => {
     const loops = idleValues.map((value, index) => {
       const loop = Animated.loop(
@@ -821,24 +775,6 @@ export default function HomeScreen() {
     closeBottleModal();
   };
 
-  const handleSupportCardPress = (cardId: string) => {
-    if (cardId === "support-1") {
-      router.push("/write-entry?mode=new");
-      return;
-    }
-    if (cardId === "support-2") {
-      router.push("/wellness-tools");
-      return;
-    }
-    if (cardId === "support-3") {
-      router.push("/consult?track=peer");
-      return;
-    }
-    if (cardId === "support-4") {
-      router.push("/consult");
-    }
-  };
-
   const handleOpenLibrary = () => {
     router.push("/library");
   };
@@ -1238,34 +1174,6 @@ export default function HomeScreen() {
               {isClaimingCheckIn ? "Checking in..." : hasCheckedInToday ? "Checked in today" : "Check-in today"}
             </Text>
           </Pressable>
-        </View>
-
-        <View style={styles.supportWrapCard}>
-          <View style={styles.supportHeader}>
-            <Text style={styles.sectionEyebrow}>Support Space</Text>
-            <Text style={styles.supportSectionTitle}>Choose what would help most today</Text>
-            <Text style={styles.supportSectionBody}>Quick paths for journaling, calming down, or reaching support.</Text>
-          </View>
-          <View style={styles.supportList}>
-            {supportShortcuts.map((card) => (
-              <Pressable
-                key={card.id}
-                style={styles.supportListCard}
-                onPress={() => handleSupportCardPress(card.id)}
-              >
-                <View style={[styles.supportListIconWrap, { backgroundColor: card.backgroundColor, borderColor: `${card.accentColor}22` }]}>
-                  <Ionicons name={card.icon} size={20} color={card.accentColor} />
-                </View>
-                <View style={styles.supportListTextWrap}>
-                  <Text style={styles.supportListTitle}>{card.title}</Text>
-                  <Text style={styles.supportListDescription}>{card.description}</Text>
-                </View>
-                <View style={styles.supportListArrow}>
-                  <Ionicons name="chevron-forward" size={18} color="#4B5F4C" />
-                </View>
-              </Pressable>
-            ))}
-          </View>
         </View>
 
         <View style={styles.recentCard}>
@@ -2748,82 +2656,6 @@ const styles = StyleSheet.create({
     color: "#2F3F52",
     fontSize: 33 / 2,
     lineHeight: 22,
-  },
-  supportWrapCard: {
-    borderRadius: 24,
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    marginBottom: 12,
-    shadowColor: "#66737E",
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: "#E6EEE7",
-  },
-  supportHeader: {
-    marginBottom: 12,
-    paddingHorizontal: 2,
-  },
-  supportSectionTitle: {
-    color: "#304558",
-    fontSize: 19,
-    lineHeight: 24,
-    fontWeight: "700",
-    marginBottom: 3,
-  },
-  supportSectionBody: {
-    color: "#607181",
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  supportList: {
-    rowGap: 10,
-  },
-  supportListCard: {
-    minHeight: 76,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#D6E6CE",
-    backgroundColor: "#F8FBF5",
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: 12,
-  },
-  supportListIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-  },
-  supportListTextWrap: {
-    flex: 1,
-  },
-  supportListTitle: {
-    color: "#2F4257",
-    fontSize: 16,
-    lineHeight: 21,
-    fontWeight: "700",
-    marginBottom: 2,
-  },
-  supportListDescription: {
-    color: "#506271",
-    fontSize: 14,
-    lineHeight: 18,
-  },
-  supportListArrow: {
-    width: 28,
-    height: 28,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.88)",
-    alignItems: "center",
-    justifyContent: "center",
   },
   futureBottleScene: {
     marginHorizontal: -12,
