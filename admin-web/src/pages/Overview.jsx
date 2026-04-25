@@ -68,6 +68,12 @@ const ANALYTICS_CARD_DEFS = [
   },
 ];
 
+const CONCERN_COLORS = ["#4D8FEF", "#9B6EF3", "#39C493", "#F6B84E"];
+const RISK_COLORS = {
+  critical: "#FF5D5D",
+  high: "#F59E0B",
+};
+
 const GENDER_DATA = [
   { label: "Male", value: 487, color: "#3E8914" },
   { label: "Female", value: 552, color: "#3DA35D" },
@@ -267,6 +273,55 @@ function mapMetricTone(key, direction) {
   if (direction === "up") return "green";
   if (direction === "down") return "gray";
   return "gray";
+}
+
+function buildLinePath(values, width, height) {
+  if (!values.length) return "";
+  const max = Math.max(...values, 1);
+  const stepX = values.length > 1 ? width / (values.length - 1) : width;
+
+  return values
+    .map((value, index) => {
+      const x = index * stepX;
+      const y = height - (Number(value || 0) / max) * (height - 12) - 6;
+      return `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
+    })
+    .join(" ");
+}
+
+function formatTooltipLines(lines) {
+  return lines.filter(Boolean).join("\n");
+}
+
+function buildStackedAreas(seriesList, width, height) {
+  const pointCount = Math.max(...seriesList.map((series) => (Array.isArray(series.values) ? series.values.length : 0)), 0);
+  if (!pointCount) return [];
+
+  const totals = Array.from({ length: pointCount }, (_, index) =>
+    seriesList.reduce((sum, series) => sum + Number(series.values?.[index] || 0), 0),
+  );
+  const maxTotal = Math.max(...totals, 1);
+  const stepX = pointCount > 1 ? width / (pointCount - 1) : width;
+  const cumulative = Array(pointCount).fill(0);
+
+  return seriesList.map((series) => {
+    const topPoints = [];
+    const bottomPoints = [];
+
+    for (let index = 0; index < pointCount; index += 1) {
+      const value = Number(series.values?.[index] || 0);
+      const x = index * stepX;
+      const bottomValue = cumulative[index];
+      const topValue = bottomValue + value;
+      const topY = height - (topValue / maxTotal) * (height - 16) - 8;
+      const bottomY = height - (bottomValue / maxTotal) * (height - 16) - 8;
+      topPoints.push(`${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${topY.toFixed(2)}`);
+      bottomPoints.unshift(`L ${x.toFixed(2)} ${bottomY.toFixed(2)}`);
+      cumulative[index] = topValue;
+    }
+
+    return `${topPoints.join(" ")} ${bottomPoints.join(" ")} Z`;
+  });
 }
 
 function DonutChart({
@@ -495,6 +550,227 @@ function ConcernThemesChart({ data }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function ConcernTrendsPanel({ analytics, loading }) {
+  const labels = analytics?.charts?.concernTrends?.labels || [];
+  const series = analytics?.charts?.concernTrends?.series || [];
+  const areaPaths = buildStackedAreas(series, 280, 170);
+
+  if (loading) {
+    return <div className="py-16 text-center text-sm text-slate-500">Loading concern trends...</div>;
+  }
+
+  if (!series.length) {
+    return <div className="py-16 text-center text-sm text-slate-500">No concern data available for this range.</div>;
+  }
+
+  return (
+    <>
+      <div className="mt-2">
+        <svg viewBox="0 0 300 190" className="h-[230px] w-full">
+          {[0, 1, 2, 3].map((row) => (
+            <line
+              key={row}
+              x1="0"
+              y1={20 + row * 40}
+              x2="280"
+              y2={20 + row * 40}
+              stroke="#D8E0EC"
+              strokeDasharray="4 5"
+            />
+          ))}
+          {areaPaths.map((path, index) => (
+            <path
+              key={series[index]?.key || index}
+              d={path}
+              fill={CONCERN_COLORS[index % CONCERN_COLORS.length]}
+              opacity="0.68"
+              transform="translate(10 6)"
+            />
+          ))}
+          {labels.map((label, index, items) => {
+            const width = items.length > 1 ? 280 / items.length : 280;
+            const x = index * width + 10;
+            const tooltip = formatTooltipLines([
+              label,
+              ...series.map((item) => `${item.label}: ${formatMetricValue(item.values?.[index] || 0)}`),
+            ]);
+            return (
+              <rect key={label} x={x} y="0" width={width} height="186" fill="transparent">
+                <title>{tooltip}</title>
+              </rect>
+            );
+          })}
+        </svg>
+      </div>
+      <div
+        className="grid gap-2 text-xs text-slate-500"
+        style={{ gridTemplateColumns: `repeat(${Math.max(1, labels.length)}, minmax(0, 1fr))` }}
+      >
+        {labels.map((label) => (
+          <div key={label} className="text-center">
+            {label}
+          </div>
+        ))}
+      </div>
+      <div className="mt-5 flex flex-wrap gap-4">
+        {series.map((item, index) => (
+          <div key={item.key} className="flex items-center gap-2 text-xs text-slate-600">
+            <span className="h-3 w-3 rounded-full" style={{ backgroundColor: CONCERN_COLORS[index % CONCERN_COLORS.length] }} />
+            {item.label.toLowerCase().replace(/\s*\/\s*/g, " ")}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function CounselorWorkloadPanel({ analytics, loading }) {
+  const workload = analytics?.charts?.counselorWorkload || [];
+  const max = Math.max(...workload.map((item) => Number(item.value || 0)), 1);
+
+  if (loading) {
+    return <div className="py-16 text-center text-sm text-slate-500">Loading counselor workload...</div>;
+  }
+
+  if (!workload.length) {
+    return <div className="py-16 text-center text-sm text-slate-500">No counselor workload data available.</div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      {workload.map((counselor) => (
+        <div key={counselor.label} className="grid grid-cols-[140px_1fr] items-center gap-4">
+          <div className="text-sm text-slate-500">{counselor.label}</div>
+          <div>
+            <div className="h-5 rounded-full bg-slate-100" title={`${counselor.label}: ${formatMetricValue(counselor.value)} assigned cases`}>
+              <div
+                className="h-5 rounded-full bg-[#20C08D]"
+                style={{ width: `${Math.max(10, (Number(counselor.value || 0) / max) * 100)}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AtRiskTrendsPanel({ analytics, loading }) {
+  const labels = analytics?.charts?.atRiskStudentTrends?.labels || [];
+  const series = analytics?.charts?.atRiskStudentTrends?.series || [];
+  const criticalSeries = series.find((item) => item.key === "critical")?.values || [];
+  const highSeries = series.find((item) => item.key === "high")?.values || [];
+  const riskMax = Math.max(...criticalSeries, ...highSeries, 1);
+  const criticalPath = buildLinePath(criticalSeries, 280, 170);
+  const highPath = buildLinePath(highSeries, 280, 170);
+
+  if (loading) {
+    return <div className="py-16 text-center text-sm text-slate-500">Loading risk trends...</div>;
+  }
+
+  if (!criticalSeries.length && !highSeries.length) {
+    return <div className="py-16 text-center text-sm text-slate-500">No at-risk trend data available.</div>;
+  }
+
+  return (
+    <>
+      <div className="mt-2">
+        <svg viewBox="0 0 300 190" className="h-[220px] w-full">
+          {[0, 1, 2, 3].map((row) => (
+            <line
+              key={row}
+              x1="0"
+              y1={20 + row * 40}
+              x2="280"
+              y2={20 + row * 40}
+              stroke="#D8E0EC"
+              strokeDasharray="4 5"
+            />
+          ))}
+          <path d={highPath} fill="none" stroke={RISK_COLORS.high} strokeWidth="3" transform="translate(10 6)" />
+          <path d={criticalPath} fill="none" stroke={RISK_COLORS.critical} strokeWidth="3" transform="translate(10 6)" />
+          {highSeries.map((value, index) => {
+            const x = highSeries.length > 1 ? (280 / (highSeries.length - 1)) * index + 10 : 150;
+            const y = 176 - (Number(value || 0) / riskMax) * 154;
+            return (
+              <circle key={`high-${index}`} cx={x} cy={y} r="4" fill="white" stroke={RISK_COLORS.high} strokeWidth="2.5">
+                <title>{`${labels[index] || `W${index + 1}`}: ${formatMetricValue(value)} high-risk cases`}</title>
+              </circle>
+            );
+          })}
+          {criticalSeries.map((value, index) => {
+            const x = criticalSeries.length > 1 ? (280 / (criticalSeries.length - 1)) * index + 10 : 150;
+            const y = 176 - (Number(value || 0) / riskMax) * 154;
+            return (
+              <circle key={`critical-${index}`} cx={x} cy={y} r="4" fill="white" stroke={RISK_COLORS.critical} strokeWidth="2.5">
+                <title>{`${labels[index] || `W${index + 1}`}: ${formatMetricValue(value)} critical cases`}</title>
+              </circle>
+            );
+          })}
+        </svg>
+      </div>
+      <div
+        className="grid gap-2 text-xs text-slate-500"
+        style={{ gridTemplateColumns: `repeat(${Math.max(1, labels.length)}, minmax(0, 1fr))` }}
+      >
+        {labels.map((label) => (
+          <div key={label} className="text-center">
+            {label}
+          </div>
+        ))}
+      </div>
+      <div className="mt-5 flex gap-5 text-xs text-slate-600">
+        <div className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded-full bg-[#FF5D5D]" />
+          Critical
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded-full bg-[#F59E0B]" />
+          High Risk
+        </div>
+      </div>
+    </>
+  );
+}
+
+function ResponseTargetPanel({ analytics, loading }) {
+  const resolutionRates = analytics?.charts?.resolutionRates || [];
+
+  if (loading) {
+    return <div className="py-16 text-center text-sm text-slate-500">Loading resolution rates...</div>;
+  }
+
+  if (!resolutionRates.length) {
+    return <div className="py-16 text-center text-sm text-slate-500">No resolution data available.</div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      {resolutionRates.map((item) => (
+        <div key={item.label}>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div className="text-sm text-slate-700">
+              {item.label} ({item.targetLabel})
+            </div>
+            <div className={`text-sm font-semibold ${item.color === "amber" ? "text-amber-500" : "text-emerald-600"}`}>
+              {item.value}%
+            </div>
+          </div>
+          <div className="h-3 rounded-full bg-slate-100" title={`${item.label}: ${item.value}% met ${item.targetLabel}`}>
+            <div
+              className={`h-3 rounded-full ${item.color === "amber" ? "bg-amber-500" : "bg-[#20C08D]"}`}
+              style={{ width: `${Math.max(0, Math.min(100, Number(item.value || 0)))}%` }}
+            />
+          </div>
+        </div>
+      ))}
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500">
+        This is a monitoring metric for response speed. It is helpful for counselor follow-up, but it is not required for basic scheduling to work.
+      </div>
     </div>
   );
 }
@@ -997,7 +1273,7 @@ export default function Overview({ onLogout, session }) {
         setAnalyticsError("");
       } catch (error) {
         if (!isMounted) return;
-        setAnalyticsError(error instanceof Error ? error.message : "Failed to load report metrics.");
+        setAnalyticsError(error instanceof Error ? error.message : "Failed to load overview analytics.");
       } finally {
         if (isMounted) {
           setAnalyticsLoading(false);
@@ -1161,7 +1437,7 @@ export default function Overview({ onLogout, session }) {
         ) : null}
         {analyticsError ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-            Report metric cards failed to load: {analyticsError}
+            Overview analytics failed to load: {analyticsError}
           </div>
         ) : null}
 
@@ -1186,6 +1462,27 @@ export default function Overview({ onLogout, session }) {
           {analyticsCards.map((item) => (
             <MetricCard key={item.key} item={item} />
           ))}
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <Card title="Concern Trends Over Time" subtitle="Stacked view of primary concerns">
+            <ConcernTrendsPanel analytics={analyticsOverview} loading={analyticsLoading} />
+          </Card>
+
+          <Card title="Counselor Workload" subtitle="Active cases assigned per role">
+            <CounselorWorkloadPanel analytics={analyticsOverview} loading={analyticsLoading} />
+          </Card>
+
+          <Card title="At-Risk Student Trends" subtitle="Weekly tracking of high and critical severity cases">
+            <AtRiskTrendsPanel analytics={analyticsOverview} loading={analyticsLoading} />
+          </Card>
+
+          <Card
+            title="Response Within Target Time"
+            subtitle="How many tagged risk cases got a counselor response within the target hours."
+          >
+            <ResponseTargetPanel analytics={analyticsOverview} loading={analyticsLoading} />
+          </Card>
         </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
