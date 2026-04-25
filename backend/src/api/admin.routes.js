@@ -1624,8 +1624,25 @@ router.get("/analytics", async (req, res) => {
     req.query.startDate,
     req.query.endDate,
   );
-  const [studentsResult, journalRowsResult, appointmentsResult, counselorsResult] = await Promise.all([
-    query("select count(*)::int as total from public.student_profiles"),
+  const [profilesResult, journalRowsResult, appointmentsResult, counselorsResult] = await Promise.all([
+    query(
+      `
+        select
+          student_number,
+          coalesce(nullif(full_name, ''), student_number) as full_name,
+          coalesce(email, '') as email,
+          coalesce(program, '') as program,
+          coalesce(gender, 'Prefer not to say') as gender,
+          coalesce(region, '') as region,
+          coalesce(province, '') as province,
+          coalesce(city, '') as city,
+          coalesce(barangay, '') as barangay,
+          birthdate,
+          created_at
+        from public.student_profiles
+        order by full_name asc, student_number asc
+      `,
+    ),
     query(
       `
         select
@@ -1674,7 +1691,8 @@ router.get("/analytics", async (req, res) => {
     ),
   ]);
 
-  const totalStudents = Number(studentsResult.rows[0]?.total || 0);
+  const profileRows = profilesResult.rows || [];
+  const totalStudents = profileRows.length;
   const journalRows = journalRowsResult.rows || [];
   const appointmentRows = appointmentsResult.rows || [];
   const counselors = counselorsResult.rows || [];
@@ -1836,6 +1854,118 @@ router.get("/analytics", async (req, res) => {
     ),
   ];
 
+  const reportStatsByStudent = new Map();
+  const getReportStats = (studentNumber) => {
+    const key = String(studentNumber || "").trim();
+    if (!reportStatsByStudent.has(key)) {
+      reportStatsByStudent.set(key, {
+        entriesInRange: 0,
+        flagsInRange: 0,
+        highRiskFlags: 0,
+        criticalRiskFlags: 0,
+        mediumRiskFlags: 0,
+        declinedSupport: 0,
+        contactedSupport: 0,
+        counselingSessions: 0,
+        confirmedSessions: 0,
+        completedSessions: 0,
+        concernCounts: new Map(),
+        lastEntryDate: "",
+        lastEntryCreatedAt: "",
+        latestRiskLevel: "NONE",
+        latestSupportResponse: "",
+      });
+    }
+    return reportStatsByStudent.get(key);
+  };
+
+  for (const row of journalRows) {
+    const studentNumber = String(row.student_number || "").trim();
+    if (!studentNumber) continue;
+    const stats = getReportStats(studentNumber);
+    const riskLevel = String(row.risk_level || "NONE").trim().toUpperCase();
+    const supportResponse = String(row.support_response || "").trim().toUpperCase();
+    const entryDate = normalizeDateValue(row.entry_date);
+    const createdAt = row.created_at ? new Date(row.created_at).toISOString() : "";
+    const normalizedTags = Array.isArray(row.concern_tags)
+      ? row.concern_tags.map((item) => normalizeConcernTheme(item)).filter(Boolean)
+      : [];
+    const fallbackConcern =
+      normalizeConcernTheme(row.primary_concern) ||
+      inferConcernThemeFromText([row.summary, row.admin_flag_reason].filter(Boolean).join(" "));
+    const tags = normalizedTags.length ? normalizedTags : fallbackConcern ? [fallbackConcern] : [];
+
+    stats.entriesInRange += 1;
+    if (["HIGH", "CRITICAL"].includes(riskLevel) || supportResponse === "DECLINED") {
+      stats.flagsInRange += 1;
+    }
+    if (riskLevel === "HIGH") stats.highRiskFlags += 1;
+    if (riskLevel === "CRITICAL") stats.criticalRiskFlags += 1;
+    if (["MEDIUM", "MODERATE"].includes(riskLevel)) stats.mediumRiskFlags += 1;
+    if (supportResponse === "DECLINED") stats.declinedSupport += 1;
+    if (supportResponse === "CONTACTED") stats.contactedSupport += 1;
+
+    for (const tag of tags) {
+      stats.concernCounts.set(tag, (stats.concernCounts.get(tag) || 0) + 1);
+    }
+
+    if (!stats.lastEntryCreatedAt || createdAt > stats.lastEntryCreatedAt) {
+      stats.lastEntryDate = entryDate;
+      stats.lastEntryCreatedAt = createdAt;
+      stats.latestRiskLevel = riskLevel || "NONE";
+      stats.latestSupportResponse = supportResponse;
+    }
+  }
+
+  for (const row of appointmentRows) {
+    const studentNumber = String(row.student_number || "").trim();
+    if (!studentNumber) continue;
+    const stats = getReportStats(studentNumber);
+    const status = String(row.status || "").toUpperCase();
+    if (["CONFIRMED", "COMPLETED"].includes(status)) {
+      stats.counselingSessions += 1;
+    }
+    if (status === "CONFIRMED") stats.confirmedSessions += 1;
+    if (status === "COMPLETED") stats.completedSessions += 1;
+  }
+
+  const studentReportRows = profileRows.map((profile) => {
+    const studentNumber = String(profile.student_number || "").trim();
+    const stats = getReportStats(studentNumber);
+    const topConcern =
+      [...stats.concernCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+
+    return {
+      studentNumber,
+      fullName: profile.full_name || studentNumber,
+      email: profile.email || "",
+      program: normalizeDisplayLabel(profile.program || "Unspecified"),
+      yearLevel: inferYearLevelFromStudentNumber(studentNumber),
+      gender: normalizeDisplayLabel(profile.gender || "Prefer not to say"),
+      region: profile.region || "",
+      province: profile.province || "",
+      city: profile.city || "",
+      barangay: profile.barangay || "",
+      birthdate: normalizeDateValue(profile.birthdate) || "",
+      registeredAt: profile.created_at || null,
+      entriesInRange: stats.entriesInRange,
+      flagsInRange: stats.flagsInRange,
+      highRiskFlags: stats.highRiskFlags,
+      criticalRiskFlags: stats.criticalRiskFlags,
+      mediumRiskFlags: stats.mediumRiskFlags,
+      declinedSupport: stats.declinedSupport,
+      contactedSupport: stats.contactedSupport,
+      counselingSessions: stats.counselingSessions,
+      confirmedSessions: stats.confirmedSessions,
+      completedSessions: stats.completedSessions,
+      topConcern,
+      latestRiskLevel: stats.latestRiskLevel,
+      latestSupportResponse: stats.latestSupportResponse,
+      lastEntryDate: stats.lastEntryDate,
+      reportStatus: stats.flagsInRange > 0 ? "Flagged" : stats.entriesInRange > 0 ? "Active" : "No entries in range",
+    };
+  });
+
   return res.json({
     filters: {
       rangeKey,
@@ -1858,6 +1988,9 @@ router.get("/analytics", async (req, res) => {
         ],
       },
       resolutionRates,
+    },
+    reports: {
+      students: studentReportRows,
     },
   });
 });

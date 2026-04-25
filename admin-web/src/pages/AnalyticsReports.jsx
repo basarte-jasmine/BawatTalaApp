@@ -10,12 +10,32 @@ const RANGE_OPTIONS = [
   { key: "custom", label: "Custom" },
 ];
 
+const REPORT_COLUMNS = [
+  { key: "studentNumber", label: "Student No." },
+  { key: "fullName", label: "Full Name" },
+  { key: "email", label: "Email" },
+  { key: "program", label: "Program" },
+  { key: "yearLevel", label: "Year Level" },
+  { key: "gender", label: "Gender" },
+  { key: "barangay", label: "Barangay" },
+  { key: "city", label: "City" },
+  { key: "province", label: "Province" },
+  { key: "entriesInRange", label: "Entries", align: "right" },
+  { key: "flagsInRange", label: "Flags", align: "right" },
+  { key: "highRiskFlags", label: "High Risk", align: "right" },
+  { key: "criticalRiskFlags", label: "Critical", align: "right" },
+  { key: "mediumRiskFlags", label: "Medium", align: "right" },
+  { key: "declinedSupport", label: "Declined Support", align: "right" },
+  { key: "contactedSupport", label: "Contacted", align: "right" },
+  { key: "counselingSessions", label: "Sessions", align: "right" },
+  { key: "topConcern", label: "Top Concern" },
+  { key: "latestRiskLevel", label: "Latest Risk" },
+  { key: "lastEntryDate", label: "Last Entry" },
+  { key: "reportStatus", label: "Status" },
+];
+
 function formatNumber(value) {
   return new Intl.NumberFormat("en-US").format(Number(value || 0));
-}
-
-function formatDecimal(value) {
-  return Number(value || 0).toFixed(1);
 }
 
 function escapeCsv(value) {
@@ -45,212 +65,84 @@ function downloadFile(filename, content, type) {
   window.URL.revokeObjectURL(url);
 }
 
-function formatMetricValue(key, value) {
-  return key === "averageEntriesPerStudent" ? formatDecimal(value) : formatNumber(value);
+function formatCellValue(row, column) {
+  const value = row?.[column.key];
+  if (column.align === "right") return formatNumber(value);
+  return value || "";
 }
 
-function formatMetricDelta(key, card) {
-  if (key === "averageEntriesPerStudent") {
-    const delta = Number(card?.deltaValue || 0);
-    return `${delta >= 0 ? "+" : ""}${formatDecimal(delta)}`;
+function buildStudentReportCsv(rows) {
+  const lines = [REPORT_COLUMNS.map((column) => escapeCsv(column.label)).join(",")];
+  for (const row of rows) {
+    lines.push(REPORT_COLUMNS.map((column) => escapeCsv(formatCellValue(row, column))).join(","));
   }
-  return card?.percentageText || "0%";
-}
-
-function buildReportSections(analytics) {
-  const cards = analytics?.cards || {};
-  const charts = analytics?.charts || {};
-  const concernLabels = charts.concernTrends?.labels || [];
-  const riskLabels = charts.atRiskStudentTrends?.labels || [];
-
-  return [
-    {
-      id: "summary",
-      title: "Summary Metrics",
-      description: "High-level counts for the selected report range.",
-      columns: [
-        { key: "metric", label: "Metric" },
-        { key: "value", label: "Value", align: "right" },
-        { key: "change", label: "Change" },
-        { key: "notes", label: "Notes" },
-      ],
-      rows: Object.entries(cards).map(([key, card]) => ({
-        metric: card.label || key,
-        value: formatMetricValue(key, card.value),
-        change: formatMetricDelta(key, card),
-        notes: key === "averageEntriesPerStudent" ? "Average uses total students as denominator." : "Aggregate value only.",
-      })),
-    },
-    {
-      id: "entry-volume",
-      title: "Journal Entry Counts",
-      description: "Daily entry totals only. Journal text, messages, and AI insights are excluded.",
-      columns: [
-        { key: "date", label: "Date" },
-        { key: "entries", label: "Number of Entries", align: "right" },
-      ],
-      rows: (charts.journalEntryVolume || []).map((item) => ({
-        date: item.isoDate || item.label,
-        entries: formatNumber(item.value),
-      })),
-    },
-    {
-      id: "concerns",
-      title: "Concern Trend Counts",
-      description: "Primary concern totals by report period.",
-      columns: [
-        { key: "period", label: "Period" },
-        { key: "concern", label: "Concern" },
-        { key: "count", label: "Count", align: "right" },
-      ],
-      rows: (charts.concernTrends?.series || []).flatMap((series) =>
-        (series.values || []).map((value, index) => ({
-          period: concernLabels[index] || `Period ${index + 1}`,
-          concern: series.label,
-          count: formatNumber(value),
-        })),
-      ),
-    },
-    {
-      id: "workload",
-      title: "Counselor Workload",
-      description: "Confirmed and completed counseling sessions assigned per counselor.",
-      columns: [
-        { key: "counselor", label: "Counselor" },
-        { key: "role", label: "Role" },
-        { key: "cases", label: "Cases", align: "right" },
-      ],
-      rows: (charts.counselorWorkload || []).map((item) => ({
-        counselor: item.label,
-        role: item.role || "Counselor",
-        cases: formatNumber(item.value),
-      })),
-    },
-    {
-      id: "risk",
-      title: "Risk Flag Counts",
-      description: "High and critical risk counts only. Entry content is not included.",
-      columns: [
-        { key: "period", label: "Period" },
-        { key: "riskLevel", label: "Risk Level" },
-        { key: "flags", label: "Number of Flags", align: "right" },
-      ],
-      rows: (charts.atRiskStudentTrends?.series || []).flatMap((series) =>
-        (series.values || []).map((value, index) => ({
-          period: riskLabels[index] || `W${index + 1}`,
-          riskLevel: series.label,
-          flags: formatNumber(value),
-        })),
-      ),
-    },
-    {
-      id: "response",
-      title: "Response Time Compliance",
-      description: "Share of flagged cases that received a counselor response within target time.",
-      columns: [
-        { key: "category", label: "Category" },
-        { key: "target", label: "Target" },
-        { key: "rate", label: "Within Target", align: "right" },
-      ],
-      rows: (charts.resolutionRates || []).map((item) => ({
-        category: item.label,
-        target: item.targetLabel,
-        rate: `${formatNumber(item.value)}%`,
-      })),
-    },
-  ];
-}
-
-function buildReportCsv(sections) {
-  const lines = [];
-
-  for (const section of sections) {
-    lines.push(section.title);
-    lines.push(section.columns.map((column) => escapeCsv(column.label)).join(","));
-    for (const row of section.rows) {
-      lines.push(section.columns.map((column) => escapeCsv(row[column.key])).join(","));
-    }
-    lines.push("");
-  }
-
   return lines.join("\n");
 }
 
-function buildPrintHtml({ sections, title, subtitle, filters }) {
-  const tableMarkup = sections
-    .map(
-      (section) => `
-        <section>
-          <h2>${escapeHtml(section.title)}</h2>
-          <p>${escapeHtml(section.description)}</p>
-          <table>
-            <thead>
-              <tr>${section.columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join("")}</tr>
-            </thead>
-            <tbody>
-              ${
-                section.rows.length
-                  ? section.rows
-                      .map(
-                        (row) =>
-                          `<tr>${section.columns.map((column) => `<td>${escapeHtml(row[column.key])}</td>`).join("")}</tr>`,
-                      )
-                      .join("")
-                  : `<tr><td colspan="${section.columns.length}">No rows available for this filter.</td></tr>`
-              }
-            </tbody>
-          </table>
-        </section>
-      `,
-    )
-    .join("");
+function buildPrintHtml({ rows, filters }) {
+  const tableRows = rows.length
+    ? rows
+        .map(
+          (row) => `
+            <tr>
+              ${REPORT_COLUMNS.map((column) => `<td>${escapeHtml(formatCellValue(row, column))}</td>`).join("")}
+            </tr>
+          `,
+        )
+        .join("")
+    : `<tr><td colspan="${REPORT_COLUMNS.length}">No student rows available for this filter.</td></tr>`;
 
   return `
     <!doctype html>
     <html>
       <head>
-        <title>${escapeHtml(title)}</title>
+        <title>Bawat Tala Student Report</title>
         <style>
-          body { font-family: Arial, sans-serif; color: #14213d; margin: 32px; }
-          h1 { margin: 0; font-size: 26px; }
-          h2 { margin: 28px 0 4px; font-size: 18px; color: #134611; }
-          p { margin: 0 0 12px; color: #52616b; font-size: 12px; }
-          .meta { margin: 10px 0 18px; font-size: 12px; color: #52616b; }
-          .privacy { margin: 18px 0; padding: 10px 12px; border: 1px solid #cbd5e1; background: #f8fafc; border-radius: 8px; }
+          body { font-family: Arial, sans-serif; color: #14213d; margin: 24px; }
+          h1 { margin: 0; font-size: 24px; }
+          .meta { margin: 8px 0 14px; font-size: 12px; color: #52616b; }
+          .privacy { margin: 14px 0; padding: 10px 12px; border: 1px solid #cbd5e1; background: #f8fafc; border-radius: 8px; font-size: 12px; }
           table { width: 100%; border-collapse: collapse; page-break-inside: auto; }
-          th, td { border: 1px solid #d7dee8; padding: 8px; font-size: 11px; text-align: left; vertical-align: top; }
+          th, td { border: 1px solid #d7dee8; padding: 6px; font-size: 9px; text-align: left; vertical-align: top; }
           th { background: #edf6e9; color: #134611; font-weight: 700; }
           tr { page-break-inside: avoid; }
-          @page { margin: 18mm; }
+          @page { margin: 12mm; size: landscape; }
         </style>
       </head>
       <body>
-        <h1>${escapeHtml(title)}</h1>
-        <div class="meta">${escapeHtml(subtitle)}<br/>Range: ${escapeHtml(filters?.startDate || "--")} to ${escapeHtml(filters?.endDate || "--")}</div>
-        <div class="privacy">This report excludes journal messages, entry text, private notes, and generated insights. It contains only administrative counts and labels.</div>
-        ${tableMarkup}
+        <h1>Bawat Tala Student Report</h1>
+        <div class="meta">Range: ${escapeHtml(filters?.startDate || "--")} to ${escapeHtml(filters?.endDate || "--")}</div>
+        <div class="privacy">Student users only. Journal messages, entry text, private notes, generated insights, admin accounts, and counselor names are excluded.</div>
+        <table>
+          <thead>
+            <tr>${REPORT_COLUMNS.map((column) => `<th>${escapeHtml(column.label)}</th>`).join("")}</tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>
       </body>
     </html>
   `;
 }
 
-function ReportTable({ section, loading }) {
+function StudentReportTable({ rows, loading }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-100 px-5 py-4">
-        <h3 className="text-lg font-semibold text-slate-900">{section.title}</h3>
-        <p className="mt-1 text-sm text-slate-500">{section.description}</p>
+        <h3 className="text-lg font-semibold text-slate-900">Student User Report</h3>
+        <p className="mt-1 text-sm text-slate-500">
+          One row per student user. This table excludes journal content, insights, admin users, and counselor names.
+        </p>
       </div>
 
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-slate-100 text-sm">
+        <table className="min-w-[2100px] divide-y divide-slate-100 text-sm">
           <thead className="bg-slate-50">
             <tr>
-              {section.columns.map((column) => (
+              {REPORT_COLUMNS.map((column) => (
                 <th
                   key={column.key}
                   scope="col"
-                  className={`whitespace-nowrap px-5 py-3 font-semibold text-slate-600 ${
+                  className={`whitespace-nowrap px-4 py-3 font-semibold text-slate-600 ${
                     column.align === "right" ? "text-right" : "text-left"
                   }`}
                 >
@@ -262,36 +154,36 @@ function ReportTable({ section, loading }) {
           <tbody className="divide-y divide-slate-100 bg-white">
             {loading ? (
               <tr>
-                <td colSpan={section.columns.length} className="px-5 py-8 text-center text-slate-500">
-                  Loading report rows...
+                <td colSpan={REPORT_COLUMNS.length} className="px-5 py-10 text-center text-slate-500">
+                  Loading student report...
                 </td>
               </tr>
-            ) : section.rows.length ? (
-              section.rows.map((row, index) => (
-                <tr key={`${section.id}-${index}`} className="hover:bg-slate-50/80">
-                  {section.columns.map((column) => (
+            ) : rows.length ? (
+              rows.map((row) => (
+                <tr key={row.studentNumber} className="hover:bg-slate-50/80">
+                  {REPORT_COLUMNS.map((column) => (
                     <td
                       key={column.key}
-                      className={`whitespace-nowrap px-5 py-3 text-slate-700 ${
+                      className={`whitespace-nowrap px-4 py-3 text-slate-700 ${
                         column.align === "right" ? "text-right font-semibold text-slate-900" : ""
                       }`}
                     >
-                      {row[column.key]}
+                      {formatCellValue(row, column)}
                     </td>
                   ))}
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan={section.columns.length} className="px-5 py-8 text-center text-slate-500">
-                  No rows available for this filter.
+                <td colSpan={REPORT_COLUMNS.length} className="px-5 py-10 text-center text-slate-500">
+                  No student rows available for this filter.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -303,9 +195,22 @@ export default function AnalyticsReports({ onLogout, session }) {
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
-  const reportSections = useMemo(() => buildReportSections(analytics), [analytics]);
-  const reportTitle = "Bawat Tala Admin Report";
-  const reportSubtitle = "Filtered administrative report tables";
+  const studentRows = useMemo(
+    () => (Array.isArray(analytics?.reports?.students) ? analytics.reports.students : []),
+    [analytics],
+  );
+  const totals = useMemo(
+    () =>
+      studentRows.reduce(
+        (acc, row) => ({
+          entries: acc.entries + Number(row.entriesInRange || 0),
+          flags: acc.flags + Number(row.flagsInRange || 0),
+          sessions: acc.sessions + Number(row.counselingSessions || 0),
+        }),
+        { entries: 0, flags: 0, sessions: 0 },
+      ),
+    [studentRows],
+  );
 
   async function loadAnalytics(nextRangeKey = rangeKey, nextCustomRange = customRange) {
     try {
@@ -339,8 +244,8 @@ export default function AnalyticsReports({ onLogout, session }) {
 
   function handleExportCsv() {
     downloadFile(
-      `admin-report-${analytics?.filters?.startDate || today}-to-${analytics?.filters?.endDate || today}.csv`,
-      buildReportCsv(reportSections),
+      `student-report-${analytics?.filters?.startDate || today}-to-${analytics?.filters?.endDate || today}.csv`,
+      buildStudentReportCsv(studentRows),
       "text/csv;charset=utf-8;",
     );
   }
@@ -348,14 +253,7 @@ export default function AnalyticsReports({ onLogout, session }) {
   function handlePrintReport() {
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
-    printWindow.document.write(
-      buildPrintHtml({
-        sections: reportSections,
-        title: reportTitle,
-        subtitle: reportSubtitle,
-        filters: analytics?.filters,
-      }),
-    );
+    printWindow.document.write(buildPrintHtml({ rows: studentRows, filters: analytics?.filters }));
     printWindow.document.close();
     printWindow.focus();
     printWindow.print();
@@ -364,7 +262,7 @@ export default function AnalyticsReports({ onLogout, session }) {
   return (
     <Layout
       title="Reports"
-      subtitle="Generate filtered tables without journal text, messages, or private insights."
+      subtitle="Generate one student-user report table without journal text, messages, or private insights."
       onLogout={onLogout}
       session={session}
     >
@@ -440,34 +338,32 @@ export default function AnalyticsReports({ onLogout, session }) {
         </div>
 
         <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-5 py-4 text-sm leading-6 text-emerald-900">
-          Report rows include administrative counts, dates, labels, workload, risk totals, and response-time percentages only.
-          Journal messages, entry text, student-written content, and generated insights are intentionally excluded.
+          This report contains student users only. It includes profile fields and filtered activity counts, but excludes journal
+          messages, entry text, private notes, generated insights, admin accounts, and counselor names.
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-          <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
-            <div>
-              <div className="text-slate-500">Report Range</div>
-              <div className="mt-1 font-semibold text-slate-900">
-                {analytics?.filters?.startDate || "--"} to {analytics?.filters?.endDate || "--"}
-              </div>
+        <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-4">
+          <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+            <div className="text-slate-500">Report Range</div>
+            <div className="mt-1 font-semibold text-slate-900">
+              {analytics?.filters?.startDate || "--"} to {analytics?.filters?.endDate || "--"}
             </div>
-            <div>
-              <div className="text-slate-500">Generated Sections</div>
-              <div className="mt-1 font-semibold text-slate-900">{reportSections.length} tables</div>
-            </div>
-            <div>
-              <div className="text-slate-500">Privacy Scope</div>
-              <div className="mt-1 font-semibold text-slate-900">Counts and labels only</div>
-            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+            <div className="text-slate-500">Student Rows</div>
+            <div className="mt-1 font-semibold text-slate-900">{formatNumber(studentRows.length)}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+            <div className="text-slate-500">Entries in Range</div>
+            <div className="mt-1 font-semibold text-slate-900">{formatNumber(totals.entries)}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+            <div className="text-slate-500">Flags in Range</div>
+            <div className="mt-1 font-semibold text-slate-900">{formatNumber(totals.flags)}</div>
           </div>
         </div>
 
-        <div className="space-y-6">
-          {reportSections.map((section) => (
-            <ReportTable key={section.id} section={section} loading={loading} />
-          ))}
-        </div>
+        <StudentReportTable rows={studentRows} loading={loading} />
       </div>
     </Layout>
   );
