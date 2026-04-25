@@ -1464,27 +1464,6 @@ export default function Overview({ onLogout, session }) {
           ))}
         </div>
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <Card title="Concern Trends Over Time" subtitle="Stacked view of primary concerns">
-            <ConcernTrendsPanel analytics={analyticsOverview} loading={analyticsLoading} />
-          </Card>
-
-          <Card title="Counselor Workload" subtitle="Active cases assigned per role">
-            <CounselorWorkloadPanel analytics={analyticsOverview} loading={analyticsLoading} />
-          </Card>
-
-          <Card title="At-Risk Student Trends" subtitle="Weekly tracking of high and critical severity cases">
-            <AtRiskTrendsPanel analytics={analyticsOverview} loading={analyticsLoading} />
-          </Card>
-
-          <Card
-            title="Response Within Target Time"
-            subtitle="How many tagged risk cases got a counselor response within the target hours."
-          >
-            <ResponseTargetPanel analytics={analyticsOverview} loading={analyticsLoading} />
-          </Card>
-        </div>
-
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <Card title="Journal Entries Volume" subtitle="Total journal entries for the current month" className="lg:col-span-2">
             <JournalEntriesGraph data={journalEntriesData} />
@@ -1596,6 +1575,27 @@ export default function Overview({ onLogout, session }) {
                 <div className="text-2xl font-bold text-emerald-700">8</div>
               </button>
             </div>
+          </Card>
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <Card title="Concern Trends Over Time" subtitle="Stacked view of primary concerns">
+            <ConcernTrendsPanel analytics={analyticsOverview} loading={analyticsLoading} />
+          </Card>
+
+          <Card title="Counselor Workload" subtitle="Active cases assigned per role">
+            <CounselorWorkloadPanel analytics={analyticsOverview} loading={analyticsLoading} />
+          </Card>
+
+          <Card title="At-Risk Student Trends" subtitle="Weekly tracking of high and critical severity cases">
+            <AtRiskTrendsPanel analytics={analyticsOverview} loading={analyticsLoading} />
+          </Card>
+
+          <Card
+            title="Response Within Target Time"
+            subtitle="How many tagged risk cases got a counselor response within the target hours."
+          >
+            <ResponseTargetPanel analytics={analyticsOverview} loading={analyticsLoading} />
           </Card>
         </div>
 
