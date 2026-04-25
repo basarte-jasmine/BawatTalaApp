@@ -16,7 +16,12 @@ import {
 import { useNavigate } from "react-router-dom";
 import Card from "../components/Card";
 import Layout from "../components/Layout";
-import { fetchAdminAppointmentsOverview, fetchAdminDashboardSummary, fetchAdminRiskFlags } from "../lib/admin-api";
+import {
+  fetchAdminAnalytics,
+  fetchAdminAppointmentsOverview,
+  fetchAdminDashboardSummary,
+  fetchAdminRiskFlags,
+} from "../lib/admin-api";
 import Modal from "../components/Modal";
 
 const SUMMARY_CARD_DEFS = [
@@ -43,6 +48,23 @@ const SUMMARY_CARD_DEFS = [
     title: "Scheduled Today",
     fallbackValue: 12,
     icon: CalendarIcon,
+  },
+];
+
+const ANALYTICS_CARD_DEFS = [
+  {
+    key: "averageEntriesPerStudent",
+    title: "Avg Entries/Student",
+    fallbackValue: 0,
+    icon: Activity,
+    valueType: "decimal",
+  },
+  {
+    key: "counselingSessions",
+    title: "Counseling Sessions",
+    fallbackValue: 0,
+    icon: CheckCircle2,
+    valueType: "number",
   },
 ];
 
@@ -183,20 +205,18 @@ const ACTIVE_USAGE_PROGRAM_DATA = ACTIVE_USAGE_SERIES.map((item) => ({
 
 function MetricCard({ item, onSelect }) {
   const Icon = item.icon;
-  const isPositive = item.tone !== "gray";
+  const DeltaIcon = item.direction === "down" ? ArrowDownRight : item.direction === "up" ? ArrowUpRight : null;
   const chipClassName =
     item.tone === "amber"
       ? "bg-amber-50 text-amber-600"
       : item.tone === "gray"
         ? "bg-gray-100 text-gray-600"
         : "bg-emerald-50 text-emerald-600";
-
-  return (
-    <button
-      type="button"
-      onClick={() => onSelect(item.title)}
-      className="rounded-xl border border-gray-100 bg-white p-5 text-left shadow-sm transition-colors hover:border-emerald-200"
-    >
+  const className = `rounded-xl border border-gray-100 bg-white p-5 text-left shadow-sm transition-colors ${
+    onSelect ? "hover:border-emerald-200" : ""
+  }`;
+  const content = (
+    <>
       <div className="mb-3 flex items-center justify-between">
         <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-700">
           <Icon
@@ -210,16 +230,34 @@ function MetricCard({ item, onSelect }) {
       <div className="flex items-end justify-between">
         <div className="text-3xl font-bold text-gray-900">{item.value}</div>
         <div className={`flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${chipClassName}`}>
-          {isPositive ? <ArrowUpRight className="mr-1 h-3 w-3" /> : <ArrowDownRight className="mr-1 h-3 w-3" />}
+          {DeltaIcon ? <DeltaIcon className="mr-1 h-3 w-3" /> : null}
           {item.delta}
         </div>
       </div>
+    </>
+  );
+
+  if (!onSelect) {
+    return <div className={className}>{content}</div>;
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(item.title)}
+      className={className}
+    >
+      {content}
     </button>
   );
 }
 
 function formatMetricValue(value) {
   return Number(value || 0).toLocaleString("en-US");
+}
+
+function formatMetricDecimal(value) {
+  return Number(value || 0).toFixed(1);
 }
 
 function mapMetricTone(key, direction) {
@@ -871,6 +909,9 @@ export default function Overview({ onLogout, session }) {
   const [flaggedModalOpen, setFlaggedModalOpen] = useState(false);
   const [appointmentItems, setAppointmentItems] = useState([]);
   const [appointmentsError, setAppointmentsError] = useState("");
+  const [analyticsOverview, setAnalyticsOverview] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(true);
+  const [analyticsError, setAnalyticsError] = useState("");
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -947,6 +988,32 @@ export default function Overview({ onLogout, session }) {
   useEffect(() => {
     let isMounted = true;
 
+    async function loadAnalyticsOverview() {
+      try {
+        setAnalyticsLoading(true);
+        const data = await fetchAdminAnalytics({ range: "30d" });
+        if (!isMounted) return;
+        setAnalyticsOverview(data);
+        setAnalyticsError("");
+      } catch (error) {
+        if (!isMounted) return;
+        setAnalyticsError(error instanceof Error ? error.message : "Failed to load report metrics.");
+      } finally {
+        if (isMounted) {
+          setAnalyticsLoading(false);
+        }
+      }
+    }
+
+    loadAnalyticsOverview();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
     async function loadRiskFlags() {
       try {
         const data = await fetchAdminRiskFlags();
@@ -981,12 +1048,41 @@ export default function Overview({ onLogout, session }) {
           : item.key === "entries"
             ? dashboardSummary?.cards?.totalEntries
             : dashboardSummary?.cards?.scheduledToday;
+    const direction = source?.direction || "neutral";
 
     return {
       ...item,
       value: formatMetricValue(source?.value ?? item.fallbackValue),
       delta: source?.percentageText || "0%",
-      tone: mapMetricTone(item.key, source?.direction || "neutral"),
+      direction,
+      tone: mapMetricTone(item.key, direction),
+    };
+  });
+  const analyticsCards = ANALYTICS_CARD_DEFS.map((item) => {
+    const source = analyticsOverview?.cards?.[item.key];
+    const deltaValue = Number(source?.deltaValue || 0);
+    const direction =
+      item.key === "averageEntriesPerStudent"
+        ? deltaValue >= 0
+          ? "up"
+          : "down"
+        : source?.direction || "neutral";
+
+    return {
+      ...item,
+      title: source?.label || item.title,
+      value: analyticsLoading
+        ? "--"
+        : item.valueType === "decimal"
+          ? formatMetricDecimal(source?.value ?? item.fallbackValue)
+          : formatMetricValue(source?.value ?? item.fallbackValue),
+      delta: analyticsLoading
+        ? "--"
+        : item.key === "averageEntriesPerStudent"
+          ? `${deltaValue >= 0 ? "+" : ""}${formatMetricDecimal(deltaValue)}`
+          : source?.percentageText || "0%",
+      direction: analyticsLoading ? "neutral" : direction,
+      tone: analyticsLoading ? "gray" : mapMetricTone(item.key, direction),
     };
   });
   const journalEntriesData =
@@ -1063,6 +1159,11 @@ export default function Overview({ onLogout, session }) {
             Appointments failed to load: {appointmentsError}
           </div>
         ) : null}
+        {analyticsError ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            Report metric cards failed to load: {analyticsError}
+          </div>
+        ) : null}
 
         <div className="flex justify-end">
           <button
@@ -1078,6 +1179,12 @@ export default function Overview({ onLogout, session }) {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           {summaryCards.map((item) => (
             <MetricCard key={item.key} item={item} onSelect={handleSummaryCardSelect} />
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {analyticsCards.map((item) => (
+            <MetricCard key={item.key} item={item} />
           ))}
         </div>
 

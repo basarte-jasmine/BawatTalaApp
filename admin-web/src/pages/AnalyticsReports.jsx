@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { ArrowDownRight, ArrowUpRight, Download } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Download } from "lucide-react";
 import Layout from "../components/Layout";
 import Modal from "../components/Modal";
 import { fetchAdminAnalytics } from "../lib/admin-api";
@@ -207,7 +207,6 @@ export default function AnalyticsReports({ onLogout, session }) {
     setIsExportModalOpen(false);
   }
 
-  const cards = analytics?.cards || {};
   const journalSeries = analytics?.charts?.journalEntryVolume || [];
   const journalValues = journalSeries.map((item) => Number(item.value || 0));
   const journalPath = buildLinePath(journalValues, 660, 240);
@@ -230,40 +229,6 @@ export default function AnalyticsReports({ onLogout, session }) {
   const criticalPath = buildLinePath(criticalSeries, 280, 170);
   const highPath = buildLinePath(highSeries, 280, 170);
   const resolutionRates = analytics?.charts?.resolutionRates || [];
-
-  const cardItems = useMemo(
-    () => [
-      {
-        key: "totalStudents",
-        label: cards.totalStudents?.label || "Total Students",
-        value: formatNumber(cards.totalStudents?.value || 0),
-        delta: cards.totalStudents?.percentageText || "0%",
-        direction: cards.totalStudents?.direction || "neutral",
-      },
-      {
-        key: "activeInRange",
-        label: cards.activeInRange?.label || "Active This Month",
-        value: formatNumber(cards.activeInRange?.value || 0),
-        delta: cards.activeInRange?.percentageText || "0%",
-        direction: cards.activeInRange?.direction || "neutral",
-      },
-      {
-        key: "averageEntriesPerStudent",
-        label: cards.averageEntriesPerStudent?.label || "Avg Entries/Student",
-        value: formatDecimal(cards.averageEntriesPerStudent?.value || 0),
-        delta: `${Number(cards.averageEntriesPerStudent?.deltaValue || 0) >= 0 ? "+" : ""}${formatDecimal(cards.averageEntriesPerStudent?.deltaValue || 0)}`,
-        direction: Number(cards.averageEntriesPerStudent?.deltaValue || 0) >= 0 ? "up" : "down",
-      },
-      {
-        key: "counselingSessions",
-        label: cards.counselingSessions?.label || "Counseling Sessions",
-        value: formatNumber(cards.counselingSessions?.value || 0),
-        delta: cards.counselingSessions?.percentageText || "0%",
-        direction: cards.counselingSessions?.direction || "neutral",
-      },
-    ],
-    [cards],
-  );
 
   return (
     <Layout title="Analytics & Reports" subtitle="Deep dive into student wellbeing metrics and system usage." onLogout={onLogout} session={session}>
@@ -327,30 +292,6 @@ export default function AnalyticsReports({ onLogout, session }) {
               Download Report
             </button>
           </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {cardItems.map((card) => {
-            const isUp = card.direction === "up";
-            const isDown = card.direction === "down";
-
-            return (
-              <div key={card.key} className="rounded-[1.6rem] border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="text-sm text-slate-500">{card.label}</div>
-                <div className="mt-3 flex items-end justify-between gap-3">
-                  <div className="text-[2rem] font-bold leading-none text-slate-900">{loading ? "--" : card.value}</div>
-                  {isUp || isDown ? (
-                    <div className={`inline-flex items-center gap-1 text-sm font-semibold ${isUp ? "text-emerald-600" : "text-rose-500"}`}>
-                      {isUp ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownRight className="h-4 w-4" />}
-                      {loading ? "--" : card.delta}
-                    </div>
-                  ) : (
-                    <div className="text-sm font-semibold text-slate-400">{loading ? "--" : card.delta}</div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
         </div>
 
         <div className="rounded-[1.8rem] border border-slate-200 bg-white p-6 shadow-sm">
