@@ -230,7 +230,7 @@ export default function Header({
               <Menu className="h-4 w-4" />
             </button>
             <div>
-              <p className="text-sm text-admin-muted">Overview</p>
+              <p className="text-sm text-admin-muted">Admin Panel</p>
               <h2 className="font-display text-3xl text-admin-ink">{title}</h2>
               {subtitle ? <p className="mt-1 text-sm text-admin-muted">{subtitle}</p> : null}
             </div>

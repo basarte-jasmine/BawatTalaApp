@@ -1414,7 +1414,7 @@ export default function Overview({ onLogout, session }) {
 
   return (
     <Layout
-      title="Dashboard Overview"
+      title="Overview & Analytics"
       subtitle="Monitor daily engagement, demographics, and student support signals."
       onLogout={onLogout}
       session={session}

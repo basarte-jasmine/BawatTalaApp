@@ -13,11 +13,11 @@ import { useLocation, useNavigate } from "react-router-dom";
 import ConfirmActionModal from "./ConfirmActionModal";
 
 const MAIN_MENU_ITEMS = [
-  { path: "/dashboard", label: "Overview", icon: LayoutGrid, active: true },
+  { path: "/dashboard", label: "Overview & Analytics", icon: LayoutGrid, active: true },
   { path: "/flagged", label: "Flagged Entries", icon: Flag, badge: "7" },
   { path: "/users", label: "Student Directory", icon: Users },
   { path: "/appointments", label: "Calendars & Scheduling", icon: CalendarDays },
-  { path: "/reports", label: "Analytics & Reports", icon: BarChart3 },
+  { path: "/reports", label: "Reports", icon: BarChart3 },
 ];
 
 const SYSTEM_MENU_ITEMS = [

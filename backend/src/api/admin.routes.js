@@ -1624,11 +1624,7 @@ router.get("/analytics", async (req, res) => {
     req.query.startDate,
     req.query.endDate,
   );
-  const manilaToday = getManilaDateParts();
-  const currentMonthStart = `${manilaToday.year}-${String(manilaToday.month).padStart(2, "0")}-01`;
-  const currentMonthEnd = getRelativeManilaIsoDate(0);
-
-  const [studentsResult, journalRowsResult, currentMonthJournalRowsResult, appointmentsResult, counselorsResult] = await Promise.all([
+  const [studentsResult, journalRowsResult, appointmentsResult, counselorsResult] = await Promise.all([
     query("select count(*)::int as total from public.student_profiles"),
     query(
       `
@@ -1648,15 +1644,6 @@ router.get("/analytics", async (req, res) => {
         order by entry_date asc, created_at asc
       `,
       [startDate, endDate],
-    ),
-    query(
-      `
-        select entry_date, created_at
-        from public.journal_entries
-        where entry_date between $1::date and $2::date
-        order by entry_date asc, created_at asc
-      `,
-      [currentMonthStart, currentMonthEnd],
     ),
     query(
       `
@@ -1689,7 +1676,6 @@ router.get("/analytics", async (req, res) => {
 
   const totalStudents = Number(studentsResult.rows[0]?.total || 0);
   const journalRows = journalRowsResult.rows || [];
-  const currentMonthJournalRows = currentMonthJournalRowsResult.rows || [];
   const appointmentRows = appointmentsResult.rows || [];
   const counselors = counselorsResult.rows || [];
   const rangeDays = getDaysBetweenInclusive(startDate, endDate);
@@ -1763,7 +1749,7 @@ router.get("/analytics", async (req, res) => {
     },
   };
 
-  const journalEntryVolume = buildCurrentMonthJournalSeries(currentMonthJournalRows, "entry_date");
+  const journalEntryVolume = buildDailyTrend(journalRows, startDate, endDate, "entry_date");
   const windowBuckets = buildWindowBuckets(startDate, endDate, rangeDays <= 30 ? 4 : 6);
   const concernTotals = new Map();
   const rowConcernTags = journalRows.map((row) => {
