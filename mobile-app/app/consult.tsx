@@ -43,6 +43,7 @@ type AvailabilityDay = {
 };
 
 type SupportTrack = "professional" | "peer";
+type PeerSessionType = "group" | "one_on_one";
 
 const TOTAL_STEPS = 4;
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
@@ -70,6 +71,22 @@ const DEFAULT_CONCERN_SUBCATEGORIES = {
 };
 const GENDER_PREFERENCE = ["No Preference", "Female Counselor", "Male Counselor"];
 const STEP_LABELS = ["Concern", "Preference", "Counselor", "Date & Time"];
+const PEER_STEP_LABELS = ["Concern", "Format", "Peer Counselor", "Date & Time"];
+const PEER_EXCLUDED_CONCERNS = new Set(["Career guidance", "Financial guidance"]);
+const PEER_SESSION_OPTIONS: { id: PeerSessionType; title: string; description: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  {
+    id: "one_on_one",
+    title: "1-on-1",
+    description: "Talk privately with a peer counselor in a scheduled support session.",
+    icon: "person-outline",
+  },
+  {
+    id: "group",
+    title: "Group",
+    description: "Join a guided peer support conversation with students who want shared support.",
+    icon: "people-outline",
+  },
+];
 
 function toMonthKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
@@ -127,6 +144,10 @@ function normalizeSupportTrack(value: string | undefined): SupportTrack | null {
   return null;
 }
 
+function getPeerSessionLabel(type: PeerSessionType) {
+  return type === "group" ? "Group" : "1-on-1";
+}
+
 export default function ConsultScreen() {
   const { track, skipIntro } = useLocalSearchParams<{ skipIntro?: string; track?: string }>();
   const { user } = useAuthSession();
@@ -141,6 +162,7 @@ export default function ConsultScreen() {
   const [otherConcern, setOtherConcern] = useState("");
   const [selectedGender, setSelectedGender] = useState("No Preference");
   const [selectedTrack, setSelectedTrack] = useState<SupportTrack>(initialTrack ?? "professional");
+  const [selectedPeerSessionType, setSelectedPeerSessionType] = useState<PeerSessionType>("one_on_one");
   const [counselors, setCounselors] = useState<CounselorCard[]>([]);
   const [loadingCounselors, setLoadingCounselors] = useState(true);
   const [loadingAvailability, setLoadingAvailability] = useState(false);
@@ -232,14 +254,19 @@ export default function ConsultScreen() {
     }
     return counselorPool;
   }, [activeCounselors, selectedGender]);
+  const peerConcerns = useMemo(
+    () => concerns.filter((item) => !PEER_EXCLUDED_CONCERNS.has(item)),
+    [concerns],
+  );
+  const activeConcerns = selectedTrack === "peer" ? peerConcerns : concerns;
   const hasPeerCounselors = peerCounselors.length > 0;
-  const supportsStepFlow = selectedTrack === "professional" || hasPeerCounselors;
+  const supportsStepFlow = true;
   const supportEyebrow = selectedTrack === "peer" ? "Peer Support" : "Guidance Support";
   const supportTitle =
     selectedTrack === "peer" ? "Find a calmer conversation with a peer counselor" : "Schedule a consultation that fits your day";
   const supportDescription =
     selectedTrack === "peer"
-      ? "Choose a trained peer listener when you want a gentler first step and a scheduled space to talk."
+      ? "Choose group support or a 1-on-1 peer counselor session when you want a gentler first step."
       : "We'll guide you through four quick steps to find the right counselor and an open time slot.";
 
   useEffect(() => {
@@ -247,6 +274,12 @@ export default function ConsultScreen() {
       setSelectedCounselor(filteredCounselors[0]?.id || "");
     }
   }, [filteredCounselors, selectedCounselor]);
+
+  useEffect(() => {
+    if (!activeConcerns.includes(selectedConcern)) {
+      setSelectedConcern(activeConcerns[0] || "");
+    }
+  }, [activeConcerns, selectedConcern]);
 
   useEffect(() => {
     let isMounted = true;
@@ -316,7 +349,7 @@ export default function ConsultScreen() {
     [selectedDayAvailability],
   );
   const calendarCells = useMemo(() => buildCalendarCells(selectedMonth), [selectedMonth]);
-  const currentStepLabel = STEP_LABELS[step - 1] ?? "Schedule";
+  const currentStepLabel = (selectedTrack === "peer" ? PEER_STEP_LABELS : STEP_LABELS)[step - 1] ?? "Schedule";
 
   useEffect(() => {
     if (!availableTimeSlots.some((slot) => slot.time === selectedTime)) {
@@ -370,6 +403,10 @@ export default function ConsultScreen() {
     }
 
     if (step === 2) {
+      if (selectedTrack === "peer" && !selectedPeerSessionType) {
+        setErrorMessage("Please choose a peer counseling format.");
+        return;
+      }
       setStep(3);
       return;
     }
@@ -400,13 +437,19 @@ export default function ConsultScreen() {
           : selectedConcern === "Others"
             ? "Others"
             : selectedConcern;
+      const resolvedStudentNote =
+        selectedTrack === "peer"
+          ? [`Peer counseling format: ${getPeerSessionLabel(selectedPeerSessionType)}`, studentNote.trim()]
+              .filter(Boolean)
+              .join("\n\n")
+          : studentNote.trim();
       const result = await bookCounselorAppointment({
         appointmentDate: selectedDayAvailability.date,
         concern: resolvedConcern,
-        counselorGenderPreference: selectedGender,
+        counselorGenderPreference: selectedTrack === "peer" ? "No Preference" : selectedGender,
         counselorId: selectedCounselor,
         slotTime: selectedTime,
-        studentNote: studentNote.trim(),
+        studentNote: resolvedStudentNote,
         studentNumber: user.studentNumber,
       });
 
@@ -514,7 +557,7 @@ export default function ConsultScreen() {
                           hasPeerCounselors ? styles.trackStatusTextBlue : styles.trackStatusTextMuted,
                         ]}
                       >
-                        {hasPeerCounselors ? `${peerCounselors.length} available` : "Preparing schedules"}
+                        {hasPeerCounselors ? `${peerCounselors.length} available` : "Open now"}
                       </Text>
                     </View>
                   </View>
@@ -614,7 +657,7 @@ export default function ConsultScreen() {
                   </Text>
 
                   <View style={styles.concernGrid}>
-                    {concerns.map((item) => {
+                    {activeConcerns.map((item) => {
                       const isSelected = item === selectedConcern;
                       return (
                         <Pressable
@@ -667,7 +710,38 @@ export default function ConsultScreen() {
                 </>
               ) : null}
 
-              {!loadingCounselors && supportsStepFlow && step === 2 ? (
+              {!loadingCounselors && supportsStepFlow && step === 2 && selectedTrack === "peer" ? (
+                <>
+                  <Text style={styles.stepTitle}>Choose Peer Counseling Format</Text>
+                  <Text style={styles.stepSubTitle}>
+                    Pick how you want to meet with peer support before choosing a peer counselor.
+                  </Text>
+
+                  <View style={styles.peerFormatList}>
+                    {PEER_SESSION_OPTIONS.map((item) => {
+                      const selected = selectedPeerSessionType === item.id;
+                      return (
+                        <Pressable
+                          key={item.id}
+                          style={[styles.peerFormatCard, selected && styles.peerFormatCardActive]}
+                          onPress={() => setSelectedPeerSessionType(item.id)}
+                        >
+                          <View style={[styles.peerFormatIconWrap, selected && styles.peerFormatIconWrapActive]}>
+                            <Ionicons name={item.icon} size={22} color={selected ? "#2E6F24" : "#50687A"} />
+                          </View>
+                          <View style={styles.peerFormatCopy}>
+                            <Text style={[styles.peerFormatTitle, selected && styles.peerFormatTitleActive]}>{item.title}</Text>
+                            <Text style={styles.peerFormatText}>{item.description}</Text>
+                          </View>
+                          {selected ? <Ionicons name="checkmark-circle" size={24} color="#2E6F24" /> : null}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </>
+              ) : null}
+
+              {!loadingCounselors && supportsStepFlow && step === 2 && selectedTrack === "professional" ? (
                 <>
                   <Text style={styles.stepTitle}>Counselor Preference</Text>
                   <Text style={styles.stepSubTitle}>
@@ -1324,6 +1398,57 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     fontWeight: "700",
+  },
+  peerFormatList: {
+    rowGap: 12,
+  },
+  peerFormatCard: {
+    minHeight: 96,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#DDE5EA",
+    backgroundColor: "#FFFFFF",
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  peerFormatCardActive: {
+    borderColor: "#6DC23C",
+    backgroundColor: "#F3FAEE",
+  },
+  peerFormatIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: "#EEF4F8",
+    borderWidth: 1,
+    borderColor: "#D5E3EC",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  peerFormatIconWrapActive: {
+    backgroundColor: "#EAF7E3",
+    borderColor: "#CFE8C2",
+  },
+  peerFormatCopy: {
+    flex: 1,
+  },
+  peerFormatTitle: {
+    color: "#31465A",
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+  peerFormatTitleActive: {
+    color: "#2E6F24",
+  },
+  peerFormatText: {
+    color: "#617282",
+    fontSize: 13,
+    lineHeight: 18,
   },
   concernGrid: {
     flexDirection: "row",
