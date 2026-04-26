@@ -779,6 +779,10 @@ export default function HomeScreen() {
     router.push("/library");
   };
 
+  const handleOpenWellnessTools = () => {
+    router.push("/wellness-tools");
+  };
+
   const handleCheckInToday = async () => {
     if (!user?.studentNumber || isClaimingCheckIn) {
       return;
@@ -1226,6 +1230,55 @@ export default function HomeScreen() {
               )}
             </ScrollView>
           </View>
+        </View>
+
+        <View style={styles.wellnessCard}>
+          <View style={styles.surfaceGlow} />
+          <View style={styles.wellnessAuraOne} />
+          <View style={styles.wellnessAuraTwo} />
+          <View style={[styles.wellnessHeroRow, libraryCompact && styles.wellnessHeroRowStacked]}>
+            <View style={[styles.wellnessHeroTextWrap, libraryCompact && styles.wellnessHeroTextWrapStacked]}>
+              <Text style={styles.sectionEyebrow}>Reset Corner</Text>
+              <Text style={[styles.wellnessTitle, libraryCompact && styles.wellnessTitleCompact]}>
+                Step into a calmer space whenever your mind or body feels loud.
+              </Text>
+              <Text style={[styles.wellnessSubtitle, libraryCompact && styles.wellnessSubtitleCompact]}>
+                Breathing, grounding, and quieter tools that help you settle before the rest of the day asks more from you.
+              </Text>
+            </View>
+
+            <View style={[styles.wellnessOrbitScene, libraryCompact && styles.wellnessOrbitSceneStacked]}>
+              <View style={styles.wellnessOrbitOuter} />
+              <View style={styles.wellnessOrbitMiddle} />
+              <View style={styles.wellnessOrbitInner} />
+              <View style={styles.wellnessOrbitCore}>
+                <Ionicons name="leaf-outline" size={22} color="#4E7E2D" />
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.wellnessMetaRow}>
+            <View style={styles.wellnessMetaPill}>
+              <Ionicons name="sparkles-outline" size={15} color="#4E7E2D" />
+              <Text style={styles.wellnessMetaPillText}>Breathing, grounding, and guided resets</Text>
+            </View>
+          </View>
+
+          <View style={[styles.wellnessToolRow, libraryCompact && styles.wellnessToolRowStacked]}>
+            <View style={[styles.wellnessToolChip, libraryCompact && styles.wellnessToolChipStacked]}>
+              <Text style={styles.wellnessToolChipTitle}>Breathing Space</Text>
+              <Text style={styles.wellnessToolChipMeta}>Start and stop at your pace</Text>
+            </View>
+            <View style={[styles.wellnessToolChip, libraryCompact && styles.wellnessToolChipStacked]}>
+              <Text style={styles.wellnessToolChipTitle}>Grounding Room</Text>
+              <Text style={styles.wellnessToolChipMeta}>Calm vibes, audio, and guided steps</Text>
+            </View>
+          </View>
+
+          <Pressable style={styles.wellnessPrimaryButton} onPress={handleOpenWellnessTools}>
+            <Text style={styles.wellnessPrimaryButtonText}>Open Wellness Tools</Text>
+            <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+          </Pressable>
         </View>
 
         <View style={styles.libraryCard}>
@@ -2355,6 +2408,206 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 18,
     lineHeight: 24,
+    fontWeight: "700",
+  },
+  wellnessCard: {
+    borderRadius: 24,
+    backgroundColor: "#F5FBF2",
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 14,
+    marginBottom: 12,
+    shadowColor: "#66737E",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: "#DCEBCD",
+    overflow: "hidden",
+  },
+  wellnessAuraOne: {
+    position: "absolute",
+    top: -40,
+    right: -18,
+    width: 140,
+    height: 140,
+    borderRadius: 999,
+    backgroundColor: "rgba(191, 228, 165, 0.34)",
+  },
+  wellnessAuraTwo: {
+    position: "absolute",
+    left: -26,
+    bottom: -54,
+    width: 122,
+    height: 122,
+    borderRadius: 999,
+    backgroundColor: "rgba(182, 225, 202, 0.24)",
+  },
+  wellnessHeroRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    columnGap: 12,
+    marginBottom: 12,
+  },
+  wellnessHeroRowStacked: {
+    flexDirection: "column",
+  },
+  wellnessHeroTextWrap: {
+    flex: 1,
+    paddingRight: 4,
+  },
+  wellnessHeroTextWrapStacked: {
+    paddingRight: 0,
+  },
+  wellnessTitle: {
+    color: "#304558",
+    fontSize: 18,
+    lineHeight: 23,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  wellnessTitleCompact: {
+    fontSize: 16,
+    lineHeight: 21,
+  },
+  wellnessSubtitle: {
+    color: "#627282",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  wellnessSubtitleCompact: {
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  wellnessOrbitScene: {
+    width: 92,
+    height: 104,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  wellnessOrbitSceneStacked: {
+    alignSelf: "center",
+    marginTop: 2,
+  },
+  wellnessOrbitOuter: {
+    position: "absolute",
+    width: 84,
+    height: 84,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#CEE4C1",
+    backgroundColor: "rgba(255,255,255,0.42)",
+  },
+  wellnessOrbitMiddle: {
+    position: "absolute",
+    width: 60,
+    height: 60,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#D7E9CE",
+    backgroundColor: "rgba(236, 247, 228, 0.78)",
+  },
+  wellnessOrbitInner: {
+    position: "absolute",
+    width: 38,
+    height: 38,
+    borderRadius: 999,
+    backgroundColor: "#E6F4D8",
+  },
+  wellnessOrbitCore: {
+    width: 46,
+    height: 46,
+    borderRadius: 16,
+    backgroundColor: "#F9FFF5",
+    borderWidth: 1,
+    borderColor: "#D7E9CE",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#8DA785",
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  wellnessMetaRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginBottom: 12,
+  },
+  wellnessMetaPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.74)",
+    borderWidth: 1,
+    borderColor: "#DCEACF",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  wellnessMetaPillText: {
+    color: "#546754",
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: "700",
+  },
+  wellnessToolRow: {
+    flexDirection: "row",
+    columnGap: 8,
+    marginBottom: 12,
+  },
+  wellnessToolRowStacked: {
+    flexDirection: "column",
+    rowGap: 8,
+  },
+  wellnessToolChip: {
+    flex: 1,
+    minHeight: 108,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.8)",
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 12,
+    borderWidth: 1,
+    borderColor: "#DFECD4",
+  },
+  wellnessToolChipStacked: {
+    width: "100%",
+    flex: 0,
+  },
+  wellnessToolChipTitle: {
+    color: "#304558",
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  wellnessToolChipMeta: {
+    color: "#6E7B7A",
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: "auto",
+  },
+  wellnessPrimaryButton: {
+    minHeight: 44,
+    borderRadius: 999,
+    backgroundColor: "#70C943",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 8,
+    shadowColor: "#5C6570",
+    shadowOpacity: 0.16,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  wellnessPrimaryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    lineHeight: 20,
     fontWeight: "700",
   },
   libraryCard: {
