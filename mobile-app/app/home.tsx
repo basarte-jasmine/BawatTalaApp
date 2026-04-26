@@ -1848,12 +1848,7 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   stickyHeaderScrolled: {
-    backgroundColor: "rgba(247, 250, 246, 0.96)",
-    shadowColor: "#627164",
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+    backgroundColor: "transparent",
   },
   contentScroll: {
     flex: 1,
