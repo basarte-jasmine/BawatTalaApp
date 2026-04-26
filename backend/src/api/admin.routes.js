@@ -4,6 +4,11 @@ const { google } = require("googleapis");
 const { supabaseAdminClient, supabaseAuthClient } = require("../config/supabase");
 const { query } = require("../config/db");
 const { EMOTION_OPTIONS, createEmotionCounts } = require("../constants/emotions");
+const {
+  JOURNAL_TAG_OPTIONS,
+  inferJournalTagsFromText,
+  resolveJournalEntryTags,
+} = require("../constants/journal-tags");
 
 const router = express.Router();
 const EMOTION_IDS = EMOTION_OPTIONS.map((item) => item.id);
@@ -265,38 +270,11 @@ function buildCurrentMonthJournalSeries(rows, dateKey) {
   });
 }
 
-function normalizeConcernTheme(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-  if (!normalized) return "";
-
-  if (normalized === "academic stress" || normalized === "academic") return "Academic Stress";
-  if (normalized === "anxiety / stress" || normalized === "anxiety/stress" || normalized === "anxiety" || normalized === "stress") {
-    return "Anxiety / Stress";
-  }
-  if (normalized === "relationships" || normalized === "relationship") return "Relationships";
-  if (normalized === "family issues" || normalized === "family") return "Family Issues";
-  if (normalized === "career guidance" || normalized === "career") return "Career Guidance";
-  if (normalized === "financial concerns" || normalized === "financial") return "Financial Concerns";
-  if (normalized === "burnout / exhaustion" || normalized === "burnout/exhaustion" || normalized === "burnout") {
-    return "Burnout / Exhaustion";
-  }
-  if (normalized === "bullying") return "Bullying";
-  if (normalized === "others" || normalized === "other") return "Others";
-  return "";
-}
-
-function inferConcernThemeFromText(text) {
-  const value = String(text || "").toLowerCase();
-  if (!value) return "Others";
-  if (/(school|exam|grades|class|academic|study|professor|subject|assignment)/.test(value)) return "Academic Stress";
-  if (/(anxiety|panic|stress|hopeless|self-harm|suicide|depressed|depression|mental)/.test(value)) return "Anxiety / Stress";
-  if (/(relationship|friend|boyfriend|girlfriend|friendship|social)/.test(value)) return "Relationships";
-  if (/(mother|father|parent|family|home|sibling)/.test(value)) return "Family Issues";
-  if (/(career|course shift|future|profession|job|internship)/.test(value)) return "Career Guidance";
-  if (/(money|financial|tuition|budget|allowance)/.test(value)) return "Financial Concerns";
-  if (/(burnout|exhaustion|drained|tired)/.test(value)) return "Burnout / Exhaustion";
-  if (/(bully|bullied|harass|harassment)/.test(value)) return "Bullying";
-  return "Others";
+function getJournalTagsForAdmin(row) {
+  const resolved = resolveJournalEntryTags(row);
+  return resolved.length
+    ? resolved
+    : inferJournalTagsFromText([row?.summary, row?.admin_flag_reason].filter(Boolean).join(" "));
 }
 
 const MANILA_TIME_ZONE = "Asia/Manila";
@@ -1356,31 +1334,14 @@ router.get("/dashboard/summary", async (req, res) => {
     }));
 
   const concernCounts = safeJournals.reduce((acc, row) => {
-    const storedConcern = normalizeConcernTheme(row.primary_concern);
-    const storedTags = Array.isArray(row.concern_tags)
-      ? row.concern_tags.map((item) => normalizeConcernTheme(item)).filter(Boolean)
-      : [];
-    const text = [
-      row.summary,
-      row.admin_flag_reason,
-      ...(Array.isArray(row.insights) ? row.insights : []),
-    ].join(" ");
-    const concern = storedConcern || storedTags[0] || inferConcernThemeFromText(text);
-    acc[concern] = (acc[concern] || 0) + 1;
+    const tags = getJournalTagsForAdmin(row);
+    for (const tag of tags) {
+      acc[tag] = (acc[tag] || 0) + 1;
+    }
     return acc;
   }, {});
 
-  const primaryConcerns = [
-    "Academic Stress",
-    "Anxiety / Stress",
-    "Relationships",
-    "Family Issues",
-    "Career Guidance",
-    "Financial Concerns",
-    "Burnout / Exhaustion",
-    "Bullying",
-    "Others",
-  ].map((label) => ({
+  const primaryConcerns = JOURNAL_TAG_OPTIONS.map((label) => ({
     label,
     value: Number(concernCounts[label] || 0),
   })).filter((item) => item.value > 0);
@@ -1424,15 +1385,7 @@ router.get("/dashboard/summary", async (req, res) => {
   }
 
   const caseAssignments = (caseAssignmentRows || []).map((row) => {
-    const concernFromPrimary = normalizeConcernTheme(row.primary_concern);
-    const concernFromTags = Array.isArray(row.concern_tags)
-      ? row.concern_tags.map((item) => normalizeConcernTheme(item)).find(Boolean)
-      : "";
-    const concern =
-      concernFromPrimary ||
-      concernFromTags ||
-      inferConcernThemeFromText([row.summary, row.admin_flag_reason].filter(Boolean).join(" ")) ||
-      "Others";
+    const concern = getJournalTagsForAdmin(row)[0] || "Others";
     const counselorName = String(row.counselor_name || "").trim();
     const initials = counselorName ? counselorName.charAt(0).toUpperCase() : "?";
 
@@ -1541,7 +1494,7 @@ router.get("/dashboard/risk-flags", async (_req, res) => {
   return res.json({
     entries: result.rows.map((row) => ({
       adminFlagReason: row.admin_flag_reason || null,
-      concernTags: Array.isArray(row.concern_tags) ? row.concern_tags : [],
+      concernTags: getJournalTagsForAdmin(row),
       createdAt: row.created_at,
       entryDate: row.entry_date,
       email: row.email || "",
@@ -1771,13 +1724,7 @@ router.get("/analytics", async (req, res) => {
   const windowBuckets = buildWindowBuckets(startDate, endDate, rangeDays <= 30 ? 4 : 6);
   const concernTotals = new Map();
   const rowConcernTags = journalRows.map((row) => {
-    const normalizedTags = Array.isArray(row.concern_tags)
-      ? row.concern_tags.map((item) => normalizeConcernTheme(item)).filter(Boolean)
-      : [];
-    const fallbackConcern =
-      normalizeConcernTheme(row.primary_concern) ||
-      inferConcernThemeFromText([row.summary, row.admin_flag_reason].filter(Boolean).join(" "));
-    const tags = normalizedTags.length ? normalizedTags : fallbackConcern ? [fallbackConcern] : [];
+    const tags = getJournalTagsForAdmin(row);
 
     for (const tag of tags) {
       concernTotals.set(tag, (concernTotals.get(tag) || 0) + 1);
@@ -1887,13 +1834,7 @@ router.get("/analytics", async (req, res) => {
     const supportResponse = String(row.support_response || "").trim().toUpperCase();
     const entryDate = normalizeDateValue(row.entry_date);
     const createdAt = row.created_at ? new Date(row.created_at).toISOString() : "";
-    const normalizedTags = Array.isArray(row.concern_tags)
-      ? row.concern_tags.map((item) => normalizeConcernTheme(item)).filter(Boolean)
-      : [];
-    const fallbackConcern =
-      normalizeConcernTheme(row.primary_concern) ||
-      inferConcernThemeFromText([row.summary, row.admin_flag_reason].filter(Boolean).join(" "));
-    const tags = normalizedTags.length ? normalizedTags : fallbackConcern ? [fallbackConcern] : [];
+    const tags = getJournalTagsForAdmin(row);
 
     stats.entriesInRange += 1;
     if (["HIGH", "CRITICAL"].includes(riskLevel) || supportResponse === "DECLINED") {
@@ -2223,7 +2164,7 @@ router.get("/students/:studentNumber", async (req, res) => {
       riskLevel,
       adminFlagReason: row.admin_flag_reason || null,
       primaryConcern: row.primary_concern || null,
-      concernTags: normalizeStringArray(row.concern_tags),
+      concernTags: getJournalTagsForAdmin(row),
       supportResponse: row.support_response || null,
       supportResponseAt: row.support_response_at || null,
       createdAt: row.created_at,

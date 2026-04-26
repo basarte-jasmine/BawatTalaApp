@@ -477,7 +477,9 @@ export async function sendJournalMessage(payload: {
 }
 
 export async function finishJournalEntry(payload: {
+  concernTags?: string[];
   entryId: string;
+  primaryConcern?: string;
   studentNumber: string;
 }): Promise<ApiResult & { entry?: JournalEntry }> {
   const { response, data } = await post("/api/journal/session/finish", payload);
@@ -486,6 +488,21 @@ export async function finishJournalEntry(payload: {
     ok: response.ok,
     message: data?.message,
     entry: data?.entry,
+  };
+}
+
+export async function suggestJournalTags(payload: {
+  entryId: string;
+  studentNumber: string;
+}): Promise<ApiResult & { entry?: JournalEntry; suggestedTags?: string[]; tagOptions?: string[] }> {
+  const { response, data } = await post("/api/journal/session/tag-suggestions", payload);
+
+  return {
+    ok: response.ok,
+    message: data?.message,
+    entry: data?.entry,
+    suggestedTags: Array.isArray(data?.suggestedTags) ? data.suggestedTags : [],
+    tagOptions: Array.isArray(data?.tagOptions) ? data.tagOptions : [],
   };
 }
 
@@ -711,6 +728,7 @@ export async function fetchJournalCalendar(
 export async function fetchAppointmentCounselors(): Promise<
   ApiResult & {
     concernOptions?: string[];
+    concernSubcategories?: Record<string, string[]>;
     counselors?: CounselorDirectoryItem[];
     slotTimes?: Array<{ label: string; value: string }>;
   }
@@ -721,6 +739,7 @@ export async function fetchAppointmentCounselors(): Promise<
     ok: response.ok,
     message: data?.message,
     concernOptions: data?.concernOptions ?? [],
+    concernSubcategories: data?.concernSubcategories ?? {},
     counselors: data?.counselors ?? [],
     slotTimes: data?.slotTimes ?? [],
   };

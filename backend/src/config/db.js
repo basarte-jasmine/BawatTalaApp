@@ -1,4 +1,28 @@
 const { Pool } = require("pg");
+const { JOURNAL_TAG_OPTIONS } = require("../constants/journal-tags");
+
+const LEGACY_JOURNAL_CONCERN_VALUES = [
+  "Academic Stress",
+  "Anxiety / Stress",
+  "Relationships",
+  "Family Issues",
+  "Career Guidance",
+  "Financial Concerns",
+  "Burnout / Exhaustion",
+  "Bullying",
+  "Others",
+];
+
+const JOURNAL_PRIMARY_CONCERN_VALUES = [
+  ...JOURNAL_TAG_OPTIONS,
+  ...LEGACY_JOURNAL_CONCERN_VALUES,
+].filter((value, index, values) => values.indexOf(value) === index);
+
+function toSqlTextList(values) {
+  return values
+    .map((value) => `'${String(value).replace(/'/g, "''")}'`)
+    .join(",\n        ");
+}
 
 function resolveDatabaseUrl() {
   const candidates = [
@@ -287,15 +311,7 @@ async function ensureDatabaseSchema() {
     check (
       primary_concern is null
       or primary_concern in (
-        'Academic Stress',
-        'Anxiety / Stress',
-        'Relationships',
-        'Family Issues',
-        'Career Guidance',
-        'Financial Concerns',
-        'Burnout / Exhaustion',
-        'Bullying',
-        'Others'
+        ${toSqlTextList(JOURNAL_PRIMARY_CONCERN_VALUES)}
       )
     );
   `);

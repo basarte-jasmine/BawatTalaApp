@@ -1031,9 +1031,19 @@ export default function CalendarScheduling({ onLogout, session }) {
                   className="w-full rounded-xl border border-slate-200 p-2.5 text-sm outline-none focus:border-[#3DA35D]"
                 >
                   <option value="">Select Concern</option>
-                  {overview?.concernOptions?.map((opt) => (
-                    <option key={`concern-${opt}`} value={opt}>{opt}</option>
-                  ))}
+                  {overview?.concernOptions?.map((opt) => {
+                    const subcategories = overview?.concernSubcategories?.[opt] || [];
+                    if (subcategories.length) {
+                      return (
+                        <optgroup key={`concern-${opt}`} label={opt}>
+                          {subcategories.map((sub) => (
+                            <option key={`concern-${sub}`} value={sub}>{sub}</option>
+                          ))}
+                        </optgroup>
+                      );
+                    }
+                    return <option key={`concern-${opt}`} value={opt}>{opt}</option>;
+                  })}
                 </select>
               </div>
 

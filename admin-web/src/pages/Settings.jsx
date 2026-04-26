@@ -531,7 +531,7 @@ export default function Settings({ onLogout, session }) {
                       value={formState.specialtiesInput}
                       onChange={(event) => setFormState((current) => ({ ...current, specialtiesInput: event.target.value }))}
                       rows={4}
-                      placeholder="Anxiety / Stress, Family Issues, Academic Stress"
+                      placeholder="Anxiety, Family relationship, Academic problems"
                       className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/20"
                     />
                     <div className="text-xs text-slate-500">Use commas to separate counselor specialties shown across admin scheduling and assignment views.</div>

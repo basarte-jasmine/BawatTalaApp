@@ -1,5 +1,10 @@
 const GEMINI_API_KEY = String(process.env.GEMINI_API_KEY || "").trim();
 const GROQ_API_KEY = String(process.env.GROQ_API_KEY || "").trim();
+const {
+  JOURNAL_TAG_OPTIONS,
+  inferJournalTagsFromText,
+  normalizeJournalTags,
+} = require("../constants/journal-tags");
 
 function parseModelList(value, defaults) {
   const configured = String(value || "")
@@ -139,6 +144,9 @@ function unavailableFinalAnalysis(latestUserMessage = "", history = []) {
   const heuristicRisk = riskFromSeverityWords(
     [latestUserMessage, ...history.map((item) => item.text)].join("\n"),
   );
+  const fallbackTags = inferJournalTagsFromText(
+    [latestUserMessage, ...history.map((item) => item.text)].join("\n"),
+  );
 
   return {
     pet_reply: "",
@@ -146,6 +154,7 @@ function unavailableFinalAnalysis(latestUserMessage = "", history = []) {
     insights: [],
     risk_level: heuristicRisk.risk_level,
     admin_flag_reason: heuristicRisk.admin_flag_reason,
+    suggested_tags: fallbackTags,
     unavailable_reason: "ai_temporarily_unavailable",
   };
 }
@@ -703,9 +712,16 @@ async function analyzeJournalEntryFinal({
     "{",
     '  "summary": "string",',
     '  "insights": ["string", "string"],',
+    '  "suggested_tags": ["string", "string"],',
     '  "risk_level": "NONE | LOW | HIGH",',
     '  "admin_flag_reason": "string or null"',
     "}",
+    "Allowed suggested_tags values:",
+    JOURNAL_TAG_OPTIONS.map((tag) => `- ${tag}`).join("\n"),
+    "Tag rules:",
+    "- Pick every clearly relevant tag, including positive tags when the entry is positive.",
+    "- Use Interpersonal relationships together with Peer, Family, or Romantic when a relationship subtype is clear.",
+    "- Use Others only when no allowed tag fits.",
     "Summary rules:",
     "- Write one short summary sentence of the main emotional theme.",
     "- Keep it observational and non-prescriptive.",
@@ -745,7 +761,7 @@ async function analyzeJournalEntryFinal({
           models: GEMINI_INSIGHTS_MODELS,
           systemInstruction,
           contents,
-          schemaLines: ['"summary"', '"insights"', '"risk_level"', '"admin_flag_reason"'],
+          schemaLines: ['"summary"', '"insights"', '"suggested_tags"', '"risk_level"', '"admin_flag_reason"'],
         })
       : { ok: false, parsed: null, reason: "gemini_missing_key" };
 
@@ -755,7 +771,7 @@ async function analyzeJournalEntryFinal({
           models: GROQ_INSIGHTS_MODELS,
           systemInstruction,
           messages: groqMessages,
-          schemaLines: ['"summary"', '"insights"', '"risk_level"', '"admin_flag_reason"'],
+          schemaLines: ['"summary"', '"insights"', '"suggested_tags"', '"risk_level"', '"admin_flag_reason"'],
         });
 
     if (!providerResult.ok) {
@@ -768,6 +784,10 @@ async function analyzeJournalEntryFinal({
     }
 
     const parsed = providerResult.parsed || {};
+    const fallbackTags = inferJournalTagsFromText(
+      [latestUserMessage, ...history.map((item) => item.text)].join("\n"),
+    );
+    const suggestedTags = normalizeJournalTags(parsed?.suggested_tags);
     const heuristicRisk = riskFromSeverityWords(
       [latestUserMessage, ...history.map((item) => item.text)].join("\n"),
     );
@@ -782,6 +802,7 @@ async function analyzeJournalEntryFinal({
       pet_reply: "",
       summary: normalizeWhitespace(parsed?.summary || ""),
       insights: normalizeInsights(parsed?.insights),
+      suggested_tags: suggestedTags.length ? suggestedTags : fallbackTags,
       risk_level: mergedRisk.risk_level,
       admin_flag_reason: mergedRisk.admin_flag_reason,
     };

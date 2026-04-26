@@ -27,6 +27,18 @@ function formatEntryHeader(entry: JournalEntry | null, createdAt?: string) {
   return timeLabel ? `\uD83D\uDCD6 ${timeLabel}` : "\uD83D\uDCD6 Journal Entry";
 }
 
+function formatEntryDateDisplay(entryDate?: string) {
+  if (!entryDate) return "Date unavailable";
+  const date = new Date(`${entryDate}T12:00:00+08:00`);
+  if (Number.isNaN(date.getTime())) return entryDate;
+  return date.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    weekday: "long",
+    year: "numeric",
+  });
+}
+
 function getUserParagraphs(messages: JournalMessage[]) {
   return messages
     .filter((message) => message.role === "user")
@@ -93,8 +105,13 @@ export default function JournalEntryViewScreen() {
     () => formatInsightsText(entry?.insights ?? []),
     [entry?.insights],
   );
-  const hasGeneratedSummary = Boolean(combinedInsights);
+  const aiSummaryText = useMemo(
+    () => [entry?.summary, combinedInsights].map((item) => String(item || "").trim()).filter(Boolean).join(" "),
+    [combinedInsights, entry?.summary],
+  );
+  const hasGeneratedSummary = Boolean(aiSummaryText);
   const summaryRating = entry?.summaryRating ?? null;
+  const entryTags = entry?.concernTags ?? [];
 
   const handleRateSummary = useCallback(async (rating: "HELPFUL" | "NEEDS_WORK") => {
     if (!user?.studentNumber || !entry?.id || isSavingSummaryRating) {
@@ -191,7 +208,7 @@ export default function JournalEntryViewScreen() {
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <View style={styles.topBar}>
-        <Pressable style={styles.topBarBackButton} onPress={() => router.back()}>
+        <Pressable style={styles.topBarBackButton} onPress={() => router.replace("/journal-calendar")}>
           <Ionicons name="chevron-back" size={28} color="#39434F" />
         </Pressable>
         <Text style={styles.topBarTitle}>Journal Entry</Text>
@@ -214,6 +231,25 @@ export default function JournalEntryViewScreen() {
             <Text style={[styles.heroStatusText, usedChatbot && styles.heroStatusTextActive]}>
               {usedChatbot ? "With Muni" : "Manual Entry"}
             </Text>
+          </View>
+
+          <View style={styles.metaBlock}>
+            <Text style={styles.metaLabel}>Date</Text>
+            <Text style={styles.metaValue}>{formatEntryDateDisplay(entry?.entryDate)}</Text>
+            <Text style={styles.metaLabel}>Tags</Text>
+            <View style={styles.tagRow}>
+              {entryTags.length ? (
+                entryTags.map((tag) => (
+                  <View key={tag} style={styles.tagPill}>
+                    <Text style={styles.tagPillText}>{tag}</Text>
+                  </View>
+                ))
+              ) : (
+                <View style={styles.tagPillMuted}>
+                  <Text style={styles.tagPillMutedText}>No tags saved</Text>
+                </View>
+              )}
+            </View>
           </View>
         </View>
 
@@ -245,6 +281,20 @@ export default function JournalEntryViewScreen() {
                 >
                   {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
+                  <View style={styles.entryContentBlock}>
+                    <Text style={styles.chatInsightHeading}>Journal Content</Text>
+                    {paragraphs.length ? (
+                      paragraphs.map((paragraph, index) => (
+                        <Text key={`content-${index}-${paragraph.slice(0, 16)}`} style={styles.entryContentText}>
+                          {paragraph}
+                        </Text>
+                      ))
+                    ) : (
+                      <Text style={styles.entryContentText}>No saved journal content found for this entry.</Text>
+                    )}
+                  </View>
+
+                  <Text style={styles.chatHistoryHeading}>Chat History</Text>
                   {messages.map((line) =>
                     line.role === "assistant" ? (
                       <View key={line.id} style={styles.leftMessageRow}>
@@ -259,10 +309,10 @@ export default function JournalEntryViewScreen() {
                     ),
                   )}
 
-                  {entry?.insights?.length ? (
+                  {hasGeneratedSummary ? (
                     <View style={styles.chatInsightBlock}>
-                      <Text style={styles.chatInsightHeading}>Summary</Text>
-                      <Text style={styles.chatInsightText}>{combinedInsights}</Text>
+                      <Text style={styles.chatInsightHeading}>AI Summary</Text>
+                      <Text style={styles.chatInsightText}>{aiSummaryText}</Text>
                       {renderSummaryFeedback}
                     </View>
                   ) : null}
@@ -295,10 +345,10 @@ export default function JournalEntryViewScreen() {
                 <Text style={styles.paragraphText}>No saved journal content found for this entry.</Text>
               )}
 
-              {entry?.insights?.length ? (
+              {hasGeneratedSummary ? (
                 <View style={styles.summaryWrap}>
-                  <Text style={styles.summaryHeading}>Summary</Text>
-                  <Text style={styles.summaryText}>{combinedInsights}</Text>
+                  <Text style={styles.summaryHeading}>AI Summary</Text>
+                  <Text style={styles.summaryText}>{aiSummaryText}</Text>
                   {renderSummaryFeedback}
                 </View>
               ) : null}
@@ -406,6 +456,55 @@ const styles = StyleSheet.create({
   },
   heroStatusTextActive: {
     color: "#2E6B23",
+  },
+  metaBlock: {
+    marginTop: 12,
+    rowGap: 6,
+  },
+  metaLabel: {
+    color: "#6E8174",
+    fontSize: 10,
+    lineHeight: 14,
+    letterSpacing: 0.8,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  metaValue: {
+    color: "#31465A",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
+  },
+  tagRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  tagPill: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#CFE4C2",
+    backgroundColor: "#F0FAE8",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  tagPillText: {
+    color: "#2F6F28",
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: "800",
+  },
+  tagPillMuted: {
+    borderRadius: 999,
+    backgroundColor: "#F1F4F5",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  tagPillMutedText: {
+    color: "#687783",
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: "700",
   },
   pageWrap: {
     flex: 1,
@@ -555,6 +654,30 @@ const styles = StyleSheet.create({
     color: "#31465A",
     fontSize: 14,
     lineHeight: 21,
+  },
+  entryContentBlock: {
+    marginLeft: 22,
+    marginRight: 10,
+    marginBottom: 12,
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: "#FCFEF8",
+    borderWidth: 1,
+    borderColor: "#E2EBD9",
+  },
+  entryContentText: {
+    color: "#31465A",
+    fontSize: 14,
+    lineHeight: 22,
+    marginBottom: 10,
+  },
+  chatHistoryHeading: {
+    marginLeft: 22,
+    marginBottom: 6,
+    color: "#34475A",
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: "700",
   },
   footnoteWrap: {
     minHeight: 38,

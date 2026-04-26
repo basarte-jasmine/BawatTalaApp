@@ -46,17 +46,28 @@ type SupportTrack = "professional" | "peer";
 
 const TOTAL_STEPS = 4;
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+const INTERPERSONAL_RELATIONSHIP_CONCERN = "Interpersonal relationships";
+const INTERPERSONAL_RELATIONSHIP_SUBCONCERNS = [
+  "Peer relationship",
+  "Family relationship",
+  "Romantic relationship",
+];
 const DEFAULT_CONCERNS = [
-  "Academic Stress",
-  "Anxiety / Stress",
-  "Relationships",
-  "Family Issues",
-  "Career Guidance",
-  "Financial Concerns",
-  "Burnout / Exhaustion",
+  "Personal problems",
+  "Mental health",
+  "Academic problems",
+  INTERPERSONAL_RELATIONSHIP_CONCERN,
+  "Career guidance",
+  "Financial guidance",
+  "Anxiety",
+  "Stress",
   "Bullying",
+  "Adjustment",
   "Others",
 ];
+const DEFAULT_CONCERN_SUBCATEGORIES = {
+  [INTERPERSONAL_RELATIONSHIP_CONCERN]: INTERPERSONAL_RELATIONSHIP_SUBCONCERNS,
+};
 const GENDER_PREFERENCE = ["No Preference", "Female Counselor", "Male Counselor"];
 const STEP_LABELS = ["Concern", "Preference", "Counselor", "Date & Time"];
 
@@ -124,7 +135,9 @@ export default function ConsultScreen() {
   const [step, setStep] = useState(1);
   const [showChooser, setShowChooser] = useState(opensWithChooser);
   const [concerns, setConcerns] = useState<string[]>(DEFAULT_CONCERNS);
-  const [selectedConcern, setSelectedConcern] = useState("Anxiety / Stress");
+  const [concernSubcategories, setConcernSubcategories] = useState<Record<string, string[]>>(DEFAULT_CONCERN_SUBCATEGORIES);
+  const [selectedConcern, setSelectedConcern] = useState("Anxiety");
+  const [selectedRelationshipConcern, setSelectedRelationshipConcern] = useState(INTERPERSONAL_RELATIONSHIP_SUBCONCERNS[0]);
   const [otherConcern, setOtherConcern] = useState("");
   const [selectedGender, setSelectedGender] = useState("No Preference");
   const [selectedTrack, setSelectedTrack] = useState<SupportTrack>(initialTrack ?? "professional");
@@ -160,6 +173,15 @@ export default function ConsultScreen() {
           setSelectedConcern((current) =>
             result.concernOptions!.includes(current) ? current : result.concernOptions![0],
           );
+        }
+        if (result.concernSubcategories && Object.keys(result.concernSubcategories).length > 0) {
+          setConcernSubcategories(result.concernSubcategories);
+          const relationshipOptions = result.concernSubcategories[INTERPERSONAL_RELATIONSHIP_CONCERN] ?? [];
+          if (relationshipOptions.length > 0) {
+            setSelectedRelationshipConcern((current) =>
+              relationshipOptions.includes(current) ? current : relationshipOptions[0],
+            );
+          }
         }
         setSelectedCounselor((current) => current || fetchedCounselors[0]?.id || "");
         setErrorMessage("");
@@ -339,6 +361,10 @@ export default function ConsultScreen() {
         setErrorMessage("Please specify your concern.");
         return;
       }
+      if (selectedConcern === INTERPERSONAL_RELATIONSHIP_CONCERN && !selectedRelationshipConcern) {
+        setErrorMessage("Please select the relationship concern.");
+        return;
+      }
       setStep(2);
       return;
     }
@@ -368,7 +394,12 @@ export default function ConsultScreen() {
 
     try {
       setSubmitting(true);
-      const resolvedConcern = selectedConcern === "Others" ? "Others" : selectedConcern;
+      const resolvedConcern =
+        selectedConcern === INTERPERSONAL_RELATIONSHIP_CONCERN
+          ? selectedRelationshipConcern
+          : selectedConcern === "Others"
+            ? "Others"
+            : selectedConcern;
       const result = await bookCounselorAppointment({
         appointmentDate: selectedDayAvailability.date,
         concern: resolvedConcern,
@@ -589,7 +620,15 @@ export default function ConsultScreen() {
                         <Pressable
                           key={item}
                           style={[styles.concernChip, isSelected && styles.concernChipActive]}
-                          onPress={() => setSelectedConcern(item)}
+                          onPress={() => {
+                            setSelectedConcern(item);
+                            if (item === INTERPERSONAL_RELATIONSHIP_CONCERN) {
+                              const relationshipOptions = concernSubcategories[INTERPERSONAL_RELATIONSHIP_CONCERN] ?? [];
+                              setSelectedRelationshipConcern((current) =>
+                                relationshipOptions.includes(current) ? current : relationshipOptions[0] ?? "",
+                              );
+                            }
+                          }}
                         >
                           <Text style={[styles.concernChipText, isSelected && styles.concernChipTextActive]}>{item}</Text>
                         </Pressable>
@@ -605,6 +644,25 @@ export default function ConsultScreen() {
                       placeholder="Please specify your concern"
                       placeholderTextColor="#596878"
                     />
+                  ) : null}
+
+                  {selectedConcern === INTERPERSONAL_RELATIONSHIP_CONCERN ? (
+                    <View style={styles.relationshipDropdown}>
+                      {(concernSubcategories[INTERPERSONAL_RELATIONSHIP_CONCERN] ?? INTERPERSONAL_RELATIONSHIP_SUBCONCERNS).map((item) => {
+                        const isSelected = selectedRelationshipConcern === item;
+                        return (
+                          <Pressable
+                            key={item}
+                            style={[styles.relationshipOption, isSelected && styles.relationshipOptionActive]}
+                            onPress={() => setSelectedRelationshipConcern(item)}
+                          >
+                            <Text style={[styles.relationshipOptionText, isSelected && styles.relationshipOptionTextActive]}>
+                              {item}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
                   ) : null}
                 </>
               ) : null}
@@ -737,7 +795,7 @@ export default function ConsultScreen() {
                                   styles.dayBubble,
                                   hasAvailableSlots && styles.dayBubbleOpen,
                                   isSelected && styles.dayBubbleActive,
-                                  !hasAvailableSlots && day && styles.dayBubbleDisabled,
+                                  !hasAvailableSlots && Boolean(day) && styles.dayBubbleDisabled,
                                 ]}
                               >
                                 <Text
@@ -745,7 +803,7 @@ export default function ConsultScreen() {
                                     styles.dayText,
                                     hasAvailableSlots && styles.dayTextOpen,
                                     isSelected && styles.dayTextActive,
-                                    !hasAvailableSlots && day && styles.dayTextDisabled,
+                                    !hasAvailableSlots && Boolean(day) && styles.dayTextDisabled,
                                   ]}
                                 >
                                   {day || ""}
@@ -1312,6 +1370,37 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     color: "#36495D",
     fontSize: 15,
+  },
+  relationshipDropdown: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#DDE5EA",
+    backgroundColor: "#F9FBFC",
+    padding: 8,
+    rowGap: 8,
+  },
+  relationshipOption: {
+    minHeight: 44,
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#DFE7EC",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  relationshipOptionActive: {
+    borderColor: "#78C74A",
+    backgroundColor: "#F3FAEE",
+  },
+  relationshipOptionText: {
+    color: "#33475C",
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "600",
+  },
+  relationshipOptionTextActive: {
+    color: "#2E6F24",
+    fontWeight: "700",
   },
   sectionLabel: {
     color: "#35495D",

@@ -162,13 +162,13 @@ const DEMOGRAPHIC_SPLIT = [
 ];
 
 const PRIMARY_CONCERNS = [
-  { label: "Academic Stress", value: 12, color: "#1B5E20" },
-  { label: "Anxiety / Stress", value: 10, color: "#2E7D32" },
-  { label: "Relationships", value: 8, color: "#43A047" },
-  { label: "Family Issues", value: 6, color: "#66BB6A" },
-  { label: "Career Guidance", value: 5, color: "#558B2F" },
-  { label: "Financial Concerns", value: 4, color: "#7CB342" },
-  { label: "Burnout / Exhaustion", value: 3, color: "#8BC34A" },
+  { label: "Academic problems", value: 12, color: "#1B5E20" },
+  { label: "Anxiety", value: 10, color: "#2E7D32" },
+  { label: "Stress", value: 8, color: "#43A047" },
+  { label: "Interpersonal relationships", value: 6, color: "#66BB6A" },
+  { label: "Mental health", value: 5, color: "#558B2F" },
+  { label: "Career guidance", value: 4, color: "#7CB342" },
+  { label: "Financial guidance", value: 3, color: "#8BC34A" },
   { label: "Bullying", value: 2, color: "#A5D6A7" },
   { label: "Others", value: 1, color: "#C5E1A5" },
 ];
@@ -997,14 +997,19 @@ function withColors(data, colors) {
 function normalizeConcernThemeLabel(value) {
   const normalized = String(value || "").trim().toLowerCase();
   if (!normalized) return "Others";
-  if (normalized.includes("academic")) return "Academic Stress";
-  if (normalized.includes("anxiety") || normalized.includes("stress")) return "Anxiety / Stress";
-  if (normalized.includes("relationship")) return "Relationships";
-  if (normalized.includes("family")) return "Family Issues";
-  if (normalized.includes("career")) return "Career Guidance";
-  if (normalized.includes("financial")) return "Financial Concerns";
-  if (normalized.includes("burnout") || normalized.includes("exhaust")) return "Burnout / Exhaustion";
+  if (normalized.includes("academic")) return "Academic problems";
+  if (normalized.includes("anxiety")) return "Anxiety";
+  if (normalized.includes("stress") || normalized.includes("burnout") || normalized.includes("exhaust")) return "Stress";
+  if (normalized.includes("peer")) return "Peer";
+  if (normalized.includes("family")) return "Family";
+  if (normalized.includes("romantic")) return "Romantic";
+  if (normalized.includes("relationship")) return "Interpersonal relationships";
+  if (normalized.includes("career")) return "Career guidance";
+  if (normalized.includes("financial")) return "Financial guidance";
+  if (normalized.includes("mental")) return "Mental health";
   if (normalized.includes("bully")) return "Bullying";
+  if (normalized.includes("adjust")) return "Adjustment";
+  if (normalized.includes("personal")) return "Personal problems";
   return "Others";
 }
 
@@ -1240,7 +1245,7 @@ export default function Overview({ onLogout, session }) {
             student: appointment.studentName || appointment.studentNumber || "(No student)",
             time: appointment.slotLabel || appointment.slotTime || "",
             tone:
-              appointment.concern === "Anxiety / Stress" || appointment.concern === "Bullying"
+              ["Anxiety", "Stress", "Bullying", "Mental health"].includes(appointment.concern)
                 ? "red"
                 : "blue",
             type: appointment.concern || "Others",
@@ -1392,7 +1397,7 @@ export default function Overview({ onLogout, session }) {
     dashboardSummary?.charts?.primaryConcerns?.length > 0
       ? withColors(
           dashboardSummary.charts.primaryConcerns,
-          ["#1B5E20", "#2E7D32", "#43A047", "#66BB6A", "#558B2F", "#7CB342", "#8BC34A", "#A5D6A7", "#C5E1A5"],
+          ["#1B5E20", "#2E7D32", "#43A047", "#66BB6A", "#558B2F", "#7CB342", "#8BC34A", "#A5D6A7", "#C5E1A5", "#0F766E", "#0369A1", "#BE185D", "#7C3AED", "#64748B"],
         )
       : PRIMARY_CONCERNS;
   const barangayConcernData =
@@ -1505,7 +1510,7 @@ export default function Overview({ onLogout, session }) {
             <ActiveUsageGraph data={activeUsageSeries} />
           </Card>
 
-          <Card title="Top Journal Themes" subtitle="Stored concern tags selected during journaling">
+          <Card title="Top Journal Themes" subtitle="Saved journal tags used for analytics">
             <ConcernThemesChart data={primaryConcernsData} />
           </Card>
         </div>

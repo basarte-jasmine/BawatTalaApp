@@ -1,5 +1,10 @@
 const express = require("express");
 const { query } = require("../config/db");
+const {
+  APPOINTMENT_CONCERN_OPTIONS,
+  APPOINTMENT_CONCERN_SUBCATEGORIES,
+  normalizeAppointmentConcern,
+} = require("../constants/appointment-concerns");
 
 const router = express.Router();
 
@@ -11,17 +16,7 @@ const MOBILE_BOOKING_LEAD_DAYS = 2;
 const APPOINTMENT_DECISION_WINDOW_HOURS = 24;
 const APPOINTMENT_EXPIRY_CHECK_MS = 5 * 60 * 1000;
 const APPOINTMENT_REMINDER_LEAD_MINUTES = 10;
-const CONCERN_OPTIONS = [
-  "Academic Stress",
-  "Anxiety / Stress",
-  "Relationships",
-  "Family Issues",
-  "Career Guidance",
-  "Financial Concerns",
-  "Burnout / Exhaustion",
-  "Bullying",
-  "Others",
-];
+const CONCERN_OPTIONS = APPOINTMENT_CONCERN_OPTIONS;
 const BOOKING_SOURCES = new Set(["MOBILE_APP", "ADMIN_PANEL"]);
 
 function getManilaDateParts(date = new Date()) {
@@ -103,10 +98,7 @@ function toRoleLabel(role) {
 }
 
 function normalizeConcern(value) {
-  const raw = String(value || "").trim().toLowerCase();
-  if (!raw) return "";
-  const match = CONCERN_OPTIONS.find((item) => item.toLowerCase() === raw);
-  return match || "";
+  return normalizeAppointmentConcern(value);
 }
 
 function formatDateLong(value) {
@@ -1203,6 +1195,7 @@ router.get("/counselors", async (_req, res) => {
       specialties: Array.isArray(row.specialties) ? row.specialties : [],
     })),
     concernOptions: CONCERN_OPTIONS,
+    concernSubcategories: APPOINTMENT_CONCERN_SUBCATEGORIES,
     slotTimes: DEFAULT_SLOT_TIMES.map((item) => ({
       value: item,
       label: toReadableTime(item),
@@ -2135,6 +2128,7 @@ router.get("/admin/overview", async (req, res) => {
         createdAtLabel: formatRelativeDateTime(item.createdAt),
       })),
     concernOptions: CONCERN_OPTIONS,
+    concernSubcategories: APPOINTMENT_CONCERN_SUBCATEGORIES,
     slotTimes: DEFAULT_SLOT_TIMES.map((item) => ({
       value: item,
       label: toReadableTime(item),

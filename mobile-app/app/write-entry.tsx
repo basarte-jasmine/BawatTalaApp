@@ -27,23 +27,35 @@ import {
   finishJournalEntry,
   JournalEntry,
   JournalMessage,
-  saveJournalConcerns,
   saveJournalSupportResponse,
   sendJournalMessage,
+  suggestJournalTags,
 } from "../lib/backend-api";
 import { getManilaTodayParts } from "../lib/manila-date";
 
 const NOTEBOOK_RINGS = Array.from({ length: 12 }, (_, index) => index);
 const PAPER_RULES = Array.from({ length: 24 }, (_, index) => index);
-const CONCERN_OPTIONS = [
-  "Academic Stress",
-  "Anxiety / Stress",
-  "Relationships",
-  "Family Issues",
-  "Career Guidance",
-  "Financial Concerns",
-  "Burnout / Exhaustion",
+const POSITIVE_TAG_OPTIONS = [
+  "Gratitude / Appreciation",
+  "Hobbies & Interests",
+  "Travel & Adventure",
+  "Personal Growth / Epiphanies",
+  "Spirituality / Faith",
+];
+const CONCERN_TAG_OPTIONS = [
+  "Personal problems",
+  "Mental health",
+  "Academic problems",
+  "Interpersonal relationships",
+  "Peer",
+  "Family",
+  "Romantic",
+  "Career guidance",
+  "Financial guidance",
+  "Anxiety",
+  "Stress",
   "Bullying",
+  "Adjustment",
   "Others",
 ];
 const AI_RETRY_LOCK_MS = 12000;
@@ -88,6 +100,10 @@ function getIntroMessages(
   ];
 }
 
+function uniqueTags(tags: string[]) {
+  return tags.filter((tag, index, items) => Boolean(tag) && items.indexOf(tag) === index);
+}
+
 export default function WriteEntryScreen() {
   const { user } = useAuthSession();
   const { mode } = useLocalSearchParams<{ mode?: string }>();
@@ -104,10 +120,10 @@ export default function WriteEntryScreen() {
   const [isAiRetryLocked, setIsAiRetryLocked] = useState(false);
   const [showRiskModal, setShowRiskModal] = useState(false);
   const [showExitModal, setShowExitModal] = useState(false);
-  const [showConcernModal, setShowConcernModal] = useState(false);
-  const [showFinishModal, setShowFinishModal] = useState(false);
-  const [selectedConcern, setSelectedConcern] = useState<string | null>(null);
-  const [isSavingConcern, setIsSavingConcern] = useState(false);
+  const [showTagReviewModal, setShowTagReviewModal] = useState(false);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [isAnalyzingTags, setIsAnalyzingTags] = useState(false);
+  const [isSavingTags, setIsSavingTags] = useState(false);
   const [isSavingSupportResponse, setIsSavingSupportResponse] = useState(false);
 
   const loadJournalSession = useCallback(async () => {
@@ -173,8 +189,9 @@ export default function WriteEntryScreen() {
   );
 
   useEffect(() => {
-    setSelectedConcern(entry?.primaryConcern ?? null);
-  }, [entry?.primaryConcern]);
+    if (showTagReviewModal) return;
+    setSelectedTags(entry?.concernTags ?? []);
+  }, [entry?.concernTags, showTagReviewModal]);
 
   useEffect(() => {
     if (!isAiRetryLocked) return undefined;
@@ -315,32 +332,12 @@ export default function WriteEntryScreen() {
     setIsLoading(false);
   };
 
-  const handleSelectConcern = async (concern: string) => {
-    if (
-      !user?.studentNumber ||
-      !entry?.id ||
-      isSavingConcern ||
-      isEntryFinished
-    ) {
-      return;
-    }
-
-    setSelectedConcern(concern);
-    setIsSavingConcern(true);
-    const result = await saveJournalConcerns({
-      concernTags: [concern],
-      entryId: entry.id,
-      primaryConcern: concern,
-      studentNumber: user.studentNumber,
-    });
-    setIsSavingConcern(false);
-
-    if (!result.ok) {
-      setErrorMessage(result.message ?? "Unable to save the selected concern.");
-      return;
-    }
-
-    setEntry(result.entry ?? entry);
+  const toggleSelectedTag = (tag: string) => {
+    setSelectedTags((current) =>
+      current.includes(tag)
+        ? current.filter((item) => item !== tag)
+        : uniqueTags([...current, tag]),
+    );
   };
 
   const saveSupportDecision = useCallback(
@@ -437,48 +434,40 @@ export default function WriteEntryScreen() {
     router.push("/wellness-tools");
   }, [isSavingSupportResponse]);
 
-  const handleFinishEntry = async () => {
-    if (!user?.studentNumber || !entry?.id || isFinishing) {
-      router.replace("/journal-entries");
+  const handleConfirmTagsAndFinish = async () => {
+    if (!user?.studentNumber || !entry?.id || isFinishing || isSavingTags) {
       return;
     }
-    if (!selectedConcern) {
-      setErrorMessage(
-        "Select a concern tag before finishing your journal entry.",
-      );
-      setShowConcernModal(true);
-      return;
-    }
-    if (!hasTypedContent) {
-      setErrorMessage(
-        "Write something first before finishing your journal entry.",
-      );
+    const finalTags = uniqueTags(selectedTags);
+    if (finalTags.length === 0) {
+      setErrorMessage("Choose at least one tag before saving this journal entry.");
       return;
     }
 
+    setIsSavingTags(true);
     setIsFinishing(true);
     setErrorMessage("");
     setStatusMessage("");
     const result = await finishJournalEntry({
+      concernTags: finalTags,
       entryId: entry.id,
+      primaryConcern: finalTags[0],
       studentNumber: user.studentNumber,
     });
     setIsFinishing(false);
+    setIsSavingTags(false);
 
     if (!result.ok) {
       setErrorMessage(result.message ?? "Unable to finish this journal entry.");
       return;
     }
 
+    setShowTagReviewModal(false);
     setEntry(result.entry ?? null);
-    if (result.entry?.riskLevel === "HIGH") {
-      setShowRiskModal(true);
-      return;
-    }
-    router.replace("/journal-entries");
+    router.replace(`/journal-entry-view?entryId=${encodeURIComponent(result.entry?.id ?? entry.id)}`);
   };
 
-  const handleRequestFinish = () => {
+  const handleRequestFinish = async () => {
     if (isEntryFinished) {
       setErrorMessage("This journal entry is already finished and can no longer be edited.");
       return;
@@ -487,19 +476,58 @@ export default function WriteEntryScreen() {
       setErrorMessage("Start a journal entry first.");
       return;
     }
+    if (!user?.studentNumber) {
+      setErrorMessage("You need to be logged in to finish this journal entry.");
+      return;
+    }
+    const studentNumber = user.studentNumber;
     if (!hasTypedContent) {
       setErrorMessage("Write something first before finishing your journal entry.");
       return;
     }
-    if (!selectedConcern) {
-      setErrorMessage("Select a concern tag before finishing your journal entry.");
-      setShowConcernModal(true);
+
+    setIsAnalyzingTags(true);
+    setErrorMessage("");
+    setStatusMessage("");
+    let activeEntry = entry;
+
+    if (inputValue.trim()) {
+      const sendResult = await sendJournalMessage({
+        aiEnabled,
+        entryId: entry.id,
+        message: inputValue.trim(),
+        studentNumber,
+      });
+
+      if (!sendResult.ok || !sendResult.entry) {
+        setIsAnalyzingTags(false);
+        setErrorMessage(sendResult.message ?? "Unable to save your journal entry.");
+        return;
+      }
+
+      activeEntry = sendResult.entry;
+      setInputValue("");
+      setEntry(sendResult.entry);
+      setMessages(sendResult.messages ?? []);
+    }
+
+    const result = await suggestJournalTags({
+      entryId: activeEntry.id,
+      studentNumber,
+    });
+    setIsAnalyzingTags(false);
+
+    if (!result.ok) {
+      setErrorMessage(result.message ?? "Unable to suggest tags for this journal entry.");
       return;
     }
 
-    setErrorMessage("");
-    setStatusMessage("");
-    setShowFinishModal(true);
+    const suggestedTags = uniqueTags(
+      (result.suggestedTags?.length ? result.suggestedTags : result.entry?.concernTags) ?? [],
+    );
+    setEntry(result.entry ?? activeEntry);
+    setSelectedTags(suggestedTags.length ? suggestedTags : ["Others"]);
+    setShowTagReviewModal(true);
   };
 
   const isEntryFinished = Boolean(entry?.isFinished);
@@ -508,10 +536,8 @@ export default function WriteEntryScreen() {
     ? "Start a journal entry first."
     : !hasTypedContent
       ? "Write something first before finishing."
-      : !selectedConcern
-        ? "Select a concern tag before finishing."
-        : "";
-  const canFinishEntry = !isEntryFinished && !isFinishing && !isSending && !isSavingConcern && !finishValidationMessage;
+      : "";
+  const canFinishEntry = !isEntryFinished && !isFinishing && !isSending && !isAnalyzingTags && !isSavingTags && !finishValidationMessage;
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
@@ -731,32 +757,14 @@ export default function WriteEntryScreen() {
 
         <View style={styles.actionRow}>
           <Pressable
-            style={[
-              styles.concernIconButton,
-              selectedConcern && styles.concernIconButtonSelected,
-            ]}
-            onPress={() => setShowConcernModal(true)}
-            disabled={!entry?.id || isEntryFinished || isSavingConcern}
-            accessibilityLabel={
-              selectedConcern
-                ? `Selected concern: ${selectedConcern}`
-                : "Select concern tag"
-            }
-          >
-            <Ionicons
-              name={selectedConcern ? "pricetag" : "pricetag-outline"}
-              size={20}
-              color={selectedConcern ? "#2E6B23" : "#5E6E7E"}
-            />
-          </Pressable>
-
-          <Pressable
             style={[styles.finishButton, !canFinishEntry && styles.finishButtonDisabled]}
-            onPress={handleRequestFinish}
-            disabled={isEntryFinished || isFinishing || isSending || isSavingConcern}
+            onPress={() => {
+              void handleRequestFinish();
+            }}
+            disabled={!canFinishEntry}
           >
             <Text style={styles.finishButtonText}>
-              {isFinishing ? "Finishing..." : "Finish Entry"}
+              {isAnalyzingTags ? "Analyzing..." : isFinishing ? "Saving..." : "Finish Entry"}
             </Text>
           </Pressable>
 
@@ -905,99 +913,82 @@ export default function WriteEntryScreen() {
         </Modal>
 
         <Modal
-          visible={showConcernModal}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setShowConcernModal(false)}
-        >
-          <View style={styles.modalBackdrop}>
-            <View style={[styles.modalCard, styles.concernModalCard]}>
-              <Text style={styles.concernTitle}>
-                What brings you here today?
-              </Text>
-
-              {selectedConcern ? (
-                <Text style={styles.concernCurrentText}>
-                  Selected: {selectedConcern}
-                </Text>
-              ) : null}
-
-              <View style={styles.concernGrid}>
-                {CONCERN_OPTIONS.map((concern) => {
-                  const isSelected = selectedConcern === concern;
-                  return (
-                    <Pressable
-                      key={concern}
-                      style={[
-                        styles.concernOption,
-                        isSelected && styles.concernOptionSelected,
-                      ]}
-                      onPress={async () => {
-                        await handleSelectConcern(concern);
-                        setShowConcernModal(false);
-                      }}
-                      disabled={
-                        !entry?.id || isEntryFinished || isSavingConcern
-                      }
-                    >
-                      <Text
-                        style={[
-                          styles.concernOptionText,
-                          isSelected && styles.concernOptionTextSelected,
-                        ]}
-                      >
-                        {concern}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-
-              <Pressable
-                style={styles.modalSecondaryButton}
-                onPress={() => setShowConcernModal(false)}
-              >
-                <Text style={styles.modalSecondaryText}>Close</Text>
-              </Pressable>
-            </View>
-          </View>
-        </Modal>
-
-        <Modal
-          visible={showFinishModal}
+          visible={showTagReviewModal}
           transparent
           animationType="fade"
           onRequestClose={() => {
-            if (isFinishing) return;
-            setShowFinishModal(false);
+            if (isSavingTags) return;
+            setShowTagReviewModal(false);
           }}
         >
           <View style={styles.modalBackdrop}>
-            <View style={styles.modalCard}>
-              <Text style={styles.modalBody}>
-                Finish this journal entry? After finishing, this entry will be locked and can no longer be edited.
+            <View style={[styles.modalCard, styles.tagReviewModalCard]}>
+              <Text style={styles.concernTitle}>Review journal tags</Text>
+              <Text style={styles.concernSubtitle}>
+                Muni suggested these tags. You can add or remove tags before saving the finished entry.
               </Text>
+
+              <ScrollView style={styles.tagReviewScroll} showsVerticalScrollIndicator={false}>
+                <Text style={styles.tagSectionLabel}>Positive tags</Text>
+                <View style={styles.concernGrid}>
+                  {POSITIVE_TAG_OPTIONS.map((tag) => {
+                    const isSelected = selectedTags.includes(tag);
+                    return (
+                      <Pressable
+                        key={tag}
+                        style={[styles.concernOption, isSelected && styles.concernOptionSelected]}
+                        onPress={() => toggleSelectedTag(tag)}
+                        disabled={isSavingTags}
+                      >
+                        <Text style={[styles.concernOptionText, isSelected && styles.concernOptionTextSelected]}>
+                          {tag}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                <Text style={styles.tagSectionLabel}>Concern tags</Text>
+                <View style={styles.concernGrid}>
+                  {CONCERN_TAG_OPTIONS.map((tag) => {
+                    const isSelected = selectedTags.includes(tag);
+                    return (
+                      <Pressable
+                        key={tag}
+                        style={[styles.concernOption, isSelected && styles.concernOptionSelected]}
+                        onPress={() => toggleSelectedTag(tag)}
+                        disabled={isSavingTags}
+                      >
+                        <Text style={[styles.concernOptionText, isSelected && styles.concernOptionTextSelected]}>
+                          {tag}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </ScrollView>
 
               <View style={styles.modalActions}>
                 <Pressable
                   style={styles.modalSecondaryButton}
-                  onPress={() => setShowFinishModal(false)}
-                  disabled={isFinishing}
+                  onPress={() => setShowTagReviewModal(false)}
+                  disabled={isSavingTags}
                 >
                   <Text style={styles.modalSecondaryText}>Keep Editing</Text>
                 </Pressable>
 
                 <Pressable
-                  style={styles.modalPrimaryButton}
-                  onPress={async () => {
-                    setShowFinishModal(false);
-                    await handleFinishEntry();
+                  style={[styles.modalPrimaryButton, selectedTags.length === 0 && styles.modalPrimaryButtonDisabled]}
+                  onPress={() => {
+                    void handleConfirmTagsAndFinish();
                   }}
-                  disabled={isFinishing}
+                  disabled={isSavingTags || selectedTags.length === 0}
                 >
-                  <Text style={styles.modalPrimaryText}>
-                    {isFinishing ? "Finishing..." : "Finish"}
-                  </Text>
+                  {isSavingTags ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={styles.modalPrimaryText}>Save Entry</Text>
+                  )}
                 </Pressable>
               </View>
             </View>
@@ -1419,6 +1410,10 @@ const styles = StyleSheet.create({
   concernModalCard: {
     maxWidth: 360,
   },
+  tagReviewModalCard: {
+    maxWidth: 380,
+    maxHeight: "82%",
+  },
   concernTitle: {
     color: "#34465A",
     fontSize: 16,
@@ -1470,6 +1465,19 @@ const styles = StyleSheet.create({
   concernOptionTextSelected: {
     color: "#2E6B23",
     fontWeight: "700",
+  },
+  tagReviewScroll: {
+    maxHeight: 420,
+    marginBottom: 14,
+  },
+  tagSectionLabel: {
+    color: "#53685A",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+    marginBottom: 8,
+    textTransform: "uppercase",
   },
   errorText: {
     color: "#B04444",
@@ -1735,6 +1743,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#79C943",
     alignItems: "center",
     justifyContent: "center",
+  },
+  modalPrimaryButtonDisabled: {
+    backgroundColor: "#A8C99C",
   },
   modalDangerButton: {
     flex: 1,

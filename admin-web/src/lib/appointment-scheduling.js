@@ -1,14 +1,19 @@
 export const WEEKDAY_HEADERS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 export const COUNSELOR_COLORS = ["#3B82F6", "#10B981", "#8B5CF6"];
 export const CONCERN_STYLES = {
-  "Academic Stress": "bg-sky-50 text-sky-700",
-  "Anxiety / Stress": "bg-emerald-50 text-emerald-700",
-  Relationships: "bg-purple-50 text-purple-700",
-  "Family Issues": "bg-amber-50 text-amber-700",
-  "Career Guidance": "bg-slate-100 text-slate-700",
-  "Financial Concerns": "bg-lime-50 text-lime-700",
-  "Burnout / Exhaustion": "bg-orange-50 text-orange-700",
+  "Personal problems": "bg-sky-50 text-sky-700",
+  "Mental health": "bg-emerald-50 text-emerald-700",
+  "Academic problems": "bg-indigo-50 text-indigo-700",
+  "Interpersonal relationships": "bg-purple-50 text-purple-700",
+  "Peer relationship": "bg-purple-50 text-purple-700",
+  "Family relationship": "bg-amber-50 text-amber-700",
+  "Romantic relationship": "bg-pink-50 text-pink-700",
+  "Career guidance": "bg-slate-100 text-slate-700",
+  "Financial guidance": "bg-lime-50 text-lime-700",
+  Anxiety: "bg-cyan-50 text-cyan-700",
+  Stress: "bg-orange-50 text-orange-700",
   Bullying: "bg-rose-50 text-rose-700",
+  Adjustment: "bg-teal-50 text-teal-700",
   Others: "bg-gray-100 text-gray-700",
 };
 

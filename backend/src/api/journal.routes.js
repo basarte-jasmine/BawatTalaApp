@@ -2,20 +2,16 @@ const express = require("express");
 const { query } = require("../config/db");
 const { supabaseAdminClient } = require("../config/supabase");
 const { analyzeJournalConversation, analyzeJournalEntryFinal } = require("../services/gemini.service");
+const {
+  JOURNAL_TAG_OPTIONS,
+  inferJournalTagsFromText,
+  normalizeJournalTag,
+  normalizeJournalTags,
+  resolveJournalEntryTags,
+} = require("../constants/journal-tags");
 
 const router = express.Router();
 const JOURNAL_MAX_WORDS = 1000;
-const CONCERN_OPTIONS = [
-  "Academic Stress",
-  "Anxiety / Stress",
-  "Relationships",
-  "Family Issues",
-  "Career Guidance",
-  "Financial Concerns",
-  "Burnout / Exhaustion",
-  "Bullying",
-  "Others",
-];
 
 function asyncHandler(handler) {
   return (req, res, next) => {
@@ -77,50 +73,11 @@ function countWords(value) {
 }
 
 function normalizeConcernValue(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-  if (!normalized) return "";
-
-  const aliases = {
-    "academic": "Academic Stress",
-    "academic stress": "Academic Stress",
-    "anxiety": "Anxiety / Stress",
-    "stress": "Anxiety / Stress",
-    "anxiety/stress": "Anxiety / Stress",
-    "anxiety / stress": "Anxiety / Stress",
-    "relationships": "Relationships",
-    "relationship": "Relationships",
-    "family": "Family Issues",
-    "family issues": "Family Issues",
-    "career": "Career Guidance",
-    "career guidance": "Career Guidance",
-    "financial": "Financial Concerns",
-    "financial concerns": "Financial Concerns",
-    "burnout": "Burnout / Exhaustion",
-    "burnout / exhaustion": "Burnout / Exhaustion",
-    "burnout/exhaustion": "Burnout / Exhaustion",
-    "bullying": "Bullying",
-    "other": "Others",
-    "others": "Others",
-  };
-
-  return aliases[normalized] || "";
+  return normalizeJournalTag(value);
 }
 
 function normalizeConcernTags(value) {
-  const rawItems = Array.isArray(value)
-    ? value
-    : typeof value === "string"
-      ? value.split(",")
-      : [];
-
-  const deduped = [];
-  for (const item of rawItems) {
-    const normalized = normalizeConcernValue(item);
-    if (normalized && !deduped.includes(normalized)) {
-      deduped.push(normalized);
-    }
-  }
-  return deduped;
+  return normalizeJournalTags(value);
 }
 
 function normalizeSummaryRating(value) {
@@ -216,17 +173,18 @@ async function getEntryById(studentNumber, entryId) {
 }
 
 function mapEntryRow(row) {
+  const concernTags = resolveJournalEntryTags(row);
   return {
     adminFlagReason: row.admin_flag_reason || null,
     aiEnabled: Boolean(row.ai_enabled),
-    concernTags: Array.isArray(row.concern_tags) ? row.concern_tags : [],
+    concernTags,
     createdAt: row.created_at,
     entryDate: formatEntryDateLabel(row.entry_date),
     finishedAt: row.finished_at || null,
     id: row.id,
     insights: Array.isArray(row.insights) ? row.insights : [],
     isFinished: Boolean(row.is_finished),
-    primaryConcern: row.primary_concern || null,
+    primaryConcern: normalizeConcernValue(row.primary_concern) || concernTags[0] || null,
     riskLevel: String(row.risk_level || "NONE"),
     summary: row.summary || "",
     summaryRatedAt: row.summary_rated_at || null,
@@ -657,7 +615,49 @@ router.post("/session/create", asyncHandler(async (req, res) => {
   });
 }));
 
-router.post("/session/finish", asyncHandler(async (req, res) => {
+async function analyzeFinalEntry({ entryId, studentNumber, existingMessages }) {
+  const userMessages = existingMessages.filter((item) => item.role === "user" && String(item.text || "").trim());
+  const profile = await getStudentProfile(studentNumber);
+  const latestUserMessage = userMessages[userMessages.length - 1]?.text || "";
+  const history = existingMessages.map((item) => ({
+    role: item.role,
+    text: item.text,
+  }));
+  const analysis = await analyzeJournalEntryFinal({
+    firstName: profile.firstName,
+    history,
+    latestUserMessage,
+  });
+  const fallbackText = [latestUserMessage, ...history.map((item) => item.text)].join("\n");
+  const suggestedTags = normalizeConcernTags(analysis.suggested_tags);
+
+  await query(
+    `
+      update public.journal_entries
+      set
+        summary = $2,
+        insights = $3::jsonb,
+        risk_level = $4,
+        admin_flag_reason = $5,
+        updated_at = now()
+      where id = $1
+    `,
+    [
+      entryId,
+      analysis.summary,
+      JSON.stringify(analysis.insights),
+      analysis.risk_level,
+      analysis.admin_flag_reason,
+    ],
+  );
+
+  return {
+    ...analysis,
+    suggested_tags: suggestedTags.length ? suggestedTags : inferJournalTagsFromText(fallbackText),
+  };
+}
+
+router.post("/session/tag-suggestions", asyncHandler(async (req, res) => {
   const studentNumber = normalizeStudentNumber(req.body.studentNumber);
   const entryId = String(req.body.entryId || "").trim();
 
@@ -675,8 +675,60 @@ router.post("/session/finish", asyncHandler(async (req, res) => {
   if (entry.is_finished) {
     return res.status(400).json({ message: "This journal entry is already finished." });
   }
-  if (!normalizeConcernValue(entry.primary_concern)) {
-    return res.status(400).json({ message: "Select a primary concern before finishing your journal entry." });
+
+  const existingMessages = await listEntryMessages(entryId);
+  const userMessages = existingMessages.filter((item) => item.role === "user" && String(item.text || "").trim());
+  if (userMessages.length === 0) {
+    await removeOrSoftDeleteEntry({
+      entryId,
+      requireOpen: true,
+      studentNumber,
+    });
+    return res.status(400).json({ message: "Write something first before finishing your journal entry." });
+  }
+
+  const analysis = await analyzeFinalEntry({ entryId, existingMessages, studentNumber });
+
+  const result = await query(
+    `
+      select id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
+             primary_concern, concern_tags,
+             ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
+             created_at, updated_at
+      from public.journal_entries
+      where id = $1 and student_number = $2
+      limit 1
+    `,
+    [entryId, studentNumber],
+  );
+
+  return res.json({
+    entry: mapEntryRow(result.rows[0]),
+    suggestedTags: analysis.suggested_tags,
+    tagOptions: JOURNAL_TAG_OPTIONS,
+    message: "Journal tags suggested.",
+  });
+}));
+
+router.post("/session/finish", asyncHandler(async (req, res) => {
+  const studentNumber = normalizeStudentNumber(req.body.studentNumber);
+  const entryId = String(req.body.entryId || "").trim();
+  const requestedTags = normalizeConcernTags(req.body.concernTags);
+  const requestedPrimary = normalizeConcernValue(req.body.primaryConcern);
+
+  if (!studentNumber) {
+    return res.status(400).json({ message: "Student number is required." });
+  }
+  if (!entryId) {
+    return res.status(400).json({ message: "Entry id is required." });
+  }
+
+  const entry = await getEntryById(studentNumber, entryId);
+  if (!entry) {
+    return res.status(404).json({ message: "Journal entry not found." });
+  }
+  if (entry.is_finished) {
+    return res.status(400).json({ message: "This journal entry is already finished." });
   }
 
   const existingMessages = await listEntryMessages(entryId);
@@ -690,50 +742,44 @@ router.post("/session/finish", asyncHandler(async (req, res) => {
     return res.status(400).json({ message: "Write something first before finishing your journal entry." });
   }
 
-  if (userMessages.length > 0) {
-    const profile = await getStudentProfile(studentNumber);
-    const latestUserMessage = userMessages[userMessages.length - 1]?.text || "";
-    const analysis = await analyzeJournalEntryFinal({
-      firstName: profile.firstName,
-      history: existingMessages.map((item) => ({
-        role: item.role,
-        text: item.text,
-      })),
-      latestUserMessage,
-    });
+  const existingTags = resolveJournalEntryTags(entry);
+  let finalTags = requestedTags.length ? requestedTags : existingTags;
+  let analysis = null;
+  const hasStoredAnalysis =
+    Boolean(String(entry.summary || "").trim()) ||
+    (Array.isArray(entry.insights) && entry.insights.length > 0);
 
-    await query(
-      `
-        update public.journal_entries
-        set
-          summary = $2,
-          insights = $3::jsonb,
-          risk_level = $4,
-          admin_flag_reason = $5,
-          updated_at = now()
-        where id = $1
-      `,
-      [
-        entryId,
-        analysis.summary,
-        JSON.stringify(analysis.insights),
-        analysis.risk_level,
-        analysis.admin_flag_reason,
-      ],
-    );
+  if (!hasStoredAnalysis || finalTags.length === 0) {
+    analysis = await analyzeFinalEntry({ entryId, existingMessages, studentNumber });
+    if (finalTags.length === 0) {
+      finalTags = normalizeConcernTags(analysis.suggested_tags);
+    }
   }
+
+  if (finalTags.length === 0) {
+    finalTags = inferJournalTagsFromText(userMessages.map((item) => item.text).join("\n"));
+  }
+
+  const primaryConcern = requestedPrimary && finalTags.includes(requestedPrimary)
+    ? requestedPrimary
+    : finalTags[0] || "Others";
 
   const result = await query(
     `
       update public.journal_entries
-      set is_finished = true, finished_at = now(), updated_at = now()
+      set
+        primary_concern = $3,
+        concern_tags = $4::jsonb,
+        is_finished = true,
+        finished_at = now(),
+        updated_at = now()
       where id = $1 and student_number = $2 and is_finished = false
       returning id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 created_at, updated_at
     `,
-    [entryId, studentNumber],
+    [entryId, studentNumber, primaryConcern, JSON.stringify(finalTags)],
   );
 
   return res.json({
