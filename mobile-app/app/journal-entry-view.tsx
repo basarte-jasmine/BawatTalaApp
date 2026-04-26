@@ -27,18 +27,6 @@ function formatEntryHeader(entry: JournalEntry | null, createdAt?: string) {
   return timeLabel ? `\uD83D\uDCD6 ${timeLabel}` : "\uD83D\uDCD6 Journal Entry";
 }
 
-function formatEntryDateDisplay(entryDate?: string) {
-  if (!entryDate) return "Date unavailable";
-  const date = new Date(`${entryDate}T12:00:00+08:00`);
-  if (Number.isNaN(date.getTime())) return entryDate;
-  return date.toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    weekday: "long",
-    year: "numeric",
-  });
-}
-
 function getUserParagraphs(messages: JournalMessage[]) {
   return messages
     .filter((message) => message.role === "user")
@@ -247,8 +235,6 @@ export default function JournalEntryViewScreen() {
           </View>
 
           <View style={[styles.metaBlock, compact && styles.metaBlockCompact]}>
-            <Text style={styles.metaLabel}>Date</Text>
-            <Text style={[styles.metaValue, compact && styles.metaValueCompact]}>{formatEntryDateDisplay(entry?.entryDate)}</Text>
             <Text style={styles.metaLabel}>Tags</Text>
             <View style={[styles.tagRow, compact && styles.tagRowCompact]}>
               {entryTags.length ? (
@@ -294,20 +280,6 @@ export default function JournalEntryViewScreen() {
                 >
                   {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
-                  <View style={[styles.entryContentBlock, compact && styles.notebookContentBlockCompact]}>
-                    <Text style={styles.chatInsightHeading}>Journal Content</Text>
-                    {paragraphs.length ? (
-                      paragraphs.map((paragraph, index) => (
-                        <Text key={`content-${index}-${paragraph.slice(0, 16)}`} style={styles.entryContentText}>
-                          {paragraph}
-                        </Text>
-                      ))
-                    ) : (
-                      <Text style={styles.entryContentText}>No saved journal content found for this entry.</Text>
-                    )}
-                  </View>
-
-                  <Text style={[styles.chatHistoryHeading, compact && styles.chatHistoryHeadingCompact]}>Chat History</Text>
                   {messages.map((line) =>
                     line.role === "assistant" ? (
                       <View key={line.id} style={[styles.leftMessageRow, compact && styles.leftMessageRowCompact]}>
