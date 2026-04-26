@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { fetchJournalEntryById, JournalEntry, JournalMessage, rateJournalEntrySummary } from "../lib/backend-api";
 import { JournalLockGate } from "../lib/app-preferences";
@@ -60,6 +60,7 @@ function formatInsightsText(insights: string[]) {
 export default function JournalEntryViewScreen() {
   const { user } = useAuthSession();
   const { entryId } = useLocalSearchParams<{ entryId?: string }>();
+  const { width } = useWindowDimensions();
   const [entry, setEntry] = useState<JournalEntry | null>(null);
   const [messages, setMessages] = useState<JournalMessage[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
@@ -112,6 +113,12 @@ export default function JournalEntryViewScreen() {
   const hasGeneratedSummary = Boolean(aiSummaryText);
   const summaryRating = entry?.summaryRating ?? null;
   const entryTags = entry?.concernTags ?? [];
+  const compact = width < 390;
+  const narrow = width < 355;
+  const ringTopStart = compact ? 14 : 16;
+  const ringGap = compact ? 40 : 44;
+  const ruleTopStart = compact ? 48 : 52;
+  const ruleGap = compact ? 24 : 26;
 
   const handleRateSummary = useCallback(async (rating: "HELPFUL" | "NEEDS_WORK") => {
     if (!user?.studentNumber || !entry?.id || isSavingSummaryRating) {
@@ -216,13 +223,19 @@ export default function JournalEntryViewScreen() {
       </View>
 
       <JournalLockGate>
-        <View style={styles.heroCard}>
+        <View style={[styles.heroCard, compact && styles.heroCardCompact]}>
           <View style={styles.heroCopy}>
             <Text style={styles.heroEyebrow}>READ ONLY</Text>
-            <Text style={styles.heroTitle}>{formatEntryHeader(entry, createdAt)}</Text>
+            <Text style={[styles.heroTitle, compact && styles.heroTitleCompact]}>{formatEntryHeader(entry, createdAt)}</Text>
           </View>
 
-          <View style={[styles.heroStatusPill, usedChatbot && styles.heroStatusPillActive]}>
+          <View
+            style={[
+              styles.heroStatusPill,
+              usedChatbot && styles.heroStatusPillActive,
+              compact && styles.heroStatusPillCompact,
+            ]}
+          >
             <Ionicons
               name={usedChatbot ? "sparkles" : "document-text-outline"}
               size={14}
@@ -233,20 +246,20 @@ export default function JournalEntryViewScreen() {
             </Text>
           </View>
 
-          <View style={styles.metaBlock}>
+          <View style={[styles.metaBlock, compact && styles.metaBlockCompact]}>
             <Text style={styles.metaLabel}>Date</Text>
-            <Text style={styles.metaValue}>{formatEntryDateDisplay(entry?.entryDate)}</Text>
+            <Text style={[styles.metaValue, compact && styles.metaValueCompact]}>{formatEntryDateDisplay(entry?.entryDate)}</Text>
             <Text style={styles.metaLabel}>Tags</Text>
-            <View style={styles.tagRow}>
+            <View style={[styles.tagRow, compact && styles.tagRowCompact]}>
               {entryTags.length ? (
                 entryTags.map((tag) => (
-                  <View key={tag} style={styles.tagPill}>
-                    <Text style={styles.tagPillText}>{tag}</Text>
+                  <View key={tag} style={[styles.tagPill, narrow && styles.tagPillCompact]}>
+                    <Text style={[styles.tagPillText, narrow && styles.tagPillTextCompact]}>{tag}</Text>
                   </View>
                 ))
               ) : (
-                <View style={styles.tagPillMuted}>
-                  <Text style={styles.tagPillMutedText}>No tags saved</Text>
+                <View style={[styles.tagPillMuted, narrow && styles.tagPillCompact]}>
+                  <Text style={[styles.tagPillMutedText, narrow && styles.tagPillTextCompact]}>No tags saved</Text>
                 </View>
               )}
             </View>
@@ -254,34 +267,34 @@ export default function JournalEntryViewScreen() {
         </View>
 
         {usedChatbot ? (
-          <View style={styles.pageWrap}>
-            <View style={styles.notebookShell}>
-              <View style={styles.spineColumn}>
+          <View style={[styles.pageWrap, compact && styles.pageWrapCompact]}>
+            <View style={[styles.notebookShell, compact && styles.notebookShellCompact]}>
+              <View style={[styles.spineColumn, compact && styles.spineColumnCompact]}>
                 {NOTEBOOK_RINGS.map((ring) => (
-                  <View key={`ring-${ring}`} style={[styles.ringItem, { top: 16 + ring * 44 }]}>
+                  <View key={`ring-${ring}`} style={[styles.ringItem, compact && styles.ringItemCompact, { top: ringTopStart + ring * ringGap }]}>
                     <View style={styles.ringHole} />
                     <View style={styles.ringArc} />
                   </View>
                 ))}
               </View>
 
-              <View style={styles.paperCard}>
+              <View style={[styles.paperCard, compact && styles.paperCardCompact]}>
                 <View style={styles.ruleLayer} pointerEvents="none">
                   {PAPER_RULES.map((line) => (
-                    <View key={`rule-${line}`} style={[styles.ruleLine, { top: 52 + line * 26 }]} />
+                    <View key={`rule-${line}`} style={[styles.ruleLine, { top: ruleTopStart + line * ruleGap }]} />
                   ))}
                 </View>
 
-                <View style={styles.marginLine} />
+                <View style={[styles.marginLine, compact && styles.marginLineCompact]} />
 
                 <ScrollView
                   style={styles.conversationScroll}
-                  contentContainerStyle={styles.conversationContent}
+                  contentContainerStyle={[styles.conversationContent, compact && styles.conversationContentCompact]}
                   showsVerticalScrollIndicator={false}
                 >
                   {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
-                  <View style={styles.entryContentBlock}>
+                  <View style={[styles.entryContentBlock, compact && styles.notebookContentBlockCompact]}>
                     <Text style={styles.chatInsightHeading}>Journal Content</Text>
                     {paragraphs.length ? (
                       paragraphs.map((paragraph, index) => (
@@ -294,15 +307,15 @@ export default function JournalEntryViewScreen() {
                     )}
                   </View>
 
-                  <Text style={styles.chatHistoryHeading}>Chat History</Text>
+                  <Text style={[styles.chatHistoryHeading, compact && styles.chatHistoryHeadingCompact]}>Chat History</Text>
                   {messages.map((line) =>
                     line.role === "assistant" ? (
-                      <View key={line.id} style={styles.leftMessageRow}>
+                      <View key={line.id} style={[styles.leftMessageRow, compact && styles.leftMessageRowCompact]}>
                         <Text style={styles.messageRoleLabel}>Muni</Text>
                         <Text style={styles.leftMessageText}>{line.text}</Text>
                       </View>
                     ) : (
-                      <View key={line.id} style={styles.rightMessageRow}>
+                      <View key={line.id} style={[styles.rightMessageRow, compact && styles.rightMessageRowCompact]}>
                         <Text style={[styles.messageRoleLabel, styles.messageRoleLabelSelf]}>You</Text>
                         <Text style={styles.rightMessageText}>{line.text}</Text>
                       </View>
@@ -310,7 +323,7 @@ export default function JournalEntryViewScreen() {
                   )}
 
                   {hasGeneratedSummary ? (
-                    <View style={styles.chatInsightBlock}>
+                    <View style={[styles.chatInsightBlock, compact && styles.notebookContentBlockCompact]}>
                       <Text style={styles.chatInsightHeading}>AI Summary</Text>
                       <Text style={styles.chatInsightText}>{aiSummaryText}</Text>
                       {renderSummaryFeedback}
@@ -318,7 +331,7 @@ export default function JournalEntryViewScreen() {
                   ) : null}
                 </ScrollView>
 
-                <View style={styles.footnoteWrap}>
+                <View style={[styles.footnoteWrap, compact && styles.footnoteWrapCompact]}>
                   <Text style={styles.footnoteText}>
                     Read-only journal view. This entry was created with Muni and can no longer be edited.
                   </Text>
@@ -331,7 +344,7 @@ export default function JournalEntryViewScreen() {
             </View>
           </View>
         ) : (
-          <View style={styles.card}>
+          <View style={[styles.card, compact && styles.cardCompact]}>
             <ScrollView style={styles.bodyScroll} contentContainerStyle={styles.bodyContent} showsVerticalScrollIndicator={false}>
               {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
@@ -415,6 +428,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     elevation: 2,
   },
+  heroCardCompact: {
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+  },
   heroCopy: {
     marginBottom: 10,
   },
@@ -431,6 +448,11 @@ const styles = StyleSheet.create({
     fontSize: 17,
     lineHeight: 23,
     fontWeight: "700",
+    flexShrink: 1,
+  },
+  heroTitleCompact: {
+    fontSize: 15.5,
+    lineHeight: 21,
   },
   heroStatusPill: {
     alignSelf: "flex-start",
@@ -443,6 +465,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     columnGap: 6,
     paddingHorizontal: 10,
+  },
+  heroStatusPillCompact: {
+    paddingHorizontal: 9,
   },
   heroStatusPillActive: {
     backgroundColor: "#EBF7E0",
@@ -461,6 +486,10 @@ const styles = StyleSheet.create({
     marginTop: 12,
     rowGap: 6,
   },
+  metaBlockCompact: {
+    marginTop: 10,
+    rowGap: 5,
+  },
   metaLabel: {
     color: "#6E8174",
     fontSize: 10,
@@ -474,11 +503,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     fontWeight: "700",
+    flexShrink: 1,
+  },
+  metaValueCompact: {
+    fontSize: 12.5,
+    lineHeight: 17,
   },
   tagRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
+    alignItems: "flex-start",
+  },
+  tagRowCompact: {
+    gap: 6,
   },
   tagPill: {
     borderRadius: 999,
@@ -487,18 +525,29 @@ const styles = StyleSheet.create({
     backgroundColor: "#F0FAE8",
     paddingHorizontal: 10,
     paddingVertical: 6,
+    maxWidth: "100%",
+  },
+  tagPillCompact: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
   },
   tagPillText: {
     color: "#2F6F28",
     fontSize: 11,
     lineHeight: 15,
     fontWeight: "800",
+    flexShrink: 1,
+  },
+  tagPillTextCompact: {
+    fontSize: 10.5,
+    lineHeight: 14,
   },
   tagPillMuted: {
     borderRadius: 999,
     backgroundColor: "#F1F4F5",
     paddingHorizontal: 10,
     paddingVertical: 6,
+    maxWidth: "100%",
   },
   tagPillMutedText: {
     color: "#687783",
@@ -516,12 +565,18 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 5 },
     elevation: 4,
   },
+  pageWrapCompact: {
+    borderRadius: 22,
+  },
   notebookShell: {
     flex: 1,
     backgroundColor: "#78C654",
     borderRadius: 24,
     padding: 5,
     flexDirection: "row",
+  },
+  notebookShellCompact: {
+    padding: 4,
   },
   spineColumn: {
     width: 30,
@@ -530,12 +585,18 @@ const styles = StyleSheet.create({
     backgroundColor: "#D7EEBE",
     position: "relative",
   },
+  spineColumnCompact: {
+    width: 24,
+  },
   ringItem: {
     position: "absolute",
     left: 1,
     width: 32,
     height: 20,
     justifyContent: "center",
+  },
+  ringItemCompact: {
+    width: 26,
   },
   ringHole: {
     width: 8,
@@ -567,6 +628,12 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     position: "relative",
   },
+  paperCardCompact: {
+    borderRadius: 16,
+    paddingTop: 12,
+    paddingHorizontal: 12,
+    paddingBottom: 9,
+  },
   ruleLayer: {
     position: "absolute",
     top: 0,
@@ -589,6 +656,9 @@ const styles = StyleSheet.create({
     width: 1,
     backgroundColor: "#E7BFC2",
   },
+  marginLineCompact: {
+    left: 24,
+  },
   conversationScroll: {
     flex: 1,
   },
@@ -597,11 +667,19 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     rowGap: 8,
   },
+  conversationContentCompact: {
+    paddingBottom: 12,
+    rowGap: 7,
+  },
   leftMessageRow: {
     maxWidth: "84%",
     alignSelf: "flex-start",
     marginLeft: 22,
     marginBottom: 4,
+  },
+  leftMessageRowCompact: {
+    maxWidth: "88%",
+    marginLeft: 16,
   },
   leftMessageText: {
     color: "#2D3B4D",
@@ -626,6 +704,9 @@ const styles = StyleSheet.create({
     alignSelf: "flex-end",
     marginBottom: 4,
   },
+  rightMessageRowCompact: {
+    maxWidth: "84%",
+  },
   rightMessageText: {
     color: "#2D3B4D",
     fontSize: 15,
@@ -642,6 +723,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#F4F9EF",
     borderWidth: 1,
     borderColor: "#DEEBD3",
+  },
+  notebookContentBlockCompact: {
+    marginLeft: 16,
+    marginRight: 6,
+    padding: 12,
   },
   chatInsightHeading: {
     color: "#34475A",
@@ -679,6 +765,9 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     fontWeight: "700",
   },
+  chatHistoryHeadingCompact: {
+    marginLeft: 16,
+  },
   footnoteWrap: {
     minHeight: 38,
     justifyContent: "center",
@@ -687,6 +776,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#EBEFE5",
     paddingTop: 8,
+  },
+  footnoteWrapCompact: {
+    paddingRight: 36,
   },
   footnoteText: {
     color: "#5D6C76",
@@ -725,6 +817,11 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
     elevation: 3,
+  },
+  cardCompact: {
+    borderRadius: 22,
+    paddingHorizontal: 12,
+    paddingTop: 11,
   },
   bodyScroll: {
     flex: 1,
