@@ -21,7 +21,8 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 const MICROPHONE_IMAGE = require("../../assets/images/microphone_sample.png");
-const MUNI_NAV_IMAGE = require("../../assets/images/MUNI_OutlineHalf.png");
+const MUNI_NAV_ACTIVE_IMAGE = require("../../assets/images/MUNI_Active.png");
+const MUNI_NAV_INACTIVE_IMAGE = require("../../assets/images/MUNI_Outline.png");
 
 type HomeBottomNavProps = {
   activeTab?: TabKey;
@@ -79,11 +80,8 @@ export function HomeBottomNav({ activeTab, transparent = false }: HomeBottomNavP
         >
           {item.key === "muni" ? (
             <Image
-              source={MUNI_NAV_IMAGE}
-              style={[
-                styles.navMuniImage,
-                isActive ? styles.navMuniImageActive : styles.navMuniImageInactive,
-              ]}
+              source={isActive ? MUNI_NAV_ACTIVE_IMAGE : MUNI_NAV_INACTIVE_IMAGE}
+              style={styles.navMuniImage}
               resizeMode="contain"
             />
           ) : (
@@ -95,7 +93,6 @@ export function HomeBottomNav({ activeTab, transparent = false }: HomeBottomNavP
           )}
         </View>
         <Text style={[styles.navLabel, isActive && styles.navLabelActive]}>{item.label}</Text>
-        {isActive ? <View style={styles.navActiveDot} /> : null}
       </Pressable>
     );
   };
@@ -242,12 +239,6 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
   },
-  navMuniImageActive: {
-    tintColor: "#3F7A28",
-  },
-  navMuniImageInactive: {
-    tintColor: "#66737F",
-  },
   navLabel: {
     color: "#6A7681",
     fontSize: 11.5,
@@ -302,14 +293,6 @@ const styles = StyleSheet.create({
   centerMicImage: {
     width: 32,
     height: 32,
-  },
-  navActiveDot: {
-    position: "absolute",
-    bottom: 5,
-    width: 5,
-    height: 5,
-    borderRadius: 999,
-    backgroundColor: "#72C548",
   },
 });
 
