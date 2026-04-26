@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -23,14 +24,17 @@ import {
   createJournalSession,
   discardEmptyJournalEntry,
   discardJournalEntry,
+  fetchDailyMood,
   fetchTodayJournalSession,
   finishJournalEntry,
   JournalEntry,
   JournalMessage,
   saveJournalSupportResponse,
+  saveDailyMood,
   sendJournalMessage,
   suggestJournalTags,
 } from "../lib/backend-api";
+import { EMOTIONS } from "../lib/emotions";
 import { getManilaTodayParts } from "../lib/manila-date";
 
 const NOTEBOOK_RINGS = Array.from({ length: 12 }, (_, index) => index);
@@ -125,12 +129,33 @@ export default function WriteEntryScreen() {
   const [isAnalyzingTags, setIsAnalyzingTags] = useState(false);
   const [isSavingTags, setIsSavingTags] = useState(false);
   const [isSavingSupportResponse, setIsSavingSupportResponse] = useState(false);
+  const [selectedJournalEmotionId, setSelectedJournalEmotionId] = useState(EMOTIONS[0]?.id ?? "");
+  const [isSavingJournalEmotion, setIsSavingJournalEmotion] = useState(false);
+  const [showEmotionPicker, setShowEmotionPicker] = useState(false);
+
+  const selectedJournalEmotion = useMemo(
+    () => EMOTIONS.find((emotion) => emotion.id === selectedJournalEmotionId) ?? EMOTIONS[0],
+    [selectedJournalEmotionId],
+  );
+
+  const loadJournalEmotion = useCallback(async () => {
+    if (!user?.studentNumber) {
+      setSelectedJournalEmotionId(EMOTIONS[0]?.id ?? "");
+      return;
+    }
+
+    const result = await fetchDailyMood(user.studentNumber, getManilaTodayParts().isoDate);
+    if (result.ok && result.entry?.moodId) {
+      setSelectedJournalEmotionId(result.entry.moodId);
+    }
+  }, [user?.studentNumber]);
 
   const loadJournalSession = useCallback(async () => {
     if (!user?.studentNumber) {
       setMessages([]);
       setEntry(null);
       setIsLoading(false);
+      void loadJournalEmotion();
       return;
     }
 
@@ -159,6 +184,7 @@ export default function WriteEntryScreen() {
       setEntry(createResult.entry ?? null);
       setMessages(createResult.messages ?? []);
       setAiEnabled(createResult.entry?.aiEnabled ?? true);
+      void loadJournalEmotion();
       setIsLoading(false);
       return;
     }
@@ -179,8 +205,9 @@ export default function WriteEntryScreen() {
     setEntry(result.entry ?? null);
     setMessages(result.messages ?? []);
     setAiEnabled(result.entry?.aiEnabled ?? true);
+    void loadJournalEmotion();
     setIsLoading(false);
-  }, [mode, user?.studentNumber]);
+  }, [loadJournalEmotion, mode, user?.studentNumber]);
 
   useFocusEffect(
     useCallback(() => {
@@ -330,6 +357,28 @@ export default function WriteEntryScreen() {
     setMessages(result.messages ?? []);
     setAiEnabled(result.entry?.aiEnabled ?? aiEnabled);
     setIsLoading(false);
+  };
+
+  const handleSelectJournalEmotion = async (emotionId: string) => {
+    if (!user?.studentNumber || !canWrite || isSavingJournalEmotion) return;
+
+    setSelectedJournalEmotionId(emotionId);
+    setIsSavingJournalEmotion(true);
+    setErrorMessage("");
+
+    const result = await saveDailyMood(user.studentNumber, emotionId, getManilaTodayParts().isoDate);
+    setIsSavingJournalEmotion(false);
+
+    if (!result.ok) {
+      setErrorMessage(result.message ?? "Unable to save your emotion right now.");
+      return;
+    }
+
+    if (result.entry?.moodId) {
+      setSelectedJournalEmotionId(result.entry.moodId);
+    }
+
+    setShowEmotionPicker(false);
   };
 
   const toggleSelectedTag = (tag: string) => {
@@ -739,6 +788,25 @@ export default function WriteEntryScreen() {
 
           <Pressable
             style={[
+              styles.emotionMenuButton,
+              selectedJournalEmotion && { borderColor: selectedJournalEmotion.color },
+              (!canWrite || isSavingJournalEmotion) && styles.emotionMenuButtonDisabled,
+            ]}
+            onPress={() => setShowEmotionPicker(true)}
+            disabled={!canWrite || isSavingJournalEmotion}
+            accessibilityLabel="Choose journal emotion"
+          >
+            {isSavingJournalEmotion ? (
+              <ActivityIndicator color="#5AA63D" size="small" />
+            ) : selectedJournalEmotion?.image ? (
+              <Image source={selectedJournalEmotion.image} style={styles.emotionMenuImage} resizeMode="contain" />
+            ) : (
+              <Ionicons name="menu-outline" size={20} color="#53685A" />
+            )}
+          </Pressable>
+
+          <Pressable
+            style={[
               styles.sendButton,
               (isSending || isAiRetryLocked || !canWrite) && styles.sendButtonDisabled,
             ]}
@@ -798,6 +866,64 @@ export default function WriteEntryScreen() {
             <Text style={styles.newEntryButtonText}>Start New Entry</Text>
           </Pressable>
         ) : null}
+
+        <Modal
+          visible={showEmotionPicker}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowEmotionPicker(false)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={[styles.modalCard, styles.emotionPickerModalCard]}>
+              <View style={styles.emotionPickerHeader}>
+                <View>
+                  <Text style={styles.concernTitle}>Choose emotion</Text>
+                  <Text style={styles.concernSubtitle}>Save how this entry feels today.</Text>
+                </View>
+                <Pressable
+                  style={styles.emotionPickerCloseButton}
+                  onPress={() => setShowEmotionPicker(false)}
+                  accessibilityLabel="Close emotion picker"
+                >
+                  <Ionicons name="close" size={18} color="#687787" />
+                </Pressable>
+              </View>
+
+              <View style={styles.emotionPickerGrid}>
+                {EMOTIONS.map((emotion) => {
+                  const selected = selectedJournalEmotionId === emotion.id;
+                  return (
+                    <Pressable
+                      key={emotion.id}
+                      style={[styles.emotionPickerOption, selected && styles.emotionPickerOptionSelected]}
+                      onPress={() => {
+                        void handleSelectJournalEmotion(emotion.id);
+                      }}
+                      disabled={isSavingJournalEmotion}
+                    >
+                      <View
+                        style={[
+                          styles.emotionPickerIcon,
+                          { borderColor: emotion.color },
+                          selected && { backgroundColor: emotion.color },
+                        ]}
+                      >
+                        {emotion.image ? (
+                          <Image source={emotion.image} style={styles.emotionPickerImage} resizeMode="contain" />
+                        ) : (
+                          <View style={[styles.emotionPickerFallback, { backgroundColor: emotion.color }]} />
+                        )}
+                      </View>
+                      <Text style={[styles.emotionPickerLabel, selected && styles.emotionPickerLabelSelected]} numberOfLines={1}>
+                        {emotion.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          </View>
+        </Modal>
 
         <Modal
           visible={showRiskModal}
@@ -1370,6 +1496,23 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     paddingVertical: 0,
   },
+  emotionMenuButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor: "#D9E6D2",
+    backgroundColor: "#F7FAF4",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emotionMenuButtonDisabled: {
+    opacity: 0.6,
+  },
+  emotionMenuImage: {
+    width: 32,
+    height: 32,
+  },
   sendButton: {
     width: 44,
     height: 44,
@@ -1409,6 +1552,74 @@ const styles = StyleSheet.create({
   },
   concernModalCard: {
     maxWidth: 360,
+  },
+  emotionPickerModalCard: {
+    maxWidth: 360,
+  },
+  emotionPickerHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    columnGap: 12,
+  },
+  emotionPickerCloseButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    backgroundColor: "#F2F5F0",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emotionPickerGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    rowGap: 10,
+  },
+  emotionPickerOption: {
+    width: "48.5%",
+    minHeight: 56,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#D4DED0",
+    backgroundColor: "#FFFFFF",
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  emotionPickerOptionSelected: {
+    borderColor: "#7BCB46",
+    backgroundColor: "#F1FAEA",
+  },
+  emotionPickerIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emotionPickerImage: {
+    width: 26,
+    height: 26,
+  },
+  emotionPickerFallback: {
+    width: 18,
+    height: 18,
+    borderRadius: 999,
+  },
+  emotionPickerLabel: {
+    flex: 1,
+    color: "#3E556B",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
+  },
+  emotionPickerLabelSelected: {
+    color: "#2E6B23",
   },
   tagReviewModalCard: {
     maxWidth: 380,
