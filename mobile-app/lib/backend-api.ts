@@ -284,7 +284,7 @@ export async function saveDailyMood(
   studentNumber: string,
   moodId: string,
   moodDate?: string,
-): Promise<ApiResult & { entry?: { moodDate: string; moodId: string; moodLabel: string } }> {
+): Promise<ApiResult & { entry?: { createdAt?: string; id?: string; moodDate: string; moodId: string; moodLabel: string } }> {
   const { response, data } = await post("/api/moods", {
     studentNumber,
     moodId,
@@ -301,7 +301,12 @@ export async function saveDailyMood(
 export async function fetchDailyMood(
   studentNumber: string,
   moodDate?: string,
-): Promise<ApiResult & { entry?: { moodDate: string; moodId: string; moodLabel: string } | null }> {
+): Promise<
+  ApiResult & {
+    entries?: Array<{ createdAt?: string; id?: string; moodDate: string; moodId: string; moodLabel: string }>;
+    entry?: { createdAt?: string; id?: string; moodDate: string; moodId: string; moodLabel: string } | null;
+  }
+> {
   const params = new URLSearchParams({ studentNumber });
   if (moodDate) {
     params.set("moodDate", moodDate);
@@ -311,6 +316,7 @@ export async function fetchDailyMood(
   return {
     ok: response.ok,
     message: data?.message,
+    entries: Array.isArray(data?.entries) ? data.entries : [],
     entry: data?.entry ?? null,
   };
 }
@@ -322,7 +328,7 @@ export async function fetchMonthlyMoods(
 ): Promise<
   ApiResult & {
     counts?: Record<string, number>;
-    entries?: Array<{ moodDate: string; moodId: string; moodLabel: string }>;
+    entries?: Array<{ createdAt?: string; id?: string; moodDate: string; moodId: string; moodLabel: string }>;
     mostCommonMoodId?: string | null;
     mostCommonMoodLabel?: string | null;
     totalCheckIns?: number;

@@ -19,6 +19,7 @@ type MoodStat = {
 
 type CalendarDay = {
   isOutsideMonth?: boolean;
+  checkInCount?: number;
   dayNumber: number | null;
   moodId: string | null;
   state: "empty" | "future" | "mood";
@@ -55,7 +56,7 @@ export default function MoodOverviewScreen() {
   }, [now]);
   const [displayYear, setDisplayYear] = useState(initialMonth.year);
   const [displayMonthIndex, setDisplayMonthIndex] = useState(initialMonth.monthIndex);
-  const [monthlyEntries, setMonthlyEntries] = useState<{ moodDate: string; moodId: string; moodLabel: string }[]>([]);
+  const [monthlyEntries, setMonthlyEntries] = useState<{ createdAt?: string; id?: string; moodDate: string; moodId: string; moodLabel: string }[]>([]);
   const [monthlyCounts, setMonthlyCounts] = useState<Record<string, number>>(() => createEmotionCounts());
   const [mostCommonMoodId, setMostCommonMoodId] = useState<string | null>(null);
   const [totalCheckIns, setTotalCheckIns] = useState(0);
@@ -118,11 +119,15 @@ export default function MoodOverviewScreen() {
     (displayYear === now.year && displayMonthIndex > now.monthIndex);
 
   const entriesByDay = useMemo(() => {
-    const map = new Map<number, string>();
+    const map = new Map<number, { count: number; latestMoodId: string }>();
     monthlyEntries.forEach((entry) => {
       const day = getDayFromMoodDate(entry.moodDate);
       if (day) {
-        map.set(day, entry.moodId);
+        const current = map.get(day);
+        map.set(day, {
+          count: (current?.count ?? 0) + 1,
+          latestMoodId: entry.moodId,
+        });
       }
     });
     return map;
@@ -138,9 +143,11 @@ export default function MoodOverviewScreen() {
     }
 
     for (let dayNumber = 1; dayNumber <= totalDaysInMonth; dayNumber += 1) {
-      const moodId = entriesByDay.get(dayNumber) ?? null;
+      const dayEntry = entriesByDay.get(dayNumber);
+      const moodId = dayEntry?.latestMoodId ?? null;
       const isFutureDay = viewedMonthKey === todayMonthKey && dayNumber > todayDay;
       days.push({
+        checkInCount: dayEntry?.count ?? 0,
         dayNumber,
         isOutsideMonth: false,
         moodId,
@@ -188,11 +195,13 @@ export default function MoodOverviewScreen() {
 
   const mostCommonMood = mostCommonMoodId ? EMOTION_META[mostCommonMoodId] ?? null : null;
   const emotionCheckInLabel = `${totalCheckIns} emotion ${totalCheckIns === 1 ? "check-in" : "check-ins"}`;
+  const activeEmotionDays = entriesByDay.size;
+  const multiCheckInDays = [...entriesByDay.values()].filter((item) => item.count > 1).length;
   const insightText =
     totalCheckIns <= 0
       ? "Start checking in with your emotions and your monthly patterns will appear here."
       : mostCommonMood?.label
-        ? `You've been checking in regularly. Your most common emotion this month has been "${mostCommonMood.label}".`
+        ? `Muni counted ${emotionCheckInLabel.toLowerCase()} across ${activeEmotionDays} ${activeEmotionDays === 1 ? "day" : "days"}. Your most common emotion this month is "${mostCommonMood.label}"${multiCheckInDays ? `, with ${multiCheckInDays} ${multiCheckInDays === 1 ? "day" : "days"} showing more than one check-in.` : "."}`
         : "You've been checking in regularly. Keep tracking your emotions to notice patterns.";
 
   return (
@@ -297,6 +306,11 @@ export default function MoodOverviewScreen() {
                     >
                       {day.dayNumber}
                     </Text>
+                    {day.state === "mood" && Number(day.checkInCount || 0) > 1 ? (
+                      <View style={styles.dayCountBadge}>
+                        <Text style={styles.dayCountBadgeText}>{day.checkInCount}</Text>
+                      </View>
+                    ) : null}
                   </View>
                   )}
                 </View>
@@ -564,6 +578,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
     borderColor: "#8BCB68",
+    position: "relative",
   },
   dayCircleFuture: {
     backgroundColor: "#D7DADF",
@@ -597,6 +612,26 @@ const styles = StyleSheet.create({
   },
   dayNumberOutsideMonth: {
     color: "#8D96A0",
+  },
+  dayCountBadge: {
+    position: "absolute",
+    right: -4,
+    top: -5,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#6AAF43",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 3,
+  },
+  dayCountBadgeText: {
+    color: "#2E6B23",
+    fontSize: 9,
+    lineHeight: 11,
+    fontWeight: "800",
   },
   insightCard: {
     borderRadius: 22,

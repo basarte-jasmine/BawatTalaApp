@@ -188,9 +188,18 @@ async function ensureDatabaseSchema() {
       mood_label text not null,
       mood_date date not null,
       created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now(),
-      constraint student_moods_student_date_unique unique (student_number, mood_date)
+      updated_at timestamptz not null default now()
     );
+  `);
+
+  await pool.query(`
+    alter table public.student_moods
+    drop constraint if exists student_moods_student_date_unique;
+  `);
+
+  await pool.query(`
+    create index if not exists student_moods_student_date_created_idx
+      on public.student_moods (student_number, mood_date, created_at desc);
   `);
 
   await pool.query(`

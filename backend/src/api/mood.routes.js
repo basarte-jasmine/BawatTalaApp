@@ -70,12 +70,12 @@ router.get("/month", async (req, res) => {
   try {
     const result = await query(
       `
-        select mood_id, mood_label, to_char(mood_date, 'YYYY-MM-DD') as mood_date
+        select id, mood_id, mood_label, to_char(mood_date, 'YYYY-MM-DD') as mood_date, created_at
         from public.student_moods
         where student_number = $1
           and mood_date >= $2::date
           and mood_date < $3::date
-        order by mood_date asc
+        order by mood_date asc, created_at asc
       `,
       [studentNumber, monthStart, nextMonth],
     );
@@ -89,6 +89,8 @@ router.get("/month", async (req, res) => {
       }
 
       return {
+        id: row.id,
+        createdAt: row.created_at,
         moodId,
         moodLabel: row.mood_label,
         moodDate: formatMoodDateValue(row.mood_date),
@@ -122,24 +124,26 @@ router.get("/today", async (req, res) => {
   try {
     const result = await query(
       `
-        select mood_id, mood_label, to_char(mood_date, 'YYYY-MM-DD') as mood_date
+        select id, mood_id, mood_label, to_char(mood_date, 'YYYY-MM-DD') as mood_date, created_at
         from public.student_moods
         where student_number = $1
           and mood_date = $2::date
-        limit 1
+        order by created_at desc
       `,
       [studentNumber, moodDate],
     );
 
-    const row = result.rows[0];
+    const entries = result.rows.map((row) => ({
+      id: row.id,
+      createdAt: row.created_at,
+      moodId: normalizeMoodId(row.mood_id),
+      moodLabel: row.mood_label,
+      moodDate: formatMoodDateValue(row.mood_date),
+    }));
+    const row = entries[0];
     return res.json({
-      entry: row
-        ? {
-            moodId: normalizeMoodId(row.mood_id),
-            moodLabel: row.mood_label,
-            moodDate: formatMoodDateValue(row.mood_date),
-          }
-        : null,
+      entry: row || null,
+      entries,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message || "Failed to fetch today's emotion." });
@@ -168,16 +172,10 @@ router.post("/", async (req, res) => {
           student_number,
           mood_id,
           mood_label,
-          mood_date,
-          updated_at
+          mood_date
         )
-        values ($1, $2, $3, $4::date, now())
-        on conflict (student_number, mood_date)
-        do update set
-          mood_id = excluded.mood_id,
-          mood_label = excluded.mood_label,
-          updated_at = now()
-        returning mood_id, mood_label, to_char(mood_date, 'YYYY-MM-DD') as mood_date
+        values ($1, $2, $3, $4::date)
+        returning id, mood_id, mood_label, to_char(mood_date, 'YYYY-MM-DD') as mood_date, created_at
       `,
       [studentNumber, moodId, EMOTION_LABELS[moodId], moodDate],
     );
@@ -185,6 +183,8 @@ router.post("/", async (req, res) => {
     const row = result.rows[0];
     return res.json({
       entry: {
+        id: row.id,
+        createdAt: row.created_at,
         moodId: normalizeMoodId(row.mood_id),
         moodLabel: row.mood_label,
         moodDate: formatMoodDateValue(row.mood_date),

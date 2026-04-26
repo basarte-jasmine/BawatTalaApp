@@ -665,10 +665,8 @@ export default function HomeScreen() {
     }, [loadCheckInStatus, loadNotifications, loadRecentEntries, loadTodayMood, loadUpcomingAppointment]),
   );
 
-  const isMoodLocked = Boolean(selectedMoodId);
-
   const handleMoodSelect = (moodId: string) => {
-    if (!user?.studentNumber || isMoodLocked) {
+    if (!user?.studentNumber) {
       return;
     }
 
@@ -1093,11 +1091,9 @@ export default function HomeScreen() {
             {EMOTIONS.map((mood, index) => (
               <View key={mood.label} style={styles.moodItem}>
                 <Pressable
-                  disabled={isMoodLocked && selectedMoodId !== mood.id}
                   onPress={() => handleMoodSelect(mood.id)}
                   onPressIn={() => handleMoodPressIn(index)}
                   onPressOut={() => handleMoodPressOut(index)}
-                  style={isMoodLocked && selectedMoodId !== mood.id ? styles.moodButtonDisabled : undefined}
                 >
                   <Animated.View
                     style={[
@@ -1694,7 +1690,7 @@ export default function HomeScreen() {
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalBody}>Save this as your emotion for today?</Text>
+            <Text style={styles.modalBody}>Add this emotion to today&apos;s check-ins?</Text>
 
             <View style={styles.modalActions}>
               <Pressable style={styles.modalSecondaryButton} onPress={handleCancelMoodConfirm}>
