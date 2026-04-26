@@ -1,21 +1,32 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  getNotificationDetailTitle,
+  getNotificationFallbackRoute,
+  getNotificationVisual,
+} from "../lib/notification-utils";
 
 export default function NotificationViewScreen() {
-  const { createdAt, message, timeLabel, title } = useLocalSearchParams<{
+  const { createdAt, kind, message, timeLabel, title } = useLocalSearchParams<{
     createdAt?: string;
+    kind?: string;
     message?: string;
     timeLabel?: string;
     title?: string;
   }>();
+
+  const detailTitle = getNotificationDetailTitle(kind);
+  const bodyLabel = detailTitle === "Message" ? "Message body" : "Update details";
+  const visual = getNotificationVisual(kind || "");
 
   const handleBack = () => {
     if (router.canGoBack()) {
       router.back();
       return;
     }
-    router.replace("/notifications");
+    router.replace(getNotificationFallbackRoute(kind));
   };
 
   const formattedCreatedAt = createdAt
@@ -30,22 +41,35 @@ export default function NotificationViewScreen() {
     : timeLabel || "";
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <SafeAreaView style={styles.screen} edges={["top"]}>
       <View style={styles.topBar}>
         <Pressable style={styles.backButton} accessibilityLabel="Go back" onPress={handleBack}>
-          <Ionicons name="chevron-back" size={28} color="#37424F" />
+          <Ionicons name="chevron-back" size={28} color="#34424F" />
         </Pressable>
-        <Text style={styles.topTitle}>Notification</Text>
+        <Text style={styles.topTitle}>{detailTitle}</Text>
         <View style={styles.topBarSpacer} />
       </View>
 
-      <View style={styles.content}>
-        <Text style={styles.title}>{title || "Notification"}</Text>
-        <Text style={styles.meta}>{formattedCreatedAt}</Text>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.heroCard}>
+          <View style={[styles.heroIconBubble, { backgroundColor: visual.chip }]}>
+            <Ionicons name={visual.icon} size={20} color={visual.accent} />
+          </View>
+
+          <View style={styles.heroTextWrap}>
+            <View style={[styles.kindChip, { backgroundColor: visual.chip }]}>
+              <Text style={[styles.kindChipText, { color: visual.accent }]}>{visual.label}</Text>
+            </View>
+            <Text style={styles.title}>{title || detailTitle}</Text>
+            <Text style={styles.meta}>{formattedCreatedAt}</Text>
+          </View>
+        </View>
+
         <View style={styles.bodyCard}>
+          <Text style={styles.bodyLabel}>{bodyLabel}</Text>
           <Text style={styles.bodyText}>{message || "No details available."}</Text>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -53,21 +77,23 @@ export default function NotificationViewScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#ECECEC",
+    backgroundColor: "#F7FAF5",
   },
   topBar: {
-    height: 52,
+    minHeight: 58,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
     borderBottomWidth: 1,
-    borderBottomColor: "#D3D5D7",
-    backgroundColor: "#FFFFFF",
+    borderBottomColor: "#E0E7DD",
+    backgroundColor: "rgba(250, 252, 249, 0.98)",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 4,
   },
   backButton: {
-    width: 36,
-    height: 36,
+    width: 40,
+    height: 40,
+    borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -78,17 +104,59 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   topBarSpacer: {
-    width: 36,
-    height: 36,
+    width: 40,
+    height: 40,
+  },
+  scroll: {
+    flex: 1,
   },
   content: {
     paddingHorizontal: 14,
     paddingTop: 18,
+    paddingBottom: 28,
+    rowGap: 14,
+  },
+  heroCard: {
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "#DDE9D8",
+    backgroundColor: "#F8FCF7",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    columnGap: 12,
+  },
+  heroIconBubble: {
+    width: 44,
+    height: 44,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+  heroTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  kindChip: {
+    minHeight: 24,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    alignSelf: "flex-start",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  kindChipText: {
+    fontSize: 11.5,
+    lineHeight: 14,
+    fontWeight: "700",
   },
   title: {
     color: "#33475B",
-    fontSize: 24,
-    lineHeight: 30,
+    fontSize: 22,
+    lineHeight: 28,
     fontWeight: "700",
   },
   meta: {
@@ -98,15 +166,25 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   bodyCard: {
-    marginTop: 18,
-    borderRadius: 16,
+    borderRadius: 22,
     backgroundColor: "#FFFFFF",
     paddingHorizontal: 16,
     paddingVertical: 18,
+    borderWidth: 1,
+    borderColor: "#E2E9E4",
+  },
+  bodyLabel: {
+    color: "#6A875A",
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    marginBottom: 8,
   },
   bodyText: {
     color: "#384A5E",
-    fontSize: 18,
-    lineHeight: 28,
+    fontSize: 17,
+    lineHeight: 27,
   },
 });

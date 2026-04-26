@@ -19,6 +19,7 @@ import {
 import { EMOTIONS } from "../lib/emotions";
 import { FEATURED_LIBRARY_BOOKS, LIBRARY_BOOKS } from "../lib/library-data";
 import { getManilaTodayParts } from "../lib/manila-date";
+import { isAdminMessageNotification } from "../lib/notification-utils";
 
 type DailyCheckinReward = {
   id: string;
@@ -192,7 +193,7 @@ export default function HomeScreen() {
   const tiny = height < 680;
   const libraryCompact = width < 380;
   const frameWidth = Math.min(width, 412);
-  const headerHeight = tiny ? 58 : 62;
+  const headerHeight = tiny ? 72 : compact ? 78 : 84;
   const islandSceneHeight = tiny ? 218 : compact ? 238 : 256;
   const waterSceneHeight = Math.max(520, Math.round(height * 0.95));
   const rewardGap = 4;
@@ -224,6 +225,7 @@ export default function HomeScreen() {
   const [waterZoneStartY, setWaterZoneStartY] = useState<number | null>(null);
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [upcomingAppointment, setUpcomingAppointment] = useState<Awaited<ReturnType<typeof fetchStudentAppointments>>["upcomingAppointment"]>(null);
+  const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
   const headerSwitchOn = tiny ? 188 : compact ? 208 : 236;
   const headerSwitchOff = tiny ? 154 : compact ? 174 : 202;
@@ -625,17 +627,25 @@ export default function HomeScreen() {
 
   const loadNotifications = useCallback(async () => {
     if (!user?.studentNumber) {
+      setHasUnreadMessages(false);
       setHasUnreadNotifications(false);
       return;
     }
 
     const result = await fetchStudentNotifications(user.studentNumber);
     if (!result.ok) {
+      setHasUnreadMessages(false);
       setHasUnreadNotifications(false);
       return;
     }
 
-    setHasUnreadNotifications((result.unreadCount ?? 0) > 0);
+    const notifications = Array.isArray(result.notifications) ? result.notifications : [];
+    setHasUnreadMessages(
+      notifications.some((item) => !item.isRead && isAdminMessageNotification(item)),
+    );
+    setHasUnreadNotifications(
+      notifications.some((item) => !item.isRead && !isAdminMessageNotification(item)),
+    );
   }, [user?.studentNumber]);
 
   const displayedRecentEntries =
@@ -903,22 +913,48 @@ export default function HomeScreen() {
           accessibilityLabel="Open profile"
           onPress={() => router.push("/profile")}
         >
-          <View style={[styles.avatarCircle, hasScrolled ? styles.avatarCircleScrolled : styles.avatarCircleTop]}>
-            <Ionicons name="person-outline" size={18} color="#5D5D5D" />
+          <View style={[styles.headerProfileCard, hasScrolled ? styles.headerProfileCardScrolled : styles.headerProfileCardTop]}>
+            <View style={[styles.avatarCircle, hasScrolled ? styles.avatarCircleScrolled : styles.avatarCircleTop]}>
+              <Ionicons name="person-outline" size={18} color="#496453" />
+            </View>
+            <View style={styles.headerGreetingWrap}>
+              <Text style={styles.headerGreetingEyebrow}>Welcome back</Text>
+              <Text style={styles.headerGreetingName} numberOfLines={1}>
+                {user?.firstName || "Friend"}
+              </Text>
+            </View>
           </View>
-          <Text style={[styles.greetingText, hasScrolled ? styles.greetingTextScrolled : styles.greetingTextTop]}>
-            Hello, <Text style={[styles.userText, hasScrolled ? styles.userTextScrolled : styles.userTextTop]}>{user?.firstName || "User"}</Text>
-          </Text>
         </Pressable>
 
-        <Pressable
-          style={styles.headerActionButton}
-          accessibilityLabel="Open notifications"
-          onPress={() => router.push("/notifications")}
-        >
-          <Ionicons name="notifications-outline" size={22} color={hasScrolled ? "#2D3034" : "#2E4A39"} />
-          {hasUnreadNotifications ? <View style={styles.notificationDot} /> : null}
-        </Pressable>
+        <View style={[styles.headerActionCluster, hasScrolled ? styles.headerActionClusterScrolled : styles.headerActionClusterTop]}>
+          <Pressable
+            style={styles.headerActionButton}
+            accessibilityLabel="Open messages"
+            onPress={() => router.push("/messages")}
+          >
+            <Ionicons
+              name={hasUnreadMessages ? "mail-unread-outline" : "mail-outline"}
+              size={20}
+              color="#466B57"
+            />
+            {hasUnreadMessages ? <View style={styles.headerActionBadge} /> : null}
+          </Pressable>
+
+          <View style={styles.headerActionDivider} />
+
+          <Pressable
+            style={styles.headerActionButton}
+            accessibilityLabel="Open notifications"
+            onPress={() => router.push("/notifications")}
+          >
+            <Ionicons
+              name={hasUnreadNotifications ? "notifications" : "notifications-outline"}
+              size={20}
+              color="#556370"
+            />
+            {hasUnreadNotifications ? <View style={styles.headerActionBadge} /> : null}
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView
@@ -1799,9 +1835,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 8,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 10,
     zIndex: 20,
     position: "absolute",
     top: 0,
@@ -1810,12 +1846,14 @@ const styles = StyleSheet.create({
   },
   stickyHeaderTop: {
     backgroundColor: "transparent",
-    borderBottomWidth: 0,
   },
   stickyHeaderScrolled: {
-    backgroundColor: "#FFFFFF",
-    borderBottomWidth: 1,
-    borderBottomColor: "#E2E2E2",
+    backgroundColor: "rgba(247, 250, 246, 0.96)",
+    shadowColor: "#627164",
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
   },
   contentScroll: {
     flex: 1,
@@ -1866,13 +1904,37 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
   headerLeft: {
+    flex: 1,
+    minWidth: 0,
+    marginRight: 12,
+  },
+  headerProfileCard: {
     flexDirection: "row",
     alignItems: "center",
     columnGap: 10,
+    minHeight: 52,
+    paddingLeft: 8,
+    paddingRight: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    shadowColor: "#6B7A69",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  headerProfileCardTop: {
+    backgroundColor: "rgba(248, 251, 246, 0.86)",
+    borderColor: "rgba(83, 116, 91, 0.18)",
+  },
+  headerProfileCardScrolled: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#DCE8DD",
   },
   avatarCircle: {
-    width: 28,
-    height: 28,
+    width: 36,
+    height: 36,
     borderRadius: 999,
     borderWidth: 1,
     alignItems: "center",
@@ -1880,48 +1942,75 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
   },
   avatarCircleTop: {
-    borderColor: "#5E9550",
+    borderColor: "#B8D7BE",
   },
   avatarCircleScrolled: {
-    borderColor: "#5E9550",
+    borderColor: "#CFE3D3",
   },
-  greetingText: {
-    fontSize: 33 / 2,
-    lineHeight: 24,
-    fontFamily: "Outfit",
+  headerGreetingWrap: {
+    flex: 1,
+    minWidth: 0,
   },
-  greetingTextTop: {
-    color: "#1E2F1F",
+  headerGreetingEyebrow: {
+    color: "#6D846F",
+    fontSize: 10.5,
+    lineHeight: 14,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
   },
-  greetingTextScrolled: {
-    color: "#1F1F1F",
-  },
-  userText: {
+  headerGreetingName: {
+    marginTop: 1,
+    color: "#294238",
+    fontSize: 16,
+    lineHeight: 20,
     fontFamily: "Outfit",
     fontWeight: "700",
   },
-  userTextTop: {
-    color: "#2E5722",
+  headerActionCluster: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    shadowColor: "#6B7A69",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
   },
-  userTextScrolled: {
-    color: "#2E5722",
+  headerActionClusterTop: {
+    backgroundColor: "rgba(248, 251, 246, 0.88)",
+    borderColor: "rgba(83, 116, 91, 0.16)",
+  },
+  headerActionClusterScrolled: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#DCE8DD",
   },
   headerActionButton: {
-    padding: 6,
-    marginRight: 2,
-    marginTop: 2,
+    width: 40,
+    height: 40,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
     position: "relative",
   },
-  notificationDot: {
+  headerActionDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: "#DDE7DE",
+  },
+  headerActionBadge: {
     position: "absolute",
-    top: 4,
-    right: 4,
+    top: 8,
+    right: 8,
     width: 9,
     height: 9,
     borderRadius: 999,
     backgroundColor: "#F44343",
     borderWidth: 1.5,
-    borderColor: "#FFFFFF",
+    borderColor: "#F8FBF6",
   },
   quoteHeroBody: {
     alignItems: "center",
