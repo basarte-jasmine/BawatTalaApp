@@ -100,6 +100,7 @@ export default function JournalEntryViewScreen() {
   );
   const hasGeneratedSummary = Boolean(aiSummaryText);
   const summaryRating = entry?.summaryRating ?? null;
+  const hasSavedSummaryRating = summaryRating === "HELPFUL" || summaryRating === "NEEDS_WORK";
   const entryTags = entry?.concernTags ?? [];
   const compact = width < 390;
   const narrow = width < 355;
@@ -109,7 +110,7 @@ export default function JournalEntryViewScreen() {
   const ruleGap = compact ? 24 : 26;
 
   const handleRateSummary = useCallback(async (rating: "HELPFUL" | "NEEDS_WORK") => {
-    if (!user?.studentNumber || !entry?.id || isSavingSummaryRating) {
+    if (!user?.studentNumber || !entry?.id || isSavingSummaryRating || hasSavedSummaryRating) {
       return;
     }
 
@@ -130,7 +131,7 @@ export default function JournalEntryViewScreen() {
 
     setEntry(result.entry);
     setIsSavingSummaryRating(false);
-  }, [entry?.id, isSavingSummaryRating, user?.studentNumber]);
+  }, [entry?.id, hasSavedSummaryRating, isSavingSummaryRating, user?.studentNumber]);
 
   const summaryFeedbackMessage = summaryFeedbackError
     ? summaryFeedbackError
@@ -151,8 +152,9 @@ export default function JournalEntryViewScreen() {
           style={[
             styles.summaryFeedbackButton,
             summaryRating === "HELPFUL" && styles.summaryFeedbackButtonHelpful,
+            hasSavedSummaryRating && summaryRating !== "HELPFUL" && styles.summaryFeedbackButtonLocked,
           ]}
-          disabled={isSavingSummaryRating}
+          disabled={isSavingSummaryRating || hasSavedSummaryRating}
           onPress={() => void handleRateSummary("HELPFUL")}
         >
           <Ionicons
@@ -174,8 +176,9 @@ export default function JournalEntryViewScreen() {
           style={[
             styles.summaryFeedbackButton,
             summaryRating === "NEEDS_WORK" && styles.summaryFeedbackButtonNeedsWork,
+            hasSavedSummaryRating && summaryRating !== "NEEDS_WORK" && styles.summaryFeedbackButtonLocked,
           ]}
-          disabled={isSavingSummaryRating}
+          disabled={isSavingSummaryRating || hasSavedSummaryRating}
           onPress={() => void handleRateSummary("NEEDS_WORK")}
         >
           <Ionicons
@@ -872,6 +875,9 @@ const styles = StyleSheet.create({
   summaryFeedbackButtonNeedsWork: {
     borderColor: "#E9C5B8",
     backgroundColor: "#FFF0EA",
+  },
+  summaryFeedbackButtonLocked: {
+    opacity: 0.52,
   },
   summaryFeedbackButtonText: {
     color: "#4D6476",

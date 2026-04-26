@@ -538,6 +538,24 @@ router.post("/entries/:entryId/summary-rating", asyncHandler(async (req, res) =>
     return res.status(400).json({ message: "A valid summary rating is required." });
   }
 
+  const existingResult = await query(
+    `
+      select summary_rating
+      from public.journal_entries
+      where id = $1 and student_number = $2 and deleted_by_student_at is null
+      limit 1
+    `,
+    [entryId, studentNumber],
+  );
+
+  if (existingResult.rowCount === 0) {
+    return res.status(404).json({ message: "Journal entry not found." });
+  }
+
+  if (existingResult.rows[0]?.summary_rating) {
+    return res.status(409).json({ message: "Summary feedback has already been saved and cannot be changed." });
+  }
+
   const result = await query(
     `
       update public.journal_entries
@@ -553,10 +571,6 @@ router.post("/entries/:entryId/summary-rating", asyncHandler(async (req, res) =>
     `,
     [entryId, studentNumber, summaryRating],
   );
-
-  if (result.rowCount === 0) {
-    return res.status(404).json({ message: "Journal entry not found." });
-  }
 
   return res.json({
     entry: mapEntryRow(result.rows[0]),
