@@ -450,9 +450,7 @@ export async function downloadLibraryBook(payload: {
   const download = data?.download
     ? {
         ...data.download,
-        downloadUrl: Platform.OS === "web"
-          ? buildLibraryBookFileUrl(payload.studentNumber, payload.bookId)
-          : data.download.downloadUrl,
+        downloadUrl: buildLibraryBookFileUrl(payload.studentNumber, payload.bookId),
       }
     : null;
 

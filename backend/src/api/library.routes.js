@@ -16,8 +16,10 @@ const ANNA_ARCHIVE_DEFAULT_SOURCES = "libgenRs,libgenLi";
 const ANNA_ARCHIVE_DEFAULT_MIRROR_PRIORITY = "libgen.vg,libgen.rs,libgen.is,library.lol,libgen.li";
 const ANNA_ARCHIVE_DOWNLOAD_PROBE_TIMEOUT_MS = 5000;
 const ANNA_ARCHIVE_DOWNLOAD_STREAM_TIMEOUT_MS = 30000;
+const ANNA_ARCHIVE_DOWNLOAD_CACHE_TTL_MS = 15 * 60 * 1000;
 const MAX_BOOK_RESULTS = 24;
 const ACCENT_COLORS = ["#D7F0B7", "#CFE6F8", "#E8D7F2", "#F8E8BE", "#D7EBE5", "#F1D4D4"];
+const annaDownloadUrlCache = new Map();
 
 function normalizeCompactSpaces(value) {
   return String(value || "").trim().replace(/\s+/g, " ");
@@ -211,6 +213,11 @@ function isUsableDownloadProbe(response, url) {
   );
 }
 
+function isWebPageResponse(response) {
+  const contentType = String(response.headers["content-type"] || "").toLowerCase();
+  return contentType.includes("text/html") || contentType.includes("application/json");
+}
+
 function probeDownloadUrl(url, method = "HEAD", redirectDepth = 0) {
   return new Promise((resolve) => {
     let parsedUrl;
@@ -246,8 +253,19 @@ function probeDownloadUrl(url, method = "HEAD", redirectDepth = 0) {
       }
 
       const usable = isUsableDownloadProbe(response, url);
-      response.resume();
-      settle(usable);
+      if (!usable || method !== "GET") {
+        response.resume();
+        settle(usable);
+        return;
+      }
+
+      response.once("data", (chunk) => {
+        response.destroy();
+        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        settle(bytes.length >= 2 && bytes[0] === 0x50 && bytes[1] === 0x4b);
+      });
+      response.once("end", () => settle(false));
+      response.once("error", () => settle(false));
     });
 
     request.setTimeout(
@@ -268,7 +286,7 @@ async function pickDownloadUrl(urls) {
     if (await probeDownloadUrl(url, "HEAD")) return url;
     if (await probeDownloadUrl(url, "GET")) return url;
   }
-  return candidates[0] || "";
+  return "";
 }
 
 function getAnnaCoverUrl(book) {
@@ -280,6 +298,10 @@ function getAnnaCoverUrl(book) {
 
 function getAnnaSourceId(book) {
   return pickString(book, ["md5", "id", "bookId", "isbn13", "isbn", "aarecord_id"]);
+}
+
+function isAnnaEpubBook(book) {
+  return pickString(book, ["extension", "ext", "format", "fileExtension"]).toLowerCase().includes("epub");
 }
 
 function getAnnaBookId(book, index) {
@@ -326,6 +348,34 @@ function mapAnnaBook(book, index, progressByBookId, downloadsByBookId) {
     title,
     progress,
   };
+}
+
+async function getDownloadableAnnaItems(items, maxResults) {
+  const candidates = items.filter((item) => getAnnaSourceId(item) && isAnnaEpubBook(item));
+  const downloadableItems = [];
+  const batchSize = clampInteger(Number(process.env.ANNA_ARCHIVE_DOWNLOADABLE_CHECK_BATCH_SIZE), 1, 6, 3);
+
+  for (let index = 0; index < candidates.length && downloadableItems.length < maxResults; index += batchSize) {
+    const batch = candidates.slice(index, index + batchSize);
+    const results = await Promise.all(
+      batch.map(async (item) => {
+        try {
+          await fetchAnnaDownloadUrl(getAnnaSourceId(item));
+          return item;
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    for (const item of results) {
+      if (!item) continue;
+      downloadableItems.push(item);
+      if (downloadableItems.length >= maxResults) break;
+    }
+  }
+
+  return downloadableItems;
 }
 
 function mapProgressRow(row) {
@@ -488,6 +538,25 @@ async function upsertDownload({
 }
 
 async function fetchAnnaDownloadUrl(sourceId) {
+  const cached = annaDownloadUrlCache.get(sourceId);
+  if (cached?.url && cached.expiresAt > Date.now()) {
+    return cached.url;
+  }
+  annaDownloadUrlCache.delete(sourceId);
+
+  const candidates = await fetchAnnaDownloadUrls(sourceId);
+  const downloadUrl = await pickDownloadUrl(candidates);
+  if (!downloadUrl) {
+    throw new Error("Anna's Archive did not return a working EPUB mirror for this book.");
+  }
+  annaDownloadUrlCache.set(sourceId, {
+    expiresAt: Date.now() + ANNA_ARCHIVE_DOWNLOAD_CACHE_TTL_MS,
+    url: downloadUrl,
+  });
+  return downloadUrl;
+}
+
+async function fetchAnnaDownloadUrls(sourceId) {
   const apiKey = String(process.env.ANNA_ARCHIVE_RAPIDAPI_KEY || "").trim();
   if (!apiKey) {
     throw new Error("Anna's Archive RapidAPI key is not configured.");
@@ -499,11 +568,11 @@ async function fetchAnnaDownloadUrl(sourceId) {
     headers: getAnnaRapidApiHeaders(apiKey),
     serviceName: "Anna's Archive download",
   });
-  const downloadUrl = await pickDownloadUrl(collectUrls(data));
-  if (!downloadUrl) {
+  const urls = sortDownloadUrls(collectUrls(data));
+  if (!urls.length) {
     throw new Error("Anna's Archive did not return a download link for this book.");
   }
-  return downloadUrl;
+  return urls;
 }
 
 function streamRemoteFile(url, res, redirectDepth = 0) {
@@ -538,6 +607,11 @@ function streamRemoteFile(url, res, redirectDepth = 0) {
           reject(new Error("The EPUB mirror did not return a downloadable book file."));
           return;
         }
+        if (!isUsableDownloadProbe(response, url) || isWebPageResponse(response)) {
+          response.resume();
+          reject(new Error("The EPUB mirror returned a webpage or unsupported file instead of an EPUB."));
+          return;
+        }
 
         res.setHeader("Content-Type", response.headers["content-type"] || "application/epub+zip");
         res.setHeader("Cache-Control", "no-store");
@@ -560,6 +634,25 @@ function streamRemoteFile(url, res, redirectDepth = 0) {
     );
     request.on("error", reject);
   });
+}
+
+async function streamFirstWorkingRemoteFile(urls, res) {
+  const candidates = sortDownloadUrls(urls);
+  let lastError = null;
+
+  for (const url of candidates) {
+    try {
+      await streamRemoteFile(url, res);
+      return url;
+    } catch (error) {
+      lastError = error;
+      if (res.headersSent) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error(lastError?.message || "No EPUB mirror returned a downloadable book file.");
 }
 
 async function upsertProgress({
@@ -630,6 +723,7 @@ async function upsertProgress({
 router.get("/books", async (req, res) => {
   const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
   const maxResults = clampInteger(Number(req.query.maxResults || MAX_BOOK_RESULTS), 1, 40, MAX_BOOK_RESULTS);
+  const searchLimit = Math.min(40, Math.max(maxResults, maxResults * 2));
   const searchQuery = normalizeCompactSpaces(req.query.q || DEFAULT_BOOK_QUERY);
   const apiKey = String(process.env.ANNA_ARCHIVE_RAPIDAPI_KEY || "").trim();
   if (!apiKey) {
@@ -640,10 +734,10 @@ router.get("/books", async (req, res) => {
     const params = new URLSearchParams({
       cat: String(process.env.ANNA_ARCHIVE_CATEGORIES || ANNA_ARCHIVE_DEFAULT_CATEGORIES),
       ext: String(process.env.ANNA_ARCHIVE_EXTENSIONS || ANNA_ARCHIVE_DEFAULT_EXTENSIONS),
-      limit: String(maxResults),
+      limit: String(searchLimit),
       page: String(clampInteger(Number(req.query.page || 1), 1, 100, 1)),
       q: searchQuery.replace(/^subject:/i, ""),
-      skip: String((clampInteger(Number(req.query.page || 1), 1, 100, 1) - 1) * maxResults),
+      skip: String((clampInteger(Number(req.query.page || 1), 1, 100, 1) - 1) * searchLimit),
       sort: String(process.env.ANNA_ARCHIVE_SORT || ANNA_ARCHIVE_DEFAULT_SORT),
     });
     const sources = String(process.env.ANNA_ARCHIVE_SOURCES || ANNA_ARCHIVE_DEFAULT_SOURCES).trim();
@@ -655,7 +749,7 @@ router.get("/books", async (req, res) => {
       headers: getAnnaRapidApiHeaders(apiKey),
       serviceName: "Anna's Archive",
     });
-    const selectedItems = findFirstArray(data).slice(0, maxResults);
+    const selectedItems = await getDownloadableAnnaItems(findFirstArray(data), maxResults);
     const bookIds = selectedItems
       .map((item, index) => getAnnaBookId(item, index))
       .filter(Boolean);
@@ -740,11 +834,14 @@ router.get("/download-file", async (req, res) => {
 
     let downloadUrl = download.downloadUrl;
     if (download.provider === "anna" && download.sourceId) {
-      const freshDownloadUrl = await fetchAnnaDownloadUrl(download.sourceId);
-      if (freshDownloadUrl) {
-        downloadUrl = freshDownloadUrl;
-        await updateStudentDownloadUrl(studentNumber, bookId, freshDownloadUrl);
-      }
+      const freshDownloadUrls = await fetchAnnaDownloadUrls(download.sourceId);
+      const workingDownloadUrl = await streamFirstWorkingRemoteFile(freshDownloadUrls, res);
+      annaDownloadUrlCache.set(download.sourceId, {
+        expiresAt: Date.now() + ANNA_ARCHIVE_DOWNLOAD_CACHE_TTL_MS,
+        url: workingDownloadUrl,
+      });
+      await updateStudentDownloadUrl(studentNumber, bookId, workingDownloadUrl);
+      return;
     }
 
     if (!downloadUrl) {

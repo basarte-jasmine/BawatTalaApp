@@ -149,11 +149,17 @@ async function fetchEpubArrayBuffer(downloadUrl: string) {
       Accept: "application/epub+zip,application/zip,application/octet-stream,*/*",
     },
   });
-  const contentType = String(response.headers.get("content-type") || "").toLowerCase();
-  const looksLikeWebPage = contentType.includes("text/html") || contentType.includes("application/json");
 
-  if (!response.ok || looksLikeWebPage) {
-    throw new Error("The EPUB mirror did not return a downloadable book file. Try Download EPUB again.");
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    let errorMessage = "";
+    try {
+      const parsed = errorText ? JSON.parse(errorText) : null;
+      errorMessage = parsed?.message || "";
+    } catch {
+      errorMessage = "";
+    }
+    throw new Error(errorMessage || "The EPUB mirror did not return a downloadable book file. Try Download EPUB again.");
   }
 
   const arrayBuffer = await response.arrayBuffer();
@@ -188,7 +194,11 @@ export async function downloadEpubToLibrary(bookId: string, downloadUrl: string)
   if (Platform.OS === "web" || !FileSystem.documentDirectory) {
     const webEpubUri = createWebEpubUri(downloadUrl);
     const arrayBuffer = await fetchEpubArrayBuffer(downloadUrl);
-    await JSZip.loadAsync(arrayBuffer);
+    try {
+      await JSZip.loadAsync(arrayBuffer);
+    } catch {
+      throw new Error("The EPUB mirror returned a file that the reader could not open. Try another EPUB result.");
+    }
     webEpubCache.set(webEpubUri, arrayBuffer);
     return webEpubUri;
   }
@@ -208,6 +218,14 @@ export async function downloadEpubToLibrary(bookId: string, downloadUrl: string)
   if (status < 200 || status >= 300 || looksLikeWebPage) {
     await FileSystem.deleteAsync(result.uri, { idempotent: true });
     throw new Error("The EPUB mirror did not return a downloadable book file. Try Download EPUB again.");
+  }
+
+  try {
+    const base64 = await FileSystem.readAsStringAsync(result.uri, { encoding: FileSystem.EncodingType.Base64 });
+    await JSZip.loadAsync(base64, { base64: true });
+  } catch {
+    await FileSystem.deleteAsync(result.uri, { idempotent: true });
+    throw new Error("The EPUB mirror returned a file that the reader could not open. Try another EPUB result.");
   }
 
   return result.uri;
