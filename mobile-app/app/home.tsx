@@ -689,7 +689,7 @@ export default function HomeScreen() {
       return;
     }
 
-    const result = await saveDailyMood(user.studentNumber, pendingMoodId, getManilaTodayParts().isoDate);
+    const result = await saveDailyMood(user.studentNumber, pendingMoodId, getManilaTodayParts().isoDate, "INPUT");
     if (result.ok) {
       setLatestMoodId(result.entry?.moodId ?? pendingMoodId);
       setTodayMoodCheckInCount((current) => current + 1);

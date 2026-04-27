@@ -33,6 +33,15 @@ function normalizeMoodDate(value) {
   return raw;
 }
 
+function normalizeMoodSource(value) {
+  const source = String(value || "").trim().toUpperCase();
+  return source === "JOURNAL" ? "JOURNAL" : "INPUT";
+}
+
+function formatMoodSourceValue(value) {
+  return normalizeMoodSource(value);
+}
+
 function getCurrentManilaMoodDate() {
   const now = new Date();
   const utcTime = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
@@ -56,19 +65,20 @@ function formatMoodDateValue(value) {
   return match ? `${match[1]}-${match[2]}-${match[3]}` : raw;
 }
 
-async function insertMoodCheckIn(studentNumber, moodId, moodDate) {
+async function insertMoodCheckIn(studentNumber, moodId, moodDate, moodSource) {
   return query(
     `
       insert into public.student_moods (
         student_number,
         mood_id,
         mood_label,
-        mood_date
+        mood_date,
+        mood_source
       )
-      values ($1, $2, $3, $4::date)
-      returning id, mood_id, mood_label, to_char(mood_date, 'YYYY-MM-DD') as mood_date, created_at
+      values ($1, $2, $3, $4::date, $5)
+      returning id, mood_id, mood_label, to_char(mood_date, 'YYYY-MM-DD') as mood_date, mood_source, created_at
     `,
-    [studentNumber, moodId, getEmotionLabel(moodId), moodDate],
+    [studentNumber, moodId, getEmotionLabel(moodId), moodDate, moodSource],
   );
 }
 
@@ -91,7 +101,7 @@ router.get("/month", async (req, res) => {
   try {
     const result = await query(
       `
-        select id, mood_id, mood_label, to_char(mood_date, 'YYYY-MM-DD') as mood_date, created_at
+        select id, mood_id, mood_label, to_char(mood_date, 'YYYY-MM-DD') as mood_date, mood_source, created_at
         from public.student_moods
         where student_number = $1
           and mood_date >= $2::date
@@ -115,6 +125,7 @@ router.get("/month", async (req, res) => {
         moodId,
         moodLabel: getEmotionLabel(moodId) || row.mood_label,
         moodDate: formatMoodDateValue(row.mood_date),
+        moodSource: formatMoodSourceValue(row.mood_source),
       };
     });
 
@@ -145,7 +156,7 @@ router.get("/today", async (req, res) => {
   try {
     const result = await query(
       `
-        select id, mood_id, mood_label, to_char(mood_date, 'YYYY-MM-DD') as mood_date, created_at
+        select id, mood_id, mood_label, to_char(mood_date, 'YYYY-MM-DD') as mood_date, mood_source, created_at
         from public.student_moods
         where student_number = $1
           and mood_date = $2::date
@@ -160,6 +171,7 @@ router.get("/today", async (req, res) => {
       moodId: normalizeMoodId(row.mood_id),
       moodLabel: getEmotionLabel(row.mood_id) || row.mood_label,
       moodDate: formatMoodDateValue(row.mood_date),
+      moodSource: formatMoodSourceValue(row.mood_source),
     }));
     const row = entries[0];
     return res.json({
@@ -175,6 +187,7 @@ router.post("/", async (req, res) => {
   const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
   const moodId = normalizeMoodId(req.body.moodId || "");
   const moodDate = normalizeMoodDate(req.body.moodDate || "") || getCurrentManilaMoodDate();
+  const moodSource = normalizeMoodSource(req.body.moodSource || "");
 
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
     return res.status(400).json({ message: "Valid student number is required." });
@@ -189,13 +202,13 @@ router.post("/", async (req, res) => {
   try {
     let result;
     try {
-      result = await insertMoodCheckIn(studentNumber, moodId, moodDate);
+      result = await insertMoodCheckIn(studentNumber, moodId, moodDate, moodSource);
     } catch (error) {
       if (error?.code !== "23505") {
         throw error;
       }
       await removeLegacyDailyMoodUniqueness();
-      result = await insertMoodCheckIn(studentNumber, moodId, moodDate);
+      result = await insertMoodCheckIn(studentNumber, moodId, moodDate, moodSource);
     }
 
     const row = result.rows[0];
@@ -206,6 +219,7 @@ router.post("/", async (req, res) => {
         moodId: normalizeMoodId(row.mood_id),
         moodLabel: getEmotionLabel(row.mood_id) || row.mood_label,
         moodDate: formatMoodDateValue(row.mood_date),
+        moodSource: formatMoodSourceValue(row.mood_source),
       },
       message: "Emotion saved.",
     });

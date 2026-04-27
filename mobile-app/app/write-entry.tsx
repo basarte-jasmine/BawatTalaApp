@@ -366,7 +366,7 @@ export default function WriteEntryScreen() {
     setIsSavingJournalEmotion(true);
     setErrorMessage("");
 
-    const result = await saveDailyMood(user.studentNumber, emotionId, getManilaTodayParts().isoDate);
+    const result = await saveDailyMood(user.studentNumber, emotionId, getManilaTodayParts().isoDate, "JOURNAL");
     setIsSavingJournalEmotion(false);
 
     if (!result.ok) {

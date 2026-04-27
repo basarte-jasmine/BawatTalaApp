@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, ImageSourcePropType, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuthSession } from "../lib/auth-session";
-import { fetchMonthlyMoods } from "../lib/backend-api";
+import { fetchMonthlyMoods, type MoodEntryRecord } from "../lib/backend-api";
 import { EMOTION_META, EMOTION_ORDER, createEmotionCounts, normalizeEmotionId } from "../lib/emotions";
 import { getManilaTodayParts } from "../lib/manila-date";
 
@@ -24,14 +24,6 @@ type CalendarDay = {
   dayNumber: number | null;
   moodId: string | null;
   state: "empty" | "future" | "mood";
-};
-
-type MoodEntry = {
-  createdAt?: string;
-  id?: string;
-  moodDate: string;
-  moodId: string;
-  moodLabel: string;
 };
 
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
@@ -69,6 +61,10 @@ function formatCheckInTime(value?: string) {
   });
 }
 
+function formatMoodSourceLabel(value?: string) {
+  return String(value || "").toUpperCase() === "JOURNAL" ? "Journal" : "Input";
+}
+
 export default function MoodOverviewScreen() {
   const { user } = useAuthSession();
   const [now, setNow] = useState(() => getManilaTodayParts());
@@ -84,12 +80,12 @@ export default function MoodOverviewScreen() {
   }, [now]);
   const [displayYear, setDisplayYear] = useState(initialMonth.year);
   const [displayMonthIndex, setDisplayMonthIndex] = useState(initialMonth.monthIndex);
-  const [monthlyEntries, setMonthlyEntries] = useState<MoodEntry[]>([]);
+  const [monthlyEntries, setMonthlyEntries] = useState<MoodEntryRecord[]>([]);
   const [monthlyCounts, setMonthlyCounts] = useState<Record<string, number>>(() => createEmotionCounts());
   const [mostCommonMoodId, setMostCommonMoodId] = useState<string | null>(null);
   const [totalCheckIns, setTotalCheckIns] = useState(0);
   const [selectedDayNumber, setSelectedDayNumber] = useState(now.day);
-  const [selectedCheckInEntry, setSelectedCheckInEntry] = useState<MoodEntry | null>(null);
+  const [showDailyRecordsModal, setShowDailyRecordsModal] = useState(false);
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -276,10 +272,6 @@ export default function MoodOverviewScreen() {
   const selectedDayCheckInLabel = `${selectedDayEntries.length} emotion ${selectedDayEntries.length === 1 ? "check-in" : "check-ins"}`;
   const selectedDayMoodKindLabel = `${selectedDayMoodStats.length} ${selectedDayMoodStats.length === 1 ? "kind" : "kinds"}`;
   const selectedDayRecordLabel = `${selectedDayEntries.length} ${selectedDayEntries.length === 1 ? "record" : "records"}`;
-  const selectedCheckInMood = selectedCheckInEntry ? EMOTION_META[selectedCheckInEntry.moodId] ?? null : null;
-  const selectedCheckInTime = selectedCheckInEntry
-    ? formatCheckInTime(selectedCheckInEntry.createdAt) || "Time unavailable"
-    : "";
   const dailyInsightText =
     selectedDayEntries.length <= 0
       ? `No emotions were logged on ${selectedDayLabel}. Pick any day with a badge to see Muni's daily reflection.`
@@ -361,37 +353,28 @@ export default function MoodOverviewScreen() {
             <Text style={styles.dailyBreakdownMeta}>{selectedDayRecordLabel}</Text>
           </View>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={[
-              styles.dailyTrailScroller,
-              !selectedDayEntries.length && styles.dailyTrailScrollerEmpty,
+          <Pressable
+            style={[
+              styles.dailyRecordsButton,
+              !selectedDayEntries.length && styles.dailyRecordsButtonDisabled,
             ]}
+            onPress={() => setShowDailyRecordsModal(true)}
+            disabled={!selectedDayEntries.length}
+            accessibilityRole="button"
+            accessibilityLabel="Open daily emotion records"
           >
             {selectedDayEntries.length ? (
-              selectedDayEntries.map((entry, index) => {
-                const moodMeta = EMOTION_META[entry.moodId] ?? null;
-                return (
-                  <Pressable
-                    key={entry.id ?? `${entry.moodId}-${index}`}
-                    style={[styles.dailyEntryPill, moodMeta && { borderColor: moodMeta.color }]}
-                    onPress={() => setSelectedCheckInEntry(entry)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Open ${moodMeta?.label ?? entry.moodLabel} check-in details`}
-                  >
-                    <Text style={styles.dailyEntryIndex}>{index + 1}</Text>
-                    <Text style={styles.dailyEntryLabel} numberOfLines={1}>{moodMeta?.label ?? entry.moodLabel}</Text>
-                  </Pressable>
-                );
-              })
+              <>
+                <View style={styles.dailyRecordsButtonCopy}>
+                  <Text style={styles.dailyRecordsButtonTitle}>View daily records</Text>
+                  <Text style={styles.dailyRecordsButtonMeta}>Emotion, time, and source</Text>
+                </View>
+                <Ionicons name="list-outline" size={20} color="#31465A" />
+              </>
             ) : (
-              <View style={styles.dailyEmptyTrail}>
-                <Ionicons name="sparkles-outline" size={18} color="#91A184" />
-                <Text style={styles.dailyEmptyTrailText}>No check-ins yet</Text>
-              </View>
+              <Text style={styles.dailyRecordsEmptyText}>No check-ins yet</Text>
             )}
-          </ScrollView>
+          </Pressable>
         </View>
 
         <View style={styles.calendarCard}>
@@ -519,19 +502,50 @@ export default function MoodOverviewScreen() {
       </ScrollView>
 
       <Modal
-        visible={Boolean(selectedCheckInEntry)}
+        visible={showDailyRecordsModal}
         transparent
-        animationType="fade"
-        onRequestClose={() => setSelectedCheckInEntry(null)}
+        animationType="slide"
+        onRequestClose={() => setShowDailyRecordsModal(false)}
       >
         <View style={styles.detailModalBackdrop}>
-          <View style={styles.detailModalCard}>
-            <Text style={styles.detailModalEyebrow}>CHECK-IN DETAILS</Text>
-            <Text style={styles.detailModalTitle}>{selectedCheckInMood?.label ?? selectedCheckInEntry?.moodLabel ?? "Emotion"}</Text>
-            <Text style={styles.detailModalMeta}>{selectedDayLabel}</Text>
-            <Text style={styles.detailModalTime}>{selectedCheckInTime}</Text>
+          <View style={styles.recordsModalCard}>
+            <View style={styles.recordsModalHeader}>
+              <View style={styles.recordsModalHeaderCopy}>
+                <Text style={styles.detailModalEyebrow}>DAILY RECORDS</Text>
+                <Text style={styles.detailModalTitle}>{selectedDayLabel}</Text>
+                <Text style={styles.detailModalMeta}>{selectedDayRecordLabel}</Text>
+              </View>
+              <Pressable style={styles.recordsModalCloseButton} onPress={() => setShowDailyRecordsModal(false)} accessibilityLabel="Close records">
+                <Ionicons name="close" size={20} color="#31465A" />
+              </Pressable>
+            </View>
 
-            <Pressable style={styles.detailModalButton} onPress={() => setSelectedCheckInEntry(null)}>
+            <View style={styles.recordsTableHeader}>
+              <Text style={[styles.recordsTableHeaderText, styles.recordsEmotionCell]}>Emotion</Text>
+              <Text style={[styles.recordsTableHeaderText, styles.recordsTimeCell]}>Time</Text>
+              <Text style={[styles.recordsTableHeaderText, styles.recordsSourceHeaderCell]}>From</Text>
+            </View>
+
+            <ScrollView style={styles.recordsTableScroll} contentContainerStyle={styles.recordsTableContent}>
+              {selectedDayEntries.map((entry, index) => {
+                const moodMeta = EMOTION_META[entry.moodId] ?? null;
+                return (
+                  <View key={entry.id ?? `${entry.moodId}-${index}`} style={styles.recordsTableRow}>
+                    <Text style={[styles.recordsTableText, styles.recordsEmotionCell]} numberOfLines={1}>
+                      {moodMeta?.label ?? entry.moodLabel}
+                    </Text>
+                    <Text style={[styles.recordsTableText, styles.recordsTimeCell]} numberOfLines={1}>
+                      {formatCheckInTime(entry.createdAt) || "-"}
+                    </Text>
+                    <View style={styles.recordsSourceCell}>
+                      <Text style={styles.recordsSourcePill}>{formatMoodSourceLabel(entry.moodSource)}</Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            <Pressable style={styles.detailModalButton} onPress={() => setShowDailyRecordsModal(false)}>
               <Text style={styles.detailModalButtonText}>Close</Text>
             </Pressable>
           </View>
@@ -693,70 +707,54 @@ const styles = StyleSheet.create({
     lineHeight: 15,
     marginTop: 1,
   },
-  dailyTrailScroller: {
-    columnGap: 8,
-    paddingRight: 2,
-    paddingBottom: 1,
-  },
-  dailyTrailScrollerEmpty: {
-    flexGrow: 1,
-  },
-  dailyEntryPill: {
-    minWidth: 86,
-    maxWidth: 122,
-    minHeight: 34,
-    borderRadius: 999,
+  dailyRecordsButton: {
+    minHeight: 54,
+    borderRadius: 16,
     backgroundColor: "#F8FBF5",
     borderWidth: 1,
-    borderColor: "#E0E9DA",
+    borderColor: "#D9E7D2",
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    justifyContent: "space-between",
+    columnGap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  dailyRecordsButtonDisabled: {
+    opacity: 0.72,
   },
   dailyEntryFallback: {
     width: 20,
     height: 20,
     borderRadius: 999,
   },
-  dailyEntryIndex: {
-    color: "#7B8876",
-    fontSize: 11,
-    lineHeight: 14,
+  dailyRecordsButtonCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  dailyRecordsButtonTitle: {
+    color: "#31465A",
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: "800",
   },
-  dailyEntryLabel: {
-    color: "#31465A",
+  dailyRecordsButtonMeta: {
+    color: "#6A7481",
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 1,
+  },
+  dailyRecordsEmptyText: {
+    color: "#6A7481",
     fontSize: 12,
     lineHeight: 16,
     fontWeight: "700",
-    flexShrink: 1,
   },
   dailyEmptyText: {
     color: "#6A7481",
     fontSize: 13,
     lineHeight: 18,
     paddingVertical: 6,
-  },
-  dailyEmptyTrail: {
-    minHeight: 56,
-    flexGrow: 1,
-    borderRadius: 16,
-    backgroundColor: "#F8FBF5",
-    borderWidth: 1,
-    borderColor: "#E0E9DA",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    columnGap: 6,
-    paddingHorizontal: 12,
-  },
-  dailyEmptyTrailText: {
-    color: "#6A7481",
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: "700",
   },
   summaryHeader: {
     flexDirection: "row",
@@ -900,6 +898,42 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     elevation: 6,
   },
+  recordsModalCard: {
+    width: "100%",
+    maxWidth: 390,
+    maxHeight: "82%",
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#DFEADB",
+    paddingHorizontal: 14,
+    paddingTop: 16,
+    paddingBottom: 14,
+    shadowColor: "#24302B",
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
+  },
+  recordsModalHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    columnGap: 12,
+    marginBottom: 14,
+  },
+  recordsModalHeaderCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  recordsModalCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 14,
+    backgroundColor: "#F4F8F1",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   detailModalEyebrow: {
     color: "#7C8F77",
     fontSize: 10,
@@ -926,6 +960,74 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     fontWeight: "700",
     marginTop: 14,
+  },
+  recordsTableHeader: {
+    minHeight: 34,
+    borderRadius: 12,
+    backgroundColor: "#EEF5EA",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    marginBottom: 6,
+  },
+  recordsTableHeaderText: {
+    color: "#647960",
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  recordsTableScroll: {
+    maxHeight: 320,
+  },
+  recordsTableContent: {
+    rowGap: 6,
+    paddingBottom: 2,
+  },
+  recordsTableRow: {
+    minHeight: 42,
+    borderRadius: 12,
+    backgroundColor: "#FAFCF8",
+    borderWidth: 1,
+    borderColor: "#E4EDDE",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+  },
+  recordsTableText: {
+    color: "#31465A",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
+  recordsEmotionCell: {
+    flex: 1.15,
+    minWidth: 0,
+    paddingRight: 8,
+  },
+  recordsTimeCell: {
+    width: 78,
+    paddingRight: 8,
+  },
+  recordsSourceCell: {
+    width: 70,
+    alignItems: "flex-start",
+  },
+  recordsSourceHeaderCell: {
+    width: 70,
+    paddingRight: 0,
+  },
+  recordsSourcePill: {
+    color: "#31465A",
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: "800",
+    backgroundColor: "#EEF5EA",
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    overflow: "hidden",
   },
   detailModalButton: {
     height: 42,

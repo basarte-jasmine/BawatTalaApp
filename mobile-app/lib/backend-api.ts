@@ -68,6 +68,17 @@ export type CounselorAppointment = {
   studentNote?: string;
 };
 
+export type MoodSource = "INPUT" | "JOURNAL";
+
+export type MoodEntryRecord = {
+  createdAt?: string;
+  id?: string;
+  moodDate: string;
+  moodId: string;
+  moodLabel: string;
+  moodSource?: MoodSource;
+};
+
 export type CounselorDirectoryItem = {
   email: string;
   fullName: string;
@@ -284,11 +295,13 @@ export async function saveDailyMood(
   studentNumber: string,
   moodId: string,
   moodDate?: string,
-): Promise<ApiResult & { entry?: { createdAt?: string; id?: string; moodDate: string; moodId: string; moodLabel: string } }> {
+  moodSource: MoodSource = "INPUT",
+): Promise<ApiResult & { entry?: MoodEntryRecord }> {
   const { response, data } = await post("/api/moods", {
     studentNumber,
     moodId,
     moodDate: moodDate ?? "",
+    moodSource,
   });
 
   return {
@@ -303,8 +316,8 @@ export async function fetchDailyMood(
   moodDate?: string,
 ): Promise<
   ApiResult & {
-    entries?: Array<{ createdAt?: string; id?: string; moodDate: string; moodId: string; moodLabel: string }>;
-    entry?: { createdAt?: string; id?: string; moodDate: string; moodId: string; moodLabel: string } | null;
+    entries?: MoodEntryRecord[];
+    entry?: MoodEntryRecord | null;
   }
 > {
   const params = new URLSearchParams({ studentNumber });
@@ -328,7 +341,7 @@ export async function fetchMonthlyMoods(
 ): Promise<
   ApiResult & {
     counts?: Record<string, number>;
-    entries?: Array<{ createdAt?: string; id?: string; moodDate: string; moodId: string; moodLabel: string }>;
+    entries?: MoodEntryRecord[];
     mostCommonMoodId?: string | null;
     mostCommonMoodLabel?: string | null;
     totalCheckIns?: number;

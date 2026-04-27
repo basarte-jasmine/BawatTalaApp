@@ -268,9 +268,34 @@ async function ensureDatabaseSchema() {
       mood_id text not null,
       mood_label text not null,
       mood_date date not null,
+      mood_source text not null default 'INPUT',
       created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now()
+      updated_at timestamptz not null default now(),
+      constraint student_moods_mood_source_check check (mood_source in ('INPUT', 'JOURNAL'))
     );
+  `);
+
+  await pool.query(`
+    alter table public.student_moods
+    add column if not exists mood_source text not null default 'INPUT';
+  `);
+
+  await pool.query(`
+    update public.student_moods
+    set mood_source = 'INPUT'
+    where mood_source is null
+      or mood_source not in ('INPUT', 'JOURNAL');
+  `);
+
+  await pool.query(`
+    alter table public.student_moods
+    drop constraint if exists student_moods_mood_source_check;
+  `);
+
+  await pool.query(`
+    alter table public.student_moods
+    add constraint student_moods_mood_source_check
+    check (mood_source in ('INPUT', 'JOURNAL'));
   `);
 
   await removeLegacyDailyMoodUniqueness();
