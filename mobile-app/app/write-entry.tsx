@@ -878,7 +878,7 @@ export default function WriteEntryScreen() {
               <View style={styles.emotionPickerHeader}>
                 <View>
                   <Text style={styles.concernTitle}>Choose emotion</Text>
-                  <Text style={styles.concernSubtitle}>Save how this entry feels today.</Text>
+                  <Text style={styles.concernSubtitle}>Tap any emotion to add another daily check-in.</Text>
                 </View>
                 <Pressable
                   style={styles.emotionPickerCloseButton}
@@ -890,36 +890,32 @@ export default function WriteEntryScreen() {
               </View>
 
               <View style={styles.emotionPickerGrid}>
-                {EMOTIONS.map((emotion) => {
-                  const selected = selectedJournalEmotionId === emotion.id;
-                  return (
-                    <Pressable
-                      key={emotion.id}
-                      style={[styles.emotionPickerOption, selected && styles.emotionPickerOptionSelected]}
-                      onPress={() => {
-                        void handleSelectJournalEmotion(emotion.id);
-                      }}
-                      disabled={isSavingJournalEmotion}
+                {EMOTIONS.map((emotion) => (
+                  <Pressable
+                    key={emotion.id}
+                    style={styles.emotionPickerOption}
+                    onPress={() => {
+                      void handleSelectJournalEmotion(emotion.id);
+                    }}
+                    disabled={isSavingJournalEmotion}
+                  >
+                    <View
+                      style={[
+                        styles.emotionPickerIcon,
+                        { borderColor: emotion.color },
+                      ]}
                     >
-                      <View
-                        style={[
-                          styles.emotionPickerIcon,
-                          { borderColor: emotion.color },
-                          selected && { backgroundColor: emotion.color },
-                        ]}
-                      >
-                        {emotion.image ? (
-                          <Image source={emotion.image} style={styles.emotionPickerImage} resizeMode="contain" />
-                        ) : (
-                          <View style={[styles.emotionPickerFallback, { backgroundColor: emotion.color }]} />
-                        )}
-                      </View>
-                      <Text style={[styles.emotionPickerLabel, selected && styles.emotionPickerLabelSelected]} numberOfLines={1}>
-                        {emotion.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
+                      {emotion.image ? (
+                        <Image source={emotion.image} style={styles.emotionPickerImage} resizeMode="contain" />
+                      ) : (
+                        <View style={[styles.emotionPickerFallback, { backgroundColor: emotion.color }]} />
+                      )}
+                    </View>
+                    <Text style={styles.emotionPickerLabel} numberOfLines={1}>
+                      {emotion.label}
+                    </Text>
+                  </Pressable>
+                ))}
               </View>
             </View>
           </View>
@@ -1589,10 +1585,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
-  emotionPickerOptionSelected: {
-    borderColor: "#7BCB46",
-    backgroundColor: "#F1FAEA",
-  },
   emotionPickerIcon: {
     width: 34,
     height: 34,
@@ -1617,9 +1609,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     fontWeight: "700",
-  },
-  emotionPickerLabelSelected: {
-    color: "#2E6B23",
   },
   tagReviewModalCard: {
     maxWidth: 380,

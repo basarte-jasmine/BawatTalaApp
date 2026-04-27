@@ -51,6 +51,22 @@ function formatMoodDateValue(value) {
   return match ? `${match[1]}-${match[2]}-${match[3]}` : raw;
 }
 
+async function insertMoodCheckIn(studentNumber, moodId, moodDate) {
+  return query(
+    `
+      insert into public.student_moods (
+        student_number,
+        mood_id,
+        mood_label,
+        mood_date
+      )
+      values ($1, $2, $3, $4::date)
+      returning id, mood_id, mood_label, to_char(mood_date, 'YYYY-MM-DD') as mood_date, created_at
+    `,
+    [studentNumber, moodId, EMOTION_LABELS[moodId], moodDate],
+  );
+}
+
 router.get("/month", async (req, res) => {
   const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
   const year = Number(req.query.year);
@@ -166,19 +182,16 @@ router.post("/", async (req, res) => {
   }
 
   try {
-    const result = await query(
-      `
-        insert into public.student_moods (
-          student_number,
-          mood_id,
-          mood_label,
-          mood_date
-        )
-        values ($1, $2, $3, $4::date)
-        returning id, mood_id, mood_label, to_char(mood_date, 'YYYY-MM-DD') as mood_date, created_at
-      `,
-      [studentNumber, moodId, EMOTION_LABELS[moodId], moodDate],
-    );
+    let result;
+    try {
+      result = await insertMoodCheckIn(studentNumber, moodId, moodDate);
+    } catch (error) {
+      if (error?.code !== "23505") {
+        throw error;
+      }
+      await query("alter table public.student_moods drop constraint if exists student_moods_student_date_unique");
+      result = await insertMoodCheckIn(studentNumber, moodId, moodDate);
+    }
 
     const row = result.rows[0];
     return res.json({

@@ -207,7 +207,8 @@ export default function HomeScreen() {
   const [showCheckInResultModal, setShowCheckInResultModal] = useState(false);
   const [checkInResultMessage, setCheckInResultMessage] = useState("");
   const [totalTala, setTotalTala] = useState(0);
-  const [selectedMoodId, setSelectedMoodId] = useState<string | null>(null);
+  const [latestMoodId, setLatestMoodId] = useState<string | null>(null);
+  const [todayMoodCheckInCount, setTodayMoodCheckInCount] = useState(0);
   const [pendingMoodId, setPendingMoodId] = useState<string | null>(null);
   const [showMoodConfirmModal, setShowMoodConfirmModal] = useState(false);
   const [recentEntries, setRecentEntries] = useState<RecentEntryCard[]>([]);
@@ -533,13 +534,15 @@ export default function HomeScreen() {
 
   const loadTodayMood = useCallback(async () => {
     if (!user?.studentNumber) {
-      setSelectedMoodId(null);
+      setLatestMoodId(null);
+      setTodayMoodCheckInCount(0);
       return;
     }
 
     const result = await fetchDailyMood(user.studentNumber, getManilaTodayParts().isoDate);
     if (result.ok) {
-      setSelectedMoodId(result.entry?.moodId ?? null);
+      setLatestMoodId(result.entry?.moodId ?? null);
+      setTodayMoodCheckInCount(result.entries?.length ?? (result.entry ? 1 : 0));
     }
   }, [user?.studentNumber]);
 
@@ -654,6 +657,7 @@ export default function HomeScreen() {
     displayedRecentEntries.length === 0
       ? 148
       : Math.min(displayedRecentEntries.length * 104 + 20, compact ? 300 : 372);
+  const latestMoodLabel = latestMoodId ? EMOTIONS.find((emotion) => emotion.id === latestMoodId)?.label ?? "" : "";
 
   useFocusEffect(
     useCallback(() => {
@@ -683,7 +687,8 @@ export default function HomeScreen() {
 
     const result = await saveDailyMood(user.studentNumber, pendingMoodId, getManilaTodayParts().isoDate);
     if (result.ok) {
-      setSelectedMoodId(result.entry?.moodId ?? pendingMoodId);
+      setLatestMoodId(result.entry?.moodId ?? pendingMoodId);
+      setTodayMoodCheckInCount((current) => current + 1);
     } else {
       void loadTodayMood();
     }
@@ -1083,8 +1088,19 @@ export default function HomeScreen() {
             <View style={styles.moodHeaderTextWrap}>
               <Text style={styles.sectionEyebrow}>Emotions</Text>
               <Text style={styles.moodHeading}>What emotions are showing up today?</Text>
-              <Text style={styles.moodSubHeading}>Track your emotions to notice patterns</Text>
+              <Text style={styles.moodSubHeading}>
+                Tap any emotion anytime. Each tap adds another daily check-in.
+              </Text>
             </View>
+          </View>
+
+          <View style={styles.moodCheckInStatus}>
+            <Ionicons name="add-circle-outline" size={15} color="#4B7A42" />
+            <Text style={styles.moodCheckInStatusText}>
+              {todayMoodCheckInCount > 0
+                ? `${todayMoodCheckInCount} saved today${latestMoodLabel ? ` - last: ${latestMoodLabel}` : ""}`
+                : "No emotion check-ins yet today"}
+            </Text>
           </View>
 
           <View style={styles.moodRow}>
@@ -1098,7 +1114,6 @@ export default function HomeScreen() {
                   <Animated.View
                     style={[
                       styles.moodFace,
-                      selectedMoodId === mood.id && styles.moodFaceActive,
                       {
                         transform: [
                           {
@@ -1119,7 +1134,7 @@ export default function HomeScreen() {
                     )}
                   </Animated.View>
                 </Pressable>
-                <Text style={[styles.moodLabel, selectedMoodId === mood.id && styles.moodLabelActive]} numberOfLines={2}>
+                <Text style={styles.moodLabel} numberOfLines={2}>
                   {mood.label}
                 </Text>
               </View>
@@ -2120,6 +2135,25 @@ const styles = StyleSheet.create({
     fontSize: 36 / 2,
     lineHeight: 24,
   },
+  moodCheckInStatus: {
+    minHeight: 34,
+    borderRadius: 999,
+    backgroundColor: "#F4FBEE",
+    borderWidth: 1,
+    borderColor: "#D7EBCB",
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 7,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  moodCheckInStatusText: {
+    flex: 1,
+    color: "#4B6653",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
   moodRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -2131,9 +2165,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
     width: "20%",
   },
-  moodButtonDisabled: {
-    opacity: 0.42,
-  },
   moodFace: {
     width: 54,
     height: 54,
@@ -2144,10 +2175,6 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     borderWidth: 1,
     borderColor: "#A6B3BC",
-  },
-  moodFaceActive: {
-    borderWidth: 2,
-    borderColor: "#2F6F25",
   },
   moodIcon: {
     width: 42,
@@ -2163,10 +2190,6 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     minHeight: 32,
     textAlign: "center",
-  },
-  moodLabelActive: {
-    color: "#2F6F25",
-    fontWeight: "700",
   },
   moodHistoryButton: {
     height: 40,
