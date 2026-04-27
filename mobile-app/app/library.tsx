@@ -1,8 +1,9 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { useAuthSession } from "../lib/auth-session";
@@ -14,17 +15,45 @@ import {
   type LibraryBookProgress,
   type LibraryBookRecord,
 } from "../lib/backend-api";
-
-type ReaderPage = {
-  eyebrow: string;
-  paragraphs: string[];
-  title: string;
-};
+import {
+  downloadEpubToLibrary,
+  localFileExists,
+  readEpubPagesFromFile,
+  type EpubReaderPage as ReaderPage,
+} from "../lib/epub-reader";
 
 const BOOK_COVER_IMAGE = require("../assets/images/book_sample.png");
 const STAR_VALUES = [1, 2, 3, 4, 5];
 
-function buildReaderPages(book: LibraryBookRecord): ReaderPage[] {
+type StoredEpubFiles = Record<string, { downloadedAt?: string | null; uri: string }>;
+
+function getStoredEpubFilesKey(studentNumber?: string) {
+  return `bawat_tala_library_epubs:${studentNumber || "guest"}`;
+}
+
+async function getStoredEpubFiles(studentNumber?: string): Promise<StoredEpubFiles> {
+  const storedValue = await AsyncStorage.getItem(getStoredEpubFilesKey(studentNumber));
+  if (!storedValue) return {};
+
+  try {
+    const parsed = JSON.parse(storedValue);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveStoredEpubFile(studentNumber: string | undefined, bookId: string, uri: string, downloadedAt?: string | null) {
+  const storedFiles = await getStoredEpubFiles(studentNumber);
+  storedFiles[bookId] = { downloadedAt: downloadedAt ?? new Date().toISOString(), uri };
+  await AsyncStorage.setItem(getStoredEpubFilesKey(studentNumber), JSON.stringify(storedFiles));
+}
+
+function isEpubBook(book: LibraryBookRecord) {
+  return Boolean(book.downloadableEpub);
+}
+
+function buildFallbackReaderPages(book: LibraryBookRecord): ReaderPage[] {
   const detailLines = [
     book.author ? `Author: ${book.author}` : "",
     book.publisher ? `Publisher: ${book.publisher}` : "",
@@ -50,7 +79,7 @@ function buildReaderPages(book: LibraryBookRecord): ReaderPage[] {
       eyebrow: "Reading Access",
       title: "Continue in the reader",
       paragraphs: [
-        "Open the reader link when the catalog provides one, then come back here to update your progress and rating.",
+        "This EPUB could not be fully parsed, but your download is saved on this device. Try another EPUB result if the text does not appear correctly.",
       ],
     },
   ];
@@ -66,6 +95,9 @@ export default function LibraryScreen() {
   const [errorMessage, setErrorMessage] = useState("");
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   const [readerPageIndex, setReaderPageIndex] = useState(0);
+  const [readerPages, setReaderPages] = useState<ReaderPage[]>([]);
+  const [isReaderLoading, setIsReaderLoading] = useState(false);
+  const [readerErrorMessage, setReaderErrorMessage] = useState("");
   const [ratingErrorMessage, setRatingErrorMessage] = useState("");
   const [searchDraft, setSearchDraft] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
@@ -77,23 +109,45 @@ export default function LibraryScreen() {
     () => books.find((book) => book.id === selectedBookId) ?? null,
     [books, selectedBookId],
   );
-  const downloadedCount = books.filter((book) => book.downloaded).length;
-  const waitingCount = books.length - downloadedCount;
-
-  const readerPages = useMemo<ReaderPage[]>(() => {
-    if (!selectedBook) {
-      return [];
-    }
-
-    return buildReaderPages(selectedBook);
-  }, [selectedBook]);
+  const downloadedCount = books.filter((book) => book.localEpubUri).length;
+  const waitingCount = books.filter((book) => isEpubBook(book) && !book.localEpubUri).length;
 
   const currentPage = readerPages[readerPageIndex] ?? null;
   const canGoPreviousPage = readerPageIndex > 0;
   const canGoNextPage = readerPageIndex < readerPages.length - 1;
   const selectedBookRating = selectedBook?.progress?.rating ?? 0;
 
-  const updateBookDownload = useCallback((bookId: string, download: { downloadedAt?: string | null; downloadUrl?: string } | null | undefined) => {
+  const mergeLocalEpubFiles = useCallback(async (incomingBooks: LibraryBookRecord[]) => {
+    const storedFiles = await getStoredEpubFiles(user?.studentNumber);
+    const existingEntries = await Promise.all(
+      Object.entries(storedFiles).map(async ([bookId, file]) => ({
+        bookId,
+        file,
+        exists: await localFileExists(file.uri).catch(() => false),
+      })),
+    );
+    const existingFiles = new Map(existingEntries.filter((entry) => entry.exists).map((entry) => [entry.bookId, entry.file]));
+
+    return incomingBooks.map((book) => {
+      const localFile = existingFiles.get(book.id);
+      if (!localFile) return book;
+
+      return {
+        ...book,
+        downloaded: true,
+        downloadedAt: book.downloadedAt ?? localFile.downloadedAt ?? null,
+        localEpubUri: localFile.uri,
+        readerLink: "",
+        shelfLabel: "Downloaded",
+      };
+    });
+  }, [user?.studentNumber]);
+
+  const updateBookDownload = useCallback((
+    bookId: string,
+    download: { downloadedAt?: string | null; downloadUrl?: string } | null | undefined,
+    localEpubUri: string,
+  ) => {
     setBooks((current) =>
       current.map((book) => (
         book.id === bookId
@@ -102,7 +156,8 @@ export default function LibraryScreen() {
               downloaded: true,
               downloadedAt: download?.downloadedAt ?? book.downloadedAt ?? new Date().toISOString(),
               downloadUrl: download?.downloadUrl ?? book.downloadUrl ?? "",
-              readerLink: download?.downloadUrl ?? book.readerLink ?? "",
+              localEpubUri,
+              readerLink: "",
               shelfLabel: "Downloaded",
             }
           : book
@@ -132,7 +187,8 @@ export default function LibraryScreen() {
     try {
       const result = await fetchLibraryBooks(user?.studentNumber, queryOverride);
       if (result.ok) {
-        setBooks(result.books ?? []);
+        const mergedBooks = await mergeLocalEpubFiles(result.books ?? []);
+        setBooks(mergedBooks);
       } else {
         setBooks([]);
         setErrorMessage(result.message ?? "Unable to load the library right now.");
@@ -142,7 +198,7 @@ export default function LibraryScreen() {
       setErrorMessage("Unable to reach the library right now.");
     }
     setIsLoading(false);
-  }, [submittedQuery, user?.studentNumber]);
+  }, [mergeLocalEpubFiles, submittedQuery, user?.studentNumber]);
 
   useFocusEffect(
     useCallback(() => {
@@ -192,7 +248,7 @@ export default function LibraryScreen() {
   const handleClearSearch = () => {
     setSearchDraft("");
     setSubmittedQuery("");
-    if (!submittedQuery) {
+    if (submittedQuery) {
       void loadBooks("");
     }
   };
@@ -201,6 +257,11 @@ export default function LibraryScreen() {
     if (!user?.studentNumber) {
       setLibraryActionTone("error");
       setLibraryActionMessage("Log in first to download a book.");
+      return;
+    }
+    if (!isEpubBook(book)) {
+      setLibraryActionTone("error");
+      setLibraryActionMessage("Only EPUB books can be read inside the app right now.");
       return;
     }
 
@@ -225,44 +286,68 @@ export default function LibraryScreen() {
         return;
       }
 
-      updateBookDownload(book.id, result.download);
-      setLibraryActionTone("success");
-      setLibraryActionMessage("Downloaded. Reader mode is now unlocked.");
-
-      if (result.download?.downloadUrl) {
-        await Linking.openURL(result.download.downloadUrl).catch(() => {
-          setLibraryActionTone("error");
-          setLibraryActionMessage("Downloaded, but the file link could not be opened.");
-        });
+      if (!result.download?.downloadUrl) {
+        setLibraryActionTone("error");
+        setLibraryActionMessage("The download service did not return an EPUB file link.");
+        return;
       }
+
+      const localEpubUri = await downloadEpubToLibrary(book.id, result.download.downloadUrl);
+      await saveStoredEpubFile(user.studentNumber, book.id, localEpubUri, result.download.downloadedAt);
+
+      updateBookDownload(book.id, result.download, localEpubUri);
+      setLibraryActionTone("success");
+      setLibraryActionMessage("EPUB downloaded. Reader mode is now unlocked.");
     } catch {
       setLibraryActionTone("error");
-      setLibraryActionMessage("Unable to reach the download service.");
+      setLibraryActionMessage("Unable to download and save this EPUB.");
     } finally {
       setActiveDownloadBookId(null);
     }
   };
 
-  const handleOpenBook = (bookId: string) => {
+  const handleOpenBook = async (bookId: string) => {
     const book = books.find((item) => item.id === bookId);
     if (!book) return;
-    if (!book.downloaded) {
+    if (!isEpubBook(book)) {
       setLibraryActionTone("error");
-      setLibraryActionMessage("Download this book before opening the reader.");
+      setLibraryActionMessage("Only EPUB books can be read inside the app right now.");
       return;
     }
-    const pages = buildReaderPages(book);
-    const savedPage = book.progress?.currentPage ?? 0;
-    const nextPage = Math.min(Math.max(savedPage, 0), Math.max(pages.length - 1, 0));
+    if (!book.localEpubUri) {
+      setLibraryActionTone("error");
+      setLibraryActionMessage("Download this EPUB to this device before opening the reader.");
+      return;
+    }
+
     setSelectedBookId(bookId);
-    setReaderPageIndex(nextPage);
+    setReaderPages([]);
+    setReaderPageIndex(0);
+    setIsReaderLoading(true);
+    setReaderErrorMessage("");
     setRatingErrorMessage("");
-    void persistProgress(book, nextPage, pages.length, book.progress?.status === "FINISHED" ? "FINISHED" : "STARTED");
+    try {
+      const pages = await readEpubPagesFromFile(book.localEpubUri, book.title);
+      const savedPage = book.progress?.currentPage ?? 0;
+      const nextPage = Math.min(Math.max(savedPage, 0), Math.max(pages.length - 1, 0));
+      setReaderPages(pages);
+      setReaderPageIndex(nextPage);
+      void persistProgress(book, nextPage, pages.length, book.progress?.status === "FINISHED" ? "FINISHED" : "STARTED");
+    } catch {
+      const fallbackPages = buildFallbackReaderPages(book);
+      setReaderPages(fallbackPages);
+      setReaderErrorMessage("This EPUB downloaded, but its text could not be fully extracted.");
+    } finally {
+      setIsReaderLoading(false);
+    }
   };
 
   const handleCloseBook = () => {
     setSelectedBookId(null);
     setReaderPageIndex(0);
+    setReaderPages([]);
+    setReaderErrorMessage("");
+    setIsReaderLoading(false);
     setRatingErrorMessage("");
   };
 
@@ -313,32 +398,23 @@ export default function LibraryScreen() {
     }
   };
 
-  const handleOpenReaderLink = async () => {
-    if (!selectedBook?.readerLink) return;
-    if (selectedBook) {
-      void persistProgress(selectedBook, readerPageIndex, readerPages.length, selectedBook.progress?.status === "FINISHED" ? "FINISHED" : "STARTED");
-    }
-    await Linking.openURL(selectedBook.readerLink).catch(() => {
-      setRatingErrorMessage("Unable to open the reader link.");
-    });
-  };
-
   const renderBookCard = (book: LibraryBookRecord) => {
     const isFinished = book.progress?.status === "FINISHED";
     const progressPercent = book.progress?.percent ?? 0;
-    const isDownloaded = Boolean(book.downloaded);
+    const supportsInAppReader = isEpubBook(book);
+    const isDownloaded = Boolean(book.localEpubUri);
     const isDownloading = activeDownloadBookId === book.id;
 
     return (
-      <Pressable key={book.id} style={[styles.bookCard, compact && styles.bookCardCompact]} onPress={() => handleOpenBook(book.id)}>
+      <Pressable key={book.id} style={[styles.bookCard, compact && styles.bookCardCompact]} onPress={() => void handleOpenBook(book.id)}>
         <View style={[styles.bookSpine, { backgroundColor: book.accentColor }]} />
 
         <View style={styles.bookCardTopRow}>
           <View style={styles.bookTag}>
             <Text style={styles.bookTagText}>{book.shelfLabel}</Text>
           </View>
-          <Text style={[styles.bookStatusText, isFinished && styles.bookStatusTextDone, !isDownloaded && styles.bookStatusTextLocked]}>
-            {isFinished ? "Finished" : isDownloaded ? "Ready to read" : "Download first"}
+          <Text style={[styles.bookStatusText, isFinished && styles.bookStatusTextDone, (!isDownloaded || !supportsInAppReader) && styles.bookStatusTextLocked]}>
+            {isFinished ? "Finished" : isDownloaded ? "Ready to read" : supportsInAppReader ? "Download EPUB" : "EPUB only"}
           </Text>
         </View>
 
@@ -375,7 +451,7 @@ export default function LibraryScreen() {
               </View>
               <View style={styles.bookMetaPill}>
                 <Ionicons name={isDownloaded ? "cloud-done-outline" : "cloud-download-outline"} size={14} color="#6D675A" />
-                <Text style={styles.bookMetaText}>{isDownloaded ? "Downloaded" : "Not downloaded"}</Text>
+                <Text style={styles.bookMetaText}>{isDownloaded ? "Saved on device" : supportsInAppReader ? "EPUB" : "Unsupported format"}</Text>
               </View>
               {progressPercent > 0 ? (
                 <View style={styles.bookMetaPill}>
@@ -387,14 +463,14 @@ export default function LibraryScreen() {
 
             <View style={styles.bookActionRow}>
               {isDownloaded ? (
-                <Pressable style={styles.bookReadButton} onPress={() => handleOpenBook(book.id)}>
+                <Pressable style={styles.bookReadButton} onPress={() => void handleOpenBook(book.id)}>
                   <Ionicons name="book-outline" size={15} color="#FFFFFF" />
                   <Text style={styles.bookReadButtonText}>Read</Text>
                 </Pressable>
               ) : (
                 <Pressable
-                  style={[styles.bookDownloadButton, isDownloading && styles.bookActionButtonDisabled]}
-                  disabled={isDownloading}
+                  style={[styles.bookDownloadButton, (isDownloading || !supportsInAppReader) && styles.bookActionButtonDisabled]}
+                  disabled={isDownloading || !supportsInAppReader}
                   onPress={() => void handleDownloadBook(book)}
                 >
                   {isDownloading ? (
@@ -402,7 +478,9 @@ export default function LibraryScreen() {
                   ) : (
                     <Ionicons name="download-outline" size={15} color="#4D6243" />
                   )}
-                  <Text style={styles.bookDownloadButtonText}>{isDownloading ? "Downloading" : "Download"}</Text>
+                  <Text style={styles.bookDownloadButtonText}>
+                    {isDownloading ? "Downloading" : supportsInAppReader ? "Download EPUB" : "EPUB only"}
+                  </Text>
                 </Pressable>
               )}
             </View>
@@ -437,7 +515,7 @@ export default function LibraryScreen() {
                 <Text style={styles.heroBadge}>Reading Room</Text>
                 <Text style={[styles.heroTitle, compact && styles.heroTitleCompact]}>A warmer shelf for slow, comforting reading.</Text>
                 <Text style={[styles.heroBody, compact && styles.heroBodyCompact]}>
-                  The catalog pulls titles related to mental health, psychology, stress, and wellbeing.
+                  Search EPUB books, save them to this device, and read them directly inside Bawat Tala.
                 </Text>
               </View>
 
@@ -468,7 +546,7 @@ export default function LibraryScreen() {
             <Text style={styles.introEyebrow}>Settle In</Text>
             <Text style={styles.introTitle}>Browse the shelf, then step into reader mode.</Text>
             <Text style={styles.introBody}>
-              Your progress and ratings are saved to your account. Reader links appear when the configured catalog provides them.
+              EPUB downloads stay in the app library on this device. Progress and ratings are still saved to your account.
             </Text>
           </View>
 
@@ -505,7 +583,7 @@ export default function LibraryScreen() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>{submittedQuery ? "Search Results" : "Featured Shelf"}</Text>
             <Text style={styles.sectionSubTitle}>
-              {submittedQuery ? `Showing matches for "${submittedQuery}".` : "Download a title before reader mode opens."}
+              {submittedQuery ? `Showing EPUB matches for "${submittedQuery}".` : "Download an EPUB before reader mode opens."}
             </Text>
           </View>
 
@@ -556,7 +634,7 @@ export default function LibraryScreen() {
 
             <View style={[styles.readerPageBadge, narrow && styles.readerPageBadgeStacked]}>
               <Text style={styles.readerPageBadgeText}>
-                {readerPages.length > 0 ? `${readerPageIndex + 1}/${readerPages.length}` : "0/0"}
+                {isReaderLoading ? "..." : readerPages.length > 0 ? `${readerPageIndex + 1}/${readerPages.length}` : "0/0"}
               </Text>
             </View>
           </View>
@@ -565,20 +643,30 @@ export default function LibraryScreen() {
             <View style={[styles.readerSpineShadow, compact && styles.readerSpineShadowCompact]} />
             <View style={[styles.readerPageCard, compact && styles.readerPageCardCompact]}>
               <View style={[styles.readerPageInner, compact && styles.readerPageInnerCompact]}>
-                <Text style={styles.readerPageEyebrow}>{currentPage?.eyebrow ?? ""}</Text>
-                <Text style={[styles.readerPageTitle, compact && styles.readerPageTitleCompact]}>{currentPage?.title ?? ""}</Text>
+                {isReaderLoading ? (
+                  <View style={styles.readerLoadingWrap}>
+                    <ActivityIndicator color="#70C943" />
+                    <Text style={styles.readerLoadingText}>Opening EPUB...</Text>
+                  </View>
+                ) : (
+                  <>
+                    {!!readerErrorMessage && <Text style={styles.readerInlineErrorText}>{readerErrorMessage}</Text>}
+                    <Text style={styles.readerPageEyebrow}>{currentPage?.eyebrow ?? ""}</Text>
+                    <Text style={[styles.readerPageTitle, compact && styles.readerPageTitleCompact]}>{currentPage?.title ?? ""}</Text>
 
-                <ScrollView style={styles.readerPageScroll} showsVerticalScrollIndicator={false}>
-                  {currentPage?.paragraphs.map((paragraph, index) => (
-                    <Text key={`${currentPage.title}-${index}`} style={[styles.readerPageBody, compact && styles.readerPageBodyCompact]}>
-                      {paragraph}
+                    <ScrollView style={styles.readerPageScroll} showsVerticalScrollIndicator={false}>
+                      {currentPage?.paragraphs.map((paragraph, index) => (
+                        <Text key={`${currentPage.title}-${index}`} style={[styles.readerPageBody, compact && styles.readerPageBodyCompact]}>
+                          {paragraph}
+                        </Text>
+                      ))}
+                    </ScrollView>
+
+                    <Text style={styles.readerPageNumber}>
+                      {readerPages.length > 0 ? `Page ${readerPageIndex + 1}` : ""}
                     </Text>
-                  ))}
-                </ScrollView>
-
-                <Text style={styles.readerPageNumber}>
-                  {readerPages.length > 0 ? `Page ${readerPageIndex + 1}` : ""}
-                </Text>
+                  </>
+                )}
               </View>
             </View>
           </View>
@@ -598,27 +686,22 @@ export default function LibraryScreen() {
                 ))}
               </View>
             </View>
-            {selectedBook?.readerLink ? (
-              <Pressable style={styles.openReaderButton} onPress={() => void handleOpenReaderLink()}>
-                <Ionicons name="open-outline" size={15} color="#524B42" />
-                <Text style={styles.openReaderText}>Open Link</Text>
-              </Pressable>
-            ) : null}
           </View>
           {!!ratingErrorMessage && <Text style={styles.ratingErrorText}>{ratingErrorMessage}</Text>}
 
           <View style={[styles.readerFooter, compact && styles.readerFooterStacked]}>
             <Pressable
-              style={[styles.readerNavButton, compact && styles.readerFooterButtonFull, !canGoPreviousPage && styles.readerNavButtonDisabled]}
-              disabled={!canGoPreviousPage}
+              style={[styles.readerNavButton, compact && styles.readerFooterButtonFull, (!canGoPreviousPage || isReaderLoading) && styles.readerNavButtonDisabled]}
+              disabled={!canGoPreviousPage || isReaderLoading}
               onPress={() => handleReaderPageChange(readerPageIndex - 1)}
             >
-              <Ionicons name="arrow-back" size={16} color={canGoPreviousPage ? "#524B42" : "#B1A796"} />
-              <Text style={[styles.readerNavButtonText, !canGoPreviousPage && styles.readerNavButtonTextDisabled]}>Previous</Text>
+              <Ionicons name="arrow-back" size={16} color={canGoPreviousPage && !isReaderLoading ? "#524B42" : "#B1A796"} />
+              <Text style={[styles.readerNavButtonText, (!canGoPreviousPage || isReaderLoading) && styles.readerNavButtonTextDisabled]}>Previous</Text>
             </Pressable>
 
             <Pressable
-              style={[styles.readerPrimaryButton, compact && styles.readerFooterButtonFull]}
+              style={[styles.readerPrimaryButton, compact && styles.readerFooterButtonFull, isReaderLoading && styles.readerPrimaryButtonDisabled]}
+              disabled={isReaderLoading}
               onPress={() => {
                 if (canGoNextPage) {
                   handleReaderPageChange(readerPageIndex + 1);
@@ -629,7 +712,7 @@ export default function LibraryScreen() {
               }}
             >
               <Text style={styles.readerPrimaryButtonText}>
-                {canGoNextPage ? "Next page" : selectedBook?.progress?.status === "FINISHED" ? "Close book" : "Finish book"}
+                {isReaderLoading ? "Opening" : canGoNextPage ? "Next page" : selectedBook?.progress?.status === "FINISHED" ? "Close book" : "Finish book"}
               </Text>
               <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
             </Pressable>
@@ -1385,6 +1468,25 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 14,
   },
+  readerLoadingWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    rowGap: 10,
+  },
+  readerLoadingText: {
+    color: "#6A645A",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
+  },
+  readerInlineErrorText: {
+    color: "#9B4B3D",
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "700",
+    marginBottom: 10,
+  },
   readerPageEyebrow: {
     color: "#877B68",
     fontSize: 11,
@@ -1533,6 +1635,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     columnGap: 8,
     paddingHorizontal: 16,
+  },
+  readerPrimaryButtonDisabled: {
+    opacity: 0.68,
   },
   readerPrimaryButtonText: {
     color: "#FFFFFF",

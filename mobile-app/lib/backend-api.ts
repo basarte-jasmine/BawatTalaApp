@@ -107,6 +107,7 @@ export type LibraryBookRecord = {
   infoLink?: string;
   isFreeEbook?: boolean;
   language?: string;
+  localEpubUri?: string;
   pageCount?: number;
   previewLink?: string;
   provider?: string;
