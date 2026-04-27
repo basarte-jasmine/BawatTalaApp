@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Image, ImageSourcePropType, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, ImageSourcePropType, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuthSession } from "../lib/auth-session";
 import { fetchMonthlyMoods } from "../lib/backend-api";
@@ -24,6 +24,14 @@ type CalendarDay = {
   dayNumber: number | null;
   moodId: string | null;
   state: "empty" | "future" | "mood";
+};
+
+type MoodEntry = {
+  createdAt?: string;
+  id?: string;
+  moodDate: string;
+  moodId: string;
+  moodLabel: string;
 };
 
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
@@ -76,11 +84,12 @@ export default function MoodOverviewScreen() {
   }, [now]);
   const [displayYear, setDisplayYear] = useState(initialMonth.year);
   const [displayMonthIndex, setDisplayMonthIndex] = useState(initialMonth.monthIndex);
-  const [monthlyEntries, setMonthlyEntries] = useState<{ createdAt?: string; id?: string; moodDate: string; moodId: string; moodLabel: string }[]>([]);
+  const [monthlyEntries, setMonthlyEntries] = useState<MoodEntry[]>([]);
   const [monthlyCounts, setMonthlyCounts] = useState<Record<string, number>>(() => createEmotionCounts());
   const [mostCommonMoodId, setMostCommonMoodId] = useState<string | null>(null);
   const [totalCheckIns, setTotalCheckIns] = useState(0);
   const [selectedDayNumber, setSelectedDayNumber] = useState(now.day);
+  const [selectedCheckInEntry, setSelectedCheckInEntry] = useState<MoodEntry | null>(null);
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -187,6 +196,15 @@ export default function MoodOverviewScreen() {
     const [moodId, count] = Object.entries(selectedDayCounts).sort((a, b) => b[1] - a[1])[0] ?? [];
     return count > 0 ? moodId : null;
   }, [selectedDayCounts]);
+  const selectedDayMoodStats = useMemo(
+    () =>
+      EMOTION_ORDER.map((id) => ({
+        id,
+        count: selectedDayCounts[id] ?? 0,
+        meta: EMOTION_META[id],
+      })).filter((item) => item.count > 0),
+    [selectedDayCounts],
+  );
 
   const calendarDays = useMemo(() => {
     const firstDayIndex = new Date(displayYear, displayMonthIndex, 1).getDay();
@@ -256,6 +274,12 @@ export default function MoodOverviewScreen() {
   const selectedDayMostCommonMood = selectedDayMostCommonMoodId ? EMOTION_META[selectedDayMostCommonMoodId] ?? null : null;
   const selectedDayLabel = formatDisplayDate(displayYear, displayMonthIndex, selectedDayNumber);
   const selectedDayCheckInLabel = `${selectedDayEntries.length} emotion ${selectedDayEntries.length === 1 ? "check-in" : "check-ins"}`;
+  const selectedDayMoodKindLabel = `${selectedDayMoodStats.length} ${selectedDayMoodStats.length === 1 ? "kind" : "kinds"}`;
+  const selectedDayRecordLabel = `${selectedDayEntries.length} ${selectedDayEntries.length === 1 ? "record" : "records"}`;
+  const selectedCheckInMood = selectedCheckInEntry ? EMOTION_META[selectedCheckInEntry.moodId] ?? null : null;
+  const selectedCheckInTime = selectedCheckInEntry
+    ? formatCheckInTime(selectedCheckInEntry.createdAt) || "Time unavailable"
+    : "";
   const dailyInsightText =
     selectedDayEntries.length <= 0
       ? `No emotions were logged on ${selectedDayLabel}. Pick any day with a badge to see Muni's daily reflection.`
@@ -280,7 +304,7 @@ export default function MoodOverviewScreen() {
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.dailyCard}>
           <View style={styles.dailyHeader}>
-            <View>
+            <View style={styles.summaryHeaderCopy}>
               <Text style={styles.summaryEyebrow}>SELECTED DAY</Text>
               <Text style={styles.summaryMonth}>{selectedDayLabel}</Text>
               <Text style={styles.summarySub}>{selectedDayCheckInLabel}</Text>
@@ -301,30 +325,73 @@ export default function MoodOverviewScreen() {
             </View>
           </View>
 
-          <View style={styles.dailyEntriesRow}>
+          <View style={styles.dailyBreakdownHeader}>
+            <Text style={styles.dailyBreakdownTitle}>Emotion mix</Text>
+            <Text style={styles.dailyBreakdownMeta}>{selectedDayMoodKindLabel}</Text>
+          </View>
+
+          {selectedDayMoodStats.length ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.dailyMixScroller}
+            >
+              {selectedDayMoodStats.map((item) => (
+                <View key={item.id} style={styles.dailyMixChip}>
+                  <View style={[styles.dailyMixFace, { borderColor: item.meta.color }]}>
+                    {item.meta.image ? (
+                      <Image source={item.meta.image} style={styles.dailyMixImage} resizeMode="contain" />
+                    ) : (
+                      <View style={[styles.dailyEntryFallback, { backgroundColor: item.meta.color }]} />
+                    )}
+                  </View>
+                  <View style={styles.dailyMixCopy}>
+                    <Text style={styles.dailyMixLabel} numberOfLines={1}>{item.meta.label}</Text>
+                    <Text style={styles.dailyMixCount}>{item.count}x</Text>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          ) : (
+            <Text style={styles.dailyEmptyText}>No emotions logged for this day.</Text>
+          )}
+
+          <View style={styles.dailyBreakdownHeader}>
+            <Text style={styles.dailyBreakdownTitle}>Check-in trail</Text>
+            <Text style={styles.dailyBreakdownMeta}>{selectedDayRecordLabel}</Text>
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={[
+              styles.dailyTrailScroller,
+              !selectedDayEntries.length && styles.dailyTrailScrollerEmpty,
+            ]}
+          >
             {selectedDayEntries.length ? (
               selectedDayEntries.map((entry, index) => {
                 const moodMeta = EMOTION_META[entry.moodId] ?? null;
                 return (
-                  <View key={entry.id ?? `${entry.moodId}-${index}`} style={styles.dailyEntryPill}>
-                    <View style={[styles.dailyEntryFace, moodMeta && { borderColor: moodMeta.color }]}>
-                      {moodMeta?.image ? (
-                        <Image source={moodMeta.image} style={styles.dailyEntryImage} resizeMode="contain" />
-                      ) : moodMeta ? (
-                        <View style={[styles.dailyEntryFallback, { backgroundColor: moodMeta.color }]} />
-                      ) : null}
-                    </View>
-                    <View style={styles.dailyEntryCopy}>
-                      <Text style={styles.dailyEntryLabel}>{moodMeta?.label ?? entry.moodLabel}</Text>
-                      <Text style={styles.dailyEntryTime}>{formatCheckInTime(entry.createdAt) || `Check-in ${index + 1}`}</Text>
-                    </View>
-                  </View>
+                  <Pressable
+                    key={entry.id ?? `${entry.moodId}-${index}`}
+                    style={[styles.dailyEntryPill, moodMeta && { borderColor: moodMeta.color }]}
+                    onPress={() => setSelectedCheckInEntry(entry)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open ${moodMeta?.label ?? entry.moodLabel} check-in details`}
+                  >
+                    <Text style={styles.dailyEntryIndex}>{index + 1}</Text>
+                    <Text style={styles.dailyEntryLabel} numberOfLines={1}>{moodMeta?.label ?? entry.moodLabel}</Text>
+                  </Pressable>
                 );
               })
             ) : (
-              <Text style={styles.dailyEmptyText}>No emotions logged for this day.</Text>
+              <View style={styles.dailyEmptyTrail}>
+                <Ionicons name="sparkles-outline" size={18} color="#91A184" />
+                <Text style={styles.dailyEmptyTrailText}>No check-ins yet</Text>
+              </View>
             )}
-          </View>
+          </ScrollView>
         </View>
 
         <View style={styles.calendarCard}>
@@ -412,7 +479,7 @@ export default function MoodOverviewScreen() {
 
         <View style={styles.summaryCard}>
           <View style={styles.summaryHeader}>
-            <View>
+            <View style={styles.summaryHeaderCopy}>
               <Text style={styles.summaryEyebrow}>MONTHLY TOTALS</Text>
               <Text style={styles.summaryMonth}>{`${getMonthName(displayMonthIndex)} ${displayYear}`}</Text>
               <Text style={styles.summarySub}>{monthlySubText}</Text>
@@ -450,6 +517,26 @@ export default function MoodOverviewScreen() {
           </View>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={Boolean(selectedCheckInEntry)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedCheckInEntry(null)}
+      >
+        <View style={styles.detailModalBackdrop}>
+          <View style={styles.detailModalCard}>
+            <Text style={styles.detailModalEyebrow}>CHECK-IN DETAILS</Text>
+            <Text style={styles.detailModalTitle}>{selectedCheckInMood?.label ?? selectedCheckInEntry?.moodLabel ?? "Emotion"}</Text>
+            <Text style={styles.detailModalMeta}>{selectedDayLabel}</Text>
+            <Text style={styles.detailModalTime}>{selectedCheckInTime}</Text>
+
+            <Pressable style={styles.detailModalButton} onPress={() => setSelectedCheckInEntry(null)}>
+              <Text style={styles.detailModalButtonText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -538,55 +625,113 @@ const styles = StyleSheet.create({
   dailyMoodWrap: {
     alignItems: "center",
     minWidth: 88,
+    flexShrink: 0,
   },
-  dailyEntriesRow: {
-    rowGap: 9,
+  dailyBreakdownHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 10,
+    marginBottom: 7,
   },
-  dailyEntryPill: {
-    minHeight: 54,
+  dailyBreakdownTitle: {
+    color: "#31465A",
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: "700",
+  },
+  dailyBreakdownMeta: {
+    color: "#7B8876",
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: "700",
+  },
+  dailyMixScroller: {
+    columnGap: 8,
+    paddingRight: 2,
+    paddingBottom: 1,
+  },
+  dailyMixChip: {
+    width: 126,
+    minHeight: 50,
     borderRadius: 16,
     backgroundColor: "#F8FBF5",
     borderWidth: 1,
     borderColor: "#E0E9DA",
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    columnGap: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
   },
-  dailyEntryFace: {
-    width: 38,
-    height: 38,
+  dailyMixFace: {
+    width: 36,
+    height: 36,
     borderRadius: 14,
     backgroundColor: "#FFFFFF",
     borderWidth: 1.5,
-    borderColor: "#DCE5DB",
     alignItems: "center",
     justifyContent: "center",
   },
-  dailyEntryImage: {
-    width: 30,
-    height: 30,
+  dailyMixImage: {
+    width: 28,
+    height: 28,
+  },
+  dailyMixCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  dailyMixLabel: {
+    color: "#31465A",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
+  dailyMixCount: {
+    color: "#6A7481",
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 1,
+  },
+  dailyTrailScroller: {
+    columnGap: 8,
+    paddingRight: 2,
+    paddingBottom: 1,
+  },
+  dailyTrailScrollerEmpty: {
+    flexGrow: 1,
+  },
+  dailyEntryPill: {
+    minWidth: 86,
+    maxWidth: 122,
+    minHeight: 34,
+    borderRadius: 999,
+    backgroundColor: "#F8FBF5",
+    borderWidth: 1,
+    borderColor: "#E0E9DA",
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
   },
   dailyEntryFallback: {
     width: 20,
     height: 20,
     borderRadius: 999,
   },
-  dailyEntryCopy: {
-    flex: 1,
+  dailyEntryIndex: {
+    color: "#7B8876",
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "800",
   },
   dailyEntryLabel: {
     color: "#31465A",
-    fontSize: 14,
-    lineHeight: 19,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "700",
-  },
-  dailyEntryTime: {
-    color: "#6A7481",
-    fontSize: 11,
-    lineHeight: 15,
-    marginTop: 1,
+    flexShrink: 1,
   },
   dailyEmptyText: {
     color: "#6A7481",
@@ -594,11 +739,36 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     paddingVertical: 6,
   },
+  dailyEmptyTrail: {
+    minHeight: 56,
+    flexGrow: 1,
+    borderRadius: 16,
+    backgroundColor: "#F8FBF5",
+    borderWidth: 1,
+    borderColor: "#E0E9DA",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 6,
+    paddingHorizontal: 12,
+  },
+  dailyEmptyTrailText: {
+    color: "#6A7481",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
   summaryHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
+    columnGap: 12,
     marginBottom: 12,
+  },
+  summaryHeaderCopy: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 2,
   },
   summaryEyebrow: {
     color: "#7C8F77",
@@ -619,10 +789,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     marginTop: 2,
+    flexShrink: 1,
   },
   commonMoodWrap: {
     alignItems: "center",
     minWidth: 84,
+    flexShrink: 0,
   },
   commonMoodMeta: {
     color: "#6E7E8B",
@@ -705,6 +877,69 @@ const styles = StyleSheet.create({
     marginTop: 2,
     minHeight: 24,
     textAlign: "center",
+  },
+  detailModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(36, 47, 42, 0.28)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 22,
+  },
+  detailModalCard: {
+    width: "100%",
+    maxWidth: 340,
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#DFEADB",
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    shadowColor: "#24302B",
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
+  },
+  detailModalEyebrow: {
+    color: "#7C8F77",
+    fontSize: 10,
+    lineHeight: 14,
+    letterSpacing: 1,
+    fontWeight: "800",
+    marginBottom: 6,
+  },
+  detailModalTitle: {
+    color: "#31465A",
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: "800",
+  },
+  detailModalMeta: {
+    color: "#6A7481",
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 4,
+  },
+  detailModalTime: {
+    color: "#31465A",
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "700",
+    marginTop: 14,
+  },
+  detailModalButton: {
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: "#31465A",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 18,
+  },
+  detailModalButtonText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "800",
   },
   calendarCard: {
     borderRadius: 22,
