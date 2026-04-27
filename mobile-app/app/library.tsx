@@ -30,26 +30,26 @@ function buildReaderPages(book: LibraryBookRecord): ReaderPage[] {
     book.publishedDate ? `Published: ${book.publishedDate}` : "",
     book.pageCount ? `Length: ${book.pageCount} pages` : "",
     book.downloadableEpub || book.downloadablePdf
-      ? `Free formats: ${[book.downloadableEpub ? "EPUB" : "", book.downloadablePdf ? "PDF" : ""].filter(Boolean).join(", ")}`
-      : "Free reading access is provided through Google Books when available.",
+      ? `Formats: ${[book.downloadableEpub ? "EPUB" : "", book.downloadablePdf ? "PDF" : ""].filter(Boolean).join(", ")}`
+      : "Reader access depends on the configured library catalog.",
   ].filter(Boolean);
 
   return [
     {
       eyebrow: book.category,
       title: book.title,
-      paragraphs: [book.blurb || "A free mental-health and wellbeing read from Google Books."],
+      paragraphs: [book.blurb || "A mental-health and wellbeing read from the library catalog."],
     },
     {
       eyebrow: "Book Details",
       title: "About this free book",
-      paragraphs: detailLines.length ? detailLines : ["Google Books did not provide extra details for this title."],
+      paragraphs: detailLines.length ? detailLines : ["The library catalog did not provide extra details for this title."],
     },
     {
       eyebrow: "Reading Access",
-      title: "Continue in the free reader",
+      title: "Continue in the reader",
       paragraphs: [
-        "This title came from the Google Books free eBook catalog. Open the free reader to continue with the full available text, then come back here to update your progress and rating.",
+        "Open the reader link when the catalog provides one, then come back here to update your progress and rating.",
       ],
     },
   ];
@@ -111,11 +111,11 @@ export default function LibraryScreen() {
         setBooks(result.books ?? []);
       } else {
         setBooks([]);
-        setErrorMessage(result.message ?? "Unable to load the free library right now.");
+        setErrorMessage(result.message ?? "Unable to load the library right now.");
       }
     } catch {
       setBooks([]);
-      setErrorMessage("Unable to reach the free library right now.");
+      setErrorMessage("Unable to reach the library right now.");
     }
     setIsLoading(false);
   }, [user?.studentNumber]);
@@ -228,7 +228,7 @@ export default function LibraryScreen() {
       void persistProgress(selectedBook, readerPageIndex, readerPages.length, selectedBook.progress?.status === "FINISHED" ? "FINISHED" : "STARTED");
     }
     await Linking.openURL(selectedBook.readerLink).catch(() => {
-      setRatingErrorMessage("Unable to open the free reader link.");
+      setRatingErrorMessage("Unable to open the reader link.");
     });
   };
 
@@ -318,7 +318,7 @@ export default function LibraryScreen() {
                 <Text style={styles.heroBadge}>Reading Room</Text>
                 <Text style={[styles.heroTitle, compact && styles.heroTitleCompact]}>A warmer shelf for slow, comforting reading.</Text>
                 <Text style={[styles.heroBody, compact && styles.heroBodyCompact]}>
-                  The catalog now pulls free Google Books titles related to mental health, psychology, stress, and wellbeing.
+                  The catalog pulls titles related to mental health, psychology, stress, and wellbeing.
                 </Text>
               </View>
 
@@ -349,7 +349,7 @@ export default function LibraryScreen() {
             <Text style={styles.introEyebrow}>Settle In</Text>
             <Text style={styles.introTitle}>Browse the shelf, then step into reader mode.</Text>
             <Text style={styles.introBody}>
-              Your progress and ratings are saved to your account. Full book text opens through the free Google Books reader when available.
+              Your progress and ratings are saved to your account. Reader links appear when the configured catalog provides them.
             </Text>
           </View>
 
@@ -361,7 +361,7 @@ export default function LibraryScreen() {
           {isLoading ? (
             <View style={styles.loadingCard}>
               <ActivityIndicator color="#70C943" />
-              <Text style={styles.loadingText}>Loading free books...</Text>
+              <Text style={styles.loadingText}>Loading books...</Text>
             </View>
           ) : errorMessage ? (
             <View style={styles.emptyCard}>
@@ -378,8 +378,8 @@ export default function LibraryScreen() {
               </View>
             ) : (
               <View style={styles.emptyCard}>
-                <Text style={styles.emptyTitle}>No free books found</Text>
-                <Text style={styles.emptyText}>Try again in a moment. Google Books may be returning a smaller free catalog right now.</Text>
+                <Text style={styles.emptyTitle}>No books found</Text>
+                <Text style={styles.emptyText}>Try again in a moment. The configured catalog may be returning fewer results right now.</Text>
               </View>
             )
           )}
@@ -450,7 +450,7 @@ export default function LibraryScreen() {
             {selectedBook?.readerLink ? (
               <Pressable style={styles.openReaderButton} onPress={() => void handleOpenFreeReader()}>
                 <Ionicons name="open-outline" size={15} color="#524B42" />
-                <Text style={styles.openReaderText}>Free Reader</Text>
+                <Text style={styles.openReaderText}>Open Link</Text>
               </Pressable>
             ) : null}
           </View>

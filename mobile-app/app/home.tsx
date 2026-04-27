@@ -1385,7 +1385,7 @@ export default function HomeScreen() {
           <View style={styles.libraryMetaRow}>
             <View style={styles.libraryMetaPill}>
               <Ionicons name="book-outline" size={15} color="#4A7A33" />
-              <Text style={styles.libraryMetaPillText}>{libraryPreviewBooks.length ? "Free books ready" : "Free books loading"}</Text>
+              <Text style={styles.libraryMetaPillText}>{libraryPreviewBooks.length ? "Books ready" : "Books loading"}</Text>
             </View>
           </View>
 
@@ -1407,8 +1407,8 @@ export default function HomeScreen() {
                 style={[styles.libraryBookChip, libraryCompact && styles.libraryBookChipStacked, { borderLeftColor: "#A8C79F" }]}
                 onPress={handleOpenLibrary}
               >
-                <Text style={styles.libraryBookChipCategory}>Free Shelf</Text>
-                <Text style={styles.libraryBookChipTitle} numberOfLines={2}>Mental-health books from Google Books</Text>
+                <Text style={styles.libraryBookChipCategory}>Library Shelf</Text>
+                <Text style={styles.libraryBookChipTitle} numberOfLines={2}>Mental-health books from the library catalog</Text>
                 <Text style={styles.libraryBookChipMeta}>Open library</Text>
               </Pressable>
             )}

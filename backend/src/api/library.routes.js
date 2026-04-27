@@ -6,6 +6,12 @@ const router = express.Router();
 const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
 const DEFAULT_BOOK_QUERY = "subject:psychology mental health wellbeing stress anxiety";
 const GOOGLE_BOOKS_ENDPOINT = "https://www.googleapis.com/books/v1/volumes";
+const ANNA_ARCHIVE_ENDPOINT = "https://annas-archive-api.p.rapidapi.com/search";
+const ANNA_ARCHIVE_RAPIDAPI_HOST = "annas-archive-api.p.rapidapi.com";
+const ANNA_ARCHIVE_DEFAULT_CATEGORIES = "fiction, nonfiction, comic, magazine, musicalscore, other, unknown";
+const ANNA_ARCHIVE_DEFAULT_EXTENSIONS = "pdf, epub, mobi, azw3";
+const ANNA_ARCHIVE_DEFAULT_SORT = "mostRelevant";
+const ANNA_ARCHIVE_DEFAULT_SOURCES = "libgenLi, libgenRs";
 const MAX_BOOK_RESULTS = 24;
 const RELEVANCE_KEYWORDS = [
   "anxiety",
@@ -62,10 +68,10 @@ function truncateText(value, maxLength) {
   return `${text.slice(0, maxLength).trim()}...`;
 }
 
-function fetchJson(url) {
+function fetchJson(url, { headers = {}, serviceName = "Library API" } = {}) {
   return new Promise((resolve, reject) => {
     https
-      .get(url, (response) => {
+      .get(url, { headers }, (response) => {
         let body = "";
         response.setEncoding("utf8");
         response.on("data", (chunk) => {
@@ -76,12 +82,12 @@ function fetchJson(url) {
           try {
             parsed = body ? JSON.parse(body) : {};
           } catch (error) {
-            reject(new Error("Google Books returned an unreadable response."));
+            reject(new Error(`${serviceName} returned an unreadable response.`));
             return;
           }
 
           if (response.statusCode < 200 || response.statusCode >= 300) {
-            reject(new Error(parsed?.error?.message || "Google Books request failed."));
+            reject(new Error(parsed?.error?.message || parsed?.message || `${serviceName} request failed.`));
             return;
           }
 
@@ -90,6 +96,12 @@ function fetchJson(url) {
       })
       .on("error", reject);
   });
+}
+
+function getLibraryBooksProvider() {
+  const configuredProvider = String(process.env.LIBRARY_BOOKS_PROVIDER || "").trim().toLowerCase();
+  if (configuredProvider) return configuredProvider;
+  return process.env.ANNA_ARCHIVE_RAPIDAPI_KEY ? "anna" : "google";
 }
 
 function getImageUrl(imageLinks = {}) {
@@ -118,6 +130,85 @@ function isFreeGoogleBook(volume) {
 
 function getReaderLink(accessInfo = {}, info = {}) {
   return accessInfo.webReaderLink || info.previewLink || info.infoLink || "";
+}
+
+function findFirstArray(value, depth = 0) {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== "object" || depth > 3) return [];
+
+  for (const key of ["books", "results", "items", "data", "docs", "records"]) {
+    const found = findFirstArray(value[key], depth + 1);
+    if (found.length) return found;
+  }
+
+  return [];
+}
+
+function pickString(source, keys) {
+  for (const key of keys) {
+    const value = source?.[key];
+    if (Array.isArray(value)) {
+      const compact = value
+        .map((item) => (typeof item === "object" ? item?.name || item?.title || "" : item))
+        .filter(Boolean)
+        .join(", ");
+      if (compact) return normalizeCompactSpaces(compact);
+    }
+    if (value !== null && value !== undefined && typeof value !== "object") {
+      const compact = normalizeCompactSpaces(value);
+      if (compact) return compact;
+    }
+  }
+  return "";
+}
+
+function pickInteger(source, keys, min, max, fallback) {
+  for (const key of keys) {
+    const parsed = Number(source?.[key]);
+    if (Number.isInteger(parsed)) return Math.max(min, Math.min(max, parsed));
+  }
+  return fallback;
+}
+
+function getAnnaCoverUrl(book) {
+  const rawUrl = pickString(book, ["coverImageUrl", "cover_url", "coverUrl", "cover", "thumbnail", "image"]);
+  if (!rawUrl) return "";
+  if (rawUrl.startsWith("//")) return `https:${rawUrl}`;
+  return rawUrl.replace(/^http:\/\//i, "https://");
+}
+
+function mapAnnaBook(book, index, progressByBookId) {
+  const title = pickString(book, ["title", "bookTitle", "name"]) || "Untitled book";
+  const rawId = pickString(book, ["id", "md5", "bookId", "isbn13", "isbn", "aarecord_id"]);
+  const id = rawId ? `anna-${rawId}` : `anna-${index}-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+  const pageCount = pickInteger(book, ["pageCount", "pages", "numPages"], 0, 2000, 0);
+  const extension = pickString(book, ["extension", "ext", "format", "fileExtension"]).toLowerCase();
+  const category = pickString(book, ["category", "cat", "topic", "genre"]) || "Mental Health";
+  const progress = progressByBookId.get(id) || null;
+
+  return {
+    accentColor: ACCENT_COLORS[index % ACCENT_COLORS.length],
+    author: pickString(book, ["authors", "author", "creator"]) || "Library catalog",
+    blurb: truncateText(pickString(book, ["description", "summary", "subtitle"]) || "A library catalog result related to mental health and wellbeing.", 650),
+    category,
+    coverImageUrl: getAnnaCoverUrl(book),
+    downloadableEpub: extension.includes("epub"),
+    downloadablePdf: extension.includes("pdf"),
+    estimatedMinutes: Math.max(4, Math.min(45, pageCount ? Math.ceil(pageCount / 25) : 8)),
+    id,
+    infoLink: "",
+    isFreeEbook: false,
+    language: pickString(book, ["language", "lang"]),
+    pageCount,
+    previewLink: "",
+    publishedDate: pickString(book, ["publishedDate", "publishDate", "year"]),
+    publisher: pickString(book, ["publisher"]),
+    readerLink: "",
+    rewardLabel: progress?.rating ? `${progress.rating}/5 stars` : "Rate after reading",
+    shelfLabel: "Catalog shelf",
+    title,
+    progress,
+  };
 }
 
 function mapGoogleBook(volume, index, progressByBookId) {
@@ -255,14 +346,63 @@ async function upsertProgress({
 }
 
 router.get("/books", async (req, res) => {
+  const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
+  const maxResults = clampInteger(Number(req.query.maxResults || MAX_BOOK_RESULTS), 1, 40, MAX_BOOK_RESULTS);
+  const searchQuery = normalizeCompactSpaces(req.query.q || DEFAULT_BOOK_QUERY);
+  const provider = getLibraryBooksProvider();
+
+  if (provider === "anna") {
+    const apiKey = String(process.env.ANNA_ARCHIVE_RAPIDAPI_KEY || "").trim();
+    if (!apiKey) {
+      return res.status(500).json({ message: "Anna's Archive RapidAPI key is not configured." });
+    }
+
+    try {
+      const params = new URLSearchParams({
+        cat: String(process.env.ANNA_ARCHIVE_CATEGORIES || ANNA_ARCHIVE_DEFAULT_CATEGORIES),
+        ext: String(process.env.ANNA_ARCHIVE_EXTENSIONS || ANNA_ARCHIVE_DEFAULT_EXTENSIONS),
+        page: String(clampInteger(Number(req.query.page || 1), 1, 100, 1)),
+        q: searchQuery.replace(/^subject:/i, ""),
+        sort: String(process.env.ANNA_ARCHIVE_SORT || ANNA_ARCHIVE_DEFAULT_SORT),
+      });
+      const sources = String(process.env.ANNA_ARCHIVE_SOURCES || ANNA_ARCHIVE_DEFAULT_SOURCES).trim();
+      if (sources) {
+        params.set("source", sources);
+      }
+
+      const data = await fetchJson(`${ANNA_ARCHIVE_ENDPOINT}?${params.toString()}`, {
+        headers: {
+          "Content-Type": "application/json",
+          "x-rapidapi-host": String(process.env.ANNA_ARCHIVE_RAPIDAPI_HOST || ANNA_ARCHIVE_RAPIDAPI_HOST),
+          "x-rapidapi-key": apiKey,
+        },
+        serviceName: "Anna's Archive",
+      });
+      const selectedItems = findFirstArray(data).slice(0, maxResults);
+      const bookIds = selectedItems
+        .map((item, index) => {
+          const title = pickString(item, ["title", "bookTitle", "name"]) || "Untitled book";
+          const rawId = pickString(item, ["id", "md5", "bookId", "isbn13", "isbn", "aarecord_id"]);
+          return rawId ? `anna-${rawId}` : `anna-${index}-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+        })
+        .filter(Boolean);
+      const progressByBookId = await getStudentProgress(studentNumber, bookIds);
+      const books = selectedItems.map((item, index) => mapAnnaBook(item, index, progressByBookId));
+
+      return res.json({
+        books,
+        query: searchQuery,
+        totalItems: Number(data.totalItems || data.total || data.count || books.length),
+      });
+    } catch (error) {
+      return res.status(502).json({ message: error.message || "Failed to load library books." });
+    }
+  }
+
   const apiKey = String(process.env.GOOGLE_BOOKS_API_KEY || "").trim();
   if (!apiKey) {
     return res.status(500).json({ message: "Google Books API key is not configured." });
   }
-
-  const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
-  const maxResults = clampInteger(Number(req.query.maxResults || MAX_BOOK_RESULTS), 1, 40, MAX_BOOK_RESULTS);
-  const searchQuery = normalizeCompactSpaces(req.query.q || DEFAULT_BOOK_QUERY);
 
   try {
     const params = new URLSearchParams({
@@ -289,7 +429,7 @@ router.get("/books", async (req, res) => {
       totalItems: Number(data.totalItems || books.length),
     });
   } catch (error) {
-    return res.status(502).json({ message: error.message || "Failed to load free books." });
+    return res.status(502).json({ message: error.message || "Failed to load library books." });
   }
 });
 
