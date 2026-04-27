@@ -89,8 +89,8 @@ async function main() {
         `
           insert into public.student_moods (student_number, mood_id, mood_label, mood_date)
           values
-            ($1, 'calm', 'Calm', '2099-01-01'::date),
-            ($1, 'happy', 'Happy', '2099-01-01'::date)
+            ($1, 'contentment', 'Contentment', '2099-01-01'::date),
+            ($1, 'joy', 'Joy', '2099-01-01'::date)
         `,
         [studentNumber],
       );

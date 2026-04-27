@@ -2217,10 +2217,11 @@ const styles = StyleSheet.create({
   },
   moodLabel: {
     color: "#4A4A4A",
-    fontSize: 13,
-    lineHeight: 16,
-    minHeight: 32,
+    fontSize: 10,
+    lineHeight: 13,
+    minHeight: 28,
     textAlign: "center",
+    fontWeight: "700",
   },
   moodHistoryButton: {
     height: 40,

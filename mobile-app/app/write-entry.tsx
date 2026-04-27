@@ -912,7 +912,7 @@ export default function WriteEntryScreen() {
                         <View style={[styles.emotionPickerFallback, { backgroundColor: emotion.color }]} />
                       )}
                     </View>
-                    <Text style={styles.emotionPickerLabel} numberOfLines={1}>
+                    <Text style={styles.emotionPickerLabel} numberOfLines={2}>
                       {emotion.label}
                     </Text>
                   </Pressable>
@@ -1575,7 +1575,7 @@ const styles = StyleSheet.create({
   },
   emotionPickerOption: {
     width: "48.5%",
-    minHeight: 56,
+    minHeight: 62,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "#D4DED0",
@@ -1607,8 +1607,8 @@ const styles = StyleSheet.create({
   emotionPickerLabel: {
     flex: 1,
     color: "#3E556B",
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 15,
     fontWeight: "700",
   },
   tagReviewModalCard: {

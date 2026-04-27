@@ -3,7 +3,7 @@ const { randomBytes, scryptSync, timingSafeEqual } = require("crypto");
 const { google } = require("googleapis");
 const { supabaseAdminClient, supabaseAuthClient } = require("../config/supabase");
 const { query } = require("../config/db");
-const { EMOTION_OPTIONS, createEmotionCounts } = require("../constants/emotions");
+const { EMOTION_OPTIONS, createEmotionCounts, normalizeEmotionId } = require("../constants/emotions");
 const {
   JOURNAL_TAG_OPTIONS,
   inferJournalTagsFromText,
@@ -1265,7 +1265,7 @@ router.get("/dashboard/summary", async (req, res) => {
     const date = normalizeDateValue(row.mood_date);
     if (!date) continue;
     const current = moodCountsByDate.get(date) || createEmotionCounts();
-    const moodId = String(row.mood_id || "").trim().toLowerCase();
+    const moodId = normalizeEmotionId(row.mood_id);
     if (Object.prototype.hasOwnProperty.call(current, moodId)) {
       current[moodId] += 1;
     }

@@ -6,7 +6,7 @@ import { Image, ImageSourcePropType, Modal, Pressable, ScrollView, StyleSheet, T
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuthSession } from "../lib/auth-session";
 import { fetchMonthlyMoods } from "../lib/backend-api";
-import { EMOTION_META, EMOTION_ORDER, createEmotionCounts } from "../lib/emotions";
+import { EMOTION_META, EMOTION_ORDER, createEmotionCounts, normalizeEmotionId } from "../lib/emotions";
 import { getManilaTodayParts } from "../lib/manila-date";
 
 type MoodStat = {
@@ -184,7 +184,7 @@ export default function MoodOverviewScreen() {
   const selectedDayCounts = useMemo(() => {
     const counts = createEmotionCounts();
     selectedDayEntries.forEach((entry) => {
-      const moodId = String(entry.moodId || "").trim().toLowerCase();
+      const moodId = normalizeEmotionId(entry.moodId);
       if (Object.prototype.hasOwnProperty.call(counts, moodId)) {
         counts[moodId] += 1;
       }
@@ -872,10 +872,10 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     color: "#7A8792",
-    fontSize: 10,
-    lineHeight: 12,
+    fontSize: 9,
+    lineHeight: 11,
     marginTop: 2,
-    minHeight: 24,
+    minHeight: 22,
     textAlign: "center",
   },
   detailModalBackdrop: {

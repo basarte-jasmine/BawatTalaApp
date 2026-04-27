@@ -1,6 +1,11 @@
 const express = require("express");
 const { query, removeLegacyDailyMoodUniqueness } = require("../config/db");
-const { EMOTION_LABELS, createEmotionCounts } = require("../constants/emotions");
+const {
+  EMOTION_LABELS,
+  createEmotionCounts,
+  getEmotionLabel,
+  normalizeEmotionId,
+} = require("../constants/emotions");
 
 const router = express.Router();
 const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
@@ -17,7 +22,7 @@ function normalizeStudentNumber(value) {
 }
 
 function normalizeMoodId(value) {
-  return String(value || "").trim().toLowerCase();
+  return normalizeEmotionId(value);
 }
 
 function normalizeMoodDate(value) {
@@ -63,7 +68,7 @@ async function insertMoodCheckIn(studentNumber, moodId, moodDate) {
       values ($1, $2, $3, $4::date)
       returning id, mood_id, mood_label, to_char(mood_date, 'YYYY-MM-DD') as mood_date, created_at
     `,
-    [studentNumber, moodId, EMOTION_LABELS[moodId], moodDate],
+    [studentNumber, moodId, getEmotionLabel(moodId), moodDate],
   );
 }
 
@@ -108,7 +113,7 @@ router.get("/month", async (req, res) => {
         id: row.id,
         createdAt: row.created_at,
         moodId,
-        moodLabel: row.mood_label,
+        moodLabel: getEmotionLabel(moodId) || row.mood_label,
         moodDate: formatMoodDateValue(row.mood_date),
       };
     });
@@ -153,7 +158,7 @@ router.get("/today", async (req, res) => {
       id: row.id,
       createdAt: row.created_at,
       moodId: normalizeMoodId(row.mood_id),
-      moodLabel: row.mood_label,
+      moodLabel: getEmotionLabel(row.mood_id) || row.mood_label,
       moodDate: formatMoodDateValue(row.mood_date),
     }));
     const row = entries[0];
@@ -199,7 +204,7 @@ router.post("/", async (req, res) => {
         id: row.id,
         createdAt: row.created_at,
         moodId: normalizeMoodId(row.mood_id),
-        moodLabel: row.mood_label,
+        moodLabel: getEmotionLabel(row.mood_id) || row.mood_label,
         moodDate: formatMoodDateValue(row.mood_date),
       },
       message: "Emotion saved.",
