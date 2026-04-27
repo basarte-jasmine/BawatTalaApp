@@ -1,38 +1,21 @@
 const express = require("express");
+const http = require("http");
 const https = require("https");
 const { query } = require("../config/db");
 
 const router = express.Router();
 const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
 const DEFAULT_BOOK_QUERY = "subject:psychology mental health wellbeing stress anxiety";
-const GOOGLE_BOOKS_ENDPOINT = "https://www.googleapis.com/books/v1/volumes";
 const ANNA_ARCHIVE_ENDPOINT = "https://annas-archive-api.p.rapidapi.com/search";
 const ANNA_ARCHIVE_DOWNLOAD_ENDPOINT = "https://annas-archive-api.p.rapidapi.com/download";
 const ANNA_ARCHIVE_RAPIDAPI_HOST = "annas-archive-api.p.rapidapi.com";
 const ANNA_ARCHIVE_DEFAULT_CATEGORIES = "fiction, nonfiction, comic, magazine, musicalscore, other, unknown";
 const ANNA_ARCHIVE_DEFAULT_EXTENSIONS = "epub";
 const ANNA_ARCHIVE_DEFAULT_SORT = "mostRelevant";
-const ANNA_ARCHIVE_DEFAULT_SOURCES = "libgenLi, libgenRs";
+const ANNA_ARCHIVE_DEFAULT_SOURCES = "libgenRs,libgenLi";
+const ANNA_ARCHIVE_DEFAULT_MIRROR_PRIORITY = "libgen.vg,libgen.rs,libgen.is,library.lol,libgen.li";
+const ANNA_ARCHIVE_DOWNLOAD_PROBE_TIMEOUT_MS = 5000;
 const MAX_BOOK_RESULTS = 24;
-const RELEVANCE_KEYWORDS = [
-  "anxiety",
-  "behavior",
-  "cognitive",
-  "counseling",
-  "depression",
-  "emotion",
-  "emotional",
-  "health",
-  "mental",
-  "mindfulness",
-  "psychology",
-  "resilience",
-  "self-help",
-  "stress",
-  "therapy",
-  "wellbeing",
-  "wellness",
-];
 const ACCENT_COLORS = ["#D7F0B7", "#CFE6F8", "#E8D7F2", "#F8E8BE", "#D7EBE5", "#F1D4D4"];
 
 function normalizeCompactSpaces(value) {
@@ -99,46 +82,12 @@ function fetchJson(url, { headers = {}, serviceName = "Library API" } = {}) {
   });
 }
 
-function getLibraryBooksProvider() {
-  const configuredProvider = String(process.env.LIBRARY_BOOKS_PROVIDER || "").trim().toLowerCase();
-  if (configuredProvider) return configuredProvider;
-  return process.env.ANNA_ARCHIVE_RAPIDAPI_KEY ? "anna" : "google";
-}
-
 function getAnnaRapidApiHeaders(apiKey) {
   return {
     "Content-Type": "application/json",
     "x-rapidapi-host": String(process.env.ANNA_ARCHIVE_RAPIDAPI_HOST || ANNA_ARCHIVE_RAPIDAPI_HOST),
     "x-rapidapi-key": apiKey,
   };
-}
-
-function getImageUrl(imageLinks = {}) {
-  const rawUrl = imageLinks.thumbnail || imageLinks.smallThumbnail || "";
-  return rawUrl ? String(rawUrl).replace(/^http:\/\//i, "https://") : "";
-}
-
-function isRelevantBook(volume) {
-  const info = volume.volumeInfo || {};
-  const searchable = [
-    info.title,
-    info.subtitle,
-    info.description,
-    ...(Array.isArray(info.categories) ? info.categories : []),
-  ]
-    .join(" ")
-    .toLowerCase();
-
-  return RELEVANCE_KEYWORDS.some((keyword) => searchable.includes(keyword));
-}
-
-function isFreeGoogleBook(volume) {
-  const saleability = String(volume.saleInfo?.saleability || "").toUpperCase();
-  return saleability !== "FOR_SALE" && saleability !== "FOR_SALE_AND_RENTAL";
-}
-
-function getReaderLink(accessInfo = {}, info = {}) {
-  return accessInfo.webReaderLink || info.previewLink || info.infoLink || "";
 }
 
 function findFirstArray(value, depth = 0) {
@@ -183,32 +132,142 @@ function slugifyBookTitle(value) {
   return String(value || "book").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "book";
 }
 
-function findFirstUrl(value, depth = 0) {
-  if (depth > 5 || value === null || value === undefined) return "";
+function normalizeHttpUrl(value) {
+  const compact = normalizeCompactSpaces(value);
+  if (!/^https?:\/\//i.test(compact)) return "";
+  try {
+    return new URL(compact.replace(/^http:\/\//i, "https://")).toString();
+  } catch {
+    return "";
+  }
+}
+
+function collectUrls(value, depth = 0, urls = []) {
+  if (depth > 5 || value === null || value === undefined) return urls;
   if (typeof value === "string") {
-    const compact = normalizeCompactSpaces(value);
-    return /^https?:\/\//i.test(compact) ? compact.replace(/^http:\/\//i, "https://") : "";
+    const url = normalizeHttpUrl(value);
+    if (url) urls.push(url);
+    return urls;
   }
   if (Array.isArray(value)) {
     for (const item of value) {
-      const url = findFirstUrl(item, depth + 1);
-      if (url) return url;
+      collectUrls(item, depth + 1, urls);
     }
-    return "";
+    return urls;
   }
-  if (typeof value !== "object") return "";
+  if (typeof value !== "object") return urls;
 
   for (const key of ["downloadUrl", "download_url", "url", "href", "link", "download", "downloads", "links"]) {
-    const url = findFirstUrl(value[key], depth + 1);
-    if (url) return url;
+    collectUrls(value[key], depth + 1, urls);
   }
 
   for (const item of Object.values(value)) {
-    const url = findFirstUrl(item, depth + 1);
-    if (url) return url;
+    collectUrls(item, depth + 1, urls);
   }
 
-  return "";
+  return urls;
+}
+
+function getMirrorPriority(url) {
+  let hostname = "";
+  try {
+    hostname = new URL(url).hostname.replace(/^www\./i, "").toLowerCase();
+  } catch {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  const priorityHosts = String(process.env.ANNA_ARCHIVE_MIRROR_PRIORITY || ANNA_ARCHIVE_DEFAULT_MIRROR_PRIORITY)
+    .split(",")
+    .map((item) => item.trim().replace(/^www\./i, "").toLowerCase())
+    .filter(Boolean);
+  const priority = priorityHosts.findIndex((host) => hostname === host || hostname.endsWith(`.${host}`));
+  return priority >= 0 ? priority : priorityHosts.length;
+}
+
+function sortDownloadUrls(urls) {
+  return [...new Set(urls.map(normalizeHttpUrl).filter(Boolean))].sort((left, right) => {
+    const priorityDiff = getMirrorPriority(left) - getMirrorPriority(right);
+    if (priorityDiff !== 0) return priorityDiff;
+    return left.localeCompare(right);
+  });
+}
+
+function isUsableDownloadProbe(response, url) {
+  const statusCode = Number(response.statusCode || 0);
+  if (statusCode < 200 || statusCode >= 300) return false;
+
+  const contentType = String(response.headers["content-type"] || "").toLowerCase();
+  const disposition = String(response.headers["content-disposition"] || "").toLowerCase();
+  if (contentType.includes("text/html") || contentType.includes("application/json")) return false;
+
+  return (
+    !contentType ||
+    contentType.includes("epub") ||
+    contentType.includes("zip") ||
+    contentType.includes("octet-stream") ||
+    disposition.includes(".epub") ||
+    /\.epub(?:$|[?#])/i.test(url)
+  );
+}
+
+function probeDownloadUrl(url, method = "HEAD", redirectDepth = 0) {
+  return new Promise((resolve) => {
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      resolve(false);
+      return;
+    }
+
+    const client = parsedUrl.protocol === "http:" ? http : https;
+    const headers = {
+      Accept: "application/epub+zip,application/zip,application/octet-stream,*/*",
+      "User-Agent": "BawatTalaApp/1.0",
+    };
+    if (method === "GET") {
+      headers.Range = "bytes=0-0";
+    }
+
+    let settled = false;
+    const settle = (result) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
+    const request = client.request(url, { headers, method }, (response) => {
+      const location = response.headers.location;
+      if ([301, 302, 303, 307, 308].includes(Number(response.statusCode)) && location && redirectDepth < 4) {
+        response.resume();
+        probeDownloadUrl(new URL(location, url).toString(), method, redirectDepth + 1).then(settle);
+        return;
+      }
+
+      const usable = isUsableDownloadProbe(response, url);
+      response.resume();
+      settle(usable);
+    });
+
+    request.setTimeout(
+      clampInteger(Number(process.env.ANNA_ARCHIVE_DOWNLOAD_PROBE_TIMEOUT_MS), 1000, 15000, ANNA_ARCHIVE_DOWNLOAD_PROBE_TIMEOUT_MS),
+      () => {
+        request.destroy();
+        settle(false);
+      },
+    );
+    request.on("error", () => settle(false));
+    request.end();
+  });
+}
+
+async function pickDownloadUrl(urls) {
+  const candidates = sortDownloadUrls(urls);
+  for (const url of candidates) {
+    if (await probeDownloadUrl(url, "HEAD")) return url;
+    if (await probeDownloadUrl(url, "GET")) return url;
+  }
+  return candidates[0] || "";
 }
 
 function getAnnaCoverUrl(book) {
@@ -264,49 +323,6 @@ function mapAnnaBook(book, index, progressByBookId, downloadsByBookId) {
     shelfLabel: download ? "Downloaded" : "Catalog shelf",
     sourceId,
     title,
-    progress,
-  };
-}
-
-function mapGoogleBook(volume, index, progressByBookId, downloadsByBookId) {
-  const info = volume.volumeInfo || {};
-  const saleInfo = volume.saleInfo || {};
-  const accessInfo = volume.accessInfo || {};
-  const categories = Array.isArray(info.categories) ? info.categories : [];
-  const authors = Array.isArray(info.authors) && info.authors.length ? info.authors.join(", ") : "Google Books";
-  const pageCount = clampInteger(info.pageCount, 0, 2000, 0);
-  const estimatedMinutes = Math.max(4, Math.min(45, pageCount ? Math.ceil(pageCount / 25) : 8));
-  const progress = progressByBookId.get(volume.id) || null;
-  const download = downloadsByBookId.get(volume.id) || null;
-  const readerLink = download?.downloadUrl || "";
-
-  return {
-    accentColor: ACCENT_COLORS[index % ACCENT_COLORS.length],
-    author: authors,
-    blurb: truncateText(info.description || info.subtitle || "A free mental-health and wellbeing read from Google Books.", 650),
-    category: categories[0] || "Mental Health",
-    coverImageUrl: getImageUrl(info.imageLinks),
-    downloadableEpub: Boolean(accessInfo.epub?.isAvailable),
-    downloadablePdf: Boolean(accessInfo.pdf?.isAvailable),
-    estimatedMinutes,
-    id: volume.id,
-    downloaded: Boolean(download),
-    downloadedAt: download?.downloadedAt || null,
-    downloadUrl: download?.downloadUrl || "",
-    infoLink: info.infoLink || "",
-    isFreeEbook: saleInfo.saleability === "FREE" || accessInfo.viewability === "ALL_PAGES",
-    language: info.language || "",
-    pageCount,
-    previewLink: info.previewLink || "",
-    provider: "google",
-    publishedDate: info.publishedDate || "",
-    publisher: info.publisher || "",
-    readerLink,
-    rewardLabel: progress?.rating ? `${progress.rating}/5 stars` : "Rate after reading",
-    shelfLabel: download ? "Downloaded" : "Catalog shelf",
-    sourceId: volume.id,
-    sourceReaderLink: getReaderLink(accessInfo, info),
-    title: info.title || "Untitled book",
     progress,
   };
 }
@@ -445,7 +461,7 @@ async function fetchAnnaDownloadUrl(sourceId) {
     headers: getAnnaRapidApiHeaders(apiKey),
     serviceName: "Anna's Archive download",
   });
-  const downloadUrl = findFirstUrl(data);
+  const downloadUrl = await pickDownloadUrl(collectUrls(data));
   if (!downloadUrl) {
     throw new Error("Anna's Archive did not return a download link for this book.");
   }
@@ -521,84 +537,44 @@ router.get("/books", async (req, res) => {
   const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
   const maxResults = clampInteger(Number(req.query.maxResults || MAX_BOOK_RESULTS), 1, 40, MAX_BOOK_RESULTS);
   const searchQuery = normalizeCompactSpaces(req.query.q || DEFAULT_BOOK_QUERY);
-  const provider = getLibraryBooksProvider();
-
-  if (provider === "anna") {
-    const apiKey = String(process.env.ANNA_ARCHIVE_RAPIDAPI_KEY || "").trim();
-    if (!apiKey) {
-      return res.status(500).json({ message: "Anna's Archive RapidAPI key is not configured." });
-    }
-
-    try {
-      const params = new URLSearchParams({
-        cat: String(process.env.ANNA_ARCHIVE_CATEGORIES || ANNA_ARCHIVE_DEFAULT_CATEGORIES),
-        ext: String(process.env.ANNA_ARCHIVE_EXTENSIONS || ANNA_ARCHIVE_DEFAULT_EXTENSIONS),
-        limit: String(maxResults),
-        page: String(clampInteger(Number(req.query.page || 1), 1, 100, 1)),
-        q: searchQuery.replace(/^subject:/i, ""),
-        skip: String((clampInteger(Number(req.query.page || 1), 1, 100, 1) - 1) * maxResults),
-        sort: String(process.env.ANNA_ARCHIVE_SORT || ANNA_ARCHIVE_DEFAULT_SORT),
-      });
-      const sources = String(process.env.ANNA_ARCHIVE_SOURCES || ANNA_ARCHIVE_DEFAULT_SOURCES).trim();
-      if (sources) {
-        params.set("source", sources);
-      }
-
-      const data = await fetchJson(`${ANNA_ARCHIVE_ENDPOINT}?${params.toString()}`, {
-        headers: getAnnaRapidApiHeaders(apiKey),
-        serviceName: "Anna's Archive",
-      });
-      const selectedItems = findFirstArray(data).slice(0, maxResults);
-      const bookIds = selectedItems
-        .map((item, index) => getAnnaBookId(item, index))
-        .filter(Boolean);
-      const [progressByBookId, downloadsByBookId] = await Promise.all([
-        getStudentProgress(studentNumber, bookIds),
-        getStudentDownloads(studentNumber, bookIds),
-      ]);
-      const books = selectedItems.map((item, index) => mapAnnaBook(item, index, progressByBookId, downloadsByBookId));
-
-      return res.json({
-        books,
-        query: searchQuery,
-        totalItems: Number(data.totalItems || data.total || data.count || books.length),
-      });
-    } catch (error) {
-      return res.status(502).json({ message: error.message || "Failed to load library books." });
-    }
-  }
-
-  const apiKey = String(process.env.GOOGLE_BOOKS_API_KEY || "").trim();
+  const apiKey = String(process.env.ANNA_ARCHIVE_RAPIDAPI_KEY || "").trim();
   if (!apiKey) {
-    return res.status(500).json({ message: "Google Books API key is not configured." });
+    return res.status(500).json({ message: "Anna's Archive RapidAPI key is not configured." });
   }
 
   try {
     const params = new URLSearchParams({
-      filter: "free-ebooks",
-      key: apiKey,
-      langRestrict: "en",
-      maxResults: String(maxResults),
-      orderBy: "relevance",
-      printType: "books",
-      q: searchQuery,
+      cat: String(process.env.ANNA_ARCHIVE_CATEGORIES || ANNA_ARCHIVE_DEFAULT_CATEGORIES),
+      ext: String(process.env.ANNA_ARCHIVE_EXTENSIONS || ANNA_ARCHIVE_DEFAULT_EXTENSIONS),
+      limit: String(maxResults),
+      page: String(clampInteger(Number(req.query.page || 1), 1, 100, 1)),
+      q: searchQuery.replace(/^subject:/i, ""),
+      skip: String((clampInteger(Number(req.query.page || 1), 1, 100, 1) - 1) * maxResults),
+      sort: String(process.env.ANNA_ARCHIVE_SORT || ANNA_ARCHIVE_DEFAULT_SORT),
     });
-    const data = await fetchJson(`${GOOGLE_BOOKS_ENDPOINT}?${params.toString()}`);
-    const items = Array.isArray(data.items) ? data.items : [];
-    const freeItems = items.filter(isFreeGoogleBook);
-    const relevantItems = freeItems.filter(isRelevantBook);
-    const selectedItems = relevantItems.length ? relevantItems : freeItems;
-    const bookIds = selectedItems.map((item) => item.id).filter(Boolean);
+    const sources = String(process.env.ANNA_ARCHIVE_SOURCES || ANNA_ARCHIVE_DEFAULT_SOURCES).trim();
+    if (sources) {
+      params.set("source", sources);
+    }
+
+    const data = await fetchJson(`${ANNA_ARCHIVE_ENDPOINT}?${params.toString()}`, {
+      headers: getAnnaRapidApiHeaders(apiKey),
+      serviceName: "Anna's Archive",
+    });
+    const selectedItems = findFirstArray(data).slice(0, maxResults);
+    const bookIds = selectedItems
+      .map((item, index) => getAnnaBookId(item, index))
+      .filter(Boolean);
     const [progressByBookId, downloadsByBookId] = await Promise.all([
       getStudentProgress(studentNumber, bookIds),
       getStudentDownloads(studentNumber, bookIds),
     ]);
-    const books = selectedItems.map((item, index) => mapGoogleBook(item, index, progressByBookId, downloadsByBookId));
+    const books = selectedItems.map((item, index) => mapAnnaBook(item, index, progressByBookId, downloadsByBookId));
 
     return res.json({
       books,
       query: searchQuery,
-      totalItems: Number(data.totalItems || books.length),
+      totalItems: Number(data.totalItems || data.total || data.count || books.length),
     });
   } catch (error) {
     return res.status(502).json({ message: error.message || "Failed to load library books." });
@@ -608,11 +584,10 @@ router.get("/books", async (req, res) => {
 router.post("/download", async (req, res) => {
   const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
   const bookId = normalizeCompactSpaces(req.body.bookId || "");
-  const provider = normalizeCompactSpaces(req.body.provider || getLibraryBooksProvider()).toLowerCase();
+  const provider = normalizeCompactSpaces(req.body.provider || "anna").toLowerCase();
   const sourceId = normalizeCompactSpaces(req.body.sourceId || "");
   const bookTitle = normalizeCompactSpaces(req.body.bookTitle || "");
   const authors = normalizeCompactSpaces(req.body.authors || "");
-  let downloadUrl = normalizeCompactSpaces(req.body.downloadUrl || req.body.readerLink || req.body.sourceReaderLink || "");
 
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
     return res.status(400).json({ message: "Valid student number is required." });
@@ -620,12 +595,15 @@ router.post("/download", async (req, res) => {
   if (!bookId) {
     return res.status(400).json({ message: "Book id is required." });
   }
+  if (provider !== "anna") {
+    return res.status(400).json({ message: "Only Anna's Archive books are supported." });
+  }
+  if (!sourceId) {
+    return res.status(400).json({ message: "Anna's Archive source id is required." });
+  }
 
   try {
-    if (provider === "anna" && sourceId) {
-      downloadUrl = await fetchAnnaDownloadUrl(sourceId);
-    }
-
+    const downloadUrl = await fetchAnnaDownloadUrl(sourceId);
     if (!downloadUrl) {
       return res.status(502).json({ message: "No download link is available for this book right now." });
     }

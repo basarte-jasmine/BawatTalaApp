@@ -140,7 +140,21 @@ export async function ensureLibraryEpubDirectory() {
 export async function downloadEpubToLibrary(bookId: string, downloadUrl: string) {
   const directory = await ensureLibraryEpubDirectory();
   const fileUri = `${directory}${safeFileName(bookId)}.epub`;
-  const result = await FileSystem.downloadAsync(downloadUrl, fileUri);
+  const result = await FileSystem.downloadAsync(downloadUrl, fileUri, {
+    headers: {
+      Accept: "application/epub+zip,application/zip,application/octet-stream,*/*",
+      "User-Agent": "BawatTalaApp/1.0",
+    },
+  });
+  const status = Number(result.status || 0);
+  const contentType = String(result.mimeType || result.headers?.["content-type"] || "").toLowerCase();
+  const looksLikeWebPage = contentType.includes("text/html") || contentType.includes("application/json");
+
+  if (status < 200 || status >= 300 || looksLikeWebPage) {
+    await FileSystem.deleteAsync(result.uri, { idempotent: true });
+    throw new Error("The EPUB mirror did not return a downloadable book file. Try Download EPUB again.");
+  }
+
   return result.uri;
 }
 

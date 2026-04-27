@@ -298,9 +298,9 @@ export default function LibraryScreen() {
       updateBookDownload(book.id, result.download, localEpubUri);
       setLibraryActionTone("success");
       setLibraryActionMessage("EPUB downloaded. Reader mode is now unlocked.");
-    } catch {
+    } catch (error) {
       setLibraryActionTone("error");
-      setLibraryActionMessage("Unable to download and save this EPUB.");
+      setLibraryActionMessage(error instanceof Error && error.message ? error.message : "Unable to download and save this EPUB.");
     } finally {
       setActiveDownloadBookId(null);
     }
