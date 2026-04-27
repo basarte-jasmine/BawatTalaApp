@@ -5,21 +5,17 @@ const { query } = require("../config/db");
 
 const router = express.Router();
 const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
-const DEFAULT_BOOK_QUERY = "subject:psychology mental health wellbeing stress anxiety";
-const ANNA_ARCHIVE_ENDPOINT = "https://annas-archive-api.p.rapidapi.com/search";
-const ANNA_ARCHIVE_DOWNLOAD_ENDPOINT = "https://annas-archive-api.p.rapidapi.com/download";
-const ANNA_ARCHIVE_RAPIDAPI_HOST = "annas-archive-api.p.rapidapi.com";
-const ANNA_ARCHIVE_DEFAULT_CATEGORIES = "fiction, nonfiction, comic, magazine, musicalscore, other, unknown";
-const ANNA_ARCHIVE_DEFAULT_EXTENSIONS = "epub";
-const ANNA_ARCHIVE_DEFAULT_SORT = "mostRelevant";
-const ANNA_ARCHIVE_DEFAULT_SOURCES = "libgenRs,libgenLi";
-const ANNA_ARCHIVE_DEFAULT_MIRROR_PRIORITY = "libgen.vg,libgen.rs,libgen.is,library.lol,libgen.li";
-const ANNA_ARCHIVE_DOWNLOAD_PROBE_TIMEOUT_MS = 5000;
-const ANNA_ARCHIVE_DOWNLOAD_STREAM_TIMEOUT_MS = 30000;
-const ANNA_ARCHIVE_DOWNLOAD_CACHE_TTL_MS = 15 * 60 * 1000;
+const DEFAULT_BOOK_QUERY = "psychology mental health";
+const OPEN_LIBRARY_SEARCH_ENDPOINT = "https://openlibrary.org/search.json";
+const ARCHIVE_METADATA_ENDPOINT = "https://archive.org/metadata";
+const OPEN_LIBRARY_USER_AGENT = "BawattalaApp/1.0 (basartejasmine@gmail.com)";
+const OPEN_LIBRARY_DEFAULT_LANGUAGE = "eng";
+const OPEN_LIBRARY_DOWNLOAD_PROBE_TIMEOUT_MS = 5000;
+const OPEN_LIBRARY_DOWNLOAD_STREAM_TIMEOUT_MS = 30000;
+const OPEN_LIBRARY_DOWNLOAD_CACHE_TTL_MS = 15 * 60 * 1000;
 const MAX_BOOK_RESULTS = 24;
 const ACCENT_COLORS = ["#D7F0B7", "#CFE6F8", "#E8D7F2", "#F8E8BE", "#D7EBE5", "#F1D4D4"];
-const annaDownloadUrlCache = new Map();
+const openLibraryDownloadUrlCache = new Map();
 
 function normalizeCompactSpaces(value) {
   return String(value || "").trim().replace(/\s+/g, " ");
@@ -85,11 +81,10 @@ function fetchJson(url, { headers = {}, serviceName = "Library API" } = {}) {
   });
 }
 
-function getAnnaRapidApiHeaders(apiKey) {
+function getOpenLibraryHeaders() {
   return {
-    "Content-Type": "application/json",
-    "x-rapidapi-host": String(process.env.ANNA_ARCHIVE_RAPIDAPI_HOST || ANNA_ARCHIVE_RAPIDAPI_HOST),
-    "x-rapidapi-key": apiKey,
+    Accept: "application/json",
+    "User-Agent": String(process.env.OPEN_LIBRARY_USER_AGENT || OPEN_LIBRARY_USER_AGENT),
   };
 }
 
@@ -179,7 +174,7 @@ function getMirrorPriority(url) {
     return Number.MAX_SAFE_INTEGER;
   }
 
-  const priorityHosts = String(process.env.ANNA_ARCHIVE_MIRROR_PRIORITY || ANNA_ARCHIVE_DEFAULT_MIRROR_PRIORITY)
+  const priorityHosts = String(process.env.OPEN_LIBRARY_MIRROR_PRIORITY || "archive.org,ia801,ia802,ia803,ia904")
     .split(",")
     .map((item) => item.trim().replace(/^www\./i, "").toLowerCase())
     .filter(Boolean);
@@ -269,7 +264,7 @@ function probeDownloadUrl(url, method = "HEAD", redirectDepth = 0) {
     });
 
     request.setTimeout(
-      clampInteger(Number(process.env.ANNA_ARCHIVE_DOWNLOAD_PROBE_TIMEOUT_MS), 1000, 15000, ANNA_ARCHIVE_DOWNLOAD_PROBE_TIMEOUT_MS),
+      clampInteger(Number(process.env.OPEN_LIBRARY_DOWNLOAD_PROBE_TIMEOUT_MS), 1000, 15000, OPEN_LIBRARY_DOWNLOAD_PROBE_TIMEOUT_MS),
       () => {
         request.destroy();
         settle(false);
@@ -289,79 +284,92 @@ async function pickDownloadUrl(urls) {
   return "";
 }
 
-function getAnnaCoverUrl(book) {
-  const rawUrl = pickString(book, ["coverImageUrl", "cover_url", "coverUrl", "cover", "thumbnail", "image"]);
-  if (!rawUrl) return "";
-  if (rawUrl.startsWith("//")) return `https:${rawUrl}`;
-  return rawUrl.replace(/^http:\/\//i, "https://");
+function getOpenLibraryIaIdentifier(book) {
+  return pickString(book.availability || {}, ["identifier"]) || (Array.isArray(book.ia) ? book.ia.find(Boolean) : "");
 }
 
-function getAnnaSourceId(book) {
-  return pickString(book, ["md5", "id", "bookId", "isbn13", "isbn", "aarecord_id"]);
+function isOpenLibraryFreeFullBook(book) {
+  const availability = book.availability || {};
+  const status = String(availability.status || "").toLowerCase();
+  return Boolean(book.has_fulltext && book.public_scan_b && (status === "open" || availability.is_readable || availability.is_previewable));
 }
 
-function isAnnaEpubBook(book) {
-  return pickString(book, ["extension", "ext", "format", "fileExtension"]).toLowerCase().includes("epub");
+function getOpenLibraryBookId(book, sourceId, index) {
+  const rawKey = pickString(book, ["key"]).replace(/^\/works\//, "");
+  return sourceId ? `openlib-${sourceId}` : `openlib-${rawKey || index}`;
 }
 
-function getAnnaBookId(book, index) {
-  const title = pickString(book, ["title", "bookTitle", "name"]) || "Untitled book";
-  const sourceId = getAnnaSourceId(book);
-  return sourceId ? `anna-${sourceId}` : `anna-${index}-${slugifyBookTitle(title)}`;
+function getOpenLibraryCoverUrl(book, sourceId) {
+  const coverId = Number(book.cover_i || 0);
+  if (coverId) return `https://covers.openlibrary.org/b/id/${coverId}-M.jpg`;
+  const editionId = pickString(book.availability || {}, ["openlibrary_edition"]);
+  if (editionId) return `https://covers.openlibrary.org/b/olid/${editionId}-M.jpg`;
+  return sourceId ? `https://archive.org/services/img/${encodeURIComponent(sourceId)}` : "";
 }
 
-function mapAnnaBook(book, index, progressByBookId, downloadsByBookId) {
-  const title = pickString(book, ["title", "bookTitle", "name"]) || "Untitled book";
-  const sourceId = getAnnaSourceId(book);
-  const id = getAnnaBookId(book, index);
-  const pageCount = pickInteger(book, ["pageCount", "pages", "numPages"], 0, 2000, 0);
-  const extension = pickString(book, ["extension", "ext", "format", "fileExtension"]).toLowerCase();
-  const category = pickString(book, ["category", "cat", "topic", "genre"]) || "Mental Health";
-  const progress = progressByBookId.get(id) || null;
-  const download = downloadsByBookId.get(id) || null;
-
-  return {
-    accentColor: ACCENT_COLORS[index % ACCENT_COLORS.length],
-    author: pickString(book, ["authors", "author", "creator"]) || "Library catalog",
-    blurb: truncateText(pickString(book, ["description", "summary", "subtitle"]) || "A library catalog result related to mental health and wellbeing.", 650),
-    category,
-    coverImageUrl: getAnnaCoverUrl(book),
-    downloadableEpub: extension.includes("epub"),
-    downloadablePdf: extension.includes("pdf"),
-    estimatedMinutes: Math.max(4, Math.min(45, pageCount ? Math.ceil(pageCount / 25) : 8)),
-    id,
-    downloaded: Boolean(download),
-    downloadedAt: download?.downloadedAt || null,
-    downloadUrl: download?.downloadUrl || "",
-    infoLink: "",
-    isFreeEbook: false,
-    language: pickString(book, ["language", "lang"]),
-    pageCount,
-    previewLink: "",
-    provider: "anna",
-    publishedDate: pickString(book, ["publishedDate", "publishDate", "year"]),
-    publisher: pickString(book, ["publisher"]),
-    readerLink: download?.downloadUrl || "",
-    rewardLabel: progress?.rating ? `${progress.rating}/5 stars` : "Rate after reading",
-    shelfLabel: download ? "Downloaded" : "Catalog shelf",
-    sourceId,
-    title,
-    progress,
-  };
+function getOpenLibraryCategory(book) {
+  const subjects = Array.isArray(book.subject) ? book.subject : [];
+  return subjects.find((subject) => /psychology|mental|health|wellbeing|stress|anxiety|mind/i.test(subject)) || subjects[0] || "Open Library";
 }
 
-async function getDownloadableAnnaItems(items, maxResults) {
-  const candidates = items.filter((item) => getAnnaSourceId(item) && isAnnaEpubBook(item));
+function getOpenLibraryEpubFile(files = []) {
+  return files.find((file) => {
+    const name = String(file?.name || "");
+    const format = String(file?.format || "");
+    return (
+      /\.epub$/i.test(name) &&
+      !/_encrypted\.epub$/i.test(name) &&
+      !/_lcp\.epub$/i.test(name) &&
+      !/encrypted|lcp|acs|daisy/i.test(format)
+    );
+  });
+}
+
+function buildArchiveDownloadUrl(sourceId, fileName) {
+  return `https://archive.org/download/${encodeURIComponent(sourceId)}/${encodeURIComponent(fileName).replace(/%2F/gi, "/")}`;
+}
+
+async function fetchOpenLibraryEpubDownloadUrl(sourceId) {
+  const cached = openLibraryDownloadUrlCache.get(sourceId);
+  if (cached?.url && cached.expiresAt > Date.now()) {
+    return cached.url;
+  }
+  openLibraryDownloadUrlCache.delete(sourceId);
+
+  const metadata = await fetchJson(`${ARCHIVE_METADATA_ENDPOINT}/${encodeURIComponent(sourceId)}`, {
+    headers: getOpenLibraryHeaders(),
+    serviceName: "Internet Archive metadata",
+  });
+  const epubFile = getOpenLibraryEpubFile(Array.isArray(metadata.files) ? metadata.files : []);
+  if (!epubFile?.name) {
+    throw new Error("Open Library did not provide a free full EPUB file for this book.");
+  }
+
+  const downloadUrl = buildArchiveDownloadUrl(sourceId, epubFile.name);
+  if (!(await probeDownloadUrl(downloadUrl, "GET"))) {
+    throw new Error("Open Library EPUB file could not be verified for this book.");
+  }
+
+  openLibraryDownloadUrlCache.set(sourceId, {
+    expiresAt: Date.now() + OPEN_LIBRARY_DOWNLOAD_CACHE_TTL_MS,
+    url: downloadUrl,
+  });
+  return downloadUrl;
+}
+
+async function getDownloadableOpenLibraryItems(items, maxResults) {
+  const candidates = items.filter((item) => isOpenLibraryFreeFullBook(item) && getOpenLibraryIaIdentifier(item));
   const downloadableItems = [];
-  const batchSize = clampInteger(Number(process.env.ANNA_ARCHIVE_DOWNLOADABLE_CHECK_BATCH_SIZE), 1, 6, 3);
+  const batchSize = clampInteger(Number(process.env.OPEN_LIBRARY_DOWNLOADABLE_CHECK_BATCH_SIZE), 1, 6, 3);
 
   for (let index = 0; index < candidates.length && downloadableItems.length < maxResults; index += batchSize) {
     const batch = candidates.slice(index, index + batchSize);
     const results = await Promise.all(
       batch.map(async (item) => {
         try {
-          await fetchAnnaDownloadUrl(getAnnaSourceId(item));
-          return item;
+          const sourceId = getOpenLibraryIaIdentifier(item);
+          const downloadUrl = await fetchOpenLibraryEpubDownloadUrl(sourceId);
+          return { ...item, sourceId, downloadUrl };
         } catch {
           return null;
         }
@@ -376,6 +384,51 @@ async function getDownloadableAnnaItems(items, maxResults) {
   }
 
   return downloadableItems;
+}
+
+function mapOpenLibraryBook(book, index, progressByBookId, downloadsByBookId) {
+  const sourceId = book.sourceId || getOpenLibraryIaIdentifier(book);
+  const id = getOpenLibraryBookId(book, sourceId, index);
+  const progress = progressByBookId.get(id) || null;
+  const download = downloadsByBookId.get(id) || null;
+  const authors = Array.isArray(book.author_name) && book.author_name.length ? book.author_name.join(", ") : "Open Library";
+  const publishedDate = book.first_publish_year ? String(book.first_publish_year) : "";
+  const title = book.title || "Untitled book";
+
+  return {
+    accentColor: ACCENT_COLORS[index % ACCENT_COLORS.length],
+    author: authors,
+    blurb: truncateText(
+      [
+        publishedDate ? `First published in ${publishedDate}.` : "",
+        `A free full-text public scan from Open Library and the Internet Archive.`,
+      ].filter(Boolean).join(" "),
+      650,
+    ),
+    category: getOpenLibraryCategory(book),
+    coverImageUrl: getOpenLibraryCoverUrl(book, sourceId),
+    downloadableEpub: true,
+    downloadablePdf: false,
+    estimatedMinutes: 12,
+    id,
+    downloaded: Boolean(download),
+    downloadedAt: download?.downloadedAt || null,
+    downloadUrl: download?.downloadUrl || book.downloadUrl || "",
+    infoLink: book.key ? `https://openlibrary.org${book.key}` : "",
+    isFreeEbook: true,
+    language: OPEN_LIBRARY_DEFAULT_LANGUAGE,
+    pageCount: 0,
+    previewLink: sourceId ? `https://archive.org/details/${encodeURIComponent(sourceId)}` : "",
+    provider: "openlibrary",
+    publishedDate,
+    publisher: "Open Library",
+    readerLink: download?.downloadUrl || book.downloadUrl || "",
+    rewardLabel: progress?.rating ? `${progress.rating}/5 stars` : "Rate after reading",
+    shelfLabel: download ? "Downloaded" : "Free full EPUB",
+    sourceId,
+    title,
+    progress,
+  };
 }
 
 function mapProgressRow(row) {
@@ -537,44 +590,6 @@ async function upsertDownload({
   return mapDownloadRow(result.rows[0]);
 }
 
-async function fetchAnnaDownloadUrl(sourceId) {
-  const cached = annaDownloadUrlCache.get(sourceId);
-  if (cached?.url && cached.expiresAt > Date.now()) {
-    return cached.url;
-  }
-  annaDownloadUrlCache.delete(sourceId);
-
-  const candidates = await fetchAnnaDownloadUrls(sourceId);
-  const downloadUrl = await pickDownloadUrl(candidates);
-  if (!downloadUrl) {
-    throw new Error("Anna's Archive did not return a working EPUB mirror for this book.");
-  }
-  annaDownloadUrlCache.set(sourceId, {
-    expiresAt: Date.now() + ANNA_ARCHIVE_DOWNLOAD_CACHE_TTL_MS,
-    url: downloadUrl,
-  });
-  return downloadUrl;
-}
-
-async function fetchAnnaDownloadUrls(sourceId) {
-  const apiKey = String(process.env.ANNA_ARCHIVE_RAPIDAPI_KEY || "").trim();
-  if (!apiKey) {
-    throw new Error("Anna's Archive RapidAPI key is not configured.");
-  }
-
-  const endpoint = String(process.env.ANNA_ARCHIVE_DOWNLOAD_ENDPOINT || ANNA_ARCHIVE_DOWNLOAD_ENDPOINT).trim();
-  const params = new URLSearchParams({ md5: sourceId });
-  const data = await fetchJson(`${endpoint}?${params.toString()}`, {
-    headers: getAnnaRapidApiHeaders(apiKey),
-    serviceName: "Anna's Archive download",
-  });
-  const urls = sortDownloadUrls(collectUrls(data));
-  if (!urls.length) {
-    throw new Error("Anna's Archive did not return a download link for this book.");
-  }
-  return urls;
-}
-
 function streamRemoteFile(url, res, redirectDepth = 0) {
   return new Promise((resolve, reject) => {
     let parsedUrl;
@@ -591,7 +606,7 @@ function streamRemoteFile(url, res, redirectDepth = 0) {
       {
         headers: {
           Accept: "application/epub+zip,application/zip,application/octet-stream,*/*",
-          "User-Agent": "BawatTalaApp/1.0",
+          "User-Agent": String(process.env.OPEN_LIBRARY_USER_AGENT || OPEN_LIBRARY_USER_AGENT),
         },
       },
       (response) => {
@@ -626,7 +641,7 @@ function streamRemoteFile(url, res, redirectDepth = 0) {
     );
 
     request.setTimeout(
-      clampInteger(Number(process.env.ANNA_ARCHIVE_DOWNLOAD_STREAM_TIMEOUT_MS), 5000, 120000, ANNA_ARCHIVE_DOWNLOAD_STREAM_TIMEOUT_MS),
+      clampInteger(Number(process.env.OPEN_LIBRARY_DOWNLOAD_STREAM_TIMEOUT_MS), 5000, 120000, OPEN_LIBRARY_DOWNLOAD_STREAM_TIMEOUT_MS),
       () => {
         request.destroy();
         reject(new Error("The EPUB mirror took too long to respond."));
@@ -725,44 +740,34 @@ router.get("/books", async (req, res) => {
   const maxResults = clampInteger(Number(req.query.maxResults || MAX_BOOK_RESULTS), 1, 40, MAX_BOOK_RESULTS);
   const searchLimit = Math.min(40, Math.max(maxResults, maxResults * 2));
   const searchQuery = normalizeCompactSpaces(req.query.q || DEFAULT_BOOK_QUERY);
-  const apiKey = String(process.env.ANNA_ARCHIVE_RAPIDAPI_KEY || "").trim();
-  if (!apiKey) {
-    return res.status(500).json({ message: "Anna's Archive RapidAPI key is not configured." });
-  }
 
   try {
     const params = new URLSearchParams({
-      cat: String(process.env.ANNA_ARCHIVE_CATEGORIES || ANNA_ARCHIVE_DEFAULT_CATEGORIES),
-      ext: String(process.env.ANNA_ARCHIVE_EXTENSIONS || ANNA_ARCHIVE_DEFAULT_EXTENSIONS),
+      fields: "key,title,author_name,cover_i,first_publish_year,subject,ia,has_fulltext,public_scan_b,availability",
+      lang: "en",
       limit: String(searchLimit),
       page: String(clampInteger(Number(req.query.page || 1), 1, 100, 1)),
       q: searchQuery.replace(/^subject:/i, ""),
-      skip: String((clampInteger(Number(req.query.page || 1), 1, 100, 1) - 1) * searchLimit),
-      sort: String(process.env.ANNA_ARCHIVE_SORT || ANNA_ARCHIVE_DEFAULT_SORT),
     });
-    const sources = String(process.env.ANNA_ARCHIVE_SOURCES || ANNA_ARCHIVE_DEFAULT_SOURCES).trim();
-    if (sources) {
-      params.set("source", sources);
-    }
 
-    const data = await fetchJson(`${ANNA_ARCHIVE_ENDPOINT}?${params.toString()}`, {
-      headers: getAnnaRapidApiHeaders(apiKey),
-      serviceName: "Anna's Archive",
+    const data = await fetchJson(`${OPEN_LIBRARY_SEARCH_ENDPOINT}?${params.toString()}`, {
+      headers: getOpenLibraryHeaders(),
+      serviceName: "Open Library",
     });
-    const selectedItems = await getDownloadableAnnaItems(findFirstArray(data), maxResults);
+    const selectedItems = await getDownloadableOpenLibraryItems(Array.isArray(data.docs) ? data.docs : [], maxResults);
     const bookIds = selectedItems
-      .map((item, index) => getAnnaBookId(item, index))
+      .map((item, index) => getOpenLibraryBookId(item, item.sourceId, index))
       .filter(Boolean);
     const [progressByBookId, downloadsByBookId] = await Promise.all([
       getStudentProgress(studentNumber, bookIds),
       getStudentDownloads(studentNumber, bookIds),
     ]);
-    const books = selectedItems.map((item, index) => mapAnnaBook(item, index, progressByBookId, downloadsByBookId));
+    const books = selectedItems.map((item, index) => mapOpenLibraryBook(item, index, progressByBookId, downloadsByBookId));
 
     return res.json({
       books,
       query: searchQuery,
-      totalItems: Number(data.totalItems || data.total || data.count || books.length),
+      totalItems: Number(data.numFound || books.length),
     });
   } catch (error) {
     return res.status(502).json({ message: error.message || "Failed to load library books." });
@@ -772,7 +777,7 @@ router.get("/books", async (req, res) => {
 router.post("/download", async (req, res) => {
   const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
   const bookId = normalizeCompactSpaces(req.body.bookId || "");
-  const provider = normalizeCompactSpaces(req.body.provider || "anna").toLowerCase();
+  const provider = normalizeCompactSpaces(req.body.provider || "openlibrary").toLowerCase();
   const sourceId = normalizeCompactSpaces(req.body.sourceId || "");
   const bookTitle = normalizeCompactSpaces(req.body.bookTitle || "");
   const authors = normalizeCompactSpaces(req.body.authors || "");
@@ -783,15 +788,15 @@ router.post("/download", async (req, res) => {
   if (!bookId) {
     return res.status(400).json({ message: "Book id is required." });
   }
-  if (provider !== "anna") {
-    return res.status(400).json({ message: "Only Anna's Archive books are supported." });
+  if (provider !== "openlibrary") {
+    return res.status(400).json({ message: "Only Open Library free full EPUB books are supported." });
   }
   if (!sourceId) {
-    return res.status(400).json({ message: "Anna's Archive source id is required." });
+    return res.status(400).json({ message: "Open Library source id is required." });
   }
 
   try {
-    const downloadUrl = await fetchAnnaDownloadUrl(sourceId);
+    const downloadUrl = await fetchOpenLibraryEpubDownloadUrl(sourceId);
     if (!downloadUrl) {
       return res.status(502).json({ message: "No download link is available for this book right now." });
     }
@@ -833,15 +838,12 @@ router.get("/download-file", async (req, res) => {
     }
 
     let downloadUrl = download.downloadUrl;
-    if (download.provider === "anna" && download.sourceId) {
-      const freshDownloadUrls = await fetchAnnaDownloadUrls(download.sourceId);
-      const workingDownloadUrl = await streamFirstWorkingRemoteFile(freshDownloadUrls, res);
-      annaDownloadUrlCache.set(download.sourceId, {
-        expiresAt: Date.now() + ANNA_ARCHIVE_DOWNLOAD_CACHE_TTL_MS,
-        url: workingDownloadUrl,
-      });
-      await updateStudentDownloadUrl(studentNumber, bookId, workingDownloadUrl);
-      return;
+    if (download.provider === "openlibrary" && download.sourceId) {
+      const freshDownloadUrl = await fetchOpenLibraryEpubDownloadUrl(download.sourceId);
+      if (freshDownloadUrl) {
+        downloadUrl = freshDownloadUrl;
+        await updateStudentDownloadUrl(studentNumber, bookId, freshDownloadUrl);
+      }
     }
 
     if (!downloadUrl) {
