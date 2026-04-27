@@ -209,6 +209,8 @@ export default function HomeScreen() {
   const [totalTala, setTotalTala] = useState(0);
   const [latestMoodId, setLatestMoodId] = useState<string | null>(null);
   const [todayMoodCheckInCount, setTodayMoodCheckInCount] = useState(0);
+  const [moodSaveStatus, setMoodSaveStatus] = useState("");
+  const [moodSaveStatusTone, setMoodSaveStatusTone] = useState<"success" | "error">("success");
   const [pendingMoodId, setPendingMoodId] = useState<string | null>(null);
   const [showMoodConfirmModal, setShowMoodConfirmModal] = useState(false);
   const [recentEntries, setRecentEntries] = useState<RecentEntryCard[]>([]);
@@ -536,6 +538,7 @@ export default function HomeScreen() {
     if (!user?.studentNumber) {
       setLatestMoodId(null);
       setTodayMoodCheckInCount(0);
+      setMoodSaveStatus("");
       return;
     }
 
@@ -675,6 +678,7 @@ export default function HomeScreen() {
     }
 
     setPendingMoodId(moodId);
+    setMoodSaveStatus("");
     setShowMoodConfirmModal(true);
   };
 
@@ -689,7 +693,12 @@ export default function HomeScreen() {
     if (result.ok) {
       setLatestMoodId(result.entry?.moodId ?? pendingMoodId);
       setTodayMoodCheckInCount((current) => current + 1);
+      setMoodSaveStatus("Saved. You can add another emotion anytime today.");
+      setMoodSaveStatusTone("success");
+      void loadTodayMood();
     } else {
+      setMoodSaveStatus(result.message ?? "Emotion was not saved. Please try again.");
+      setMoodSaveStatusTone("error");
       void loadTodayMood();
     }
 
@@ -1102,6 +1111,16 @@ export default function HomeScreen() {
                 : "No emotion check-ins yet today"}
             </Text>
           </View>
+          {moodSaveStatus ? (
+            <Text
+              style={[
+                styles.moodSaveStatusText,
+                moodSaveStatusTone === "error" && styles.moodSaveStatusTextError,
+              ]}
+            >
+              {moodSaveStatus}
+            </Text>
+          ) : null}
 
           <View style={styles.moodRow}>
             {EMOTIONS.map((mood, index) => (
@@ -2153,6 +2172,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     fontWeight: "700",
+  },
+  moodSaveStatusText: {
+    color: "#4B6653",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+    marginTop: -5,
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  moodSaveStatusTextError: {
+    color: "#B14A4A",
   },
   moodRow: {
     flexDirection: "row",

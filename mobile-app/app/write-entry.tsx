@@ -378,6 +378,7 @@ export default function WriteEntryScreen() {
       setSelectedJournalEmotionId(result.entry.moodId);
     }
 
+    setStatusMessage("Emotion check-in saved for today.");
     setShowEmotionPicker(false);
   };
 

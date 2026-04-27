@@ -67,6 +67,11 @@ async function insertMoodCheckIn(studentNumber, moodId, moodDate) {
   );
 }
 
+async function removeLegacyDailyMoodUniqueness() {
+  await query("alter table public.student_moods drop constraint if exists student_moods_student_date_unique");
+  await query("drop index if exists public.student_moods_student_date_unique");
+}
+
 router.get("/month", async (req, res) => {
   const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
   const year = Number(req.query.year);
@@ -189,7 +194,7 @@ router.post("/", async (req, res) => {
       if (error?.code !== "23505") {
         throw error;
       }
-      await query("alter table public.student_moods drop constraint if exists student_moods_student_date_unique");
+      await removeLegacyDailyMoodUniqueness();
       result = await insertMoodCheckIn(studentNumber, moodId, moodDate);
     }
 

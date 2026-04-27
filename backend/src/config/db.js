@@ -198,6 +198,10 @@ async function ensureDatabaseSchema() {
   `);
 
   await pool.query(`
+    drop index if exists public.student_moods_student_date_unique;
+  `);
+
+  await pool.query(`
     create index if not exists student_moods_student_date_created_idx
       on public.student_moods (student_number, mood_date, created_at desc);
   `);
