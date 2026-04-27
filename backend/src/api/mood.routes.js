@@ -1,5 +1,5 @@
 const express = require("express");
-const { query } = require("../config/db");
+const { query, removeLegacyDailyMoodUniqueness } = require("../config/db");
 const { EMOTION_LABELS, createEmotionCounts } = require("../constants/emotions");
 
 const router = express.Router();
@@ -65,11 +65,6 @@ async function insertMoodCheckIn(studentNumber, moodId, moodDate) {
     `,
     [studentNumber, moodId, EMOTION_LABELS[moodId], moodDate],
   );
-}
-
-async function removeLegacyDailyMoodUniqueness() {
-  await query("alter table public.student_moods drop constraint if exists student_moods_student_date_unique");
-  await query("drop index if exists public.student_moods_student_date_unique");
 }
 
 router.get("/month", async (req, res) => {

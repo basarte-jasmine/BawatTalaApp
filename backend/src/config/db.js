@@ -18,10 +18,31 @@ const JOURNAL_PRIMARY_CONCERN_VALUES = [
   ...LEGACY_JOURNAL_CONCERN_VALUES,
 ].filter((value, index, values) => values.indexOf(value) === index);
 
+const LEGACY_DAILY_MOOD_UNIQUE_NAMES = [
+  "student_moods_student_date_unique",
+  "student_moods_student_number_mood_date_key",
+];
+
 function toSqlTextList(values) {
   return values
     .map((value) => `'${String(value).replace(/'/g, "''")}'`)
     .join(",\n        ");
+}
+
+function quoteIdentifier(value) {
+  return `"${String(value).replace(/"/g, '""')}"`;
+}
+
+function withDatabaseErrorDetails(friendlyError, originalError) {
+  if (!originalError) return friendlyError;
+
+  for (const key of ["code", "constraint", "detail", "schema", "table"]) {
+    if (originalError[key]) {
+      friendlyError[key] = originalError[key];
+    }
+  }
+
+  return friendlyError;
 }
 
 function resolveDatabaseUrl() {
@@ -64,30 +85,41 @@ function toFriendlyDatabaseError(error, connectionString) {
 
   const host = describeDatabaseTarget(connectionString);
   if (error.code === "ENOTFOUND") {
-    return new Error(
-      `Database host could not be resolved: ${host}. Check your DATABASE_URL or SUPABASE_DB_URL value.`,
+    return withDatabaseErrorDetails(
+      new Error(`Database host could not be resolved: ${host}. Check your DATABASE_URL or SUPABASE_DB_URL value.`),
+      error,
     );
   }
 
   if (error.code === "ECONNREFUSED") {
-    return new Error(
-      `Database connection was refused by ${host}. Check that the database is reachable and your port is correct.`,
+    return withDatabaseErrorDetails(
+      new Error(`Database connection was refused by ${host}. Check that the database is reachable and your port is correct.`),
+      error,
     );
   }
 
   if (error.code === "28P01") {
-    return new Error("Database login failed. Check your database username and password.");
+    return withDatabaseErrorDetails(
+      new Error("Database login failed. Check your database username and password."),
+      error,
+    );
   }
 
   if (error.code === "3D000") {
-    return new Error("Database does not exist. Check the database name in your connection settings.");
+    return withDatabaseErrorDetails(
+      new Error("Database does not exist. Check the database name in your connection settings."),
+      error,
+    );
   }
 
   if (error.code === "SELF_SIGNED_CERT_IN_CHAIN") {
-    return new Error("Database SSL verification failed. Check the SSL settings for your database connection.");
+    return withDatabaseErrorDetails(
+      new Error("Database SSL verification failed. Check the SSL settings for your database connection."),
+      error,
+    );
   }
 
-  return new Error(error.message || "Database connection failed.");
+  return withDatabaseErrorDetails(new Error(error.message || "Database connection failed."), error);
 }
 
 const databaseUrl = resolveDatabaseUrl();
@@ -98,6 +130,55 @@ if (databaseUrl) {
     connectionString: databaseUrl,
     ssl: { rejectUnauthorized: false },
   });
+}
+
+async function removeLegacyDailyMoodUniqueness() {
+  const legacyConstraints = await query(`
+    select constraint_name
+    from information_schema.table_constraints
+    where table_schema = 'public'
+      and table_name = 'student_moods'
+      and constraint_type = 'UNIQUE'
+      and constraint_name in (
+        select tc.constraint_name
+        from information_schema.table_constraints tc
+        join information_schema.key_column_usage kcu
+          on tc.constraint_schema = kcu.constraint_schema
+          and tc.constraint_name = kcu.constraint_name
+          and tc.table_schema = kcu.table_schema
+          and tc.table_name = kcu.table_name
+        where tc.table_schema = 'public'
+          and tc.table_name = 'student_moods'
+          and tc.constraint_type = 'UNIQUE'
+        group by tc.constraint_name
+        having array_agg(kcu.column_name::text order by kcu.ordinal_position) = array['student_number', 'mood_date']
+      )
+  `);
+
+  for (const row of legacyConstraints.rows) {
+    await query(`alter table public.student_moods drop constraint if exists ${quoteIdentifier(row.constraint_name)}`);
+  }
+
+  for (const name of LEGACY_DAILY_MOOD_UNIQUE_NAMES) {
+    await query(`alter table public.student_moods drop constraint if exists ${quoteIdentifier(name)}`);
+  }
+
+  const legacyIndexes = await query(`
+    select indexname
+    from pg_indexes
+    where schemaname = 'public'
+      and tablename = 'student_moods'
+      and indexdef ilike 'CREATE UNIQUE INDEX%'
+      and indexdef ilike '%(student_number, mood_date)%'
+  `);
+
+  for (const row of legacyIndexes.rows) {
+    await query(`drop index if exists public.${quoteIdentifier(row.indexname)}`);
+  }
+
+  for (const name of LEGACY_DAILY_MOOD_UNIQUE_NAMES) {
+    await query(`drop index if exists public.${quoteIdentifier(name)}`);
+  }
 }
 
 async function ensureDatabaseSchema() {
@@ -192,14 +273,7 @@ async function ensureDatabaseSchema() {
     );
   `);
 
-  await pool.query(`
-    alter table public.student_moods
-    drop constraint if exists student_moods_student_date_unique;
-  `);
-
-  await pool.query(`
-    drop index if exists public.student_moods_student_date_unique;
-  `);
+  await removeLegacyDailyMoodUniqueness();
 
   await pool.query(`
     create index if not exists student_moods_student_date_created_idx
@@ -618,4 +692,5 @@ module.exports = {
   dbPool: pool,
   ensureDatabaseSchema,
   query,
+  removeLegacyDailyMoodUniqueness,
 };
