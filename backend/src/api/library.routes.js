@@ -15,6 +15,7 @@ const ANNA_ARCHIVE_DEFAULT_SORT = "mostRelevant";
 const ANNA_ARCHIVE_DEFAULT_SOURCES = "libgenRs,libgenLi";
 const ANNA_ARCHIVE_DEFAULT_MIRROR_PRIORITY = "libgen.vg,libgen.rs,libgen.is,library.lol,libgen.li";
 const ANNA_ARCHIVE_DOWNLOAD_PROBE_TIMEOUT_MS = 5000;
+const ANNA_ARCHIVE_DOWNLOAD_STREAM_TIMEOUT_MS = 30000;
 const MAX_BOOK_RESULTS = 24;
 const ACCENT_COLORS = ["#D7F0B7", "#CFE6F8", "#E8D7F2", "#F8E8BE", "#D7EBE5", "#F1D4D4"];
 
@@ -409,6 +410,43 @@ async function hasStudentDownloadedBook(studentNumber, bookId) {
   return result.rowCount > 0;
 }
 
+async function getStudentDownload(studentNumber, bookId) {
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber) || !bookId) {
+    return null;
+  }
+
+  const result = await query(
+    `
+      select book_id, provider, source_id, download_url, downloaded_at
+      from public.student_library_downloads
+      where student_number = $1
+        and book_id = $2
+      limit 1
+    `,
+    [studentNumber, bookId],
+  );
+
+  return mapDownloadRow(result.rows[0]);
+}
+
+async function updateStudentDownloadUrl(studentNumber, bookId, downloadUrl) {
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber) || !bookId || !downloadUrl) {
+    return;
+  }
+
+  await query(
+    `
+      update public.student_library_downloads
+      set download_url = $3,
+          downloaded_at = now(),
+          updated_at = now()
+      where student_number = $1
+        and book_id = $2
+    `,
+    [studentNumber, bookId, downloadUrl],
+  );
+}
+
 async function upsertDownload({
   authors,
   bookId,
@@ -466,6 +504,62 @@ async function fetchAnnaDownloadUrl(sourceId) {
     throw new Error("Anna's Archive did not return a download link for this book.");
   }
   return downloadUrl;
+}
+
+function streamRemoteFile(url, res, redirectDepth = 0) {
+  return new Promise((resolve, reject) => {
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      reject(new Error("The EPUB download link is invalid."));
+      return;
+    }
+
+    const client = parsedUrl.protocol === "http:" ? http : https;
+    const request = client.get(
+      url,
+      {
+        headers: {
+          Accept: "application/epub+zip,application/zip,application/octet-stream,*/*",
+          "User-Agent": "BawatTalaApp/1.0",
+        },
+      },
+      (response) => {
+        const location = response.headers.location;
+        if ([301, 302, 303, 307, 308].includes(Number(response.statusCode)) && location && redirectDepth < 4) {
+          response.resume();
+          streamRemoteFile(new URL(location, url).toString(), res, redirectDepth + 1).then(resolve, reject);
+          return;
+        }
+
+        if (Number(response.statusCode || 0) < 200 || Number(response.statusCode || 0) >= 300) {
+          response.resume();
+          reject(new Error("The EPUB mirror did not return a downloadable book file."));
+          return;
+        }
+
+        res.setHeader("Content-Type", response.headers["content-type"] || "application/epub+zip");
+        res.setHeader("Cache-Control", "no-store");
+        if (response.headers["content-length"]) {
+          res.setHeader("Content-Length", response.headers["content-length"]);
+        }
+
+        response.pipe(res);
+        response.on("end", resolve);
+        response.on("error", reject);
+      },
+    );
+
+    request.setTimeout(
+      clampInteger(Number(process.env.ANNA_ARCHIVE_DOWNLOAD_STREAM_TIMEOUT_MS), 5000, 120000, ANNA_ARCHIVE_DOWNLOAD_STREAM_TIMEOUT_MS),
+      () => {
+        request.destroy();
+        reject(new Error("The EPUB mirror took too long to respond."));
+      },
+    );
+    request.on("error", reject);
+  });
 }
 
 async function upsertProgress({
@@ -624,6 +718,46 @@ router.post("/download", async (req, res) => {
     });
   } catch (error) {
     return res.status(502).json({ message: error.message || "Failed to download this book." });
+  }
+});
+
+router.get("/download-file", async (req, res) => {
+  const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
+  const bookId = normalizeCompactSpaces(req.query.bookId || "");
+
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "Valid student number is required." });
+  }
+  if (!bookId) {
+    return res.status(400).json({ message: "Book id is required." });
+  }
+
+  try {
+    const download = await getStudentDownload(studentNumber, bookId);
+    if (!download) {
+      return res.status(403).json({ message: "Download this book before opening the reader." });
+    }
+
+    let downloadUrl = download.downloadUrl;
+    if (download.provider === "anna" && download.sourceId) {
+      const freshDownloadUrl = await fetchAnnaDownloadUrl(download.sourceId);
+      if (freshDownloadUrl) {
+        downloadUrl = freshDownloadUrl;
+        await updateStudentDownloadUrl(studentNumber, bookId, freshDownloadUrl);
+      }
+    }
+
+    if (!downloadUrl) {
+      return res.status(502).json({ message: "No download link is available for this book right now." });
+    }
+
+    await streamRemoteFile(downloadUrl, res);
+  } catch (error) {
+    if (res.headersSent) {
+      res.destroy(error);
+      return;
+    }
+    return res.status(502).json({ message: error.message || "Failed to open this EPUB." });
   }
 });
 

@@ -79,7 +79,7 @@ function buildFallbackReaderPages(book: LibraryBookRecord): ReaderPage[] {
       eyebrow: "Reading Access",
       title: "Continue in the reader",
       paragraphs: [
-        "This EPUB could not be fully parsed, but your download is saved on this device. Try another EPUB result if the text does not appear correctly.",
+        "This EPUB could not be fully parsed, but your download is saved in the app. Try another EPUB result if the text does not appear correctly.",
       ],
     },
   ];
@@ -316,7 +316,7 @@ export default function LibraryScreen() {
     }
     if (!book.localEpubUri) {
       setLibraryActionTone("error");
-      setLibraryActionMessage("Download this EPUB to this device before opening the reader.");
+      setLibraryActionMessage("Save this EPUB in the app before opening the reader.");
       return;
     }
 
@@ -451,7 +451,7 @@ export default function LibraryScreen() {
               </View>
               <View style={styles.bookMetaPill}>
                 <Ionicons name={isDownloaded ? "cloud-done-outline" : "cloud-download-outline"} size={14} color="#6D675A" />
-                <Text style={styles.bookMetaText}>{isDownloaded ? "Saved on device" : supportsInAppReader ? "EPUB" : "Unsupported format"}</Text>
+                <Text style={styles.bookMetaText}>{isDownloaded ? "Saved in app" : supportsInAppReader ? "EPUB" : "Unsupported format"}</Text>
               </View>
               {progressPercent > 0 ? (
                 <View style={styles.bookMetaPill}>
@@ -515,7 +515,7 @@ export default function LibraryScreen() {
                 <Text style={styles.heroBadge}>Reading Room</Text>
                 <Text style={[styles.heroTitle, compact && styles.heroTitleCompact]}>A warmer shelf for slow, comforting reading.</Text>
                 <Text style={[styles.heroBody, compact && styles.heroBodyCompact]}>
-                  Search EPUB books, save them to this device, and read them directly inside Bawat Tala.
+                  Search EPUB books, save them in the app, and read them directly inside Bawat Tala.
                 </Text>
               </View>
 
@@ -546,7 +546,7 @@ export default function LibraryScreen() {
             <Text style={styles.introEyebrow}>Settle In</Text>
             <Text style={styles.introTitle}>Browse the shelf, then step into reader mode.</Text>
             <Text style={styles.introBody}>
-              EPUB downloads stay in the app library on this device. Progress and ratings are still saved to your account.
+              EPUB downloads stay in the app library. Progress and ratings are still saved to your account.
             </Text>
           </View>
 

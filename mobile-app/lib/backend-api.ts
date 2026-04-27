@@ -214,6 +214,11 @@ async function post(path: string, payload: Record<string, unknown>) {
   return { response, data };
 }
 
+function buildLibraryBookFileUrl(studentNumber: string, bookId: string) {
+  const params = new URLSearchParams({ bookId, studentNumber });
+  return `${API_BASE_URL}/api/library/download-file?${params.toString()}`;
+}
+
 export async function sendOtp(email: string): Promise<ApiResult> {
   const { response, data } = await post("/api/auth/send-otp", { email });
   return { ok: response.ok, message: data?.message };
@@ -442,11 +447,19 @@ export async function downloadLibraryBook(payload: {
   studentNumber: string;
 }): Promise<ApiResult & { download?: { bookId: string; downloadedAt?: string | null; downloadUrl?: string } | null }> {
   const { response, data } = await post("/api/library/download", payload as unknown as Record<string, unknown>);
+  const download = data?.download
+    ? {
+        ...data.download,
+        downloadUrl: Platform.OS === "web"
+          ? buildLibraryBookFileUrl(payload.studentNumber, payload.bookId)
+          : data.download.downloadUrl,
+      }
+    : null;
 
   return {
     ok: response.ok,
     message: data?.message,
-    download: data?.download ?? null,
+    download,
   };
 }
 

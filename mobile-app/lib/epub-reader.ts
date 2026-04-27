@@ -1,6 +1,7 @@
 import * as FileSystem from "expo-file-system/legacy";
 import JSZip from "jszip";
 import { DOMParser } from "@xmldom/xmldom";
+import { Platform } from "react-native";
 
 export type EpubReaderPage = {
   eyebrow: string;
@@ -10,6 +11,8 @@ export type EpubReaderPage = {
 
 const EPUB_PAGE_TARGET_LENGTH = 1100;
 const LIBRARY_EPUB_DIRECTORY = `${FileSystem.documentDirectory ?? ""}library-epubs/`;
+const WEB_EPUB_URI_PREFIX = "web-epub:";
+const webEpubCache = new Map<string, ArrayBuffer>();
 
 function getElementAttribute(element: Element | null | undefined, attributeName: string) {
   return element?.getAttribute(attributeName) || "";
@@ -128,6 +131,50 @@ function safeFileName(value: string) {
   return String(value || "book").replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-|-$/g, "") || "book";
 }
 
+function isWebEpubUri(uri: string) {
+  return String(uri || "").startsWith(WEB_EPUB_URI_PREFIX);
+}
+
+function createWebEpubUri(downloadUrl: string) {
+  return `${WEB_EPUB_URI_PREFIX}${encodeURIComponent(downloadUrl)}`;
+}
+
+function getWebEpubDownloadUrl(uri: string) {
+  return decodeURIComponent(uri.slice(WEB_EPUB_URI_PREFIX.length));
+}
+
+async function fetchEpubArrayBuffer(downloadUrl: string) {
+  const response = await fetch(downloadUrl, {
+    headers: {
+      Accept: "application/epub+zip,application/zip,application/octet-stream,*/*",
+    },
+  });
+  const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+  const looksLikeWebPage = contentType.includes("text/html") || contentType.includes("application/json");
+
+  if (!response.ok || looksLikeWebPage) {
+    throw new Error("The EPUB mirror did not return a downloadable book file. Try Download EPUB again.");
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  if (!arrayBuffer.byteLength) {
+    throw new Error("The EPUB file was empty. Try Download EPUB again.");
+  }
+  return arrayBuffer;
+}
+
+async function loadEpubZip(fileUri: string) {
+  if (isWebEpubUri(fileUri)) {
+    const cachedEpub = webEpubCache.get(fileUri);
+    const arrayBuffer = cachedEpub ?? await fetchEpubArrayBuffer(getWebEpubDownloadUrl(fileUri));
+    webEpubCache.set(fileUri, arrayBuffer);
+    return JSZip.loadAsync(arrayBuffer);
+  }
+
+  const base64 = await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.Base64 });
+  return JSZip.loadAsync(base64, { base64: true });
+}
+
 export async function ensureLibraryEpubDirectory() {
   if (!FileSystem.documentDirectory) {
     throw new Error("App document storage is not available on this device.");
@@ -138,6 +185,14 @@ export async function ensureLibraryEpubDirectory() {
 }
 
 export async function downloadEpubToLibrary(bookId: string, downloadUrl: string) {
+  if (Platform.OS === "web" || !FileSystem.documentDirectory) {
+    const webEpubUri = createWebEpubUri(downloadUrl);
+    const arrayBuffer = await fetchEpubArrayBuffer(downloadUrl);
+    await JSZip.loadAsync(arrayBuffer);
+    webEpubCache.set(webEpubUri, arrayBuffer);
+    return webEpubUri;
+  }
+
   const directory = await ensureLibraryEpubDirectory();
   const fileUri = `${directory}${safeFileName(bookId)}.epub`;
   const result = await FileSystem.downloadAsync(downloadUrl, fileUri, {
@@ -160,13 +215,14 @@ export async function downloadEpubToLibrary(bookId: string, downloadUrl: string)
 
 export async function localFileExists(uri: string) {
   if (!uri) return false;
+  if (isWebEpubUri(uri)) return true;
+  if (!FileSystem.documentDirectory) return false;
   const fileInfo = await FileSystem.getInfoAsync(uri);
   return Boolean(fileInfo.exists);
 }
 
 export async function readEpubPagesFromFile(fileUri: string, fallbackTitle: string): Promise<EpubReaderPage[]> {
-  const base64 = await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.Base64 });
-  const zip = await JSZip.loadAsync(base64, { base64: true });
+  const zip = await loadEpubZip(fileUri);
   const containerXml = await zip.file("META-INF/container.xml")?.async("string");
 
   if (!containerXml) {
