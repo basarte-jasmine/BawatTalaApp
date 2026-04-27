@@ -7,6 +7,7 @@ const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
 const DEFAULT_BOOK_QUERY = "subject:psychology mental health wellbeing stress anxiety";
 const GOOGLE_BOOKS_ENDPOINT = "https://www.googleapis.com/books/v1/volumes";
 const ANNA_ARCHIVE_ENDPOINT = "https://annas-archive-api.p.rapidapi.com/search";
+const ANNA_ARCHIVE_DOWNLOAD_ENDPOINT = "https://annas-archive-api.p.rapidapi.com/download";
 const ANNA_ARCHIVE_RAPIDAPI_HOST = "annas-archive-api.p.rapidapi.com";
 const ANNA_ARCHIVE_DEFAULT_CATEGORIES = "fiction, nonfiction, comic, magazine, musicalscore, other, unknown";
 const ANNA_ARCHIVE_DEFAULT_EXTENSIONS = "pdf, epub, mobi, azw3";
@@ -104,6 +105,14 @@ function getLibraryBooksProvider() {
   return process.env.ANNA_ARCHIVE_RAPIDAPI_KEY ? "anna" : "google";
 }
 
+function getAnnaRapidApiHeaders(apiKey) {
+  return {
+    "Content-Type": "application/json",
+    "x-rapidapi-host": String(process.env.ANNA_ARCHIVE_RAPIDAPI_HOST || ANNA_ARCHIVE_RAPIDAPI_HOST),
+    "x-rapidapi-key": apiKey,
+  };
+}
+
 function getImageUrl(imageLinks = {}) {
   const rawUrl = imageLinks.thumbnail || imageLinks.smallThumbnail || "";
   return rawUrl ? String(rawUrl).replace(/^http:\/\//i, "https://") : "";
@@ -170,6 +179,38 @@ function pickInteger(source, keys, min, max, fallback) {
   return fallback;
 }
 
+function slugifyBookTitle(value) {
+  return String(value || "book").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "book";
+}
+
+function findFirstUrl(value, depth = 0) {
+  if (depth > 5 || value === null || value === undefined) return "";
+  if (typeof value === "string") {
+    const compact = normalizeCompactSpaces(value);
+    return /^https?:\/\//i.test(compact) ? compact.replace(/^http:\/\//i, "https://") : "";
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const url = findFirstUrl(item, depth + 1);
+      if (url) return url;
+    }
+    return "";
+  }
+  if (typeof value !== "object") return "";
+
+  for (const key of ["downloadUrl", "download_url", "url", "href", "link", "download", "downloads", "links"]) {
+    const url = findFirstUrl(value[key], depth + 1);
+    if (url) return url;
+  }
+
+  for (const item of Object.values(value)) {
+    const url = findFirstUrl(item, depth + 1);
+    if (url) return url;
+  }
+
+  return "";
+}
+
 function getAnnaCoverUrl(book) {
   const rawUrl = pickString(book, ["coverImageUrl", "cover_url", "coverUrl", "cover", "thumbnail", "image"]);
   if (!rawUrl) return "";
@@ -177,14 +218,25 @@ function getAnnaCoverUrl(book) {
   return rawUrl.replace(/^http:\/\//i, "https://");
 }
 
-function mapAnnaBook(book, index, progressByBookId) {
+function getAnnaSourceId(book) {
+  return pickString(book, ["md5", "id", "bookId", "isbn13", "isbn", "aarecord_id"]);
+}
+
+function getAnnaBookId(book, index) {
   const title = pickString(book, ["title", "bookTitle", "name"]) || "Untitled book";
-  const rawId = pickString(book, ["id", "md5", "bookId", "isbn13", "isbn", "aarecord_id"]);
-  const id = rawId ? `anna-${rawId}` : `anna-${index}-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+  const sourceId = getAnnaSourceId(book);
+  return sourceId ? `anna-${sourceId}` : `anna-${index}-${slugifyBookTitle(title)}`;
+}
+
+function mapAnnaBook(book, index, progressByBookId, downloadsByBookId) {
+  const title = pickString(book, ["title", "bookTitle", "name"]) || "Untitled book";
+  const sourceId = getAnnaSourceId(book);
+  const id = getAnnaBookId(book, index);
   const pageCount = pickInteger(book, ["pageCount", "pages", "numPages"], 0, 2000, 0);
   const extension = pickString(book, ["extension", "ext", "format", "fileExtension"]).toLowerCase();
   const category = pickString(book, ["category", "cat", "topic", "genre"]) || "Mental Health";
   const progress = progressByBookId.get(id) || null;
+  const download = downloadsByBookId.get(id) || null;
 
   return {
     accentColor: ACCENT_COLORS[index % ACCENT_COLORS.length],
@@ -196,22 +248,27 @@ function mapAnnaBook(book, index, progressByBookId) {
     downloadablePdf: extension.includes("pdf"),
     estimatedMinutes: Math.max(4, Math.min(45, pageCount ? Math.ceil(pageCount / 25) : 8)),
     id,
+    downloaded: Boolean(download),
+    downloadedAt: download?.downloadedAt || null,
+    downloadUrl: download?.downloadUrl || "",
     infoLink: "",
     isFreeEbook: false,
     language: pickString(book, ["language", "lang"]),
     pageCount,
     previewLink: "",
+    provider: "anna",
     publishedDate: pickString(book, ["publishedDate", "publishDate", "year"]),
     publisher: pickString(book, ["publisher"]),
-    readerLink: "",
+    readerLink: download?.downloadUrl || "",
     rewardLabel: progress?.rating ? `${progress.rating}/5 stars` : "Rate after reading",
-    shelfLabel: "Catalog shelf",
+    shelfLabel: download ? "Downloaded" : "Catalog shelf",
+    sourceId,
     title,
     progress,
   };
 }
 
-function mapGoogleBook(volume, index, progressByBookId) {
+function mapGoogleBook(volume, index, progressByBookId, downloadsByBookId) {
   const info = volume.volumeInfo || {};
   const saleInfo = volume.saleInfo || {};
   const accessInfo = volume.accessInfo || {};
@@ -220,6 +277,8 @@ function mapGoogleBook(volume, index, progressByBookId) {
   const pageCount = clampInteger(info.pageCount, 0, 2000, 0);
   const estimatedMinutes = Math.max(4, Math.min(45, pageCount ? Math.ceil(pageCount / 25) : 8));
   const progress = progressByBookId.get(volume.id) || null;
+  const download = downloadsByBookId.get(volume.id) || null;
+  const readerLink = download?.downloadUrl || "";
 
   return {
     accentColor: ACCENT_COLORS[index % ACCENT_COLORS.length],
@@ -231,16 +290,22 @@ function mapGoogleBook(volume, index, progressByBookId) {
     downloadablePdf: Boolean(accessInfo.pdf?.isAvailable),
     estimatedMinutes,
     id: volume.id,
+    downloaded: Boolean(download),
+    downloadedAt: download?.downloadedAt || null,
+    downloadUrl: download?.downloadUrl || "",
     infoLink: info.infoLink || "",
     isFreeEbook: saleInfo.saleability === "FREE" || accessInfo.viewability === "ALL_PAGES",
     language: info.language || "",
     pageCount,
     previewLink: info.previewLink || "",
+    provider: "google",
     publishedDate: info.publishedDate || "",
     publisher: info.publisher || "",
-    readerLink: getReaderLink(accessInfo, info),
+    readerLink,
     rewardLabel: progress?.rating ? `${progress.rating}/5 stars` : "Rate after reading",
-    shelfLabel: "Free shelf",
+    shelfLabel: download ? "Downloaded" : "Catalog shelf",
+    sourceId: volume.id,
+    sourceReaderLink: getReaderLink(accessInfo, info),
     title: info.title || "Untitled book",
     progress,
   };
@@ -261,6 +326,17 @@ function mapProgressRow(row) {
   };
 }
 
+function mapDownloadRow(row) {
+  if (!row) return null;
+  return {
+    bookId: row.book_id,
+    downloadedAt: row.downloaded_at || null,
+    downloadUrl: row.download_url || "",
+    provider: row.provider || "library",
+    sourceId: row.source_id || "",
+  };
+}
+
 async function getStudentProgress(studentNumber, bookIds) {
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber) || !bookIds.length) {
     return new Map();
@@ -278,6 +354,102 @@ async function getStudentProgress(studentNumber, bookIds) {
   );
 
   return new Map(result.rows.map((row) => [row.google_volume_id, mapProgressRow(row)]));
+}
+
+async function getStudentDownloads(studentNumber, bookIds) {
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber) || !bookIds.length) {
+    return new Map();
+  }
+
+  const result = await query(
+    `
+      select book_id, provider, source_id, download_url, downloaded_at
+      from public.student_library_downloads
+      where student_number = $1
+        and book_id = any($2::text[])
+    `,
+    [studentNumber, bookIds],
+  );
+
+  return new Map(result.rows.map((row) => [row.book_id, mapDownloadRow(row)]));
+}
+
+async function hasStudentDownloadedBook(studentNumber, bookId) {
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber) || !bookId) {
+    return false;
+  }
+
+  const result = await query(
+    `
+      select 1
+      from public.student_library_downloads
+      where student_number = $1
+        and book_id = $2
+      limit 1
+    `,
+    [studentNumber, bookId],
+  );
+
+  return result.rowCount > 0;
+}
+
+async function upsertDownload({
+  authors,
+  bookId,
+  bookTitle,
+  downloadUrl,
+  provider,
+  sourceId,
+  studentNumber,
+}) {
+  const result = await query(
+    `
+      insert into public.student_library_downloads (
+        student_number,
+        book_id,
+        book_title,
+        book_authors,
+        provider,
+        source_id,
+        download_url,
+        downloaded_at,
+        updated_at
+      )
+      values ($1, $2, $3, $4, $5, $6, $7, now(), now())
+      on conflict (student_number, book_id)
+      do update set
+        book_title = coalesce(excluded.book_title, public.student_library_downloads.book_title),
+        book_authors = coalesce(excluded.book_authors, public.student_library_downloads.book_authors),
+        provider = excluded.provider,
+        source_id = coalesce(excluded.source_id, public.student_library_downloads.source_id),
+        download_url = coalesce(excluded.download_url, public.student_library_downloads.download_url),
+        downloaded_at = now(),
+        updated_at = now()
+      returning book_id, provider, source_id, download_url, downloaded_at
+    `,
+    [studentNumber, bookId, bookTitle || null, authors || null, provider || "library", sourceId || null, downloadUrl || null],
+  );
+
+  return mapDownloadRow(result.rows[0]);
+}
+
+async function fetchAnnaDownloadUrl(sourceId) {
+  const apiKey = String(process.env.ANNA_ARCHIVE_RAPIDAPI_KEY || "").trim();
+  if (!apiKey) {
+    throw new Error("Anna's Archive RapidAPI key is not configured.");
+  }
+
+  const endpoint = String(process.env.ANNA_ARCHIVE_DOWNLOAD_ENDPOINT || ANNA_ARCHIVE_DOWNLOAD_ENDPOINT).trim();
+  const params = new URLSearchParams({ md5: sourceId });
+  const data = await fetchJson(`${endpoint}?${params.toString()}`, {
+    headers: getAnnaRapidApiHeaders(apiKey),
+    serviceName: "Anna's Archive download",
+  });
+  const downloadUrl = findFirstUrl(data);
+  if (!downloadUrl) {
+    throw new Error("Anna's Archive did not return a download link for this book.");
+  }
+  return downloadUrl;
 }
 
 async function upsertProgress({
@@ -361,8 +533,10 @@ router.get("/books", async (req, res) => {
       const params = new URLSearchParams({
         cat: String(process.env.ANNA_ARCHIVE_CATEGORIES || ANNA_ARCHIVE_DEFAULT_CATEGORIES),
         ext: String(process.env.ANNA_ARCHIVE_EXTENSIONS || ANNA_ARCHIVE_DEFAULT_EXTENSIONS),
+        limit: String(maxResults),
         page: String(clampInteger(Number(req.query.page || 1), 1, 100, 1)),
         q: searchQuery.replace(/^subject:/i, ""),
+        skip: String((clampInteger(Number(req.query.page || 1), 1, 100, 1) - 1) * maxResults),
         sort: String(process.env.ANNA_ARCHIVE_SORT || ANNA_ARCHIVE_DEFAULT_SORT),
       });
       const sources = String(process.env.ANNA_ARCHIVE_SOURCES || ANNA_ARCHIVE_DEFAULT_SOURCES).trim();
@@ -371,23 +545,18 @@ router.get("/books", async (req, res) => {
       }
 
       const data = await fetchJson(`${ANNA_ARCHIVE_ENDPOINT}?${params.toString()}`, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-rapidapi-host": String(process.env.ANNA_ARCHIVE_RAPIDAPI_HOST || ANNA_ARCHIVE_RAPIDAPI_HOST),
-          "x-rapidapi-key": apiKey,
-        },
+        headers: getAnnaRapidApiHeaders(apiKey),
         serviceName: "Anna's Archive",
       });
       const selectedItems = findFirstArray(data).slice(0, maxResults);
       const bookIds = selectedItems
-        .map((item, index) => {
-          const title = pickString(item, ["title", "bookTitle", "name"]) || "Untitled book";
-          const rawId = pickString(item, ["id", "md5", "bookId", "isbn13", "isbn", "aarecord_id"]);
-          return rawId ? `anna-${rawId}` : `anna-${index}-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
-        })
+        .map((item, index) => getAnnaBookId(item, index))
         .filter(Boolean);
-      const progressByBookId = await getStudentProgress(studentNumber, bookIds);
-      const books = selectedItems.map((item, index) => mapAnnaBook(item, index, progressByBookId));
+      const [progressByBookId, downloadsByBookId] = await Promise.all([
+        getStudentProgress(studentNumber, bookIds),
+        getStudentDownloads(studentNumber, bookIds),
+      ]);
+      const books = selectedItems.map((item, index) => mapAnnaBook(item, index, progressByBookId, downloadsByBookId));
 
       return res.json({
         books,
@@ -420,8 +589,11 @@ router.get("/books", async (req, res) => {
     const relevantItems = freeItems.filter(isRelevantBook);
     const selectedItems = relevantItems.length ? relevantItems : freeItems;
     const bookIds = selectedItems.map((item) => item.id).filter(Boolean);
-    const progressByBookId = await getStudentProgress(studentNumber, bookIds);
-    const books = selectedItems.map((item, index) => mapGoogleBook(item, index, progressByBookId));
+    const [progressByBookId, downloadsByBookId] = await Promise.all([
+      getStudentProgress(studentNumber, bookIds),
+      getStudentDownloads(studentNumber, bookIds),
+    ]);
+    const books = selectedItems.map((item, index) => mapGoogleBook(item, index, progressByBookId, downloadsByBookId));
 
     return res.json({
       books,
@@ -430,6 +602,50 @@ router.get("/books", async (req, res) => {
     });
   } catch (error) {
     return res.status(502).json({ message: error.message || "Failed to load library books." });
+  }
+});
+
+router.post("/download", async (req, res) => {
+  const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
+  const bookId = normalizeCompactSpaces(req.body.bookId || "");
+  const provider = normalizeCompactSpaces(req.body.provider || getLibraryBooksProvider()).toLowerCase();
+  const sourceId = normalizeCompactSpaces(req.body.sourceId || "");
+  const bookTitle = normalizeCompactSpaces(req.body.bookTitle || "");
+  const authors = normalizeCompactSpaces(req.body.authors || "");
+  let downloadUrl = normalizeCompactSpaces(req.body.downloadUrl || req.body.readerLink || req.body.sourceReaderLink || "");
+
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "Valid student number is required." });
+  }
+  if (!bookId) {
+    return res.status(400).json({ message: "Book id is required." });
+  }
+
+  try {
+    if (provider === "anna" && sourceId) {
+      downloadUrl = await fetchAnnaDownloadUrl(sourceId);
+    }
+
+    if (!downloadUrl) {
+      return res.status(502).json({ message: "No download link is available for this book right now." });
+    }
+
+    const download = await upsertDownload({
+      authors,
+      bookId,
+      bookTitle,
+      downloadUrl,
+      provider,
+      sourceId,
+      studentNumber,
+    });
+
+    return res.json({
+      download,
+      message: "Book downloaded.",
+    });
+  } catch (error) {
+    return res.status(502).json({ message: error.message || "Failed to download this book." });
   }
 });
 
@@ -448,6 +664,11 @@ router.post("/progress", async (req, res) => {
   }
 
   try {
+    const downloaded = await hasStudentDownloadedBook(studentNumber, bookId);
+    if (!downloaded) {
+      return res.status(403).json({ message: "Download this book before opening the reader." });
+    }
+
     const progress = await upsertProgress({
       authors: normalizeCompactSpaces(req.body.authors || ""),
       bookId,
@@ -482,6 +703,11 @@ router.post("/rating", async (req, res) => {
   }
 
   try {
+    const downloaded = await hasStudentDownloadedBook(studentNumber, bookId);
+    if (!downloaded) {
+      return res.status(403).json({ message: "Download this book before rating it." });
+    }
+
     const progress = await upsertProgress({
       authors: normalizeCompactSpaces(req.body.authors || ""),
       bookId,

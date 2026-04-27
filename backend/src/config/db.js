@@ -415,6 +415,28 @@ async function ensureDatabaseSchema() {
   `);
 
   await pool.query(`
+    create table if not exists public.student_library_downloads (
+      id uuid primary key default gen_random_uuid(),
+      student_number text not null,
+      book_id text not null,
+      book_title text,
+      book_authors text,
+      provider text not null default 'library',
+      source_id text,
+      download_url text,
+      downloaded_at timestamptz not null default now(),
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      constraint student_library_downloads_student_book_unique unique (student_number, book_id)
+    );
+  `);
+
+  await pool.query(`
+    create index if not exists student_library_downloads_student_idx
+      on public.student_library_downloads (student_number, downloaded_at desc);
+  `);
+
+  await pool.query(`
     create table if not exists public.journal_entries (
       id uuid primary key default gen_random_uuid(),
       student_number text not null,

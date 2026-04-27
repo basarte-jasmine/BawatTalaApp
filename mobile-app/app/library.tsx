@@ -2,11 +2,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { ActivityIndicator, Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { useAuthSession } from "../lib/auth-session";
 import {
+  downloadLibraryBook,
   fetchLibraryBooks,
   rateLibraryBook,
   saveLibraryBookProgress,
@@ -42,7 +43,7 @@ function buildReaderPages(book: LibraryBookRecord): ReaderPage[] {
     },
     {
       eyebrow: "Book Details",
-      title: "About this free book",
+      title: "About this book",
       paragraphs: detailLines.length ? detailLines : ["The library catalog did not provide extra details for this title."],
     },
     {
@@ -66,13 +67,18 @@ export default function LibraryScreen() {
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   const [readerPageIndex, setReaderPageIndex] = useState(0);
   const [ratingErrorMessage, setRatingErrorMessage] = useState("");
+  const [searchDraft, setSearchDraft] = useState("");
+  const [submittedQuery, setSubmittedQuery] = useState("");
+  const [activeDownloadBookId, setActiveDownloadBookId] = useState<string | null>(null);
+  const [libraryActionMessage, setLibraryActionMessage] = useState("");
+  const [libraryActionTone, setLibraryActionTone] = useState<"error" | "success">("success");
 
   const selectedBook = useMemo(
     () => books.find((book) => book.id === selectedBookId) ?? null,
     [books, selectedBookId],
   );
-  const finishedCount = books.filter((book) => book.progress?.status === "FINISHED").length;
-  const readyCount = books.length - finishedCount;
+  const downloadedCount = books.filter((book) => book.downloaded).length;
+  const waitingCount = books.length - downloadedCount;
 
   const readerPages = useMemo<ReaderPage[]>(() => {
     if (!selectedBook) {
@@ -86,6 +92,23 @@ export default function LibraryScreen() {
   const canGoPreviousPage = readerPageIndex > 0;
   const canGoNextPage = readerPageIndex < readerPages.length - 1;
   const selectedBookRating = selectedBook?.progress?.rating ?? 0;
+
+  const updateBookDownload = useCallback((bookId: string, download: { downloadedAt?: string | null; downloadUrl?: string } | null | undefined) => {
+    setBooks((current) =>
+      current.map((book) => (
+        book.id === bookId
+          ? {
+              ...book,
+              downloaded: true,
+              downloadedAt: download?.downloadedAt ?? book.downloadedAt ?? new Date().toISOString(),
+              downloadUrl: download?.downloadUrl ?? book.downloadUrl ?? "",
+              readerLink: download?.downloadUrl ?? book.readerLink ?? "",
+              shelfLabel: "Downloaded",
+            }
+          : book
+      )),
+    );
+  }, []);
 
   const updateBookProgress = useCallback((bookId: string, progress: LibraryBookProgress | null | undefined) => {
     if (!progress) return;
@@ -102,11 +125,12 @@ export default function LibraryScreen() {
     );
   }, []);
 
-  const loadBooks = useCallback(async () => {
+  const loadBooks = useCallback(async (queryOverride = submittedQuery) => {
     setIsLoading(true);
     setErrorMessage("");
+    setLibraryActionMessage("");
     try {
-      const result = await fetchLibraryBooks(user?.studentNumber);
+      const result = await fetchLibraryBooks(user?.studentNumber, queryOverride);
       if (result.ok) {
         setBooks(result.books ?? []);
       } else {
@@ -118,7 +142,7 @@ export default function LibraryScreen() {
       setErrorMessage("Unable to reach the library right now.");
     }
     setIsLoading(false);
-  }, [user?.studentNumber]);
+  }, [submittedQuery, user?.studentNumber]);
 
   useFocusEffect(
     useCallback(() => {
@@ -157,9 +181,76 @@ export default function LibraryScreen() {
     router.replace("/home");
   };
 
+  const handleSearchSubmit = () => {
+    const nextQuery = searchDraft.trim();
+    setSubmittedQuery(nextQuery);
+    if (nextQuery === submittedQuery) {
+      void loadBooks(nextQuery);
+    }
+  };
+
+  const handleClearSearch = () => {
+    setSearchDraft("");
+    setSubmittedQuery("");
+    if (!submittedQuery) {
+      void loadBooks("");
+    }
+  };
+
+  const handleDownloadBook = async (book: LibraryBookRecord) => {
+    if (!user?.studentNumber) {
+      setLibraryActionTone("error");
+      setLibraryActionMessage("Log in first to download a book.");
+      return;
+    }
+
+    setActiveDownloadBookId(book.id);
+    setLibraryActionMessage("");
+    try {
+      const result = await downloadLibraryBook({
+        authors: book.author,
+        bookId: book.id,
+        bookTitle: book.title,
+        downloadUrl: book.downloadUrl,
+        provider: book.provider,
+        readerLink: book.readerLink,
+        sourceId: book.sourceId,
+        sourceReaderLink: book.sourceReaderLink,
+        studentNumber: user.studentNumber,
+      });
+
+      if (!result.ok) {
+        setLibraryActionTone("error");
+        setLibraryActionMessage(result.message ?? "Unable to download this book.");
+        return;
+      }
+
+      updateBookDownload(book.id, result.download);
+      setLibraryActionTone("success");
+      setLibraryActionMessage("Downloaded. Reader mode is now unlocked.");
+
+      if (result.download?.downloadUrl) {
+        await Linking.openURL(result.download.downloadUrl).catch(() => {
+          setLibraryActionTone("error");
+          setLibraryActionMessage("Downloaded, but the file link could not be opened.");
+        });
+      }
+    } catch {
+      setLibraryActionTone("error");
+      setLibraryActionMessage("Unable to reach the download service.");
+    } finally {
+      setActiveDownloadBookId(null);
+    }
+  };
+
   const handleOpenBook = (bookId: string) => {
     const book = books.find((item) => item.id === bookId);
     if (!book) return;
+    if (!book.downloaded) {
+      setLibraryActionTone("error");
+      setLibraryActionMessage("Download this book before opening the reader.");
+      return;
+    }
     const pages = buildReaderPages(book);
     const savedPage = book.progress?.currentPage ?? 0;
     const nextPage = Math.min(Math.max(savedPage, 0), Math.max(pages.length - 1, 0));
@@ -222,7 +313,7 @@ export default function LibraryScreen() {
     }
   };
 
-  const handleOpenFreeReader = async () => {
+  const handleOpenReaderLink = async () => {
     if (!selectedBook?.readerLink) return;
     if (selectedBook) {
       void persistProgress(selectedBook, readerPageIndex, readerPages.length, selectedBook.progress?.status === "FINISHED" ? "FINISHED" : "STARTED");
@@ -235,6 +326,8 @@ export default function LibraryScreen() {
   const renderBookCard = (book: LibraryBookRecord) => {
     const isFinished = book.progress?.status === "FINISHED";
     const progressPercent = book.progress?.percent ?? 0;
+    const isDownloaded = Boolean(book.downloaded);
+    const isDownloading = activeDownloadBookId === book.id;
 
     return (
       <Pressable key={book.id} style={[styles.bookCard, compact && styles.bookCardCompact]} onPress={() => handleOpenBook(book.id)}>
@@ -244,8 +337,8 @@ export default function LibraryScreen() {
           <View style={styles.bookTag}>
             <Text style={styles.bookTagText}>{book.shelfLabel}</Text>
           </View>
-          <Text style={[styles.bookStatusText, isFinished && styles.bookStatusTextDone]}>
-            {isFinished ? "Finished" : "Open reader"}
+          <Text style={[styles.bookStatusText, isFinished && styles.bookStatusTextDone, !isDownloaded && styles.bookStatusTextLocked]}>
+            {isFinished ? "Finished" : isDownloaded ? "Ready to read" : "Download first"}
           </Text>
         </View>
 
@@ -280,12 +373,38 @@ export default function LibraryScreen() {
                 <Ionicons name="sparkles-outline" size={14} color="#6D675A" />
                 <Text style={styles.bookMetaText}>{book.rewardLabel}</Text>
               </View>
+              <View style={styles.bookMetaPill}>
+                <Ionicons name={isDownloaded ? "cloud-done-outline" : "cloud-download-outline"} size={14} color="#6D675A" />
+                <Text style={styles.bookMetaText}>{isDownloaded ? "Downloaded" : "Not downloaded"}</Text>
+              </View>
               {progressPercent > 0 ? (
                 <View style={styles.bookMetaPill}>
                   <Ionicons name="bookmark-outline" size={14} color="#6D675A" />
                   <Text style={styles.bookMetaText}>{`${progressPercent}%`}</Text>
                 </View>
               ) : null}
+            </View>
+
+            <View style={styles.bookActionRow}>
+              {isDownloaded ? (
+                <Pressable style={styles.bookReadButton} onPress={() => handleOpenBook(book.id)}>
+                  <Ionicons name="book-outline" size={15} color="#FFFFFF" />
+                  <Text style={styles.bookReadButtonText}>Read</Text>
+                </Pressable>
+              ) : (
+                <Pressable
+                  style={[styles.bookDownloadButton, isDownloading && styles.bookActionButtonDisabled]}
+                  disabled={isDownloading}
+                  onPress={() => void handleDownloadBook(book)}
+                >
+                  {isDownloading ? (
+                    <ActivityIndicator size="small" color="#4D6243" />
+                  ) : (
+                    <Ionicons name="download-outline" size={15} color="#4D6243" />
+                  )}
+                  <Text style={styles.bookDownloadButtonText}>{isDownloading ? "Downloading" : "Download"}</Text>
+                </Pressable>
+              )}
             </View>
           </View>
         </View>
@@ -335,12 +454,12 @@ export default function LibraryScreen() {
                 <Text style={styles.heroStatLabel}>Books on shelf</Text>
               </View>
               <View style={[styles.heroStatPill, compact && styles.heroStatPillCompact]}>
-                <Text style={styles.heroStatValue}>{finishedCount}</Text>
-                <Text style={styles.heroStatLabel}>Books finished</Text>
+                <Text style={styles.heroStatValue}>{downloadedCount}</Text>
+                <Text style={styles.heroStatLabel}>Downloaded</Text>
               </View>
               <View style={[styles.heroStatPill, compact && styles.heroStatPillCompact]}>
-                <Text style={styles.heroStatValue}>{readyCount}</Text>
-                <Text style={styles.heroStatLabel}>Still waiting</Text>
+                <Text style={styles.heroStatValue}>{waitingCount}</Text>
+                <Text style={styles.heroStatLabel}>Need download</Text>
               </View>
             </View>
           </View>
@@ -353,9 +472,41 @@ export default function LibraryScreen() {
             </Text>
           </View>
 
+          <View style={[styles.searchCard, compact && styles.searchCardCompact]}>
+            <View style={styles.searchInputWrap}>
+              <Ionicons name="search-outline" size={18} color="#746B5E" />
+              <TextInput
+                value={searchDraft}
+                onChangeText={setSearchDraft}
+                onSubmitEditing={handleSearchSubmit}
+                placeholder="Search title, author, ISBN"
+                placeholderTextColor="#9A9184"
+                returnKeyType="search"
+                style={styles.searchInput}
+              />
+              {searchDraft.length ? (
+                <Pressable style={styles.searchIconButton} accessibilityLabel="Clear search" onPress={handleClearSearch}>
+                  <Ionicons name="close" size={17} color="#746B5E" />
+                </Pressable>
+              ) : null}
+            </View>
+            <Pressable style={styles.searchButton} onPress={handleSearchSubmit}>
+              <Ionicons name="search" size={15} color="#FFFFFF" />
+              <Text style={styles.searchButtonText}>Search</Text>
+            </Pressable>
+          </View>
+
+          {!!libraryActionMessage && (
+            <Text style={[styles.libraryActionMessage, libraryActionTone === "error" && styles.libraryActionMessageError]}>
+              {libraryActionMessage}
+            </Text>
+          )}
+
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Featured Shelf</Text>
-            <Text style={styles.sectionSubTitle}>Tap any title to open the page-by-page reader.</Text>
+            <Text style={styles.sectionTitle}>{submittedQuery ? "Search Results" : "Featured Shelf"}</Text>
+            <Text style={styles.sectionSubTitle}>
+              {submittedQuery ? `Showing matches for "${submittedQuery}".` : "Download a title before reader mode opens."}
+            </Text>
           </View>
 
           {isLoading ? (
@@ -448,7 +599,7 @@ export default function LibraryScreen() {
               </View>
             </View>
             {selectedBook?.readerLink ? (
-              <Pressable style={styles.openReaderButton} onPress={() => void handleOpenFreeReader()}>
+              <Pressable style={styles.openReaderButton} onPress={() => void handleOpenReaderLink()}>
                 <Ionicons name="open-outline" size={15} color="#524B42" />
                 <Text style={styles.openReaderText}>Open Link</Text>
               </Pressable>
@@ -737,6 +888,78 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
   },
+  searchCard: {
+    width: "100%",
+    borderRadius: 22,
+    backgroundColor: "#FFFDF8",
+    borderWidth: 1,
+    borderColor: "#E7DDD0",
+    padding: 10,
+    marginBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 8,
+  },
+  searchCardCompact: {
+    flexDirection: "column",
+    alignItems: "stretch",
+    rowGap: 8,
+  },
+  searchInputWrap: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 16,
+    backgroundColor: "#F7F2E8",
+    borderWidth: 1,
+    borderColor: "#E9DED0",
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 8,
+    paddingLeft: 12,
+    paddingRight: 6,
+  },
+  searchInput: {
+    flex: 1,
+    minWidth: 0,
+    color: "#4B453C",
+    fontSize: 14,
+    lineHeight: 19,
+    paddingVertical: 8,
+  },
+  searchIconButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  searchButton: {
+    minHeight: 44,
+    borderRadius: 16,
+    backgroundColor: "#70C943",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 6,
+    paddingHorizontal: 14,
+  },
+  searchButtonText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
+  },
+  libraryActionMessage: {
+    color: "#4F7E3E",
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "700",
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  libraryActionMessageError: {
+    color: "#9B4B3D",
+  },
   sectionHeader: {
     width: "100%",
     marginBottom: 10,
@@ -877,6 +1100,9 @@ const styles = StyleSheet.create({
   bookStatusTextDone: {
     color: "#5C8A4A",
   },
+  bookStatusTextLocked: {
+    color: "#9A6B42",
+  },
   bookCardBody: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -965,6 +1191,48 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 14,
     fontWeight: "600",
+  },
+  bookActionRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginTop: 12,
+  },
+  bookReadButton: {
+    minHeight: 38,
+    borderRadius: 999,
+    backgroundColor: "#70C943",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 6,
+    paddingHorizontal: 15,
+  },
+  bookReadButtonText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
+  },
+  bookDownloadButton: {
+    minHeight: 38,
+    borderRadius: 999,
+    backgroundColor: "#E9F4DE",
+    borderWidth: 1,
+    borderColor: "#CAE3B5",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 6,
+    paddingHorizontal: 15,
+  },
+  bookActionButtonDisabled: {
+    opacity: 0.68,
+  },
+  bookDownloadButtonText: {
+    color: "#4D6243",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
   },
   readerScreen: {
     flex: 1,

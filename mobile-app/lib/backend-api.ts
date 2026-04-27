@@ -99,6 +99,9 @@ export type LibraryBookRecord = {
   coverImageUrl: string;
   downloadableEpub?: boolean;
   downloadablePdf?: boolean;
+  downloaded?: boolean;
+  downloadedAt?: string | null;
+  downloadUrl?: string;
   estimatedMinutes: number;
   id: string;
   infoLink?: string;
@@ -106,12 +109,15 @@ export type LibraryBookRecord = {
   language?: string;
   pageCount?: number;
   previewLink?: string;
+  provider?: string;
   progress?: LibraryBookProgress | null;
   publishedDate?: string;
   publisher?: string;
   readerLink?: string;
   rewardLabel: string;
   shelfLabel: string;
+  sourceId?: string;
+  sourceReaderLink?: string;
   title: string;
 };
 
@@ -403,10 +409,14 @@ export async function fetchMonthlyMoods(
 
 export async function fetchLibraryBooks(
   studentNumber?: string,
+  searchQuery?: string,
 ): Promise<ApiResult & { books?: LibraryBookRecord[]; totalItems?: number }> {
   const params = new URLSearchParams({ maxResults: "24" });
   if (studentNumber) {
     params.set("studentNumber", studentNumber);
+  }
+  if (searchQuery?.trim()) {
+    params.set("q", searchQuery.trim());
   }
 
   const { response, data } = await get(`/api/library/books?${params.toString()}`);
@@ -416,6 +426,26 @@ export async function fetchLibraryBooks(
     message: data?.message,
     books: Array.isArray(data?.books) ? data.books : [],
     totalItems: Number(data?.totalItems ?? 0),
+  };
+}
+
+export async function downloadLibraryBook(payload: {
+  authors?: string;
+  bookId: string;
+  bookTitle?: string;
+  downloadUrl?: string;
+  provider?: string;
+  readerLink?: string;
+  sourceId?: string;
+  sourceReaderLink?: string;
+  studentNumber: string;
+}): Promise<ApiResult & { download?: { bookId: string; downloadedAt?: string | null; downloadUrl?: string } | null }> {
+  const { response, data } = await post("/api/library/download", payload as unknown as Record<string, unknown>);
+
+  return {
+    ok: response.ok,
+    message: data?.message,
+    download: data?.download ?? null,
   };
 }
 
