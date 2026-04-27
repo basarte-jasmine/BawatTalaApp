@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, ImageSourcePropType, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuthSession } from "../lib/auth-session";
@@ -18,6 +18,7 @@ type MoodStat = {
 };
 
 type CalendarDay = {
+  isSelected?: boolean;
   isOutsideMonth?: boolean;
   checkInCount?: number;
   dayNumber: number | null;
@@ -41,6 +42,25 @@ function getDayFromMoodDate(value: string) {
   return match ? Number(match[3]) : 0;
 }
 
+function formatDisplayDate(year: number, monthIndex: number, dayNumber: number) {
+  return new Date(year, monthIndex, dayNumber).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatCheckInTime(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
 export default function MoodOverviewScreen() {
   const { user } = useAuthSession();
   const [now, setNow] = useState(() => getManilaTodayParts());
@@ -60,6 +80,7 @@ export default function MoodOverviewScreen() {
   const [monthlyCounts, setMonthlyCounts] = useState<Record<string, number>>(() => createEmotionCounts());
   const [mostCommonMoodId, setMostCommonMoodId] = useState<string | null>(null);
   const [totalCheckIns, setTotalCheckIns] = useState(0);
+  const [selectedDayNumber, setSelectedDayNumber] = useState(now.day);
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -133,6 +154,40 @@ export default function MoodOverviewScreen() {
     return map;
   }, [monthlyEntries]);
 
+  useEffect(() => {
+    const totalDaysInMonth = new Date(displayYear, displayMonthIndex + 1, 0).getDate();
+    const viewedCurrentMonth = viewedMonthKey === todayMonthKey;
+    const firstEntryDay = [...entriesByDay.keys()].sort((a, b) => a - b)[0];
+    const fallbackDay = viewedCurrentMonth ? todayDay : firstEntryDay ?? 1;
+    const maxSelectableDay = viewedCurrentMonth ? Math.min(todayDay, totalDaysInMonth) : totalDaysInMonth;
+
+    if (selectedDayNumber < 1 || selectedDayNumber > maxSelectableDay) {
+      setSelectedDayNumber(Math.min(fallbackDay, maxSelectableDay));
+    }
+  }, [displayMonthIndex, displayYear, entriesByDay, selectedDayNumber, todayDay, todayMonthKey, viewedMonthKey]);
+
+  const selectedDayEntries = useMemo(
+    () =>
+      monthlyEntries.filter((entry) => getDayFromMoodDate(entry.moodDate) === selectedDayNumber),
+    [monthlyEntries, selectedDayNumber],
+  );
+
+  const selectedDayCounts = useMemo(() => {
+    const counts = createEmotionCounts();
+    selectedDayEntries.forEach((entry) => {
+      const moodId = String(entry.moodId || "").trim().toLowerCase();
+      if (Object.prototype.hasOwnProperty.call(counts, moodId)) {
+        counts[moodId] += 1;
+      }
+    });
+    return counts;
+  }, [selectedDayEntries]);
+
+  const selectedDayMostCommonMoodId = useMemo(() => {
+    const [moodId, count] = Object.entries(selectedDayCounts).sort((a, b) => b[1] - a[1])[0] ?? [];
+    return count > 0 ? moodId : null;
+  }, [selectedDayCounts]);
+
   const calendarDays = useMemo(() => {
     const firstDayIndex = new Date(displayYear, displayMonthIndex, 1).getDay();
     const totalDaysInMonth = new Date(displayYear, displayMonthIndex + 1, 0).getDate();
@@ -149,6 +204,7 @@ export default function MoodOverviewScreen() {
       days.push({
         checkInCount: dayEntry?.count ?? 0,
         dayNumber,
+        isSelected: selectedDayNumber === dayNumber,
         isOutsideMonth: false,
         moodId,
         state: moodId ? "mood" : isFutureMonth || isFutureDay ? "future" : "empty",
@@ -166,7 +222,7 @@ export default function MoodOverviewScreen() {
     }
 
     return days;
-  }, [displayMonthIndex, displayYear, entriesByDay, isFutureMonth, todayDay, todayMonthKey, viewedMonthKey]);
+  }, [displayMonthIndex, displayYear, entriesByDay, isFutureMonth, selectedDayNumber, todayDay, todayMonthKey, viewedMonthKey]);
 
   const canGoPrevious = displayYear > MIN_YEAR || (displayYear === MIN_YEAR && displayMonthIndex > MIN_MONTH_INDEX);
   const goPreviousMonth = () => {
@@ -197,12 +253,19 @@ export default function MoodOverviewScreen() {
   const emotionCheckInLabel = `${totalCheckIns} emotion ${totalCheckIns === 1 ? "check-in" : "check-ins"}`;
   const activeEmotionDays = entriesByDay.size;
   const multiCheckInDays = [...entriesByDay.values()].filter((item) => item.count > 1).length;
-  const insightText =
+  const selectedDayMostCommonMood = selectedDayMostCommonMoodId ? EMOTION_META[selectedDayMostCommonMoodId] ?? null : null;
+  const selectedDayLabel = formatDisplayDate(displayYear, displayMonthIndex, selectedDayNumber);
+  const selectedDayCheckInLabel = `${selectedDayEntries.length} emotion ${selectedDayEntries.length === 1 ? "check-in" : "check-ins"}`;
+  const dailyInsightText =
+    selectedDayEntries.length <= 0
+      ? `No emotions were logged on ${selectedDayLabel}. Pick any day with a badge to see Muni's daily reflection.`
+      : selectedDayMostCommonMood?.label
+        ? `Muni counted ${selectedDayCheckInLabel.toLowerCase()} on ${selectedDayLabel}. The strongest pattern for this day is "${selectedDayMostCommonMood.label}".`
+        : `Muni counted ${selectedDayCheckInLabel.toLowerCase()} on ${selectedDayLabel}.`;
+  const monthlySubText =
     totalCheckIns <= 0
-      ? "Start checking in with your emotions and your monthly patterns will appear here."
-      : mostCommonMood?.label
-        ? `Muni counted ${emotionCheckInLabel.toLowerCase()} across ${activeEmotionDays} ${activeEmotionDays === 1 ? "day" : "days"}. Your most common emotion this month is "${mostCommonMood.label}"${multiCheckInDays ? `, with ${multiCheckInDays} ${multiCheckInDays === 1 ? "day" : "days"} showing more than one check-in.` : "."}`
-        : "You've been checking in regularly. Keep tracking your emotions to notice patterns.";
+      ? "No monthly check-ins yet."
+      : `${emotionCheckInLabel} across ${activeEmotionDays} ${activeEmotionDays === 1 ? "day" : "days"}${multiCheckInDays ? `, ${multiCheckInDays} with multiple check-ins` : ""}.`;
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
@@ -215,43 +278,52 @@ export default function MoodOverviewScreen() {
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.summaryCard}>
-          <View style={styles.summaryHeader}>
+        <View style={styles.dailyCard}>
+          <View style={styles.dailyHeader}>
             <View>
-              <Text style={styles.summaryEyebrow}>THIS MONTH</Text>
-              <Text style={styles.summaryMonth}>{`${getMonthName(displayMonthIndex)} ${displayYear}`}</Text>
-              <Text style={styles.summarySub}>{emotionCheckInLabel}</Text>
+              <Text style={styles.summaryEyebrow}>SELECTED DAY</Text>
+              <Text style={styles.summaryMonth}>{selectedDayLabel}</Text>
+              <Text style={styles.summarySub}>{selectedDayCheckInLabel}</Text>
             </View>
 
-            <View style={styles.commonMoodWrap}>
-              <Text style={styles.commonMoodMeta}>Most Common</Text>
+            <View style={styles.dailyMoodWrap}>
+              <Text style={styles.commonMoodMeta}>Daily Pattern</Text>
               <View style={styles.commonMoodFace}>
-                {mostCommonMood?.image ? (
-                  <Image source={mostCommonMood.image} style={styles.commonMoodImage} resizeMode="contain" />
-                ) : mostCommonMood ? (
+                {selectedDayMostCommonMood?.image ? (
+                  <Image source={selectedDayMostCommonMood.image} style={styles.commonMoodImage} resizeMode="contain" />
+                ) : selectedDayMostCommonMood ? (
                   <View style={styles.commonMoodPlaceholder} />
                 ) : (
                   <Text style={styles.commonMoodFallback}>-</Text>
                 )}
               </View>
-              <Text style={styles.commonMoodLabel}>{mostCommonMood?.label ?? "No emotion yet"}</Text>
+              <Text style={styles.commonMoodLabel}>{selectedDayMostCommonMood?.label ?? "No emotion yet"}</Text>
             </View>
           </View>
 
-          <View style={styles.statsRow}>
-            {moodStats.map((item) => (
-              <View key={item.id} style={styles.statItem}>
-                <View style={styles.statFace}>
-                  {item.image ? (
-                    <Image source={item.image} style={styles.statImage} resizeMode="contain" />
-                  ) : (
-                    <View style={styles.statImagePlaceholder} />
-                  )}
-                </View>
-                <Text style={styles.statCount}>{item.count}</Text>
-                <Text style={styles.statLabel} numberOfLines={2}>{item.label}</Text>
-              </View>
-            ))}
+          <View style={styles.dailyEntriesRow}>
+            {selectedDayEntries.length ? (
+              selectedDayEntries.map((entry, index) => {
+                const moodMeta = EMOTION_META[entry.moodId] ?? null;
+                return (
+                  <View key={entry.id ?? `${entry.moodId}-${index}`} style={styles.dailyEntryPill}>
+                    <View style={[styles.dailyEntryFace, moodMeta && { borderColor: moodMeta.color }]}>
+                      {moodMeta?.image ? (
+                        <Image source={moodMeta.image} style={styles.dailyEntryImage} resizeMode="contain" />
+                      ) : moodMeta ? (
+                        <View style={[styles.dailyEntryFallback, { backgroundColor: moodMeta.color }]} />
+                      ) : null}
+                    </View>
+                    <View style={styles.dailyEntryCopy}>
+                      <Text style={styles.dailyEntryLabel}>{moodMeta?.label ?? entry.moodLabel}</Text>
+                      <Text style={styles.dailyEntryTime}>{formatCheckInTime(entry.createdAt) || `Check-in ${index + 1}`}</Text>
+                    </View>
+                  </View>
+                );
+              })
+            ) : (
+              <Text style={styles.dailyEmptyText}>No emotions logged for this day.</Text>
+            )}
           </View>
         </View>
 
@@ -285,7 +357,13 @@ export default function MoodOverviewScreen() {
               return (
                 <View key={`${day.dayNumber ?? "blank"}-${index}`} style={styles.dayCell}>
                   {day.dayNumber === null ? <View style={styles.dayCircleBlank} /> : (
-                  <View
+                  <Pressable
+                    disabled={day.isOutsideMonth || day.state === "future"}
+                    onPress={() => {
+                      if (day.dayNumber) {
+                        setSelectedDayNumber(day.dayNumber);
+                      }
+                    }}
                     style={[
                       styles.dayCircle,
                       day.isOutsideMonth && styles.dayCircleOutsideMonth,
@@ -294,6 +372,7 @@ export default function MoodOverviewScreen() {
                       day.state === "empty" && styles.dayCircleEmpty,
                       day.state === "empty" && styles.dayCircleEmptyBorder,
                       isToday && styles.dayCircleToday,
+                      day.isSelected && styles.dayCircleSelected,
                     ]}
                   >
                     <Text
@@ -302,6 +381,7 @@ export default function MoodOverviewScreen() {
                         day.isOutsideMonth && styles.dayNumberOutsideMonth,
                         day.state === "future" && styles.dayNumberFuture,
                         day.state === "mood" && styles.dayNumberMood,
+                        day.isSelected && styles.dayNumberSelected,
                       ]}
                     >
                       {day.dayNumber}
@@ -311,7 +391,7 @@ export default function MoodOverviewScreen() {
                         <Text style={styles.dayCountBadgeText}>{day.checkInCount}</Text>
                       </View>
                     ) : null}
-                  </View>
+                  </Pressable>
                   )}
                 </View>
               );
@@ -325,8 +405,48 @@ export default function MoodOverviewScreen() {
           </View>
 
           <View style={styles.insightTextWrap}>
-            <Text style={styles.insightText}>{insightText}</Text>
+            <Text style={styles.insightText}>{dailyInsightText}</Text>
             <Text style={styles.insightFootnote}>{INSIGHT_FOOTNOTE}</Text>
+          </View>
+        </View>
+
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryHeader}>
+            <View>
+              <Text style={styles.summaryEyebrow}>MONTHLY TOTALS</Text>
+              <Text style={styles.summaryMonth}>{`${getMonthName(displayMonthIndex)} ${displayYear}`}</Text>
+              <Text style={styles.summarySub}>{monthlySubText}</Text>
+            </View>
+
+            <View style={styles.commonMoodWrap}>
+              <Text style={styles.commonMoodMeta}>Most Common</Text>
+              <View style={styles.commonMoodFace}>
+                {mostCommonMood?.image ? (
+                  <Image source={mostCommonMood.image} style={styles.commonMoodImage} resizeMode="contain" />
+                ) : mostCommonMood ? (
+                  <View style={styles.commonMoodPlaceholder} />
+                ) : (
+                  <Text style={styles.commonMoodFallback}>-</Text>
+                )}
+              </View>
+              <Text style={styles.commonMoodLabel}>{mostCommonMood?.label ?? "No emotion yet"}</Text>
+            </View>
+          </View>
+
+          <View style={styles.statsRow}>
+            {moodStats.map((item) => (
+              <View key={item.id} style={styles.statItem}>
+                <View style={styles.statFace}>
+                  {item.image ? (
+                    <Image source={item.image} style={styles.statImage} resizeMode="contain" />
+                  ) : (
+                    <View style={styles.statImagePlaceholder} />
+                  )}
+                </View>
+                <Text style={styles.statCount}>{item.count}</Text>
+                <Text style={styles.statLabel} numberOfLines={2}>{item.label}</Text>
+              </View>
+            ))}
           </View>
         </View>
       </ScrollView>
@@ -392,6 +512,87 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
     elevation: 2,
+  },
+  dailyCard: {
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E1EBD9",
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 14,
+    marginBottom: 14,
+    shadowColor: "#525C67",
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  dailyHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    columnGap: 12,
+    marginBottom: 12,
+  },
+  dailyMoodWrap: {
+    alignItems: "center",
+    minWidth: 88,
+  },
+  dailyEntriesRow: {
+    rowGap: 9,
+  },
+  dailyEntryPill: {
+    minHeight: 54,
+    borderRadius: 16,
+    backgroundColor: "#F8FBF5",
+    borderWidth: 1,
+    borderColor: "#E0E9DA",
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  dailyEntryFace: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: "#DCE5DB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dailyEntryImage: {
+    width: 30,
+    height: 30,
+  },
+  dailyEntryFallback: {
+    width: 20,
+    height: 20,
+    borderRadius: 999,
+  },
+  dailyEntryCopy: {
+    flex: 1,
+  },
+  dailyEntryLabel: {
+    color: "#31465A",
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: "700",
+  },
+  dailyEntryTime: {
+    color: "#6A7481",
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 1,
+  },
+  dailyEmptyText: {
+    color: "#6A7481",
+    fontSize: 13,
+    lineHeight: 18,
+    paddingVertical: 6,
   },
   summaryHeader: {
     flexDirection: "row",
@@ -597,6 +798,10 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#5FAD38",
   },
+  dayCircleSelected: {
+    borderWidth: 2,
+    borderColor: "#31465A",
+  },
   dayNumber: {
     color: "#4B5F73",
     fontSize: 15 / 1.08,
@@ -612,6 +817,9 @@ const styles = StyleSheet.create({
   },
   dayNumberOutsideMonth: {
     color: "#8D96A0",
+  },
+  dayNumberSelected: {
+    color: "#263647",
   },
   dayCountBadge: {
     position: "absolute",
@@ -647,7 +855,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
     elevation: 2,
-    marginBottom: 4,
+    marginBottom: 14,
   },
   insightImageWrap: {
     width: 92,
