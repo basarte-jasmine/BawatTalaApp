@@ -386,6 +386,35 @@ async function ensureDatabaseSchema() {
   `);
 
   await pool.query(`
+    create table if not exists public.student_library_progress (
+      id uuid primary key default gen_random_uuid(),
+      student_number text not null,
+      google_volume_id text not null,
+      book_title text,
+      book_authors text,
+      current_page integer not null default 0,
+      total_pages integer not null default 0,
+      progress_percent integer not null default 0,
+      status text not null default 'STARTED',
+      rating integer,
+      started_at timestamptz not null default now(),
+      finished_at timestamptz,
+      last_opened_at timestamptz,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      constraint student_library_progress_student_book_unique unique (student_number, google_volume_id),
+      constraint student_library_progress_status_check check (status in ('STARTED', 'FINISHED')),
+      constraint student_library_progress_rating_check check (rating is null or rating between 1 and 5),
+      constraint student_library_progress_percent_check check (progress_percent between 0 and 100)
+    );
+  `);
+
+  await pool.query(`
+    create index if not exists student_library_progress_student_idx
+      on public.student_library_progress (student_number, updated_at desc);
+  `);
+
+  await pool.query(`
     create table if not exists public.journal_entries (
       id uuid primary key default gen_random_uuid(),
       student_number text not null,

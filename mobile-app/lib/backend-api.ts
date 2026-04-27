@@ -79,6 +79,42 @@ export type MoodEntryRecord = {
   moodSource?: MoodSource;
 };
 
+export type LibraryBookProgress = {
+  bookId: string;
+  currentPage: number;
+  finishedAt?: string | null;
+  lastOpenedAt?: string | null;
+  percent: number;
+  rating?: number | null;
+  status: "STARTED" | "FINISHED";
+  totalPages: number;
+  updatedAt?: string | null;
+};
+
+export type LibraryBookRecord = {
+  accentColor: string;
+  author: string;
+  blurb: string;
+  category: string;
+  coverImageUrl: string;
+  downloadableEpub?: boolean;
+  downloadablePdf?: boolean;
+  estimatedMinutes: number;
+  id: string;
+  infoLink?: string;
+  isFreeEbook?: boolean;
+  language?: string;
+  pageCount?: number;
+  previewLink?: string;
+  progress?: LibraryBookProgress | null;
+  publishedDate?: string;
+  publisher?: string;
+  readerLink?: string;
+  rewardLabel: string;
+  shelfLabel: string;
+  title: string;
+};
+
 export type CounselorDirectoryItem = {
   email: string;
   fullName: string;
@@ -362,6 +398,61 @@ export async function fetchMonthlyMoods(
     mostCommonMoodId: data?.mostCommonMoodId ?? null,
     mostCommonMoodLabel: data?.mostCommonMoodLabel ?? null,
     totalCheckIns: data?.totalCheckIns ?? 0,
+  };
+}
+
+export async function fetchLibraryBooks(
+  studentNumber?: string,
+): Promise<ApiResult & { books?: LibraryBookRecord[]; totalItems?: number }> {
+  const params = new URLSearchParams({ maxResults: "24" });
+  if (studentNumber) {
+    params.set("studentNumber", studentNumber);
+  }
+
+  const { response, data } = await get(`/api/library/books?${params.toString()}`);
+
+  return {
+    ok: response.ok,
+    message: data?.message,
+    books: Array.isArray(data?.books) ? data.books : [],
+    totalItems: Number(data?.totalItems ?? 0),
+  };
+}
+
+export async function saveLibraryBookProgress(payload: {
+  authors?: string;
+  bookId: string;
+  bookTitle?: string;
+  currentPage: number;
+  status?: "STARTED" | "FINISHED";
+  studentNumber: string;
+  totalPages: number;
+}): Promise<ApiResult & { progress?: LibraryBookProgress | null }> {
+  const { response, data } = await post("/api/library/progress", payload);
+
+  return {
+    ok: response.ok,
+    message: data?.message,
+    progress: data?.progress ?? null,
+  };
+}
+
+export async function rateLibraryBook(payload: {
+  authors?: string;
+  bookId: string;
+  bookTitle?: string;
+  currentPage: number;
+  rating: number;
+  status?: "STARTED" | "FINISHED";
+  studentNumber: string;
+  totalPages: number;
+}): Promise<ApiResult & { progress?: LibraryBookProgress | null }> {
+  const { response, data } = await post("/api/library/rating", payload);
+
+  return {
+    ok: response.ok,
+    message: data?.message,
+    progress: data?.progress ?? null,
   };
 }
 

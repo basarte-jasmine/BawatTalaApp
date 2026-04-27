@@ -12,12 +12,13 @@ import {
   fetchCheckInStatus,
   fetchDailyMood,
   fetchJournalEntriesByDate,
+  fetchLibraryBooks,
   fetchStudentAppointments,
   fetchStudentNotifications,
   saveDailyMood,
+  type LibraryBookRecord,
 } from "../lib/backend-api";
 import { EMOTIONS } from "../lib/emotions";
-import { FEATURED_LIBRARY_BOOKS, LIBRARY_BOOKS } from "../lib/library-data";
 import { getManilaTodayParts } from "../lib/manila-date";
 import { isAdminMessageNotification } from "../lib/notification-utils";
 
@@ -214,6 +215,7 @@ export default function HomeScreen() {
   const [pendingMoodId, setPendingMoodId] = useState<string | null>(null);
   const [showMoodConfirmModal, setShowMoodConfirmModal] = useState(false);
   const [recentEntries, setRecentEntries] = useState<RecentEntryCard[]>([]);
+  const [libraryPreviewBooks, setLibraryPreviewBooks] = useState<LibraryBookRecord[]>([]);
   const [recentEntriesSort, setRecentEntriesSort] = useState<HomeRecentFilter>("newest");
   const [showRecentEntriesFilterModal, setShowRecentEntriesFilterModal] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
@@ -631,6 +633,17 @@ export default function HomeScreen() {
     setUpcomingAppointment(matchedAppointment || result.upcomingAppointment || null);
   }, [appointmentId, user?.studentNumber]);
 
+  const loadLibraryPreview = useCallback(async () => {
+    try {
+      const result = await fetchLibraryBooks(user?.studentNumber);
+      if (result.ok) {
+        setLibraryPreviewBooks((result.books ?? []).slice(0, 2));
+      }
+    } catch {
+      setLibraryPreviewBooks([]);
+    }
+  }, [user?.studentNumber]);
+
   const loadNotifications = useCallback(async () => {
     if (!user?.studentNumber) {
       setHasUnreadMessages(false);
@@ -668,8 +681,9 @@ export default function HomeScreen() {
       void loadCheckInStatus();
       void loadRecentEntries();
       void loadUpcomingAppointment();
+      void loadLibraryPreview();
       void loadNotifications();
-    }, [loadCheckInStatus, loadNotifications, loadRecentEntries, loadTodayMood, loadUpcomingAppointment]),
+    }, [loadCheckInStatus, loadLibraryPreview, loadNotifications, loadRecentEntries, loadTodayMood, loadUpcomingAppointment]),
   );
 
   const handleMoodSelect = (moodId: string) => {
@@ -1371,22 +1385,33 @@ export default function HomeScreen() {
           <View style={styles.libraryMetaRow}>
             <View style={styles.libraryMetaPill}>
               <Ionicons name="book-outline" size={15} color="#4A7A33" />
-              <Text style={styles.libraryMetaPillText}>{`${LIBRARY_BOOKS.length} books waiting`}</Text>
+              <Text style={styles.libraryMetaPillText}>{libraryPreviewBooks.length ? "Free books ready" : "Free books loading"}</Text>
             </View>
           </View>
 
           <View style={[styles.libraryShelfRow, libraryCompact && styles.libraryShelfRowStacked]}>
-            {FEATURED_LIBRARY_BOOKS.slice(0, 2).map((book) => (
+            {libraryPreviewBooks.length ? (
+              libraryPreviewBooks.map((book) => (
+                <Pressable
+                  key={book.id}
+                  style={[styles.libraryBookChip, libraryCompact && styles.libraryBookChipStacked, { borderLeftColor: book.accentColor }]}
+                  onPress={handleOpenLibrary}
+                >
+                  <Text style={styles.libraryBookChipCategory}>{book.category}</Text>
+                  <Text style={styles.libraryBookChipTitle} numberOfLines={2}>{book.title}</Text>
+                  <Text style={styles.libraryBookChipMeta}>{`${book.estimatedMinutes} min read`}</Text>
+                </Pressable>
+              ))
+            ) : (
               <Pressable
-                key={book.id}
-                style={[styles.libraryBookChip, libraryCompact && styles.libraryBookChipStacked, { borderLeftColor: book.accentColor }]}
+                style={[styles.libraryBookChip, libraryCompact && styles.libraryBookChipStacked, { borderLeftColor: "#A8C79F" }]}
                 onPress={handleOpenLibrary}
               >
-                <Text style={styles.libraryBookChipCategory}>{book.category}</Text>
-                <Text style={styles.libraryBookChipTitle} numberOfLines={2}>{book.title}</Text>
-                <Text style={styles.libraryBookChipMeta}>{`${book.estimatedMinutes} min read`}</Text>
+                <Text style={styles.libraryBookChipCategory}>Free Shelf</Text>
+                <Text style={styles.libraryBookChipTitle} numberOfLines={2}>Mental-health books from Google Books</Text>
+                <Text style={styles.libraryBookChipMeta}>Open library</Text>
               </Pressable>
-            ))}
+            )}
           </View>
 
           <Pressable style={styles.libraryPrimaryButton} onPress={handleOpenLibrary}>

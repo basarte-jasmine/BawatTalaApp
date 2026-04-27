@@ -1,10 +1,18 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
-import { useMemo, useState } from "react";
-import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import { ActivityIndicator, Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
-import { LIBRARY_BOOKS, type LibraryBook } from "../lib/library-data";
+import { useAuthSession } from "../lib/auth-session";
+import {
+  fetchLibraryBooks,
+  rateLibraryBook,
+  saveLibraryBookProgress,
+  type LibraryBookProgress,
+  type LibraryBookRecord,
+} from "../lib/backend-api";
 
 type ReaderPage = {
   eyebrow: string;
@@ -12,20 +20,58 @@ type ReaderPage = {
   title: string;
 };
 
+const BOOK_COVER_IMAGE = require("../assets/images/book_sample.png");
+const STAR_VALUES = [1, 2, 3, 4, 5];
+
+function buildReaderPages(book: LibraryBookRecord): ReaderPage[] {
+  const detailLines = [
+    book.author ? `Author: ${book.author}` : "",
+    book.publisher ? `Publisher: ${book.publisher}` : "",
+    book.publishedDate ? `Published: ${book.publishedDate}` : "",
+    book.pageCount ? `Length: ${book.pageCount} pages` : "",
+    book.downloadableEpub || book.downloadablePdf
+      ? `Free formats: ${[book.downloadableEpub ? "EPUB" : "", book.downloadablePdf ? "PDF" : ""].filter(Boolean).join(", ")}`
+      : "Free reading access is provided through Google Books when available.",
+  ].filter(Boolean);
+
+  return [
+    {
+      eyebrow: book.category,
+      title: book.title,
+      paragraphs: [book.blurb || "A free mental-health and wellbeing read from Google Books."],
+    },
+    {
+      eyebrow: "Book Details",
+      title: "About this free book",
+      paragraphs: detailLines.length ? detailLines : ["Google Books did not provide extra details for this title."],
+    },
+    {
+      eyebrow: "Reading Access",
+      title: "Continue in the free reader",
+      paragraphs: [
+        "This title came from the Google Books free eBook catalog. Open the free reader to continue with the full available text, then come back here to update your progress and rating.",
+      ],
+    },
+  ];
+}
+
 export default function LibraryScreen() {
+  const { user } = useAuthSession();
   const { width } = useWindowDimensions();
   const compact = width < 390;
   const narrow = width < 360;
-  const [books] = useState<LibraryBook[]>(LIBRARY_BOOKS);
+  const [books, setBooks] = useState<LibraryBookRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
-  const [finishedBookIds, setFinishedBookIds] = useState<string[]>([]);
   const [readerPageIndex, setReaderPageIndex] = useState(0);
+  const [ratingErrorMessage, setRatingErrorMessage] = useState("");
 
   const selectedBook = useMemo(
     () => books.find((book) => book.id === selectedBookId) ?? null,
     [books, selectedBookId],
   );
-  const finishedCount = finishedBookIds.length;
+  const finishedCount = books.filter((book) => book.progress?.status === "FINISHED").length;
   const readyCount = books.length - finishedCount;
 
   const readerPages = useMemo<ReaderPage[]>(() => {
@@ -33,23 +79,75 @@ export default function LibraryScreen() {
       return [];
     }
 
-    return [
-      {
-        eyebrow: selectedBook.category,
-        title: selectedBook.title,
-        paragraphs: [selectedBook.blurb],
-      },
-      ...selectedBook.chapters.map((chapter) => ({
-        eyebrow: selectedBook.title,
-        title: chapter.title,
-        paragraphs: chapter.body,
-      })),
-    ];
+    return buildReaderPages(selectedBook);
   }, [selectedBook]);
 
   const currentPage = readerPages[readerPageIndex] ?? null;
   const canGoPreviousPage = readerPageIndex > 0;
   const canGoNextPage = readerPageIndex < readerPages.length - 1;
+  const selectedBookRating = selectedBook?.progress?.rating ?? 0;
+
+  const updateBookProgress = useCallback((bookId: string, progress: LibraryBookProgress | null | undefined) => {
+    if (!progress) return;
+    setBooks((current) =>
+      current.map((book) => (
+        book.id === bookId
+          ? {
+              ...book,
+              progress,
+              rewardLabel: progress.rating ? `${progress.rating}/5 stars` : book.rewardLabel,
+            }
+          : book
+      )),
+    );
+  }, []);
+
+  const loadBooks = useCallback(async () => {
+    setIsLoading(true);
+    setErrorMessage("");
+    try {
+      const result = await fetchLibraryBooks(user?.studentNumber);
+      if (result.ok) {
+        setBooks(result.books ?? []);
+      } else {
+        setBooks([]);
+        setErrorMessage(result.message ?? "Unable to load the free library right now.");
+      }
+    } catch {
+      setBooks([]);
+      setErrorMessage("Unable to reach the free library right now.");
+    }
+    setIsLoading(false);
+  }, [user?.studentNumber]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadBooks();
+    }, [loadBooks]),
+  );
+
+  const persistProgress = useCallback(
+    async (book: LibraryBookRecord, currentPage: number, totalPages: number, status: "STARTED" | "FINISHED" = "STARTED") => {
+      if (!user?.studentNumber) return;
+      try {
+        const result = await saveLibraryBookProgress({
+          authors: book.author,
+          bookId: book.id,
+          bookTitle: book.title,
+          currentPage,
+          status,
+          studentNumber: user.studentNumber,
+          totalPages,
+        });
+        if (result.ok) {
+          updateBookProgress(book.id, result.progress);
+        }
+      } catch {
+        // Progress is best-effort; the reader should stay usable offline or during brief API failures.
+      }
+    },
+    [updateBookProgress, user?.studentNumber],
+  );
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -60,21 +158,83 @@ export default function LibraryScreen() {
   };
 
   const handleOpenBook = (bookId: string) => {
+    const book = books.find((item) => item.id === bookId);
+    if (!book) return;
+    const pages = buildReaderPages(book);
+    const savedPage = book.progress?.currentPage ?? 0;
+    const nextPage = Math.min(Math.max(savedPage, 0), Math.max(pages.length - 1, 0));
     setSelectedBookId(bookId);
-    setReaderPageIndex(0);
+    setReaderPageIndex(nextPage);
+    setRatingErrorMessage("");
+    void persistProgress(book, nextPage, pages.length, book.progress?.status === "FINISHED" ? "FINISHED" : "STARTED");
   };
 
   const handleCloseBook = () => {
     setSelectedBookId(null);
     setReaderPageIndex(0);
+    setRatingErrorMessage("");
   };
 
-  const handleMarkFinished = (bookId: string) => {
-    setFinishedBookIds((current) => (current.includes(bookId) ? current : [...current, bookId]));
+  const handleReaderPageChange = (nextPage: number) => {
+    const boundedPage = Math.min(Math.max(nextPage, 0), Math.max(readerPages.length - 1, 0));
+    setReaderPageIndex(boundedPage);
+    if (selectedBook) {
+      void persistProgress(
+        selectedBook,
+        boundedPage,
+        readerPages.length,
+        selectedBook.progress?.status === "FINISHED" ? "FINISHED" : "STARTED",
+      );
+    }
   };
 
-  const renderBookCard = (book: LibraryBook) => {
-    const isFinished = finishedBookIds.includes(book.id);
+  const handleFinishBook = () => {
+    if (selectedBook) {
+      void persistProgress(selectedBook, Math.max(readerPages.length - 1, 0), readerPages.length, "FINISHED");
+    }
+    handleCloseBook();
+  };
+
+  const handleRateBook = async (rating: number) => {
+    if (!selectedBook || !user?.studentNumber) {
+      setRatingErrorMessage("Log in first to save a rating.");
+      return;
+    }
+    setRatingErrorMessage("");
+    try {
+      const result = await rateLibraryBook({
+        authors: selectedBook.author,
+        bookId: selectedBook.id,
+        bookTitle: selectedBook.title,
+        currentPage: readerPageIndex,
+        rating,
+        status: selectedBook.progress?.status === "FINISHED" ? "FINISHED" : "STARTED",
+        studentNumber: user.studentNumber,
+        totalPages: readerPages.length || 1,
+      });
+      if (result.ok) {
+        updateBookProgress(selectedBook.id, result.progress);
+      } else {
+        setRatingErrorMessage(result.message ?? "Unable to save rating.");
+      }
+    } catch {
+      setRatingErrorMessage("Unable to reach the library rating service.");
+    }
+  };
+
+  const handleOpenFreeReader = async () => {
+    if (!selectedBook?.readerLink) return;
+    if (selectedBook) {
+      void persistProgress(selectedBook, readerPageIndex, readerPages.length, selectedBook.progress?.status === "FINISHED" ? "FINISHED" : "STARTED");
+    }
+    await Linking.openURL(selectedBook.readerLink).catch(() => {
+      setRatingErrorMessage("Unable to open the free reader link.");
+    });
+  };
+
+  const renderBookCard = (book: LibraryBookRecord) => {
+    const isFinished = book.progress?.status === "FINISHED";
+    const progressPercent = book.progress?.percent ?? 0;
 
     return (
       <Pressable key={book.id} style={[styles.bookCard, compact && styles.bookCardCompact]} onPress={() => handleOpenBook(book.id)}>
@@ -98,7 +258,11 @@ export default function LibraryScreen() {
               { backgroundColor: book.accentColor },
             ]}
           >
-            {book.coverImage ? <Image source={book.coverImage} style={styles.bookCoverImage} resizeMode="contain" /> : null}
+            <Image
+              source={book.coverImageUrl ? { uri: book.coverImageUrl } : BOOK_COVER_IMAGE}
+              style={styles.bookCoverImage}
+              resizeMode="contain"
+            />
           </View>
 
           <View style={styles.bookInfoWrap}>
@@ -116,6 +280,12 @@ export default function LibraryScreen() {
                 <Ionicons name="sparkles-outline" size={14} color="#6D675A" />
                 <Text style={styles.bookMetaText}>{book.rewardLabel}</Text>
               </View>
+              {progressPercent > 0 ? (
+                <View style={styles.bookMetaPill}>
+                  <Ionicons name="bookmark-outline" size={14} color="#6D675A" />
+                  <Text style={styles.bookMetaText}>{`${progressPercent}%`}</Text>
+                </View>
+              ) : null}
             </View>
           </View>
         </View>
@@ -148,7 +318,7 @@ export default function LibraryScreen() {
                 <Text style={styles.heroBadge}>Reading Room</Text>
                 <Text style={[styles.heroTitle, compact && styles.heroTitleCompact]}>A warmer shelf for slow, comforting reading.</Text>
                 <Text style={[styles.heroBody, compact && styles.heroBodyCompact]}>
-                  The catalog is shaped to feel intimate: short books, quiet covers, and a reader that opens one page at a time instead of dumping everything into a plain scroll.
+                  The catalog now pulls free Google Books titles related to mental health, psychology, stress, and wellbeing.
                 </Text>
               </View>
 
@@ -179,7 +349,7 @@ export default function LibraryScreen() {
             <Text style={styles.introEyebrow}>Settle In</Text>
             <Text style={styles.introTitle}>Browse the shelf, then step into reader mode.</Text>
             <Text style={styles.introBody}>
-              This layout is ready for API-powered books later, but the reading experience already works page by page so it feels closer to opening a real little book.
+              Your progress and ratings are saved to your account. Full book text opens through the free Google Books reader when available.
             </Text>
           </View>
 
@@ -188,9 +358,31 @@ export default function LibraryScreen() {
             <Text style={styles.sectionSubTitle}>Tap any title to open the page-by-page reader.</Text>
           </View>
 
-          <View style={styles.bookList}>
-            {books.map(renderBookCard)}
-          </View>
+          {isLoading ? (
+            <View style={styles.loadingCard}>
+              <ActivityIndicator color="#70C943" />
+              <Text style={styles.loadingText}>Loading free books...</Text>
+            </View>
+          ) : errorMessage ? (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>Library is unavailable</Text>
+              <Text style={styles.emptyText}>{errorMessage}</Text>
+              <Pressable style={styles.retryButton} onPress={() => void loadBooks()}>
+                <Text style={styles.retryButtonText}>Try Again</Text>
+              </Pressable>
+            </View>
+          ) : (
+            books.length ? (
+              <View style={styles.bookList}>
+                {books.map(renderBookCard)}
+              </View>
+            ) : (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyTitle}>No free books found</Text>
+                <Text style={styles.emptyText}>Try again in a moment. Google Books may be returning a smaller free catalog right now.</Text>
+              </View>
+            )
+          )}
         </View>
       </ScrollView>
 
@@ -240,11 +432,35 @@ export default function LibraryScreen() {
             </View>
           </View>
 
+          <View style={styles.readerUtilityRow}>
+            <View style={styles.ratingWrap}>
+              <Text style={styles.ratingLabel}>Rate this book</Text>
+              <View style={styles.ratingStars}>
+                {STAR_VALUES.map((star) => (
+                  <Pressable key={star} style={styles.ratingStarButton} onPress={() => void handleRateBook(star)}>
+                    <Ionicons
+                      name={star <= selectedBookRating ? "star" : "star-outline"}
+                      size={20}
+                      color={star <= selectedBookRating ? "#D7A52F" : "#A79D8B"}
+                    />
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+            {selectedBook?.readerLink ? (
+              <Pressable style={styles.openReaderButton} onPress={() => void handleOpenFreeReader()}>
+                <Ionicons name="open-outline" size={15} color="#524B42" />
+                <Text style={styles.openReaderText}>Free Reader</Text>
+              </Pressable>
+            ) : null}
+          </View>
+          {!!ratingErrorMessage && <Text style={styles.ratingErrorText}>{ratingErrorMessage}</Text>}
+
           <View style={[styles.readerFooter, compact && styles.readerFooterStacked]}>
             <Pressable
               style={[styles.readerNavButton, compact && styles.readerFooterButtonFull, !canGoPreviousPage && styles.readerNavButtonDisabled]}
               disabled={!canGoPreviousPage}
-              onPress={() => setReaderPageIndex((current) => Math.max(0, current - 1))}
+              onPress={() => handleReaderPageChange(readerPageIndex - 1)}
             >
               <Ionicons name="arrow-back" size={16} color={canGoPreviousPage ? "#524B42" : "#B1A796"} />
               <Text style={[styles.readerNavButtonText, !canGoPreviousPage && styles.readerNavButtonTextDisabled]}>Previous</Text>
@@ -254,18 +470,15 @@ export default function LibraryScreen() {
               style={[styles.readerPrimaryButton, compact && styles.readerFooterButtonFull]}
               onPress={() => {
                 if (canGoNextPage) {
-                  setReaderPageIndex((current) => current + 1);
+                  handleReaderPageChange(readerPageIndex + 1);
                   return;
                 }
 
-                if (selectedBook && !finishedBookIds.includes(selectedBook.id)) {
-                  handleMarkFinished(selectedBook.id);
-                }
-                handleCloseBook();
+                handleFinishBook();
               }}
             >
               <Text style={styles.readerPrimaryButtonText}>
-                {canGoNextPage ? "Next page" : selectedBook && finishedBookIds.includes(selectedBook.id) ? "Close book" : "Finish book"}
+                {canGoNextPage ? "Next page" : selectedBook?.progress?.status === "FINISHED" ? "Close book" : "Finish book"}
               </Text>
               <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
             </Pressable>
@@ -544,6 +757,62 @@ const styles = StyleSheet.create({
   bookList: {
     width: "100%",
     rowGap: 12,
+  },
+  loadingCard: {
+    width: "100%",
+    borderRadius: 20,
+    backgroundColor: "#FFFDF8",
+    borderWidth: 1,
+    borderColor: "#E7DDD0",
+    paddingHorizontal: 18,
+    paddingVertical: 24,
+    alignItems: "center",
+    rowGap: 10,
+  },
+  loadingText: {
+    color: "#6A645A",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "600",
+  },
+  emptyCard: {
+    width: "100%",
+    borderRadius: 20,
+    backgroundColor: "#FFFDF8",
+    borderWidth: 1,
+    borderColor: "#E7DDD0",
+    paddingHorizontal: 18,
+    paddingVertical: 22,
+    alignItems: "center",
+  },
+  emptyTitle: {
+    color: "#35485B",
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: "700",
+    marginBottom: 6,
+    textAlign: "center",
+  },
+  emptyText: {
+    color: "#665F54",
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: "center",
+  },
+  retryButton: {
+    marginTop: 14,
+    minHeight: 40,
+    borderRadius: 999,
+    backgroundColor: "#70C943",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 18,
+  },
+  retryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
   },
   bookCard: {
     width: "100%",
@@ -890,6 +1159,63 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     marginTop: 8,
+  },
+  readerUtilityRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    columnGap: 10,
+    rowGap: 8,
+    marginBottom: 10,
+    flexWrap: "wrap",
+  },
+  ratingWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 8,
+    flexShrink: 1,
+  },
+  ratingLabel: {
+    color: "#665D50",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
+  ratingStars: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 2,
+  },
+  ratingStarButton: {
+    width: 26,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  openReaderButton: {
+    minHeight: 34,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.62)",
+    borderWidth: 1,
+    borderColor: "#DECDB7",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 6,
+    paddingHorizontal: 12,
+  },
+  openReaderText: {
+    color: "#524B42",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "700",
+  },
+  ratingErrorText: {
+    color: "#B85C5C",
+    fontSize: 12,
+    lineHeight: 16,
+    textAlign: "center",
+    marginBottom: 8,
   },
   readerFooter: {
     flexDirection: "row",
