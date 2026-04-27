@@ -45,6 +45,7 @@ function createEmotionCounts() {
 module.exports = {
   EMOTION_LABELS,
   EMOTION_OPTIONS,
+  LEGACY_EMOTION_ALIASES,
   createEmotionCounts,
   getEmotionLabel,
   normalizeEmotionId,

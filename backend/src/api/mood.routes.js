@@ -1,5 +1,9 @@
 const express = require("express");
-const { query, removeLegacyDailyMoodUniqueness } = require("../config/db");
+const {
+  query,
+  refreshStudentMoodIdConstraint,
+  removeLegacyDailyMoodUniqueness,
+} = require("../config/db");
 const {
   EMOTION_LABELS,
   createEmotionCounts,
@@ -204,11 +208,15 @@ router.post("/", async (req, res) => {
     try {
       result = await insertMoodCheckIn(studentNumber, moodId, moodDate, moodSource);
     } catch (error) {
-      if (error?.code !== "23505") {
+      if (error?.code === "23505") {
+        await removeLegacyDailyMoodUniqueness();
+        result = await insertMoodCheckIn(studentNumber, moodId, moodDate, moodSource);
+      } else if (error?.code === "23514" && error?.constraint === "student_moods_mood_id_check") {
+        await refreshStudentMoodIdConstraint();
+        result = await insertMoodCheckIn(studentNumber, moodId, moodDate, moodSource);
+      } else {
         throw error;
       }
-      await removeLegacyDailyMoodUniqueness();
-      result = await insertMoodCheckIn(studentNumber, moodId, moodDate, moodSource);
     }
 
     const row = result.rows[0];

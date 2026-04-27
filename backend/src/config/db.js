@@ -1,4 +1,9 @@
 const { Pool } = require("pg");
+const {
+  EMOTION_LABELS,
+  EMOTION_OPTIONS,
+  LEGACY_EMOTION_ALIASES,
+} = require("../constants/emotions");
 const { JOURNAL_TAG_OPTIONS } = require("../constants/journal-tags");
 
 const LEGACY_JOURNAL_CONCERN_VALUES = [
@@ -22,6 +27,7 @@ const LEGACY_DAILY_MOOD_UNIQUE_NAMES = [
   "student_moods_student_date_unique",
   "student_moods_student_number_mood_date_key",
 ];
+const STUDENT_MOOD_ID_CHECK_NAME = "student_moods_mood_id_check";
 
 function toSqlTextList(values) {
   return values
@@ -181,6 +187,53 @@ async function removeLegacyDailyMoodUniqueness() {
   }
 }
 
+async function refreshStudentMoodIdConstraint() {
+  const validMoodIds = EMOTION_OPTIONS.map(({ id }) => id);
+
+  await query(`alter table public.student_moods drop constraint if exists ${quoteIdentifier(STUDENT_MOOD_ID_CHECK_NAME)}`);
+
+  await query(`
+    update public.student_moods
+    set mood_id = lower(trim(mood_id)),
+        updated_at = now()
+    where mood_id <> lower(trim(mood_id));
+  `);
+
+  for (const [legacyId, moodId] of Object.entries(LEGACY_EMOTION_ALIASES)) {
+    await query(
+      `
+        update public.student_moods
+        set mood_id = $2,
+            mood_label = $3,
+            updated_at = now()
+        where mood_id = $1;
+      `,
+      [legacyId, moodId, EMOTION_LABELS[moodId] || moodId],
+    );
+  }
+
+  for (const { id, label } of EMOTION_OPTIONS) {
+    await query(
+      `
+        update public.student_moods
+        set mood_label = $2,
+            updated_at = now()
+        where mood_id = $1
+          and mood_label <> $2;
+      `,
+      [id, label],
+    );
+  }
+
+  await query(`
+    alter table public.student_moods
+    add constraint ${quoteIdentifier(STUDENT_MOOD_ID_CHECK_NAME)}
+    check (mood_id in (
+        ${toSqlTextList(validMoodIds)}
+    )) not valid;
+  `);
+}
+
 async function ensureDatabaseSchema() {
   if (!pool) return;
 
@@ -297,6 +350,8 @@ async function ensureDatabaseSchema() {
     add constraint student_moods_mood_source_check
     check (mood_source in ('INPUT', 'JOURNAL'));
   `);
+
+  await refreshStudentMoodIdConstraint();
 
   await removeLegacyDailyMoodUniqueness();
 
@@ -717,5 +772,6 @@ module.exports = {
   dbPool: pool,
   ensureDatabaseSchema,
   query,
+  refreshStudentMoodIdConstraint,
   removeLegacyDailyMoodUniqueness,
 };
