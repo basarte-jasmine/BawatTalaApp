@@ -7,17 +7,30 @@ export type EmotionOption = {
   label: string;
 };
 
+const EMOTION_IMAGES = {
+  anger: require("../assets/images/Emotions/angry.gif"),
+  anxiety: require("../assets/images/Emotions/anxious.gif"),
+  contentment: require("../assets/images/Emotions/Contentment.gif"),
+  disappointment: require("../assets/images/Emotions/Disappointment .gif"),
+  embarrassment: require("../assets/images/Emotions/Embarrassment .gif"),
+  excitement: require("../assets/images/Emotions/Excitement .gif"),
+  guilt: require("../assets/images/Emotions/Guilt.gif"),
+  joy: require("../assets/images/Emotions/Joy.gif"),
+  relief: require("../assets/images/Emotions/Relief.gif"),
+  sadness: require("../assets/images/Emotions/sad.gif"),
+} satisfies Record<string, ImageSourcePropType>;
+
 export const EMOTIONS: EmotionOption[] = [
-  { color: "#FDBA58", id: "excitement", image: require("../assets/images/Moods/happy.gif"), label: "Excitement" },
-  { color: "#FFD616", id: "joy", image: require("../assets/images/Moods/happy.gif"), label: "Joy" },
-  { color: "#97CFDA", id: "contentment", image: require("../assets/images/Moods/calm.gif"), label: "Contentment" },
-  { color: "#78C6A3", id: "relief", image: require("../assets/images/Moods/calm.gif"), label: "Relief" },
-  { color: "#F0A0B8", id: "embarrassment", image: require("../assets/images/Moods/anxious.gif"), label: "Embarrassment" },
-  { color: "#B895C8", id: "guilt", image: require("../assets/images/Moods/anxious.gif"), label: "Guilt" },
-  { color: "#A7B4C6", id: "disappointment", image: require("../assets/images/Moods/sad.gif"), label: "Disappointment" },
-  { color: "#7EA9D9", id: "sadness", image: require("../assets/images/Moods/sad.gif"), label: "Sadness" },
-  { color: "#F19137", id: "anxiety", image: require("../assets/images/Moods/anxious.gif"), label: "Anxiety" },
-  { color: "#E86686", id: "anger", image: require("../assets/images/Moods/angry.gif"), label: "Anger" },
+  { color: "#FDBA58", id: "excitement", image: EMOTION_IMAGES.excitement, label: "Excited" },
+  { color: "#FFD616", id: "joy", image: EMOTION_IMAGES.joy, label: "Joy" },
+  { color: "#97CFDA", id: "contentment", image: EMOTION_IMAGES.contentment, label: "Content" },
+  { color: "#78C6A3", id: "relief", image: EMOTION_IMAGES.relief, label: "Relief" },
+  { color: "#F0A0B8", id: "embarrassment", image: EMOTION_IMAGES.embarrassment, label: "Embarrass" },
+  { color: "#B895C8", id: "guilt", image: EMOTION_IMAGES.guilt, label: "Guilt" },
+  { color: "#A7B4C6", id: "disappointment", image: EMOTION_IMAGES.disappointment, label: "Disappointed" },
+  { color: "#7EA9D9", id: "sadness", image: EMOTION_IMAGES.sadness, label: "Sadness" },
+  { color: "#F19137", id: "anxiety", image: EMOTION_IMAGES.anxiety, label: "Anxiety" },
+  { color: "#E86686", id: "anger", image: EMOTION_IMAGES.anger, label: "Anger" },
 ];
 
 export const EMOTION_ORDER = EMOTIONS.map((emotion) => emotion.id);

@@ -1147,6 +1147,7 @@ export default function HomeScreen() {
                   <Animated.View
                     style={[
                       styles.moodFace,
+                      { borderColor: mood.color },
                       {
                         transform: [
                           {
@@ -2213,38 +2214,40 @@ const styles = StyleSheet.create({
   moodRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    rowGap: 10,
-    marginBottom: 10,
+    rowGap: 12,
+    marginBottom: 12,
   },
   moodItem: {
     alignItems: "center",
-    paddingHorizontal: 2,
+    paddingHorizontal: 1,
     width: "20%",
   },
   moodFace: {
-    width: 54,
-    height: 54,
-    borderRadius: 14,
+    width: 64,
+    height: 64,
+    borderRadius: 18,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 4,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: "#A6B3BC",
+    overflow: "hidden",
   },
   moodIcon: {
-    width: 42,
-    height: 42,
+    width: 60,
+    height: 60,
+    borderRadius: 16,
   },
   moodIconPlaceholder: {
-    width: 42,
-    height: 42,
+    width: 60,
+    height: 60,
   },
   moodLabel: {
     color: "#4A4A4A",
-    fontSize: 10,
-    lineHeight: 13,
-    minHeight: 28,
+    fontSize: 10.5,
+    lineHeight: 13.5,
+    minHeight: 30,
     textAlign: "center",
     fontWeight: "700",
   },

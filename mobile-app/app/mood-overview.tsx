@@ -304,7 +304,7 @@ export default function MoodOverviewScreen() {
 
             <View style={styles.dailyMoodWrap}>
               <Text style={styles.commonMoodMeta}>Daily Pattern</Text>
-              <View style={styles.commonMoodFace}>
+              <View style={[styles.commonMoodFace, selectedDayMostCommonMood && { borderColor: selectedDayMostCommonMood.color }]}>
                 {selectedDayMostCommonMood?.image ? (
                   <Image source={selectedDayMostCommonMood.image} style={styles.commonMoodImage} resizeMode="contain" />
                 ) : selectedDayMostCommonMood ? (
@@ -470,7 +470,7 @@ export default function MoodOverviewScreen() {
 
             <View style={styles.commonMoodWrap}>
               <Text style={styles.commonMoodMeta}>Most Common</Text>
-              <View style={styles.commonMoodFace}>
+              <View style={[styles.commonMoodFace, mostCommonMood && { borderColor: mostCommonMood.color }]}>
                 {mostCommonMood?.image ? (
                   <Image source={mostCommonMood.image} style={styles.commonMoodImage} resizeMode="contain" />
                 ) : mostCommonMood ? (
@@ -486,7 +486,7 @@ export default function MoodOverviewScreen() {
           <View style={styles.statsRow}>
             {moodStats.map((item) => (
               <View key={item.id} style={styles.statItem}>
-                <View style={styles.statFace}>
+                <View style={[styles.statFace, { borderColor: item.color }]}>
                   {item.image ? (
                     <Image source={item.image} style={styles.statImage} resizeMode="contain" />
                   ) : (
@@ -679,17 +679,19 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   dailyMixFace: {
-    width: 36,
-    height: 36,
-    borderRadius: 14,
+    width: 42,
+    height: 42,
+    borderRadius: 15,
     backgroundColor: "#FFFFFF",
     borderWidth: 1.5,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
   },
   dailyMixImage: {
-    width: 28,
-    height: 28,
+    width: 40,
+    height: 40,
+    borderRadius: 14,
   },
   dailyMixCopy: {
     flex: 1,
@@ -802,23 +804,25 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   commonMoodFace: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
+    width: 60,
+    height: 60,
+    borderRadius: 18,
     backgroundColor: "#F8FBF5",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 4,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: "#DCE5DB",
+    overflow: "hidden",
   },
   commonMoodImage: {
-    width: 38,
-    height: 38,
+    width: 56,
+    height: 56,
+    borderRadius: 16,
   },
   commonMoodPlaceholder: {
-    width: 38,
-    height: 38,
+    width: 56,
+    height: 56,
   },
   commonMoodFallback: {
     color: "#3F4F61",
@@ -844,23 +848,25 @@ const styles = StyleSheet.create({
     width: "20%",
   },
   statFace: {
-    width: 48,
-    height: 46,
-    borderRadius: 14,
+    width: 56,
+    height: 56,
+    borderRadius: 17,
     backgroundColor: "#F9FBF7",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 4,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: "#DCE5DB",
+    overflow: "hidden",
   },
   statImage: {
-    width: 38,
-    height: 38,
+    width: 52,
+    height: 52,
+    borderRadius: 15,
   },
   statImagePlaceholder: {
-    width: 38,
-    height: 38,
+    width: 52,
+    height: 52,
   },
   statCount: {
     color: "#4B5968",
