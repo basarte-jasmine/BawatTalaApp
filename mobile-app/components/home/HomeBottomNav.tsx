@@ -50,10 +50,10 @@ export function HomeBottomNav({ activeTab, transparent = false }: HomeBottomNavP
   };
 
   const handleMicPress = () => {
-    if (pathname === "/muni-avatar") {
+    if (pathname === "/write-entry") {
       return;
     }
-    router.replace("/muni-avatar");
+    router.push("/write-entry?mode=new");
   };
 
   const renderTab = (item: NavItem) => {
@@ -124,7 +124,7 @@ export function HomeBottomNav({ activeTab, transparent = false }: HomeBottomNavP
             derivedActiveTab === "muni" && styles.centerActionButtonActive,
             transparent && styles.centerActionButtonTransparent,
           ]}
-          accessibilityLabel="Open Muni microphone"
+          accessibilityLabel="Start a new journal entry"
           accessibilityRole="button"
           accessibilityState={{ selected: derivedActiveTab === "muni" }}
           hitSlop={8}

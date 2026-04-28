@@ -25,7 +25,7 @@ export const EMOTIONS: EmotionOption[] = [
   { color: "#FFD616", id: "joy", image: EMOTION_IMAGES.joy, label: "Joy" },
   { color: "#97CFDA", id: "contentment", image: EMOTION_IMAGES.contentment, label: "Content" },
   { color: "#78C6A3", id: "relief", image: EMOTION_IMAGES.relief, label: "Relief" },
-  { color: "#F0A0B8", id: "embarrassment", image: EMOTION_IMAGES.embarrassment, label: "Embarrass" },
+  { color: "#F0A0B8", id: "embarrassment", image: EMOTION_IMAGES.embarrassment, label: "Embarrassed" },
   { color: "#B895C8", id: "guilt", image: EMOTION_IMAGES.guilt, label: "Guilt" },
   { color: "#A7B4C6", id: "disappointment", image: EMOTION_IMAGES.disappointment, label: "Disappointed" },
   { color: "#7EA9D9", id: "sadness", image: EMOTION_IMAGES.sadness, label: "Sadness" },
