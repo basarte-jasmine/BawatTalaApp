@@ -21,6 +21,7 @@
     "@xmldom/xmldom": "^0.8.11",
     "epubjs": "^0.3.93",
     "expo": "~54.0.33",
+    "expo-asset": "~12.0.12",
     "expo-audio": "~1.1.1",
     "expo-constants": "~18.0.13",
     "expo-file-system": "~19.0.21",

@@ -2,28 +2,42 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Svg, { Circle } from "react-native-svg";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { useAuthSession } from "../lib/auth-session";
 import {
+  claimLibraryReadingReward,
   downloadLibraryBook,
   fetchLibraryBooks,
+  fetchLibraryMyShelf,
   rateLibraryBook,
   saveLibraryBookProgress,
   type LibraryBookProgress,
   type LibraryBookRecord,
 } from "../lib/backend-api";
+import { BUILT_IN_LIBRARY_BOOK_IDS, BUILT_IN_LIBRARY_BOOKS } from "../lib/builtin-library-books";
 import {
   downloadEpubToLibrary,
   localFileExists,
   readEpubPagesFromFile,
+  resolveBundledEpubUri,
   type EpubReaderPage as ReaderPage,
 } from "../lib/epub-reader";
 
 const BOOK_COVER_IMAGE = require("../assets/images/book_sample.png");
+const TALA_IMAGE = require("../assets/images/Tala_Star.png");
 const STAR_VALUES = [1, 2, 3, 4, 5];
+const READING_REWARD_SECONDS = 5 * 60;
+const READING_REWARD_TALA = 20;
+const READING_REWARD_RING_RADIUS = 25;
+const READING_REWARD_RING_SIZE = 64;
+const READING_REWARD_RING_STROKE = 5;
+const READING_REWARD_RING_CIRCUMFERENCE = 2 * Math.PI * READING_REWARD_RING_RADIUS;
+
+type ShelfTab = "featured" | "my";
 
 type StoredEpubFiles = Record<string, { downloadedAt?: string | null; uri: string }>;
 
@@ -53,6 +67,10 @@ function isEpubBook(book: LibraryBookRecord) {
   return Boolean(book.downloadableEpub || book.supportsInAppReader);
 }
 
+function isBookReadyInApp(book: LibraryBookRecord) {
+  return Boolean(book.localEpubUri || book.bundledEpubAsset);
+}
+
 function getExternalReaderUrl(book: LibraryBookRecord) {
   return book.externalReaderLink || book.sourceReaderLink || book.previewLink || book.infoLink || "";
 }
@@ -63,6 +81,34 @@ function getBookActionLabel(book: LibraryBookRecord) {
   if (book.accessType === "waitlist") return "Join waitlist";
   if (book.accessType === "preview") return "Preview";
   return "Open Library";
+}
+
+function getProgressRewardLabel(book: LibraryBookRecord, progress: LibraryBookProgress | null | undefined) {
+  if (progress?.rating) return `${progress.rating}/5 stars`;
+  return book.rewardLabel || `+${READING_REWARD_TALA} Tala / 5 min`;
+}
+
+function applyProgressToBook(book: LibraryBookRecord, progress: LibraryBookProgress | null | undefined) {
+  if (!progress) return book;
+  return {
+    ...book,
+    progress,
+    rewardLabel: getProgressRewardLabel(book, progress),
+  };
+}
+
+function buildBuiltInShelfBooks(progressByBookId: Record<string, LibraryBookProgress | null> = {}) {
+  return BUILT_IN_LIBRARY_BOOKS.map((book) => applyProgressToBook({ ...book }, progressByBookId[book.id]));
+}
+
+function filterBooksByQuery(books: LibraryBookRecord[], query: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return books;
+
+  return books.filter((book) =>
+    [book.title, book.author, book.category, book.shelfLabel]
+      .some((value) => String(value || "").toLowerCase().includes(normalizedQuery)),
+  );
 }
 
 function buildFallbackReaderPages(book: LibraryBookRecord): ReaderPage[] {
@@ -103,26 +149,44 @@ export default function LibraryScreen() {
   const compact = width < 390;
   const narrow = width < 360;
   const [books, setBooks] = useState<LibraryBookRecord[]>([]);
+  const [myShelfBooks, setMyShelfBooks] = useState<LibraryBookRecord[]>(() => buildBuiltInShelfBooks());
+  const [activeShelf, setActiveShelf] = useState<ShelfTab>("featured");
   const [isLoading, setIsLoading] = useState(true);
+  const [isMyShelfLoading, setIsMyShelfLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [myShelfErrorMessage, setMyShelfErrorMessage] = useState("");
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   const [readerPageIndex, setReaderPageIndex] = useState(0);
   const [readerPages, setReaderPages] = useState<ReaderPage[]>([]);
   const [isReaderLoading, setIsReaderLoading] = useState(false);
   const [readerErrorMessage, setReaderErrorMessage] = useState("");
   const [ratingErrorMessage, setRatingErrorMessage] = useState("");
+  const [readingRewardSeconds, setReadingRewardSeconds] = useState(0);
+  const [isClaimingReadingReward, setIsClaimingReadingReward] = useState(false);
+  const [showReadingRewardModal, setShowReadingRewardModal] = useState(false);
+  const [readingRewardMessage, setReadingRewardMessage] = useState("");
   const [searchDraft, setSearchDraft] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
   const [activeDownloadBookId, setActiveDownloadBookId] = useState<string | null>(null);
   const [libraryActionMessage, setLibraryActionMessage] = useState("");
   const [libraryActionTone, setLibraryActionTone] = useState<"error" | "success">("success");
+  const readingRewardClaimRef = useRef(false);
 
+  const allKnownBooks = useMemo(() => [...myShelfBooks, ...books], [books, myShelfBooks]);
   const selectedBook = useMemo(
-    () => books.find((book) => book.id === selectedBookId) ?? null,
-    [books, selectedBookId],
+    () => allKnownBooks.find((book) => book.id === selectedBookId) ?? null,
+    [allKnownBooks, selectedBookId],
   );
-  const downloadedCount = books.filter((book) => book.localEpubUri).length;
+  const displayedBooks = useMemo(
+    () => activeShelf === "my" ? filterBooksByQuery(myShelfBooks, submittedQuery) : books,
+    [activeShelf, books, myShelfBooks, submittedQuery],
+  );
+  const displayedIsLoading = activeShelf === "my" ? isMyShelfLoading : isLoading;
+  const displayedErrorMessage = activeShelf === "my" ? (myShelfBooks.length ? "" : myShelfErrorMessage) : errorMessage;
+  const downloadedCount = myShelfBooks.length;
   const onlineCount = books.filter((book) => !isEpubBook(book) && getExternalReaderUrl(book)).length;
+  const readingRewardProgress = Math.min(readingRewardSeconds / READING_REWARD_SECONDS, 1);
+  const readingRewardStrokeOffset = READING_REWARD_RING_CIRCUMFERENCE * (1 - readingRewardProgress);
 
   const currentPage = readerPages[readerPageIndex] ?? null;
   const canGoPreviousPage = readerPageIndex > 0;
@@ -160,7 +224,7 @@ export default function LibraryScreen() {
     download: { downloadedAt?: string | null; downloadUrl?: string } | null | undefined,
     localEpubUri: string,
   ) => {
-    setBooks((current) =>
+    const applyDownload = (current: LibraryBookRecord[]) =>
       current.map((book) => (
         book.id === bookId
           ? {
@@ -173,26 +237,40 @@ export default function LibraryScreen() {
               shelfLabel: "Downloaded",
             }
           : book
-      )),
-    );
+      ));
+
+    setBooks(applyDownload);
+    setMyShelfBooks(applyDownload);
   }, []);
 
-  const updateBookProgress = useCallback((bookId: string, progress: LibraryBookProgress | null | undefined) => {
-    if (!progress) return;
-    setBooks((current) =>
+  const updateBookLocalUri = useCallback((bookId: string, localEpubUri: string) => {
+    const applyLocalUri = (current: LibraryBookRecord[]) =>
       current.map((book) => (
         book.id === bookId
           ? {
               ...book,
-              progress,
-              rewardLabel: progress.rating ? `${progress.rating}/5 stars` : book.rewardLabel,
+              downloaded: true,
+              localEpubUri,
             }
           : book
-      )),
-    );
+      ));
+
+    setBooks(applyLocalUri);
+    setMyShelfBooks(applyLocalUri);
   }, []);
 
-  const loadBooks = useCallback(async (queryOverride = submittedQuery) => {
+  const updateBookProgress = useCallback((bookId: string, progress: LibraryBookProgress | null | undefined) => {
+    if (!progress) return;
+    const applyProgress = (current: LibraryBookRecord[]) =>
+      current.map((book) => (
+        book.id === bookId ? applyProgressToBook(book, progress) : book
+      ));
+
+    setBooks(applyProgress);
+    setMyShelfBooks(applyProgress);
+  }, []);
+
+  const loadBooks = useCallback(async (queryOverride = "") => {
     setIsLoading(true);
     setErrorMessage("");
     setLibraryActionMessage("");
@@ -210,12 +288,44 @@ export default function LibraryScreen() {
       setErrorMessage("Unable to reach the library right now.");
     }
     setIsLoading(false);
-  }, [mergeLocalEpubFiles, submittedQuery, user?.studentNumber]);
+  }, [mergeLocalEpubFiles, user?.studentNumber]);
+
+  const loadMyShelf = useCallback(async () => {
+    setIsMyShelfLoading(true);
+    setMyShelfErrorMessage("");
+    try {
+      if (!user?.studentNumber) {
+        setMyShelfBooks(buildBuiltInShelfBooks());
+        return;
+      }
+
+      const result = await fetchLibraryMyShelf(user.studentNumber, BUILT_IN_LIBRARY_BOOK_IDS);
+      if (!result.ok) {
+        setMyShelfBooks(buildBuiltInShelfBooks());
+        setMyShelfErrorMessage(result.message ?? "Unable to load your shelf right now.");
+        return;
+      }
+
+      const downloadedBooks = await mergeLocalEpubFiles(result.books ?? []);
+      setMyShelfBooks([
+        ...buildBuiltInShelfBooks(result.progressByBookId ?? {}),
+        ...downloadedBooks,
+      ]);
+    } catch {
+      setMyShelfBooks(buildBuiltInShelfBooks());
+      setMyShelfErrorMessage("Unable to reach your shelf right now.");
+    } finally {
+      setIsMyShelfLoading(false);
+    }
+  }, [mergeLocalEpubFiles, user?.studentNumber]);
 
   useFocusEffect(
     useCallback(() => {
-      void loadBooks();
-    }, [loadBooks]),
+      if (activeShelf === "featured") {
+        void loadBooks(submittedQuery);
+      }
+      void loadMyShelf();
+    }, [activeShelf, loadBooks, loadMyShelf, submittedQuery]),
   );
 
   const persistProgress = useCallback(
@@ -252,7 +362,7 @@ export default function LibraryScreen() {
   const handleSearchSubmit = () => {
     const nextQuery = searchDraft.trim();
     setSubmittedQuery(nextQuery);
-    if (nextQuery === submittedQuery) {
+    if (activeShelf === "featured") {
       void loadBooks(nextQuery);
     }
   };
@@ -260,9 +370,16 @@ export default function LibraryScreen() {
   const handleClearSearch = () => {
     setSearchDraft("");
     setSubmittedQuery("");
-    if (submittedQuery) {
+    if (activeShelf === "featured" && submittedQuery) {
       void loadBooks("");
     }
+  };
+
+  const handleShelfTabChange = (nextShelf: ShelfTab) => {
+    setActiveShelf(nextShelf);
+    setSearchDraft("");
+    setSubmittedQuery("");
+    setLibraryActionMessage("");
   };
 
   const handleDownloadBook = async (book: LibraryBookRecord) => {
@@ -308,6 +425,7 @@ export default function LibraryScreen() {
       await saveStoredEpubFile(user.studentNumber, book.id, localEpubUri, result.download.downloadedAt);
 
       updateBookDownload(book.id, result.download, localEpubUri);
+      void loadMyShelf();
       setLibraryActionTone("success");
       setLibraryActionMessage("EPUB downloaded. Reader mode is now unlocked.");
     } catch (error) {
@@ -337,7 +455,7 @@ export default function LibraryScreen() {
   };
 
   const handlePrimaryBookAction = async (book: LibraryBookRecord) => {
-    if (book.localEpubUri) {
+    if (isBookReadyInApp(book)) {
       await handleOpenBook(book.id);
       return;
     }
@@ -349,13 +467,13 @@ export default function LibraryScreen() {
   };
 
   const handleOpenBook = async (bookId: string) => {
-    const book = books.find((item) => item.id === bookId);
+    const book = allKnownBooks.find((item) => item.id === bookId);
     if (!book) return;
     if (!isEpubBook(book)) {
       await handleOpenExternalBook(book);
       return;
     }
-    if (!book.localEpubUri) {
+    if (!isBookReadyInApp(book)) {
       setLibraryActionTone("error");
       setLibraryActionMessage("Save this EPUB in the app before opening the reader.");
       return;
@@ -367,8 +485,17 @@ export default function LibraryScreen() {
     setIsReaderLoading(true);
     setReaderErrorMessage("");
     setRatingErrorMessage("");
+    setReadingRewardSeconds(0);
     try {
-      const pages = await readEpubPagesFromFile(book.localEpubUri, book.title);
+      const epubUri = book.localEpubUri || (book.bundledEpubAsset ? await resolveBundledEpubUri(book.bundledEpubAsset) : "");
+      if (!epubUri) {
+        throw new Error("This EPUB file could not be opened.");
+      }
+      if (!book.localEpubUri) {
+        updateBookLocalUri(book.id, epubUri);
+      }
+
+      const pages = await readEpubPagesFromFile(epubUri, book.title);
       const savedPage = book.progress?.currentPage ?? 0;
       const nextPage = Math.min(Math.max(savedPage, 0), Math.max(pages.length - 1, 0));
       setReaderPages(pages);
@@ -390,6 +517,8 @@ export default function LibraryScreen() {
     setReaderErrorMessage("");
     setIsReaderLoading(false);
     setRatingErrorMessage("");
+    setReadingRewardSeconds(0);
+    setShowReadingRewardModal(false);
   };
 
   const handleReaderPageChange = (nextPage: number) => {
@@ -439,11 +568,62 @@ export default function LibraryScreen() {
     }
   };
 
+  const claimReadingReward = useCallback(async () => {
+    if (readingRewardClaimRef.current || !selectedBook) return;
+
+    readingRewardClaimRef.current = true;
+    setIsClaimingReadingReward(true);
+    try {
+      if (!user?.studentNumber) {
+        setReadingRewardSeconds(0);
+        return;
+      }
+
+      const result = await claimLibraryReadingReward({
+        bookId: selectedBook.id,
+        bookTitle: selectedBook.title,
+        readingSeconds: READING_REWARD_SECONDS,
+        studentNumber: user.studentNumber,
+      });
+
+      if (result.ok) {
+        setReadingRewardMessage(result.message ?? `You earned +${READING_REWARD_TALA} Tala for reading.`);
+        setShowReadingRewardModal(true);
+      }
+      setReadingRewardSeconds(0);
+    } catch {
+      setReadingRewardSeconds(0);
+    } finally {
+      setIsClaimingReadingReward(false);
+      readingRewardClaimRef.current = false;
+    }
+  }, [selectedBook, user?.studentNumber]);
+
+  useEffect(() => {
+    if (!selectedBook || isReaderLoading || !readerPages.length || showReadingRewardModal) {
+      return undefined;
+    }
+
+    const timer = setInterval(() => {
+      setReadingRewardSeconds((current) => Math.min(current + 1, READING_REWARD_SECONDS));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isReaderLoading, readerPages.length, selectedBook, showReadingRewardModal]);
+
+  useEffect(() => {
+    if (readingRewardSeconds < READING_REWARD_SECONDS || isClaimingReadingReward) {
+      return;
+    }
+
+    void claimReadingReward();
+  }, [claimReadingReward, isClaimingReadingReward, readingRewardSeconds]);
+
   const renderBookCard = (book: LibraryBookRecord) => {
     const isFinished = book.progress?.status === "FINISHED";
     const progressPercent = book.progress?.percent ?? 0;
     const supportsInAppReader = isEpubBook(book);
-    const isDownloaded = Boolean(book.localEpubUri);
+    const isDownloaded = isBookReadyInApp(book);
     const isDownloading = activeDownloadBookId === book.id;
     const externalReaderUrl = getExternalReaderUrl(book);
     const actionLabel = getBookActionLabel(book);
@@ -505,7 +685,7 @@ export default function LibraryScreen() {
               </View>
               <View style={styles.bookMetaPill}>
                 <Ionicons name={accessIconName} size={14} color="#6D675A" />
-                <Text style={styles.bookMetaText}>{isDownloaded ? "Saved in app" : supportsInAppReader ? "Free EPUB" : book.accessLabel || "Open Library"}</Text>
+                <Text style={styles.bookMetaText}>{book.provider === "builtin" ? "Built in" : isDownloaded ? "Saved in app" : supportsInAppReader ? "Free EPUB" : book.accessLabel || "Open Library"}</Text>
               </View>
               {progressPercent > 0 ? (
                 <View style={styles.bookMetaPill}>
@@ -592,12 +772,12 @@ export default function LibraryScreen() {
 
             <View style={[styles.heroStatsRow, compact && styles.heroStatsRowWrap]}>
               <View style={[styles.heroStatPill, compact && styles.heroStatPillCompact]}>
-                <Text style={styles.heroStatValue}>{books.length}</Text>
+                <Text style={styles.heroStatValue}>{activeShelf === "my" ? myShelfBooks.length : books.length}</Text>
                 <Text style={styles.heroStatLabel}>Books on shelf</Text>
               </View>
               <View style={[styles.heroStatPill, compact && styles.heroStatPillCompact]}>
                 <Text style={styles.heroStatValue}>{downloadedCount}</Text>
-                <Text style={styles.heroStatLabel}>Downloaded</Text>
+                <Text style={styles.heroStatLabel}>In app</Text>
               </View>
               <View style={[styles.heroStatPill, compact && styles.heroStatPillCompact]}>
                 <Text style={styles.heroStatValue}>{onlineCount}</Text>
@@ -614,6 +794,25 @@ export default function LibraryScreen() {
             </Text>
           </View>
 
+          <View style={styles.shelfTabs}>
+            <Pressable
+              style={[styles.shelfTabButton, activeShelf === "featured" && styles.shelfTabButtonActive]}
+              onPress={() => handleShelfTabChange("featured")}
+            >
+              <Text style={[styles.shelfTabText, activeShelf === "featured" && styles.shelfTabTextActive]}>
+                Featured Shelf
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.shelfTabButton, activeShelf === "my" && styles.shelfTabButtonActive]}
+              onPress={() => handleShelfTabChange("my")}
+            >
+              <Text style={[styles.shelfTabText, activeShelf === "my" && styles.shelfTabTextActive]}>
+                My Shelf
+              </Text>
+            </Pressable>
+          </View>
+
           <View style={[styles.searchCard, compact && styles.searchCardCompact]}>
             <View style={styles.searchInputWrap}>
               <Ionicons name="search-outline" size={18} color="#746B5E" />
@@ -621,7 +820,7 @@ export default function LibraryScreen() {
                 value={searchDraft}
                 onChangeText={setSearchDraft}
                 onSubmitEditing={handleSearchSubmit}
-                placeholder="Search title, author, ISBN"
+                placeholder={activeShelf === "my" ? "Search your shelf" : "Search title, author, ISBN"}
                 placeholderTextColor="#9A9184"
                 returnKeyType="search"
                 style={styles.searchInput}
@@ -645,34 +844,44 @@ export default function LibraryScreen() {
           )}
 
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>{submittedQuery ? "Search Results" : "Featured Shelf"}</Text>
+            <Text style={styles.sectionTitle}>
+              {activeShelf === "my" ? "My Shelf" : submittedQuery ? "Search Results" : "Featured Shelf"}
+            </Text>
             <Text style={styles.sectionSubTitle}>
-              {submittedQuery ? `Showing Open Library matches for "${submittedQuery}".` : "Download free EPUBs here, or open borrow and preview books online."}
+              {activeShelf === "my"
+                ? "Built-in EPUBs and free Open Library downloads stay here with reading progress."
+                : submittedQuery
+                  ? `Showing Open Library matches for "${submittedQuery}".`
+                  : "Download free EPUBs here, or open borrow and preview books online."}
             </Text>
           </View>
 
-          {isLoading ? (
+          {displayedIsLoading ? (
             <View style={styles.loadingCard}>
               <ActivityIndicator color="#70C943" />
               <Text style={styles.loadingText}>Loading books...</Text>
             </View>
-          ) : errorMessage ? (
+          ) : displayedErrorMessage ? (
             <View style={styles.emptyCard}>
               <Text style={styles.emptyTitle}>Library is unavailable</Text>
-              <Text style={styles.emptyText}>{errorMessage}</Text>
-              <Pressable style={styles.retryButton} onPress={() => void loadBooks()}>
+              <Text style={styles.emptyText}>{displayedErrorMessage}</Text>
+              <Pressable style={styles.retryButton} onPress={() => activeShelf === "my" ? void loadMyShelf() : void loadBooks()}>
                 <Text style={styles.retryButtonText}>Try Again</Text>
               </Pressable>
             </View>
           ) : (
-            books.length ? (
+            displayedBooks.length ? (
               <View style={styles.bookList}>
-                {books.map(renderBookCard)}
+                {displayedBooks.map(renderBookCard)}
               </View>
             ) : (
               <View style={styles.emptyCard}>
                 <Text style={styles.emptyTitle}>No books found</Text>
-                <Text style={styles.emptyText}>Try another title, author, or ISBN. Open Library may not have an online reader for every result.</Text>
+                <Text style={styles.emptyText}>
+                  {activeShelf === "my"
+                    ? "Your shelf will show built-in books and Open Library EPUBs after you save them."
+                    : "Try another title, author, or ISBN. Open Library may not have an online reader for every result."}
+                </Text>
               </View>
             )
           )}
@@ -733,6 +942,41 @@ export default function LibraryScreen() {
                     </>
                   )}
                 </View>
+                {!isReaderLoading && readerPages.length > 0 ? (
+                  <View style={styles.readerRewardBubble} pointerEvents="none">
+                    <Svg width={READING_REWARD_RING_SIZE} height={READING_REWARD_RING_SIZE} style={styles.readerRewardRing}>
+                      <Circle
+                        cx={READING_REWARD_RING_SIZE / 2}
+                        cy={READING_REWARD_RING_SIZE / 2}
+                        r={READING_REWARD_RING_RADIUS}
+                        stroke="rgba(222, 205, 183, 0.86)"
+                        strokeWidth={READING_REWARD_RING_STROKE}
+                        fill="rgba(255, 253, 248, 0.94)"
+                      />
+                      <Circle
+                        cx={READING_REWARD_RING_SIZE / 2}
+                        cy={READING_REWARD_RING_SIZE / 2}
+                        r={READING_REWARD_RING_RADIUS}
+                        stroke="#70C943"
+                        strokeWidth={READING_REWARD_RING_STROKE}
+                        fill="transparent"
+                        strokeDasharray={`${READING_REWARD_RING_CIRCUMFERENCE} ${READING_REWARD_RING_CIRCUMFERENCE}`}
+                        strokeDashoffset={readingRewardStrokeOffset}
+                        strokeLinecap="round"
+                        rotation={-90}
+                        originX={READING_REWARD_RING_SIZE / 2}
+                        originY={READING_REWARD_RING_SIZE / 2}
+                      />
+                    </Svg>
+                    <View style={styles.readerRewardIconWrap}>
+                      {isClaimingReadingReward ? (
+                        <ActivityIndicator size="small" color="#70C943" />
+                      ) : (
+                        <Image source={TALA_IMAGE} style={styles.readerRewardIcon} resizeMode="contain" />
+                      )}
+                    </View>
+                  </View>
+                ) : null}
               </View>
             </View>
 
@@ -784,6 +1028,29 @@ export default function LibraryScreen() {
             </View>
           </View>
         </SafeAreaView>
+      </Modal>
+
+      <Modal
+        visible={showReadingRewardModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowReadingRewardModal(false)}
+      >
+        <View style={styles.rewardModalBackdrop}>
+          <View style={styles.rewardModalCard}>
+            <View style={styles.rewardModalIconHalo}>
+              <Image source={TALA_IMAGE} style={styles.rewardModalIcon} resizeMode="contain" />
+            </View>
+            <Text style={styles.rewardModalEyebrow}>Reading reward</Text>
+            <Text style={styles.rewardModalTitle}>+{READING_REWARD_TALA} Tala</Text>
+            <Text style={styles.rewardModalBody}>
+              {readingRewardMessage || `You received ${READING_REWARD_TALA} Tala for reading for 5 minutes.`}
+            </Text>
+            <Pressable style={styles.rewardModalButton} onPress={() => setShowReadingRewardModal(false)}>
+              <Text style={styles.rewardModalButtonText}>Keep Reading</Text>
+            </Pressable>
+          </View>
+        </View>
       </Modal>
 
       <HomeBottomNav activeTab="home" />
@@ -1036,6 +1303,47 @@ const styles = StyleSheet.create({
     color: "#6A645A",
     fontSize: 13,
     lineHeight: 19,
+  },
+  shelfTabs: {
+    width: "100%",
+    minHeight: 52,
+    borderRadius: 18,
+    backgroundColor: "#F3EFE8",
+    borderWidth: 1,
+    borderColor: "#E4DBCF",
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 5,
+    marginBottom: 12,
+  },
+  shelfTabButton: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 8,
+  },
+  shelfTabButtonActive: {
+    backgroundColor: "#FFFDF8",
+    borderWidth: 1,
+    borderColor: "#E7DDD0",
+    shadowColor: "#8A7E6F",
+    shadowOpacity: 0.08,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  shelfTabText: {
+    color: "#596B80",
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  shelfTabTextActive: {
+    color: "#0C2341",
+    fontWeight: "700",
   },
   searchCard: {
     width: "100%",
@@ -1531,6 +1839,7 @@ const styles = StyleSheet.create({
   },
   readerPageCard: {
     flex: 1,
+    position: "relative",
     borderRadius: 30,
     backgroundColor: "#FFF9EF",
     borderWidth: 1,
@@ -1618,6 +1927,39 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     marginTop: 8,
+  },
+  readerRewardBubble: {
+    position: "absolute",
+    right: 12,
+    bottom: 12,
+    width: READING_REWARD_RING_SIZE,
+    height: READING_REWARD_RING_SIZE,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  readerRewardRing: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+  },
+  readerRewardIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 999,
+    backgroundColor: "#FFFDF8",
+    borderWidth: 1,
+    borderColor: "#E6D8BE",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#7D6D5A",
+    shadowOpacity: 0.14,
+    shadowRadius: 7,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  readerRewardIcon: {
+    width: 24,
+    height: 24,
   },
   readerUtilityRow: {
     flexDirection: "row",
@@ -1733,5 +2075,81 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
     fontWeight: "700",
+  },
+  rewardModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(45, 38, 28, 0.36)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  rewardModalCard: {
+    width: "100%",
+    maxWidth: 340,
+    borderRadius: 28,
+    backgroundColor: "#FFFDF8",
+    borderWidth: 1,
+    borderColor: "#E7DDD0",
+    paddingHorizontal: 22,
+    paddingTop: 24,
+    paddingBottom: 20,
+    alignItems: "center",
+    shadowColor: "#5C4B35",
+    shadowOpacity: 0.18,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 7,
+  },
+  rewardModalIconHalo: {
+    width: 82,
+    height: 82,
+    borderRadius: 999,
+    backgroundColor: "#FFF3C4",
+    borderWidth: 1,
+    borderColor: "#F0D88A",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  rewardModalIcon: {
+    width: 44,
+    height: 44,
+  },
+  rewardModalEyebrow: {
+    color: "#8A7552",
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "800",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    marginBottom: 5,
+  },
+  rewardModalTitle: {
+    color: "#33485B",
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: "800",
+    marginBottom: 7,
+  },
+  rewardModalBody: {
+    color: "#675F53",
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+    marginBottom: 18,
+  },
+  rewardModalButton: {
+    minHeight: 44,
+    borderRadius: 999,
+    backgroundColor: "#70C943",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 22,
+  },
+  rewardModalButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: "800",
   },
 });

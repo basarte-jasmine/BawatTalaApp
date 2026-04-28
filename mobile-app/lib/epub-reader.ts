@@ -1,4 +1,5 @@
 import * as FileSystem from "expo-file-system/legacy";
+import { Asset } from "expo-asset";
 import JSZip from "jszip";
 import { DOMParser } from "@xmldom/xmldom";
 import { Platform } from "react-native";
@@ -135,6 +136,10 @@ function isWebEpubUri(uri: string) {
   return String(uri || "").startsWith(WEB_EPUB_URI_PREFIX);
 }
 
+function isRemoteEpubUri(uri: string) {
+  return /^https?:\/\//i.test(String(uri || ""));
+}
+
 function createWebEpubUri(downloadUrl: string) {
   return `${WEB_EPUB_URI_PREFIX}${encodeURIComponent(downloadUrl)}`;
 }
@@ -175,6 +180,10 @@ async function loadEpubZip(fileUri: string) {
     const arrayBuffer = cachedEpub ?? await fetchEpubArrayBuffer(getWebEpubDownloadUrl(fileUri));
     webEpubCache.set(fileUri, arrayBuffer);
     return JSZip.loadAsync(arrayBuffer);
+  }
+
+  if (isRemoteEpubUri(fileUri) || Platform.OS === "web") {
+    return JSZip.loadAsync(await fetchEpubArrayBuffer(fileUri));
   }
 
   const base64 = await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.Base64 });
@@ -233,10 +242,18 @@ export async function downloadEpubToLibrary(bookId: string, downloadUrl: string)
 
 export async function localFileExists(uri: string) {
   if (!uri) return false;
-  if (isWebEpubUri(uri)) return true;
+  if (isWebEpubUri(uri) || isRemoteEpubUri(uri)) return true;
   if (!FileSystem.documentDirectory) return false;
   const fileInfo = await FileSystem.getInfoAsync(uri);
   return Boolean(fileInfo.exists);
+}
+
+export async function resolveBundledEpubUri(assetModule: number) {
+  const asset = Asset.fromModule(assetModule);
+  if (!asset.localUri) {
+    await asset.downloadAsync();
+  }
+  return asset.localUri ?? asset.uri;
 }
 
 export async function readEpubPagesFromFile(fileUri: string, fallbackTitle: string): Promise<EpubReaderPage[]> {

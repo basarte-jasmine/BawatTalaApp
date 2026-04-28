@@ -102,6 +102,7 @@ export type LibraryBookRecord = {
   actionLabel?: string;
   author: string;
   blurb: string;
+  bundledEpubAsset?: number;
   category: string;
   coverImageUrl: string;
   downloadableEpub?: boolean;
@@ -474,6 +475,34 @@ export async function downloadLibraryBook(payload: {
   };
 }
 
+export async function fetchLibraryMyShelf(
+  studentNumber: string,
+  builtInBookIds: string[] = [],
+): Promise<
+  ApiResult & {
+    books?: LibraryBookRecord[];
+    progressByBookId?: Record<string, LibraryBookProgress | null>;
+  }
+> {
+  const params = new URLSearchParams({ studentNumber });
+  if (builtInBookIds.length) {
+    params.set("builtInBookIds", builtInBookIds.join(","));
+  }
+
+  const { response, data } = await get(`/api/library/my-shelf?${params.toString()}`);
+  const rawProgressByBookId = data?.progressByBookId;
+
+  return {
+    ok: response.ok,
+    message: data?.message,
+    books: Array.isArray(data?.books) ? data.books : [],
+    progressByBookId:
+      rawProgressByBookId && typeof rawProgressByBookId === "object"
+        ? rawProgressByBookId
+        : {},
+  };
+}
+
 export async function saveLibraryBookProgress(payload: {
   authors?: string;
   bookId: string;
@@ -489,6 +518,22 @@ export async function saveLibraryBookProgress(payload: {
     ok: response.ok,
     message: data?.message,
     progress: data?.progress ?? null,
+  };
+}
+
+export async function claimLibraryReadingReward(payload: {
+  bookId: string;
+  bookTitle?: string;
+  readingSeconds: number;
+  studentNumber: string;
+}): Promise<ApiResult & { rewardTala?: number; totalTala?: number }> {
+  const { response, data } = await post("/api/library/reading-reward", payload);
+
+  return {
+    ok: response.ok,
+    message: data?.message,
+    rewardTala: data?.rewardTala,
+    totalTala: data?.totalTala,
   };
 }
 
