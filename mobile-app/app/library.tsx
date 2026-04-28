@@ -620,102 +620,104 @@ export default function LibraryScreen() {
           <View style={styles.readerAuraOne} />
           <View style={styles.readerAuraTwo} />
 
-          <View style={[styles.readerTopBar, compact && styles.readerTopBarCompact, narrow && styles.readerTopBarStacked]}>
-            <Pressable style={styles.readerTopButton} accessibilityLabel="Close reader" onPress={handleCloseBook}>
-              <Ionicons name="chevron-back" size={22} color="#534D43" />
-            </Pressable>
+          <View style={styles.readerFrame}>
+            <View style={[styles.readerTopBar, compact && styles.readerTopBarCompact, narrow && styles.readerTopBarStacked]}>
+              <Pressable style={styles.readerTopButton} accessibilityLabel="Close reader" onPress={handleCloseBook}>
+                <Ionicons name="chevron-back" size={22} color="#534D43" />
+              </Pressable>
 
-            <View style={[styles.readerTopTextWrap, compact && styles.readerTopTextWrapCompact]}>
-              <Text style={styles.readerTopEyebrow}>{selectedBook?.category ?? "Library"}</Text>
-              <Text style={[styles.readerTopTitle, compact && styles.readerTopTitleCompact]} numberOfLines={1}>
-                {selectedBook?.title ?? ""}
-              </Text>
-            </View>
+              <View style={[styles.readerTopTextWrap, compact && styles.readerTopTextWrapCompact]}>
+                <Text style={styles.readerTopEyebrow}>{selectedBook?.category ?? "Library"}</Text>
+                <Text style={[styles.readerTopTitle, compact && styles.readerTopTitleCompact]} numberOfLines={1}>
+                  {selectedBook?.title ?? ""}
+                </Text>
+              </View>
 
-            <View style={[styles.readerPageBadge, narrow && styles.readerPageBadgeStacked]}>
-              <Text style={styles.readerPageBadgeText}>
-                {isReaderLoading ? "..." : readerPages.length > 0 ? `${readerPageIndex + 1}/${readerPages.length}` : "0/0"}
-              </Text>
-            </View>
-          </View>
-
-          <View style={[styles.readerBookShell, compact && styles.readerBookShellCompact]}>
-            <View style={[styles.readerSpineShadow, compact && styles.readerSpineShadowCompact]} />
-            <View style={[styles.readerPageCard, compact && styles.readerPageCardCompact]}>
-              <View style={[styles.readerPageInner, compact && styles.readerPageInnerCompact]}>
-                {isReaderLoading ? (
-                  <View style={styles.readerLoadingWrap}>
-                    <ActivityIndicator color="#70C943" />
-                    <Text style={styles.readerLoadingText}>Opening EPUB...</Text>
-                  </View>
-                ) : (
-                  <>
-                    {!!readerErrorMessage && <Text style={styles.readerInlineErrorText}>{readerErrorMessage}</Text>}
-                    <Text style={styles.readerPageEyebrow}>{currentPage?.eyebrow ?? ""}</Text>
-                    <Text style={[styles.readerPageTitle, compact && styles.readerPageTitleCompact]}>{currentPage?.title ?? ""}</Text>
-
-                    <ScrollView style={styles.readerPageScroll} showsVerticalScrollIndicator={false}>
-                      {currentPage?.paragraphs.map((paragraph, index) => (
-                        <Text key={`${currentPage.title}-${index}`} style={[styles.readerPageBody, compact && styles.readerPageBodyCompact]}>
-                          {paragraph}
-                        </Text>
-                      ))}
-                    </ScrollView>
-
-                    <Text style={styles.readerPageNumber}>
-                      {readerPages.length > 0 ? `Page ${readerPageIndex + 1}` : ""}
-                    </Text>
-                  </>
-                )}
+              <View style={[styles.readerPageBadge, narrow && styles.readerPageBadgeStacked]}>
+                <Text style={styles.readerPageBadgeText}>
+                  {isReaderLoading ? "..." : readerPages.length > 0 ? `${readerPageIndex + 1}/${readerPages.length}` : "0/0"}
+                </Text>
               </View>
             </View>
-          </View>
 
-          <View style={styles.readerUtilityRow}>
-            <View style={styles.ratingWrap}>
-              <Text style={styles.ratingLabel}>Rate this book</Text>
-              <View style={styles.ratingStars}>
-                {STAR_VALUES.map((star) => (
-                  <Pressable key={star} style={styles.ratingStarButton} onPress={() => void handleRateBook(star)}>
-                    <Ionicons
-                      name={star <= selectedBookRating ? "star" : "star-outline"}
-                      size={20}
-                      color={star <= selectedBookRating ? "#D7A52F" : "#A79D8B"}
-                    />
-                  </Pressable>
-                ))}
+            <View style={[styles.readerBookShell, compact && styles.readerBookShellCompact]}>
+              <View style={[styles.readerSpineShadow, compact && styles.readerSpineShadowCompact]} />
+              <View style={[styles.readerPageCard, compact && styles.readerPageCardCompact]}>
+                <View style={[styles.readerPageInner, compact && styles.readerPageInnerCompact]}>
+                  {isReaderLoading ? (
+                    <View style={styles.readerLoadingWrap}>
+                      <ActivityIndicator color="#70C943" />
+                      <Text style={styles.readerLoadingText}>Opening EPUB...</Text>
+                    </View>
+                  ) : (
+                    <>
+                      {!!readerErrorMessage && <Text style={styles.readerInlineErrorText}>{readerErrorMessage}</Text>}
+                      <Text style={styles.readerPageEyebrow}>{currentPage?.eyebrow ?? ""}</Text>
+                      <Text style={[styles.readerPageTitle, compact && styles.readerPageTitleCompact]}>{currentPage?.title ?? ""}</Text>
+
+                      <ScrollView style={styles.readerPageScroll} showsVerticalScrollIndicator={false}>
+                        {currentPage?.paragraphs.map((paragraph, index) => (
+                          <Text key={`${currentPage.title}-${index}`} style={[styles.readerPageBody, compact && styles.readerPageBodyCompact]}>
+                            {paragraph}
+                          </Text>
+                        ))}
+                      </ScrollView>
+
+                      <Text style={styles.readerPageNumber}>
+                        {readerPages.length > 0 ? `Page ${readerPageIndex + 1}` : ""}
+                      </Text>
+                    </>
+                  )}
+                </View>
               </View>
             </View>
-          </View>
-          {!!ratingErrorMessage && <Text style={styles.ratingErrorText}>{ratingErrorMessage}</Text>}
 
-          <View style={[styles.readerFooter, compact && styles.readerFooterStacked]}>
-            <Pressable
-              style={[styles.readerNavButton, compact && styles.readerFooterButtonFull, (!canGoPreviousPage || isReaderLoading) && styles.readerNavButtonDisabled]}
-              disabled={!canGoPreviousPage || isReaderLoading}
-              onPress={() => handleReaderPageChange(readerPageIndex - 1)}
-            >
-              <Ionicons name="arrow-back" size={16} color={canGoPreviousPage && !isReaderLoading ? "#524B42" : "#B1A796"} />
-              <Text style={[styles.readerNavButtonText, (!canGoPreviousPage || isReaderLoading) && styles.readerNavButtonTextDisabled]}>Previous</Text>
-            </Pressable>
+            <View style={styles.readerUtilityRow}>
+              <View style={styles.ratingWrap}>
+                <Text style={styles.ratingLabel}>Rate this book</Text>
+                <View style={styles.ratingStars}>
+                  {STAR_VALUES.map((star) => (
+                    <Pressable key={star} style={styles.ratingStarButton} onPress={() => void handleRateBook(star)}>
+                      <Ionicons
+                        name={star <= selectedBookRating ? "star" : "star-outline"}
+                        size={20}
+                        color={star <= selectedBookRating ? "#D7A52F" : "#A79D8B"}
+                      />
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            </View>
+            {!!ratingErrorMessage && <Text style={styles.ratingErrorText}>{ratingErrorMessage}</Text>}
 
-            <Pressable
-              style={[styles.readerPrimaryButton, compact && styles.readerFooterButtonFull, isReaderLoading && styles.readerPrimaryButtonDisabled]}
-              disabled={isReaderLoading}
-              onPress={() => {
-                if (canGoNextPage) {
-                  handleReaderPageChange(readerPageIndex + 1);
-                  return;
-                }
+            <View style={[styles.readerFooter, compact && styles.readerFooterStacked]}>
+              <Pressable
+                style={[styles.readerNavButton, compact && styles.readerFooterButtonFull, (!canGoPreviousPage || isReaderLoading) && styles.readerNavButtonDisabled]}
+                disabled={!canGoPreviousPage || isReaderLoading}
+                onPress={() => handleReaderPageChange(readerPageIndex - 1)}
+              >
+                <Ionicons name="arrow-back" size={16} color={canGoPreviousPage && !isReaderLoading ? "#524B42" : "#B1A796"} />
+                <Text style={[styles.readerNavButtonText, (!canGoPreviousPage || isReaderLoading) && styles.readerNavButtonTextDisabled]}>Previous</Text>
+              </Pressable>
 
-                handleFinishBook();
-              }}
-            >
-              <Text style={styles.readerPrimaryButtonText}>
-                {isReaderLoading ? "Opening" : canGoNextPage ? "Next page" : selectedBook?.progress?.status === "FINISHED" ? "Close book" : "Finish book"}
-              </Text>
-              <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
-            </Pressable>
+              <Pressable
+                style={[styles.readerPrimaryButton, compact && styles.readerFooterButtonFull, isReaderLoading && styles.readerPrimaryButtonDisabled]}
+                disabled={isReaderLoading}
+                onPress={() => {
+                  if (canGoNextPage) {
+                    handleReaderPageChange(readerPageIndex + 1);
+                    return;
+                  }
+
+                  handleFinishBook();
+                }}
+              >
+                <Text style={styles.readerPrimaryButtonText}>
+                  {isReaderLoading ? "Opening" : canGoNextPage ? "Next page" : selectedBook?.progress?.status === "FINISHED" ? "Close book" : "Finish book"}
+                </Text>
+                <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+              </Pressable>
+            </View>
           </View>
         </SafeAreaView>
       </Modal>
@@ -1323,6 +1325,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 6,
     paddingBottom: 20,
+    alignItems: "center",
+  },
+  readerFrame: {
+    flex: 1,
+    width: "100%",
+    maxWidth: 420,
+    alignSelf: "center",
   },
   readerAuraOne: {
     position: "absolute",
