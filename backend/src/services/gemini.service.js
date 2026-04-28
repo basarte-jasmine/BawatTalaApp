@@ -542,69 +542,84 @@ async function requestGroqJson({
   let lastFailure = null;
 
   for (const model of models) {
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${GROQ_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: systemInstruction },
-          ...messages,
-        ],
-        temperature: 0.5,
-        response_format: { type: "json_object" },
-      }),
-    });
-
-    const data = await response.json().catch(() => ({}));
-    const rawText = String(data?.choices?.[0]?.message?.content || "").trim();
-
-    if (response.ok && rawText) {
-      clearGroqFailureState();
-      try {
-        return { ok: true, parsed: parseProviderJson(rawText), provider: "groq", model };
-      } catch (error) {
-        console.error("Failed to parse Groq JSON response.", {
-          error: error instanceof Error ? error.message : String(error),
+    try {
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${GROQ_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
           model,
-          rawText,
-        });
-        throw new Error(
-          `Failed to parse Groq JSON for schema: ${schemaLines.join(" ")}`,
-        );
+          messages: [
+            { role: "system", content: systemInstruction },
+            ...messages,
+          ],
+          temperature: 0.5,
+          response_format: { type: "json_object" },
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      const rawText = String(data?.choices?.[0]?.message?.content || "").trim();
+
+      if (response.ok && rawText) {
+        try {
+          const parsed = parseProviderJson(rawText);
+          clearGroqFailureState();
+          return { ok: true, parsed, provider: "groq", model };
+        } catch (error) {
+          lastFailure = {
+            error: error instanceof Error ? error.message : String(error),
+            hasRawText: true,
+            model,
+            reason: "parse_failed",
+            schema: schemaLines.join(" "),
+            status: response?.status,
+            statusText: response?.statusText,
+          };
+          groqLastFailure = {
+            occurredAt: new Date().toISOString(),
+            ...lastFailure,
+          };
+          console.warn("Groq returned invalid JSON, trying next model.", lastFailure);
+          continue;
+        }
       }
-    }
 
-    lastFailure = {
-      hasRawText: Boolean(rawText),
-      model,
-      status: response?.status,
-      statusText: response?.statusText,
-    };
+      lastFailure = {
+        hasRawText: Boolean(rawText),
+        model,
+        reason: response.status === 429 ? "rate_limit" : "request_failed",
+        status: response?.status,
+        statusText: response?.statusText,
+      };
 
-    if (response.status === 429) {
       groqLastFailure = {
         occurredAt: new Date().toISOString(),
-        reason: "rate_limit",
         ...lastFailure,
       };
-      console.warn("Groq rate limit hit, trying next model.", lastFailure);
+      console.warn("Groq request failed for model, trying next model.", {
+        data,
+        ...lastFailure,
+      });
+      continue;
+    } catch (error) {
+      lastFailure = {
+        error: error instanceof Error ? error.message : String(error),
+        hasRawText: false,
+        model,
+        reason: "request_error",
+        status: null,
+        statusText: null,
+      };
+      groqLastFailure = {
+        occurredAt: new Date().toISOString(),
+        ...lastFailure,
+      };
+      console.warn("Groq request error for model, trying next model.", lastFailure);
       continue;
     }
-
-    groqLastFailure = {
-      occurredAt: new Date().toISOString(),
-      reason: "request_failed",
-      ...lastFailure,
-    };
-    console.error("Groq request failed.", {
-      data,
-      ...lastFailure,
-    });
-    return { ok: false, parsed: null, reason: "groq_request_failed" };
   }
 
   if (lastFailure) {
@@ -614,7 +629,7 @@ async function requestGroqJson({
   return {
     ok: false,
     parsed: null,
-    reason: lastFailure?.status === 429 ? "groq_rate_limited" : "groq_request_failed",
+    reason: lastFailure?.reason === "rate_limit" ? "groq_rate_limited" : "groq_request_failed",
   };
 }
 
