@@ -24,6 +24,7 @@ const PEER_CONCERN_VALUES = new Set([
   ...PEER_CONCERN_OPTIONS,
   ...Object.values(APPOINTMENT_CONCERN_SUBCATEGORIES).flat(),
 ]);
+const PEER_GENDER_VALUES = new Set(["Male", "Female"]);
 const BOOKING_SOURCES = new Set(["MOBILE_APP", "ADMIN_PANEL"]);
 const SUPPORT_TYPE_GUIDANCE = "GUIDANCE";
 const SUPPORT_TYPE_PEER = "PEER";
@@ -110,6 +111,11 @@ function normalizeSupportType(value) {
     return SUPPORT_TYPE_PEER;
   }
   return SUPPORT_TYPE_GUIDANCE;
+}
+
+function normalizePeerGender(value) {
+  const gender = String(value || "").trim();
+  return PEER_GENDER_VALUES.has(gender) ? gender : "";
 }
 
 function isPeerSupportType(value) {
@@ -1482,7 +1488,7 @@ router.get("/counselors", async (_req, res) => {
         role: toRoleLabel(row.role, SUPPORT_TYPE_PEER),
         gender: row.gender,
         pictureUrl: "",
-        specialties: Array.isArray(row.specialties) ? row.specialties : [],
+        specialties: [],
         studentNumber: row.student_number || "",
         program: row.program || "",
         supportType: SUPPORT_TYPE_PEER,
@@ -2468,7 +2474,7 @@ router.get("/admin/overview", async (req, res) => {
       role: toRoleLabel(row.role, supportType),
       gender: row.gender,
       pictureUrl: row.profile_picture_url || "",
-      specialties: Array.isArray(row.specialties) ? row.specialties : [],
+      specialties: isPeerSupportType(supportType) ? [] : Array.isArray(row.specialties) ? row.specialties : [],
       studentNumber: row.student_number || "",
       program: row.program || "",
       supportType,
@@ -2548,7 +2554,7 @@ router.get("/admin/peer-counselors", async (_req, res) => {
       gender: row.gender,
       studentNumber: row.student_number || "",
       program: row.program || "",
-      specialties: Array.isArray(row.specialties) ? row.specialties : [],
+      specialties: [],
       isActive: Boolean(row.is_active),
       status: row.is_active ? "Active" : "Inactive",
       supportType: SUPPORT_TYPE_PEER,
@@ -2561,13 +2567,11 @@ router.get("/admin/peer-counselors", async (_req, res) => {
 router.post("/admin/peer-counselors", async (req, res) => {
   const fullName = String(req.body.fullName || "").trim().replace(/\s+/g, " ");
   const email = String(req.body.email || "").trim().toLowerCase();
-  const gender = String(req.body.gender || "Prefer not to say").trim();
+  const gender = normalizePeerGender(req.body.gender);
   const studentNumber = String(req.body.studentNumber || "").trim();
   const program = String(req.body.program || "").trim().replace(/\s+/g, " ");
   const actorEmail = String(req.body.actorEmail || "").trim().toLowerCase();
-  const specialties = Array.isArray(req.body.specialties)
-    ? req.body.specialties.map((item) => String(item || "").trim()).filter(Boolean)
-    : PEER_CONCERN_OPTIONS.filter((item) => item !== "Others");
+  const specialties = [];
 
   if (!fullName || !email || !studentNumber || !program) {
     return res.status(400).json({ message: "Name, Gmail, student number, and program are required." });
@@ -2575,8 +2579,8 @@ router.post("/admin/peer-counselors", async (req, res) => {
   if (!isLikelyEmailAddress(email)) {
     return res.status(400).json({ message: "A valid Gmail address is required." });
   }
-  if (!["Male", "Female", "Prefer not to say"].includes(gender)) {
-    return res.status(400).json({ message: "Invalid gender value." });
+  if (!gender) {
+    return res.status(400).json({ message: "Please choose Male or Female for the peer counselor." });
   }
 
   const actorAdmin = await findAdminByEmail(actorEmail);
@@ -2633,7 +2637,7 @@ router.post("/admin/peer-counselors", async (req, res) => {
       gender: peerCounselor.gender,
       studentNumber: peerCounselor.student_number || "",
       program: peerCounselor.program || "",
-      specialties: Array.isArray(peerCounselor.specialties) ? peerCounselor.specialties : [],
+      specialties: [],
       isActive: Boolean(peerCounselor.is_active),
       supportType: SUPPORT_TYPE_PEER,
     },
@@ -2644,14 +2648,12 @@ router.patch("/admin/peer-counselors/:peerCounselorId", async (req, res) => {
   const peerCounselorId = String(req.params.peerCounselorId || "").trim();
   const fullName = String(req.body.fullName || "").trim().replace(/\s+/g, " ");
   const email = String(req.body.email || "").trim().toLowerCase();
-  const gender = String(req.body.gender || "Prefer not to say").trim();
+  const gender = normalizePeerGender(req.body.gender);
   const studentNumber = String(req.body.studentNumber || "").trim();
   const program = String(req.body.program || "").trim().replace(/\s+/g, " ");
   const isActive = typeof req.body.isActive === "boolean" ? req.body.isActive : true;
   const actorEmail = String(req.body.actorEmail || "").trim().toLowerCase();
-  const specialties = Array.isArray(req.body.specialties)
-    ? req.body.specialties.map((item) => String(item || "").trim()).filter(Boolean)
-    : PEER_CONCERN_OPTIONS.filter((item) => item !== "Others");
+  const specialties = [];
 
   if (!peerCounselorId || !fullName || !email || !studentNumber || !program) {
     return res.status(400).json({ message: "Peer counselor details are required." });
@@ -2659,8 +2661,8 @@ router.patch("/admin/peer-counselors/:peerCounselorId", async (req, res) => {
   if (!isLikelyEmailAddress(email)) {
     return res.status(400).json({ message: "A valid Gmail address is required." });
   }
-  if (!["Male", "Female", "Prefer not to say"].includes(gender)) {
-    return res.status(400).json({ message: "Invalid gender value." });
+  if (!gender) {
+    return res.status(400).json({ message: "Please choose Male or Female for the peer counselor." });
   }
 
   const actorAdmin = await findAdminByEmail(actorEmail);
@@ -2715,7 +2717,7 @@ router.patch("/admin/peer-counselors/:peerCounselorId", async (req, res) => {
       gender: peerCounselor.gender,
       studentNumber: peerCounselor.student_number || "",
       program: peerCounselor.program || "",
-      specialties: Array.isArray(peerCounselor.specialties) ? peerCounselor.specialties : [],
+      specialties: [],
       isActive: Boolean(peerCounselor.is_active),
       supportType: SUPPORT_TYPE_PEER,
     },

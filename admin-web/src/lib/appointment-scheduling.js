@@ -127,6 +127,7 @@ export function isPastIsoDate(isoDate) {
 
 export function getAvailableSlotsForDate({
   availability,
+  availabilityOverrides = [],
   counselorId,
   isoDate,
   monthAppointments,
@@ -135,6 +136,7 @@ export function getAvailableSlotsForDate({
 }) {
   if (!counselorId || !isoDate) return [];
   const availabilityMap = buildAvailabilityMap(availability, counselorId);
+  const overrideMap = buildAvailabilityOverrideMap(availabilityOverrides, counselorId);
   const dayOfWeek = new Date(`${isoDate}T12:00:00+08:00`).getUTCDay();
   const bookedSlots = new Set(
     monthAppointments
@@ -149,7 +151,10 @@ export function getAvailableSlotsForDate({
   );
 
   return slotTimes.filter((slot) => {
-    const enabled = availabilityMap.get(`${dayOfWeek}:${slot.value}`) === true;
+    const overrideKey = `${isoDate}:${slot.value}`;
+    const enabled = overrideMap.has(overrideKey)
+      ? overrideMap.get(overrideKey) === true
+      : availabilityMap.get(`${dayOfWeek}:${slot.value}`) === true;
     const booked = bookedSlots.has(`${isoDate}:${slot.value}`);
     return enabled && !booked && !isPastIsoDate(isoDate);
   });

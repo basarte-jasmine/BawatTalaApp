@@ -74,7 +74,7 @@ const DEFAULT_CONCERN_SUBCATEGORIES = {
 };
 const GENDER_PREFERENCE = ["No Preference", "Female Counselor", "Male Counselor"];
 const STEP_LABELS = ["Concern", "Preference", "Counselor", "Date & Time"];
-const PEER_STEP_LABELS = ["Concern", "Format", "Peer Counselor", "Date & Time"];
+const PEER_STEP_LABELS = ["Concern", "Format & Preference", "Peer Counselor", "Date & Time"];
 const PEER_EXCLUDED_CONCERNS = new Set(["Career guidance", "Financial guidance"]);
 const PEER_SESSION_OPTIONS: { id: PeerSessionType; title: string; description: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   {
@@ -149,6 +149,14 @@ function normalizeSupportTrack(value: string | undefined): SupportTrack | null {
 
 function getPeerSessionLabel(type: PeerSessionType) {
   return type === "group" ? "Group" : "1-on-1";
+}
+
+function getPeerGenderDescription(gender: string) {
+  const normalizedGender = String(gender || "").trim();
+  if (normalizedGender === "Female" || normalizedGender === "Male") {
+    return `${normalizedGender} peer counselor`;
+  }
+  return "Peer counselor";
 }
 
 export default function ConsultScreen() {
@@ -458,7 +466,7 @@ export default function ConsultScreen() {
       const result = await bookCounselorAppointment({
         appointmentDate: selectedDayAvailability.date,
         concern: resolvedConcern,
-        counselorGenderPreference: selectedTrack === "peer" ? "No Preference" : selectedGender,
+        counselorGenderPreference: selectedGender,
         counselorId: selectedCounselor,
         slotTime: selectedTime,
         studentNote: resolvedStudentNote,
@@ -751,6 +759,20 @@ export default function ConsultScreen() {
                       );
                     })}
                   </View>
+
+                  <Text style={[styles.sectionLabel, styles.typeSectionLabel]}>Peer Counselor Preference</Text>
+                  {GENDER_PREFERENCE.map((item) => {
+                    const selected = selectedGender === item;
+                    return (
+                      <Pressable
+                        key={`peer-${item}`}
+                        style={[styles.preferenceCard, selected && styles.preferenceCardActive]}
+                        onPress={() => setSelectedGender(item)}
+                      >
+                        <Text style={[styles.preferenceTitle, selected && styles.preferenceTitleActive]}>{item}</Text>
+                      </Pressable>
+                    );
+                  })}
                 </>
               ) : null}
 
@@ -779,7 +801,9 @@ export default function ConsultScreen() {
 
               {!loadingCounselors && supportsStepFlow && step === 3 ? (
                 <>
-                  <Text style={styles.stepTitle}>Select your Counselor</Text>
+                  <Text style={styles.stepTitle}>
+                    {selectedTrack === "peer" ? "Select your Peer Counselor" : "Select your Counselor"}
+                  </Text>
                   <Text style={styles.stepSubTitle}>
                     Only active {selectedTrack === "peer" ? "peer counselors" : "guidance counselors"} with real schedules appear here.
                   </Text>
@@ -814,7 +838,11 @@ export default function ConsultScreen() {
                                 <Text style={styles.counselorName}>{item.fullName}</Text>
                                 <Text style={styles.counselorRole}>{item.role}</Text>
                                 <Text style={styles.counselorFocus}>
-                                  {item.specialties?.length ? item.specialties.join(", ") : "General guidance and student support"}
+                                  {selectedTrack === "peer"
+                                    ? getPeerGenderDescription(item.gender)
+                                    : item.specialties?.length
+                                      ? item.specialties.join(", ")
+                                      : "General guidance and student support"}
                                 </Text>
                                 {selectedTrack === "peer" ? (
                                   <Text style={styles.counselorMeta}>

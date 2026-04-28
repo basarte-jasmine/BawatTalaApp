@@ -38,7 +38,7 @@ const ACTIVITY_LOGS_PER_PAGE = 5;
 const PEER_FORM_INITIAL_STATE = {
   email: "",
   fullName: "",
-  gender: "Male",
+  gender: "",
   program: "",
   studentNumber: "",
 };
@@ -191,18 +191,20 @@ export default function CalendarScheduling({
   const modalOverview = overviewCache[`${normalizedSupportType}:${modalMonthKey}`] || overview;
   const modalMonthAppointments = Array.isArray(modalOverview?.monthAppointments) ? modalOverview.monthAppointments : [];
   const modalAvailability = Array.isArray(modalOverview?.availability) ? modalOverview.availability : [];
+  const modalAvailabilityOverrides = Array.isArray(modalOverview?.availabilityOverrides) ? modalOverview.availabilityOverrides : [];
   const modalSlotTimes = Array.isArray(modalOverview?.slotTimes) ? modalOverview.slotTimes : slotTimes;
   const modalAvailableSlots = useMemo(
     () =>
       getAvailableSlotsForDate({
         availability: modalAvailability,
+        availabilityOverrides: modalAvailabilityOverrides,
         counselorId: modalCounselorId,
         isoDate: modalDate,
         ignoreAppointmentId: editingAppointmentId,
         monthAppointments: modalMonthAppointments,
         slotTimes: modalSlotTimes,
       }),
-    [editingAppointmentId, modalAvailability, modalCounselorId, modalDate, modalMonthAppointments, modalSlotTimes],
+    [editingAppointmentId, modalAvailability, modalAvailabilityOverrides, modalCounselorId, modalDate, modalMonthAppointments, modalSlotTimes],
   );
 
   const appointmentCountByDate = useMemo(() => {
@@ -463,15 +465,26 @@ export default function CalendarScheduling({
   }
 
   function handleEditPeerCounselor(peerCounselor) {
+    const peerGender = ["Male", "Female"].includes(peerCounselor.gender) ? peerCounselor.gender : "";
     setPeerForm({
       email: peerCounselor.email || "",
       fullName: peerCounselor.fullName || "",
-      gender: peerCounselor.gender || "Prefer not to say",
+      gender: peerGender,
       program: peerCounselor.program || "",
       studentNumber: peerCounselor.studentNumber || "",
     });
     setEditingPeerCounselorId(peerCounselor.id);
     setPeerFormError("");
+  }
+
+  function handleEditPeerSchedule(peerCounselor) {
+    if (!peerCounselor?.id) return;
+    setSelectedCounselorId(peerCounselor.id);
+    setIsEditingDailySchedule(true);
+    setIsEditingCounselorAvailability(true);
+    window.requestAnimationFrame(() => {
+      document.getElementById("calendar-schedule-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }
 
   async function handleSubmitPeerCounselor(event) {
@@ -482,7 +495,7 @@ export default function CalendarScheduling({
       const payload = {
         ...peerForm,
         actorEmail: session?.email || "",
-        specialties: overview?.peerConcernOptions?.filter((item) => item !== "Others") || [],
+        specialties: [],
       };
       if (editingPeerCounselorId) {
         await updateAdminPeerCounselor(editingPeerCounselorId, payload);
@@ -547,7 +560,7 @@ export default function CalendarScheduling({
                   <h3 className="text-[1.15rem] font-black text-slate-800">
                     {editingPeerCounselorId ? "Edit Peer Counselor" : "Add Peer Counselor"}
                   </h3>
-                  <p className="mt-1 text-sm text-slate-500">Peer counselors do not receive admin accounts; schedules are sent by email.</p>
+                  <p className="mt-1 text-sm text-slate-500">Add their details, then use Schedule to set their available days and hours.</p>
                 </div>
               </div>
 
@@ -603,13 +616,14 @@ export default function CalendarScheduling({
                 <label className="block text-sm font-semibold text-slate-700">
                   Gender
                   <select
+                    required
                     value={peerForm.gender}
                     onChange={(event) => setPeerForm((current) => ({ ...current, gender: event.target.value }))}
                     className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#3DA35D]"
                   >
+                    <option value="" disabled>Select Male or Female</option>
                     <option value="Male">Male</option>
                     <option value="Female">Female</option>
-                    <option value="Prefer not to say">Prefer not to say</option>
                   </select>
                 </label>
 
@@ -654,12 +668,19 @@ export default function CalendarScheduling({
                           <div className="font-semibold text-slate-800">{peer.fullName}</div>
                           <div className="mt-1 text-sm text-slate-500">{peer.email}</div>
                           <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium">
-                            <span className="rounded-full bg-white px-2.5 py-1 text-slate-600">{peer.gender}</span>
+                            <span className="rounded-full bg-white px-2.5 py-1 text-slate-600">{peer.gender || "Gender not set"}</span>
                             <span className="rounded-full bg-white px-2.5 py-1 text-slate-600">{peer.studentNumber}</span>
                             <span className="rounded-full bg-white px-2.5 py-1 text-slate-600">{peer.program}</span>
                           </div>
                         </div>
                         <div className="flex shrink-0 items-center gap-1 text-slate-400">
+                          <button
+                            type="button"
+                            onClick={() => handleEditPeerSchedule(peer)}
+                            className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+                          >
+                            Schedule
+                          </button>
                           <button
                             type="button"
                             onClick={() => handleEditPeerCounselor(peer)}
@@ -708,7 +729,7 @@ export default function CalendarScheduling({
         ) : (
           <>
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.9fr,0.9fr]">
-              <section className="rounded-[2rem] border border-admin-border bg-white p-6 shadow-sm">
+              <section id="calendar-schedule-section" className="rounded-[2rem] border border-admin-border bg-white p-6 shadow-sm">
                 <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <h3 className="text-[1.15rem] font-black text-slate-800">{getMonthTitle(selectedMonth)}</h3>
@@ -988,7 +1009,7 @@ export default function CalendarScheduling({
                     onClick={() => setIsEditingCounselorAvailability((current) => !current)}
                     className="rounded-xl bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
                   >
-                    {isEditingCounselorAvailability ? "Done" : "Edit"}
+                    {isEditingCounselorAvailability ? "Done" : isPeerSupport ? "Edit Days" : "Edit"}
                   </button>
 
                   <button
@@ -1164,7 +1185,7 @@ export default function CalendarScheduling({
                   <div>
                     <h3 className="text-[1.15rem] font-black text-slate-800">{isPeerSupport ? "Peer Counselor List" : "Counselor & Admin List"}</h3>
                     <p className="mt-1 text-sm text-slate-500">
-                      {isPeerSupport ? "Peer counselors receive schedules by email only." : "Active scheduling accounts with their roles and specialties."}
+                      {isPeerSupport ? "Active peer counselors with their gender, student number, program, and availability." : "Active scheduling accounts with their roles and specialties."}
                     </p>
                   </div>
                 </div>
@@ -1187,13 +1208,24 @@ export default function CalendarScheduling({
                           <div className="mt-1 text-sm text-slate-500">{item.email}</div>
                           <div className="mt-2 flex flex-wrap gap-2">
                             <span className="rounded-full bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600">
-                              {item.gender || "Prefer not to say"}
+                              {item.gender || "Gender not set"}
                             </span>
-                            {(item.specialties?.length ? item.specialties : ["General guidance"]).map((specialty) => (
-                              <span key={`${item.id}-${specialty}`} className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600">
-                                {specialty}
-                              </span>
-                            ))}
+                            {isPeerSupport ? (
+                              <>
+                                <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600">
+                                  {item.studentNumber || "No student number"}
+                                </span>
+                                <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600">
+                                  {item.program || "No program"}
+                                </span>
+                              </>
+                            ) : (
+                              (item.specialties?.length ? item.specialties : ["General guidance"]).map((specialty) => (
+                                <span key={`${item.id}-${specialty}`} className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600">
+                                  {specialty}
+                                </span>
+                              ))
+                            )}
                           </div>
                         </div>
                       </div>
