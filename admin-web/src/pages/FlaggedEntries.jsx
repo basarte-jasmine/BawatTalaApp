@@ -246,16 +246,16 @@ export default function FlaggedEntries({ onLogout, session }) {
             <div className="px-6 py-10 text-sm text-slate-500">Loading flagged entries...</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-left">
+              <table className="w-full min-w-[1180px] border-collapse text-left">
                 <thead>
                   <tr className="border-b border-red-200 bg-red-100 text-xs uppercase tracking-wider text-red-900">
                     <th className="px-6 py-4 font-semibold">Student Name</th>
-                    <th className="px-6 py-4 font-semibold">Program</th>
                     <th className="px-6 py-4 font-semibold">Concern Type</th>
                     <th className="px-6 py-4 font-semibold">Urgency</th>
-                    <th className="px-6 py-4 font-semibold">Flagged Date</th>
                     <th className="px-6 py-4 font-semibold">Status</th>
-                    <th className="px-6 py-4 text-right font-semibold">Actions</th>
+                    <th className="px-6 py-4 font-semibold">Program</th>
+                    <th className="px-6 py-4 text-center font-semibold">Actions</th>
+                    <th className="px-6 py-4 font-semibold">Flagged Date</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white text-sm">
@@ -279,7 +279,6 @@ export default function FlaggedEntries({ onLogout, session }) {
                             </div>
                           </div>
                         </td>
-                        <td className="whitespace-nowrap px-6 py-4 text-slate-600">{entry.program || "Unspecified"}</td>
                         <td className="px-6 py-4">
                           <div className="flex flex-wrap gap-2">
                             {entry.primaryConcern ? (
@@ -299,18 +298,29 @@ export default function FlaggedEntries({ onLogout, session }) {
                         <td className="whitespace-nowrap px-6 py-4">
                           <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${urgencyClasses(entry.urgency)}`}>{entry.urgency}</span>
                         </td>
-                        <td className="whitespace-nowrap px-6 py-4 text-slate-500">{formatDateTime(entry.createdAt)}</td>
                         <td className="whitespace-nowrap px-6 py-4 text-xs font-medium text-slate-600">{entry.status}</td>
-                        <td className="whitespace-nowrap px-6 py-4 text-right" onClick={(event) => event.stopPropagation()}>
-                          <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100">
-                            <button type="button" className="rounded-md p-1.5 text-slate-500 hover:bg-red-100 hover:text-red-700" onClick={() => setSelectedEntry(entry)}>
+                        <td className="whitespace-nowrap px-6 py-4 text-slate-600">{entry.program || "Unspecified"}</td>
+                        <td className="whitespace-nowrap px-6 py-4" onClick={(event) => event.stopPropagation()}>
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-red-700"
+                              onClick={() => setSelectedEntry(entry)}
+                            >
                               <Eye className="h-4 w-4" />
+                              Review
                             </button>
-                            <button type="button" className="rounded-md p-1.5 text-slate-500 hover:bg-red-100 hover:text-red-700" onClick={() => setMessageTarget(entry)}>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-bold text-red-700 shadow-sm transition hover:bg-red-50"
+                              onClick={() => setMessageTarget(entry)}
+                            >
                               <MessageCircle className="h-4 w-4" />
+                              Message
                             </button>
                           </div>
                         </td>
+                        <td className="whitespace-nowrap px-6 py-4 text-slate-500">{formatDateTime(entry.createdAt)}</td>
                       </tr>
                     ))
                   ) : (
