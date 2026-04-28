@@ -1,10 +1,27 @@
 const GEMINI_API_KEY = String(process.env.GEMINI_API_KEY || "").trim();
 const GROQ_API_KEY = String(process.env.GROQ_API_KEY || "").trim();
+const OLLAMA_BASE_URL = normalizeBaseUrl(process.env.OLLAMA_BASE_URL || process.env.OLLAMA_URL || "");
+const OLLAMA_CF_ACCESS_CLIENT_ID = String(
+  process.env.OLLAMA_CF_ACCESS_CLIENT_ID ||
+    process.env.CLOUDFLARE_ACCESS_CLIENT_ID ||
+    "",
+).trim();
+const OLLAMA_CF_ACCESS_CLIENT_SECRET = String(
+  process.env.OLLAMA_CF_ACCESS_CLIENT_SECRET ||
+    process.env.CLOUDFLARE_ACCESS_CLIENT_SECRET ||
+    "",
+).trim();
 const {
   JOURNAL_TAG_OPTIONS,
   inferJournalTagsFromText,
   normalizeJournalTags,
 } = require("../constants/journal-tags");
+
+function normalizeBaseUrl(value) {
+  const compact = String(value || "").trim().replace(/\/+$/, "");
+  if (!compact) return "";
+  return compact.replace(/\/v1$/i, "");
+}
 
 function parseModelList(value, defaults) {
   const configured = String(value || "")
@@ -41,10 +58,40 @@ const GROQ_INSIGHTS_MODELS = parseModelList(
   process.env.GROQ_INSIGHTS_MODELS || process.env.GROQ_INSIGHTS_MODEL,
   ["llama-3.1-8b-instant"],
 );
+const OLLAMA_CHAT_MODELS = parseModelList(
+  process.env.OLLAMA_CHAT_MODELS || process.env.OLLAMA_CHAT_MODEL || process.env.OLLAMA_MODEL,
+  ["gemma3:4b"],
+);
+const OLLAMA_INSIGHTS_MODELS = parseModelList(
+  process.env.OLLAMA_INSIGHTS_MODELS || process.env.OLLAMA_INSIGHTS_MODEL || process.env.OLLAMA_MODEL,
+  ["gemma3:4b"],
+);
+const AI_PROVIDER_ORDER = parseProviderOrder(
+  process.env.AI_PROVIDER_ORDER || process.env.AI_PROVIDER,
+  ["gemini", "groq"],
+);
+const OLLAMA_REQUEST_TIMEOUT_MS = Math.max(
+  3000,
+  Number(process.env.OLLAMA_REQUEST_TIMEOUT_MS || 60000),
+);
+const OLLAMA_MAX_TOKENS = Math.max(0, Number(process.env.OLLAMA_MAX_TOKENS || 0));
 
 let geminiCooldownUntil = 0;
 let geminiLastFailure = null;
 let groqLastFailure = null;
+let ollamaLastFailure = null;
+
+function parseProviderOrder(value, defaults) {
+  const allowed = new Set(["ollama", "gemini", "groq"]);
+  const configured = String(value || "")
+    .split(",")
+    .map((item) => String(item || "").trim().toLowerCase())
+    .filter((provider) => allowed.has(provider));
+
+  return (configured.length ? configured : defaults).filter(
+    (provider, index, items) => provider && items.indexOf(provider) === index,
+  );
+}
 
 function cleanJsonFence(value) {
   return String(value || "")
@@ -169,6 +216,19 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = 25000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function getGeminiCooldownRemainingMs() {
   return Math.max(0, geminiCooldownUntil - Date.now());
 }
@@ -190,6 +250,10 @@ function clearGeminiFailureState() {
 
 function clearGroqFailureState() {
   groqLastFailure = null;
+}
+
+function clearOllamaFailureState() {
+  ollamaLastFailure = null;
 }
 
 function normalizePetReply(rawReply, latestUserMessage) {
@@ -405,7 +469,7 @@ async function requestGeminiJson({
     if (response.ok && rawText) {
       clearGeminiFailureState();
       try {
-        return { ok: true, parsed: parseGeminiJson(rawText) };
+        return { ok: true, parsed: parseGeminiJson(rawText), provider: "gemini" };
       } catch (error) {
         console.error("Failed to parse Gemini JSON response.", {
           error: error instanceof Error ? error.message : String(error),
@@ -555,6 +619,172 @@ async function requestGroqJson({
   };
 }
 
+function getOllamaChatCompletionsEndpoint() {
+  return OLLAMA_BASE_URL ? `${OLLAMA_BASE_URL}/v1/chat/completions` : "";
+}
+
+function getOllamaRequestHeaders() {
+  const headers = {
+    "Content-Type": "application/json",
+    "User-Agent": "BawatTalaBackend/1.0",
+  };
+
+  if (OLLAMA_CF_ACCESS_CLIENT_ID && OLLAMA_CF_ACCESS_CLIENT_SECRET) {
+    headers["CF-Access-Client-Id"] = OLLAMA_CF_ACCESS_CLIENT_ID;
+    headers["CF-Access-Client-Secret"] = OLLAMA_CF_ACCESS_CLIENT_SECRET;
+  }
+
+  return headers;
+}
+
+async function requestOllamaJson({
+  models,
+  systemInstruction,
+  messages,
+  schemaLines,
+}) {
+  const endpoint = getOllamaChatCompletionsEndpoint();
+  if (!endpoint) {
+    return { ok: false, parsed: null, reason: "ollama_missing_base_url" };
+  }
+
+  let lastFailure = null;
+
+  for (const model of models) {
+    let response = null;
+    let data = {};
+    const requestBody = {
+      model,
+      messages: [
+        { role: "system", content: systemInstruction },
+        ...messages,
+      ],
+      response_format: { type: "json_object" },
+      stream: false,
+      temperature: 0.5,
+    };
+    if (OLLAMA_MAX_TOKENS > 0) {
+      requestBody.max_tokens = OLLAMA_MAX_TOKENS;
+    }
+
+    try {
+      response = await fetchWithTimeout(
+        endpoint,
+        {
+          method: "POST",
+          headers: getOllamaRequestHeaders(),
+          body: JSON.stringify(requestBody),
+        },
+        OLLAMA_REQUEST_TIMEOUT_MS,
+      );
+      data = await response.json().catch(() => ({}));
+    } catch (error) {
+      lastFailure = {
+        error: error instanceof Error ? error.message : String(error),
+        model,
+      };
+      ollamaLastFailure = {
+        occurredAt: new Date().toISOString(),
+        reason: "request_failed",
+        ...lastFailure,
+      };
+      console.warn("Ollama request failed, trying next provider.", lastFailure);
+      return { ok: false, parsed: null, reason: "ollama_request_failed" };
+    }
+
+    const rawText = String(data?.choices?.[0]?.message?.content || "").trim();
+
+    if (response.ok && rawText) {
+      clearOllamaFailureState();
+      try {
+        return { ok: true, parsed: parseProviderJson(rawText), provider: "ollama" };
+      } catch (error) {
+        console.error("Failed to parse Ollama JSON response.", {
+          error: error instanceof Error ? error.message : String(error),
+          model,
+          rawText,
+        });
+        throw new Error(
+          `Failed to parse Ollama JSON for schema: ${schemaLines.join(" ")}`,
+        );
+      }
+    }
+
+    lastFailure = {
+      data,
+      hasRawText: Boolean(rawText),
+      model,
+      status: response?.status,
+      statusText: response?.statusText,
+    };
+    ollamaLastFailure = {
+      occurredAt: new Date().toISOString(),
+      reason: "request_failed",
+      ...lastFailure,
+    };
+    console.warn("Ollama request failed for model, trying next model.", lastFailure);
+  }
+
+  return {
+    ok: false,
+    parsed: null,
+    reason: lastFailure?.status === 404 ? "ollama_model_not_found" : "ollama_request_failed",
+  };
+}
+
+async function requestConfiguredProviderJson({
+  geminiModels,
+  groqModels,
+  ollamaModels,
+  systemInstruction,
+  contents,
+  messages,
+  schemaLines,
+}) {
+  const providerReasons = {};
+
+  for (const provider of AI_PROVIDER_ORDER) {
+    let result = { ok: false, parsed: null, reason: "provider_not_configured" };
+
+    if (provider === "gemini") {
+      result = GEMINI_API_KEY
+        ? await requestGeminiJson({
+            models: geminiModels,
+            systemInstruction,
+            contents,
+            schemaLines,
+          })
+        : { ok: false, parsed: null, reason: "gemini_missing_key" };
+    } else if (provider === "groq") {
+      result = await requestGroqJson({
+        models: groqModels,
+        systemInstruction,
+        messages,
+        schemaLines,
+      });
+    } else if (provider === "ollama") {
+      result = await requestOllamaJson({
+        models: ollamaModels,
+        systemInstruction,
+        messages,
+        schemaLines,
+      });
+    }
+
+    if (result.ok) {
+      return result;
+    }
+    providerReasons[provider] = result.reason || "unknown";
+  }
+
+  return {
+    ok: false,
+    parsed: null,
+    providerReasons,
+    reason: "all_providers_failed",
+  };
+}
+
 async function analyzeJournalConversation({
   firstName,
   latestUserMessage,
@@ -633,29 +863,25 @@ async function analyzeJournalConversation({
   ];
 
   try {
-    const analysisResult = GEMINI_API_KEY
-      ? await requestGeminiJson({
-          models: GEMINI_CHAT_MODELS,
-          systemInstruction,
-          contents: analysisContents,
-          schemaLines: ['"pet_reply"', '"insights"', '"risk_level"', '"admin_flag_reason"'],
-        })
-      : { ok: false, parsed: null, reason: "gemini_missing_key" };
-
-    const providerResult = analysisResult.ok
-      ? analysisResult
-      : await requestGroqJson({
-          models: GROQ_CHAT_MODELS,
-          systemInstruction,
-          messages: groqMessages,
-          schemaLines: ['"pet_reply"', '"insights"', '"risk_level"', '"admin_flag_reason"'],
-        });
+    const providerResult = await requestConfiguredProviderJson({
+      geminiModels: GEMINI_CHAT_MODELS,
+      groqModels: GROQ_CHAT_MODELS,
+      ollamaModels: OLLAMA_CHAT_MODELS,
+      systemInstruction,
+      contents: analysisContents,
+      messages: groqMessages,
+      schemaLines: ['"pet_reply"', '"insights"', '"risk_level"', '"admin_flag_reason"'],
+    });
 
     if (!providerResult.ok) {
       console.warn("Using journal conversation fallback.", {
         latestUserMessage,
-        geminiReason: analysisResult.reason || geminiLastFailure?.reason || "unknown",
-        groqReason: providerResult.reason || groqLastFailure?.reason || "unknown",
+        providerOrder: AI_PROVIDER_ORDER,
+        providerReasons: providerResult.providerReasons || {
+          gemini: geminiLastFailure?.reason || "unknown",
+          groq: groqLastFailure?.reason || "unknown",
+          ollama: ollamaLastFailure?.reason || "unknown",
+        },
       });
       return unavailableConversationAnalysis(latestUserMessage, history);
     }
@@ -756,29 +982,25 @@ async function analyzeJournalEntryFinal({
   ];
 
   try {
-    const analysisResult = GEMINI_API_KEY
-      ? await requestGeminiJson({
-          models: GEMINI_INSIGHTS_MODELS,
-          systemInstruction,
-          contents,
-          schemaLines: ['"summary"', '"insights"', '"suggested_tags"', '"risk_level"', '"admin_flag_reason"'],
-        })
-      : { ok: false, parsed: null, reason: "gemini_missing_key" };
-
-    const providerResult = analysisResult.ok
-      ? analysisResult
-      : await requestGroqJson({
-          models: GROQ_INSIGHTS_MODELS,
-          systemInstruction,
-          messages: groqMessages,
-          schemaLines: ['"summary"', '"insights"', '"suggested_tags"', '"risk_level"', '"admin_flag_reason"'],
-        });
+    const providerResult = await requestConfiguredProviderJson({
+      geminiModels: GEMINI_INSIGHTS_MODELS,
+      groqModels: GROQ_INSIGHTS_MODELS,
+      ollamaModels: OLLAMA_INSIGHTS_MODELS,
+      systemInstruction,
+      contents,
+      messages: groqMessages,
+      schemaLines: ['"summary"', '"insights"', '"suggested_tags"', '"risk_level"', '"admin_flag_reason"'],
+    });
 
     if (!providerResult.ok) {
       console.warn("Using journal final-analysis fallback.", {
         latestUserMessage,
-        geminiReason: analysisResult.reason || geminiLastFailure?.reason || "unknown",
-        groqReason: providerResult.reason || groqLastFailure?.reason || "unknown",
+        providerOrder: AI_PROVIDER_ORDER,
+        providerReasons: providerResult.providerReasons || {
+          gemini: geminiLastFailure?.reason || "unknown",
+          groq: groqLastFailure?.reason || "unknown",
+          ollama: ollamaLastFailure?.reason || "unknown",
+        },
       });
       return unavailableFinalAnalysis(latestUserMessage, history);
     }
