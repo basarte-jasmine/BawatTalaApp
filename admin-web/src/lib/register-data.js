@@ -1,0 +1,18 @@
+export const PROGRAM_OPTIONS = [
+  "BECED Early Childhood Education",
+  "BSEd Filipino",
+  "BSEd Science",
+  "BSEd Social Studies",
+  "BSEd Mathematics",
+  "BSEd English",
+  "BS Civil Engineering",
+  "BS Electrical Engineering",
+  "BS Information Technology",
+  "BS Psychology",
+  "BA Communication Theater Arts",
+  "BS Social Work",
+  "BSBA Marketing Management",
+  "BSBA Human Resource Development Management",
+  "BS Accountancy",
+  "BSBA Financial Management",
+];

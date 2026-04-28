@@ -31,6 +31,7 @@ import {
   updateAdminDayAvailability,
   updateAdminAppointment,
 } from "../lib/admin-api";
+import { PROGRAM_OPTIONS } from "../lib/register-data";
 
 const ACTIVITY_LOGS_PER_PAGE = 5;
 
@@ -300,6 +301,14 @@ export default function CalendarScheduling({
     } catch (_error) {}
   }
 
+  function invalidateSupportOverviewCache() {
+    setOverviewCache((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([cacheKey]) => !cacheKey.startsWith(`${normalizedSupportType}:`)),
+      ),
+    );
+  }
+
   async function handleConfirmDayAvailabilityToggle() {
     if (!selectedCounselor?.id || !dayAvailabilityAction) return;
     try {
@@ -456,6 +465,7 @@ export default function CalendarScheduling({
       }
       resetPeerForm();
       setIsPeerFormModalOpen(false);
+      invalidateSupportOverviewCache();
       await refreshOverview();
     } catch (error) {
       setPeerFormError(error instanceof Error ? error.message : "Failed to save peer counselor.");
@@ -472,6 +482,7 @@ export default function CalendarScheduling({
       if (editingPeerCounselorId === pendingDeletePeerCounselor.id) {
         resetPeerForm();
       }
+      invalidateSupportOverviewCache();
       await refreshOverview();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to remove peer counselor.");
@@ -1206,13 +1217,19 @@ export default function CalendarScheduling({
                 </label>
                 <label className="text-sm font-semibold text-slate-700">
                   Course / Program
-                  <input
+                  <select
                     required
                     value={peerForm.program}
                     onChange={(event) => setPeerForm((current) => ({ ...current, program: event.target.value }))}
-                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#3DA35D]"
-                    placeholder="BS PSYCHOLOGY"
-                  />
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#3DA35D]"
+                  >
+                    <option value="" disabled>Select course / program</option>
+                    {PROGRAM_OPTIONS.map((programOption) => (
+                      <option key={programOption} value={programOption}>
+                        {programOption}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </div>
 
@@ -1411,10 +1428,10 @@ export default function CalendarScheduling({
         isOpen={Boolean(pendingDeletePeerCounselor)}
         onClose={() => setPendingDeletePeerCounselor(null)}
         onConfirm={() => void handleConfirmDeletePeerCounselor()}
-        title="Remove Peer Counselor"
-        description={`Remove ${pendingDeletePeerCounselor?.fullName || "this peer counselor"} from active peer scheduling? Existing appointments will stay visible.`}
+        title="Delete Peer Counselor"
+        description={`Permanently delete ${pendingDeletePeerCounselor?.fullName || "this peer counselor"} from peer counseling? Any appointments assigned to them will also be removed from the database.`}
         cancelLabel="Keep"
-        confirmLabel="Remove"
+        confirmLabel="Delete Permanently"
         confirmTone="rose"
       />
 
