@@ -1971,7 +1971,7 @@ router.get("/roles", async (_req, res) => {
           pc.gender,
           coalesce(pc.student_number, '') as student_number,
           coalesce(pc.program, '') as program,
-          coalesce(nullif(pc.profile_picture_url, ''), nullif(pc.google_profile_picture_url, ''), '') as profile_picture_url,
+          coalesce(pc.profile_picture_url, '') as profile_picture_url,
           coalesce(pc.specialties, '[]'::jsonb) as specialties,
           pc.is_active,
           coalesce(pc.invitation_status, case when pc.is_active then 'ACCEPTED' else 'DECLINED' end) as invitation_status,

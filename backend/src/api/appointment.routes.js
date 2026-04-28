@@ -1,7 +1,7 @@
 const express = require("express");
 const { createHash, randomBytes } = require("crypto");
-const { google } = require("googleapis");
 const { dbPool, query } = require("../config/db");
+const { supabaseAdminClient } = require("../config/supabase");
 const {
   APPOINTMENT_CONCERN_OPTIONS,
   APPOINTMENT_CONCERN_SUBCATEGORIES,
@@ -18,6 +18,7 @@ const MOBILE_BOOKING_LEAD_DAYS = 2;
 const APPOINTMENT_DECISION_WINDOW_HOURS = 24;
 const APPOINTMENT_EXPIRY_CHECK_MS = 5 * 60 * 1000;
 const APPOINTMENT_REMINDER_LEAD_MINUTES = 10;
+const PEER_PROFILE_PICTURE_LIMIT_BYTES = 5 * 1024 * 1024;
 const CONCERN_OPTIONS = APPOINTMENT_CONCERN_OPTIONS;
 const PEER_CONCERN_OPTIONS = CONCERN_OPTIONS.filter(
   (item) => !["Career guidance", "Financial guidance"].includes(item),
@@ -298,6 +299,106 @@ function createPeerInviteToken() {
   return randomBytes(32).toString("base64url");
 }
 
+function getPeerProfilePictureBucket() {
+  return normalizeCompactSpaces(
+    process.env.SUPABASE_PEER_AVATAR_BUCKET ||
+      process.env.SUPABASE_ADMIN_AVATAR_BUCKET ||
+      "admin-profile-pictures",
+  );
+}
+
+function sanitizeFileName(value) {
+  const normalized = normalizeCompactSpaces(value || "")
+    .replace(/[^a-zA-Z0-9._-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return normalized || "profile-image";
+}
+
+function parsePeerProfilePicturePayload(rawValue) {
+  if (!rawValue || typeof rawValue !== "object" || Array.isArray(rawValue)) {
+    throw new Error("Please upload a profile picture.");
+  }
+
+  const dataUrl = String(rawValue.dataUrl || "").trim();
+  const fileName = sanitizeFileName(rawValue.fileName || "profile-image");
+  const contentType = String(rawValue.contentType || "").trim().toLowerCase();
+  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) {
+    throw new Error("Invalid uploaded image format.");
+  }
+
+  const mimeType = match[1].toLowerCase();
+  if (!["image/jpeg", "image/jpg", "image/png", "image/webp"].includes(mimeType)) {
+    throw new Error("Only JPG, PNG, or WEBP profile pictures are allowed.");
+  }
+
+  const buffer = Buffer.from(match[2], "base64");
+  if (!buffer.length) {
+    throw new Error("Uploaded image is empty.");
+  }
+  if (buffer.length >= PEER_PROFILE_PICTURE_LIMIT_BYTES) {
+    throw new Error("Profile picture must be less than 5 MB.");
+  }
+
+  const extension =
+    mimeType === "image/png"
+      ? "png"
+      : mimeType === "image/webp"
+        ? "webp"
+        : "jpg";
+
+  return {
+    buffer,
+    contentType: contentType || mimeType,
+    extension,
+    fileName,
+  };
+}
+
+async function ensurePeerProfilePictureBucket() {
+  const bucketName = getPeerProfilePictureBucket();
+  const { data: buckets, error: listError } = await supabaseAdminClient.storage.listBuckets();
+  if (listError) {
+    throw new Error(listError.message || "Unable to verify storage bucket.");
+  }
+
+  const exists = Array.isArray(buckets) && buckets.some((bucket) => bucket.name === bucketName);
+  if (exists) {
+    return bucketName;
+  }
+
+  const { error: createError } = await supabaseAdminClient.storage.createBucket(bucketName, {
+    public: true,
+    fileSizeLimit: `${PEER_PROFILE_PICTURE_LIMIT_BYTES}`,
+  });
+
+  if (createError && !String(createError.message || "").toLowerCase().includes("already exists")) {
+    throw new Error(createError.message || "Unable to create storage bucket.");
+  }
+
+  return bucketName;
+}
+
+async function uploadPeerProfilePicture({ peerCounselorId, uploadedImage }) {
+  const bucketName = await ensurePeerProfilePictureBucket();
+  const filePath = `peer-counselors/${peerCounselorId}/${Date.now()}-${uploadedImage.fileName}.${uploadedImage.extension}`;
+  const { error: uploadError } = await supabaseAdminClient.storage
+    .from(bucketName)
+    .upload(filePath, uploadedImage.buffer, {
+      cacheControl: "3600",
+      contentType: uploadedImage.contentType,
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw new Error(uploadError.message || "Unable to upload profile picture.");
+  }
+
+  const { data } = supabaseAdminClient.storage.from(bucketName).getPublicUrl(filePath);
+  return data?.publicUrl || "";
+}
+
 async function withDbTransaction(operation) {
   if (!dbPool) {
     throw new Error(
@@ -344,20 +445,23 @@ async function deletePeerCounselorFromDatabase(peerCounselorId, run = query) {
   };
 }
 
+async function deletePendingPeerInvitationFromDatabase(invitation) {
+  const result = await query(
+    `
+      delete from public.peer_counselors
+      where id = $1::uuid
+        and invitation_token_hash = $2
+      returning id, email, full_name
+    `,
+    [invitation.id, invitation.invitation_token_hash],
+  );
+
+  return result.rows[0] || null;
+}
+
 function getPeerInvitationActionUrl(req, token, action) {
   const baseUrl = getRequestBaseUrl(req);
   return `${baseUrl}/api/appointments/peer-counselors/invitations/${encodeURIComponent(token)}/${action}`;
-}
-
-function getPeerGoogleInviteClient(req) {
-  const clientId = String(process.env.GOOGLE_CLIENT_ID || "").trim();
-  const clientSecret = String(process.env.GOOGLE_CLIENT_SECRET || "").trim();
-  if (!clientId || !clientSecret) return null;
-
-  const redirectUri = String(process.env.GOOGLE_PEER_INVITE_REDIRECT_URI || "").trim()
-    || `${getRequestBaseUrl(req)}/api/appointments/peer-counselors/google/callback`;
-
-  return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 }
 
 function getAppointmentNotificationMetadata(appointment, extra = {}) {
@@ -542,7 +646,7 @@ async function sendPeerCounselorInvitationEmail({
     `Hi ${greetingName},`,
     "",
     inviterLine,
-    "Please accept or decline this invitation from this email. Accepting opens Google to confirm your Gmail and let Bawat Tala show your Google profile photo in staff and student views.",
+    "Please accept or decline this invitation from this email. Accepting opens a secure page where you will upload a JPG, PNG, or WEBP profile picture under 5 MB.",
     "",
     `Accept: ${acceptUrl}`,
     `Decline: ${declineUrl}`,
@@ -564,7 +668,7 @@ async function sendPeerCounselorInvitationEmail({
           <td style="padding:24px;">
             <p style="margin:0 0 16px;font-size:16px;line-height:1.7;color:#2b3d31;">Hi ${escapeHtml(greetingName)},</p>
             <p style="margin:0 0 18px;font-size:16px;line-height:1.7;color:#2b3d31;">${escapeHtml(inviterLine)}</p>
-            <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#465749;">Please accept or decline this invitation from this email. Accepting opens Google to confirm your Gmail and let Bawat Tala show your Google profile photo in staff and student views.</p>
+            <p style="margin:0 0 18px;font-size:15px;line-height:1.7;color:#465749;">Please accept or decline this invitation from this email. Accepting opens a secure page where you will upload a JPG, PNG, or WEBP profile picture under 5 MB.</p>
             <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:18px;">
               <a href="${escapeHtml(acceptUrl)}" style="display:inline-block;padding:12px 18px;border-radius:999px;background:#386641;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;">Accept invitation</a>
               <a href="${escapeHtml(declineUrl)}" style="display:inline-block;padding:12px 18px;border-radius:999px;background:#f8fafc;color:#475569;border:1px solid #cbd5e1;font-size:14px;font-weight:700;text-decoration:none;">Decline</a>
@@ -1334,7 +1438,7 @@ async function findAppointmentById(appointmentId) {
         coalesce(nullif(aa.full_name, ''), pc.full_name, split_part(aa.email, '@', 1)) as counselor_name,
         case when coalesce(ca.support_type, 'GUIDANCE') = 'PEER' then 'PEER_COUNSELOR' else coalesce(aa.role, 'COUNSELOR') end as counselor_role,
         coalesce(aa.gender, pc.gender, 'Prefer not to say') as counselor_gender,
-        coalesce(nullif(aa.profile_picture_url, ''), nullif(pc.profile_picture_url, ''), nullif(pc.google_profile_picture_url, ''), '') as counselor_picture_url,
+        coalesce(nullif(aa.profile_picture_url, ''), nullif(pc.profile_picture_url, ''), '') as counselor_picture_url,
         coalesce(pc.student_number, '') as peer_student_number,
         coalesce(pc.program, '') as peer_program
       from public.counselor_appointments ca
@@ -1435,7 +1539,7 @@ async function listPeerCounselors({ includeInactive = false } = {}) {
     ...row,
     role: "PEER_COUNSELOR",
     support_type: SUPPORT_TYPE_PEER,
-    profile_picture_url: row.profile_picture_url || row.google_profile_picture_url || "",
+    profile_picture_url: row.profile_picture_url || "",
   }));
 }
 
@@ -1648,7 +1752,7 @@ async function findPeerCounselorById(peerCounselorId) {
         gender,
         coalesce(student_number, '') as student_number,
         coalesce(program, '') as program,
-        coalesce(nullif(profile_picture_url, ''), nullif(google_profile_picture_url, ''), '') as profile_picture_url,
+        coalesce(profile_picture_url, '') as profile_picture_url,
         coalesce(specialties, '[]'::jsonb) as specialties,
         is_active
       from public.peer_counselors
@@ -1697,6 +1801,111 @@ function renderPeerInvitationResult(res, { title, message, tone = "success" }) {
   `);
 }
 
+function renderPeerInvitationUploadForm(res, { invitation, token, req }) {
+  const actionUrl = getPeerInvitationActionUrl(req, token, "accept");
+  const name = invitation?.full_name || "Peer Counselor";
+  return res.send(`
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Accept peer counselor invitation</title>
+      </head>
+      <body style="margin:0;background:#eef6ea;font-family:Arial,sans-serif;color:#203126;">
+        <main style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;">
+          <section id="card" style="max-width:560px;width:100%;border:1px solid #d7e6d0;border-radius:22px;background:#fff;padding:28px;box-shadow:0 18px 44px rgba(32,49,38,0.12);">
+            <div style="font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#6a7f70;">Bawat Tala Peer Support</div>
+            <h1 style="margin:12px 0 10px;font-size:28px;line-height:1.2;color:#386641;">Accept invitation</h1>
+            <p style="margin:0 0 18px;font-size:16px;line-height:1.7;color:#465749;">Hi ${escapeHtml(getFirstName(name) || name)}, upload a profile picture to finish accepting your peer counselor invitation.</p>
+            <form id="peerInviteForm">
+              <label style="display:block;font-size:14px;font-weight:700;color:#203126;margin-bottom:8px;" for="profilePicture">Profile picture</label>
+              <input id="profilePicture" name="profilePicture" type="file" accept="image/jpeg,image/png,image/webp" required style="display:block;width:100%;box-sizing:border-box;border:1px solid #cbd5c9;border-radius:14px;padding:12px;background:#f8fbf6;color:#203126;" />
+              <p style="margin:10px 0 0;font-size:13px;line-height:1.5;color:#64748b;">JPG, PNG, or WEBP only. File must be less than 5 MB.</p>
+              <div id="message" style="display:none;margin-top:16px;border-radius:14px;padding:12px 14px;font-size:14px;line-height:1.5;"></div>
+              <button id="submitButton" type="submit" style="margin-top:20px;width:100%;border:0;border-radius:999px;background:#386641;color:#fff;font-size:15px;font-weight:700;padding:13px 18px;cursor:pointer;">Accept invitation</button>
+            </form>
+          </section>
+        </main>
+        <script>
+          const form = document.getElementById("peerInviteForm");
+          const fileInput = document.getElementById("profilePicture");
+          const button = document.getElementById("submitButton");
+          const messageBox = document.getElementById("message");
+          const maxBytes = ${PEER_PROFILE_PICTURE_LIMIT_BYTES};
+          const postUrl = ${JSON.stringify(actionUrl)};
+
+          function showMessage(text, tone) {
+            messageBox.style.display = "block";
+            messageBox.textContent = text;
+            if (tone === "success") {
+              messageBox.style.background = "#edf7ed";
+              messageBox.style.color = "#386641";
+              messageBox.style.border = "1px solid #cfe8cf";
+            } else {
+              messageBox.style.background = "#fff1f2";
+              messageBox.style.color = "#b42318";
+              messageBox.style.border = "1px solid #fecdd3";
+            }
+          }
+
+          function readFileAsDataUrl(file) {
+            return new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result);
+              reader.onerror = () => reject(new Error("Could not read selected image."));
+              reader.readAsDataURL(file);
+            });
+          }
+
+          form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const file = fileInput.files && fileInput.files[0];
+            if (!file) {
+              showMessage("Please choose a profile picture.", "error");
+              return;
+            }
+            if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+              showMessage("Only JPG, PNG, or WEBP profile pictures are allowed.", "error");
+              return;
+            }
+            if (file.size >= maxBytes) {
+              showMessage("Profile picture must be less than 5 MB.", "error");
+              return;
+            }
+
+            button.disabled = true;
+            button.textContent = "Uploading...";
+            try {
+              const dataUrl = await readFileAsDataUrl(file);
+              const response = await fetch(postUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  uploadedProfilePicture: {
+                    dataUrl,
+                    fileName: file.name,
+                    contentType: file.type,
+                  },
+                }),
+              });
+              const result = await response.json().catch(() => ({}));
+              if (!response.ok) {
+                throw new Error(result.message || "Unable to accept invitation.");
+              }
+              form.innerHTML = '<div style="border-radius:16px;background:#edf7ed;border:1px solid #cfe8cf;padding:16px;color:#386641;font-size:15px;line-height:1.6;font-weight:700;">' + (result.message || "Invitation accepted.") + '</div>';
+            } catch (error) {
+              showMessage(error.message || "Unable to accept invitation.", "error");
+              button.disabled = false;
+              button.textContent = "Accept invitation";
+            }
+          });
+        </script>
+      </body>
+    </html>
+  `);
+}
+
 async function findPeerInvitationByToken(token) {
   const tokenHash = hashPeerInviteToken(token);
   const result = await query(
@@ -1722,51 +1931,34 @@ async function findPeerInvitationByToken(token) {
   return result.rows[0] || null;
 }
 
-async function acceptPeerInvitation({ token, googleEmail = "", googlePictureUrl = "" }) {
+async function acceptPeerInvitation({ token, profilePictureUrl = "" }) {
   const invitation = await findPeerInvitationByToken(token);
   if (!invitation) {
-    return { ok: false, tone: "error", title: "Invitation not found", message: "This peer counselor invitation is invalid or has already been replaced." };
+    return { ok: false, tone: "error", title: "Invitation not available", message: "This peer counselor invitation is invalid or has already been used." };
   }
 
   const currentStatus = normalizePeerInvitationStatus(invitation.invitation_status);
   if (currentStatus === "ACCEPTED") {
-    const normalizedGoogleEmail = String(googleEmail || "").trim().toLowerCase();
-    if (normalizedGoogleEmail && normalizedGoogleEmail !== String(invitation.email || "").trim().toLowerCase()) {
-      return {
-        ok: false,
-        tone: "error",
-        title: "Google account mismatch",
-        message: `Please connect with ${invitation.email}. The Google account used was ${normalizedGoogleEmail}.`,
-      };
-    }
-    const profilePictureUrl = normalizeCompactSpaces(googlePictureUrl || "");
-    if (profilePictureUrl) {
-      await query(
-        `
-          update public.peer_counselors
-          set profile_picture_url = $2, google_profile_picture_url = $2, updated_at = now()
-          where id = $1::uuid
-        `,
-        [invitation.id, profilePictureUrl],
-      );
-    }
-    return { ok: true, peerCounselor: invitation, title: "Invitation already accepted", message: "Your peer counselor invitation is active. Future session schedules will be sent by email." };
+    await query(
+      `
+        update public.peer_counselors
+        set invitation_token_hash = null, updated_at = now()
+        where id = $1::uuid
+          and invitation_token_hash = $2
+      `,
+      [invitation.id, invitation.invitation_token_hash],
+    );
+    return { ok: false, tone: "warning", title: "Invitation already accepted", message: "This invitation has already been accepted." };
   }
   if (currentStatus === "DECLINED") {
-    return { ok: false, tone: "warning", title: "Invitation already declined", message: "This invitation was already declined. Please contact the guidance office if this was a mistake." };
+    return { ok: false, tone: "warning", title: "Invitation already declined", message: "This invitation was already declined." };
   }
 
-  const normalizedGoogleEmail = String(googleEmail || "").trim().toLowerCase();
-  if (normalizedGoogleEmail && normalizedGoogleEmail !== String(invitation.email || "").trim().toLowerCase()) {
-    return {
-      ok: false,
-      tone: "error",
-      title: "Google account mismatch",
-      message: `Please accept with ${invitation.email}. The Google account used was ${normalizedGoogleEmail}.`,
-    };
+  const normalizedProfilePictureUrl = normalizeCompactSpaces(profilePictureUrl);
+  if (!normalizedProfilePictureUrl) {
+    return { ok: false, tone: "error", title: "Profile picture required", message: "Please upload a profile picture before accepting." };
   }
 
-  const profilePictureUrl = normalizeCompactSpaces(googlePictureUrl || invitation.profile_picture_url || invitation.google_profile_picture_url || "");
   const updateResult = await query(
     `
       update public.peer_counselors
@@ -1775,15 +1967,20 @@ async function acceptPeerInvitation({ token, googleEmail = "", googlePictureUrl 
         invitation_status = 'ACCEPTED',
         invitation_responded_at = now(),
         profile_picture_url = nullif($2, ''),
-        google_profile_picture_url = nullif($2, ''),
+        google_profile_picture_url = null,
+        invitation_token_hash = null,
         updated_at = now()
       where id = $1::uuid
+        and invitation_token_hash = $3
       returning id, email, full_name, gender, student_number, program, profile_picture_url, google_profile_picture_url, is_active, invitation_status
     `,
-    [invitation.id, profilePictureUrl],
+    [invitation.id, normalizedProfilePictureUrl, invitation.invitation_token_hash],
   );
 
   const peerCounselor = updateResult.rows[0];
+  if (!peerCounselor) {
+    return { ok: false, tone: "error", title: "Invitation not available", message: "This peer counselor invitation has already been used." };
+  }
   await ensureDefaultAvailability(peerCounselor.id, SUPPORT_TYPE_PEER);
   return {
     ok: true,
@@ -1793,22 +1990,57 @@ async function acceptPeerInvitation({ token, googleEmail = "", googlePictureUrl 
   };
 }
 
+async function notifyAdminsAboutPeerInvitationDeclined(invitation) {
+  const admins = await listSchedulingAdmins();
+  for (const admin of admins) {
+    await createAdminNotification({
+      adminEmail: admin.email,
+      kind: "PEER_COUNSELOR_INVITATION_DECLINED",
+      title: "Peer counselor invitation declined",
+      message: `${invitation.full_name || invitation.email} declined the peer counselor invitation.`,
+      metadata: {
+        peerCounselorId: invitation.id,
+        peerCounselorEmail: invitation.email,
+        peerCounselorName: invitation.full_name,
+        supportType: SUPPORT_TYPE_PEER,
+      },
+    });
+  }
+}
+
 async function declinePeerInvitation(token) {
   const invitation = await findPeerInvitationByToken(token);
   if (!invitation) {
-    return { ok: false, tone: "error", title: "Invitation not found", message: "This peer counselor invitation is invalid or has already been replaced." };
+    return { ok: false, tone: "error", title: "Invitation not available", message: "This peer counselor invitation is invalid or has already been used." };
   }
 
   const currentStatus = normalizePeerInvitationStatus(invitation.invitation_status);
   if (currentStatus === "ACCEPTED") {
-    return { ok: false, tone: "warning", title: "Invitation already accepted", message: "This invitation has already been accepted. Please contact the guidance office if you need to step down." };
+    await query(
+      `
+        update public.peer_counselors
+        set invitation_token_hash = null, updated_at = now()
+        where id = $1::uuid
+          and invitation_token_hash = $2
+      `,
+      [invitation.id, invitation.invitation_token_hash],
+    );
+    return { ok: false, tone: "warning", title: "Invitation already accepted", message: "This invitation has already been accepted." };
   }
   if (currentStatus === "DECLINED") {
-    await deletePeerCounselorFromDatabase(invitation.id);
+    await deletePendingPeerInvitationFromDatabase(invitation);
     return { ok: true, tone: "warning", title: "Invitation already declined", message: "This invitation was already declined." };
   }
 
-  await deletePeerCounselorFromDatabase(invitation.id);
+  try {
+    await notifyAdminsAboutPeerInvitationDeclined(invitation);
+  } catch (error) {
+    console.warn("Failed to notify admins about declined peer invitation:", error?.message || error);
+  }
+  const deletedInvitation = await deletePendingPeerInvitationFromDatabase(invitation);
+  if (!deletedInvitation) {
+    return { ok: false, tone: "error", title: "Invitation not available", message: "This peer counselor invitation has already been used." };
+  }
 
   return {
     ok: true,
@@ -1828,30 +2060,72 @@ router.get("/peer-counselors/invitations/:token/accept", async (req, res) => {
     });
   }
 
-  const client = getPeerGoogleInviteClient(req);
-  if (!client) {
+  const invitation = await findPeerInvitationByToken(token);
+  if (!invitation) {
     return renderPeerInvitationResult(res, {
       tone: "error",
-      title: "Google sign-in unavailable",
-      message: "Google sign-in must be configured before peer counselor invitations can be accepted.",
+      title: "Invitation not available",
+      message: "This peer counselor invitation is invalid or has already been used.",
     });
   }
 
-  const state = randomBytes(18).toString("base64url");
-  req.session.peerInviteState = {
-    state,
-    token,
-    createdAt: Date.now(),
-  };
+  const currentStatus = normalizePeerInvitationStatus(invitation.invitation_status);
+  if (currentStatus === "ACCEPTED") {
+    await query(
+      `
+        update public.peer_counselors
+        set invitation_token_hash = null, updated_at = now()
+        where id = $1::uuid
+          and invitation_token_hash = $2
+      `,
+      [invitation.id, invitation.invitation_token_hash],
+    );
+    return renderPeerInvitationResult(res, {
+      tone: "warning",
+      title: "Invitation already accepted",
+      message: "This invitation has already been accepted.",
+    });
+  }
+  if (currentStatus === "DECLINED") {
+    return renderPeerInvitationResult(res, {
+      tone: "warning",
+      title: "Invitation already declined",
+      message: "This invitation was already declined.",
+    });
+  }
 
-  const authUrl = client.generateAuthUrl({
-    access_type: "online",
-    prompt: "select_account",
-    scope: ["openid", "email", "profile"],
-    state,
-  });
+  return renderPeerInvitationUploadForm(res, { invitation, token, req });
+});
 
-  return res.redirect(authUrl);
+router.post("/peer-counselors/invitations/:token/accept", async (req, res) => {
+  const token = String(req.params.token || "").trim();
+  if (!token) {
+    return res.status(400).json({ message: "This peer counselor invitation link is invalid." });
+  }
+
+  try {
+    const invitation = await findPeerInvitationByToken(token);
+    if (!invitation) {
+      return res.status(410).json({ message: "This peer counselor invitation is invalid or has already been used." });
+    }
+    const currentStatus = normalizePeerInvitationStatus(invitation.invitation_status);
+    if (currentStatus !== "PENDING") {
+      return res.status(410).json({ message: "This peer counselor invitation has already been used." });
+    }
+
+    const uploadedProfilePicture = parsePeerProfilePicturePayload(req.body.uploadedProfilePicture);
+    const profilePictureUrl = await uploadPeerProfilePicture({
+      peerCounselorId: invitation.id,
+      uploadedImage: uploadedProfilePicture,
+    });
+    const result = await acceptPeerInvitation({ token, profilePictureUrl });
+    if (!result.ok) {
+      return res.status(409).json({ message: result.message || "This peer counselor invitation has already been used." });
+    }
+    return res.json({ message: result.message || "Invitation accepted." });
+  } catch (error) {
+    return res.status(400).json({ message: error?.message || "Unable to accept invitation." });
+  }
 });
 
 router.get("/peer-counselors/invitations/:token/decline", async (req, res) => {
@@ -1860,49 +2134,6 @@ router.get("/peer-counselors/invitations/:token/decline", async (req, res) => {
     ? await declinePeerInvitation(token)
     : { tone: "error", title: "Invitation not found", message: "This peer counselor invitation link is invalid." };
   return renderPeerInvitationResult(res, result);
-});
-
-router.get("/peer-counselors/google/callback", async (req, res) => {
-  const client = getPeerGoogleInviteClient(req);
-  if (!client) {
-    return renderPeerInvitationResult(res, {
-      tone: "error",
-      title: "Google sign-in unavailable",
-      message: "Google sign-in is not configured for peer counselor invitations.",
-    });
-  }
-
-  const code = String(req.query.code || "");
-  const state = String(req.query.state || "");
-  const inviteState = req.session.peerInviteState || {};
-  req.session.peerInviteState = null;
-
-  if (!code || !state || state !== inviteState.state || !inviteState.token) {
-    return renderPeerInvitationResult(res, {
-      tone: "error",
-      title: "Invalid invitation session",
-      message: "Please open the invitation link again and retry.",
-    });
-  }
-
-  try {
-    const { tokens } = await client.getToken(code);
-    client.setCredentials(tokens);
-    const oauth2 = google.oauth2({ version: "v2", auth: client });
-    const { data } = await oauth2.userinfo.get();
-    const result = await acceptPeerInvitation({
-      token: inviteState.token,
-      googleEmail: data?.email || "",
-      googlePictureUrl: data?.picture || "",
-    });
-    return renderPeerInvitationResult(res, result);
-  } catch (error) {
-    return renderPeerInvitationResult(res, {
-      tone: "error",
-      title: "Google sign-in failed",
-      message: error?.message || "Please open the invitation link again and retry.",
-    });
-  }
 });
 
 router.get("/counselors", async (_req, res) => {
@@ -2725,7 +2956,7 @@ router.get("/student", async (req, res) => {
         coalesce(nullif(aa.full_name, ''), pc.full_name, split_part(aa.email, '@', 1)) as counselor_name,
         case when coalesce(ca.support_type, 'GUIDANCE') = 'PEER' then 'PEER_COUNSELOR' else coalesce(aa.role, 'COUNSELOR') end as counselor_role,
         coalesce(aa.gender, pc.gender, 'Prefer not to say') as counselor_gender,
-        coalesce(nullif(aa.profile_picture_url, ''), nullif(pc.profile_picture_url, ''), nullif(pc.google_profile_picture_url, ''), '') as counselor_picture_url,
+        coalesce(nullif(aa.profile_picture_url, ''), nullif(pc.profile_picture_url, ''), '') as counselor_picture_url,
         coalesce(pc.student_number, '') as peer_student_number,
         coalesce(pc.program, '') as peer_program
       from public.counselor_appointments ca
@@ -3016,7 +3247,7 @@ router.get("/admin/peer-counselors", async (_req, res) => {
       studentNumber: row.student_number || "",
       program: row.program || "",
       pictureUrl: row.profile_picture_url || "",
-      googleProfilePictureUrl: row.google_profile_picture_url || "",
+      googleProfilePictureUrl: "",
       specialties: [],
       isActive: Boolean(row.is_active) && normalizePeerInvitationStatus(row.invitation_status, row.is_active ? "ACCEPTED" : "DECLINED") === "ACCEPTED",
       invitationStatus: normalizePeerInvitationStatus(row.invitation_status, row.is_active ? "ACCEPTED" : "DECLINED"),
@@ -3148,7 +3379,7 @@ router.post("/admin/peer-counselors", async (req, res) => {
       gender: peerCounselor.gender,
       studentNumber: peerCounselor.student_number || "",
       program: peerCounselor.program || "",
-      pictureUrl: peerCounselor.profile_picture_url || peerCounselor.google_profile_picture_url || "",
+      pictureUrl: peerCounselor.profile_picture_url || "",
       specialties: [],
       isActive: Boolean(peerCounselor.is_active) && invitationStatus === "ACCEPTED",
       invitationStatus,
@@ -3238,7 +3469,7 @@ router.patch("/admin/peer-counselors/:peerCounselorId", async (req, res) => {
       gender: peerCounselor.gender,
       studentNumber: peerCounselor.student_number || "",
       program: peerCounselor.program || "",
-      pictureUrl: peerCounselor.profile_picture_url || peerCounselor.google_profile_picture_url || "",
+      pictureUrl: peerCounselor.profile_picture_url || "",
       specialties: [],
       isActive: Boolean(peerCounselor.is_active) && invitationStatus === "ACCEPTED",
       invitationStatus,
