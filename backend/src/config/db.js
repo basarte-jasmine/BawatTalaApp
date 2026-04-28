@@ -437,6 +437,23 @@ async function ensureDatabaseSchema() {
   `);
 
   await pool.query(`
+    create table if not exists public.student_library_reading_rewards (
+      id uuid primary key default gen_random_uuid(),
+      student_number text not null,
+      book_id text not null,
+      book_title text,
+      reading_seconds integer not null default 300,
+      reward_tala integer not null default 20,
+      claimed_at timestamptz not null default now()
+    );
+  `);
+
+  await pool.query(`
+    create index if not exists student_library_reading_rewards_student_idx
+      on public.student_library_reading_rewards (student_number, claimed_at desc);
+  `);
+
+  await pool.query(`
     create table if not exists public.journal_entries (
       id uuid primary key default gen_random_uuid(),
       student_number text not null,

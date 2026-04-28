@@ -132,6 +132,26 @@ function safeFileName(value: string) {
   return String(value || "book").replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-|-$/g, "") || "book";
 }
 
+function getImageMimeType(path: string, fallbackMimeType = "") {
+  const lowerPath = String(path || "").toLowerCase();
+  if (fallbackMimeType) return fallbackMimeType;
+  if (lowerPath.endsWith(".png")) return "image/png";
+  if (lowerPath.endsWith(".webp")) return "image/webp";
+  if (lowerPath.endsWith(".gif")) return "image/gif";
+  return "image/jpeg";
+}
+
+function getImageFileExtension(path: string, mimeType: string) {
+  const lowerPath = String(path || "").toLowerCase();
+  if (lowerPath.endsWith(".png")) return "png";
+  if (lowerPath.endsWith(".webp")) return "webp";
+  if (lowerPath.endsWith(".gif")) return "gif";
+  if (mimeType.includes("png")) return "png";
+  if (mimeType.includes("webp")) return "webp";
+  if (mimeType.includes("gif")) return "gif";
+  return "jpg";
+}
+
 function isWebEpubUri(uri: string) {
   return String(uri || "").startsWith(WEB_EPUB_URI_PREFIX);
 }
@@ -248,12 +268,104 @@ export async function localFileExists(uri: string) {
   return Boolean(fileInfo.exists);
 }
 
+export async function deleteCachedEpubFile(uri: string) {
+  if (!uri) return;
+  if (isWebEpubUri(uri)) {
+    webEpubCache.delete(uri);
+    return;
+  }
+  if (isRemoteEpubUri(uri) || !FileSystem.documentDirectory) return;
+  await FileSystem.deleteAsync(uri, { idempotent: true });
+}
+
 export async function resolveBundledEpubUri(assetModule: number) {
   const asset = Asset.fromModule(assetModule);
   if (!asset.localUri) {
     await asset.downloadAsync();
   }
   return asset.localUri ?? asset.uri;
+}
+
+export async function readEpubCoverUriFromFile(fileUri: string, cacheKey: string) {
+  const zip = await loadEpubZip(fileUri);
+  const containerXml = await zip.file("META-INF/container.xml")?.async("string");
+  if (!containerXml) return "";
+
+  const parser = new DOMParser();
+  const containerDocument = parser.parseFromString(containerXml, "application/xml");
+  const rootfilePath = getElementAttribute(containerDocument.getElementsByTagName("rootfile").item(0), "full-path");
+  if (!rootfilePath) return "";
+
+  const opfXml = await zip.file(rootfilePath)?.async("string");
+  if (!opfXml) return "";
+
+  const opfDirectory = dirname(rootfilePath);
+  const opfDocument = parser.parseFromString(opfXml, "application/xml");
+  const manifestItems = Array.from({ length: opfDocument.getElementsByTagName("item").length }, (_, index) =>
+    opfDocument.getElementsByTagName("item").item(index),
+  ).filter(Boolean);
+  const manifestById = new Map(
+    manifestItems.map((item) => [
+      getElementAttribute(item, "id"),
+      {
+        href: getElementAttribute(item, "href"),
+        mediaType: getElementAttribute(item, "media-type"),
+        properties: getElementAttribute(item, "properties"),
+      },
+    ]),
+  );
+  const metaTags = Array.from({ length: opfDocument.getElementsByTagName("meta").length }, (_, index) =>
+    opfDocument.getElementsByTagName("meta").item(index),
+  ).filter(Boolean);
+  const coverMeta = metaTags.find((item) => getElementAttribute(item, "name").toLowerCase() === "cover");
+  const coverMetaId = getElementAttribute(coverMeta, "content");
+  const coverItem = coverMetaId ? manifestById.get(coverMetaId) : null;
+  const imageCandidates = [
+    coverItem,
+    ...manifestItems
+      .map((item) => ({
+        href: getElementAttribute(item, "href"),
+        mediaType: getElementAttribute(item, "media-type"),
+        properties: getElementAttribute(item, "properties"),
+      }))
+      .filter((item) => /image/i.test(item.mediaType))
+      .sort((left, right) => {
+        const leftScore = /cover/i.test(`${left.href} ${left.properties}`) ? 0 : 1;
+        const rightScore = /cover/i.test(`${right.href} ${right.properties}`) ? 0 : 1;
+        return leftScore - rightScore;
+      }),
+  ].filter((item): item is { href: string; mediaType: string; properties: string } => Boolean(item?.href));
+
+  const fallbackImagePaths = Object.keys(zip.files)
+    .filter((path) => /\.(jpe?g|png|webp|gif)$/i.test(path))
+    .sort((left, right) => {
+      const leftScore = /cover/i.test(left) ? 0 : 1;
+      const rightScore = /cover/i.test(right) ? 0 : 1;
+      return leftScore - rightScore;
+    })
+    .map((path) => ({ href: path, mediaType: getImageMimeType(path), properties: "" }));
+
+  for (const candidate of [...imageCandidates, ...fallbackImagePaths]) {
+    const directImagePath = normalizeZipPath(candidate.href);
+    const imagePath = zip.file(directImagePath) ? directImagePath : resolveZipPath(opfDirectory, candidate.href);
+    const imageFile = zip.file(imagePath);
+    if (!imageFile) continue;
+
+    const base64 = await imageFile.async("base64");
+    const mimeType = getImageMimeType(imagePath, candidate.mediaType);
+    if (Platform.OS === "web" || !FileSystem.cacheDirectory) {
+      return `data:${mimeType};base64,${base64}`;
+    }
+
+    const extension = getImageFileExtension(imagePath, mimeType);
+    const directory = `${FileSystem.cacheDirectory}library-covers/`;
+    await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
+    const coverUri = `${directory}${safeFileName(cacheKey)}.${extension}`;
+    await FileSystem.writeAsStringAsync(coverUri, base64, { encoding: FileSystem.EncodingType.Base64 });
+    return coverUri;
+  }
+
+  return "";
 }
 
 export async function readEpubPagesFromFile(fileUri: string, fallbackTitle: string): Promise<EpubReaderPage[]> {

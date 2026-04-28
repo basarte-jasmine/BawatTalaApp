@@ -14,6 +14,8 @@ const OPEN_LIBRARY_DOWNLOAD_PROBE_TIMEOUT_MS = 5000;
 const OPEN_LIBRARY_DOWNLOAD_STREAM_TIMEOUT_MS = 30000;
 const OPEN_LIBRARY_DOWNLOAD_CACHE_TTL_MS = 15 * 60 * 1000;
 const MAX_BOOK_RESULTS = 24;
+const READING_REWARD_SECONDS = 5 * 60;
+const READING_REWARD_TALA = 20;
 const ACCENT_COLORS = ["#D7F0B7", "#CFE6F8", "#E8D7F2", "#F8E8BE", "#D7EBE5", "#F1D4D4"];
 const openLibraryDownloadUrlCache = new Map();
 
@@ -26,6 +28,19 @@ function normalizeStudentNumber(value) {
   const match = compact.match(/^(\d{2})[- ]?(\d{4})$/);
   if (!match) return compact;
   return `${match[1]}-${match[2]}`;
+}
+
+function parseBookIds(value) {
+  return [...new Set(
+    String(value || "")
+      .split(",")
+      .map(normalizeCompactSpaces)
+      .filter(Boolean),
+  )].slice(0, 50);
+}
+
+function isBuiltInLibraryBook(bookId) {
+  return String(bookId || "").startsWith("builtin-");
 }
 
 function clampInteger(value, min, max, fallback) {
@@ -598,8 +613,8 @@ async function getOpenLibraryDisplayItems(items, maxResults) {
 function mapOpenLibraryBook(book, index, progressByBookId, downloadsByBookId) {
   const sourceId = book.sourceId || getOpenLibraryIaIdentifier(book);
   const id = getOpenLibraryBookId(book, sourceId, index);
-  const progress = progressByBookId.get(id) || null;
-  const download = downloadsByBookId.get(id) || null;
+  const download = downloadsByBookId.get(id) || downloadsByBookId.get(`source:${sourceId}`) || null;
+  const progress = progressByBookId.get(id) || progressByBookId.get(download?.bookId) || null;
   const authors = Array.isArray(book.author_name) && book.author_name.length ? book.author_name.join(", ") : "Open Library";
   const publishedDate = book.first_publish_year ? String(book.first_publish_year) : "";
   const title = book.title || "Untitled book";
@@ -676,6 +691,47 @@ function mapDownloadRow(row) {
   };
 }
 
+function mapShelfDownloadRow(row, index) {
+  const sourceId = row.source_id || "";
+  const progress = row.google_volume_id ? mapProgressRow(row) : null;
+
+  return {
+    accessLabel: "Saved EPUB",
+    accessType: "full",
+    accentColor: ACCENT_COLORS[index % ACCENT_COLORS.length],
+    actionLabel: "Read",
+    author: row.book_authors || "Open Library",
+    blurb: "A free full EPUB saved from Open Library for in-app reading.",
+    category: "Saved EPUB",
+    coverImageUrl: sourceId ? `https://archive.org/services/img/${encodeURIComponent(sourceId)}` : "",
+    downloadableEpub: true,
+    downloadablePdf: false,
+    downloaded: true,
+    downloadedAt: row.downloaded_at || null,
+    downloadUrl: row.download_url || "",
+    estimatedMinutes: 12,
+    externalReaderLink: sourceId ? getArchiveDetailsLink(sourceId) : "",
+    id: row.book_id,
+    infoLink: sourceId ? getArchiveDetailsLink(sourceId) : "",
+    isFreeEbook: true,
+    language: OPEN_LIBRARY_DEFAULT_LANGUAGE,
+    pageCount: 0,
+    previewLink: sourceId ? getArchiveDetailsLink(sourceId) : "",
+    provider: row.provider || "openlibrary",
+    publishedDate: "",
+    publisher: row.provider === "openlibrary" ? "Open Library" : "Library",
+    readerLink: row.download_url || "",
+    rewardLabel: progress?.rating ? `${progress.rating}/5 stars` : "Rate after reading",
+    shelfLabel: "Downloaded",
+    sourceId,
+    sourceReaderLink: sourceId ? getArchiveDetailsLink(sourceId) : "",
+    statusLabel: "Saved in account",
+    supportsInAppReader: true,
+    title: row.book_title || "Downloaded EPUB",
+    progress,
+  };
+}
+
 async function getStudentProgress(studentNumber, bookIds) {
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber) || !bookIds.length) {
     return new Map();
@@ -695,8 +751,8 @@ async function getStudentProgress(studentNumber, bookIds) {
   return new Map(result.rows.map((row) => [row.google_volume_id, mapProgressRow(row)]));
 }
 
-async function getStudentDownloads(studentNumber, bookIds) {
-  if (!STUDENT_NUMBER_PATTERN.test(studentNumber) || !bookIds.length) {
+async function getStudentDownloads(studentNumber, bookIds, sourceIds = []) {
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber) || (!bookIds.length && !sourceIds.length)) {
     return new Map();
   }
 
@@ -705,12 +761,59 @@ async function getStudentDownloads(studentNumber, bookIds) {
       select book_id, provider, source_id, download_url, downloaded_at
       from public.student_library_downloads
       where student_number = $1
-        and book_id = any($2::text[])
+        and (
+          book_id = any($2::text[])
+          or source_id = any($3::text[])
+        )
     `,
-    [studentNumber, bookIds],
+    [studentNumber, bookIds, sourceIds],
   );
 
-  return new Map(result.rows.map((row) => [row.book_id, mapDownloadRow(row)]));
+  const downloads = new Map();
+  result.rows.forEach((row) => {
+    const download = mapDownloadRow(row);
+    downloads.set(row.book_id, download);
+    if (row.source_id) {
+      downloads.set(`source:${row.source_id}`, download);
+    }
+  });
+  return downloads;
+}
+
+async function getStudentShelfDownloads(studentNumber) {
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return [];
+  }
+
+  const result = await query(
+    `
+      select d.book_id,
+             d.book_title,
+             d.book_authors,
+             d.provider,
+             d.source_id,
+             d.download_url,
+             d.downloaded_at,
+             p.google_volume_id,
+             p.current_page,
+             p.total_pages,
+             p.progress_percent,
+             p.status,
+             p.rating,
+             p.finished_at,
+             p.last_opened_at,
+             p.updated_at
+      from public.student_library_downloads d
+      left join public.student_library_progress p
+        on p.student_number = d.student_number
+       and p.google_volume_id = d.book_id
+      where d.student_number = $1
+      order by d.downloaded_at desc
+    `,
+    [studentNumber],
+  );
+
+  return result.rows.map(mapShelfDownloadRow);
 }
 
 async function hasStudentDownloadedBook(studentNumber, bookId) {
@@ -732,6 +835,13 @@ async function hasStudentDownloadedBook(studentNumber, bookId) {
   return result.rowCount > 0;
 }
 
+async function canUseInAppReader(studentNumber, bookId) {
+  if (isBuiltInLibraryBook(bookId)) {
+    return true;
+  }
+  return hasStudentDownloadedBook(studentNumber, bookId);
+}
+
 async function getStudentDownload(studentNumber, bookId) {
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber) || !bookId) {
     return null;
@@ -749,6 +859,52 @@ async function getStudentDownload(studentNumber, bookId) {
   );
 
   return mapDownloadRow(result.rows[0]);
+}
+
+async function getStudentDownloadBySourceId(studentNumber, sourceId) {
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber) || !sourceId) {
+    return null;
+  }
+
+  const result = await query(
+    `
+      select book_id, provider, source_id, download_url, downloaded_at
+      from public.student_library_downloads
+      where student_number = $1
+        and source_id = $2
+      order by downloaded_at desc
+      limit 1
+    `,
+    [studentNumber, sourceId],
+  );
+
+  return mapDownloadRow(result.rows[0]);
+}
+
+async function deleteStudentDownload(studentNumber, bookId) {
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber) || !bookId || isBuiltInLibraryBook(bookId)) {
+    return 0;
+  }
+
+  const result = await query(
+    `
+      delete from public.student_library_downloads
+      where student_number = $1
+        and book_id = $2
+    `,
+    [studentNumber, bookId],
+  );
+
+  await query(
+    `
+      delete from public.student_library_progress
+      where student_number = $1
+        and google_volume_id = $2
+    `,
+    [studentNumber, bookId],
+  );
+
+  return result.rowCount;
 }
 
 async function updateStudentDownloadUrl(studentNumber, bookId, downloadUrl) {
@@ -954,6 +1110,42 @@ async function upsertProgress({
   return mapProgressRow(result.rows[0]);
 }
 
+async function grantReadingReward({ bookId, bookTitle, readingSeconds, studentNumber }) {
+  await query(
+    `
+      insert into public.student_library_reading_rewards (
+        student_number,
+        book_id,
+        book_title,
+        reading_seconds,
+        reward_tala,
+        claimed_at
+      )
+      values ($1, $2, $3, $4, $5, now())
+    `,
+    [studentNumber, bookId, bookTitle || null, readingSeconds, READING_REWARD_TALA],
+  );
+
+  const result = await query(
+    `
+      insert into public.student_tala_wallets (
+        student_number,
+        total_tala,
+        updated_at
+      )
+      values ($1, $2, now())
+      on conflict (student_number)
+      do update set
+        total_tala = public.student_tala_wallets.total_tala + excluded.total_tala,
+        updated_at = now()
+      returning total_tala
+    `,
+    [studentNumber, READING_REWARD_TALA],
+  );
+
+  return Number(result.rows[0]?.total_tala || 0);
+}
+
 router.get("/books", async (req, res) => {
   const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
   const maxResults = clampInteger(Number(req.query.maxResults || MAX_BOOK_RESULTS), 1, 40, MAX_BOOK_RESULTS);
@@ -977,10 +1169,13 @@ router.get("/books", async (req, res) => {
     const bookIds = selectedItems
       .map((item, index) => getOpenLibraryBookId(item, item.sourceId, index))
       .filter(Boolean);
-    const [progressByBookId, downloadsByBookId] = await Promise.all([
-      getStudentProgress(studentNumber, bookIds),
-      getStudentDownloads(studentNumber, bookIds),
-    ]);
+    const sourceIds = selectedItems.map((item) => item.sourceId).filter(Boolean);
+    const downloadsByBookId = await getStudentDownloads(studentNumber, bookIds, sourceIds);
+    const progressBookIds = [
+      ...bookIds,
+      ...Array.from(downloadsByBookId.values()).map((download) => download?.bookId).filter(Boolean),
+    ];
+    const progressByBookId = await getStudentProgress(studentNumber, [...new Set(progressBookIds)]);
     const books = selectedItems.map((item, index) => mapOpenLibraryBook(item, index, progressByBookId, downloadsByBookId));
 
     return res.json({
@@ -990,6 +1185,29 @@ router.get("/books", async (req, res) => {
     });
   } catch (error) {
     return res.status(502).json({ message: error.message || "Failed to load library books." });
+  }
+});
+
+router.get("/my-shelf", async (req, res) => {
+  const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
+  const builtInBookIds = parseBookIds(req.query.builtInBookIds || "");
+
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "Valid student number is required." });
+  }
+
+  try {
+    const [books, builtInProgress] = await Promise.all([
+      getStudentShelfDownloads(studentNumber),
+      getStudentProgress(studentNumber, builtInBookIds),
+    ]);
+
+    return res.json({
+      books,
+      progressByBookId: Object.fromEntries(builtInProgress.entries()),
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message || "Failed to load your shelf." });
   }
 });
 
@@ -1015,6 +1233,15 @@ router.post("/download", async (req, res) => {
   }
 
   try {
+    const existingDownload = await getStudentDownload(studentNumber, bookId) || await getStudentDownloadBySourceId(studentNumber, sourceId);
+    if (existingDownload) {
+      return res.json({
+        alreadyDownloaded: true,
+        download: existingDownload,
+        message: "This book is already in My Shelf.",
+      });
+    }
+
     const downloadUrl = await fetchOpenLibraryEpubDownloadUrl(sourceId);
     if (!downloadUrl) {
       return res.status(502).json({ message: "No download link is available for this book right now." });
@@ -1036,6 +1263,31 @@ router.post("/download", async (req, res) => {
     });
   } catch (error) {
     return res.status(502).json({ message: error.message || "Failed to download this book." });
+  }
+});
+
+router.delete("/download", async (req, res) => {
+  const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
+  const bookId = normalizeCompactSpaces(req.query.bookId || "");
+
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "Valid student number is required." });
+  }
+  if (!bookId) {
+    return res.status(400).json({ message: "Book id is required." });
+  }
+  if (isBuiltInLibraryBook(bookId)) {
+    return res.status(400).json({ message: "Built-in books cannot be removed from My Shelf." });
+  }
+
+  try {
+    const removedCount = await deleteStudentDownload(studentNumber, bookId);
+    return res.json({
+      message: removedCount > 0 ? "Book removed from My Shelf." : "This book was not in My Shelf.",
+      removed: removedCount > 0,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message || "Failed to remove this book." });
   }
 });
 
@@ -1094,8 +1346,8 @@ router.post("/progress", async (req, res) => {
   }
 
   try {
-    const downloaded = await hasStudentDownloadedBook(studentNumber, bookId);
-    if (!downloaded) {
+    const canReadInApp = await canUseInAppReader(studentNumber, bookId);
+    if (!canReadInApp) {
       return res.status(403).json({ message: "Download this book before opening the reader." });
     }
 
@@ -1112,6 +1364,45 @@ router.post("/progress", async (req, res) => {
     return res.json({ message: "Reading progress saved.", progress });
   } catch (error) {
     return res.status(500).json({ message: error.message || "Failed to save reading progress." });
+  }
+});
+
+router.post("/reading-reward", async (req, res) => {
+  const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
+  const bookId = normalizeCompactSpaces(req.body.bookId || "");
+  const bookTitle = normalizeCompactSpaces(req.body.bookTitle || "");
+  const readingSeconds = clampInteger(Number(req.body.readingSeconds), 0, 24 * 60 * 60, 0);
+
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "Valid student number is required." });
+  }
+  if (!bookId) {
+    return res.status(400).json({ message: "Book id is required." });
+  }
+  if (readingSeconds < READING_REWARD_SECONDS) {
+    return res.status(400).json({ message: "Read for 5 minutes before claiming this reward." });
+  }
+
+  try {
+    const canReadInApp = await canUseInAppReader(studentNumber, bookId);
+    if (!canReadInApp) {
+      return res.status(403).json({ message: "Download this book before claiming reading rewards." });
+    }
+
+    const totalTala = await grantReadingReward({
+      bookId,
+      bookTitle,
+      readingSeconds,
+      studentNumber,
+    });
+
+    return res.json({
+      message: `You earned +${READING_REWARD_TALA} Tala for reading.`,
+      rewardTala: READING_REWARD_TALA,
+      totalTala,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message || "Failed to claim reading reward." });
   }
 });
 
@@ -1133,8 +1424,8 @@ router.post("/rating", async (req, res) => {
   }
 
   try {
-    const downloaded = await hasStudentDownloadedBook(studentNumber, bookId);
-    if (!downloaded) {
+    const canReadInApp = await canUseInAppReader(studentNumber, bookId);
+    if (!canReadInApp) {
       return res.status(403).json({ message: "Download this book before rating it." });
     }
 

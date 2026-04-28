@@ -459,19 +459,34 @@ export async function downloadLibraryBook(payload: {
   sourceId?: string;
   sourceReaderLink?: string;
   studentNumber: string;
-}): Promise<ApiResult & { download?: { bookId: string; downloadedAt?: string | null; downloadUrl?: string } | null }> {
+}): Promise<ApiResult & { alreadyDownloaded?: boolean; download?: { bookId: string; downloadedAt?: string | null; downloadUrl?: string } | null }> {
   const { response, data } = await post("/api/library/download", payload as unknown as Record<string, unknown>);
   const download = data?.download
     ? {
         ...data.download,
-        downloadUrl: buildLibraryBookFileUrl(payload.studentNumber, payload.bookId),
+        downloadUrl: buildLibraryBookFileUrl(payload.studentNumber, data.download.bookId ?? payload.bookId),
       }
     : null;
 
   return {
     ok: response.ok,
+    alreadyDownloaded: Boolean(data?.alreadyDownloaded),
     message: data?.message,
     download,
+  };
+}
+
+export async function removeLibraryBookFromShelf(
+  studentNumber: string,
+  bookId: string,
+): Promise<ApiResult & { removed?: boolean }> {
+  const params = new URLSearchParams({ bookId, studentNumber });
+  const { response, data } = await del(`/api/library/download?${params.toString()}`);
+
+  return {
+    ok: response.ok,
+    message: data?.message,
+    removed: Boolean(data?.removed),
   };
 }
 
