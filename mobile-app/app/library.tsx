@@ -3,7 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { ActivityIndicator, Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { useAuthSession } from "../lib/auth-session";
@@ -50,7 +50,19 @@ async function saveStoredEpubFile(studentNumber: string | undefined, bookId: str
 }
 
 function isEpubBook(book: LibraryBookRecord) {
-  return Boolean(book.downloadableEpub);
+  return Boolean(book.downloadableEpub || book.supportsInAppReader);
+}
+
+function getExternalReaderUrl(book: LibraryBookRecord) {
+  return book.externalReaderLink || book.sourceReaderLink || book.previewLink || book.infoLink || "";
+}
+
+function getBookActionLabel(book: LibraryBookRecord) {
+  if (book.actionLabel) return book.actionLabel;
+  if (book.accessType === "borrow") return "Borrow";
+  if (book.accessType === "waitlist") return "Join waitlist";
+  if (book.accessType === "preview") return "Preview";
+  return "Open Library";
 }
 
 function buildFallbackReaderPages(book: LibraryBookRecord): ReaderPage[] {
@@ -110,7 +122,7 @@ export default function LibraryScreen() {
     [books, selectedBookId],
   );
   const downloadedCount = books.filter((book) => book.localEpubUri).length;
-  const waitingCount = books.filter((book) => isEpubBook(book) && !book.localEpubUri).length;
+  const onlineCount = books.filter((book) => !isEpubBook(book) && getExternalReaderUrl(book)).length;
 
   const currentPage = readerPages[readerPageIndex] ?? null;
   const canGoPreviousPage = readerPageIndex > 0;
@@ -306,12 +318,41 @@ export default function LibraryScreen() {
     }
   };
 
+  const handleOpenExternalBook = async (book: LibraryBookRecord) => {
+    const url = getExternalReaderUrl(book);
+    if (!url) {
+      setLibraryActionTone("error");
+      setLibraryActionMessage("Open Library did not provide a reader link for this title.");
+      return;
+    }
+
+    setLibraryActionTone("success");
+    setLibraryActionMessage("Opening Open Library...");
+    try {
+      await Linking.openURL(url);
+    } catch {
+      setLibraryActionTone("error");
+      setLibraryActionMessage("Unable to open this Open Library link.");
+    }
+  };
+
+  const handlePrimaryBookAction = async (book: LibraryBookRecord) => {
+    if (book.localEpubUri) {
+      await handleOpenBook(book.id);
+      return;
+    }
+    if (isEpubBook(book)) {
+      await handleDownloadBook(book);
+      return;
+    }
+    await handleOpenExternalBook(book);
+  };
+
   const handleOpenBook = async (bookId: string) => {
     const book = books.find((item) => item.id === bookId);
     if (!book) return;
     if (!isEpubBook(book)) {
-      setLibraryActionTone("error");
-      setLibraryActionMessage("Only EPUB books can be read inside the app right now.");
+      await handleOpenExternalBook(book);
       return;
     }
     if (!book.localEpubUri) {
@@ -404,9 +445,22 @@ export default function LibraryScreen() {
     const supportsInAppReader = isEpubBook(book);
     const isDownloaded = Boolean(book.localEpubUri);
     const isDownloading = activeDownloadBookId === book.id;
+    const externalReaderUrl = getExternalReaderUrl(book);
+    const actionLabel = getBookActionLabel(book);
+    const accessIconName = (
+      isDownloaded
+        ? "cloud-done-outline"
+        : supportsInAppReader
+          ? "cloud-download-outline"
+          : book.accessType === "waitlist"
+            ? "hourglass-outline"
+            : book.accessType === "preview"
+              ? "eye-outline"
+              : "open-outline"
+    ) as keyof typeof Ionicons.glyphMap;
 
     return (
-      <Pressable key={book.id} style={[styles.bookCard, compact && styles.bookCardCompact]} onPress={() => void handleOpenBook(book.id)}>
+      <Pressable key={book.id} style={[styles.bookCard, compact && styles.bookCardCompact]} onPress={() => void handlePrimaryBookAction(book)}>
         <View style={[styles.bookSpine, { backgroundColor: book.accentColor }]} />
 
         <View style={styles.bookCardTopRow}>
@@ -414,7 +468,7 @@ export default function LibraryScreen() {
             <Text style={styles.bookTagText}>{book.shelfLabel}</Text>
           </View>
           <Text style={[styles.bookStatusText, isFinished && styles.bookStatusTextDone, (!isDownloaded || !supportsInAppReader) && styles.bookStatusTextLocked]}>
-            {isFinished ? "Finished" : isDownloaded ? "Ready to read" : supportsInAppReader ? "Download EPUB" : "EPUB only"}
+            {isFinished ? "Finished" : isDownloaded ? "Ready to read" : book.statusLabel || (supportsInAppReader ? "Download EPUB" : "Open Library")}
           </Text>
         </View>
 
@@ -450,8 +504,8 @@ export default function LibraryScreen() {
                 <Text style={styles.bookMetaText}>{book.rewardLabel}</Text>
               </View>
               <View style={styles.bookMetaPill}>
-                <Ionicons name={isDownloaded ? "cloud-done-outline" : "cloud-download-outline"} size={14} color="#6D675A" />
-                <Text style={styles.bookMetaText}>{isDownloaded ? "Saved in app" : supportsInAppReader ? "EPUB" : "Unsupported format"}</Text>
+                <Ionicons name={accessIconName} size={14} color="#6D675A" />
+                <Text style={styles.bookMetaText}>{isDownloaded ? "Saved in app" : supportsInAppReader ? "Free EPUB" : book.accessLabel || "Open Library"}</Text>
               </View>
               {progressPercent > 0 ? (
                 <View style={styles.bookMetaPill}>
@@ -467,10 +521,10 @@ export default function LibraryScreen() {
                   <Ionicons name="book-outline" size={15} color="#FFFFFF" />
                   <Text style={styles.bookReadButtonText}>Read</Text>
                 </Pressable>
-              ) : (
+              ) : supportsInAppReader ? (
                 <Pressable
-                  style={[styles.bookDownloadButton, (isDownloading || !supportsInAppReader) && styles.bookActionButtonDisabled]}
-                  disabled={isDownloading || !supportsInAppReader}
+                  style={[styles.bookDownloadButton, isDownloading && styles.bookActionButtonDisabled]}
+                  disabled={isDownloading}
                   onPress={() => void handleDownloadBook(book)}
                 >
                   {isDownloading ? (
@@ -479,8 +533,18 @@ export default function LibraryScreen() {
                     <Ionicons name="download-outline" size={15} color="#4D6243" />
                   )}
                   <Text style={styles.bookDownloadButtonText}>
-                    {isDownloading ? "Downloading" : supportsInAppReader ? "Download EPUB" : "EPUB only"}
+                    {isDownloading ? "Downloading" : "Download EPUB"}
                   </Text>
+                </Pressable>
+              ) : externalReaderUrl ? (
+                <Pressable style={styles.bookExternalButton} onPress={() => void handleOpenExternalBook(book)}>
+                  <Ionicons name="open-outline" size={15} color="#FFFFFF" />
+                  <Text style={styles.bookExternalButtonText}>{actionLabel}</Text>
+                </Pressable>
+              ) : (
+                <Pressable style={[styles.bookDownloadButton, styles.bookActionButtonDisabled]} disabled>
+                  <Ionicons name="alert-circle-outline" size={15} color="#4D6243" />
+                  <Text style={styles.bookDownloadButtonText}>Unavailable</Text>
                 </Pressable>
               )}
             </View>
@@ -515,7 +579,7 @@ export default function LibraryScreen() {
                 <Text style={styles.heroBadge}>Reading Room</Text>
                 <Text style={[styles.heroTitle, compact && styles.heroTitleCompact]}>A warmer shelf for slow, comforting reading.</Text>
                 <Text style={[styles.heroBody, compact && styles.heroBodyCompact]}>
-                  Search EPUB books, save them in the app, and read them directly inside Bawat Tala.
+                  Search Open Library books, read free EPUBs inside Bawat Tala, or open borrow and preview titles with your account.
                 </Text>
               </View>
 
@@ -536,8 +600,8 @@ export default function LibraryScreen() {
                 <Text style={styles.heroStatLabel}>Downloaded</Text>
               </View>
               <View style={[styles.heroStatPill, compact && styles.heroStatPillCompact]}>
-                <Text style={styles.heroStatValue}>{waitingCount}</Text>
-                <Text style={styles.heroStatLabel}>Need download</Text>
+                <Text style={styles.heroStatValue}>{onlineCount}</Text>
+                <Text style={styles.heroStatLabel}>Open online</Text>
               </View>
             </View>
           </View>
@@ -546,7 +610,7 @@ export default function LibraryScreen() {
             <Text style={styles.introEyebrow}>Settle In</Text>
             <Text style={styles.introTitle}>Browse the shelf, then step into reader mode.</Text>
             <Text style={styles.introBody}>
-              EPUB downloads stay in the app library. Progress and ratings are still saved to your account.
+              Free EPUB downloads stay in the app library. Borrow, waitlist, and preview books open through Open Library.
             </Text>
           </View>
 
@@ -583,7 +647,7 @@ export default function LibraryScreen() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>{submittedQuery ? "Search Results" : "Featured Shelf"}</Text>
             <Text style={styles.sectionSubTitle}>
-              {submittedQuery ? `Showing EPUB matches for "${submittedQuery}".` : "Download an EPUB before reader mode opens."}
+              {submittedQuery ? `Showing Open Library matches for "${submittedQuery}".` : "Download free EPUBs here, or open borrow and preview books online."}
             </Text>
           </View>
 
@@ -608,7 +672,7 @@ export default function LibraryScreen() {
             ) : (
               <View style={styles.emptyCard}>
                 <Text style={styles.emptyTitle}>No books found</Text>
-                <Text style={styles.emptyText}>Try again in a moment. The configured catalog may be returning fewer results right now.</Text>
+                <Text style={styles.emptyText}>Try another title, author, or ISBN. Open Library may not have an online reader for every result.</Text>
               </View>
             )
           )}
@@ -1315,6 +1379,22 @@ const styles = StyleSheet.create({
   },
   bookDownloadButtonText: {
     color: "#4D6243",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
+  },
+  bookExternalButton: {
+    minHeight: 38,
+    borderRadius: 999,
+    backgroundColor: "#4E7E9E",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 6,
+    paddingHorizontal: 15,
+  },
+  bookExternalButtonText: {
+    color: "#FFFFFF",
     fontSize: 13,
     lineHeight: 18,
     fontWeight: "700",

@@ -288,10 +288,174 @@ function getOpenLibraryIaIdentifier(book) {
   return pickString(book.availability || {}, ["identifier"]) || (Array.isArray(book.ia) ? book.ia.find(Boolean) : "");
 }
 
+function normalizeOpenLibraryStatus(value) {
+  return normalizeCompactSpaces(value).toLowerCase().replace(/[_-]+/g, " ");
+}
+
 function isOpenLibraryFreeFullBook(book) {
   const availability = book.availability || {};
-  const status = String(availability.status || "").toLowerCase();
-  return Boolean(book.has_fulltext && book.public_scan_b && (status === "open" || availability.is_readable || availability.is_previewable));
+  const status = normalizeOpenLibraryStatus(availability.status || "");
+  const ebookAccess = normalizeOpenLibraryStatus(book.ebook_access || "");
+  return Boolean(
+    book.has_fulltext &&
+      book.public_scan_b &&
+      (status === "open" || status === "full access" || ebookAccess === "public" || availability.is_readable),
+  );
+}
+
+function normalizeOpenLibraryLink(value) {
+  const compact = normalizeCompactSpaces(value);
+  if (!compact) return "";
+  if (/^https?:\/\//i.test(compact)) return normalizeHttpUrl(compact);
+  if (compact.startsWith("/")) return `https://openlibrary.org${compact}`;
+  return "";
+}
+
+function pickOpenLibraryLink(source, keys) {
+  for (const key of keys) {
+    const value = source?.[key];
+    if (Array.isArray(value)) {
+      const found = value.map(normalizeOpenLibraryLink).find(Boolean);
+      if (found) return found;
+      continue;
+    }
+    const link = normalizeOpenLibraryLink(value);
+    if (link) return link;
+  }
+  return "";
+}
+
+function getOpenLibraryInfoLink(book) {
+  const keyLink = normalizeOpenLibraryLink(book.key || "");
+  if (keyLink) return keyLink;
+  const availability = book.availability || {};
+  const editionId = pickString(availability, ["openlibrary_edition"]);
+  if (editionId) return normalizeOpenLibraryLink(editionId.startsWith("/") ? editionId : `/books/${editionId}`);
+  const workId = pickString(availability, ["openlibrary_work"]);
+  if (workId) return normalizeOpenLibraryLink(workId.startsWith("/") ? workId : `/works/${workId}`);
+  return "";
+}
+
+function getArchiveDetailsLink(sourceId) {
+  return sourceId ? `https://archive.org/details/${encodeURIComponent(sourceId)}` : "";
+}
+
+function getOpenLibraryExternalReaderLink(book, sourceId, accessType = "") {
+  const availability = book.availability || {};
+  const preferredKeys = {
+    borrow: ["borrow_url", "read_url", "web_url", "url", "info_url"],
+    waitlist: ["borrow_url", "read_url", "web_url", "url", "info_url"],
+    preview: ["preview_url", "read_url", "web_url", "url", "info_url"],
+    full: ["read_url", "web_url", "url", "info_url"],
+  }[accessType] || ["read_url", "borrow_url", "preview_url", "web_url", "url", "info_url"];
+  return pickOpenLibraryLink(availability, preferredKeys) || getOpenLibraryInfoLink(book) || getArchiveDetailsLink(sourceId);
+}
+
+function getOpenLibraryAccess(book, sourceId, hasDownloadableEpub = false) {
+  const availability = book.availability || {};
+  const status = normalizeOpenLibraryStatus(availability.status || "");
+  const ebookAccess = normalizeOpenLibraryStatus(book.ebook_access || "");
+  const isCheckedOut = status.includes("checked out") || status.includes("unavailable") || ebookAccess.includes("unavailable");
+  const isWaitlist = Boolean(availability.available_to_waitlist || status.includes("waitlist") || ebookAccess.includes("waitlist") || isCheckedOut);
+  const isBorrowable = Boolean(
+    availability.available_to_borrow ||
+      availability.is_lendable ||
+      status === "lendable" ||
+      ebookAccess === "borrowable" ||
+      (status.includes("borrow") && !isCheckedOut),
+  );
+  const isPreviewable = Boolean(
+    availability.is_previewable ||
+      availability.is_restricted ||
+      availability.is_printdisabled ||
+      status.includes("preview") ||
+      status.includes("restricted") ||
+      ebookAccess.includes("printdisabled") ||
+      ebookAccess.includes("restricted"),
+  );
+  const isReadableOnline = Boolean(
+    availability.is_readable || availability.available_to_browse || book.has_fulltext || ebookAccess === "public" || ebookAccess === "borrowable",
+  );
+
+  if (hasDownloadableEpub) {
+    return {
+      accessLabel: "Free EPUB",
+      accessType: "full",
+      actionLabel: "Download EPUB",
+      description: "A free full-text public scan from Open Library and the Internet Archive.",
+      externalReaderLink: getOpenLibraryExternalReaderLink(book, sourceId, "full"),
+      shelfLabel: "Free full EPUB",
+      statusLabel: "Download EPUB",
+      supportsInAppReader: true,
+    };
+  }
+
+  if (isOpenLibraryFreeFullBook(book)) {
+    return {
+      accessLabel: "Free online",
+      accessType: "full",
+      actionLabel: "Read Online",
+      description: "A free public scan is available through Open Library.",
+      externalReaderLink: getOpenLibraryExternalReaderLink(book, sourceId, "full"),
+      shelfLabel: "Free online",
+      statusLabel: "Open online",
+      supportsInAppReader: false,
+    };
+  }
+
+  if (isWaitlist) {
+    return {
+      accessLabel: "Waitlist",
+      accessType: "waitlist",
+      actionLabel: "Join waitlist",
+      description: "This title is checked out, but Open Library may let you join the waitlist after signing in.",
+      externalReaderLink: getOpenLibraryExternalReaderLink(book, sourceId, "waitlist"),
+      shelfLabel: "Waitlist",
+      statusLabel: "Currently checked out",
+      supportsInAppReader: false,
+    };
+  }
+
+  if (isBorrowable) {
+    return {
+      accessLabel: "Borrow",
+      accessType: "borrow",
+      actionLabel: "Borrow",
+      description: "Borrow this through Open Library using your Open Library account.",
+      externalReaderLink: getOpenLibraryExternalReaderLink(book, sourceId, "borrow"),
+      shelfLabel: "Borrowable",
+      statusLabel: "Open Library account",
+      supportsInAppReader: false,
+    };
+  }
+
+  if (isPreviewable || status === "restricted") {
+    return {
+      accessLabel: "Preview",
+      accessType: "preview",
+      actionLabel: "Preview",
+      description: "Open Library has a preview for this title, but not a free full EPUB for in-app reading.",
+      externalReaderLink: getOpenLibraryExternalReaderLink(book, sourceId, "preview"),
+      shelfLabel: "Preview Only",
+      statusLabel: "Preview on Open Library",
+      supportsInAppReader: false,
+    };
+  }
+
+  if (isReadableOnline) {
+    return {
+      accessLabel: "Read online",
+      accessType: "online",
+      actionLabel: "Read Online",
+      description: "Open Library lists an online reader for this title.",
+      externalReaderLink: getOpenLibraryExternalReaderLink(book, sourceId, "full"),
+      shelfLabel: "Read online",
+      statusLabel: "Open online",
+      supportsInAppReader: false,
+    };
+  }
+
+  return null;
 }
 
 function getOpenLibraryBookId(book, sourceId, index) {
@@ -353,33 +517,40 @@ async function fetchOpenLibraryEpubDownloadUrl(sourceId) {
   return downloadUrl;
 }
 
-async function getDownloadableOpenLibraryItems(items, maxResults) {
-  const candidates = items.filter((item) => isOpenLibraryFreeFullBook(item) && getOpenLibraryIaIdentifier(item));
-  const downloadableItems = [];
-  const batchSize = clampInteger(Number(process.env.OPEN_LIBRARY_DOWNLOADABLE_CHECK_BATCH_SIZE), 1, 6, 3);
+async function resolveOpenLibraryDisplayItem(item) {
+  const sourceId = getOpenLibraryIaIdentifier(item);
+  let access = getOpenLibraryAccess(item, sourceId);
+  if (!access) return null;
 
-  for (let index = 0; index < candidates.length && downloadableItems.length < maxResults; index += batchSize) {
-    const batch = candidates.slice(index, index + batchSize);
-    const results = await Promise.all(
-      batch.map(async (item) => {
-        try {
-          const sourceId = getOpenLibraryIaIdentifier(item);
-          const downloadUrl = await fetchOpenLibraryEpubDownloadUrl(sourceId);
-          return { ...item, sourceId, downloadUrl };
-        } catch {
-          return null;
-        }
-      }),
-    );
-
-    for (const item of results) {
-      if (!item) continue;
-      downloadableItems.push(item);
-      if (downloadableItems.length >= maxResults) break;
+  if (isOpenLibraryFreeFullBook(item) && sourceId) {
+    try {
+      const downloadUrl = await fetchOpenLibraryEpubDownloadUrl(sourceId);
+      access = getOpenLibraryAccess(item, sourceId, true);
+      return { ...item, access, downloadUrl, sourceId };
+    } catch {
+      return { ...item, access, sourceId };
     }
   }
 
-  return downloadableItems;
+  return { ...item, access, sourceId };
+}
+
+async function getOpenLibraryDisplayItems(items, maxResults) {
+  const displayItems = [];
+  const batchSize = clampInteger(Number(process.env.OPEN_LIBRARY_DOWNLOADABLE_CHECK_BATCH_SIZE), 1, 6, 3);
+
+  for (let index = 0; index < items.length && displayItems.length < maxResults; index += batchSize) {
+    const batch = items.slice(index, index + batchSize);
+    const results = await Promise.all(batch.map(resolveOpenLibraryDisplayItem));
+
+    for (const item of results) {
+      if (!item) continue;
+      displayItems.push(item);
+      if (displayItems.length >= maxResults) break;
+    }
+  }
+
+  return displayItems;
 }
 
 function mapOpenLibraryBook(book, index, progressByBookId, downloadsByBookId) {
@@ -390,38 +561,48 @@ function mapOpenLibraryBook(book, index, progressByBookId, downloadsByBookId) {
   const authors = Array.isArray(book.author_name) && book.author_name.length ? book.author_name.join(", ") : "Open Library";
   const publishedDate = book.first_publish_year ? String(book.first_publish_year) : "";
   const title = book.title || "Untitled book";
+  const hasDownloadableEpub = Boolean(download?.downloadUrl || book.downloadUrl);
+  const access = book.access || getOpenLibraryAccess(book, sourceId, hasDownloadableEpub) || {};
+  const externalReaderLink = access.externalReaderLink || getOpenLibraryExternalReaderLink(book, sourceId, access.accessType);
 
   return {
+    accessLabel: access.accessLabel || "Open Library",
+    accessType: access.accessType || "catalog",
     accentColor: ACCENT_COLORS[index % ACCENT_COLORS.length],
+    actionLabel: access.actionLabel || "View Details",
     author: authors,
     blurb: truncateText(
       [
         publishedDate ? `First published in ${publishedDate}.` : "",
-        `A free full-text public scan from Open Library and the Internet Archive.`,
+        access.description || `A title from Open Library and the Internet Archive.`,
       ].filter(Boolean).join(" "),
       650,
     ),
     category: getOpenLibraryCategory(book),
     coverImageUrl: getOpenLibraryCoverUrl(book, sourceId),
-    downloadableEpub: true,
+    downloadableEpub: hasDownloadableEpub,
     downloadablePdf: false,
     estimatedMinutes: 12,
+    externalReaderLink,
     id,
     downloaded: Boolean(download),
     downloadedAt: download?.downloadedAt || null,
     downloadUrl: download?.downloadUrl || book.downloadUrl || "",
-    infoLink: book.key ? `https://openlibrary.org${book.key}` : "",
-    isFreeEbook: true,
+    infoLink: getOpenLibraryInfoLink(book),
+    isFreeEbook: access.accessType === "full",
     language: OPEN_LIBRARY_DEFAULT_LANGUAGE,
     pageCount: 0,
-    previewLink: sourceId ? `https://archive.org/details/${encodeURIComponent(sourceId)}` : "",
+    previewLink: externalReaderLink,
     provider: "openlibrary",
     publishedDate,
     publisher: "Open Library",
     readerLink: download?.downloadUrl || book.downloadUrl || "",
     rewardLabel: progress?.rating ? `${progress.rating}/5 stars` : "Rate after reading",
-    shelfLabel: download ? "Downloaded" : "Free full EPUB",
+    shelfLabel: download ? "Downloaded" : access.shelfLabel || "Open Library",
     sourceId,
+    sourceReaderLink: externalReaderLink,
+    statusLabel: access.statusLabel || "Open Library",
+    supportsInAppReader: Boolean(access.supportsInAppReader || hasDownloadableEpub),
     title,
     progress,
   };
@@ -739,7 +920,7 @@ router.get("/books", async (req, res) => {
 
   try {
     const params = new URLSearchParams({
-      fields: "key,title,author_name,cover_i,first_publish_year,subject,ia,has_fulltext,public_scan_b,availability",
+      fields: "key,title,author_name,cover_i,first_publish_year,subject,ia,has_fulltext,public_scan_b,ebook_access,availability",
       lang: "en",
       limit: String(searchLimit),
       page: String(clampInteger(Number(req.query.page || 1), 1, 100, 1)),
@@ -750,7 +931,7 @@ router.get("/books", async (req, res) => {
       headers: getOpenLibraryHeaders(),
       serviceName: "Open Library",
     });
-    const selectedItems = await getDownloadableOpenLibraryItems(Array.isArray(data.docs) ? data.docs : [], maxResults);
+    const selectedItems = await getOpenLibraryDisplayItems(Array.isArray(data.docs) ? data.docs : [], maxResults);
     const bookIds = selectedItems
       .map((item, index) => getOpenLibraryBookId(item, item.sourceId, index))
       .filter(Boolean);

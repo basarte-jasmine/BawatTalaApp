@@ -92,7 +92,10 @@ export type LibraryBookProgress = {
 };
 
 export type LibraryBookRecord = {
+  accessLabel?: string;
+  accessType?: "full" | "borrow" | "waitlist" | "preview" | "online" | "catalog";
   accentColor: string;
+  actionLabel?: string;
   author: string;
   blurb: string;
   category: string;
@@ -103,6 +106,7 @@ export type LibraryBookRecord = {
   downloadedAt?: string | null;
   downloadUrl?: string;
   estimatedMinutes: number;
+  externalReaderLink?: string;
   id: string;
   infoLink?: string;
   isFreeEbook?: boolean;
@@ -119,6 +123,8 @@ export type LibraryBookRecord = {
   shelfLabel: string;
   sourceId?: string;
   sourceReaderLink?: string;
+  statusLabel?: string;
+  supportsInAppReader?: boolean;
   title: string;
 };
 
