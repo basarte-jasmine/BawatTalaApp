@@ -34,6 +34,16 @@ function parseModelList(value, defaults) {
   );
 }
 
+function parseConfiguredModelList(value, defaults) {
+  const configured = String(value || "")
+    .split(",")
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  const selected = configured.length ? configured : defaults;
+
+  return selected.filter((model, index, items) => model && items.indexOf(model) === index);
+}
+
 const GEMINI_CHAT_MODELS = parseModelList(
   process.env.GEMINI_CHAT_MODELS ||
     process.env.GEMINI_CHAT_MODEL ||
@@ -58,11 +68,11 @@ const GROQ_INSIGHTS_MODELS = parseModelList(
   process.env.GROQ_INSIGHTS_MODELS || process.env.GROQ_INSIGHTS_MODEL,
   ["llama-3.1-8b-instant"],
 );
-const OLLAMA_CHAT_MODELS = parseModelList(
+const OLLAMA_CHAT_MODELS = parseConfiguredModelList(
   process.env.OLLAMA_CHAT_MODELS || process.env.OLLAMA_CHAT_MODEL || process.env.OLLAMA_MODEL,
   ["gemma3:4b"],
 );
-const OLLAMA_INSIGHTS_MODELS = parseModelList(
+const OLLAMA_INSIGHTS_MODELS = parseConfiguredModelList(
   process.env.OLLAMA_INSIGHTS_MODELS || process.env.OLLAMA_INSIGHTS_MODEL || process.env.OLLAMA_MODEL,
   ["gemma3:4b"],
 );
