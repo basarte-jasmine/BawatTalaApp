@@ -284,8 +284,50 @@ async function pickDownloadUrl(urls) {
   return "";
 }
 
+function normalizeIdentifierWords(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function getSignificantWords(value) {
+  const stopWords = new Set(["a", "an", "and", "by", "for", "of", "the", "to"]);
+  return String(value || "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/i)
+    .map((word) => word.trim())
+    .filter((word) => word.length > 2 && !stopWords.has(word));
+}
+
+function scoreOpenLibraryIaIdentifier(identifier, book, preferredIdentifier) {
+  const normalizedId = normalizeIdentifierWords(identifier);
+  if (!normalizedId) return -1;
+
+  const titleWords = getSignificantWords(book.title);
+  const authorWords = Array.isArray(book.author_name) ? getSignificantWords(book.author_name.join(" ")) : [];
+  const titleScore = titleWords.reduce((score, word) => score + (normalizedId.includes(word) ? 35 : 0), 0);
+  const authorScore = authorWords.reduce((score, word) => score + (normalizedId.includes(word) ? 12 : 0), 0);
+  const preferredScore = preferredIdentifier && identifier === preferredIdentifier ? 20 : 0;
+  const compactTitle = titleWords.join("");
+  const compactTitleScore = compactTitle && normalizedId.includes(compactTitle) ? 60 : 0;
+  return titleScore + authorScore + preferredScore + compactTitleScore;
+}
+
 function getOpenLibraryIaIdentifier(book) {
-  return pickString(book.availability || {}, ["identifier"]) || (Array.isArray(book.ia) ? book.ia.find(Boolean) : "");
+  const availability = book.availability || {};
+  const preferredIdentifier = pickString(availability, ["identifier"]) || pickString(book, ["lending_identifier_s"]);
+  const candidates = [
+    ...(Array.isArray(book.ia) ? book.ia : []),
+    pickString(book, ["lending_identifier_s"]),
+    preferredIdentifier,
+  ].filter(Boolean);
+
+  if (!candidates.length) return "";
+
+  return [...new Set(candidates)]
+    .map((identifier) => ({
+      identifier,
+      score: scoreOpenLibraryIaIdentifier(identifier, book, preferredIdentifier),
+    }))
+    .sort((left, right) => right.score - left.score)[0]?.identifier || preferredIdentifier || candidates[0] || "";
 }
 
 function normalizeOpenLibraryStatus(value) {
@@ -337,7 +379,7 @@ function getOpenLibraryInfoLink(book) {
 }
 
 function getArchiveDetailsLink(sourceId) {
-  return sourceId ? `https://archive.org/details/${encodeURIComponent(sourceId)}` : "";
+  return sourceId ? `https://archive.org/details/${encodeURIComponent(sourceId)}/mode/2up` : "";
 }
 
 function getOpenLibraryExternalReaderLink(book, sourceId, accessType = "") {
@@ -348,7 +390,7 @@ function getOpenLibraryExternalReaderLink(book, sourceId, accessType = "") {
     preview: ["preview_url", "read_url", "web_url", "url", "info_url"],
     full: ["read_url", "web_url", "url", "info_url"],
   }[accessType] || ["read_url", "borrow_url", "preview_url", "web_url", "url", "info_url"];
-  return pickOpenLibraryLink(availability, preferredKeys) || getOpenLibraryInfoLink(book) || getArchiveDetailsLink(sourceId);
+  return pickOpenLibraryLink(availability, preferredKeys) || getArchiveDetailsLink(sourceId) || getOpenLibraryInfoLink(book);
 }
 
 function getOpenLibraryAccess(book, sourceId, hasDownloadableEpub = false) {
@@ -920,7 +962,7 @@ router.get("/books", async (req, res) => {
 
   try {
     const params = new URLSearchParams({
-      fields: "key,title,author_name,cover_i,first_publish_year,subject,ia,has_fulltext,public_scan_b,ebook_access,availability",
+      fields: "key,title,author_name,cover_i,first_publish_year,subject,ia,lending_identifier_s,lending_edition_s,has_fulltext,public_scan_b,ebook_access,availability",
       lang: "en",
       limit: String(searchLimit),
       page: String(clampInteger(Number(req.query.page || 1), 1, 100, 1)),
