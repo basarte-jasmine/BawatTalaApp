@@ -28,7 +28,6 @@ import {
   deleteAdminPeerCounselor,
   fetchAdminAppointmentsOverview,
   updateAdminPeerCounselor,
-  updateAdminAvailability,
   updateAdminDayAvailability,
   updateAdminAppointment,
 } from "../lib/admin-api";
@@ -65,12 +64,11 @@ export default function CalendarScheduling({
   const [overviewCache, setOverviewCache] = useState({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [isEditingDailySchedule, setIsEditingDailySchedule] = useState(false);
   const [isEditingCounselorAvailability, setIsEditingCounselorAvailability] = useState(false);
   const [activityFilterCounselorId, setActivityFilterCounselorId] = useState("ALL");
   const [activityLogsPage, setActivityLogsPage] = useState(1);
   const [errorMessage, setErrorMessage] = useState("");
-  const [savingKey, setSavingKey] = useState("");
+  const [appointmentsModalDate, setAppointmentsModalDate] = useState("");
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalStudentNumber, setModalStudentNumber] = useState("");
@@ -166,27 +164,15 @@ export default function CalendarScheduling({
   const slotTimes = Array.isArray(overview?.slotTimes) ? overview.slotTimes : [];
   const monthAppointments = Array.isArray(overview?.monthAppointments) ? overview.monthAppointments : [];
   const recentActivity = Array.isArray(overview?.recentActivity) ? overview.recentActivity : [];
-  const selectedDateAppointments = monthAppointments.filter((item) => item.appointmentDate === selectedDate);
-  const upcomingAppointments = [...selectedDateAppointments]
-    .sort((a, b) => String(a.slotTime || "").localeCompare(String(b.slotTime || "")))
-    .slice(0, 4);
-  const availabilityMap = useMemo(
-    () => buildAvailabilityMap(availability, selectedCounselor?.id),
-    [availability, selectedCounselor?.id],
-  );
   const calendarCells = useMemo(() => buildCalendarCells(selectedMonth), [selectedMonth]);
-  const weeklyAvailabilitySummary = useMemo(
+  const appointmentsModalAppointments = useMemo(
     () =>
-      [1, 2, 3, 4, 5].map((dayOfWeek) => {
-        const openSlots = slotTimes.filter((slot) => availabilityMap.get(`${dayOfWeek}:${slot.value}`) === true);
-        return {
-          dayLabel: WEEKDAY_HEADERS[dayOfWeek],
-          dayOfWeek,
-          isWorkingDay: openSlots.length > 0,
-          openSlots,
-        };
-      }),
-    [availabilityMap, slotTimes],
+      appointmentsModalDate
+        ? monthAppointments
+            .filter((item) => item.appointmentDate === appointmentsModalDate)
+            .sort((a, b) => String(a.slotTime || "").localeCompare(String(b.slotTime || "")))
+        : [],
+    [appointmentsModalDate, monthAppointments],
   );
   const modalMonthKey = useMemo(
     () => getMonthKey(new Date(`${(modalDate || selectedDate) || getTodayIsoDate()}T12:00:00+08:00`)),
@@ -312,49 +298,6 @@ export default function CalendarScheduling({
     try {
       await loadOverviewForMonth(selectedMonth, { force: true, silent: true });
     } catch (_error) {}
-  }
-
-  function applyAvailabilityUpdate(updateSlot) {
-    if (!overview || !selectedCounselor?.id) {
-      return;
-    }
-    const nextOverview = {
-      ...overview,
-      availability: availability.map((row) => ({
-        ...row,
-        slots: row.counselorId === selectedCounselor?.id ? row.slots.map(updateSlot) : row.slots,
-      })),
-    };
-    setOverview(nextOverview);
-    setOverviewCache((current) => ({
-      ...current,
-      [`${normalizedSupportType}:${getMonthKey(selectedMonth)}`]: nextOverview,
-    }));
-  }
-
-  async function handleToggleAvailability(dayOfWeek, slotTime) {
-    if (!selectedCounselor?.id) return;
-    const stateKey = `${dayOfWeek}:${slotTime}`;
-    const nextEnabled = !availabilityMap.get(stateKey);
-    try {
-      setSavingKey(stateKey);
-      await updateAdminAvailability({
-        actorEmail: session?.email || "",
-        counselorId: selectedCounselor.id,
-        dayOfWeek,
-        isEnabled: nextEnabled,
-        slotTime,
-        supportType: normalizedSupportType,
-      });
-      applyAvailabilityUpdate((slot) =>
-        slot.dayOfWeek === dayOfWeek && slot.slotTime === slotTime ? { ...slot, isEnabled: nextEnabled } : slot,
-      );
-      setErrorMessage("");
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to update availability.");
-    } finally {
-      setSavingKey("");
-    }
   }
 
   async function handleConfirmDayAvailabilityToggle() {
@@ -490,10 +433,9 @@ export default function CalendarScheduling({
   function handleEditPeerSchedule(peerCounselor) {
     if (!peerCounselor?.id) return;
     setSelectedCounselorId(peerCounselor.id);
-    setIsEditingDailySchedule(true);
     setIsEditingCounselorAvailability(true);
     window.requestAnimationFrame(() => {
-      document.getElementById("calendar-schedule-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      document.getElementById("counselor-availability-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   }
 
@@ -602,7 +544,7 @@ export default function CalendarScheduling({
           </section>
         ) : (
           <>
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.9fr,0.9fr]">
+            <div className="grid grid-cols-1 gap-6">
               <section id="calendar-schedule-section" className="rounded-[2rem] border border-admin-border bg-white p-6 shadow-sm">
                 <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
@@ -658,7 +600,11 @@ export default function CalendarScheduling({
                       <button
                         key={`${cell?.isoDate || "empty"}-${index}`}
                         type="button"
-                        onClick={() => cell?.isoDate && setSelectedDate(cell.isoDate)}
+                        onClick={() => {
+                          if (!cell?.isoDate) return;
+                          setSelectedDate(cell.isoDate);
+                          setAppointmentsModalDate(cell.isoDate);
+                        }}
                         disabled={!cell?.isoDate}
                         className={`min-h-[112px] bg-white px-4 py-4 text-left transition ${
                           cell?.isoDate ? "hover:bg-emerald-50" : "cursor-default"
@@ -709,165 +655,6 @@ export default function CalendarScheduling({
                 </div>
               </section>
 
-              <section className="space-y-6">
-                <div className="rounded-[2rem] border border-admin-border bg-white p-6 shadow-sm">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-[1.15rem] font-black text-slate-800">{counselorLabel} Daily Schedule</h3>
-                    <p className="mt-1 text-sm text-slate-500">{selectedCounselor?.fullName || `Select a ${counselorLabel.toLowerCase()}`}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setIsEditingDailySchedule((current) => !current)}
-                        className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
-                      >
-                      {isEditingDailySchedule ? "Done" : "Edit"}
-                      </button>
-                    <button
-                      type="button"
-                      onClick={() => refreshOverview()}
-                      className="rounded-xl bg-slate-100 p-2.5 text-slate-500 transition hover:bg-slate-200"
-                    >
-                      <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-                    </button>
-                  </div>
-                </div>
-
-                  <div className="rounded-2xl bg-slate-50 p-4">
-                    <div className="space-y-4">
-                      {weeklyAvailabilitySummary.map((day) => (
-                        <div key={day.dayOfWeek} className="rounded-2xl bg-white px-4 py-3">
-                          <div className="flex items-center justify-between gap-3 text-sm">
-                            <span className="font-semibold text-slate-700">{day.dayLabel}</span>
-                            <span className="text-slate-500">
-                              {day.openSlots.length ? `${day.openSlots[0].label} - ${day.openSlots[day.openSlots.length - 1].label}` : "Off"}
-                            </span>
-                          </div>
-
-                          {isEditingDailySchedule ? (
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              {slotTimes.map((slot) => {
-                                const stateKey = `${day.dayOfWeek}:${slot.value}`;
-                                const enabled = availabilityMap.get(stateKey) === true;
-                                const isSaving = savingKey === stateKey;
-                                return (
-                                  <button
-                                    key={stateKey}
-                                    type="button"
-                                    onClick={() => handleToggleAvailability(day.dayOfWeek, slot.value)}
-                                    disabled={isSaving}
-                                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-                                      enabled
-                                        ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
-                                        : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                                    } disabled:cursor-not-allowed disabled:opacity-60`}
-                                  >
-                                    {isSaving ? "Saving..." : slot.label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-[2rem] border border-admin-border bg-white p-6 shadow-sm">
-                  <h3 className="text-[1.15rem] font-black text-slate-800">Appointments For This Date</h3>
-                  <p className="mt-1 text-sm text-slate-500">{formatDisplayDate(selectedDate)}</p>
-
-                  <div className="mt-5 space-y-4">
-                    {upcomingAppointments.length ? (
-                      upcomingAppointments.map((appointment) => (
-                        <div key={appointment.id} className="rounded-[1.6rem] bg-slate-50 px-4 py-4">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-3">
-                              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-600">
-                                <Clock3 className="h-4 w-4" />
-                              </span>
-                              <div className="text-lg font-black text-slate-800">{appointment.slotLabel}</div>
-                            </div>
-                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getConcernClassName(appointment.concern)}`}>
-                              {appointment.concern}
-                            </span>
-                          </div>
-
-                          <div className="mt-4 flex items-center justify-between gap-3 text-sm text-slate-500">
-                            <div>
-                              <div className="font-semibold text-slate-700">{appointment.studentName}</div>
-                              <div className="mt-1">{appointment.program || appointment.studentNumber}</div>
-                              {String(appointment.status || "").toUpperCase() === "PENDING" && appointment.decisionDueAt ? (
-                                <div className="mt-1 text-xs font-semibold text-amber-700">
-                                  Respond by {formatDisplayDate(appointment.decisionDueAt.slice(0, 10))}
-                                </div>
-                              ) : null}
-                            </div>
-                            <div className="text-right">
-                              <div className="font-medium text-slate-500">{appointment.counselorName}</div>
-                              <span className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getStatusClassName(appointment.status)}`}>
-                                {appointment.statusLabel || appointment.status}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="mt-4 flex flex-wrap justify-end gap-2">
-                            {["PENDING", "CONFIRMED", "DECLINED"].includes(String(appointment.status || "").toUpperCase()) ? (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenModal(appointment)}
-                                className="rounded-full bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-300"
-                              >
-                                {String(appointment.status || "").toUpperCase() === "PENDING" ? "Reschedule" : "Edit"}
-                              </button>
-                            ) : null}
-                            {String(appointment.status || "").toUpperCase() === "PENDING" ? (
-                              <button
-                                type="button"
-                                onClick={() => void handleConfirmAppointment(appointment.id)}
-                                className="rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-200"
-                              >
-                                Confirm
-                              </button>
-                            ) : null}
-                            {String(appointment.status || "").toUpperCase() === "PENDING" ? (
-                              <button
-                                type="button"
-                                onClick={() => void handleDeclineAppointment(appointment.id)}
-                                className="rounded-full bg-rose-100 px-3 py-1.5 text-xs font-semibold text-rose-800 transition hover:bg-rose-200"
-                              >
-                                Decline
-                              </button>
-                            ) : null}
-                            {String(appointment.status || "").toUpperCase() === "CONFIRMED" ? (
-                              <button
-                                type="button"
-                                onClick={() => setCancelAppointmentId(appointment.id)}
-                                className="rounded-full bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-200"
-                              >
-                                Cancel
-                              </button>
-                            ) : null}
-                            <button
-                              type="button"
-                              onClick={() => setDeleteAppointmentId(appointment.id)}
-                              className="rounded-full bg-rose-100 px-3 py-1.5 text-xs font-semibold text-rose-800 transition hover:bg-rose-200"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                        No sessions booked for this date yet.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </section>
             </div>
 
             {isPeerSupport ? (
@@ -979,7 +766,7 @@ export default function CalendarScheduling({
               </section>
             ) : null}
 
-            <section className="rounded-[2rem] border border-admin-border bg-white p-6 shadow-sm">
+            <section id="counselor-availability-section" className="rounded-[2rem] border border-admin-border bg-white p-6 shadow-sm">
               <div className="mb-6 flex items-center justify-between gap-4">
                 <div>
                   <h3 className="text-[1.25rem] font-black text-slate-800">{counselorLabel} Availability</h3>
@@ -1222,6 +1009,133 @@ export default function CalendarScheduling({
           </>
         )}
       </div>
+
+      {appointmentsModalDate ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="flex max-h-[88vh] w-full max-w-3xl flex-col rounded-3xl bg-white p-6 shadow-xl">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-black text-slate-800">Appointments For This Date</h3>
+                <p className="mt-1 text-sm text-slate-500">{formatDisplayDate(appointmentsModalDate)}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAppointmentsModalDate("");
+                    handleOpenModal();
+                  }}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#3DA35D] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#2f8c4d]"
+                >
+                  <Plus className="h-4 w-4" />
+                  Create
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAppointmentsModalDate("")}
+                  className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                  aria-label="Close appointments list"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="min-h-0 overflow-y-auto pr-1">
+              <div className="space-y-4">
+                {appointmentsModalAppointments.length ? (
+                  appointmentsModalAppointments.map((appointment) => (
+                    <div key={appointment.id} className="rounded-[1.6rem] bg-slate-50 px-4 py-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                            <Clock3 className="h-4 w-4" />
+                          </span>
+                          <div className="text-lg font-black text-slate-800">{appointment.slotLabel}</div>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getConcernClassName(appointment.concern)}`}>
+                          {appointment.concern}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 text-sm text-slate-500 sm:grid-cols-[1fr,auto]">
+                        <div>
+                          <div className="font-semibold text-slate-700">{appointment.studentName}</div>
+                          <div className="mt-1">{appointment.program || appointment.studentNumber}</div>
+                          {String(appointment.status || "").toUpperCase() === "PENDING" && appointment.decisionDueAt ? (
+                            <div className="mt-1 text-xs font-semibold text-amber-700">
+                              Respond by {formatDisplayDate(appointment.decisionDueAt.slice(0, 10))}
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="sm:text-right">
+                          <div className="font-medium text-slate-500">{appointment.counselorName}</div>
+                          <span className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getStatusClassName(appointment.status)}`}>
+                            {appointment.statusLabel || appointment.status}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap justify-end gap-2">
+                        {["PENDING", "CONFIRMED", "DECLINED"].includes(String(appointment.status || "").toUpperCase()) ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAppointmentsModalDate("");
+                              handleOpenModal(appointment);
+                            }}
+                            className="rounded-full bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-300"
+                          >
+                            {String(appointment.status || "").toUpperCase() === "PENDING" ? "Reschedule" : "Edit"}
+                          </button>
+                        ) : null}
+                        {String(appointment.status || "").toUpperCase() === "PENDING" ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleConfirmAppointment(appointment.id)}
+                            className="rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-200"
+                          >
+                            Confirm
+                          </button>
+                        ) : null}
+                        {String(appointment.status || "").toUpperCase() === "PENDING" ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleDeclineAppointment(appointment.id)}
+                            className="rounded-full bg-rose-100 px-3 py-1.5 text-xs font-semibold text-rose-800 transition hover:bg-rose-200"
+                          >
+                            Decline
+                          </button>
+                        ) : null}
+                        {String(appointment.status || "").toUpperCase() === "CONFIRMED" ? (
+                          <button
+                            type="button"
+                            onClick={() => setCancelAppointmentId(appointment.id)}
+                            className="rounded-full bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-200"
+                          >
+                            Cancel
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => setDeleteAppointmentId(appointment.id)}
+                          className="rounded-full bg-rose-100 px-3 py-1.5 text-xs font-semibold text-rose-800 transition hover:bg-rose-200"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                    No sessions booked for this date yet.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {isPeerSupport && isPeerFormModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
