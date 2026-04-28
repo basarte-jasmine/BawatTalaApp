@@ -346,10 +346,6 @@ async function fetchOpenLibraryEpubDownloadUrl(sourceId) {
   }
 
   const downloadUrl = buildArchiveDownloadUrl(sourceId, epubFile.name);
-  if (!(await probeDownloadUrl(downloadUrl, "GET"))) {
-    throw new Error("Open Library EPUB file could not be verified for this book.");
-  }
-
   openLibraryDownloadUrlCache.set(sourceId, {
     expiresAt: Date.now() + OPEN_LIBRARY_DOWNLOAD_CACHE_TTL_MS,
     url: downloadUrl,
