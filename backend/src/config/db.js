@@ -597,12 +597,21 @@ async function ensureDatabaseSchema() {
       gender text not null default 'Prefer not to say',
       student_number text,
       program text,
+      profile_picture_url text,
+      google_profile_picture_url text,
       specialties jsonb not null default '[]'::jsonb,
+      invitation_status text not null default 'ACCEPTED',
+      invitation_token_hash text,
+      invitation_sent_at timestamptz,
+      invitation_responded_at timestamptz,
       is_active boolean not null default true,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now(),
       constraint peer_counselors_gender_check check (
         gender in ('Male', 'Female', 'Prefer not to say')
+      ),
+      constraint peer_counselors_invitation_status_check check (
+        invitation_status in ('PENDING', 'ACCEPTED', 'DECLINED')
       )
     );
   `);
@@ -620,6 +629,54 @@ async function ensureDatabaseSchema() {
   await pool.query(`
     alter table public.peer_counselors
     add column if not exists specialties jsonb not null default '[]'::jsonb;
+  `);
+
+  await pool.query(`
+    alter table public.peer_counselors
+    add column if not exists profile_picture_url text;
+  `);
+
+  await pool.query(`
+    alter table public.peer_counselors
+    add column if not exists google_profile_picture_url text;
+  `);
+
+  await pool.query(`
+    alter table public.peer_counselors
+    add column if not exists invitation_status text not null default 'ACCEPTED';
+  `);
+
+  await pool.query(`
+    alter table public.peer_counselors
+    add column if not exists invitation_token_hash text;
+  `);
+
+  await pool.query(`
+    alter table public.peer_counselors
+    add column if not exists invitation_sent_at timestamptz;
+  `);
+
+  await pool.query(`
+    alter table public.peer_counselors
+    add column if not exists invitation_responded_at timestamptz;
+  `);
+
+  await pool.query(`
+    update public.peer_counselors
+    set invitation_status = case when is_active then 'ACCEPTED' else 'DECLINED' end
+    where invitation_status is null
+       or invitation_status not in ('PENDING', 'ACCEPTED', 'DECLINED');
+  `);
+
+  await pool.query(`
+    alter table public.peer_counselors
+    drop constraint if exists peer_counselors_invitation_status_check;
+  `);
+
+  await pool.query(`
+    alter table public.peer_counselors
+    add constraint peer_counselors_invitation_status_check
+    check (invitation_status in ('PENDING', 'ACCEPTED', 'DECLINED'));
   `);
 
   await pool.query(`
@@ -648,7 +705,9 @@ async function ensureDatabaseSchema() {
       student_number,
       program,
       specialties,
-      is_active
+      is_active,
+      invitation_status,
+      invitation_responded_at
     )
     values
       (
@@ -658,7 +717,9 @@ async function ensureDatabaseSchema() {
         '23-1111',
         'BS PSYCHOLOGY',
         '["Personal problems", "Mental health", "Anxiety", "Stress", "Academic problems", "Interpersonal relationships", "Bullying", "Adjustment"]'::jsonb,
-        true
+        true,
+        'ACCEPTED',
+        now()
       ),
       (
         'Cesia Atreides',
@@ -667,7 +728,9 @@ async function ensureDatabaseSchema() {
         '23-0001',
         'BS INFORMATION TECHNOLOGY',
         '["Personal problems", "Mental health", "Anxiety", "Stress", "Academic problems", "Interpersonal relationships", "Bullying", "Adjustment"]'::jsonb,
-        true
+        true,
+        'ACCEPTED',
+        now()
       )
     on conflict (email)
     do update set
@@ -677,6 +740,8 @@ async function ensureDatabaseSchema() {
       program = excluded.program,
       specialties = excluded.specialties,
       is_active = true,
+      invitation_status = 'ACCEPTED',
+      invitation_responded_at = coalesce(public.peer_counselors.invitation_responded_at, now()),
       updated_at = now();
   `);
 
@@ -927,6 +992,12 @@ async function ensureDatabaseSchema() {
   await pool.query(`
     create index if not exists peer_counselor_availability_counselor_idx
       on public.peer_counselor_availability (peer_counselor_id, day_of_week, slot_time);
+  `);
+
+  await pool.query(`
+    create unique index if not exists peer_counselors_invitation_token_hash_unique_idx
+      on public.peer_counselors (invitation_token_hash)
+      where invitation_token_hash is not null;
   `);
 
   await pool.query(`

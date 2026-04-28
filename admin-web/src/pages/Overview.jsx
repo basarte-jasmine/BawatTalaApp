@@ -21,6 +21,7 @@ import {
   fetchAdminAppointmentsOverview,
   fetchAdminDashboardSummary,
   fetchAdminRiskFlags,
+  fetchAdminRoleAssignments,
 } from "../lib/admin-api";
 import Modal from "../components/Modal";
 
@@ -914,38 +915,59 @@ function AppointmentCard({ item, onClick, onSelect }) {
   );
 }
 
-function AssignmentCard({ item, onSelect }) {
-  const statusIcon =
-    item.status === "assigned" ? (
-      <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-    ) : (
-      <span className="h-2.5 w-2.5 rounded-full bg-amber-400" />
-    );
+function getInitials(value) {
+  return String(value || "")
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0))
+    .join("")
+    .toUpperCase() || "TM";
+}
+
+function TeamMemberCard({ item, onClick }) {
+  const statusClasses =
+    String(item.status || "").toUpperCase() === "PENDING"
+      ? "border-amber-200 bg-amber-50 text-amber-700"
+      : item.isActive
+        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+        : "border-slate-200 bg-slate-100 text-slate-600";
 
   return (
     <button
       type="button"
-      onClick={onSelect ? () => onSelect(`Case Assignment: ${item.student}`) : undefined}
-      title={`${item.student} - ${item.concern}`}
+      onClick={onClick}
+      title={`${item.fullName} - ${item.roleLabel}`}
       className="w-full rounded-2xl bg-slate-50 p-4 text-left transition hover:bg-slate-100"
     >
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div>
-          <div className="text-lg font-semibold text-gray-900">{item.student}</div>
-          <div className="text-sm text-slate-500">{item.concern}</div>
-        </div>
-        {statusIcon}
-      </div>
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-600">
-            {item.initials}
-          </span>
-          <span className={`text-sm ${item.status === "pending" ? "text-slate-400" : "text-slate-700"}`}>
-            {item.counselor}
-          </span>
+        <div className="flex min-w-0 items-center gap-3">
+          {item.profilePictureUrl ? (
+            <img
+              src={item.profilePictureUrl}
+              alt={item.fullName}
+              className="h-10 w-10 rounded-full border border-slate-200 object-cover"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700">
+              {getInitials(item.fullName)}
+            </span>
+          )}
+          <div className="min-w-0">
+            <div className="truncate font-semibold text-gray-900">{item.fullName}</div>
+            <div className="truncate text-sm text-slate-500">{item.email}</div>
+          </div>
         </div>
-        <span className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm">{item.role}</span>
+        <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClasses}`}>
+          {item.status}
+        </span>
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <span className="text-sm font-medium text-slate-600">{item.roleLabel}</span>
+        <span className="rounded-lg bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm">
+          {item.department}
+        </span>
       </div>
     </button>
   );
@@ -1190,6 +1212,8 @@ export default function Overview({ onLogout, session }) {
   const [flaggedModalOpen, setFlaggedModalOpen] = useState(false);
   const [appointmentItems, setAppointmentItems] = useState([]);
   const [appointmentsError, setAppointmentsError] = useState("");
+  const [roleMembers, setRoleMembers] = useState([]);
+  const [rolesError, setRolesError] = useState("");
   const [analyticsOverview, setAnalyticsOverview] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
   const [analyticsError, setAnalyticsError] = useState("");
@@ -1234,14 +1258,24 @@ export default function Overview({ onLogout, session }) {
           month: "2-digit",
           day: "2-digit",
         }).format(new Date());
-        const data = await fetchAdminAppointmentsOverview(todayIso);
+        const supportType = calendarTab === "peer" ? "PEER" : "GUIDANCE";
+        const data = await fetchAdminAppointmentsOverview(todayIso, supportType);
         if (!isMounted) return;
 
+        const sessionEmail = String(session?.email || "").trim().toLowerCase();
+        const myCounselorId =
+          calendarTab === "my"
+            ? (Array.isArray(data?.counselors) ? data.counselors : []).find(
+                (item) => String(item.email || "").trim().toLowerCase() === sessionEmail,
+              )?.id || ""
+            : "";
         const items = (Array.isArray(data?.appointments) ? data.appointments : [])
+          .filter((appointment) => (calendarTab === "my" ? appointment.counselorId === myCounselorId : true))
           .sort((a, b) => String(a.slotTime || "").localeCompare(String(b.slotTime || "")))
           .map((appointment) => ({
             concernTag: appointment.concern || "Others",
             note: appointment.studentNote || appointment.program || "",
+            route: calendarTab === "peer" ? "/peer-counselors" : "/appointments",
             student: appointment.studentName || appointment.studentNumber || "(No student)",
             time: appointment.slotLabel || appointment.slotTime || "",
             tone:
@@ -1261,6 +1295,28 @@ export default function Overview({ onLogout, session }) {
     }
 
     loadAppointments();
+    return () => {
+      isMounted = false;
+    };
+  }, [calendarTab, session?.email]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadRolePreview() {
+      try {
+        const data = await fetchAdminRoleAssignments();
+        if (!isMounted) return;
+        setRoleMembers(Array.isArray(data?.members) ? data.members.slice(0, 6) : []);
+        setRolesError("");
+      } catch (error) {
+        if (!isMounted) return;
+        setRoleMembers([]);
+        setRolesError(error instanceof Error ? error.message : "Failed to load team members.");
+      }
+    }
+
+    loadRolePreview();
     return () => {
       isMounted = false;
     };
@@ -1440,6 +1496,11 @@ export default function Overview({ onLogout, session }) {
             Appointments failed to load: {appointmentsError}
           </div>
         ) : null}
+        {rolesError ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            Team preview failed to load: {rolesError}
+          </div>
+        ) : null}
         {analyticsError ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
             Overview analytics failed to load: {analyticsError}
@@ -1608,7 +1669,7 @@ export default function Overview({ onLogout, session }) {
           <Card title="Schedules & Appointments" subtitle="Today's sessions and related concern tags">
             <div className="mb-5 flex items-center justify-between gap-4">
               <div className="text-sm font-semibold text-slate-500">{`Today, ${formatAppointmentDateLabel(now.toISOString())}`}</div>
-              <div className="rounded-2xl bg-slate-100 p-1">
+              <div className="flex flex-wrap rounded-2xl bg-slate-100 p-1">
                 <button
                   type="button"
                   onClick={() => setCalendarTab("my")}
@@ -1627,13 +1688,22 @@ export default function Overview({ onLogout, session }) {
                 >
                   Overall Admin
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setCalendarTab("peer")}
+                  className={`rounded-xl px-4 py-2 text-sm font-medium ${
+                    calendarTab === "peer" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
+                  }`}
+                >
+                  Peer Counselors
+                </button>
               </div>
             </div>
 
             <div className="space-y-4">
               {appointmentItems.length ? (
                 appointmentItems.map((item) => (
-                  <AppointmentCard key={`${item.time}-${item.student}`} item={item} onClick={() => navigate("/appointments")} />
+                  <AppointmentCard key={`${item.time}-${item.student}`} item={item} onClick={() => navigate(item.route || "/appointments")} />
                 ))
               ) : (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
@@ -1643,15 +1713,15 @@ export default function Overview({ onLogout, session }) {
             </div>
           </Card>
 
-          <Card title="Case Assignments" subtitle="Recent cases and role-based routing">
+          <Card title="Team Roles" subtitle="Guidance counselors, peer counselors, and their current role status">
             <div className="space-y-4">
-              {Array.isArray(dashboardSummary?.caseAssignments) && dashboardSummary.caseAssignments.length ? (
-                dashboardSummary.caseAssignments.map((item) => (
-                  <AssignmentCard key={`${item.studentNumber || item.student}-${item.concern}`} item={item} />
+              {roleMembers.length ? (
+                roleMembers.map((item) => (
+                  <TeamMemberCard key={`${item.memberType || "member"}-${item.id}`} item={item} onClick={() => navigate("/roles")} />
                 ))
               ) : (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                  No live case assignments found right now.
+                  No team members found right now.
                 </div>
               )}
             </div>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Edit2, Plus, RefreshCw, Trash2, UserPlus, Users } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Edit2, Plus, RefreshCw, Trash2, UserPlus, Users, X } from "lucide-react";
 import ConfirmActionModal from "../components/ConfirmActionModal";
 import Layout from "../components/Layout";
 import {
@@ -92,6 +92,7 @@ export default function CalendarScheduling({
   const [peerFormError, setPeerFormError] = useState("");
   const [isSavingPeerCounselor, setIsSavingPeerCounselor] = useState(false);
   const [pendingDeletePeerCounselor, setPendingDeletePeerCounselor] = useState(null);
+  const [isPeerFormModalOpen, setIsPeerFormModalOpen] = useState(false);
 
   useEffect(() => {
     const monthFromDate = new Date(`${selectedDate}T12:00:00+08:00`);
@@ -156,6 +157,9 @@ export default function CalendarScheduling({
   }, [overview, selectedCounselorId, session?.email]);
 
   const counselors = Array.isArray(overview?.counselors) ? overview.counselors : [];
+  const peerDirectory = isPeerSupport
+    ? (Array.isArray(overview?.peerCounselors) && overview.peerCounselors.length ? overview.peerCounselors : counselors)
+    : [];
   const selectedCounselor = counselors.find((item) => item.id === selectedCounselorId) || counselors[0] || null;
   const availability = Array.isArray(overview?.availability) ? overview.availability : [];
   const availabilityOverrides = Array.isArray(overview?.availabilityOverrides) ? overview.availabilityOverrides : [];
@@ -464,6 +468,11 @@ export default function CalendarScheduling({
     setPeerFormError("");
   }
 
+  function handleOpenAddPeerCounselor() {
+    resetPeerForm();
+    setIsPeerFormModalOpen(true);
+  }
+
   function handleEditPeerCounselor(peerCounselor) {
     const peerGender = ["Male", "Female"].includes(peerCounselor.gender) ? peerCounselor.gender : "";
     setPeerForm({
@@ -475,6 +484,7 @@ export default function CalendarScheduling({
     });
     setEditingPeerCounselorId(peerCounselor.id);
     setPeerFormError("");
+    setIsPeerFormModalOpen(true);
   }
 
   function handleEditPeerSchedule(peerCounselor) {
@@ -503,6 +513,7 @@ export default function CalendarScheduling({
         await createAdminPeerCounselor(payload);
       }
       resetPeerForm();
+      setIsPeerFormModalOpen(false);
       await refreshOverview();
     } catch (error) {
       setPeerFormError(error instanceof Error ? error.message : "Failed to save peer counselor.");
@@ -535,6 +546,31 @@ export default function CalendarScheduling({
     return `${openSlots[0].label} - ${openSlots[openSlots.length - 1].label}`;
   }
 
+  function getPeerStatusClasses(peer) {
+    const status = String(peer?.invitationStatus || peer?.status || "").toUpperCase();
+    if (status === "PENDING") return "border-amber-200 bg-amber-50 text-amber-700";
+    if (status === "ACCEPTED" || peer?.isActive) return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    return "border-slate-200 bg-slate-100 text-slate-600";
+  }
+
+  function getPeerStatusLabel(peer) {
+    const status = String(peer?.invitationStatus || peer?.status || "").toUpperCase();
+    if (status === "PENDING") return "Pending";
+    if (status === "ACCEPTED" || peer?.isActive) return "Active";
+    if (status === "DECLINED") return "Declined";
+    return peer?.status || "Inactive";
+  }
+
+  function getPeerInitials(peer) {
+    return String(peer?.fullName || "")
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part.charAt(0))
+      .join("")
+      .toUpperCase() || "PC";
+  }
+
   return (
     <Layout
       title={pageTitle}
@@ -547,168 +583,6 @@ export default function CalendarScheduling({
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
             {errorMessage}
           </div>
-        ) : null}
-
-        {isPeerSupport ? (
-          <section className="grid grid-cols-1 gap-6 xl:grid-cols-[0.9fr,1.1fr]">
-            <div className="rounded-[2rem] border border-admin-border bg-white p-6 shadow-sm">
-              <div className="mb-5 flex items-center gap-3">
-                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-50 text-sky-700">
-                  <UserPlus className="h-5 w-5" />
-                </span>
-                <div>
-                  <h3 className="text-[1.15rem] font-black text-slate-800">
-                    {editingPeerCounselorId ? "Edit Peer Counselor" : "Add Peer Counselor"}
-                  </h3>
-                  <p className="mt-1 text-sm text-slate-500">Add their details, then use Schedule to set their available days and hours.</p>
-                </div>
-              </div>
-
-              {peerFormError ? (
-                <div className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600">{peerFormError}</div>
-              ) : null}
-
-              <form onSubmit={(event) => void handleSubmitPeerCounselor(event)} className="space-y-4">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <label className="text-sm font-semibold text-slate-700">
-                    Name
-                    <input
-                      required
-                      value={peerForm.fullName}
-                      onChange={(event) => setPeerForm((current) => ({ ...current, fullName: event.target.value }))}
-                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#3DA35D]"
-                      placeholder="Full name"
-                    />
-                  </label>
-                  <label className="text-sm font-semibold text-slate-700">
-                    Gmail
-                    <input
-                      required
-                      type="email"
-                      value={peerForm.email}
-                      onChange={(event) => setPeerForm((current) => ({ ...current, email: event.target.value }))}
-                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#3DA35D]"
-                      placeholder="name@gmail.com"
-                    />
-                  </label>
-                  <label className="text-sm font-semibold text-slate-700">
-                    Student Number
-                    <input
-                      required
-                      value={peerForm.studentNumber}
-                      onChange={(event) => setPeerForm((current) => ({ ...current, studentNumber: event.target.value }))}
-                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#3DA35D]"
-                      placeholder="23-0000"
-                    />
-                  </label>
-                  <label className="text-sm font-semibold text-slate-700">
-                    Course / Program
-                    <input
-                      required
-                      value={peerForm.program}
-                      onChange={(event) => setPeerForm((current) => ({ ...current, program: event.target.value }))}
-                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#3DA35D]"
-                      placeholder="BS PSYCHOLOGY"
-                    />
-                  </label>
-                </div>
-
-                <label className="block text-sm font-semibold text-slate-700">
-                  Gender
-                  <select
-                    required
-                    value={peerForm.gender}
-                    onChange={(event) => setPeerForm((current) => ({ ...current, gender: event.target.value }))}
-                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#3DA35D]"
-                  >
-                    <option value="" disabled>Select Male or Female</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                  </select>
-                </label>
-
-                <div className="flex justify-end gap-3">
-                  {editingPeerCounselorId ? (
-                    <button
-                      type="button"
-                      onClick={resetPeerForm}
-                      className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100"
-                    >
-                      Cancel Edit
-                    </button>
-                  ) : null}
-                  <button
-                    type="submit"
-                    disabled={isSavingPeerCounselor}
-                    className="rounded-xl bg-[#3DA35D] px-5 py-2 text-sm font-semibold text-white hover:bg-[#2f8c4d] disabled:opacity-70"
-                  >
-                    {isSavingPeerCounselor ? "Saving..." : editingPeerCounselorId ? "Save Peer Counselor" : "Add Peer Counselor"}
-                  </button>
-                </div>
-              </form>
-            </div>
-
-            <div className="rounded-[2rem] border border-admin-border bg-white p-6 shadow-sm">
-              <div className="mb-5 flex items-center gap-3">
-                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
-                  <Users className="h-5 w-5" />
-                </span>
-                <div>
-                  <h3 className="text-[1.15rem] font-black text-slate-800">Peer Counselor Directory</h3>
-                  <p className="mt-1 text-sm text-slate-500">Active peer counselors available for talk-to-peer sessions.</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                {counselors.length ? (
-                  counselors.map((peer) => (
-                    <div key={peer.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="font-semibold text-slate-800">{peer.fullName}</div>
-                          <div className="mt-1 text-sm text-slate-500">{peer.email}</div>
-                          <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium">
-                            <span className="rounded-full bg-white px-2.5 py-1 text-slate-600">{peer.gender || "Gender not set"}</span>
-                            <span className="rounded-full bg-white px-2.5 py-1 text-slate-600">{peer.studentNumber}</span>
-                            <span className="rounded-full bg-white px-2.5 py-1 text-slate-600">{peer.program}</span>
-                          </div>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1 text-slate-400">
-                          <button
-                            type="button"
-                            onClick={() => handleEditPeerSchedule(peer)}
-                            className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
-                          >
-                            Schedule
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleEditPeerCounselor(peer)}
-                            className="rounded-lg p-2 hover:bg-white hover:text-emerald-700"
-                            aria-label={`Edit ${peer.fullName}`}
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setPendingDeletePeerCounselor(peer)}
-                            className="rounded-lg p-2 hover:bg-white hover:text-red-600"
-                            aria-label={`Remove ${peer.fullName}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                    No active peer counselors yet.
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
         ) : null}
 
         <div className="flex justify-end">
@@ -996,6 +870,115 @@ export default function CalendarScheduling({
               </section>
             </div>
 
+            {isPeerSupport ? (
+              <section className="rounded-[2rem] border border-admin-border bg-white p-6 shadow-sm">
+                <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+                      <Users className="h-5 w-5" />
+                    </span>
+                    <div>
+                      <h3 className="text-[1.25rem] font-black text-slate-800">Peer Counselor Directory</h3>
+                      <p className="mt-1 text-sm text-slate-500">Peer counselors, invite status, and scheduling controls in one list.</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleOpenAddPeerCounselor}
+                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#3DA35D] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#2f8c4d]"
+                  >
+                    <UserPlus className="h-4 w-4" />
+                    Add Peer Counselor
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[920px] border-collapse text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-xs uppercase tracking-wider text-slate-500">
+                        <th className="px-4 py-3 font-semibold">Peer Counselor</th>
+                        <th className="px-4 py-3 font-semibold">Gender</th>
+                        <th className="px-4 py-3 font-semibold">Student No.</th>
+                        <th className="px-4 py-3 font-semibold">Program</th>
+                        <th className="px-4 py-3 font-semibold">Status</th>
+                        <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {peerDirectory.length ? (
+                        peerDirectory.map((peer) => (
+                          <tr key={peer.id} className="hover:bg-slate-50">
+                            <td className="px-4 py-4">
+                              <div className="flex items-center gap-3">
+                                {peer.pictureUrl ? (
+                                  <img
+                                    src={peer.pictureUrl}
+                                    alt={peer.fullName}
+                                    className="h-10 w-10 rounded-full border border-slate-200 object-cover"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                ) : (
+                                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700">
+                                    {getPeerInitials(peer)}
+                                  </div>
+                                )}
+                                <div>
+                                  <div className="font-semibold text-slate-800">{peer.fullName}</div>
+                                  <div className="text-xs text-slate-500">{peer.email}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-4 text-slate-600">{peer.gender || "Not set"}</td>
+                            <td className="px-4 py-4 text-slate-600">{peer.studentNumber || "Not set"}</td>
+                            <td className="px-4 py-4 text-slate-600">{peer.program || "Not set"}</td>
+                            <td className="px-4 py-4">
+                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getPeerStatusClasses(peer)}`}>
+                                {getPeerStatusLabel(peer)}
+                              </span>
+                            </td>
+                            <td className="px-4 py-4">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditPeerSchedule(peer)}
+                                  disabled={!peer.isActive}
+                                  className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                                >
+                                  Schedule
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditPeerCounselor(peer)}
+                                  className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-emerald-700"
+                                  aria-label={`Edit ${peer.fullName}`}
+                                >
+                                  <Edit2 className="h-4 w-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPendingDeletePeerCounselor(peer)}
+                                  className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-red-600"
+                                  aria-label={`Remove ${peer.fullName}`}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-500">
+                            No peer counselors have been added yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            ) : null}
+
             <section className="rounded-[2rem] border border-admin-border bg-white p-6 shadow-sm">
               <div className="mb-6 flex items-center justify-between gap-4">
                 <div>
@@ -1097,6 +1080,7 @@ export default function CalendarScheduling({
               </div>
             </section>
 
+            {!isPeerSupport ? (
             <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr,0.9fr]">
               <section className="rounded-[2rem] border border-admin-border bg-white p-6 shadow-sm">
                 <div className="mb-5 flex items-center gap-3">
@@ -1136,7 +1120,7 @@ export default function CalendarScheduling({
                             <div className="text-sm font-semibold text-slate-800">{item.title}</div>
                             <div className="mt-1 text-sm text-slate-500">{item.description}</div>
                             <div className="mt-2 text-xs font-medium text-slate-400">
-                              {item.actorName} · {item.actorRole}
+                              {item.actorName} - {item.actorRole}
                             </div>
                           </div>
                           <div className="shrink-0 text-xs font-medium text-slate-400">{item.createdAtLabel}</div>
@@ -1234,9 +1218,128 @@ export default function CalendarScheduling({
                 </div>
               </section>
             </div>
+            ) : null}
           </>
         )}
       </div>
+
+      {isPeerSupport && isPeerFormModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-xl">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-50 text-sky-700">
+                  <UserPlus className="h-5 w-5" />
+                </span>
+                <div>
+                  <h3 className="text-xl font-black text-slate-800">
+                    {editingPeerCounselorId ? "Edit Peer Counselor" : "Add Peer Counselor"}
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    New peer counselors are emailed an invitation and stay pending until they respond.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsPeerFormModalOpen(false);
+                  resetPeerForm();
+                }}
+                className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Close peer counselor form"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {peerFormError ? (
+              <div className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600">{peerFormError}</div>
+            ) : null}
+
+            <form onSubmit={(event) => void handleSubmitPeerCounselor(event)} className="space-y-4">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="text-sm font-semibold text-slate-700">
+                  Name
+                  <input
+                    required
+                    value={peerForm.fullName}
+                    onChange={(event) => setPeerForm((current) => ({ ...current, fullName: event.target.value }))}
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#3DA35D]"
+                    placeholder="Full name"
+                  />
+                </label>
+                <label className="text-sm font-semibold text-slate-700">
+                  Gmail
+                  <input
+                    required
+                    type="email"
+                    value={peerForm.email}
+                    onChange={(event) => setPeerForm((current) => ({ ...current, email: event.target.value }))}
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#3DA35D]"
+                    placeholder="name@gmail.com"
+                  />
+                </label>
+                <label className="text-sm font-semibold text-slate-700">
+                  Student Number
+                  <input
+                    required
+                    value={peerForm.studentNumber}
+                    onChange={(event) => setPeerForm((current) => ({ ...current, studentNumber: event.target.value }))}
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#3DA35D]"
+                    placeholder="23-0000"
+                  />
+                </label>
+                <label className="text-sm font-semibold text-slate-700">
+                  Course / Program
+                  <input
+                    required
+                    value={peerForm.program}
+                    onChange={(event) => setPeerForm((current) => ({ ...current, program: event.target.value }))}
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#3DA35D]"
+                    placeholder="BS PSYCHOLOGY"
+                  />
+                </label>
+              </div>
+
+              <label className="block text-sm font-semibold text-slate-700">
+                Gender
+                <select
+                  required
+                  value={peerForm.gender}
+                  onChange={(event) => setPeerForm((current) => ({ ...current, gender: event.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#3DA35D]"
+                >
+                  <option value="" disabled>Select Male or Female</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                </select>
+              </label>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPeerFormModalOpen(false);
+                    resetPeerForm();
+                  }}
+                  disabled={isSavingPeerCounselor}
+                  className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingPeerCounselor}
+                  className="rounded-xl bg-[#3DA35D] px-5 py-2 text-sm font-semibold text-white hover:bg-[#2f8c4d] disabled:opacity-70"
+                >
+                  {isSavingPeerCounselor ? "Saving..." : editingPeerCounselorId ? "Save Peer Counselor" : "Send Invitation"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
 
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">

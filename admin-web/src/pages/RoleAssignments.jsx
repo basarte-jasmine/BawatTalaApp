@@ -38,7 +38,7 @@ const ROLE_SUMMARY_CARDS = [
   },
   {
     key: "peerAdvisorCount",
-    title: "Peer Advisor",
+    title: "Peer Counselor",
     icon: AlertTriangle,
     iconClass: "text-amber-700",
     bgClass: "bg-amber-50",
@@ -72,6 +72,7 @@ export default function RoleAssignments({ onLogout, session }) {
   });
   const [members, setMembers] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [roleFilter, setRoleFilter] = useState("ALL");
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -105,16 +106,22 @@ export default function RoleAssignments({ onLogout, session }) {
 
   const filteredMembers = useMemo(() => {
     const normalized = searchTerm.trim().toLowerCase();
-    if (!normalized) {
-      return members;
-    }
-    return members.filter((member) =>
-      [member.fullName, member.email, member.roleLabel, member.department]
+    return members.filter((member) => {
+      const matchesRole = roleFilter === "ALL" || member.role === roleFilter;
+      const matchesSearch = !normalized || [member.fullName, member.email, member.roleLabel, member.department, member.program, member.studentNumber]
         .join(" ")
         .toLowerCase()
-        .includes(normalized),
-    );
-  }, [members, searchTerm]);
+        .includes(normalized);
+      return matchesRole && matchesSearch;
+    });
+  }, [members, roleFilter, searchTerm]);
+
+  function getStatusClasses(member) {
+    const status = String(member.status || "").toUpperCase();
+    if (status === "PENDING") return "border-amber-200 bg-amber-50 text-amber-700";
+    if (member.isActive) return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    return "border-slate-200 bg-slate-100 text-slate-600";
+  }
 
   function resetFormState() {
     setFormState(INITIAL_FORM_STATE);
@@ -209,15 +216,27 @@ export default function RoleAssignments({ onLogout, session }) {
         </div>
 
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="flex flex-col gap-3 border-b border-gray-200 bg-gray-50/50 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 border-b border-gray-200 bg-gray-50/50 p-5 lg:flex-row lg:items-center lg:justify-between">
             <h2 className="text-lg font-semibold text-gray-900">Team Members</h2>
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Search members..."
-              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 sm:w-64"
-            />
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <select
+                value={roleFilter}
+                onChange={(event) => setRoleFilter(event.target.value)}
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 sm:w-52"
+              >
+                <option value="ALL">All roles</option>
+                <option value="HEAD_COUNSELOR">Super Admin</option>
+                <option value="COUNSELOR">School Counselor</option>
+                <option value="PEER_ADVISOR">Peer Counselor</option>
+              </select>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Search members..."
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 sm:w-64"
+              />
+            </div>
           </div>
 
           {loading ? (
@@ -227,7 +246,7 @@ export default function RoleAssignments({ onLogout, session }) {
               <table className="w-full border-collapse text-left">
                 <thead>
                   <tr className="border-b border-gray-200 bg-white text-xs uppercase tracking-wider text-gray-500">
-                    <th className="px-6 py-4 font-semibold">Counselor Name</th>
+                    <th className="px-6 py-4 font-semibold">Team Member</th>
                     <th className="px-6 py-4 font-semibold">Role</th>
                     <th className="px-6 py-4 font-semibold">Department</th>
                     <th className="px-6 py-4 text-center font-semibold">Students Assigned</th>
@@ -241,12 +260,24 @@ export default function RoleAssignments({ onLogout, session }) {
                       <tr key={member.id} className="hover:bg-gray-50">
                         <td className="whitespace-nowrap px-6 py-4">
                           <div className="flex items-center gap-3">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-xs font-medium text-emerald-700">
-                              {getInitials(member.fullName)}
-                            </div>
+                            {member.profilePictureUrl ? (
+                              <img
+                                src={member.profilePictureUrl}
+                                alt={member.fullName}
+                                className="h-9 w-9 rounded-full border border-gray-200 object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-xs font-medium text-emerald-700">
+                                {getInitials(member.fullName)}
+                              </div>
+                            )}
                             <div>
                               <div className="font-medium text-gray-900">{member.fullName}</div>
                               <div className="text-xs text-gray-400">{member.email}</div>
+                              {member.role === "PEER_ADVISOR" ? (
+                                <div className="text-xs text-gray-400">{[member.studentNumber, member.program].filter(Boolean).join(" - ")}</div>
+                              ) : null}
                             </div>
                           </div>
                         </td>
@@ -256,9 +287,7 @@ export default function RoleAssignments({ onLogout, session }) {
                         <td className="whitespace-nowrap px-6 py-4">
                           <span
                             className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${
-                              member.isActive
-                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                : "border-slate-200 bg-slate-100 text-slate-600"
+                              getStatusClasses(member)
                             }`}
                           >
                             {member.status}
@@ -266,10 +295,22 @@ export default function RoleAssignments({ onLogout, session }) {
                         </td>
                         <td className="whitespace-nowrap px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-2 text-gray-400">
-                            <button type="button" onClick={() => handleOpenEditModal(member)} className="p-1 hover:text-emerald-700">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditModal(member)}
+                              disabled={!member.canEdit}
+                              title={member.canEdit ? "Edit member" : "Manage peer counselors from the Peer Counselors page"}
+                              className="p-1 hover:text-emerald-700 disabled:cursor-not-allowed disabled:opacity-35"
+                            >
                               <Edit2 className="h-4 w-4" />
                             </button>
-                            <button type="button" onClick={() => setPendingDeleteMember(member)} className="p-1 hover:text-red-600">
+                            <button
+                              type="button"
+                              onClick={() => setPendingDeleteMember(member)}
+                              disabled={!member.canDelete}
+                              title={member.canDelete ? "Remove member" : "Manage peer counselors from the Peer Counselors page"}
+                              className="p-1 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-35"
+                            >
                               <Trash2 className="h-4 w-4" />
                             </button>
                           </div>
@@ -301,7 +342,7 @@ export default function RoleAssignments({ onLogout, session }) {
                   <th className="w-1/3 px-6 py-4 font-semibold">Permission</th>
                   <th className="px-6 py-4 text-center font-semibold">Super Admin</th>
                   <th className="px-6 py-4 text-center font-semibold">School Counselor</th>
-                  <th className="px-6 py-4 text-center font-semibold">Peer Advisor</th>
+                  <th className="px-6 py-4 text-center font-semibold">Peer Counselor</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 bg-white text-sm">

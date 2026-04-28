@@ -1937,7 +1937,7 @@ router.get("/analytics", async (req, res) => {
 });
 
 router.get("/roles", async (_req, res) => {
-  const [membersResult, peerCountResult] = await Promise.all([
+  const [membersResult, peerMembersResult] = await Promise.all([
     query(
       `
         select
@@ -1946,6 +1946,7 @@ router.get("/roles", async (_req, res) => {
           coalesce(nullif(aa.full_name, ''), split_part(aa.email, '@', 1)) as full_name,
           coalesce(aa.role, 'COUNSELOR') as role,
           coalesce(aa.gender, 'Prefer not to say') as gender,
+          coalesce(aa.profile_picture_url, '') as profile_picture_url,
           coalesce(aa.specialties, '[]'::jsonb) as specialties,
           aa.is_active,
           aa.created_at,
@@ -1963,14 +1964,38 @@ router.get("/roles", async (_req, res) => {
     ),
     query(
       `
-        select count(*)::int as total
-        from public.peer_counselors
-        where is_active = true
+        select
+          pc.id,
+          pc.email,
+          pc.full_name,
+          pc.gender,
+          coalesce(pc.student_number, '') as student_number,
+          coalesce(pc.program, '') as program,
+          coalesce(pc.profile_picture_url, pc.google_profile_picture_url, '') as profile_picture_url,
+          coalesce(pc.specialties, '[]'::jsonb) as specialties,
+          pc.is_active,
+          coalesce(pc.invitation_status, case when pc.is_active then 'ACCEPTED' else 'DECLINED' end) as invitation_status,
+          pc.created_at,
+          coalesce(stats.assigned_students, 0) as assigned_students
+        from public.peer_counselors pc
+        left join lateral (
+          select count(distinct ca.student_number)::int as assigned_students
+          from public.counselor_appointments ca
+          where ca.peer_counselor_id = pc.id
+            and ca.status = 'CONFIRMED'
+        ) stats on true
+        order by
+          case coalesce(pc.invitation_status, case when pc.is_active then 'ACCEPTED' else 'DECLINED' end)
+            when 'ACCEPTED' then 0
+            when 'PENDING' then 1
+            else 2
+          end,
+          pc.full_name asc
       `,
     ),
   ]);
 
-  const members = membersResult.rows.map((row) => ({
+  const adminMembers = membersResult.rows.map((row) => ({
     id: row.id,
     email: row.email,
     fullName: row.full_name,
@@ -1980,17 +2005,47 @@ router.get("/roles", async (_req, res) => {
     assignedStudents: Number(row.assigned_students || 0),
     status: row.is_active ? "Active" : "Inactive",
     isActive: Boolean(row.is_active),
+    profilePictureUrl: row.profile_picture_url || "",
     gender: row.gender,
     specialties: Array.isArray(row.specialties) ? row.specialties : [],
     createdAt: row.created_at,
+    memberType: "ADMIN",
+    canEdit: true,
+    canDelete: true,
   }));
+  const peerMembers = peerMembersResult.rows.map((row) => {
+    const invitationStatus = String(row.invitation_status || (row.is_active ? "ACCEPTED" : "DECLINED")).toUpperCase();
+    const isActive = Boolean(row.is_active) && invitationStatus === "ACCEPTED";
+    return {
+      id: row.id,
+      email: row.email,
+      fullName: row.full_name,
+      role: "PEER_ADVISOR",
+      roleLabel: "Peer Counselor",
+      department: "Peer Support",
+      assignedStudents: Number(row.assigned_students || 0),
+      status: invitationStatus === "PENDING" ? "Pending" : isActive ? "Active" : "Declined",
+      isActive,
+      invitationStatus,
+      profilePictureUrl: row.profile_picture_url || "",
+      gender: row.gender,
+      specialties: Array.isArray(row.specialties) ? row.specialties : [],
+      studentNumber: row.student_number || "",
+      program: row.program || "",
+      createdAt: row.created_at,
+      memberType: "PEER",
+      canEdit: false,
+      canDelete: false,
+    };
+  });
+  const members = [...adminMembers, ...peerMembers];
 
   return res.json({
     members,
     summary: {
-      superAdminCount: members.filter((item) => item.role === "HEAD_COUNSELOR" && item.isActive).length,
-      counselorCount: members.filter((item) => item.role === "COUNSELOR" && item.isActive).length,
-      peerAdvisorCount: Number(peerCountResult.rows[0]?.total || 0),
+      superAdminCount: adminMembers.filter((item) => item.role === "HEAD_COUNSELOR" && item.isActive).length,
+      counselorCount: adminMembers.filter((item) => item.role === "COUNSELOR" && item.isActive).length,
+      peerAdvisorCount: peerMembers.filter((item) => item.isActive).length,
     },
   });
 });
