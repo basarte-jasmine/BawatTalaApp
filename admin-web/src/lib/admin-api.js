@@ -152,10 +152,13 @@ export async function fetchAdminGoogleOAuthUrl() {
   return request("/api/admin/oauth/google/start");
 }
 
-export async function fetchAdminAppointmentsOverview(date) {
+export async function fetchAdminAppointmentsOverview(date, supportType = "GUIDANCE") {
   const params = new URLSearchParams();
   if (date) {
     params.set("date", date);
+  }
+  if (supportType) {
+    params.set("supportType", supportType);
   }
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return request(`/api/appointments/admin/overview${suffix}`);
@@ -247,6 +250,35 @@ export async function deleteAdminAppointment(appointmentId, actorEmail) {
   }
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return request(`/api/appointments/admin/${appointmentId}${suffix}`, {
+    method: "DELETE",
+  });
+}
+
+export async function fetchAdminPeerCounselors() {
+  return request("/api/appointments/admin/peer-counselors");
+}
+
+export async function createAdminPeerCounselor(payload) {
+  return request("/api/appointments/admin/peer-counselors", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateAdminPeerCounselor(peerCounselorId, payload) {
+  return request(`/api/appointments/admin/peer-counselors/${peerCounselorId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteAdminPeerCounselor(peerCounselorId, actorEmail) {
+  const params = new URLSearchParams();
+  if (actorEmail) {
+    params.set("actorEmail", actorEmail);
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return request(`/api/appointments/admin/peer-counselors/${peerCounselorId}${suffix}`, {
     method: "DELETE",
   });
 }

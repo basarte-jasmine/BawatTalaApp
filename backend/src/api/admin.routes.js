@@ -1937,29 +1937,38 @@ router.get("/analytics", async (req, res) => {
 });
 
 router.get("/roles", async (_req, res) => {
-  const membersResult = await query(
-    `
-      select
-        aa.id,
-        aa.email,
-        coalesce(nullif(aa.full_name, ''), split_part(aa.email, '@', 1)) as full_name,
-        coalesce(aa.role, 'COUNSELOR') as role,
-        coalesce(aa.gender, 'Prefer not to say') as gender,
-        coalesce(aa.specialties, '[]'::jsonb) as specialties,
-        aa.is_active,
-        aa.created_at,
-        coalesce(stats.assigned_students, 0) as assigned_students
-      from public.admin_accounts aa
-      left join lateral (
-        select count(distinct ca.student_number)::int as assigned_students
-        from public.counselor_appointments ca
-        where ca.counselor_id = aa.id
-          and ca.status = 'CONFIRMED'
-      ) stats on true
-      where coalesce(aa.role, 'COUNSELOR') in ('HEAD_COUNSELOR', 'COUNSELOR')
-      order by case when coalesce(aa.role, 'COUNSELOR') = 'HEAD_COUNSELOR' then 0 else 1 end, full_name asc
-    `,
-  );
+  const [membersResult, peerCountResult] = await Promise.all([
+    query(
+      `
+        select
+          aa.id,
+          aa.email,
+          coalesce(nullif(aa.full_name, ''), split_part(aa.email, '@', 1)) as full_name,
+          coalesce(aa.role, 'COUNSELOR') as role,
+          coalesce(aa.gender, 'Prefer not to say') as gender,
+          coalesce(aa.specialties, '[]'::jsonb) as specialties,
+          aa.is_active,
+          aa.created_at,
+          coalesce(stats.assigned_students, 0) as assigned_students
+        from public.admin_accounts aa
+        left join lateral (
+          select count(distinct ca.student_number)::int as assigned_students
+          from public.counselor_appointments ca
+          where ca.counselor_id = aa.id
+            and ca.status = 'CONFIRMED'
+        ) stats on true
+        where coalesce(aa.role, 'COUNSELOR') in ('HEAD_COUNSELOR', 'COUNSELOR')
+        order by case when coalesce(aa.role, 'COUNSELOR') = 'HEAD_COUNSELOR' then 0 else 1 end, full_name asc
+      `,
+    ),
+    query(
+      `
+        select count(*)::int as total
+        from public.peer_counselors
+        where is_active = true
+      `,
+    ),
+  ]);
 
   const members = membersResult.rows.map((row) => ({
     id: row.id,
@@ -1981,7 +1990,7 @@ router.get("/roles", async (_req, res) => {
     summary: {
       superAdminCount: members.filter((item) => item.role === "HEAD_COUNSELOR" && item.isActive).length,
       counselorCount: members.filter((item) => item.role === "COUNSELOR" && item.isActive).length,
-      peerAdvisorCount: 0,
+      peerAdvisorCount: Number(peerCountResult.rows[0]?.total || 0),
     },
   });
 });

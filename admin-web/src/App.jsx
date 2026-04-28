@@ -6,6 +6,7 @@ import ForgotPassword from "./pages/ForgotPassword";
 import FlaggedEntries from "./pages/FlaggedEntries";
 import Login from "./pages/Login";
 import Overview from "./pages/Overview";
+import PeerCounselors from "./pages/PeerCounselors";
 import RoleAssignments from "./pages/RoleAssignments";
 import Settings from "./pages/Settings";
 import StudentDirectory from "./pages/StudentDirectory";
@@ -66,6 +67,14 @@ export default function App() {
           element={
             <ProtectedRoute session={session}>
               <CalendarScheduling session={session} onLogout={authActions.logout} />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/peer-counselors"
+          element={
+            <ProtectedRoute session={session}>
+              <PeerCounselors session={session} onLogout={authActions.logout} />
             </ProtectedRoute>
           }
         />

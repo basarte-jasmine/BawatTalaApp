@@ -57,7 +57,10 @@ export type CounselorAppointment = {
     fullName: string;
     gender: string;
     pictureUrl: string;
+    program?: string;
     role: string;
+    studentNumber?: string;
+    supportType?: "GUIDANCE" | "PEER";
   };
   createdAt?: string;
   decisionDueAt?: string | null;
@@ -66,6 +69,7 @@ export type CounselorAppointment = {
   slotTime: string;
   status: "PENDING" | "CONFIRMED" | "DECLINED" | "COMPLETED" | "CANCELLED";
   studentNote?: string;
+  supportType?: "GUIDANCE" | "PEER";
 };
 
 export type MoodSource = "INPUT" | "JOURNAL";
@@ -134,8 +138,11 @@ export type CounselorDirectoryItem = {
   gender: string;
   id: string;
   pictureUrl: string;
+  program?: string;
   role: string;
   specialties: string[];
+  studentNumber?: string;
+  supportType?: "GUIDANCE" | "PEER";
 };
 
 export type AppNotification = {
@@ -888,6 +895,7 @@ export async function fetchAppointmentCounselors(): Promise<
     concernOptions?: string[];
     concernSubcategories?: Record<string, string[]>;
     counselors?: CounselorDirectoryItem[];
+    peerConcernOptions?: string[];
     slotTimes?: Array<{ label: string; value: string }>;
   }
 > {
@@ -899,6 +907,7 @@ export async function fetchAppointmentCounselors(): Promise<
     concernOptions: data?.concernOptions ?? [],
     concernSubcategories: data?.concernSubcategories ?? {},
     counselors: data?.counselors ?? [],
+    peerConcernOptions: data?.peerConcernOptions ?? [],
     slotTimes: data?.slotTimes ?? [],
   };
 }
@@ -907,6 +916,7 @@ export async function fetchAppointmentAvailability(
   counselorId: string,
   month: string,
   studentNumber?: string,
+  supportType?: "GUIDANCE" | "PEER",
 ): Promise<
   ApiResult & {
     counselor?: CounselorDirectoryItem;
@@ -928,6 +938,9 @@ export async function fetchAppointmentAvailability(
     counselorId,
     month,
   });
+  if (supportType) {
+    params.set("supportType", supportType);
+  }
   if (studentNumber) {
     params.set("studentNumber", studentNumber);
   }
@@ -950,6 +963,7 @@ export async function bookCounselorAppointment(payload: {
   slotTime: string;
   studentNote?: string;
   studentNumber: string;
+  supportType?: "GUIDANCE" | "PEER";
 }): Promise<ApiResult & { appointment?: CounselorAppointment }> {
   const { response, data } = await post("/api/appointments/book", payload as unknown as Record<string, unknown>);
 

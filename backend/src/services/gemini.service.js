@@ -44,40 +44,27 @@ function parseConfiguredModelList(value, defaults) {
   return selected.filter((model, index, items) => model && items.indexOf(model) === index);
 }
 
-const GEMINI_CHAT_MODELS = parseModelList(
-  process.env.GEMINI_CHAT_MODELS ||
-    process.env.GEMINI_CHAT_MODEL ||
-    process.env.GEMINI_MODEL,
+const GEMINI_MODELS = parseModelList(
+  process.env.GEMINI_MODELS || process.env.GEMINI_MODEL,
   ["gemini-2.5-flash-lite", "gemini-2.5-flash"],
-);
-const GEMINI_INSIGHTS_MODELS = parseModelList(
-  process.env.GEMINI_INSIGHTS_MODELS ||
-    process.env.GEMINI_INSIGHTS_MODEL ||
-    process.env.GEMINI_MODEL,
-  ["gemini-2.5-flash", "gemini-2.5-flash-lite"],
 );
 const GEMINI_RATE_LIMIT_COOLDOWN_MS = Math.max(
   8000,
   Number(process.env.GEMINI_RATE_LIMIT_COOLDOWN_MS || 12000),
 );
-const GROQ_CHAT_MODELS = parseModelList(
-  process.env.GROQ_CHAT_MODELS || process.env.GROQ_CHAT_MODEL,
+const GROQ_MODELS = parseModelList(
+  process.env.GROQ_MODELS || process.env.GROQ_MODEL,
   ["llama-3.1-8b-instant"],
 );
-const GROQ_INSIGHTS_MODELS = parseModelList(
-  process.env.GROQ_INSIGHTS_MODELS || process.env.GROQ_INSIGHTS_MODEL,
-  ["llama-3.1-8b-instant"],
-);
-const OLLAMA_CHAT_MODELS = parseConfiguredModelList(
-  process.env.OLLAMA_CHAT_MODELS || process.env.OLLAMA_CHAT_MODEL || process.env.OLLAMA_MODEL,
-  ["gemma3:4b"],
-);
-const OLLAMA_INSIGHTS_MODELS = parseConfiguredModelList(
-  process.env.OLLAMA_INSIGHTS_MODELS || process.env.OLLAMA_INSIGHTS_MODEL || process.env.OLLAMA_MODEL,
+const OLLAMA_MODELS = parseConfiguredModelList(
+  process.env.OLLAMA_MODELS || process.env.OLLAMA_MODEL,
   ["gemma3:4b"],
 );
 const AI_PROVIDER_ORDER = parseProviderOrder(
-  process.env.AI_PROVIDER_ORDER || process.env.AI_PROVIDER,
+  process.env.AI_CHAT_PROVIDER_ORDER ||
+    process.env.AI_PROVIDER_ORDER ||
+    process.env.AI_PROVIDER ||
+    process.env.AI_CHAT_PROVIDER,
   ["gemini", "groq"],
 );
 const OLLAMA_REQUEST_TIMEOUT_MS = Math.max(
@@ -479,7 +466,7 @@ async function requestGeminiJson({
     if (response.ok && rawText) {
       clearGeminiFailureState();
       try {
-        return { ok: true, parsed: parseGeminiJson(rawText), provider: "gemini" };
+        return { ok: true, parsed: parseGeminiJson(rawText), provider: "gemini", model };
       } catch (error) {
         console.error("Failed to parse Gemini JSON response.", {
           error: error instanceof Error ? error.message : String(error),
@@ -503,6 +490,8 @@ async function requestGeminiJson({
           admin_flag_reason:
             "Gemini safety filters were triggered while analyzing the entry.",
         },
+        provider: "gemini",
+        model,
       };
     }
 
@@ -576,7 +565,7 @@ async function requestGroqJson({
     if (response.ok && rawText) {
       clearGroqFailureState();
       try {
-        return { ok: true, parsed: parseProviderJson(rawText), provider: "groq" };
+        return { ok: true, parsed: parseProviderJson(rawText), provider: "groq", model };
       } catch (error) {
         console.error("Failed to parse Groq JSON response.", {
           error: error instanceof Error ? error.message : String(error),
@@ -707,7 +696,7 @@ async function requestOllamaJson({
     if (response.ok && rawText) {
       clearOllamaFailureState();
       try {
-        return { ok: true, parsed: parseProviderJson(rawText), provider: "ollama" };
+        return { ok: true, parsed: parseProviderJson(rawText), provider: "ollama", model };
       } catch (error) {
         console.error("Failed to parse Ollama JSON response.", {
           error: error instanceof Error ? error.message : String(error),
@@ -743,9 +732,6 @@ async function requestOllamaJson({
 }
 
 async function requestConfiguredProviderJson({
-  geminiModels,
-  groqModels,
-  ollamaModels,
   systemInstruction,
   contents,
   messages,
@@ -755,11 +741,12 @@ async function requestConfiguredProviderJson({
 
   for (const provider of AI_PROVIDER_ORDER) {
     let result = { ok: false, parsed: null, reason: "provider_not_configured" };
+    console.info("Trying AI provider.", { provider });
 
     if (provider === "gemini") {
       result = GEMINI_API_KEY
         ? await requestGeminiJson({
-            models: geminiModels,
+            models: GEMINI_MODELS,
             systemInstruction,
             contents,
             schemaLines,
@@ -767,14 +754,14 @@ async function requestConfiguredProviderJson({
         : { ok: false, parsed: null, reason: "gemini_missing_key" };
     } else if (provider === "groq") {
       result = await requestGroqJson({
-        models: groqModels,
+        models: GROQ_MODELS,
         systemInstruction,
         messages,
         schemaLines,
       });
     } else if (provider === "ollama") {
       result = await requestOllamaJson({
-        models: ollamaModels,
+        models: OLLAMA_MODELS,
         systemInstruction,
         messages,
         schemaLines,
@@ -782,6 +769,10 @@ async function requestConfiguredProviderJson({
     }
 
     if (result.ok) {
+      console.info("AI provider succeeded.", {
+        model: result.model || "unknown",
+        provider: result.provider || provider,
+      });
       return result;
     }
     providerReasons[provider] = result.reason || "unknown";
@@ -874,9 +865,6 @@ async function analyzeJournalConversation({
 
   try {
     const providerResult = await requestConfiguredProviderJson({
-      geminiModels: GEMINI_CHAT_MODELS,
-      groqModels: GROQ_CHAT_MODELS,
-      ollamaModels: OLLAMA_CHAT_MODELS,
       systemInstruction,
       contents: analysisContents,
       messages: groqMessages,
@@ -993,9 +981,6 @@ async function analyzeJournalEntryFinal({
 
   try {
     const providerResult = await requestConfiguredProviderJson({
-      geminiModels: GEMINI_INSIGHTS_MODELS,
-      groqModels: GROQ_INSIGHTS_MODELS,
-      ollamaModels: OLLAMA_INSIGHTS_MODELS,
       systemInstruction,
       contents,
       messages: groqMessages,

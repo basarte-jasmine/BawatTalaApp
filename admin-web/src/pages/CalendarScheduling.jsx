@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Plus, RefreshCw } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Edit2, Plus, RefreshCw, Trash2, UserPlus, Users } from "lucide-react";
 import ConfirmActionModal from "../components/ConfirmActionModal";
 import Layout from "../components/Layout";
 import {
@@ -22,9 +22,12 @@ import {
   confirmAdminAppointment,
   cancelAdminAppointment,
   createAdminAppointment,
+  createAdminPeerCounselor,
   declineAdminAppointment,
   deleteAdminAppointment,
+  deleteAdminPeerCounselor,
   fetchAdminAppointmentsOverview,
+  updateAdminPeerCounselor,
   updateAdminAvailability,
   updateAdminDayAvailability,
   updateAdminAppointment,
@@ -32,7 +35,29 @@ import {
 
 const ACTIVITY_LOGS_PER_PAGE = 5;
 
-export default function CalendarScheduling({ onLogout, session }) {
+const PEER_FORM_INITIAL_STATE = {
+  email: "",
+  fullName: "",
+  gender: "Male",
+  program: "",
+  studentNumber: "",
+};
+
+export default function CalendarScheduling({
+  onLogout,
+  session,
+  supportType = "GUIDANCE",
+  title,
+  subtitle,
+}) {
+  const normalizedSupportType = String(supportType || "GUIDANCE").toUpperCase() === "PEER" ? "PEER" : "GUIDANCE";
+  const isPeerSupport = normalizedSupportType === "PEER";
+  const pageTitle = title || (isPeerSupport ? "Peer Counselor Scheduling" : "Guidance Calendar & Scheduling");
+  const pageSubtitle = subtitle || (isPeerSupport
+    ? "Manage talk-to-peer sessions, peer counselor schedules, and admin approvals."
+    : "Manage guidance appointments, counseling sessions, and counselor availability.");
+  const counselorLabel = isPeerSupport ? "Peer Counselor" : "Counselor";
+  const counselorLabelPlural = isPeerSupport ? "Peer Counselors" : "Counselors";
   const [selectedDate, setSelectedDate] = useState(getTodayIsoDate);
   const [selectedMonth, setSelectedMonth] = useState(() => new Date());
   const [selectedCounselorId, setSelectedCounselorId] = useState("");
@@ -62,6 +87,11 @@ export default function CalendarScheduling({ onLogout, session }) {
   const [cancelAppointmentId, setCancelAppointmentId] = useState("");
   const [deleteAppointmentId, setDeleteAppointmentId] = useState("");
   const [dayAvailabilityAction, setDayAvailabilityAction] = useState(null);
+  const [peerForm, setPeerForm] = useState(PEER_FORM_INITIAL_STATE);
+  const [editingPeerCounselorId, setEditingPeerCounselorId] = useState("");
+  const [peerFormError, setPeerFormError] = useState("");
+  const [isSavingPeerCounselor, setIsSavingPeerCounselor] = useState(false);
+  const [pendingDeletePeerCounselor, setPendingDeletePeerCounselor] = useState(null);
 
   useEffect(() => {
     const monthFromDate = new Date(`${selectedDate}T12:00:00+08:00`);
@@ -73,10 +103,11 @@ export default function CalendarScheduling({ onLogout, session }) {
   async function loadOverviewForMonth(monthDate, options = {}) {
     const { force = false, silent = false } = options;
     const monthKey = getMonthKey(monthDate);
-    if (!force && overviewCache[monthKey]) {
-      setOverview(overviewCache[monthKey]);
+    const cacheKey = `${normalizedSupportType}:${monthKey}`;
+    if (!force && overviewCache[cacheKey]) {
+      setOverview(overviewCache[cacheKey]);
       setLoading(false);
-      return overviewCache[monthKey];
+      return overviewCache[cacheKey];
     }
 
     if (silent || overview) {
@@ -86,11 +117,11 @@ export default function CalendarScheduling({ onLogout, session }) {
     }
 
     try {
-      const data = await fetchAdminAppointmentsOverview(toFirstDayIso(monthDate));
+      const data = await fetchAdminAppointmentsOverview(toFirstDayIso(monthDate), normalizedSupportType);
       setOverview(data);
       setOverviewCache((current) => ({
         ...current,
-        [monthKey]: data,
+        [cacheKey]: data,
       }));
       setErrorMessage("");
       return data;
@@ -105,15 +136,22 @@ export default function CalendarScheduling({ onLogout, session }) {
 
   useEffect(() => {
     void loadOverviewForMonth(selectedMonth);
-  }, [selectedMonth]);
+  }, [selectedMonth, normalizedSupportType]);
 
   useEffect(() => {
-    if (!selectedCounselorId && overview?.counselors?.length) {
+    const overviewCounselors = overview?.counselors || [];
+    if (!overviewCounselors.length) {
+      if (selectedCounselorId) {
+        setSelectedCounselorId("");
+      }
+      return;
+    }
+    if (!selectedCounselorId || !overviewCounselors.some((item) => item.id === selectedCounselorId)) {
       const sessionEmail = String(session?.email || "").trim().toLowerCase();
-      const matchingCounselor = (overview?.counselors || []).find(
+      const matchingCounselor = overviewCounselors.find(
         (item) => String(item.email || "").trim().toLowerCase() === sessionEmail,
       );
-      setSelectedCounselorId(matchingCounselor?.id || overview?.counselors?.[0]?.id || "");
+      setSelectedCounselorId(matchingCounselor?.id || overviewCounselors[0]?.id || "");
     }
   }, [overview, selectedCounselorId, session?.email]);
 
@@ -150,7 +188,7 @@ export default function CalendarScheduling({ onLogout, session }) {
     () => getMonthKey(new Date(`${(modalDate || selectedDate) || getTodayIsoDate()}T12:00:00+08:00`)),
     [modalDate, selectedDate],
   );
-  const modalOverview = overviewCache[modalMonthKey] || overview;
+  const modalOverview = overviewCache[`${normalizedSupportType}:${modalMonthKey}`] || overview;
   const modalMonthAppointments = Array.isArray(modalOverview?.monthAppointments) ? modalOverview.monthAppointments : [];
   const modalAvailability = Array.isArray(modalOverview?.availability) ? modalOverview.availability : [];
   const modalSlotTimes = Array.isArray(modalOverview?.slotTimes) ? modalOverview.slotTimes : slotTimes;
@@ -236,7 +274,7 @@ export default function CalendarScheduling({ onLogout, session }) {
       return undefined;
     }
     const modalMonth = new Date(`${modalDate}T12:00:00+08:00`);
-    if (overviewCache[getMonthKey(modalMonth)]) {
+    if (overviewCache[`${normalizedSupportType}:${getMonthKey(modalMonth)}`]) {
       return undefined;
     }
 
@@ -284,7 +322,7 @@ export default function CalendarScheduling({ onLogout, session }) {
     setOverview(nextOverview);
     setOverviewCache((current) => ({
       ...current,
-      [getMonthKey(selectedMonth)]: nextOverview,
+      [`${normalizedSupportType}:${getMonthKey(selectedMonth)}`]: nextOverview,
     }));
   }
 
@@ -300,6 +338,7 @@ export default function CalendarScheduling({ onLogout, session }) {
         dayOfWeek,
         isEnabled: nextEnabled,
         slotTime,
+        supportType: normalizedSupportType,
       });
       applyAvailabilityUpdate((slot) =>
         slot.dayOfWeek === dayOfWeek && slot.slotTime === slotTime ? { ...slot, isEnabled: nextEnabled } : slot,
@@ -320,6 +359,7 @@ export default function CalendarScheduling({ onLogout, session }) {
         counselorId: selectedCounselor.id,
         dayOfWeek: dayAvailabilityAction.dayOfWeek,
         isEnabled: dayAvailabilityAction.nextEnabled,
+        supportType: normalizedSupportType,
         targetDate: dayAvailabilityAction.targetDate,
       });
       setDayAvailabilityAction(null);
@@ -334,7 +374,7 @@ export default function CalendarScheduling({ onLogout, session }) {
     setIsModalOpen(true);
     setEditingAppointmentId(appointment?.id || "");
     setModalStudentNumber(appointment?.studentNumber || "");
-    setModalCounselorId(appointment?.counselorId || selectedCounselorId || "");
+    setModalCounselorId(appointment?.counselorId || selectedCounselor?.id || selectedCounselorId || "");
     setModalDate(appointment?.appointmentDate || selectedDate || getTodayIsoDate());
     setModalTime(appointment?.slotTime || "");
     setModalConcern(appointment?.concern || "");
@@ -358,6 +398,7 @@ export default function CalendarScheduling({ onLogout, session }) {
         studentNote: modalNote,
         counselorGenderPreference: modalGenderPreference,
         bookingSource: "ADMIN_PANEL",
+        supportType: normalizedSupportType,
       };
       if (editingAppointmentId) {
         await updateAdminAppointment(editingAppointmentId, payload);
@@ -415,6 +456,62 @@ export default function CalendarScheduling({ onLogout, session }) {
     }
   }
 
+  function resetPeerForm() {
+    setPeerForm(PEER_FORM_INITIAL_STATE);
+    setEditingPeerCounselorId("");
+    setPeerFormError("");
+  }
+
+  function handleEditPeerCounselor(peerCounselor) {
+    setPeerForm({
+      email: peerCounselor.email || "",
+      fullName: peerCounselor.fullName || "",
+      gender: peerCounselor.gender || "Prefer not to say",
+      program: peerCounselor.program || "",
+      studentNumber: peerCounselor.studentNumber || "",
+    });
+    setEditingPeerCounselorId(peerCounselor.id);
+    setPeerFormError("");
+  }
+
+  async function handleSubmitPeerCounselor(event) {
+    event.preventDefault();
+    try {
+      setIsSavingPeerCounselor(true);
+      setPeerFormError("");
+      const payload = {
+        ...peerForm,
+        actorEmail: session?.email || "",
+        specialties: overview?.peerConcernOptions?.filter((item) => item !== "Others") || [],
+      };
+      if (editingPeerCounselorId) {
+        await updateAdminPeerCounselor(editingPeerCounselorId, payload);
+      } else {
+        await createAdminPeerCounselor(payload);
+      }
+      resetPeerForm();
+      await refreshOverview();
+    } catch (error) {
+      setPeerFormError(error instanceof Error ? error.message : "Failed to save peer counselor.");
+    } finally {
+      setIsSavingPeerCounselor(false);
+    }
+  }
+
+  async function handleConfirmDeletePeerCounselor() {
+    if (!pendingDeletePeerCounselor?.id) return;
+    try {
+      await deleteAdminPeerCounselor(pendingDeletePeerCounselor.id, session?.email || "");
+      setPendingDeletePeerCounselor(null);
+      if (editingPeerCounselorId === pendingDeletePeerCounselor.id) {
+        resetPeerForm();
+      }
+      await refreshOverview();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to remove peer counselor.");
+    }
+  }
+
   function formatAvailabilityHours(openSlots) {
     if (!openSlots.length) {
       return "Unavailable all day";
@@ -427,8 +524,8 @@ export default function CalendarScheduling({ onLogout, session }) {
 
   return (
     <Layout
-      title="Calendar & Scheduling"
-      subtitle="Manage appointments, counseling sessions, and counselor availability."
+      title={pageTitle}
+      subtitle={pageSubtitle}
       onLogout={onLogout}
       session={session}
     >
@@ -439,6 +536,160 @@ export default function CalendarScheduling({ onLogout, session }) {
           </div>
         ) : null}
 
+        {isPeerSupport ? (
+          <section className="grid grid-cols-1 gap-6 xl:grid-cols-[0.9fr,1.1fr]">
+            <div className="rounded-[2rem] border border-admin-border bg-white p-6 shadow-sm">
+              <div className="mb-5 flex items-center gap-3">
+                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-50 text-sky-700">
+                  <UserPlus className="h-5 w-5" />
+                </span>
+                <div>
+                  <h3 className="text-[1.15rem] font-black text-slate-800">
+                    {editingPeerCounselorId ? "Edit Peer Counselor" : "Add Peer Counselor"}
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-500">Peer counselors do not receive admin accounts; schedules are sent by email.</p>
+                </div>
+              </div>
+
+              {peerFormError ? (
+                <div className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600">{peerFormError}</div>
+              ) : null}
+
+              <form onSubmit={(event) => void handleSubmitPeerCounselor(event)} className="space-y-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="text-sm font-semibold text-slate-700">
+                    Name
+                    <input
+                      required
+                      value={peerForm.fullName}
+                      onChange={(event) => setPeerForm((current) => ({ ...current, fullName: event.target.value }))}
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#3DA35D]"
+                      placeholder="Full name"
+                    />
+                  </label>
+                  <label className="text-sm font-semibold text-slate-700">
+                    Gmail
+                    <input
+                      required
+                      type="email"
+                      value={peerForm.email}
+                      onChange={(event) => setPeerForm((current) => ({ ...current, email: event.target.value }))}
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#3DA35D]"
+                      placeholder="name@gmail.com"
+                    />
+                  </label>
+                  <label className="text-sm font-semibold text-slate-700">
+                    Student Number
+                    <input
+                      required
+                      value={peerForm.studentNumber}
+                      onChange={(event) => setPeerForm((current) => ({ ...current, studentNumber: event.target.value }))}
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#3DA35D]"
+                      placeholder="23-0000"
+                    />
+                  </label>
+                  <label className="text-sm font-semibold text-slate-700">
+                    Course / Program
+                    <input
+                      required
+                      value={peerForm.program}
+                      onChange={(event) => setPeerForm((current) => ({ ...current, program: event.target.value }))}
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#3DA35D]"
+                      placeholder="BS PSYCHOLOGY"
+                    />
+                  </label>
+                </div>
+
+                <label className="block text-sm font-semibold text-slate-700">
+                  Gender
+                  <select
+                    value={peerForm.gender}
+                    onChange={(event) => setPeerForm((current) => ({ ...current, gender: event.target.value }))}
+                    className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-[#3DA35D]"
+                  >
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Prefer not to say">Prefer not to say</option>
+                  </select>
+                </label>
+
+                <div className="flex justify-end gap-3">
+                  {editingPeerCounselorId ? (
+                    <button
+                      type="button"
+                      onClick={resetPeerForm}
+                      className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+                    >
+                      Cancel Edit
+                    </button>
+                  ) : null}
+                  <button
+                    type="submit"
+                    disabled={isSavingPeerCounselor}
+                    className="rounded-xl bg-[#3DA35D] px-5 py-2 text-sm font-semibold text-white hover:bg-[#2f8c4d] disabled:opacity-70"
+                  >
+                    {isSavingPeerCounselor ? "Saving..." : editingPeerCounselorId ? "Save Peer Counselor" : "Add Peer Counselor"}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <div className="rounded-[2rem] border border-admin-border bg-white p-6 shadow-sm">
+              <div className="mb-5 flex items-center gap-3">
+                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+                  <Users className="h-5 w-5" />
+                </span>
+                <div>
+                  <h3 className="text-[1.15rem] font-black text-slate-800">Peer Counselor Directory</h3>
+                  <p className="mt-1 text-sm text-slate-500">Active peer counselors available for talk-to-peer sessions.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                {counselors.length ? (
+                  counselors.map((peer) => (
+                    <div key={peer.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-semibold text-slate-800">{peer.fullName}</div>
+                          <div className="mt-1 text-sm text-slate-500">{peer.email}</div>
+                          <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium">
+                            <span className="rounded-full bg-white px-2.5 py-1 text-slate-600">{peer.gender}</span>
+                            <span className="rounded-full bg-white px-2.5 py-1 text-slate-600">{peer.studentNumber}</span>
+                            <span className="rounded-full bg-white px-2.5 py-1 text-slate-600">{peer.program}</span>
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1 text-slate-400">
+                          <button
+                            type="button"
+                            onClick={() => handleEditPeerCounselor(peer)}
+                            className="rounded-lg p-2 hover:bg-white hover:text-emerald-700"
+                            aria-label={`Edit ${peer.fullName}`}
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPendingDeletePeerCounselor(peer)}
+                            className="rounded-lg p-2 hover:bg-white hover:text-red-600"
+                            aria-label={`Remove ${peer.fullName}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+                    No active peer counselors yet.
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        ) : null}
+
         <div className="flex justify-end">
           <button
             type="button"
@@ -446,7 +697,7 @@ export default function CalendarScheduling({ onLogout, session }) {
             className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#3DA35D] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#2f8c4d]"
           >
             <Plus className="h-4 w-4" />
-            Create Counselor Appointment
+            Create {counselorLabel} Appointment
           </button>
         </div>
 
@@ -567,8 +818,8 @@ export default function CalendarScheduling({ onLogout, session }) {
                 <div className="rounded-[2rem] border border-admin-border bg-white p-6 shadow-sm">
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-[1.15rem] font-black text-slate-800">Counselor Daily Schedule</h3>
-                    <p className="mt-1 text-sm text-slate-500">{selectedCounselor?.fullName || "Select a counselor"}</p>
+                    <h3 className="text-[1.15rem] font-black text-slate-800">{counselorLabel} Daily Schedule</h3>
+                    <p className="mt-1 text-sm text-slate-500">{selectedCounselor?.fullName || `Select a ${counselorLabel.toLowerCase()}`}</p>
                   </div>
                   <div className="flex items-center gap-2">
                       <button
@@ -727,7 +978,7 @@ export default function CalendarScheduling({ onLogout, session }) {
             <section className="rounded-[2rem] border border-admin-border bg-white p-6 shadow-sm">
               <div className="mb-6 flex items-center justify-between gap-4">
                 <div>
-                  <h3 className="text-[1.25rem] font-black text-slate-800">Counselor Availability</h3>
+                  <h3 className="text-[1.25rem] font-black text-slate-800">{counselorLabel} Availability</h3>
                   <p className="mt-1 text-sm text-slate-500">Weekly schedule overview for the currently selected week. Turning a day off only affects that specific date and clears its hours.</p>
                 </div>
 
@@ -753,7 +1004,7 @@ export default function CalendarScheduling({ onLogout, session }) {
               <div className="overflow-x-auto">
                 <div className="min-w-[880px] space-y-5">
                   <div className="grid grid-cols-[180px_repeat(5,minmax(0,1fr))] gap-5 text-sm font-semibold text-slate-500">
-                    <div>Counselor</div>
+                    <div>{counselorLabel}</div>
                     <div>Mon</div>
                     <div>Tue</div>
                     <div>Wed</div>
@@ -836,7 +1087,7 @@ export default function CalendarScheduling({ onLogout, session }) {
                     <p className="mt-1 text-sm text-slate-500">Recent admin activity across scheduling and the wider admin panel.</p>
                   </div>
                   <label className="flex min-w-[220px] flex-col gap-1 text-sm font-semibold text-slate-700">
-                    Filter by counselor
+                    Filter by {counselorLabel.toLowerCase()}
                     <select
                       value={activityFilterCounselorId}
                       onChange={(event) => {
@@ -845,7 +1096,7 @@ export default function CalendarScheduling({ onLogout, session }) {
                       }}
                       className="rounded-xl border border-admin-border bg-white px-3 py-2 text-sm font-medium text-admin-ink"
                     >
-                      <option value="ALL">All counselors</option>
+                      <option value="ALL">All {counselorLabelPlural.toLowerCase()}</option>
                       {counselors.map((item) => (
                         <option key={`activity-${item.id}`} value={item.id}>
                           {item.fullName}
@@ -873,7 +1124,7 @@ export default function CalendarScheduling({ onLogout, session }) {
                     ))
                   ) : (
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                      No activity recorded for that counselor yet.
+                      No activity recorded for that {counselorLabel.toLowerCase()} yet.
                     </div>
                   )}
                 </div>
@@ -911,8 +1162,10 @@ export default function CalendarScheduling({ onLogout, session }) {
                     <Clock3 className="h-5 w-5" />
                   </span>
                   <div>
-                    <h3 className="text-[1.15rem] font-black text-slate-800">Counselor & Admin List</h3>
-                    <p className="mt-1 text-sm text-slate-500">Active scheduling accounts with their roles and specialties.</p>
+                    <h3 className="text-[1.15rem] font-black text-slate-800">{isPeerSupport ? "Peer Counselor List" : "Counselor & Admin List"}</h3>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {isPeerSupport ? "Peer counselors receive schedules by email only." : "Active scheduling accounts with their roles and specialties."}
+                    </p>
                   </div>
                 </div>
 
@@ -956,7 +1209,7 @@ export default function CalendarScheduling({ onLogout, session }) {
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-xl">
-            <h3 className="mb-4 text-xl font-bold text-slate-800">{editingAppointmentId ? "Edit Counselor Appointment" : "Create Counselor Appointment"}</h3>
+            <h3 className="mb-4 text-xl font-bold text-slate-800">{editingAppointmentId ? `Edit ${counselorLabel} Appointment` : `Create ${counselorLabel} Appointment`}</h3>
             
             {modalError && (
               <div className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-600">
@@ -978,14 +1231,14 @@ export default function CalendarScheduling({ onLogout, session }) {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-semibold text-slate-700">Counselor</label>
+                <label className="mb-1 block text-sm font-semibold text-slate-700">{counselorLabel}</label>
                 <select
                   required
                   value={modalCounselorId}
                   onChange={(e) => setModalCounselorId(e.target.value)}
                   className="w-full rounded-xl border border-slate-200 p-2.5 text-sm outline-none focus:border-[#3DA35D]"
                 >
-                  <option value="">Select Counselor</option>
+                  <option value="">Select {counselorLabel}</option>
                   {counselors.map((c) => (
                     <option key={`modal-${c.id}`} value={c.id}>{c.fullName}</option>
                   ))}
@@ -1075,7 +1328,7 @@ export default function CalendarScheduling({ onLogout, session }) {
                   disabled={isSubmitting}
                   className="rounded-xl bg-[#3DA35D] px-6 py-2 text-sm font-semibold text-white hover:bg-[#2f8c4d] disabled:opacity-70"
                 >
-                  {isSubmitting ? "Saving..." : editingAppointmentId ? "Save Changes" : "Create Counselor Appointment"}
+                  {isSubmitting ? "Saving..." : editingAppointmentId ? "Save Changes" : `Create ${counselorLabel} Appointment`}
                 </button>
               </div>
             </form>
@@ -1102,6 +1355,17 @@ export default function CalendarScheduling({ onLogout, session }) {
         description="Delete this appointment permanently from the database?"
         cancelLabel="Keep"
         confirmLabel="Delete Permanently"
+        confirmTone="rose"
+      />
+
+      <ConfirmActionModal
+        isOpen={Boolean(pendingDeletePeerCounselor)}
+        onClose={() => setPendingDeletePeerCounselor(null)}
+        onConfirm={() => void handleConfirmDeletePeerCounselor()}
+        title="Remove Peer Counselor"
+        description={`Remove ${pendingDeletePeerCounselor?.fullName || "this peer counselor"} from active peer scheduling? Existing appointments will stay visible.`}
+        cancelLabel="Keep"
+        confirmLabel="Remove"
         confirmTone="rose"
       />
 

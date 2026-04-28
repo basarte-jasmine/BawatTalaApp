@@ -140,7 +140,7 @@ export default function RoleAssignments({ onLogout, session }) {
     if (!editingMemberId) return;
 
     if (formState.role === "PEER_ADVISOR") {
-      setFormError("Peer Advisor is visible for planning only and is not available yet.");
+      setFormError("Peer counselors are managed from the Peer Counselors page and do not receive admin accounts.");
       return;
     }
 
@@ -195,13 +195,13 @@ export default function RoleAssignments({ onLogout, session }) {
                   <div>
                     <h3 className="font-semibold text-gray-900">{role.title}</h3>
                     {role.key === "peerAdvisorCount" ? (
-                      <div className="text-xs text-amber-700">Not opened yet</div>
+                      <div className="text-xs text-amber-700">Email-only access</div>
                     ) : null}
                   </div>
                 </div>
                 <div className="text-2xl font-bold text-gray-900">{count}</div>
                 <div className="text-sm text-gray-500">
-                  {role.key === "peerAdvisorCount" ? "Reserved slot" : `Active user${count !== 1 ? "s" : ""}`}
+                  {role.key === "peerAdvisorCount" ? `Active peer counselor${count !== 1 ? "s" : ""}` : `Active user${count !== 1 ? "s" : ""}`}
                 </div>
               </div>
             );
@@ -292,7 +292,7 @@ export default function RoleAssignments({ onLogout, session }) {
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-200 bg-gray-50/50 p-5">
             <h2 className="text-lg font-semibold text-gray-900">Permission Matrix</h2>
-            <p className="mt-1 text-sm text-gray-500">Detailed breakdown of access levels by role. Peer Advisor stays visible but unavailable for now.</p>
+            <p className="mt-1 text-sm text-gray-500">Detailed breakdown of access levels by role. Peer counselors stay email-only and do not receive admin panel access.</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left">
@@ -344,7 +344,7 @@ export default function RoleAssignments({ onLogout, session }) {
                 >
                   <option value="HEAD_COUNSELOR">Super Admin</option>
                   <option value="COUNSELOR">School Counselor</option>
-                  <option value="PEER_ADVISOR">Peer Advisor (Not Available Yet)</option>
+                  <option value="PEER_ADVISOR">Peer Counselor (Email Only)</option>
                 </select>
               </div>
               <div className="space-y-1.5">

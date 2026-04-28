@@ -590,6 +590,97 @@ async function ensureDatabaseSchema() {
   `);
 
   await pool.query(`
+    create table if not exists public.peer_counselors (
+      id uuid primary key default gen_random_uuid(),
+      full_name text not null,
+      email text not null unique,
+      gender text not null default 'Prefer not to say',
+      student_number text,
+      program text,
+      specialties jsonb not null default '[]'::jsonb,
+      is_active boolean not null default true,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      constraint peer_counselors_gender_check check (
+        gender in ('Male', 'Female', 'Prefer not to say')
+      )
+    );
+  `);
+
+  await pool.query(`
+    alter table public.peer_counselors
+    add column if not exists student_number text;
+  `);
+
+  await pool.query(`
+    alter table public.peer_counselors
+    add column if not exists program text;
+  `);
+
+  await pool.query(`
+    alter table public.peer_counselors
+    add column if not exists specialties jsonb not null default '[]'::jsonb;
+  `);
+
+  await pool.query(`
+    create table if not exists public.peer_counselor_availability (
+      id uuid primary key default gen_random_uuid(),
+      peer_counselor_id uuid not null references public.peer_counselors(id) on delete cascade,
+      day_of_week integer,
+      override_date date,
+      slot_time text not null,
+      is_enabled boolean not null default true,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      constraint peer_counselor_availability_day_of_week_check check (day_of_week is null or day_of_week between 0 and 6),
+      constraint peer_counselor_availability_scope_check check (
+        (override_date is null and day_of_week is not null)
+        or (override_date is not null)
+      )
+    );
+  `);
+
+  await pool.query(`
+    insert into public.peer_counselors (
+      full_name,
+      email,
+      gender,
+      student_number,
+      program,
+      specialties,
+      is_active
+    )
+    values
+      (
+        'Aciel Di Magiba',
+        'acielgunhookim@gmail.com',
+        'Male',
+        '23-1111',
+        'BS PSYCHOLOGY',
+        '["Personal problems", "Mental health", "Anxiety", "Stress", "Academic problems", "Interpersonal relationships", "Bullying", "Adjustment"]'::jsonb,
+        true
+      ),
+      (
+        'Cesia Atreides',
+        'atreidescesia@gmail.com',
+        'Female',
+        '23-0001',
+        'BS INFORMATION TECHNOLOGY',
+        '["Personal problems", "Mental health", "Anxiety", "Stress", "Academic problems", "Interpersonal relationships", "Bullying", "Adjustment"]'::jsonb,
+        true
+      )
+    on conflict (email)
+    do update set
+      full_name = excluded.full_name,
+      gender = excluded.gender,
+      student_number = excluded.student_number,
+      program = excluded.program,
+      specialties = excluded.specialties,
+      is_active = true,
+      updated_at = now();
+  `);
+
+  await pool.query(`
     alter table public.counselor_availability
     add column if not exists override_date date;
   `);
@@ -633,7 +724,9 @@ async function ensureDatabaseSchema() {
     create table if not exists public.counselor_appointments (
       id uuid primary key default gen_random_uuid(),
       student_number text not null,
-      counselor_id uuid not null references public.admin_accounts(id) on delete restrict,
+      counselor_id uuid references public.admin_accounts(id) on delete restrict,
+      peer_counselor_id uuid references public.peer_counselors(id) on delete restrict,
+      support_type text not null default 'GUIDANCE',
       concern text not null,
       appointment_date date not null,
       slot_time text not null,
@@ -648,12 +741,38 @@ async function ensureDatabaseSchema() {
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now(),
       constraint counselor_appointments_status_check check (status in ('PENDING', 'CONFIRMED', 'DECLINED', 'COMPLETED', 'CANCELLED')),
+      constraint counselor_appointments_support_type_check check (support_type in ('GUIDANCE', 'PEER')),
+      constraint counselor_appointments_assignee_check check (
+        (support_type = 'GUIDANCE' and counselor_id is not null and peer_counselor_id is null)
+        or (support_type = 'PEER' and peer_counselor_id is not null and counselor_id is null)
+      ),
       constraint counselor_appointments_booking_source_check check (booking_source in ('MOBILE_APP', 'ADMIN_PANEL')),
       constraint counselor_appointments_gender_preference_check check (
         counselor_gender_preference is null
         or counselor_gender_preference in ('No Preference', 'Female Counselor', 'Male Counselor')
       )
     );
+  `);
+
+  await pool.query(`
+    alter table public.counselor_appointments
+    alter column counselor_id drop not null;
+  `);
+
+  await pool.query(`
+    alter table public.counselor_appointments
+    add column if not exists peer_counselor_id uuid references public.peer_counselors(id) on delete restrict;
+  `);
+
+  await pool.query(`
+    alter table public.counselor_appointments
+    add column if not exists support_type text not null default 'GUIDANCE';
+  `);
+
+  await pool.query(`
+    update public.counselor_appointments
+    set support_type = 'GUIDANCE'
+    where support_type is null;
   `);
 
   await pool.query(`
@@ -690,6 +809,31 @@ async function ensureDatabaseSchema() {
     alter table public.counselor_appointments
     add constraint counselor_appointments_status_check
     check (status in ('PENDING', 'CONFIRMED', 'DECLINED', 'COMPLETED', 'CANCELLED'));
+  `);
+
+  await pool.query(`
+    alter table public.counselor_appointments
+    drop constraint if exists counselor_appointments_support_type_check;
+  `);
+
+  await pool.query(`
+    alter table public.counselor_appointments
+    add constraint counselor_appointments_support_type_check
+    check (support_type in ('GUIDANCE', 'PEER'));
+  `);
+
+  await pool.query(`
+    alter table public.counselor_appointments
+    drop constraint if exists counselor_appointments_assignee_check;
+  `);
+
+  await pool.query(`
+    alter table public.counselor_appointments
+    add constraint counselor_appointments_assignee_check
+    check (
+      (support_type = 'GUIDANCE' and counselor_id is not null and peer_counselor_id is null)
+      or (support_type = 'PEER' and peer_counselor_id is not null and counselor_id is null)
+    );
   `);
 
   await pool.query(`
@@ -781,8 +925,40 @@ async function ensureDatabaseSchema() {
   `);
 
   await pool.query(`
+    create index if not exists peer_counselor_availability_counselor_idx
+      on public.peer_counselor_availability (peer_counselor_id, day_of_week, slot_time);
+  `);
+
+  await pool.query(`
+    create index if not exists peer_counselor_availability_override_date_idx
+      on public.peer_counselor_availability (peer_counselor_id, override_date, slot_time);
+  `);
+
+  await pool.query(`
+    create unique index if not exists peer_counselor_availability_weekly_unique_idx
+      on public.peer_counselor_availability (peer_counselor_id, day_of_week, slot_time)
+      where override_date is null;
+  `);
+
+  await pool.query(`
+    create unique index if not exists peer_counselor_availability_date_override_unique_idx
+      on public.peer_counselor_availability (peer_counselor_id, override_date, slot_time)
+      where override_date is not null;
+  `);
+
+  await pool.query(`
     create index if not exists counselor_appointments_date_idx
       on public.counselor_appointments (appointment_date, slot_time);
+  `);
+
+  await pool.query(`
+    create index if not exists counselor_appointments_peer_counselor_idx
+      on public.counselor_appointments (peer_counselor_id, appointment_date, slot_time);
+  `);
+
+  await pool.query(`
+    create index if not exists counselor_appointments_support_type_idx
+      on public.counselor_appointments (support_type, appointment_date);
   `);
 
   await pool.query(`

@@ -26,8 +26,11 @@ type CounselorCard = {
   gender: string;
   id: string;
   pictureUrl: string;
+  program?: string;
   role: string;
   specialties: string[];
+  studentNumber?: string;
+  supportType?: "GUIDANCE" | "PEER";
 };
 
 type AvailabilityDay = {
@@ -156,6 +159,7 @@ export default function ConsultScreen() {
   const [step, setStep] = useState(1);
   const [showChooser, setShowChooser] = useState(opensWithChooser);
   const [concerns, setConcerns] = useState<string[]>(DEFAULT_CONCERNS);
+  const [peerConcernOptions, setPeerConcernOptions] = useState<string[]>(DEFAULT_CONCERNS.filter((item) => !PEER_EXCLUDED_CONCERNS.has(item)));
   const [concernSubcategories, setConcernSubcategories] = useState<Record<string, string[]>>(DEFAULT_CONCERN_SUBCATEGORIES);
   const [selectedConcern, setSelectedConcern] = useState("Anxiety");
   const [selectedRelationshipConcern, setSelectedRelationshipConcern] = useState(INTERPERSONAL_RELATIONSHIP_SUBCONCERNS[0]);
@@ -196,6 +200,9 @@ export default function ConsultScreen() {
             result.concernOptions!.includes(current) ? current : result.concernOptions![0],
           );
         }
+        if (Array.isArray(result.peerConcernOptions) && result.peerConcernOptions.length > 0) {
+          setPeerConcernOptions(result.peerConcernOptions);
+        }
         if (result.concernSubcategories && Object.keys(result.concernSubcategories).length > 0) {
           setConcernSubcategories(result.concernSubcategories);
           const relationshipOptions = result.concernSubcategories[INTERPERSONAL_RELATIONSHIP_CONCERN] ?? [];
@@ -228,7 +235,7 @@ export default function ConsultScreen() {
     () =>
       counselors.filter((item) => {
         const role = String(item.role || "").toLowerCase();
-        return !role.includes("peer");
+        return item.supportType !== "PEER" && !role.includes("peer");
       }),
     [counselors],
   );
@@ -236,7 +243,7 @@ export default function ConsultScreen() {
     () =>
       counselors.filter((item) => {
         const role = String(item.role || "").toLowerCase();
-        return role.includes("peer");
+        return item.supportType === "PEER" || role.includes("peer");
       }),
     [counselors],
   );
@@ -255,8 +262,8 @@ export default function ConsultScreen() {
     return counselorPool;
   }, [activeCounselors, selectedGender]);
   const peerConcerns = useMemo(
-    () => concerns.filter((item) => !PEER_EXCLUDED_CONCERNS.has(item)),
-    [concerns],
+    () => peerConcernOptions.filter((item) => !PEER_EXCLUDED_CONCERNS.has(item)),
+    [peerConcernOptions],
   );
   const activeConcerns = selectedTrack === "peer" ? peerConcerns : concerns;
   const hasPeerCounselors = peerCounselors.length > 0;
@@ -293,7 +300,12 @@ export default function ConsultScreen() {
     async function loadAvailability() {
       try {
         setLoadingAvailability(true);
-        const result = await fetchAppointmentAvailability(selectedCounselor, toMonthKey(selectedMonth), user?.studentNumber);
+        const result = await fetchAppointmentAvailability(
+          selectedCounselor,
+          toMonthKey(selectedMonth),
+          user?.studentNumber,
+          selectedTrack === "peer" ? "PEER" : "GUIDANCE",
+        );
         if (!isMounted) return;
         if (!result.ok) {
           setErrorMessage(result.message || "Failed to load availability.");
@@ -338,7 +350,7 @@ export default function ConsultScreen() {
     return () => {
       isMounted = false;
     };
-  }, [selectedCounselor, selectedMonth, user?.studentNumber]);
+  }, [selectedCounselor, selectedMonth, selectedTrack, user?.studentNumber]);
 
   const selectedDayAvailability = useMemo(
     () => getDayFromAvailability(availableDays, selectedDay),
@@ -451,6 +463,7 @@ export default function ConsultScreen() {
         slotTime: selectedTime,
         studentNote: resolvedStudentNote,
         studentNumber: user.studentNumber,
+        supportType: selectedTrack === "peer" ? "PEER" : "GUIDANCE",
       });
 
       if (!result.ok || !result.appointment) {
@@ -745,7 +758,7 @@ export default function ConsultScreen() {
                 <>
                   <Text style={styles.stepTitle}>Counselor Preference</Text>
                   <Text style={styles.stepSubTitle}>
-                    Let us know if you have a gender preference before we show your available {selectedTrack === "peer" ? "peer counselors" : "counselors"}.
+                    Let us know if you have a gender preference before we show your available counselors.
                   </Text>
 
                   <Text style={styles.sectionLabel}>Gender Preference</Text>
@@ -803,6 +816,11 @@ export default function ConsultScreen() {
                                 <Text style={styles.counselorFocus}>
                                   {item.specialties?.length ? item.specialties.join(", ") : "General guidance and student support"}
                                 </Text>
+                                {selectedTrack === "peer" ? (
+                                  <Text style={styles.counselorMeta}>
+                                    {[item.studentNumber, item.program].filter(Boolean).join(" · ")}
+                                  </Text>
+                                ) : null}
                               </View>
 
                               {selected ? <Ionicons name="checkmark-circle" size={24} color="#2E6F24" /> : null}
@@ -1639,6 +1657,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     marginTop: 2,
+  },
+  counselorMeta: {
+    color: "#6D7D8C",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 16,
+    marginTop: 4,
   },
   monthHeaderRow: {
     flexDirection: "row",

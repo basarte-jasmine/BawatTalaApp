@@ -16,7 +16,8 @@ const MAIN_MENU_ITEMS = [
   { path: "/dashboard", label: "Overview & Analytics", icon: LayoutGrid, active: true },
   { path: "/flagged", label: "Flagged Entries", icon: Flag, badge: "7" },
   { path: "/users", label: "Student Directory", icon: Users },
-  { path: "/appointments", label: "Calendars & Scheduling", icon: CalendarDays },
+  { path: "/appointments", label: "Guidance Scheduling", icon: CalendarDays },
+  { path: "/peer-counselors", label: "Peer Counselors", icon: Users },
   { path: "/reports", label: "Reports", icon: BarChart3 },
 ];
 
