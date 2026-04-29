@@ -31,7 +31,7 @@ const WELLNESS_TOOLS: ToolItem[] = [
     label: "Open now",
     title: "5-4-3-2-1 Sensory Grounding",
     icon: "eye-outline",
-    description: "Interrupt anxiety loops and reconnect with your present surroundings using your senses.",
+    description: "Follow the guided 5-4-3-2-1 video exercise to reconnect with your present surroundings using your senses.",
   },
   {
     accentColor: "#5E7396",
