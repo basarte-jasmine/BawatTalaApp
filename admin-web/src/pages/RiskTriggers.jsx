@@ -21,7 +21,6 @@ import {
 import { getRiskBadgeClasses, getRiskLevelLabel } from "../lib/risk-labels";
 
 const DEFAULT_FORM = {
-  category: "Safety signal",
   isEnabled: true,
   phrase: "",
   riskLevel: "HIGH",
@@ -101,7 +100,7 @@ export default function RiskTriggers({ onLogout, session }) {
       const matchesFilter =
         activeFilter === "ALL" ||
         (activeFilter === "DISABLED" ? !trigger.isEnabled : trigger.riskLevel === activeFilter);
-      const haystack = [trigger.phrase, trigger.category, trigger.riskLabel]
+      const haystack = [trigger.phrase, trigger.riskLabel]
         .join(" ")
         .toLowerCase();
       return matchesFilter && haystack.includes(needle);
@@ -119,7 +118,6 @@ export default function RiskTriggers({ onLogout, session }) {
   function openEditModal(trigger) {
     setEditingTrigger(trigger);
     setFormState({
-      category: trigger.category || "Safety signal",
       isEnabled: Boolean(trigger.isEnabled),
       phrase: trigger.phrase || "",
       riskLevel: trigger.riskLevel || "HIGH",
@@ -140,7 +138,6 @@ export default function RiskTriggers({ onLogout, session }) {
       setIsSaving(true);
       const payload = {
         ...getActorPayload(session),
-        category: formState.category.trim() || "Safety signal",
         isEnabled: Boolean(formState.isEnabled),
         phrase,
         riskLevel: formState.riskLevel,
@@ -176,7 +173,6 @@ export default function RiskTriggers({ onLogout, session }) {
     try {
       const data = await updateRiskTrigger(trigger.id, {
         ...getActorPayload(session),
-        category: trigger.category,
         isEnabled: !trigger.isEnabled,
         phrase: trigger.phrase,
         riskLevel: trigger.riskLevel,
@@ -318,12 +314,11 @@ export default function RiskTriggers({ onLogout, session }) {
             <div className="px-6 py-10 text-sm text-slate-500">Loading risk triggers...</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[920px] border-collapse text-left">
+              <table className="w-full min-w-[780px] border-collapse text-left">
                 <thead>
                   <tr className="border-b border-slate-200 bg-white text-xs uppercase tracking-wider text-slate-500">
                     <th className="px-6 py-4 font-semibold">Trigger Phrase</th>
                     <th className="px-6 py-4 font-semibold">Risk Flag</th>
-                    <th className="px-6 py-4 font-semibold">Category</th>
                     <th className="px-6 py-4 font-semibold">Status</th>
                     <th className="px-6 py-4 font-semibold">Updated</th>
                     <th className="px-6 py-4 text-right font-semibold">Actions</th>
@@ -341,7 +336,6 @@ export default function RiskTriggers({ onLogout, session }) {
                             {trigger.riskLabel || getRiskLevelLabel(trigger.riskLevel)}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-slate-600">{trigger.category || "Safety signal"}</td>
                         <td className="px-6 py-4">
                           <button
                             type="button"
@@ -380,7 +374,7 @@ export default function RiskTriggers({ onLogout, session }) {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={6} className="px-6 py-10 text-center text-sm text-slate-500">
+                      <td colSpan={5} className="px-6 py-10 text-center text-sm text-slate-500">
                         No trigger phrases matched the current filters.
                       </td>
                     </tr>
@@ -426,17 +420,6 @@ export default function RiskTriggers({ onLogout, session }) {
                 <option value="HIGH">Crisis / Critical Need</option>
                 <option value="LOW">Distressed / Needs Support</option>
               </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-slate-700">Category</label>
-              <input
-                type="text"
-                value={formState.category}
-                onChange={(event) => setFormState((current) => ({ ...current, category: event.target.value }))}
-                placeholder="Safety signal"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/20"
-              />
             </div>
 
             <label className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">

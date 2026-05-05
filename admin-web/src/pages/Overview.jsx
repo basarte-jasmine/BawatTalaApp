@@ -30,25 +30,21 @@ const SUMMARY_CARD_DEFS = [
   {
     key: "flagged",
     title: "Flagged Entries",
-    fallbackValue: 25,
     icon: AlertTriangle,
   },
   {
     key: "students",
     title: "Total Students",
-    fallbackValue: 1245,
     icon: Users,
   },
   {
     key: "entries",
     title: "Total Entries",
-    fallbackValue: 184,
     icon: Activity,
   },
   {
     key: "scheduled",
     title: "Scheduled Today",
-    fallbackValue: 12,
     icon: CalendarIcon,
   },
 ];
@@ -57,14 +53,12 @@ const ANALYTICS_CARD_DEFS = [
   {
     key: "averageEntriesPerStudent",
     title: "Avg Entries/Student",
-    fallbackValue: 0,
     icon: Activity,
     valueType: "decimal",
   },
   {
     key: "counselingSessions",
     title: "Counseling Sessions",
-    fallbackValue: 0,
     icon: CheckCircle2,
     valueType: "number",
   },
@@ -75,141 +69,6 @@ const RISK_COLORS = {
   crisis: "#FF5D5D",
   distressed: "#F59E0B",
 };
-
-const GENDER_DATA = [
-  { label: "Male", value: 487, color: "#3E8914" },
-  { label: "Female", value: 552, color: "#3DA35D" },
-  { label: "Prefer not to say", value: 83, color: "#A7F3D0" },
-];
-
-const MOOD_TREND_SERIES = [
-  {
-    key: "excitement",
-    label: "Excitement",
-    color: "#FDBA58",
-    values: [11, 13, 15, 12, 14, 18, 17],
-  },
-  {
-    key: "joy",
-    label: "Joy",
-    color: "#FFD616",
-    values: [40, 36, 31, 27, 33, 46, 49],
-  },
-  {
-    key: "contentment",
-    label: "Contentment",
-    color: "#97CFDA",
-    values: [20, 22, 25, 18, 25, 19, 16],
-  },
-  {
-    key: "relief",
-    label: "Relief",
-    color: "#78C6A3",
-    values: [15, 17, 19, 16, 18, 15, 14],
-  },
-  {
-    key: "embarrassment",
-    label: "Embarrassment",
-    color: "#F0A0B8",
-    values: [5, 6, 8, 9, 7, 5, 4],
-  },
-  {
-    key: "guilt",
-    label: "Guilt",
-    color: "#B895C8",
-    values: [6, 7, 9, 11, 8, 6, 5],
-  },
-  {
-    key: "disappointment",
-    label: "Disappointment",
-    color: "#A7B4C6",
-    values: [9, 11, 15, 19, 13, 10, 9],
-  },
-  {
-    key: "sadness",
-    label: "Sadness",
-    color: "#7EA9D9",
-    values: [14, 15, 20, 25, 18, 12, 10],
-  },
-  {
-    key: "anxiety",
-    label: "Anxiety",
-    color: "#F19137",
-    values: [10, 12, 18, 23, 14, 10, 8],
-  },
-  {
-    key: "anger",
-    label: "Anger",
-    color: "#E86686",
-    values: [8, 9, 11, 10, 9, 7, 6],
-  },
-];
-
-const MOOD_TREND_LABELS = ["Oct 1", "Oct 5", "Oct 10", "Oct 15", "Oct 20", "Oct 25", "Oct 30"];
-
-const STUDENT_DEMOGRAPHICS = [
-  { label: "San Antonio", value: 128, female: 53, male: 41, nonBinary: 4, undisclosed: 2 },
-  { label: "Poblacion", value: 113, female: 47, male: 36, nonBinary: 5, undisclosed: 3 },
-  { label: "San Jose", value: 86, female: 34, male: 29, nonBinary: 3, undisclosed: 2 },
-  { label: "Rosario", value: 77, female: 29, male: 23, nonBinary: 2, undisclosed: 1 },
-  { label: "San Juan", value: 61, female: 24, male: 19, nonBinary: 2, undisclosed: 1 },
-  { label: "Manggahan", value: 49, female: 18, male: 16, nonBinary: 1, undisclosed: 1 },
-];
-
-const DEMOGRAPHIC_SPLIT = [
-  { label: "Female", value: 189, color: "#2E7D32" },
-  { label: "Male", value: 164, color: "#43A047" },
-  { label: "Non-binary", value: 17, color: "#66BB6A" },
-  { label: "Prefer not to say", value: 10, color: "#A5D6A7" },
-];
-
-const PRIMARY_CONCERNS = [
-  { label: "Academic problems", value: 12, color: "#1B5E20" },
-  { label: "Anxiety", value: 10, color: "#2E7D32" },
-  { label: "Stress", value: 8, color: "#43A047" },
-  { label: "Interpersonal relationships", value: 6, color: "#66BB6A" },
-  { label: "Mental health", value: 5, color: "#558B2F" },
-  { label: "Career guidance", value: 4, color: "#7CB342" },
-  { label: "Financial guidance", value: 3, color: "#8BC34A" },
-  { label: "Bullying", value: 2, color: "#A5D6A7" },
-  { label: "Others", value: 1, color: "#C5E1A5" },
-];
-
-const BARANGAY_DATA = [
-  { label: "Malanday", value: 142, percent: 85 },
-  { label: "Karuhatan", value: 116, percent: 69 },
-  { label: "Gen T De Leon", value: 94, percent: 54 },
-  { label: "Marulas", value: 73, percent: 42 },
-];
-
-const JOURNAL_ENTRIES_DATA = [
-  { label: "Week 1", value: 392 },
-  { label: "Week 2", value: 304 },
-  { label: "Week 3", value: 548 },
-  { label: "Week 4", value: 447 },
-  { label: "Week 5", value: 623 },
-  { label: "Week 6", value: 801 },
-  { label: "Week 7", value: 712 },
-];
-
-const ACTIVE_USAGE_GROUPS = [
-  { label: "1st Year", BSIT: 118, BSPSY: 96, BSED: 149, BSCE: 182 },
-  { label: "2nd Year", BSIT: 101, BSPSY: 82, BSED: 128, BSCE: 160 },
-  { label: "3rd Year", BSIT: 87, BSPSY: 71, BSED: 109, BSCE: 145 },
-  { label: "4th Year", BSIT: 76, BSPSY: 62, BSED: 97, BSCE: 137 },
-];
-
-const ACTIVE_USAGE_SERIES = [
-  { key: "BSIT", label: "BS Information Technology", color: "#3E8914" },
-  { key: "BSPSY", label: "BS Psychology", color: "#3DA35D" },
-  { key: "BSED", label: "BSEd English", color: "#96E072" },
-  { key: "BSCE", label: "BS Civil Engineering", color: "#134611" },
-];
-
-const ACTIVE_USAGE_PROGRAM_DATA = ACTIVE_USAGE_SERIES.map((item) => ({
-  ...item,
-  value: ACTIVE_USAGE_GROUPS.reduce((sum, group) => sum + Number(group[item.key] || 0), 0),
-}));
 
 function MetricCard({ item, onSelect }) {
   const Icon = item.icon;
@@ -257,6 +116,14 @@ function MetricCard({ item, onSelect }) {
     >
       {content}
     </button>
+  );
+}
+
+function EmptyState({ children = "No live data available yet." }) {
+  return (
+    <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+      {children}
+    </div>
   );
 }
 
@@ -1214,6 +1081,7 @@ export default function Overview({ onLogout, session }) {
   const [now, setNow] = useState(() => new Date());
   const [dashboardSummary, setDashboardSummary] = useState(null);
   const [summaryError, setSummaryError] = useState("");
+  const [summaryLoading, setSummaryLoading] = useState(true);
   const [riskFlags, setRiskFlags] = useState([]);
   const [riskFlagsError, setRiskFlagsError] = useState("");
   const [flaggedModalOpen, setFlaggedModalOpen] = useState(false);
@@ -1238,13 +1106,19 @@ export default function Overview({ onLogout, session }) {
 
     async function loadDashboardSummary() {
       try {
+        setSummaryLoading(true);
         const data = await fetchAdminDashboardSummary();
         if (!isMounted) return;
         setDashboardSummary(data);
         setSummaryError("");
       } catch (error) {
         if (!isMounted) return;
+        setDashboardSummary(null);
         setSummaryError(error instanceof Error ? error.message : "Failed to load dashboard summary.");
+      } finally {
+        if (isMounted) {
+          setSummaryLoading(false);
+        }
       }
     }
 
@@ -1393,17 +1267,19 @@ export default function Overview({ onLogout, session }) {
             ? dashboardSummary?.cards?.totalEntries
             : dashboardSummary?.cards?.scheduledToday;
     const direction = source?.direction || "neutral";
+    const hasValue = source?.value !== undefined && source?.value !== null;
 
     return {
       ...item,
-      value: formatMetricValue(source?.value ?? item.fallbackValue),
-      delta: source?.percentageText || "0%",
-      direction,
-      tone: mapMetricTone(item.key, direction),
+      value: summaryLoading ? "--" : hasValue ? formatMetricValue(source.value) : "--",
+      delta: summaryLoading ? "--" : source?.percentageText || "--",
+      direction: summaryLoading || !hasValue ? "neutral" : direction,
+      tone: summaryLoading || !hasValue ? "gray" : mapMetricTone(item.key, direction),
     };
   });
   const analyticsCards = ANALYTICS_CARD_DEFS.map((item) => {
     const source = analyticsOverview?.cards?.[item.key];
+    const hasValue = source?.value !== undefined && source?.value !== null;
     const deltaValue = Number(source?.deltaValue || 0);
     const direction =
       item.key === "averageEntriesPerStudent"
@@ -1417,59 +1293,72 @@ export default function Overview({ onLogout, session }) {
       title: source?.label || item.title,
       value: analyticsLoading
         ? "--"
-        : item.valueType === "decimal"
-          ? formatMetricDecimal(source?.value ?? item.fallbackValue)
-          : formatMetricValue(source?.value ?? item.fallbackValue),
+        : hasValue
+          ? item.valueType === "decimal"
+            ? formatMetricDecimal(source.value)
+            : formatMetricValue(source.value)
+          : "--",
       delta: analyticsLoading
         ? "--"
-        : item.key === "averageEntriesPerStudent"
-          ? `${deltaValue >= 0 ? "+" : ""}${formatMetricDecimal(deltaValue)}`
-          : source?.percentageText || "0%",
-      direction: analyticsLoading ? "neutral" : direction,
-      tone: analyticsLoading ? "gray" : mapMetricTone(item.key, direction),
+        : hasValue
+          ? item.key === "averageEntriesPerStudent"
+            ? `${deltaValue >= 0 ? "+" : ""}${formatMetricDecimal(deltaValue)}`
+            : source?.percentageText || "--"
+          : "--",
+      direction: analyticsLoading || !hasValue ? "neutral" : direction,
+      tone: analyticsLoading || !hasValue ? "gray" : mapMetricTone(item.key, direction),
     };
   });
   const journalEntriesData =
-    dashboardSummary?.charts?.journalEntries?.length > 0 ? dashboardSummary.charts.journalEntries : JOURNAL_ENTRIES_DATA;
+    dashboardSummary?.charts?.journalEntries?.length > 0 ? dashboardSummary.charts.journalEntries : [];
   const genderData =
     dashboardSummary?.charts?.genderDistribution?.length > 0
       ? withColors(dashboardSummary.charts.genderDistribution, ["#3E8914", "#3DA35D", "#A7F3D0"])
-      : GENDER_DATA;
+      : [];
   const moodTrendData =
     dashboardSummary?.charts?.moodTrends?.series?.length > 0
       ? withColors(
           dashboardSummary.charts.moodTrends.series,
           ["#FFD616", "#97CFDA", "#7EA9D9", "#F19137", "#E86686", "#B895C8", "#FDBA58", "#A7B4C6", "#8FA7DB", "#D68A5C"],
         )
-      : MOOD_TREND_SERIES;
+      : [];
   const moodTrendLabels =
-    dashboardSummary?.charts?.moodTrends?.labels?.length > 0 ? dashboardSummary.charts.moodTrends.labels : MOOD_TREND_LABELS;
+    dashboardSummary?.charts?.moodTrends?.labels?.length > 0 ? dashboardSummary.charts.moodTrends.labels : [];
   const studentDemographicLocations =
     dashboardSummary?.charts?.studentDemographics?.locations?.length > 0
       ? dashboardSummary.charts.studentDemographics.locations
-      : STUDENT_DEMOGRAPHICS;
+      : [];
   const studentDemographicSplit =
     dashboardSummary?.charts?.studentDemographics?.genderSplit?.length > 0
       ? withColors(dashboardSummary.charts.studentDemographics.genderSplit, ["#2E7D32", "#43A047", "#A5D6A7"])
-      : DEMOGRAPHIC_SPLIT;
+      : [];
   const activeUsageSeries =
     dashboardSummary?.charts?.activeUsageByCourseYear?.series?.length > 0
       ? withColors(dashboardSummary.charts.activeUsageByCourseYear.series, ["#3E8914", "#3DA35D", "#96E072", "#134611"])
-      : ACTIVE_USAGE_PROGRAM_DATA;
+      : [];
   const primaryConcernsData =
     dashboardSummary?.charts?.primaryConcerns?.length > 0
       ? withColors(
           dashboardSummary.charts.primaryConcerns,
           ["#1B5E20", "#2E7D32", "#43A047", "#66BB6A", "#558B2F", "#7CB342", "#8BC34A", "#A5D6A7", "#C5E1A5", "#0F766E", "#0369A1", "#BE185D", "#7C3AED", "#64748B"],
         )
-      : PRIMARY_CONCERNS;
+      : [];
   const barangayConcernData =
     dashboardSummary?.charts?.topConcernsByBarangay?.length > 0
       ? dashboardSummary.charts.topConcernsByBarangay.map((item, index, items) => ({
           ...item,
           percent: items[0]?.value ? Math.round((item.value / items[0].value) * 100) : 0,
         }))
-      : BARANGAY_DATA;
+      : [];
+  const crisisSignalCount = riskFlags.filter((entry) =>
+    ["HIGH", "CRITICAL"].includes(String(entry.riskLevel || "").toUpperCase()),
+  ).length;
+  const distressedSignalCount = riskFlags.filter((entry) =>
+    ["LOW", "MEDIUM", "MODERATE"].includes(String(entry.riskLevel || "").toUpperCase()),
+  ).length;
+  const contactedSignalCount = riskFlags.filter(
+    (entry) => String(entry.supportResponse || "").toUpperCase() === "CONTACTED",
+  ).length;
   const handleSummaryCardSelect = (cardTitle) => {
     if (cardTitle === "Flagged Entries") {
       setFlaggedModalOpen(true);
@@ -1490,7 +1379,7 @@ export default function Overview({ onLogout, session }) {
       <div className="mx-auto max-w-[1200px] space-y-6 pb-12">
         {summaryError ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-            Dashboard cards are showing fallback values because live summary data failed to load: {summaryError}
+            Dashboard summary failed to load: {summaryError}
           </div>
         ) : null}
         {riskFlagsError ? (
@@ -1539,101 +1428,145 @@ export default function Overview({ onLogout, session }) {
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <Card title="Journal Entries Volume" subtitle="Total journal entries for the current month" className="lg:col-span-2">
-            <JournalEntriesGraph data={journalEntriesData} />
+            {journalEntriesData.length ? (
+              <JournalEntriesGraph data={journalEntriesData} />
+            ) : (
+              <EmptyState>No journal entry volume data available yet.</EmptyState>
+            )}
           </Card>
 
           <Card title="Student Gender Demographics" subtitle="Student profile distribution across submitted records">
-            <DonutChart
-              data={genderData}
-              centerValue={genderData.reduce((sum, item) => sum + item.value, 0).toLocaleString()}
-            />
-            <ChartLegend data={genderData} />
+            {genderData.length ? (
+              <>
+                <DonutChart
+                  data={genderData}
+                  centerValue={genderData.reduce((sum, item) => sum + item.value, 0).toLocaleString()}
+                />
+                <ChartLegend data={genderData} />
+              </>
+            ) : (
+              <EmptyState>No student gender data available yet.</EmptyState>
+            )}
           </Card>
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr,1.9fr]">
           <Card title="Student Emotion Trends (Current Month)" subtitle="Daily emotion check-ins recorded from the mobile app this month">
-            <MoodTrendsChart labels={moodTrendLabels} series={moodTrendData} />
+            {moodTrendLabels.length && moodTrendData.length ? (
+              <MoodTrendsChart labels={moodTrendLabels} series={moodTrendData} />
+            ) : (
+              <EmptyState>No emotion trend data available yet.</EmptyState>
+            )}
           </Card>
 
           <Card title="Student Demographics" subtitle="Distribution by location and gender">
-            <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1.45fr,0.85fr]">
-              <StudentDemographicsChart data={studentDemographicLocations} />
-              <div className="flex flex-col justify-center">
-                <DonutChart
-                  data={studentDemographicSplit}
-                  size={180}
-                  strokeWidth={18}
-                  centerValue={studentDemographicSplit.reduce((sum, item) => sum + item.value, 0)}
-                  centerLabel="Tracked students"
-                />
-                <ChartLegend data={studentDemographicSplit} className="justify-start" />
+            {studentDemographicLocations.length || studentDemographicSplit.length ? (
+              <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1.45fr,0.85fr]">
+                {studentDemographicLocations.length ? (
+                  <StudentDemographicsChart data={studentDemographicLocations} />
+                ) : (
+                  <EmptyState>No location data available yet.</EmptyState>
+                )}
+                <div className="flex flex-col justify-center">
+                  {studentDemographicSplit.length ? (
+                    <>
+                      <DonutChart
+                        data={studentDemographicSplit}
+                        size={180}
+                        strokeWidth={18}
+                        centerValue={studentDemographicSplit.reduce((sum, item) => sum + item.value, 0)}
+                        centerLabel="Tracked students"
+                      />
+                      <ChartLegend data={studentDemographicSplit} className="justify-start" />
+                    </>
+                  ) : (
+                    <EmptyState>No demographic split data available yet.</EmptyState>
+                  )}
+                </div>
               </div>
-            </div>
+            ) : (
+              <EmptyState>No student demographic data available yet.</EmptyState>
+            )}
           </Card>
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.8fr,1fr]">
           <Card title="Student Distribution by Program" subtitle="Enrolled students grouped by program">
-            <ActiveUsageGraph data={activeUsageSeries} />
+            {activeUsageSeries.length ? (
+              <ActiveUsageGraph data={activeUsageSeries} />
+            ) : (
+              <EmptyState>No program distribution data available yet.</EmptyState>
+            )}
           </Card>
 
           <Card title="Top Journal Themes" subtitle="Saved journal tags used for analytics">
-            <ConcernThemesChart data={primaryConcernsData} />
+            {primaryConcernsData.length ? (
+              <ConcernThemesChart data={primaryConcernsData} />
+            ) : (
+              <EmptyState>No journal theme data available yet.</EmptyState>
+            )}
           </Card>
         </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <Card title="Top Concerns by Barangay" subtitle="Most active barangays based on submitted journal entries">
-            <div className="space-y-4">
-              {barangayConcernData.map((item) => (
-                <button
-                  key={item.label}
-                  type="button"
-                  title={`${item.label}: ${item.value.toLocaleString()} entries`}
-                  className="group -mx-2 block w-[calc(100%+16px)] rounded-lg px-2 py-2 text-left transition-colors hover:bg-gray-50"
-                >
-                  <div className="mb-1.5 flex justify-between text-sm">
-                    <span className="font-medium text-gray-700 transition-colors group-hover:text-emerald-700">
-                      {item.label}
-                    </span>
-                    <span className="font-medium text-gray-500">{item.value} entries</span>
-                  </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
-                    <div className="h-2 rounded-full bg-emerald-600" style={{ width: `${item.percent}%` }} />
-                  </div>
-                </button>
-              ))}
-            </div>
+            {barangayConcernData.length ? (
+              <div className="space-y-4">
+                {barangayConcernData.map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    title={`${item.label}: ${item.value.toLocaleString()} entries`}
+                    className="group -mx-2 block w-[calc(100%+16px)] rounded-lg px-2 py-2 text-left transition-colors hover:bg-gray-50"
+                  >
+                    <div className="mb-1.5 flex justify-between text-sm">
+                      <span className="font-medium text-gray-700 transition-colors group-hover:text-emerald-700">
+                        {item.label}
+                      </span>
+                      <span className="font-medium text-gray-500">{item.value} entries</span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                      <div className="h-2 rounded-full bg-emerald-600" style={{ width: `${item.percent}%` }} />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <EmptyState>No barangay concern data available yet.</EmptyState>
+            )}
           </Card>
 
           <Card title="Support Signals" subtitle="Snapshot of entries that may need faster response">
             <div className="space-y-4">
               <button
                 type="button"
-                title="High-risk queue"
+                title="Crisis / Critical Need"
                 className="flex w-full items-center justify-between rounded-2xl border border-red-100 bg-red-50 px-4 py-4 text-left"
               >
                 <div>
-                  <div className="text-sm font-semibold text-red-700">High-risk queue</div>
-                  <div className="mt-1 text-sm text-red-500">4 entries need counselor review within the hour</div>
+                  <div className="text-sm font-semibold text-red-700">Crisis / Critical Need</div>
+                  <div className="mt-1 text-sm text-red-500">Live entries marked high or critical risk</div>
                 </div>
-                <div className="text-2xl font-bold text-red-700">4</div>
+                <div className="text-2xl font-bold text-red-700">
+                  {riskFlagsError ? "--" : formatMetricValue(crisisSignalCount)}
+                </div>
               </button>
               <button
                 type="button"
-                title="Medium-priority follow-ups"
+                title="Distressed / Needs Support"
                 className="flex w-full items-center justify-between rounded-2xl border border-amber-100 bg-amber-50 px-4 py-4 text-left"
               >
                 <div>
-                  <div className="text-sm font-semibold text-amber-700">Medium-priority follow-ups</div>
-                  <div className="mt-1 text-sm text-amber-600">11 students asked for a counselor check-in this week</div>
+                  <div className="text-sm font-semibold text-amber-700">Distressed / Needs Support</div>
+                  <div className="mt-1 text-sm text-amber-600">Live entries marked as needing support</div>
                 </div>
-                <div className="text-2xl font-bold text-amber-700">11</div>
+                <div className="text-2xl font-bold text-amber-700">
+                  {riskFlagsError ? "--" : formatMetricValue(distressedSignalCount)}
+                </div>
               </button>
               <button
                 type="button"
-                title="Outbound contacts completed"
+                title="Contacted support"
                 className="flex w-full items-center justify-between rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-4 text-left"
               >
                 <div className="flex items-center gap-3">
@@ -1641,11 +1574,13 @@ export default function Overview({ onLogout, session }) {
                     <PhoneCall className="h-4 w-4" />
                   </span>
                   <div>
-                    <div className="text-sm font-semibold text-emerald-700">Outbound contacts completed</div>
-                    <div className="mt-1 text-sm text-emerald-600">8 students were reached by counselors today</div>
+                    <div className="text-sm font-semibold text-emerald-700">Contacted support</div>
+                    <div className="mt-1 text-sm text-emerald-600">Live flagged entries with counselor contact recorded</div>
                   </div>
                 </div>
-                <div className="text-2xl font-bold text-emerald-700">8</div>
+                <div className="text-2xl font-bold text-emerald-700">
+                  {riskFlagsError ? "--" : formatMetricValue(contactedSignalCount)}
+                </div>
               </button>
             </div>
           </Card>

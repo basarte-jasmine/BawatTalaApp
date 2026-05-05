@@ -19,11 +19,10 @@ const {
   normalizeJournalTags,
 } = require("../constants/journal-tags");
 const {
-  DEFAULT_RISK_TRIGGER_WORDS,
   getRiskLevelLabel,
   normalizeRiskTriggerLevel,
   normalizeRiskTriggerPhrase,
-} = require("../constants/risk-trigger-words");
+} = require("../constants/risk-levels");
 const { query } = require("../config/db");
 
 function normalizeBaseUrl(value) {
@@ -293,7 +292,7 @@ async function loadEnabledRiskTriggerWords() {
   try {
     const result = await query(
       `
-        select phrase, risk_level, category
+        select phrase, risk_level
         from public.risk_trigger_words
         where is_enabled = true
         order by
@@ -304,16 +303,15 @@ async function loadEnabledRiskTriggerWords() {
 
     return result.rows
       .map((row) => ({
-        category: normalizeWhitespace(row.category || "Safety signal"),
         phrase: normalizeRiskTriggerPhrase(row.phrase),
         riskLevel: normalizeRiskTriggerLevel(row.risk_level),
       }))
       .filter((trigger) => trigger.phrase && trigger.riskLevel);
   } catch (error) {
-    console.warn("Using default risk triggers because configured triggers could not be loaded.", {
+    console.warn("Configured risk triggers could not be loaded.", {
       error: error instanceof Error ? error.message : String(error),
     });
-    return DEFAULT_RISK_TRIGGER_WORDS;
+    return [];
   }
 }
 
@@ -321,7 +319,6 @@ function riskFromTriggerWords(text, triggers) {
   const value = String(text || "").toLowerCase();
   const matchedTriggers = (Array.isArray(triggers) ? triggers : [])
     .map((trigger) => ({
-      category: normalizeWhitespace(trigger.category || "Safety signal"),
       phrase: normalizeRiskTriggerPhrase(trigger.phrase),
       riskLevel: normalizeRiskTriggerLevel(trigger.riskLevel || trigger.risk_level),
     }))
@@ -334,9 +331,7 @@ function riskFromTriggerWords(text, triggers) {
     const riskLabel = getRiskLevelLabel(matched.riskLevel);
     return {
       risk_level: matched.riskLevel,
-      admin_flag_reason: `${riskLabel} trigger phrase "${matched.phrase}" was detected${
-        matched.category ? ` (${matched.category})` : ""
-      }.`,
+      admin_flag_reason: `${riskLabel} trigger phrase "${matched.phrase}" was detected.`,
     };
   }
 

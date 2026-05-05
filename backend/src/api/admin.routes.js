@@ -14,7 +14,7 @@ const {
   getRiskLevelLabel,
   normalizeRiskTriggerLevel,
   normalizeRiskTriggerPhrase,
-} = require("../constants/risk-trigger-words");
+} = require("../constants/risk-levels");
 
 const router = express.Router();
 const EMOTION_IDS = EMOTION_OPTIONS.map((item) => item.id);
@@ -173,46 +173,6 @@ async function ensureDefaultAdminAccount() {
         on conflict (email) do nothing
       `,
       [defaultEmail, hashPassword(defaultPassword), defaultFullName, defaultRole, defaultGender],
-    );
-  }
-
-  const counselorSeeds = [
-    {
-      email: "minchiekim0807@gmail.com",
-      password: "SecondAdmin_123*",
-      fullName: "Maria Isabel Santos",
-      gender: "Female",
-      role: "COUNSELOR",
-    },
-    {
-      email: "ismeniah2704@gmail.com",
-      password: "ThirdAdmin_123!",
-      fullName: "Jonathan Paul Fernandez",
-      gender: "Male",
-      role: "COUNSELOR",
-    },
-  ];
-
-  for (const counselor of counselorSeeds) {
-    await query(
-      `
-        insert into public.admin_accounts (email, password_hash, full_name, role, gender, is_active)
-        values ($1, $2, $3, $4, $5, true)
-        on conflict (email)
-        do update set
-          full_name = excluded.full_name,
-          role = excluded.role,
-          gender = excluded.gender,
-          is_active = true,
-          updated_at = now()
-      `,
-      [
-        counselor.email,
-        hashPassword(counselor.password),
-        counselor.fullName,
-        counselor.role,
-        counselor.gender,
-      ],
     );
   }
 }
@@ -548,10 +508,6 @@ function isUuid(value) {
   );
 }
 
-function normalizeRiskTriggerCategory(value) {
-  return normalizeCompactSpaces(value || "Safety signal").slice(0, 80) || "Safety signal";
-}
-
 function parseRiskTriggerPayload(body, existing = {}) {
   const phrase =
     Object.prototype.hasOwnProperty.call(body, "phrase")
@@ -561,10 +517,6 @@ function parseRiskTriggerPayload(body, existing = {}) {
     Object.prototype.hasOwnProperty.call(body, "riskLevel") || Object.prototype.hasOwnProperty.call(body, "risk_level")
       ? normalizeRiskTriggerLevel(body.riskLevel || body.risk_level)
       : normalizeRiskTriggerLevel(existing.risk_level || existing.riskLevel);
-  const category =
-    Object.prototype.hasOwnProperty.call(body, "category")
-      ? normalizeRiskTriggerCategory(body.category)
-      : normalizeRiskTriggerCategory(existing.category);
   const isEnabled =
     typeof body.isEnabled === "boolean"
       ? body.isEnabled
@@ -575,7 +527,6 @@ function parseRiskTriggerPayload(body, existing = {}) {
           : Boolean(existing.is_enabled);
 
   return {
-    category,
     isEnabled,
     phrase,
     riskLevel,
@@ -589,7 +540,6 @@ function serializeRiskTrigger(row) {
     phrase: row.phrase,
     riskLevel,
     riskLabel: getRiskLevelLabel(riskLevel),
-    category: row.category || "Safety signal",
     isEnabled: Boolean(row.is_enabled),
     createdByEmail: row.created_by_email || "",
     updatedByEmail: row.updated_by_email || "",
@@ -1591,7 +1541,6 @@ router.get("/risk-triggers", async (_req, res) => {
         id,
         phrase,
         risk_level,
-        category,
         is_enabled,
         created_by_email,
         updated_by_email,
@@ -1631,24 +1580,22 @@ router.post("/risk-triggers", async (req, res) => {
         insert into public.risk_trigger_words (
           phrase,
           risk_level,
-          category,
           is_enabled,
           created_by_email,
           updated_by_email
         )
-        values ($1, $2, $3, $4, $5, $5)
+        values ($1, $2, $3, $4, $4)
         returning
           id,
           phrase,
           risk_level,
-          category,
           is_enabled,
           created_by_email,
           updated_by_email,
           created_at,
           updated_at
       `,
-      [trigger.phrase, trigger.riskLevel, trigger.category, trigger.isEnabled, actorEmail || null],
+      [trigger.phrase, trigger.riskLevel, trigger.isEnabled, actorEmail || null],
     );
 
     const created = serializeRiskTrigger(result.rows[0]);
@@ -1686,7 +1633,7 @@ router.patch("/risk-triggers/:triggerId", async (req, res) => {
 
   const existingResult = await query(
     `
-      select id, phrase, risk_level, category, is_enabled
+      select id, phrase, risk_level, is_enabled
       from public.risk_trigger_words
       where id = $1::uuid
       limit 1
@@ -1717,23 +1664,21 @@ router.patch("/risk-triggers/:triggerId", async (req, res) => {
         set
           phrase = $2,
           risk_level = $3,
-          category = $4,
-          is_enabled = $5,
-          updated_by_email = $6,
+          is_enabled = $4,
+          updated_by_email = $5,
           updated_at = now()
         where id = $1::uuid
         returning
           id,
           phrase,
           risk_level,
-          category,
           is_enabled,
           created_by_email,
           updated_by_email,
           created_at,
           updated_at
       `,
-      [triggerId, trigger.phrase, trigger.riskLevel, trigger.category, trigger.isEnabled, actorEmail || null],
+      [triggerId, trigger.phrase, trigger.riskLevel, trigger.isEnabled, actorEmail || null],
     );
 
     const updated = serializeRiskTrigger(result.rows[0]);
@@ -1774,7 +1719,7 @@ router.delete("/risk-triggers/:triggerId", async (req, res) => {
     `
       delete from public.risk_trigger_words
       where id = $1::uuid
-      returning id, phrase, risk_level, category, is_enabled
+      returning id, phrase, risk_level, is_enabled
     `,
     [triggerId],
   );
