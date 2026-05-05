@@ -1,8 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import DateTimePicker, { DateTimePickerAndroid, type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Animated, Easing, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { Animated, Easing, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Defs, Ellipse, LinearGradient, Path, Rect, Stop } from "react-native-svg";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
@@ -47,18 +49,16 @@ type RecentEntryCard = {
 
 type HomeRecentFilter = "newest" | "oldest";
 
-type BottleDeliveryOption = {
-  days: number;
-  id: string;
-  label: string;
-};
-
 type ScheduledBottleNote = {
-  deliveryDateLabel: string;
-  deliveryId: string;
-  deliveryLabel: string;
+  createdAt: string;
+  deliveryAt: string;
+  id: string;
   message: string;
 };
+
+type BottleModalMode = "compose" | "status";
+
+type BottlePickerMode = "date" | "time" | null;
 
 type DriftingBottleNote = {
   baseRotate: string;
@@ -83,17 +83,133 @@ const HOME_QUOTES = [
   "Even quiet progress is still progress worth honoring.",
 ];
 
-const BOTTLE_DELIVERY_OPTIONS: BottleDeliveryOption[] = [
-  { id: "one-week", label: "1 Week", days: 7 },
-  { id: "one-month", label: "1 Month", days: 30 },
-  { id: "three-months", label: "3 Months", days: 90 },
-  { id: "one-year", label: "1 Year", days: 365 },
-];
+const FUTURE_BOTTLE_STORAGE_PREFIX = "@bawat-tala/future-bottle";
+const BOTTLE_MESSAGE_MAX_LENGTH = 240;
 
 const TALA_IMAGE = require("../assets/images/Tala_Star.png");
 const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
 const ISLAND_IMAGE = require("../assets/images/island_sample.png");
 const BOTTLE_IMAGE = require("../assets/images/bottle_sample.png");
+
+function getFutureBottleStorageKey(studentNumber: string) {
+  return `${FUTURE_BOTTLE_STORAGE_PREFIX}:${studentNumber}`;
+}
+
+function isValidDate(value: Date) {
+  return !Number.isNaN(value.getTime());
+}
+
+function createDefaultBottleDeliveryDate() {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  date.setHours(9, 0, 0, 0);
+  return date;
+}
+
+function parseStoredBottleDate(value: string | undefined) {
+  if (!value) return null;
+  const date = new Date(value);
+  return isValidDate(date) ? date : null;
+}
+
+function padDatePart(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+function formatBottleDateInput(date: Date) {
+  return `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}`;
+}
+
+function formatBottleTimeInput(date: Date) {
+  return `${padDatePart(date.getHours())}:${padDatePart(date.getMinutes())}`;
+}
+
+function parseBottleDateTimeInput(dateInput: string, timeInput: string) {
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateInput.trim());
+  const timeMatch = /^(\d{1,2}):(\d{2})$/.exec(timeInput.trim());
+  if (!dateMatch || !timeMatch) return null;
+
+  const year = Number(dateMatch[1]);
+  const month = Number(dateMatch[2]);
+  const day = Number(dateMatch[3]);
+  const hour = Number(timeMatch[1]);
+  const minute = Number(timeMatch[2]);
+  const date = new Date(year, month - 1, day, hour, minute, 0, 0);
+
+  if (
+    !isValidDate(date) ||
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day ||
+    date.getHours() !== hour ||
+    date.getMinutes() !== minute
+  ) {
+    return null;
+  }
+
+  return date;
+}
+
+function mergeBottleDate(current: Date, selectedDate: Date) {
+  const nextDate = new Date(current);
+  nextDate.setFullYear(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+  nextDate.setSeconds(0, 0);
+  return nextDate;
+}
+
+function mergeBottleTime(current: Date, selectedTime: Date) {
+  const nextDate = new Date(current);
+  nextDate.setHours(selectedTime.getHours(), selectedTime.getMinutes(), 0, 0);
+  return nextDate;
+}
+
+function formatBottleDeliveryDateTime(value: Date | string) {
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (!isValidDate(date)) return "Choose a date and time";
+
+  return date.toLocaleString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function formatBottleDeliveryDate(value: Date) {
+  return value.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatBottleDeliveryTime(value: Date) {
+  return value.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function getBottleCountdownLabel(deliveryAt: Date, nowMs: number) {
+  const remainingMs = deliveryAt.getTime() - nowMs;
+  if (remainingMs <= 0) return "Ready to open";
+
+  const totalMinutes = Math.ceil(remainingMs / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) {
+    return `${days} day${days === 1 ? "" : "s"}${hours > 0 ? ` ${hours} hr` : ""} left`;
+  }
+  if (hours > 0) {
+    return `${hours} hr${hours === 1 ? "" : "s"}${minutes > 0 ? ` ${minutes} min` : ""} left`;
+  }
+  return `${minutes} min left`;
+}
 
 const DRIFTING_BOTTLE_NOTES: DriftingBottleNote[] = [
   {
@@ -225,8 +341,15 @@ export default function HomeScreen() {
   const [showBottleModal, setShowBottleModal] = useState(false);
   const [selectedDriftingBottle, setSelectedDriftingBottle] = useState<DriftingBottleNote | null>(null);
   const [bottleDraft, setBottleDraft] = useState("");
-  const [selectedBottleDeliveryId, setSelectedBottleDeliveryId] = useState(BOTTLE_DELIVERY_OPTIONS[1].id);
+  const [bottleDeliveryAt, setBottleDeliveryAt] = useState(createDefaultBottleDeliveryDate);
+  const [bottleDateInput, setBottleDateInput] = useState(() => formatBottleDateInput(createDefaultBottleDeliveryDate()));
+  const [bottleTimeInput, setBottleTimeInput] = useState(() => formatBottleTimeInput(createDefaultBottleDeliveryDate()));
+  const [bottleFormMessage, setBottleFormMessage] = useState("");
+  const [bottleModalMode, setBottleModalMode] = useState<BottleModalMode>("compose");
+  const [bottlePickerMode, setBottlePickerMode] = useState<BottlePickerMode>(null);
+  const [editingBottleNoteId, setEditingBottleNoteId] = useState<string | null>(null);
   const [scheduledBottleNote, setScheduledBottleNote] = useState<ScheduledBottleNote | null>(null);
+  const [bottleClockNow, setBottleClockNow] = useState(() => Date.now());
   const [waterZoneStartY, setWaterZoneStartY] = useState<number | null>(null);
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [upcomingAppointment, setUpcomingAppointment] = useState<Awaited<ReturnType<typeof fetchStudentAppointments>>["upcomingAppointment"]>(null);
@@ -256,6 +379,12 @@ export default function HomeScreen() {
     driftingBottleProgressRef.current = driftingBottleProgressRef.current.slice(0, DRIFTING_BOTTLE_NOTES.length);
   }
   const driftingBottleProgress = driftingBottleProgressRef.current;
+  const updateBottleDeliveryDraft = useCallback((nextDate: Date) => {
+    setBottleDeliveryAt(nextDate);
+    setBottleDateInput(formatBottleDateInput(nextDate));
+    setBottleTimeInput(formatBottleTimeInput(nextDate));
+  }, []);
+
   useEffect(() => {
     const loops = idleValues.map((value, index) => {
       const loop = Animated.loop(
@@ -382,6 +511,16 @@ export default function HomeScreen() {
       pulseLoop.stop();
     };
   }, [quoteAuraDrift, quoteAuraPulse]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setBottleClockNow(Date.now());
+    }, 30000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     if (HOME_QUOTES.length <= 1) {
@@ -667,6 +806,40 @@ export default function HomeScreen() {
     );
   }, [user?.studentNumber]);
 
+  const loadScheduledBottleNote = useCallback(async () => {
+    if (!user?.studentNumber) {
+      setScheduledBottleNote(null);
+      return;
+    }
+
+    try {
+      const storedValue = await AsyncStorage.getItem(getFutureBottleStorageKey(user.studentNumber));
+      if (!storedValue) {
+        setScheduledBottleNote(null);
+        return;
+      }
+
+      const parsed = JSON.parse(storedValue) as Partial<ScheduledBottleNote>;
+      const deliveryAt = parseStoredBottleDate(parsed.deliveryAt);
+      const message = typeof parsed.message === "string" ? parsed.message.trim() : "";
+
+      if (!deliveryAt || !message) {
+        setScheduledBottleNote(null);
+        return;
+      }
+
+      setScheduledBottleNote({
+        id: typeof parsed.id === "string" && parsed.id ? parsed.id : `future-bottle-${deliveryAt.getTime()}`,
+        createdAt: typeof parsed.createdAt === "string" && parsed.createdAt ? parsed.createdAt : new Date().toISOString(),
+        deliveryAt: deliveryAt.toISOString(),
+        message,
+      });
+      setBottleClockNow(Date.now());
+    } catch {
+      setScheduledBottleNote(null);
+    }
+  }, [user?.studentNumber]);
+
   const displayedRecentEntries =
     recentEntriesSort === "newest" ? recentEntries : [...recentEntries].reverse();
   const recentListHeight =
@@ -683,7 +856,8 @@ export default function HomeScreen() {
       void loadUpcomingAppointment();
       void loadLibraryPreview();
       void loadNotifications();
-    }, [loadCheckInStatus, loadLibraryPreview, loadNotifications, loadRecentEntries, loadTodayMood, loadUpcomingAppointment]),
+      void loadScheduledBottleNote();
+    }, [loadCheckInStatus, loadLibraryPreview, loadNotifications, loadRecentEntries, loadScheduledBottleNote, loadTodayMood, loadUpcomingAppointment]),
   );
 
   const handleMoodSelect = (moodId: string) => {
@@ -770,45 +944,168 @@ export default function HomeScreen() {
     setShowWelcomeModal(false);
   };
 
-  const getBottleDeliveryDateLabel = (days: number) => {
-    const deliveryDate = new Date();
-    deliveryDate.setDate(deliveryDate.getDate() + days);
-    return deliveryDate.toLocaleDateString("en-US", {
-      month: "long",
-      day: "numeric",
-      year: "numeric",
-    });
-  };
-
   const openBottleModal = () => {
     if (scheduledBottleNote) {
+      const deliveryAt = parseStoredBottleDate(scheduledBottleNote.deliveryAt) ?? createDefaultBottleDeliveryDate();
       setBottleDraft(scheduledBottleNote.message);
-      setSelectedBottleDeliveryId(scheduledBottleNote.deliveryId);
+      updateBottleDeliveryDraft(deliveryAt);
+      setBottleModalMode("status");
+      setEditingBottleNoteId(null);
+    } else {
+      setBottleDraft("");
+      updateBottleDeliveryDraft(createDefaultBottleDeliveryDate());
+      setBottleModalMode("compose");
+      setEditingBottleNoteId(null);
     }
+    setBottleFormMessage("");
+    setBottlePickerMode(null);
+    setBottleClockNow(Date.now());
     setShowBottleModal(true);
   };
 
   const closeBottleModal = () => {
     setShowBottleModal(false);
     setBottleDraft("");
-    setSelectedBottleDeliveryId(BOTTLE_DELIVERY_OPTIONS[1].id);
+    updateBottleDeliveryDraft(createDefaultBottleDeliveryDate());
+    setBottleFormMessage("");
+    setBottlePickerMode(null);
+    setEditingBottleNoteId(null);
+    setBottleModalMode("compose");
   };
 
-  const handleSaveBottleNote = () => {
-    const trimmedMessage = bottleDraft.trim();
-    const selectedOption = BOTTLE_DELIVERY_OPTIONS.find((option) => option.id === selectedBottleDeliveryId);
+  const handleEditBottleNote = () => {
+    if (!scheduledBottleNote) return;
 
-    if (!trimmedMessage || !selectedOption) {
+    const deliveryAt = parseStoredBottleDate(scheduledBottleNote.deliveryAt) ?? createDefaultBottleDeliveryDate();
+    setBottleDraft(scheduledBottleNote.message);
+    updateBottleDeliveryDraft(deliveryAt);
+    setEditingBottleNoteId(scheduledBottleNote.id);
+    setBottleFormMessage("");
+    setBottlePickerMode(null);
+    setBottleModalMode("compose");
+  };
+
+  const handleWriteAnotherBottleNote = () => {
+    setBottleDraft("");
+    updateBottleDeliveryDraft(createDefaultBottleDeliveryDate());
+    setEditingBottleNoteId(null);
+    setBottleFormMessage("");
+    setBottlePickerMode(null);
+    setBottleModalMode("compose");
+  };
+
+  const getBottleDeliveryDraftDate = () => {
+    if (Platform.OS === "web") {
+      return parseBottleDateTimeInput(bottleDateInput, bottleTimeInput);
+    }
+    return bottleDeliveryAt;
+  };
+
+  const handleSaveBottleNote = async () => {
+    const trimmedMessage = bottleDraft.trim();
+    const deliveryAt = getBottleDeliveryDraftDate();
+
+    if (!trimmedMessage) {
+      setBottleFormMessage("Write a message first.");
       return;
     }
 
-    setScheduledBottleNote({
+    if (!deliveryAt || deliveryAt.getTime() <= Date.now()) {
+      setBottleFormMessage("Choose a future date and time.");
+      return;
+    }
+
+    if (!user?.studentNumber) {
+      setBottleFormMessage("Sign in again before setting your letter.");
+      return;
+    }
+
+    const nextNote: ScheduledBottleNote = {
+      id: editingBottleNoteId ?? `future-bottle-${Date.now()}`,
+      createdAt:
+        editingBottleNoteId && scheduledBottleNote?.id === editingBottleNoteId
+          ? scheduledBottleNote.createdAt
+          : new Date().toISOString(),
       message: trimmedMessage,
-      deliveryId: selectedOption.id,
-      deliveryLabel: selectedOption.label,
-      deliveryDateLabel: getBottleDeliveryDateLabel(selectedOption.days),
-    });
-    closeBottleModal();
+      deliveryAt: deliveryAt.toISOString(),
+    };
+
+    try {
+      await AsyncStorage.setItem(getFutureBottleStorageKey(user.studentNumber), JSON.stringify(nextNote));
+      setScheduledBottleNote(nextNote);
+      setBottleClockNow(Date.now());
+      closeBottleModal();
+    } catch {
+      setBottleFormMessage("Could not save this letter. Please try again.");
+    }
+  };
+
+  const handleBottleDateInputChange = (value: string) => {
+    setBottleDateInput(value);
+    const parsedDate = parseBottleDateTimeInput(value, bottleTimeInput);
+    if (parsedDate) {
+      setBottleDeliveryAt(parsedDate);
+      setBottleFormMessage("");
+    }
+  };
+
+  const handleBottleTimeInputChange = (value: string) => {
+    setBottleTimeInput(value);
+    const parsedDate = parseBottleDateTimeInput(bottleDateInput, value);
+    if (parsedDate) {
+      setBottleDeliveryAt(parsedDate);
+      setBottleFormMessage("");
+    }
+  };
+
+  const handleBottleDatePickerChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    if (event.type === "dismissed" || !selectedDate) return;
+    const nextDate = mergeBottleDate(bottleDeliveryAt, selectedDate);
+    updateBottleDeliveryDraft(nextDate);
+    setBottleFormMessage("");
+  };
+
+  const handleBottleTimePickerChange = (event: DateTimePickerEvent, selectedTime?: Date) => {
+    if (event.type === "dismissed" || !selectedTime) return;
+    const nextDate = mergeBottleTime(bottleDeliveryAt, selectedTime);
+    updateBottleDeliveryDraft(nextDate);
+    setBottleFormMessage("");
+  };
+
+  const openBottleDatePicker = () => {
+    if (Platform.OS === "web") {
+      return;
+    }
+
+    if (Platform.OS === "android") {
+      DateTimePickerAndroid.open({
+        mode: "date",
+        value: bottleDeliveryAt,
+        minimumDate: new Date(),
+        onChange: handleBottleDatePickerChange,
+      });
+      return;
+    }
+
+    setBottlePickerMode((current) => (current === "date" ? null : "date"));
+  };
+
+  const openBottleTimePicker = () => {
+    if (Platform.OS === "web") {
+      return;
+    }
+
+    if (Platform.OS === "android") {
+      DateTimePickerAndroid.open({
+        mode: "time",
+        value: bottleDeliveryAt,
+        is24Hour: false,
+        onChange: handleBottleTimePickerChange,
+      });
+      return;
+    }
+
+    setBottlePickerMode((current) => (current === "time" ? null : "time"));
   };
 
   const handleOpenLibrary = () => {
@@ -926,8 +1223,9 @@ export default function HomeScreen() {
     outputRange: ["3deg", "-3deg", "3deg"],
   });
   const driftingBottleTravelDistance = frameWidth + 168;
-  const selectedBottleDeliveryOption =
-    BOTTLE_DELIVERY_OPTIONS.find((option) => option.id === selectedBottleDeliveryId) ?? BOTTLE_DELIVERY_OPTIONS[1];
+  const scheduledBottleDeliveryDate = scheduledBottleNote ? parseStoredBottleDate(scheduledBottleNote.deliveryAt) : null;
+  const hasBottleArrived = Boolean(scheduledBottleDeliveryDate && scheduledBottleDeliveryDate.getTime() <= bottleClockNow);
+  const bottleDeliveryDraftDate = getBottleDeliveryDraftDate();
   const bottleDraftLength = bottleDraft.trim().length;
   const isBottleDraftReady = bottleDraftLength > 0;
 
@@ -1445,10 +1743,24 @@ export default function HomeScreen() {
 
               <View style={styles.futureBottleInfoCard}>
                 <Text style={[styles.sectionEyebrow, styles.futureBottleEyebrow]}>Future Self</Text>
-                <Text style={styles.futureBottleInfoTitle}>Message in a Bottle</Text>
+                <Text style={styles.futureBottleInfoTitle}>Dear Future Me</Text>
                 <Text style={styles.futureBottleInfoSubtitle}>
                   Leave a note for later and let it drift back to you.
                 </Text>
+                {scheduledBottleDeliveryDate ? (
+                  <View style={[styles.futureBottleStatusPill, hasBottleArrived && styles.futureBottleStatusPillArrived]}>
+                    <Ionicons
+                      name={hasBottleArrived ? "mail-open-outline" : "time-outline"}
+                      size={13}
+                      color={hasBottleArrived ? "#2F6F25" : "#355368"}
+                    />
+                    <Text style={[styles.futureBottleStatusPillText, hasBottleArrived && styles.futureBottleStatusPillTextArrived]} numberOfLines={2}>
+                      {hasBottleArrived
+                        ? "Your letter arrived"
+                        : getBottleCountdownLabel(scheduledBottleDeliveryDate, bottleClockNow)}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
             </View>
 
@@ -1596,79 +1908,198 @@ export default function HomeScreen() {
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.bottleModalCard}>
-            <View style={styles.bottleModalHeader}>
-              <View style={styles.bottleModalTextWrap}>
-                <Text style={styles.bottleModalEyebrow}>For future you</Text>
-                <Text style={styles.bottleModalTitle}>Set your bottle message</Text>
-                <Text style={styles.bottleModalDescription}>
-                  Write a note and choose when it should return to you.
-                </Text>
-              </View>
+            {bottleModalMode === "status" && scheduledBottleNote && scheduledBottleDeliveryDate ? (
+              <>
+                <View style={styles.bottleModalHeader}>
+                  <View style={styles.bottleModalTextWrap}>
+                    <Text style={styles.bottleModalEyebrow}>For future you</Text>
+                    <Text style={styles.bottleModalTitle}>
+                      {hasBottleArrived ? "Your bottle arrived" : "Your bottle is sealed"}
+                    </Text>
+                    <Text style={styles.bottleModalDescription}>
+                      {hasBottleArrived
+                        ? "A note from your past self is ready."
+                        : "It will open when the date and time you chose arrives."}
+                    </Text>
+                  </View>
 
-              <Pressable style={styles.bottleModalCloseButton} onPress={closeBottleModal} accessibilityLabel="Close bottle note">
-                <Ionicons name="close" size={18} color="#52606C" />
-              </Pressable>
-            </View>
+                  <Pressable style={styles.bottleModalCloseButton} onPress={closeBottleModal} accessibilityLabel="Close bottle note">
+                    <Ionicons name="close" size={18} color="#52606C" />
+                  </Pressable>
+                </View>
 
-            <View style={styles.bottleInputCard}>
-              <TextInput
-                multiline
-                maxLength={240}
-                placeholder="Write something your future self may need to hear..."
-                placeholderTextColor="#8DA0AF"
-                style={styles.bottleInput}
-                textAlignVertical="top"
-                value={bottleDraft}
-                onChangeText={setBottleDraft}
-              />
-              <Text style={styles.bottleCharacterCount}>{bottleDraftLength}/240</Text>
-            </View>
-
-            <Text style={styles.bottleOptionLabel}>When should it arrive?</Text>
-            <View style={styles.bottleOptionGrid}>
-              {BOTTLE_DELIVERY_OPTIONS.map((option) => (
-                <Pressable
-                  key={option.id}
-                  style={[
-                    styles.bottleOptionChip,
-                    selectedBottleDeliveryId === option.id && styles.bottleOptionChipActive,
-                  ]}
-                  onPress={() => setSelectedBottleDeliveryId(option.id)}
-                >
-                  <Text
-                    style={[
-                      styles.bottleOptionChipText,
-                      selectedBottleDeliveryId === option.id && styles.bottleOptionChipTextActive,
-                    ]}
-                  >
-                    {option.label}
+                <View style={styles.bottleStatusCard}>
+                  <View style={[styles.bottleStatusIconWrap, hasBottleArrived && styles.bottleStatusIconWrapArrived]}>
+                    <Ionicons
+                      name={hasBottleArrived ? "mail-open-outline" : "lock-closed-outline"}
+                      size={24}
+                      color={hasBottleArrived ? "#2F6F25" : "#355368"}
+                    />
+                  </View>
+                  <Text style={styles.bottleStatusTitle}>
+                    {hasBottleArrived ? "Dear future me" : getBottleCountdownLabel(scheduledBottleDeliveryDate, bottleClockNow)}
                   </Text>
-                </Pressable>
-              ))}
-            </View>
 
-            <View style={styles.bottleArrivalCard}>
-              <Ionicons name="calendar-outline" size={16} color="#486151" />
-              <Text style={styles.bottleArrivalCardText}>
-                Arrives around <Text style={styles.bottleArrivalCardTextStrong}>{getBottleDeliveryDateLabel(selectedBottleDeliveryOption.days)}</Text>
-              </Text>
-            </View>
+                  {hasBottleArrived ? (
+                    <View style={styles.bottleDeliveredMessageCard}>
+                      <Text style={styles.bottleDeliveredMessageText}>{scheduledBottleNote.message}</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.bottleStatusBody}>
+                      Your message is saved and will return on {formatBottleDeliveryDateTime(scheduledBottleDeliveryDate)}.
+                    </Text>
+                  )}
 
-            <View style={styles.modalActions}>
-              <Pressable style={styles.modalSecondaryButton} onPress={closeBottleModal}>
-                <Text style={styles.modalSecondaryText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.modalPrimaryButton,
-                  !isBottleDraftReady && styles.futureBottlePrimaryButtonDisabled,
-                ]}
-                onPress={handleSaveBottleNote}
-                disabled={!isBottleDraftReady}
-              >
-                <Text style={styles.modalPrimaryText}>Set Delivery</Text>
-              </Pressable>
-            </View>
+                  <View style={styles.bottleStatusDateRow}>
+                    <View style={styles.bottleStatusDateItem}>
+                      <Text style={styles.bottleStatusDateLabel}>Date</Text>
+                      <Text style={styles.bottleStatusDateValue}>{formatBottleDeliveryDate(scheduledBottleDeliveryDate)}</Text>
+                    </View>
+                    <View style={styles.bottleStatusDateItem}>
+                      <Text style={styles.bottleStatusDateLabel}>Time</Text>
+                      <Text style={styles.bottleStatusDateValue}>{formatBottleDeliveryTime(scheduledBottleDeliveryDate)}</Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.modalActions}>
+                  <Pressable style={styles.modalSecondaryButton} onPress={closeBottleModal}>
+                    <Text style={styles.modalSecondaryText}>Close</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.modalPrimaryButton}
+                    onPress={hasBottleArrived ? handleWriteAnotherBottleNote : handleEditBottleNote}
+                  >
+                    <Text style={styles.modalPrimaryText}>{hasBottleArrived ? "Write Another" : "Edit Delivery"}</Text>
+                  </Pressable>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={styles.bottleModalHeader}>
+                  <View style={styles.bottleModalTextWrap}>
+                    <Text style={styles.bottleModalEyebrow}>For future you</Text>
+                    <Text style={styles.bottleModalTitle}>
+                      {editingBottleNoteId ? "Edit your bottle message" : "Set your bottle message"}
+                    </Text>
+                    <Text style={styles.bottleModalDescription}>
+                      Write a note and choose the exact date and time it should return.
+                    </Text>
+                  </View>
+
+                  <Pressable style={styles.bottleModalCloseButton} onPress={closeBottleModal} accessibilityLabel="Close bottle note">
+                    <Ionicons name="close" size={18} color="#52606C" />
+                  </Pressable>
+                </View>
+
+                <View style={styles.bottleInputCard}>
+                  <TextInput
+                    multiline
+                    maxLength={BOTTLE_MESSAGE_MAX_LENGTH}
+                    placeholder="Write something your future self may need to hear..."
+                    placeholderTextColor="#8DA0AF"
+                    style={styles.bottleInput}
+                    textAlignVertical="top"
+                    value={bottleDraft}
+                    onChangeText={(value) => {
+                      setBottleDraft(value);
+                      setBottleFormMessage("");
+                    }}
+                  />
+                  <Text style={styles.bottleCharacterCount}>{bottleDraftLength}/{BOTTLE_MESSAGE_MAX_LENGTH}</Text>
+                </View>
+
+                <Text style={styles.bottleOptionLabel}>When should it arrive?</Text>
+                <View style={styles.bottleDateTimeGrid}>
+                  <Pressable
+                    style={styles.bottleDateTimeButton}
+                    onPress={openBottleDatePicker}
+                    accessibilityLabel="Choose bottle arrival date"
+                  >
+                    <View style={styles.bottleDateTimeIcon}>
+                      <Ionicons name="calendar-outline" size={17} color="#486151" />
+                    </View>
+                    <View style={styles.bottleDateTimeTextWrap}>
+                      <Text style={styles.bottleDateTimeLabel}>Date</Text>
+                      <Text style={styles.bottleDateTimeValue}>{formatBottleDeliveryDate(bottleDeliveryAt)}</Text>
+                    </View>
+                  </Pressable>
+
+                  <Pressable
+                    style={styles.bottleDateTimeButton}
+                    onPress={openBottleTimePicker}
+                    accessibilityLabel="Choose bottle arrival time"
+                  >
+                    <View style={styles.bottleDateTimeIcon}>
+                      <Ionicons name="time-outline" size={17} color="#486151" />
+                    </View>
+                    <View style={styles.bottleDateTimeTextWrap}>
+                      <Text style={styles.bottleDateTimeLabel}>Time</Text>
+                      <Text style={styles.bottleDateTimeValue}>{formatBottleDeliveryTime(bottleDeliveryAt)}</Text>
+                    </View>
+                  </Pressable>
+                </View>
+
+                {Platform.OS === "web" ? (
+                  <View style={styles.bottleWebInputRow}>
+                    <TextInput
+                      value={bottleDateInput}
+                      onChangeText={handleBottleDateInputChange}
+                      placeholder="YYYY-MM-DD"
+                      placeholderTextColor="#8DA0AF"
+                      style={styles.bottleWebInput}
+                    />
+                    <TextInput
+                      value={bottleTimeInput}
+                      onChangeText={handleBottleTimeInputChange}
+                      placeholder="HH:MM"
+                      placeholderTextColor="#8DA0AF"
+                      style={styles.bottleWebInput}
+                    />
+                  </View>
+                ) : null}
+
+                {Platform.OS === "ios" && bottlePickerMode ? (
+                  <View style={styles.bottleInlinePickerCard}>
+                    <DateTimePicker
+                      value={bottleDeliveryAt}
+                      mode={bottlePickerMode}
+                      display="spinner"
+                      minimumDate={bottlePickerMode === "date" ? new Date() : undefined}
+                      onChange={bottlePickerMode === "date" ? handleBottleDatePickerChange : handleBottleTimePickerChange}
+                    />
+                    <Pressable style={styles.bottleInlinePickerDoneButton} onPress={() => setBottlePickerMode(null)}>
+                      <Text style={styles.bottleInlinePickerDoneText}>Done</Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+
+                <View style={styles.bottleArrivalCard}>
+                  <Ionicons name="send-outline" size={16} color="#486151" />
+                  <Text style={styles.bottleArrivalCardText}>
+                    Arrives <Text style={styles.bottleArrivalCardTextStrong}>{formatBottleDeliveryDateTime(bottleDeliveryDraftDate ?? bottleDeliveryAt)}</Text>
+                  </Text>
+                </View>
+
+                {bottleFormMessage ? <Text style={styles.bottleFormMessage}>{bottleFormMessage}</Text> : null}
+
+                <View style={styles.modalActions}>
+                  <Pressable style={styles.modalSecondaryButton} onPress={closeBottleModal}>
+                    <Text style={styles.modalSecondaryText}>Cancel</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[
+                      styles.modalPrimaryButton,
+                      !isBottleDraftReady && styles.futureBottlePrimaryButtonDisabled,
+                    ]}
+                    onPress={handleSaveBottleNote}
+                    disabled={!isBottleDraftReady}
+                  >
+                    <Text style={styles.modalPrimaryText}>Set Delivery</Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -3181,6 +3612,32 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
+  futureBottleStatusPill: {
+    marginTop: 10,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.76)",
+    borderWidth: 1,
+    borderColor: "rgba(204, 224, 216, 0.72)",
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 5,
+  },
+  futureBottleStatusPillArrived: {
+    backgroundColor: "rgba(238, 250, 226, 0.88)",
+    borderColor: "rgba(137, 201, 95, 0.64)",
+  },
+  futureBottleStatusPillText: {
+    flex: 1,
+    color: "#355368",
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "700",
+  },
+  futureBottleStatusPillTextArrived: {
+    color: "#2F6F25",
+  },
   futureBottleNoteGlow: {
     position: "absolute",
     alignSelf: "center",
@@ -3608,6 +4065,83 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: 10,
   },
+  bottleDateTimeGrid: {
+    rowGap: 8,
+    marginBottom: 12,
+  },
+  bottleDateTimeButton: {
+    minHeight: 58,
+    borderRadius: 16,
+    backgroundColor: "#F6F8F5",
+    borderWidth: 1,
+    borderColor: "#D6E1D0",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 10,
+  },
+  bottleDateTimeIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    backgroundColor: "#E9F7DD",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bottleDateTimeTextWrap: {
+    flex: 1,
+  },
+  bottleDateTimeLabel: {
+    color: "#71806E",
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+  bottleDateTimeValue: {
+    marginTop: 2,
+    color: "#304558",
+    fontSize: 15,
+    lineHeight: 19,
+    fontWeight: "700",
+  },
+  bottleWebInputRow: {
+    flexDirection: "row",
+    columnGap: 8,
+    marginBottom: 12,
+  },
+  bottleWebInput: {
+    flex: 1,
+    borderRadius: 14,
+    backgroundColor: "#FBFCF8",
+    borderWidth: 1,
+    borderColor: "#DEE7D8",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: "#314456",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  bottleInlinePickerCard: {
+    borderRadius: 16,
+    backgroundColor: "#FBFCF8",
+    borderWidth: 1,
+    borderColor: "#DEE7D8",
+    marginBottom: 12,
+    overflow: "hidden",
+  },
+  bottleInlinePickerDoneButton: {
+    alignSelf: "flex-end",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  bottleInlinePickerDoneText: {
+    color: "#2F6F25",
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: "800",
+  },
   bottleOptionGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -3659,6 +4193,94 @@ const styles = StyleSheet.create({
   },
   bottleArrivalCardTextStrong: {
     color: "#355368",
+    fontWeight: "700",
+  },
+  bottleFormMessage: {
+    color: "#B94A48",
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: -6,
+    marginBottom: 12,
+  },
+  bottleStatusCard: {
+    borderRadius: 20,
+    backgroundColor: "#F8FBF6",
+    borderWidth: 1,
+    borderColor: "#DCE9D9",
+    paddingHorizontal: 14,
+    paddingTop: 16,
+    paddingBottom: 14,
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  bottleStatusIconWrap: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
+    backgroundColor: "#EDF6E7",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  bottleStatusIconWrapArrived: {
+    backgroundColor: "#E9F7DD",
+  },
+  bottleStatusTitle: {
+    color: "#304558",
+    fontSize: 20,
+    lineHeight: 25,
+    fontWeight: "800",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  bottleStatusBody: {
+    color: "#5D7080",
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: "center",
+    marginBottom: 14,
+  },
+  bottleDeliveredMessageCard: {
+    width: "100%",
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#D5E0E7",
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    marginBottom: 14,
+  },
+  bottleDeliveredMessageText: {
+    color: "#2F4257",
+    fontSize: 15,
+    lineHeight: 23,
+  },
+  bottleStatusDateRow: {
+    width: "100%",
+    flexDirection: "row",
+    columnGap: 8,
+  },
+  bottleStatusDateItem: {
+    flex: 1,
+    borderRadius: 14,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E1E9DD",
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  bottleStatusDateLabel: {
+    color: "#71806E",
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    marginBottom: 3,
+  },
+  bottleStatusDateValue: {
+    color: "#304558",
+    fontSize: 13,
+    lineHeight: 17,
     fontWeight: "700",
   },
   consultOverlay: {
