@@ -9,6 +9,12 @@ const {
   inferJournalTagsFromText,
   resolveJournalEntryTags,
 } = require("../constants/journal-tags");
+const {
+  RISK_LEVEL_LABELS,
+  getRiskLevelLabel,
+  normalizeRiskTriggerLevel,
+  normalizeRiskTriggerPhrase,
+} = require("../constants/risk-trigger-words");
 
 const router = express.Router();
 const EMOTION_IDS = EMOTION_OPTIONS.map((item) => item.id);
@@ -534,6 +540,70 @@ function normalizeStringArray(value) {
   return Array.isArray(value)
     ? value.map((item) => normalizeCompactSpaces(item)).filter(Boolean)
     : [];
+}
+
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(value || "").trim(),
+  );
+}
+
+function normalizeRiskTriggerCategory(value) {
+  return normalizeCompactSpaces(value || "Safety signal").slice(0, 80) || "Safety signal";
+}
+
+function parseRiskTriggerPayload(body, existing = {}) {
+  const phrase =
+    Object.prototype.hasOwnProperty.call(body, "phrase")
+      ? normalizeRiskTriggerPhrase(body.phrase)
+      : normalizeRiskTriggerPhrase(existing.phrase);
+  const riskLevel =
+    Object.prototype.hasOwnProperty.call(body, "riskLevel") || Object.prototype.hasOwnProperty.call(body, "risk_level")
+      ? normalizeRiskTriggerLevel(body.riskLevel || body.risk_level)
+      : normalizeRiskTriggerLevel(existing.risk_level || existing.riskLevel);
+  const category =
+    Object.prototype.hasOwnProperty.call(body, "category")
+      ? normalizeRiskTriggerCategory(body.category)
+      : normalizeRiskTriggerCategory(existing.category);
+  const isEnabled =
+    typeof body.isEnabled === "boolean"
+      ? body.isEnabled
+      : typeof body.is_enabled === "boolean"
+        ? body.is_enabled
+        : existing.is_enabled == null
+          ? true
+          : Boolean(existing.is_enabled);
+
+  return {
+    category,
+    isEnabled,
+    phrase,
+    riskLevel,
+  };
+}
+
+function serializeRiskTrigger(row) {
+  const riskLevel = normalizeRiskTriggerLevel(row.risk_level) || "LOW";
+  return {
+    id: row.id,
+    phrase: row.phrase,
+    riskLevel,
+    riskLabel: getRiskLevelLabel(riskLevel),
+    category: row.category || "Safety signal",
+    isEnabled: Boolean(row.is_enabled),
+    createdByEmail: row.created_by_email || "",
+    updatedByEmail: row.updated_by_email || "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function getActorPayload(body = {}) {
+  return {
+    actorEmail: normalizeEmail(body.actorEmail || ""),
+    actorName: normalizeCompactSpaces(body.actorName || ""),
+    actorRole: normalizeCompactSpaces(body.actorRole || "Admin"),
+  };
 }
 
 function toStudentStatus(row) {
@@ -1146,7 +1216,8 @@ router.get("/dashboard/summary", async (req, res) => {
       `
         select id, student_number, entry_date, created_at, risk_level, support_response
         from public.journal_entries
-        where risk_level = 'HIGH' or support_response = 'DECLINED'
+        where upper(coalesce(risk_level, 'NONE')) in ('LOW', 'HIGH', 'CRITICAL')
+           or support_response = 'DECLINED'
       `,
     ),
     query(
@@ -1482,7 +1553,7 @@ router.get("/dashboard/risk-flags", async (_req, res) => {
       from public.journal_entries je
       left join public.student_profiles sp on sp.student_number = je.student_number
       where (
-        upper(coalesce(je.risk_level, 'NONE')) in ('HIGH', 'CRITICAL')
+        upper(coalesce(je.risk_level, 'NONE')) in ('LOW', 'HIGH', 'CRITICAL')
         or upper(coalesce(je.support_response, '')) = 'DECLINED'
       )
         and je.deleted_by_student_at is null
@@ -1510,6 +1581,226 @@ router.get("/dashboard/risk-flags", async (_req, res) => {
       summary: row.summary || "",
       title: row.title || "",
     })),
+  });
+});
+
+router.get("/risk-triggers", async (_req, res) => {
+  const result = await query(
+    `
+      select
+        id,
+        phrase,
+        risk_level,
+        category,
+        is_enabled,
+        created_by_email,
+        updated_by_email,
+        created_at,
+        updated_at
+      from public.risk_trigger_words
+      order by
+        case risk_level when 'HIGH' then 0 when 'LOW' then 1 else 2 end,
+        is_enabled desc,
+        phrase asc
+    `,
+  );
+
+  return res.json({
+    riskLabels: RISK_LEVEL_LABELS,
+    triggers: result.rows.map(serializeRiskTrigger),
+  });
+});
+
+router.post("/risk-triggers", async (req, res) => {
+  const { actorEmail, actorName, actorRole } = getActorPayload(req.body);
+  const trigger = parseRiskTriggerPayload(req.body);
+
+  if (!trigger.phrase) {
+    return res.status(400).json({ message: "Trigger word or phrase is required." });
+  }
+  if (trigger.phrase.length > 120) {
+    return res.status(400).json({ message: "Trigger phrase must be 120 characters or fewer." });
+  }
+  if (!trigger.riskLevel) {
+    return res.status(400).json({ message: "Risk flag must be Distressed or Crisis." });
+  }
+
+  try {
+    const result = await query(
+      `
+        insert into public.risk_trigger_words (
+          phrase,
+          risk_level,
+          category,
+          is_enabled,
+          created_by_email,
+          updated_by_email
+        )
+        values ($1, $2, $3, $4, $5, $5)
+        returning
+          id,
+          phrase,
+          risk_level,
+          category,
+          is_enabled,
+          created_by_email,
+          updated_by_email,
+          created_at,
+          updated_at
+      `,
+      [trigger.phrase, trigger.riskLevel, trigger.category, trigger.isEnabled, actorEmail || null],
+    );
+
+    const created = serializeRiskTrigger(result.rows[0]);
+    await writeAdminActivityLog({
+      actionType: "RISK_TRIGGER_CREATED",
+      actorEmail,
+      actorName,
+      actorRole,
+      entityType: "RISK_TRIGGER",
+      title: `Risk trigger added: ${created.phrase}`,
+      description: `${created.phrase} was added as ${created.riskLabel}.`,
+      metadata: {
+        riskLevel: created.riskLevel,
+        triggerId: created.id,
+      },
+    });
+
+    return res.status(201).json({
+      message: "Risk trigger added.",
+      trigger: created,
+    });
+  } catch (error) {
+    if (error?.code === "23505") {
+      return res.status(409).json({ message: "That trigger phrase already exists." });
+    }
+    throw error;
+  }
+});
+
+router.patch("/risk-triggers/:triggerId", async (req, res) => {
+  const triggerId = String(req.params.triggerId || "").trim();
+  if (!isUuid(triggerId)) {
+    return res.status(400).json({ message: "Valid trigger id is required." });
+  }
+
+  const existingResult = await query(
+    `
+      select id, phrase, risk_level, category, is_enabled
+      from public.risk_trigger_words
+      where id = $1::uuid
+      limit 1
+    `,
+    [triggerId],
+  );
+  if (existingResult.rowCount === 0) {
+    return res.status(404).json({ message: "Risk trigger not found." });
+  }
+
+  const { actorEmail, actorName, actorRole } = getActorPayload(req.body);
+  const trigger = parseRiskTriggerPayload(req.body, existingResult.rows[0]);
+
+  if (!trigger.phrase) {
+    return res.status(400).json({ message: "Trigger word or phrase is required." });
+  }
+  if (trigger.phrase.length > 120) {
+    return res.status(400).json({ message: "Trigger phrase must be 120 characters or fewer." });
+  }
+  if (!trigger.riskLevel) {
+    return res.status(400).json({ message: "Risk flag must be Distressed or Crisis." });
+  }
+
+  try {
+    const result = await query(
+      `
+        update public.risk_trigger_words
+        set
+          phrase = $2,
+          risk_level = $3,
+          category = $4,
+          is_enabled = $5,
+          updated_by_email = $6,
+          updated_at = now()
+        where id = $1::uuid
+        returning
+          id,
+          phrase,
+          risk_level,
+          category,
+          is_enabled,
+          created_by_email,
+          updated_by_email,
+          created_at,
+          updated_at
+      `,
+      [triggerId, trigger.phrase, trigger.riskLevel, trigger.category, trigger.isEnabled, actorEmail || null],
+    );
+
+    const updated = serializeRiskTrigger(result.rows[0]);
+    await writeAdminActivityLog({
+      actionType: "RISK_TRIGGER_UPDATED",
+      actorEmail,
+      actorName,
+      actorRole,
+      entityType: "RISK_TRIGGER",
+      title: `Risk trigger updated: ${updated.phrase}`,
+      description: `${updated.phrase} is now ${updated.isEnabled ? "enabled" : "disabled"} as ${updated.riskLabel}.`,
+      metadata: {
+        isEnabled: updated.isEnabled,
+        riskLevel: updated.riskLevel,
+        triggerId: updated.id,
+      },
+    });
+
+    return res.json({
+      message: "Risk trigger updated.",
+      trigger: updated,
+    });
+  } catch (error) {
+    if (error?.code === "23505") {
+      return res.status(409).json({ message: "That trigger phrase already exists." });
+    }
+    throw error;
+  }
+});
+
+router.delete("/risk-triggers/:triggerId", async (req, res) => {
+  const triggerId = String(req.params.triggerId || "").trim();
+  if (!isUuid(triggerId)) {
+    return res.status(400).json({ message: "Valid trigger id is required." });
+  }
+
+  const existingResult = await query(
+    `
+      delete from public.risk_trigger_words
+      where id = $1::uuid
+      returning id, phrase, risk_level, category, is_enabled
+    `,
+    [triggerId],
+  );
+  if (existingResult.rowCount === 0) {
+    return res.status(404).json({ message: "Risk trigger not found." });
+  }
+
+  const { actorEmail, actorName, actorRole } = getActorPayload(req.body);
+  const deleted = serializeRiskTrigger(existingResult.rows[0]);
+  await writeAdminActivityLog({
+    actionType: "RISK_TRIGGER_DELETED",
+    actorEmail,
+    actorName,
+    actorRole,
+    entityType: "RISK_TRIGGER",
+    title: `Risk trigger deleted: ${deleted.phrase}`,
+    description: `${deleted.phrase} was removed from configurable risk triggers.`,
+    metadata: {
+      riskLevel: deleted.riskLevel,
+      triggerId: deleted.id,
+    },
+  });
+
+  return res.json({
+    message: "Risk trigger deleted.",
+    trigger: deleted,
   });
 });
 
@@ -1773,8 +2064,8 @@ router.get("/analytics", async (req, res) => {
   }));
 
   const weeklyBuckets = buildWindowBuckets(startDate, endDate, 4);
-  const highRiskSeries = Array(weeklyBuckets.length).fill(0);
-  const criticalRiskSeries = Array(weeklyBuckets.length).fill(0);
+  const crisisRiskSeries = Array(weeklyBuckets.length).fill(0);
+  const distressedRiskSeries = Array(weeklyBuckets.length).fill(0);
 
   for (const row of journalRows) {
     const riskLevel = String(row.risk_level || "").trim().toUpperCase();
@@ -1782,20 +2073,25 @@ router.get("/analytics", async (req, res) => {
     const bucketIndex = weeklyBuckets.findIndex((bucket) => entryDate >= bucket.startDate && entryDate <= bucket.endDate);
     if (bucketIndex < 0) continue;
 
-    if (riskLevel === "CRITICAL") {
-      criticalRiskSeries[bucketIndex] += 1;
-    } else if (riskLevel === "HIGH") {
-      highRiskSeries[bucketIndex] += 1;
+    if (["HIGH", "CRITICAL"].includes(riskLevel)) {
+      crisisRiskSeries[bucketIndex] += 1;
+    } else if (["LOW", "MEDIUM", "MODERATE"].includes(riskLevel)) {
+      distressedRiskSeries[bucketIndex] += 1;
     }
   }
 
   const resolutionRates = [
-    buildResolutionRate(journalRows, "Critical Cases", (row) => String(row.risk_level || "").toUpperCase() === "CRITICAL", 24, "emerald"),
-    buildResolutionRate(journalRows, "High Risk Cases", (row) => String(row.risk_level || "").toUpperCase() === "HIGH", 48, "emerald"),
     buildResolutionRate(
       journalRows,
-      "Medium Risk Cases",
-      (row) => ["MEDIUM", "MODERATE"].includes(String(row.risk_level || "").toUpperCase()),
+      "Crisis / Critical Need",
+      (row) => ["HIGH", "CRITICAL"].includes(String(row.risk_level || "").toUpperCase()),
+      48,
+      "emerald",
+    ),
+    buildResolutionRate(
+      journalRows,
+      "Distressed / Needs Support",
+      (row) => ["LOW", "MEDIUM", "MODERATE"].includes(String(row.risk_level || "").toUpperCase()),
       120,
       "amber",
     ),
@@ -1837,12 +2133,12 @@ router.get("/analytics", async (req, res) => {
     const tags = getJournalTagsForAdmin(row);
 
     stats.entriesInRange += 1;
-    if (["HIGH", "CRITICAL"].includes(riskLevel) || supportResponse === "DECLINED") {
+    if (["LOW", "HIGH", "CRITICAL", "MEDIUM", "MODERATE"].includes(riskLevel) || supportResponse === "DECLINED") {
       stats.flagsInRange += 1;
     }
-    if (riskLevel === "HIGH") stats.highRiskFlags += 1;
+    if (["HIGH", "CRITICAL"].includes(riskLevel)) stats.highRiskFlags += 1;
     if (riskLevel === "CRITICAL") stats.criticalRiskFlags += 1;
-    if (["MEDIUM", "MODERATE"].includes(riskLevel)) stats.mediumRiskFlags += 1;
+    if (["LOW", "MEDIUM", "MODERATE"].includes(riskLevel)) stats.mediumRiskFlags += 1;
     if (supportResponse === "DECLINED") stats.declinedSupport += 1;
     if (supportResponse === "CONTACTED") stats.contactedSupport += 1;
 
@@ -1924,8 +2220,8 @@ router.get("/analytics", async (req, res) => {
       atRiskStudentTrends: {
         labels: weeklyBuckets.map((_, index) => `W${index + 1}`),
         series: [
-          { key: "critical", label: "Critical", values: criticalRiskSeries },
-          { key: "high", label: "High Risk", values: highRiskSeries },
+          { key: "crisis", label: "Crisis / Critical Need", values: crisisRiskSeries },
+          { key: "distressed", label: "Distressed / Needs Support", values: distressedRiskSeries },
         ],
       },
       resolutionRates,
@@ -2095,7 +2391,7 @@ router.get("/students", async (req, res) => {
           count(*)::int as total_entries,
           max(je.created_at) as last_entry_at,
           count(*) filter (
-            where upper(coalesce(je.risk_level, 'NONE')) in ('HIGH', 'CRITICAL')
+            where upper(coalesce(je.risk_level, 'NONE')) in ('LOW', 'HIGH', 'CRITICAL')
               or upper(coalesce(je.support_response, '')) = 'DECLINED'
           )::int as flagged_entries
         from public.journal_entries je
@@ -2217,7 +2513,7 @@ router.get("/students/:studentNumber", async (req, res) => {
         }))
       : [];
     const canViewConversation =
-      ["HIGH", "CRITICAL"].includes(riskLevel) || Boolean(row.admin_flag_reason);
+      ["LOW", "HIGH", "CRITICAL"].includes(riskLevel) || Boolean(row.admin_flag_reason);
 
     return {
       id: row.id,
@@ -2255,10 +2551,10 @@ router.get("/students/:studentNumber", async (req, res) => {
       birthdate: profile.birthdate || null,
       createdAt: profile.created_at,
       totalEntries: entries.length,
-      flaggedEntries: entries.filter((entry) => ["HIGH", "CRITICAL"].includes(String(entry.riskLevel || "").toUpperCase())).length,
+      flaggedEntries: entries.filter((entry) => ["LOW", "HIGH", "CRITICAL"].includes(String(entry.riskLevel || "").toUpperCase())).length,
       status: toStudentStatus({
         total_entries: entries.length,
-        flagged_entries: entries.filter((entry) => ["HIGH", "CRITICAL"].includes(String(entry.riskLevel || "").toUpperCase())).length,
+        flagged_entries: entries.filter((entry) => ["LOW", "HIGH", "CRITICAL"].includes(String(entry.riskLevel || "").toUpperCase())).length,
       }),
     },
     entries,

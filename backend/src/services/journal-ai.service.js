@@ -1,6 +1,8 @@
 const GEMINI_API_KEY = String(process.env.GEMINI_API_KEY || "").trim();
 const GROQ_API_KEY = String(process.env.GROQ_API_KEY || "").trim();
-const OLLAMA_BASE_URL = normalizeBaseUrl(process.env.OLLAMA_BASE_URL || process.env.OLLAMA_URL || "");
+const OLLAMA_BASE_URL = normalizeBaseUrl(
+  process.env.OLLAMA_BASE_URL || process.env.OLLAMA_URL || "",
+);
 const OLLAMA_CF_ACCESS_CLIENT_ID = String(
   process.env.OLLAMA_CF_ACCESS_CLIENT_ID ||
     process.env.CLOUDFLARE_ACCESS_CLIENT_ID ||
@@ -16,9 +18,18 @@ const {
   inferJournalTagsFromText,
   normalizeJournalTags,
 } = require("../constants/journal-tags");
+const {
+  DEFAULT_RISK_TRIGGER_WORDS,
+  getRiskLevelLabel,
+  normalizeRiskTriggerLevel,
+  normalizeRiskTriggerPhrase,
+} = require("../constants/risk-trigger-words");
+const { query } = require("../config/db");
 
 function normalizeBaseUrl(value) {
-  const compact = String(value || "").trim().replace(/\/+$/, "");
+  const compact = String(value || "")
+    .trim()
+    .replace(/\/+$/, "");
   if (!compact) return "";
   return compact.replace(/\/v1$/i, "");
 }
@@ -41,7 +52,9 @@ function parseConfiguredModelList(value, defaults) {
     .filter(Boolean);
   const selected = configured.length ? configured : defaults;
 
-  return selected.filter((model, index, items) => model && items.indexOf(model) === index);
+  return selected.filter(
+    (model, index, items) => model && items.indexOf(model) === index,
+  );
 }
 
 const GEMINI_MODELS = parseModelList(
@@ -71,7 +84,10 @@ const OLLAMA_REQUEST_TIMEOUT_MS = Math.max(
   3000,
   Number(process.env.OLLAMA_REQUEST_TIMEOUT_MS || 60000),
 );
-const OLLAMA_MAX_TOKENS = Math.max(0, Number(process.env.OLLAMA_MAX_TOKENS || 0));
+const OLLAMA_MAX_TOKENS = Math.max(
+  0,
+  Number(process.env.OLLAMA_MAX_TOKENS || 0),
+);
 
 let geminiCooldownUntil = 0;
 let geminiLastFailure = null;
@@ -82,7 +98,11 @@ function parseProviderOrder(value, defaults) {
   const allowed = new Set(["ollama", "gemini", "groq"]);
   const configured = String(value || "")
     .split(",")
-    .map((item) => String(item || "").trim().toLowerCase())
+    .map((item) =>
+      String(item || "")
+        .trim()
+        .toLowerCase(),
+    )
     .filter((provider) => allowed.has(provider));
 
   return (configured.length ? configured : defaults).filter(
@@ -165,8 +185,8 @@ function pickMirrorLanguageTemplate(latestUserMessage) {
   };
 }
 
-function unavailableConversationAnalysis(latestUserMessage = "", history = []) {
-  const heuristicRisk = riskFromSeverityWords(
+async function unavailableConversationAnalysis(latestUserMessage = "", history = []) {
+  const heuristicRisk = await riskFromSeverityWords(
     [latestUserMessage, ...history.map((item) => item.text)].join("\n"),
   );
 
@@ -184,8 +204,8 @@ function parseProviderJson(text) {
   return parseGeminiJson(text);
 }
 
-function unavailableFinalAnalysis(latestUserMessage = "", history = []) {
-  const heuristicRisk = riskFromSeverityWords(
+async function unavailableFinalAnalysis(latestUserMessage = "", history = []) {
+  const heuristicRisk = await riskFromSeverityWords(
     [latestUserMessage, ...history.map((item) => item.text)].join("\n"),
   );
   const fallbackTags = inferJournalTagsFromText(
@@ -269,67 +289,54 @@ function normalizePetReply(rawReply, latestUserMessage) {
   return "";
 }
 
-function riskFromSeverityWords(text) {
-  const value = String(text || "").toLowerCase();
+async function loadEnabledRiskTriggerWords() {
+  try {
+    const result = await query(
+      `
+        select phrase, risk_level, category
+        from public.risk_trigger_words
+        where is_enabled = true
+        order by
+          case risk_level when 'HIGH' then 0 when 'LOW' then 1 else 2 end,
+          phrase asc
+      `,
+    );
 
-  const highSignals = [
-    "suicide",
-    "suicidal",
-    "kill myself",
-    "end my life",
-    "hurt myself",
-    "self harm",
-    "self-harm",
-    "i want to die",
-    "i wanna die",
-    "ayoko na mabuhay",
-    "gusto ko nang mamatay",
-    "gusto ko na mamatay",
-    "papatayin ko sarili ko",
-    "sasaktan ko sarili ko",
-    "saktan ang sarili",
-    "magpapakamatay",
-    "mamatay na lang",
-    "wala nang dahilan mabuhay",
-    "abuse",
-    "inaabuso",
-    "binubugbog",
-    "rape",
-    "sexual assault",
-  ];
-
-  const lowSignals = [
-    "panic attack",
-    "can't stop crying",
-    "cant stop crying",
-    "sobrang lungkot",
-    "sobrang bigat",
-    "wala na akong gana",
-    "i feel hopeless",
-    "hopeless",
-    "burned out",
-    "burnt out",
-    "pagod na pagod",
-    "hindi ko na kaya",
-    "di ko na kaya",
-    "overwhelmed",
-    "matinding anxiety",
-    "severe anxiety",
-  ];
-
-  if (highSignals.some((signal) => value.includes(signal))) {
-    return {
-      risk_level: "HIGH",
-      admin_flag_reason:
-        "Risk keywords suggesting self-harm, suicide, abuse, or immediate danger were detected.",
-    };
+    return result.rows
+      .map((row) => ({
+        category: normalizeWhitespace(row.category || "Safety signal"),
+        phrase: normalizeRiskTriggerPhrase(row.phrase),
+        riskLevel: normalizeRiskTriggerLevel(row.risk_level),
+      }))
+      .filter((trigger) => trigger.phrase && trigger.riskLevel);
+  } catch (error) {
+    console.warn("Using default risk triggers because configured triggers could not be loaded.", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return DEFAULT_RISK_TRIGGER_WORDS;
   }
+}
 
-  if (lowSignals.some((signal) => value.includes(signal))) {
+function riskFromTriggerWords(text, triggers) {
+  const value = String(text || "").toLowerCase();
+  const matchedTriggers = (Array.isArray(triggers) ? triggers : [])
+    .map((trigger) => ({
+      category: normalizeWhitespace(trigger.category || "Safety signal"),
+      phrase: normalizeRiskTriggerPhrase(trigger.phrase),
+      riskLevel: normalizeRiskTriggerLevel(trigger.riskLevel || trigger.risk_level),
+    }))
+    .filter((trigger) => trigger.phrase && trigger.riskLevel && value.includes(trigger.phrase));
+
+  const matched =
+    matchedTriggers.find((trigger) => trigger.riskLevel === "HIGH") ||
+    matchedTriggers.find((trigger) => trigger.riskLevel === "LOW");
+  if (matched) {
+    const riskLabel = getRiskLevelLabel(matched.riskLevel);
     return {
-      risk_level: "LOW",
-      admin_flag_reason:
-        "Risk keywords suggesting significant distress were detected.",
+      risk_level: matched.riskLevel,
+      admin_flag_reason: `${riskLabel} trigger phrase "${matched.phrase}" was detected${
+        matched.category ? ` (${matched.category})` : ""
+      }.`,
     };
   }
 
@@ -337,6 +344,10 @@ function riskFromSeverityWords(text) {
     risk_level: "NONE",
     admin_flag_reason: null,
   };
+}
+
+async function riskFromSeverityWords(text) {
+  return riskFromTriggerWords(text, await loadEnabledRiskTriggerWords());
 }
 
 function mergeRiskSignals(
@@ -466,7 +477,12 @@ async function requestGeminiJson({
     if (response.ok && rawText) {
       clearGeminiFailureState();
       try {
-        return { ok: true, parsed: parseGeminiJson(rawText), provider: "gemini", model };
+        return {
+          ok: true,
+          parsed: parseGeminiJson(rawText),
+          provider: "gemini",
+          model,
+        };
       } catch (error) {
         console.error("Failed to parse Gemini JSON response.", {
           error: error instanceof Error ? error.message : String(error),
@@ -519,7 +535,10 @@ async function requestGeminiJson({
   }
 
   if (lastFailure) {
-    console.error("Gemini request failed for all configured models.", lastFailure);
+    console.error(
+      "Gemini request failed for all configured models.",
+      lastFailure,
+    );
   }
 
   return {
@@ -543,22 +562,25 @@ async function requestGroqJson({
 
   for (const model of models) {
     try {
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${GROQ_API_KEY}`,
-          "Content-Type": "application/json",
+      const response = await fetch(
+        "https://api.groq.com/openai/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${GROQ_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: "system", content: systemInstruction },
+              ...messages,
+            ],
+            temperature: 0.5,
+            response_format: { type: "json_object" },
+          }),
         },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: systemInstruction },
-            ...messages,
-          ],
-          temperature: 0.5,
-          response_format: { type: "json_object" },
-        }),
-      });
+      );
 
       const data = await response.json().catch(() => ({}));
       const rawText = String(data?.choices?.[0]?.message?.content || "").trim();
@@ -582,7 +604,10 @@ async function requestGroqJson({
             occurredAt: new Date().toISOString(),
             ...lastFailure,
           };
-          console.warn("Groq returned invalid JSON, trying next model.", lastFailure);
+          console.warn(
+            "Groq returned invalid JSON, trying next model.",
+            lastFailure,
+          );
           continue;
         }
       }
@@ -617,19 +642,28 @@ async function requestGroqJson({
         occurredAt: new Date().toISOString(),
         ...lastFailure,
       };
-      console.warn("Groq request error for model, trying next model.", lastFailure);
+      console.warn(
+        "Groq request error for model, trying next model.",
+        lastFailure,
+      );
       continue;
     }
   }
 
   if (lastFailure) {
-    console.error("Groq request failed for all configured models.", lastFailure);
+    console.error(
+      "Groq request failed for all configured models.",
+      lastFailure,
+    );
   }
 
   return {
     ok: false,
     parsed: null,
-    reason: lastFailure?.reason === "rate_limit" ? "groq_rate_limited" : "groq_request_failed",
+    reason:
+      lastFailure?.reason === "rate_limit"
+        ? "groq_rate_limited"
+        : "groq_request_failed",
   };
 }
 
@@ -669,10 +703,7 @@ async function requestOllamaJson({
     let data = {};
     const requestBody = {
       model,
-      messages: [
-        { role: "system", content: systemInstruction },
-        ...messages,
-      ],
+      messages: [{ role: "system", content: systemInstruction }, ...messages],
       response_format: { type: "json_object" },
       stream: false,
       temperature: 0.5,
@@ -711,7 +742,12 @@ async function requestOllamaJson({
     if (response.ok && rawText) {
       clearOllamaFailureState();
       try {
-        return { ok: true, parsed: parseProviderJson(rawText), provider: "ollama", model };
+        return {
+          ok: true,
+          parsed: parseProviderJson(rawText),
+          provider: "ollama",
+          model,
+        };
       } catch (error) {
         console.error("Failed to parse Ollama JSON response.", {
           error: error instanceof Error ? error.message : String(error),
@@ -736,13 +772,19 @@ async function requestOllamaJson({
       reason: "request_failed",
       ...lastFailure,
     };
-    console.warn("Ollama request failed for model, trying next model.", lastFailure);
+    console.warn(
+      "Ollama request failed for model, trying next model.",
+      lastFailure,
+    );
   }
 
   return {
     ok: false,
     parsed: null,
-    reason: lastFailure?.status === 404 ? "ollama_model_not_found" : "ollama_request_failed",
+    reason:
+      lastFailure?.status === 404
+        ? "ollama_model_not_found"
+        : "ollama_request_failed",
   };
 }
 
@@ -849,7 +891,7 @@ async function analyzeJournalConversation({
     "- HIGH only if there are signs of self-harm, suicidal intent, danger, abuse, or severe crisis.",
     "- LOW for strong distress without clear immediate danger.",
     "- NONE for normal reflection or mild emotion.",
-    "Write insights as 2 or 3 short complete sentences.",
+    "Write insights as 3 or 4 short complete sentences.",
     "Insights must not give advice or instructions.",
   ].join("\n");
 
@@ -883,7 +925,12 @@ async function analyzeJournalConversation({
       systemInstruction,
       contents: analysisContents,
       messages: groqMessages,
-      schemaLines: ['"pet_reply"', '"insights"', '"risk_level"', '"admin_flag_reason"'],
+      schemaLines: [
+        '"pet_reply"',
+        '"insights"',
+        '"risk_level"',
+        '"admin_flag_reason"',
+      ],
     });
 
     if (!providerResult.ok) {
@@ -896,11 +943,11 @@ async function analyzeJournalConversation({
           ollama: ollamaLastFailure?.reason || "unknown",
         },
       });
-      return unavailableConversationAnalysis(latestUserMessage, history);
+      return await unavailableConversationAnalysis(latestUserMessage, history);
     }
 
     const parsedAnalysis = providerResult.parsed || {};
-    const heuristicRisk = riskFromSeverityWords(
+    const heuristicRisk = await riskFromSeverityWords(
       [latestUserMessage, ...history.map((item) => item.text)].join("\n"),
     );
     const mergedRisk = mergeRiskSignals(
@@ -925,7 +972,7 @@ async function analyzeJournalConversation({
       error: error instanceof Error ? error.message : String(error),
       latestUserMessage,
     });
-    return unavailableConversationAnalysis(latestUserMessage, history);
+    return await unavailableConversationAnalysis(latestUserMessage, history);
   }
 }
 
@@ -969,7 +1016,7 @@ async function analyzeJournalEntryFinal({
     "- LOW for strong distress without clear immediate danger.",
     "- NONE for normal reflection or mild emotion.",
     "Insights rules:",
-    "- Write 2 or 3 short complete sentences.",
+    "- Write 3 or 4 short complete sentences.",
     "- Keep them reflective and non-prescriptive.",
   ].join("\n");
 
@@ -999,7 +1046,13 @@ async function analyzeJournalEntryFinal({
       systemInstruction,
       contents,
       messages: groqMessages,
-      schemaLines: ['"summary"', '"insights"', '"suggested_tags"', '"risk_level"', '"admin_flag_reason"'],
+      schemaLines: [
+        '"summary"',
+        '"insights"',
+        '"suggested_tags"',
+        '"risk_level"',
+        '"admin_flag_reason"',
+      ],
     });
 
     if (!providerResult.ok) {
@@ -1012,7 +1065,7 @@ async function analyzeJournalEntryFinal({
           ollama: ollamaLastFailure?.reason || "unknown",
         },
       });
-      return unavailableFinalAnalysis(latestUserMessage, history);
+      return await unavailableFinalAnalysis(latestUserMessage, history);
     }
 
     const parsed = providerResult.parsed || {};
@@ -1020,7 +1073,7 @@ async function analyzeJournalEntryFinal({
       [latestUserMessage, ...history.map((item) => item.text)].join("\n"),
     );
     const suggestedTags = normalizeJournalTags(parsed?.suggested_tags);
-    const heuristicRisk = riskFromSeverityWords(
+    const heuristicRisk = await riskFromSeverityWords(
       [latestUserMessage, ...history.map((item) => item.text)].join("\n"),
     );
     const mergedRisk = mergeRiskSignals(
@@ -1043,7 +1096,7 @@ async function analyzeJournalEntryFinal({
       error: error instanceof Error ? error.message : String(error),
       latestUserMessage,
     });
-    return unavailableFinalAnalysis(latestUserMessage, history);
+    return await unavailableFinalAnalysis(latestUserMessage, history);
   }
 }
 
@@ -1051,4 +1104,3 @@ module.exports = {
   analyzeJournalConversation,
   analyzeJournalEntryFinal,
 };
-

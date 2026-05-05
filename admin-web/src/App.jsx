@@ -7,6 +7,7 @@ import FlaggedEntries from "./pages/FlaggedEntries";
 import Login from "./pages/Login";
 import Overview from "./pages/Overview";
 import PeerCounselors from "./pages/PeerCounselors";
+import RiskTriggers from "./pages/RiskTriggers";
 import RoleAssignments from "./pages/RoleAssignments";
 import Settings from "./pages/Settings";
 import StudentDirectory from "./pages/StudentDirectory";
@@ -107,6 +108,14 @@ export default function App() {
           element={
             <ProtectedRoute session={session}>
               <RoleAssignments session={session} onLogout={authActions.logout} />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/risk-triggers"
+          element={
+            <ProtectedRoute session={session}>
+              <RiskTriggers session={session} onLogout={authActions.logout} />
             </ProtectedRoute>
           }
         />

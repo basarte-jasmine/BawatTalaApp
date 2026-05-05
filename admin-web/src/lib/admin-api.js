@@ -79,6 +79,31 @@ export async function fetchAdminRiskFlags() {
   return request("/api/admin/dashboard/risk-flags");
 }
 
+export async function fetchRiskTriggers() {
+  return request("/api/admin/risk-triggers");
+}
+
+export async function createRiskTrigger(payload) {
+  return request("/api/admin/risk-triggers", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateRiskTrigger(triggerId, payload) {
+  return request(`/api/admin/risk-triggers/${triggerId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteRiskTrigger(triggerId, payload = {}) {
+  return request(`/api/admin/risk-triggers/${triggerId}`, {
+    method: "DELETE",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function fetchAdminStudents(params = {}) {
   const searchParams = new URLSearchParams();
   if (params.search) {

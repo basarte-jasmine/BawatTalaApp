@@ -23,6 +23,7 @@ const MAIN_MENU_ITEMS = [
 
 const SYSTEM_MENU_ITEMS = [
   { path: "/roles", label: "Role Assignments", icon: ShieldCheck },
+  { path: "/risk-triggers", label: "Risk Triggers", icon: Flag },
   { path: "/settings", label: "Settings", icon: Settings },
 ];
 

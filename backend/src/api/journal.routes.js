@@ -1,7 +1,7 @@
 const express = require("express");
 const { query } = require("../config/db");
 const { supabaseAdminClient } = require("../config/supabase");
-const { analyzeJournalConversation, analyzeJournalEntryFinal } = require("../services/gemini.service");
+const { analyzeJournalConversation, analyzeJournalEntryFinal } = require("../services/journal-ai.service");
 const {
   JOURNAL_TAG_OPTIONS,
   inferJournalTagsFromText,

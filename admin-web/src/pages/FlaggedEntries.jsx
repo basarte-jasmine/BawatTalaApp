@@ -3,19 +3,19 @@ import { AlertCircle, CheckCircle, Eye, Flag, MessageCircle, Search } from "luci
 import Layout from "../components/Layout";
 import Modal from "../components/Modal";
 import { fetchAdminRiskFlags, sendAdminStudentNotification } from "../lib/admin-api";
+import { getRiskLevelLabel } from "../lib/risk-labels";
 
-const TABS = ["All", "Urgent", "High", "Reviewed"];
+const TABS = ["All", "Crisis / Critical Need", "Distressed / Needs Support", "Reviewed"];
 
 function urgencyFromEntry(entry) {
   const riskLevel = String(entry?.riskLevel || "").toUpperCase();
-  if (riskLevel === "CRITICAL") return "Urgent";
-  if (riskLevel === "HIGH") return "High";
-  return "High";
+  if (riskLevel === "CRITICAL" || riskLevel === "HIGH") return "Crisis / Critical Need";
+  return getRiskLevelLabel(riskLevel);
 }
 
 function urgencyClasses(urgency) {
-  if (urgency === "Urgent") return "bg-red-600 text-white border-red-700 shadow-sm shadow-red-200";
-  if (urgency === "High") return "bg-orange-500 text-white border-orange-600 shadow-sm shadow-orange-100";
+  if (urgency === "Crisis / Critical Need") return "bg-red-600 text-white border-red-700 shadow-sm shadow-red-200";
+  if (urgency === "Distressed / Needs Support") return "bg-amber-100 text-amber-800 border-amber-200";
   if (urgency === "Reviewed") return "bg-emerald-50 text-emerald-700 border-emerald-200";
   return "bg-slate-50 text-slate-700 border-slate-200";
 }
@@ -112,7 +112,7 @@ export default function FlaggedEntries({ onLogout, session }) {
 
   const stats = useMemo(() => {
     const totalFlagged = normalizedEntries.length;
-    const urgent = normalizedEntries.filter((entry) => entry.urgency === "Urgent").length;
+    const urgent = normalizedEntries.filter((entry) => entry.urgency === "Crisis / Critical Need").length;
     const pending = normalizedEntries.filter((entry) => entry.status === "Pending review" || entry.status === "Declined support").length;
     const resolved = normalizedEntries.filter((entry) => entry.status === "Reviewed").length;
     return { totalFlagged, urgent, pending, resolved };
@@ -166,7 +166,7 @@ export default function FlaggedEntries({ onLogout, session }) {
               valueClass: "text-red-900",
             },
             {
-              label: "Urgent",
+              label: "Crisis / Critical Need",
               value: stats.urgent,
               icon: AlertCircle,
               iconClass: "text-white",
@@ -251,7 +251,7 @@ export default function FlaggedEntries({ onLogout, session }) {
                   <tr className="border-b border-red-200 bg-red-100 text-xs uppercase tracking-wider text-red-900">
                     <th className="px-6 py-4 font-semibold">Student Name</th>
                     <th className="px-6 py-4 font-semibold">Concern Type</th>
-                    <th className="px-6 py-4 font-semibold">Urgency</th>
+                    <th className="px-6 py-4 font-semibold">Risk Flag</th>
                     <th className="px-6 py-4 font-semibold">Status</th>
                     <th className="px-6 py-4 font-semibold">Program</th>
                     <th className="px-6 py-4 text-center font-semibold">Actions</th>
@@ -264,7 +264,7 @@ export default function FlaggedEntries({ onLogout, session }) {
                       <tr
                         key={entry.id}
                         className={`group cursor-pointer ${
-                          entry.urgency === "Urgent" ? "bg-red-50/70 hover:bg-red-100" : "hover:bg-orange-50"
+                          entry.urgency === "Crisis / Critical Need" ? "bg-red-50/70 hover:bg-red-100" : "hover:bg-orange-50"
                         }`}
                         onClick={() => setSelectedEntry(entry)}
                       >
@@ -351,7 +351,7 @@ export default function FlaggedEntries({ onLogout, session }) {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${urgencyClasses(selectedEntry.urgency)}`}>{selectedEntry.urgency} Priority</span>
+                  <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${urgencyClasses(selectedEntry.urgency)}`}>{selectedEntry.urgency}</span>
                   <span className="inline-flex rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700">{selectedEntry.status}</span>
                 </div>
               </div>
@@ -396,7 +396,7 @@ export default function FlaggedEntries({ onLogout, session }) {
                   <div className="rounded-2xl border border-red-200 bg-white p-4">
                     <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-red-700">Flag Details</div>
                     <div className="space-y-2 text-sm text-slate-700">
-                      <div><span className="font-semibold text-slate-900">Risk Level:</span> {selectedEntry.riskLevel}</div>
+                      <div><span className="font-semibold text-slate-900">Risk Flag:</span> {getRiskLevelLabel(selectedEntry.riskLevel)}</div>
                       <div><span className="font-semibold text-slate-900">Primary Concern:</span> {selectedEntry.primaryConcern || "Not set"}</div>
                       <div><span className="font-semibold text-slate-900">Support Response:</span> {selectedEntry.supportResponse || "No response recorded"}</div>
                       <div><span className="font-semibold text-slate-900">Reason:</span> {selectedEntry.adminFlagReason || "No admin flag reason recorded."}</div>

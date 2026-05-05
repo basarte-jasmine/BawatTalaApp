@@ -5,6 +5,7 @@ const {
   LEGACY_EMOTION_ALIASES,
 } = require("../constants/emotions");
 const { JOURNAL_TAG_OPTIONS } = require("../constants/journal-tags");
+const { DEFAULT_RISK_TRIGGER_WORDS } = require("../constants/risk-trigger-words");
 
 const LEGACY_JOURNAL_CONCERN_VALUES = [
   "Academic Stress",
@@ -587,6 +588,49 @@ async function ensureDatabaseSchema() {
     create index if not exists journal_entry_messages_entry_id_idx
       on public.journal_entry_messages (entry_id, created_at);
   `);
+
+  await pool.query(`
+    create table if not exists public.risk_trigger_words (
+      id uuid primary key default gen_random_uuid(),
+      phrase text not null unique,
+      risk_level text not null,
+      category text not null default 'Safety signal',
+      is_enabled boolean not null default true,
+      created_by_email text,
+      updated_by_email text,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      constraint risk_trigger_words_risk_level_check check (risk_level in ('LOW', 'HIGH'))
+    );
+  `);
+
+  await pool.query(`
+    create index if not exists risk_trigger_words_enabled_level_idx
+      on public.risk_trigger_words (is_enabled, risk_level);
+  `);
+
+  const riskTriggerSeedState = await pool.query(`
+    select count(*)::int as total
+    from public.risk_trigger_words;
+  `);
+
+  if (Number(riskTriggerSeedState.rows[0]?.total || 0) === 0) {
+    for (const trigger of DEFAULT_RISK_TRIGGER_WORDS) {
+      await pool.query(
+        `
+          insert into public.risk_trigger_words (
+            phrase,
+            risk_level,
+            category,
+            is_enabled
+          )
+          values ($1, $2, $3, true)
+          on conflict (phrase) do nothing
+        `,
+        [trigger.phrase, trigger.riskLevel, trigger.category],
+      );
+    }
+  }
 
   await pool.query(`
     create table if not exists public.counselor_availability (

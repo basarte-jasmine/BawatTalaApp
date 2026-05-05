@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Download, Printer } from "lucide-react";
 import Layout from "../components/Layout";
 import { fetchAdminAnalytics } from "../lib/admin-api";
+import { getRiskLevelLabel } from "../lib/risk-labels";
 
 const RANGE_OPTIONS = [
   { key: "7d", label: "7 Days" },
@@ -22,9 +23,8 @@ const REPORT_COLUMNS = [
   { key: "province", label: "Province" },
   { key: "entriesInRange", label: "Entries", align: "right" },
   { key: "flagsInRange", label: "Flags", align: "right" },
-  { key: "highRiskFlags", label: "High Risk", align: "right" },
-  { key: "criticalRiskFlags", label: "Critical", align: "right" },
-  { key: "mediumRiskFlags", label: "Medium", align: "right" },
+  { key: "highRiskFlags", label: "Crisis / Critical Need", align: "right" },
+  { key: "mediumRiskFlags", label: "Distressed / Needs Support", align: "right" },
   { key: "declinedSupport", label: "Declined Support", align: "right" },
   { key: "contactedSupport", label: "Contacted", align: "right" },
   { key: "counselingSessions", label: "Sessions", align: "right" },
@@ -68,6 +68,7 @@ function downloadFile(filename, content, type) {
 function formatCellValue(row, column) {
   const value = row?.[column.key];
   if (column.align === "right") return formatNumber(value);
+  if (column.key === "latestRiskLevel") return getRiskLevelLabel(value);
   return value || "";
 }
 

@@ -16,6 +16,7 @@ import {
 import Layout from "../components/Layout";
 import Modal from "../components/Modal";
 import { fetchAdminStudentProfile, fetchAdminStudents } from "../lib/admin-api";
+import { getRiskBadgeClasses, getRiskLevelLabel } from "../lib/risk-labels";
 
 function getInitials(name) {
   return String(name || "")
@@ -72,15 +73,6 @@ function getStatusClasses(status) {
   if (status === "Flagged") return "border-rose-100 bg-rose-50 text-rose-700";
   if (status === "Inactive") return "border-slate-200 bg-slate-100 text-slate-600";
   return "border-emerald-100 bg-emerald-50 text-emerald-700";
-}
-
-function getRiskBadgeClasses(riskLevel) {
-  const normalized = String(riskLevel || "NONE").toUpperCase();
-  if (normalized === "CRITICAL") return "border-rose-200 bg-rose-50 text-rose-700";
-  if (normalized === "HIGH") return "border-orange-200 bg-orange-50 text-orange-700";
-  if (normalized === "MEDIUM") return "border-amber-200 bg-amber-50 text-amber-700";
-  if (normalized === "LOW") return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  return "border-slate-200 bg-slate-50 text-slate-600";
 }
 
 function getSupportResponseClasses(response) {
@@ -557,7 +549,7 @@ export default function StudentDirectory({ onLogout, session }) {
                             </div>
                             <div className="flex flex-wrap gap-2">
                               <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${getRiskBadgeClasses(entry.riskLevel)}`}>
-                                {entry.riskLevel}
+                                {getRiskLevelLabel(entry.riskLevel)}
                               </span>
                               {entry.primaryConcern ? (
                                 <span className="inline-flex rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">{entry.primaryConcern}</span>

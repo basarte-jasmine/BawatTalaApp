@@ -23,6 +23,7 @@ import {
   fetchAdminRiskFlags,
   fetchAdminRoleAssignments,
 } from "../lib/admin-api";
+import { getRiskLevelLabel } from "../lib/risk-labels";
 import Modal from "../components/Modal";
 
 const SUMMARY_CARD_DEFS = [
@@ -71,8 +72,8 @@ const ANALYTICS_CARD_DEFS = [
 
 const CONCERN_COLORS = ["#4D8FEF", "#9B6EF3", "#39C493", "#F6B84E"];
 const RISK_COLORS = {
-  critical: "#FF5D5D",
-  high: "#F59E0B",
+  crisis: "#FF5D5D",
+  distressed: "#F59E0B",
 };
 
 const GENDER_DATA = [
@@ -663,17 +664,23 @@ function CounselorWorkloadPanel({ analytics, loading }) {
 function AtRiskTrendsPanel({ analytics, loading }) {
   const labels = analytics?.charts?.atRiskStudentTrends?.labels || [];
   const series = analytics?.charts?.atRiskStudentTrends?.series || [];
-  const criticalSeries = series.find((item) => item.key === "critical")?.values || [];
-  const highSeries = series.find((item) => item.key === "high")?.values || [];
-  const riskMax = Math.max(...criticalSeries, ...highSeries, 1);
-  const criticalPath = buildLinePath(criticalSeries, 280, 170);
-  const highPath = buildLinePath(highSeries, 280, 170);
+  const crisisSeries =
+    series.find((item) => item.key === "crisis")?.values ||
+    series.find((item) => item.key === "critical")?.values ||
+    [];
+  const distressedSeries =
+    series.find((item) => item.key === "distressed")?.values ||
+    series.find((item) => item.key === "high")?.values ||
+    [];
+  const riskMax = Math.max(...crisisSeries, ...distressedSeries, 1);
+  const crisisPath = buildLinePath(crisisSeries, 280, 170);
+  const distressedPath = buildLinePath(distressedSeries, 280, 170);
 
   if (loading) {
     return <div className="py-16 text-center text-sm text-slate-500">Loading risk trends...</div>;
   }
 
-  if (!criticalSeries.length && !highSeries.length) {
+  if (!crisisSeries.length && !distressedSeries.length) {
     return <div className="py-16 text-center text-sm text-slate-500">No at-risk trend data available.</div>;
   }
 
@@ -692,23 +699,23 @@ function AtRiskTrendsPanel({ analytics, loading }) {
               strokeDasharray="4 5"
             />
           ))}
-          <path d={highPath} fill="none" stroke={RISK_COLORS.high} strokeWidth="3" transform="translate(10 6)" />
-          <path d={criticalPath} fill="none" stroke={RISK_COLORS.critical} strokeWidth="3" transform="translate(10 6)" />
-          {highSeries.map((value, index) => {
-            const x = highSeries.length > 1 ? (280 / (highSeries.length - 1)) * index + 10 : 150;
+          <path d={distressedPath} fill="none" stroke={RISK_COLORS.distressed} strokeWidth="3" transform="translate(10 6)" />
+          <path d={crisisPath} fill="none" stroke={RISK_COLORS.crisis} strokeWidth="3" transform="translate(10 6)" />
+          {distressedSeries.map((value, index) => {
+            const x = distressedSeries.length > 1 ? (280 / (distressedSeries.length - 1)) * index + 10 : 150;
             const y = 176 - (Number(value || 0) / riskMax) * 154;
             return (
-              <circle key={`high-${index}`} cx={x} cy={y} r="4" fill="white" stroke={RISK_COLORS.high} strokeWidth="2.5">
-                <title>{`${labels[index] || `W${index + 1}`}: ${formatMetricValue(value)} high-risk cases`}</title>
+              <circle key={`distressed-${index}`} cx={x} cy={y} r="4" fill="white" stroke={RISK_COLORS.distressed} strokeWidth="2.5">
+                <title>{`${labels[index] || `W${index + 1}`}: ${formatMetricValue(value)} distressed / needs support cases`}</title>
               </circle>
             );
           })}
-          {criticalSeries.map((value, index) => {
-            const x = criticalSeries.length > 1 ? (280 / (criticalSeries.length - 1)) * index + 10 : 150;
+          {crisisSeries.map((value, index) => {
+            const x = crisisSeries.length > 1 ? (280 / (crisisSeries.length - 1)) * index + 10 : 150;
             const y = 176 - (Number(value || 0) / riskMax) * 154;
             return (
-              <circle key={`critical-${index}`} cx={x} cy={y} r="4" fill="white" stroke={RISK_COLORS.critical} strokeWidth="2.5">
-                <title>{`${labels[index] || `W${index + 1}`}: ${formatMetricValue(value)} critical cases`}</title>
+              <circle key={`crisis-${index}`} cx={x} cy={y} r="4" fill="white" stroke={RISK_COLORS.crisis} strokeWidth="2.5">
+                <title>{`${labels[index] || `W${index + 1}`}: ${formatMetricValue(value)} crisis / critical need cases`}</title>
               </circle>
             );
           })}
@@ -727,11 +734,11 @@ function AtRiskTrendsPanel({ analytics, loading }) {
       <div className="mt-5 flex gap-5 text-xs text-slate-600">
         <div className="flex items-center gap-2">
           <span className="h-3 w-3 rounded-full bg-[#FF5D5D]" />
-          Critical
+          Crisis / Critical Need
         </div>
         <div className="flex items-center gap-2">
           <span className="h-3 w-3 rounded-full bg-[#F59E0B]" />
-          High Risk
+          Distressed / Needs Support
         </div>
       </div>
     </>
@@ -1077,7 +1084,7 @@ function toManilaIsoDate(value) {
 
 function FlaggedEntriesModal({ entries, isOpen, onClose, onReviewAll }) {
   const flaggedEntries = Array.isArray(entries) ? entries : [];
-  const urgentCount = flaggedEntries.filter((entry) => entry.riskLevel === "HIGH").length;
+  const crisisCount = flaggedEntries.filter((entry) => ["HIGH", "CRITICAL"].includes(String(entry.riskLevel || "").toUpperCase())).length;
   const declinedCount = flaggedEntries.filter((entry) => entry.supportResponse === "DECLINED").length;
   const contactedCount = flaggedEntries.filter((entry) => entry.supportResponse === "CONTACTED").length;
 
@@ -1092,7 +1099,7 @@ function FlaggedEntriesModal({ entries, isOpen, onClose, onReviewAll }) {
             <div className="flex flex-wrap items-center gap-3">
               <h2 className="text-2xl font-bold text-slate-900">Flagged Entries</h2>
               <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-red-600">
-                {urgentCount} Urgent
+                {crisisCount} Crisis / Critical Need
               </span>
               {declinedCount > 0 ? (
                 <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-amber-700">
@@ -1106,7 +1113,7 @@ function FlaggedEntriesModal({ entries, isOpen, onClose, onReviewAll }) {
               ) : null}
             </div>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
-              High-risk journal entries and support responses captured from the student help prompt
+              Crisis-level journal entries and support responses captured from the student help prompt
             </p>
           </div>
         </div>
@@ -1114,11 +1121,11 @@ function FlaggedEntriesModal({ entries, isOpen, onClose, onReviewAll }) {
         <div className="space-y-3">
           {flaggedEntries.length ? (
             flaggedEntries.map((entry) => {
-              const isHighRisk = entry.riskLevel === "HIGH";
+              const isHighRisk = ["HIGH", "CRITICAL"].includes(String(entry.riskLevel || "").toUpperCase());
               const declinedSupport = entry.supportResponse === "DECLINED";
               const contactedSupport = entry.supportResponse === "CONTACTED";
               const concernLabel =
-                entry.adminFlagReason || entry.summary || entry.riskLevel;
+                entry.adminFlagReason || entry.summary || getRiskLevelLabel(entry.riskLevel);
 
               return (
                 <div key={entry.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-5 py-4">
@@ -1156,7 +1163,7 @@ function FlaggedEntriesModal({ entries, isOpen, onClose, onReviewAll }) {
                               isHighRisk ? "bg-red-100 text-red-600" : "bg-slate-100 text-slate-600"
                             }`}
                           >
-                            {entry.riskLevel || "NONE"}
+                          {getRiskLevelLabel(entry.riskLevel)}
                           </span>
                           {declinedSupport ? (
                             <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-amber-700">
