@@ -35,7 +35,7 @@ export default function Sidebar({ onLogout, isOpen, onClose }) {
   return (
     <>
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-[17.5rem] flex-col bg-[#134611] p-4 text-white transition-transform duration-200 lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-[17.5rem] shrink-0 flex-col overflow-y-auto bg-[#134611] p-4 text-white transition-transform duration-200 lg:static lg:h-full lg:translate-x-0 ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >

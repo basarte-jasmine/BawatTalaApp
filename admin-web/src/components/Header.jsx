@@ -218,7 +218,7 @@ export default function Header({
 
   return (
     <>
-      <header className="border-b border-gray-200 bg-white px-4 py-4 shadow-sm md:px-6">
+      <header className="shrink-0 border-b border-gray-200 bg-white px-4 py-4 shadow-sm md:px-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex items-start gap-3">
             <button
