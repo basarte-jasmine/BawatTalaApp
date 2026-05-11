@@ -66,7 +66,7 @@ const GEMINI_RATE_LIMIT_COOLDOWN_MS = Math.max(
 );
 const GROQ_MODELS = parseModelList(
   process.env.GROQ_MODELS || process.env.GROQ_MODEL,
-  ["llama-3.1-8b-instant"],
+  ["llama-3.3-70b-versatile"],
 );
 const OLLAMA_MODELS = parseConfiguredModelList(
   process.env.OLLAMA_MODELS || process.env.OLLAMA_MODEL,
@@ -77,7 +77,7 @@ const AI_PROVIDER_ORDER = parseProviderOrder(
     process.env.AI_PROVIDER_ORDER ||
     process.env.AI_PROVIDER ||
     process.env.AI_CHAT_PROVIDER,
-  ["gemini", "groq"],
+  ["groq", "gemini", "ollama"],
 );
 const OLLAMA_REQUEST_TIMEOUT_MS = Math.max(
   3000,
@@ -87,6 +87,7 @@ const OLLAMA_MAX_TOKENS = Math.max(
   0,
   Number(process.env.OLLAMA_MAX_TOKENS || 0),
 );
+const AI_JSON_TEMPERATURE = 0.6;
 
 let geminiCooldownUntil = 0;
 let geminiLastFailure = null;
@@ -352,10 +353,16 @@ function clearOllamaFailureState() {
 }
 
 function normalizePetReply(rawReply, latestUserMessage) {
+  const addTerminalPunctuation = (line) => {
+    const text = normalizeWhitespace(line);
+    if (!text) return "";
+    return /[.!?)]$/.test(text) ? text : `${text}.`;
+  };
+
   const cleanReply = String(rawReply || "")
     .replace(/\r/g, "")
     .split("\n")
-    .map((line) => normalizeWhitespace(line))
+    .map((line) => addTerminalPunctuation(line))
     .filter(Boolean)
     .slice(0, 3)
     .join("\n");
@@ -365,6 +372,115 @@ function normalizePetReply(rawReply, latestUserMessage) {
   }
 
   return "";
+}
+
+function getReplyOpening(value) {
+  return normalizeWhitespace(value)
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s'-]/gu, "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 4)
+    .join(" ");
+}
+
+function getRecentAssistantOpenings(history = []) {
+  const openings = [];
+  for (const item of [...(Array.isArray(history) ? history : [])].reverse()) {
+    const role = String(item?.role || "").trim().toLowerCase();
+    if (role !== "assistant" && role !== "model") continue;
+    const opening = getReplyOpening(item?.text || "");
+    if (opening && !openings.includes(opening)) {
+      openings.push(opening);
+    }
+    if (openings.length >= 3) break;
+  }
+  return openings.reverse();
+}
+
+function getRecentAssistantFirstWords(history = []) {
+  const firstWords = [];
+  for (const item of [...(Array.isArray(history) ? history : [])].reverse()) {
+    const role = String(item?.role || "").trim().toLowerCase();
+    if (role !== "assistant" && role !== "model") continue;
+    const firstWord = getReplyOpening(item?.text || "").split(/\s+/)[0] || "";
+    if (firstWord && !firstWords.includes(firstWord)) {
+      firstWords.push(firstWord);
+    }
+    if (firstWords.length >= 5) break;
+  }
+  return firstWords.reverse();
+}
+
+function getConversationMetadata(history = [], latestUserMessage = "") {
+  const userTurns = (Array.isArray(history) ? history : []).filter((item) => {
+    const role = String(item?.role || "").trim().toLowerCase();
+    return role === "user";
+  }).length;
+  const depth = userTurns < 3 ? "early" : userTurns < 8 ? "mid" : "deep";
+  const hasFilipino =
+    /\b(ako|ko|mo|siya|naman|talaga|kasi|bakit|ewan)\b/i.test(
+      String(latestUserMessage || ""),
+    );
+
+  return {
+    depth,
+    mode: hasFilipino ? "Taglish/Filipino" : "English",
+    turnCount: userTurns + 1,
+  };
+}
+
+function isShortAgreement(text) {
+  const cleaned = normalizeWhitespace(text).toLowerCase();
+  if (!cleaned) return false;
+  if (/^(?:not|hindi|di)\s+(?:ok|okay|yes|sure|sige|oo)\b/.test(cleaned)) {
+    return false;
+  }
+  const normalized = cleaned.replace(/[^\p{L}\p{N}\s]/gu, "").trim();
+
+  const agreements = [
+    "oo",
+    "sige",
+    "ok",
+    "okay",
+    "yeah",
+    "yep",
+    "yes",
+    "sure",
+    "oo nga",
+    "ah okay",
+  ];
+
+  return (
+    normalized.split(/\s+/).length <= 3 &&
+    agreements.includes(normalized)
+  );
+}
+
+function getRecentPatterns(history = []) {
+  const lastThreeMuni = (Array.isArray(history) ? history : [])
+    .filter((item) => {
+      const role = String(item?.role || "").trim().toLowerCase();
+      return role === "assistant" || role === "model";
+    })
+    .slice(-3);
+
+  const endedInQuestion =
+    lastThreeMuni.length === 3 &&
+    lastThreeMuni.every((item) => String(item?.text || "").trim().endsWith("?"));
+  const startedWithParang = lastThreeMuni.some((item) =>
+    String(item?.text || "")
+      .trim()
+      .toLowerCase()
+      .startsWith("parang"),
+  );
+
+  return { endedInQuestion, startedWithParang };
+}
+
+function looksLikeMuniFeedback(value) {
+  const text = String(value || "").toLowerCase();
+  return /\b(off[-\s]?topic|random|repetitive|paulit|ulit|huh|wtf|ano sinasabi|what are you saying|nakalimutan|forgot|bakit.*tanong|why.*question|changed? topic|iba.*usapan)\b/i.test(text);
 }
 
 async function loadEnabledRiskTriggerWords() {
@@ -489,7 +605,7 @@ async function requestGeminiJson({
     },
     contents,
     generationConfig: {
-      temperature: 0.5,
+      temperature: AI_JSON_TEMPERATURE,
       responseMimeType: "application/json",
     },
     safetySettings: [
@@ -655,7 +771,7 @@ async function requestGroqJson({
               { role: "system", content: systemInstruction },
               ...messages,
             ],
-            temperature: 0.5,
+            temperature: AI_JSON_TEMPERATURE,
             response_format: { type: "json_object" },
           }),
         },
@@ -785,7 +901,7 @@ async function requestOllamaJson({
       messages: [{ role: "system", content: systemInstruction }, ...messages],
       response_format: { type: "json_object" },
       stream: false,
-      temperature: 0.5,
+      temperature: AI_JSON_TEMPERATURE,
     };
     if (OLLAMA_MAX_TOKENS > 0) {
       requestBody.max_tokens = OLLAMA_MAX_TOKENS;
@@ -927,8 +1043,15 @@ async function analyzeJournalConversation({
   latestUserMessage,
   history,
 }) {
+  const recentAssistantOpenings = getRecentAssistantOpenings(history);
+  const recentAssistantFirstWords = getRecentAssistantFirstWords(history);
+  const meta = getConversationMetadata(history, latestUserMessage);
+  const patterns = getRecentPatterns(history);
+  const latestMessageIsShortAgreement = isShortAgreement(latestUserMessage);
+  const latestMessageIsMuniFeedback = looksLikeMuniFeedback(latestUserMessage);
   const systemInstruction = [
     "You are Muni, the Bawat Tala journaling companion for students.",
+    "You have two distinct internal modes: 1. COMPANION MODE: Warm, casual, brief (2-3 sentences). This is for pet_reply. 2. ANALYST MODE: Objective, clinical, and precise. This is for risk_level and insights.",
     "You only help with journaling, emotional reflection, mood support, school-life stress, coping, and gentle self-check-ins.",
     "Do not answer unrelated general knowledge, coding, shopping, entertainment, trivia, or off-topic requests.",
     "If the user goes off-topic, gently redirect them back to their journal reflection instead of answering the unrelated request.",
@@ -938,12 +1061,18 @@ async function analyzeJournalConversation({
     "Do not repeat generic filler such as 'I'm here for you', 'Nandito lang ako', or 'It's okay to feel that way' unless a safety situation requires it.",
     "Use the latest user message as the main target, but keep continuity with recent conversation history so pronouns, follow-up questions, and topic shifts make sense.",
     "Reference at least one concrete detail from the latest user message whenever possible.",
-    "Most replies should help the reflection move forward, but not every reply needs a question.",
-    "If a question would feel forced, you may respond with a brief natural reaction or reflection instead.",
+    "Most replies should help the reflection move forward. If the latest message is short, closed, or simply agrees, keep the conversation alive with a gentle follow-up or a concrete invitation to say more.",
+    "If a question would feel forced, you may respond with a brief natural reaction, but avoid ending several turns in a row with only observations.",
+    "Vary your sentence openings and rhythm. Do not reuse the same opening phrase or same reflection structure from recent Muni replies.",
+    "Do not fall into a single formulaic Taglish reflection pattern. Avoid using 'Parang' as the default opening, and never use it in consecutive Muni turns.",
+    "Mix direct acknowledgement, gentle clarification, concise emotional reflection, and casual human-sounding reactions as appropriate.",
+    "Stay anchored to the student's current thread. Do not introduce a new theme, activity, coping area, or emotional claim that the student did not bring up unless you first connect it clearly to what they just said.",
+    "Do not over-infer confidence, certainty, or hidden feelings from short confirmations. When the student's meaning is unclear, ask a simple clarifying question instead of making a claim about what they feel.",
+    "If the latest user message is feedback about Muni's wording, repetition, accuracy, off-topic turn, or confusing response, answer that feedback directly and briefly, then return to the prior journal thread. Do not treat that feedback as the student's emotional journal content.",
     "If the user sounds playful, joking, sarcastic, or casually expressive, respond naturally and lightly without over-pathologizing or turning it into a deep therapy analysis.",
     "If the user mentions physical discomfort like being sleepy, hungry, nauseous, or needing the bathroom, do not invent a hidden psychological cause unless the user clearly connects it to stress.",
     "If the user asks about something you cannot know, do not pretend to know. Briefly acknowledge the uncertainty, reflect the concern behind it, and, if helpful, ask what made them bring it up.",
-    "Keep the full pet reply brief: usually 1 to 3 short sentences.",
+    "Keep the full pet reply brief: 2 or 3 short complete sentences with normal punctuation.",
     "Use natural Filipino, English, or Taglish to match the student's tone.",
     "Do not give prescriptive advice, instructions, commands, medical guidance, legal guidance, or dangerous suggestions.",
     "Insights must be observational, reflective, and non-prescriptive. They should describe emotional patterns, themes, or tensions, not tell the user what to do.",
@@ -954,7 +1083,27 @@ async function analyzeJournalConversation({
   const analysisPrompt = [
     `Student first name: ${String(firstName || "Student").trim() || "Student"}`,
     `Latest journal message: ${latestUserMessage}`,
+    `Conversation Turn: ${meta.turnCount} (${meta.depth} session phase)`,
+    `Student's Preferred Language: ${meta.mode}`,
+    meta.depth === "deep"
+      ? "The student has opened up; move past surface-level validation and offer deeper reflection."
+      : "Keep it welcoming and build trust.",
+    latestMessageIsShortAgreement
+      ? "The student gave a short agreement. Do not over-analyze. Briefly acknowledge, then bring back a specific detail from earlier to keep the flow going."
+      : "Respond to the new emotional content provided.",
+    patterns.endedInQuestion
+      ? "Your last few replies ended in questions. Do NOT ask a question this time. Use a warm, grounded statement instead."
+      : "You may ask at most one thoughtful follow-up question only if it genuinely helps the conversation.",
+    patterns.startedWithParang
+      ? "A recent Muni reply started with 'Parang'. Do not start this reply with 'Parang'."
+      : "Avoid making 'Parang' the default opening.",
     "Conversation history is included for continuity. Use recent history for memory and thread tracking, but prioritize the latest user message.",
+    `Recent Muni reply openings to avoid repeating: ${recentAssistantOpenings.length ? recentAssistantOpenings.join(" | ") : "none"}`,
+    `Recent Muni first words to avoid repeating: ${recentAssistantFirstWords.length ? recentAssistantFirstWords.join(" | ") : "none"}`,
+    `Latest message is a short agreement: ${latestMessageIsShortAgreement ? "yes" : "no"}`,
+    `Recent Muni replies all ended in questions: ${patterns.endedInQuestion ? "yes" : "no"}`,
+    `Recent Muni reply started with Parang: ${patterns.startedWithParang ? "yes" : "no"}`,
+    `Latest message is feedback about Muni's reply: ${latestMessageIsMuniFeedback ? "yes" : "no"}`,
     "Return a JSON object with this exact shape:",
     "{",
     '  "pet_reply": "string",',
@@ -962,10 +1111,24 @@ async function analyzeJournalConversation({
     '  "risk_level": "NONE | LOW | HIGH",',
     '  "admin_flag_reason": "string or null"',
     "}",
-    "Write a brief natural companion reply.",
-    "Good replies may validate, react naturally, reflect a pattern, or ask one thoughtful follow-up question.",
-    "Do not force a question into every reply.",
+    "Write a brief natural companion reply in 2 or 3 complete sentences.",
+    "Good replies may validate, react naturally, acknowledge feedback, clarify, reflect a pattern, or ask one thoughtful follow-up question.",
+    latestMessageIsShortAgreement
+      ? "Because the student's latest message is only a short agreement, keep pet_reply especially brief and avoid adding a heavy new interpretation."
+      : "Do not force a question into every reply, but if the student's latest message is short, closed, or just agrees, usually ask a gentle follow-up so the student is not the only one carrying the conversation.",
+    patterns.endedInQuestion
+      ? "Do not end pet_reply with a question this turn."
+      : "Avoid ending every turn with a question.",
     "Do not add advice, lists, diagnosis, or long analysis.",
+    "Reply style rules:",
+    "- Do not start with any listed recent Muni opening.",
+    "- Do not start with any listed recent Muni first word when another natural opening is possible.",
+    "- Avoid repeating the same first word or same sentence frame across consecutive replies.",
+    "- If the student gives a short reaction, confusion, correction, or complaint about Muni, respond to that directly instead of making another emotional interpretation.",
+    "- For feedback about being off-topic, random, repetitive, or confusing: briefly acknowledge the mismatch from Muni's side, then reconnect to the last real journal topic. Do not describe the student's frustration, do not defend yourself, and do not ask what topic they wanted if the prior topic is already clear.",
+    "- If the student gives a short agreement or acknowledgment, do not infer a new emotion from it. Use the prior context and ask a grounded follow-up or invite the next detail.",
+    "- Keep the reply specific to the current turn, but do not simply rephrase the student's words back to them.",
+    "- Every pet_reply must read like a real sentence, not a label, note, fragment, or analysis headline.",
     "Risk rules:",
     "- Assess risk from the overall context and content of the journal entry. The generated summary may support the risk decision when it reflects the entry content, but Muni companion replies, suggested_tags, concern/theme tags, and topic labels must not create a risk flag by themselves.",
     "- Concern/theme tags like Anxiety, Stress, Academic problems, or Mental health are topic metadata and must not make an entry LOW or HIGH by themselves.",
