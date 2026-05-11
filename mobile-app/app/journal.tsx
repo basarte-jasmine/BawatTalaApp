@@ -140,7 +140,11 @@ export default function JournalScreen() {
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <JournalLockGate>
-        <View style={[styles.content, compact && styles.contentCompact, veryCompact && styles.contentVeryCompact]}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={[styles.content, compact && styles.contentCompact, veryCompact && styles.contentVeryCompact]}
+          showsVerticalScrollIndicator={false}
+        >
         <View style={[styles.topSection, compact && styles.topSectionCompact]}>
           <View style={[styles.calendarCard, compact && styles.calendarCardCompact]}>
             <Text style={styles.cardEyebrow}>THIS WEEK</Text>
@@ -246,7 +250,7 @@ export default function JournalScreen() {
             <Text style={[styles.viewEntriesText, compact && styles.viewEntriesTextCompact]}>View Entries</Text>
           </Pressable>
         </View>
-        </View>
+        </ScrollView>
 
         <Modal
           visible={showFullInsightModal}
@@ -289,8 +293,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F7FAF4",
   },
-  content: {
+  scroll: {
     flex: 1,
+  },
+  content: {
+    flexGrow: 1,
     paddingHorizontal: 10,
     paddingTop: 12,
     paddingBottom: 112,
