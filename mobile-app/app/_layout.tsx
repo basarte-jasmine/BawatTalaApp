@@ -50,7 +50,7 @@ export default function RootLayout() {
   const useDesktopFrame = width >= DESKTOP_FRAME_BREAKPOINT;
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, useDesktopFrame && styles.desktopRoot]}>
       <View style={[styles.frame, useDesktopFrame && styles.desktopFrame]}>
         <AppPreferencesProvider>
           <AuthSessionProvider>
@@ -73,6 +73,9 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     backgroundColor: "#F7FAF4",
+  },
+  desktopRoot: {
+    backgroundColor: "#E4E4E4",
   },
   frame: {
     flex: 1,
