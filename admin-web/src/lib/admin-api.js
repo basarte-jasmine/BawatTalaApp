@@ -79,6 +79,13 @@ export async function fetchAdminRiskFlags() {
   return request("/api/admin/dashboard/risk-flags");
 }
 
+export async function updateAdminJournalFlag(entryId, payload) {
+  return request(`/api/admin/journal-entries/${encodeURIComponent(entryId)}/flag`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function fetchRiskTriggers() {
   return request("/api/admin/risk-triggers");
 }

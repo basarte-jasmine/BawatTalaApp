@@ -9,12 +9,15 @@ import {
   Users,
 } from "lucide-react";
 import { useState } from "react";
+import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import adminLogo from "../assets/BT_Logo.png";
+import { fetchAdminRiskFlags } from "../lib/admin-api";
 import ConfirmActionModal from "./ConfirmActionModal";
 
 const MAIN_MENU_ITEMS = [
   { path: "/dashboard", label: "Overview & Analytics", icon: LayoutGrid, active: true },
-  { path: "/flagged", label: "Flagged Entries", icon: Flag, badge: "7" },
+  { path: "/flagged", label: "Flagged Entries", icon: Flag, badgeKey: "criticalEntries" },
   { path: "/users", label: "Student Directory", icon: Users },
   { path: "/appointments", label: "Guidance Scheduling", icon: CalendarDays },
   { path: "/peer-counselors", label: "Peer Counselors", icon: Users },
@@ -31,96 +34,122 @@ export default function Sidebar({ onLogout, isOpen, onClose }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
+  const [criticalEntriesCount, setCriticalEntriesCount] = useState(0);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadCriticalEntriesCount() {
+      try {
+        const data = await fetchAdminRiskFlags();
+        const count = (Array.isArray(data?.entries) ? data.entries : []).filter((entry) =>
+          ["HIGH", "CRITICAL"].includes(String(entry?.riskLevel || "").toUpperCase()),
+        ).length;
+        if (isMounted) {
+          setCriticalEntriesCount(count);
+        }
+      } catch (_error) {
+        if (isMounted) {
+          setCriticalEntriesCount(0);
+        }
+      }
+    }
+
+    void loadCriticalEntriesCount();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   return (
     <>
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-[17.5rem] shrink-0 flex-col overflow-y-auto bg-[#134611] p-4 text-white transition-transform duration-200 lg:static lg:h-full lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-[17.5rem] shrink-0 flex-col overflow-y-auto border-r border-[#b8e3d2] bg-white p-4 text-[#229365] transition-transform duration-200 lg:static lg:h-full lg:translate-x-0 ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="mb-6 flex items-center gap-3 rounded-2xl bg-white px-3 py-4">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#4d8fef] font-black text-white">
-            BT
-          </div>
+        <div className="mb-4 flex shrink-0 items-center gap-3 px-3 py-3">
+          <img
+            src={adminLogo}
+            alt="Bawat Tala"
+            className="h-12 w-12 object-contain"
+          />
           <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-admin-muted">Bawat Tala</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-[#5f7a5f]">Bawat Tala</p>
             <p className="font-semibold text-admin-ink">Admin Panel</p>
           </div>
         </div>
 
-        <div className="mb-4 px-3 text-xs font-semibold uppercase tracking-[0.18em] text-[#8ccf72]">
-          Main Menu
-        </div>
-        <nav className="space-y-2">
-          {MAIN_MENU_ITEMS.map((item) => {
-            const isCurrent = item.path && location.pathname === item.path;
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.label}
-                type="button"
-                onClick={() => {
-                  if (item.path) {
-                    navigate(item.path);
-                    onClose?.();
-                  }
-                }}
-                className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-semibold transition ${
-                  isCurrent
-                    ? "bg-admin-accent text-white"
-                    : "text-[#e4f7d2] hover:bg-white/10"
-                }`}
-              >
-                <Icon className="h-5 w-5" />
-                <span className="flex-1">{item.label}</span>
-                {item.badge ? (
+        <div className="min-h-0 flex-1 pr-1">
+          <div className="mb-3 px-3 text-xs font-semibold uppercase tracking-[0.18em] text-[#6b7c8f]">
+            Main Menu
+          </div>
+          <nav className="space-y-1.5">
+            {MAIN_MENU_ITEMS.map((item) => {
+              const isCurrent = item.path && location.pathname === item.path;
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => {
+                    if (item.path) {
+                      navigate(item.path);
+                      onClose?.();
+                    }
+                  }}
+                  className={`flex w-full items-center gap-3 rounded-2xl px-4 py-2.5 text-left text-sm font-semibold transition ${
+                    isCurrent
+                      ? "bg-[#229365] text-white"
+                      : "text-[#229365] hover:bg-[#229365]/10"
+                  }`}
+                >
+                  <Icon className="h-5 w-5" />
+                  <span className="flex-1">{item.label}</span>
+                {item.badgeKey === "criticalEntries" ? (
                   <span className="rounded-full bg-red-500 px-2 py-0.5 text-xs font-bold text-white">
-                    {item.badge}
+                    {criticalEntriesCount}
                   </span>
                 ) : null}
-              </button>
-            );
-          })}
-        </nav>
+                </button>
+              );
+            })}
+          </nav>
 
-        <div className="mb-4 mt-8 px-3 text-xs font-semibold uppercase tracking-[0.18em] text-[#8ccf72]">
-          System Settings
-        </div>
-        <nav className="space-y-2">
-          {SYSTEM_MENU_ITEMS.map((item) => {
-            const isCurrent = item.path && location.pathname === item.path;
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.label}
-                type="button"
-                onClick={() => {
-                  if (item.path) {
-                    navigate(item.path);
-                    onClose?.();
-                  }
-                }}
-                className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-semibold ${
-                  isCurrent ? "bg-admin-accent text-white" : "text-[#e4f7d2] hover:bg-white/10"
-                }`}
-              >
-                <Icon className="h-5 w-5" />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-
-        <div className="mt-auto rounded-2xl bg-white/10 p-4">
-          <p className="font-semibold text-white">System Status</p>
-          <p className="mt-2 text-sm text-[#b9ebb0]">All systems operational</p>
+          <div className="mb-3 mt-6 px-3 text-xs font-semibold uppercase tracking-[0.18em] text-[#6b7c8f]">
+            System Settings
+          </div>
+          <nav className="space-y-1.5">
+            {SYSTEM_MENU_ITEMS.map((item) => {
+              const isCurrent = item.path && location.pathname === item.path;
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => {
+                    if (item.path) {
+                      navigate(item.path);
+                      onClose?.();
+                    }
+                  }}
+                  className={`flex w-full items-center gap-3 rounded-2xl px-4 py-2.5 text-left text-sm font-semibold ${
+                    isCurrent ? "bg-[#229365] text-white" : "text-[#229365] hover:bg-[#229365]/10"
+                  }`}
+                >
+                  <Icon className="h-5 w-5" />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
         </div>
 
         <button
           type="button"
           onClick={() => setIsLogoutConfirmOpen(true)}
-          className="mt-4 flex items-center justify-center gap-2 rounded-2xl bg-white py-3 text-sm font-semibold text-admin-ink hover:bg-admin-surface"
+          className="mt-3 flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-[#229365] py-3 text-sm font-semibold text-white hover:bg-[#1b7b54]"
         >
           <LogOut className="h-4 w-4" />
           <span>Log Out</span>

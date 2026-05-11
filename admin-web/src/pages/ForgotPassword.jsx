@@ -220,7 +220,7 @@ export default function ForgotPassword() {
         <button
           type="submit"
           disabled={pending}
-          className="h-11 w-full rounded-lg bg-admin-ink text-sm font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
+          className="h-11 w-full rounded-lg bg-[#229365] text-sm font-bold text-white transition hover:bg-[#1b7b54] disabled:cursor-not-allowed disabled:opacity-70"
         >
           {step === "email"
             ? pending
@@ -235,7 +235,7 @@ export default function ForgotPassword() {
                 : "Change Password"}
         </button>
 
-        <Link to="/login" className="block text-center text-sm font-semibold text-admin-brand hover:underline">
+        <Link to="/login" className="block text-center text-sm font-semibold text-[#229365] hover:underline">
           Back to Login Page
         </Link>
       </form>

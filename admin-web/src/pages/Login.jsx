@@ -109,7 +109,7 @@ export default function Login({ onLogin }) {
         </div>
 
         <div className="flex justify-end">
-          <Link to="/forgot-password" className="text-sm font-semibold text-admin-brand hover:underline">
+          <Link to="/forgot-password" className="text-sm font-semibold text-[#229365] hover:underline">
             Forgot Password?
           </Link>
         </div>
@@ -117,7 +117,7 @@ export default function Login({ onLogin }) {
         <button
           type="submit"
           disabled={submitting}
-          className="h-11 w-full rounded-lg bg-admin-ink text-sm font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
+          className="h-11 w-full rounded-lg bg-[#229365] text-sm font-bold text-white transition hover:bg-[#1b7b54] disabled:cursor-not-allowed disabled:opacity-70"
         >
           {submitting ? "Logging in..." : "Login"}
         </button>

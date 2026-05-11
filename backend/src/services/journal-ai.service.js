@@ -149,6 +149,83 @@ function normalizeRiskLevel(value) {
   return "NONE";
 }
 
+function collectStudentJournalTexts(latestUserMessage = "", history = []) {
+  const texts = [];
+  const addText = (value) => {
+    const text = String(value || "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (text && !texts.includes(text)) texts.push(text);
+  };
+
+  for (const item of Array.isArray(history) ? history : []) {
+    const role = String(item?.role || "")
+      .trim()
+      .toLowerCase();
+    if (role === "assistant" || role === "model") continue;
+    addText(item?.text);
+  }
+  addText(latestUserMessage);
+
+  return texts;
+}
+
+function getStudentJournalText(latestUserMessage = "", history = []) {
+  return collectStudentJournalTexts(latestUserMessage, history).join("\n");
+}
+
+function getRiskEvidenceText(latestUserMessage = "", history = [], summaries = []) {
+  return [
+    getStudentJournalText(latestUserMessage, history),
+    ...(Array.isArray(summaries) ? summaries : [summaries]),
+  ]
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function hasStrongDistressContext(text) {
+  const value = String(text || "").toLowerCase();
+  if (!value) return false;
+
+  return [
+    /\b(?:can't|cannot|cant|can not)\s+(?:cope|handle|function|breathe|sleep|eat|focus|calm down)\b/,
+    /\b(?:di|hindi)\s+(?:ko\s+)?(?:kaya|makaya|okay)\b/,
+    /\b(?:sobrang|super|very|really|so|extremely|severely|intensely|totally|completely)\s+(?:anxious|overwhelmed|stressed|distressed|scared|afraid|panicked|panic|sad|down|empty|numb)\b/,
+    /\b(?:panic attack|anxiety attack|breaking down|breakdown|meltdown|spiraling|spiralling|losing control|not okay|not ok|hindi okay|di okay)\b/,
+    /\b(?:hopeless|worthless|helpless|desperate|empty|numb)\b/,
+    /\b(?:unsafe|danger|abuse|abused|assault|violence|threatened|harassed|harassment|hit me|hurt me|hurts me)\b/,
+    /\b(?:self[-\s]?harm|suicid(?:e|al)|kill myself|end my life|hurt myself)\b/,
+    /\b(?:crying|iyak|umiiyak)\s+(?:all day|for days|for weeks|nonstop|constantly)\b/,
+    /\b(?:need|needs|want|wants)\s+(?:emotional\s+)?(?:support|counsel(?:ing|ling)|someone to talk to|professional help)\b/,
+  ].some((pattern) => pattern.test(value));
+}
+
+function calibrateRiskSignal(riskSignal, studentText) {
+  const riskLevel = normalizeRiskLevel(riskSignal?.risk_level);
+  if (riskLevel === "NONE") {
+    return {
+      risk_level: "NONE",
+      admin_flag_reason: null,
+    };
+  }
+
+  if (riskLevel === "LOW" && !hasStrongDistressContext(studentText)) {
+    return {
+      risk_level: "NONE",
+      admin_flag_reason: null,
+    };
+  }
+
+  return {
+    risk_level: riskLevel,
+    admin_flag_reason:
+      riskSignal?.admin_flag_reason == null
+        ? null
+        : String(riskSignal.admin_flag_reason).trim() || null,
+  };
+}
+
 function pickMirrorLanguageTemplate(latestUserMessage) {
   const text = String(latestUserMessage || "").trim();
   if (!text) {
@@ -185,8 +262,10 @@ function pickMirrorLanguageTemplate(latestUserMessage) {
 }
 
 async function unavailableConversationAnalysis(latestUserMessage = "", history = []) {
-  const heuristicRisk = await riskFromSeverityWords(
-    [latestUserMessage, ...history.map((item) => item.text)].join("\n"),
+  const studentText = getStudentJournalText(latestUserMessage, history);
+  const heuristicRisk = calibrateRiskSignal(
+    await riskFromSeverityWords(studentText),
+    studentText,
   );
 
   return {
@@ -204,12 +283,12 @@ function parseProviderJson(text) {
 }
 
 async function unavailableFinalAnalysis(latestUserMessage = "", history = []) {
-  const heuristicRisk = await riskFromSeverityWords(
-    [latestUserMessage, ...history.map((item) => item.text)].join("\n"),
+  const studentText = getStudentJournalText(latestUserMessage, history);
+  const heuristicRisk = calibrateRiskSignal(
+    await riskFromSeverityWords(studentText),
+    studentText,
   );
-  const fallbackTags = inferJournalTagsFromText(
-    [latestUserMessage, ...history.map((item) => item.text)].join("\n"),
-  );
+  const fallbackTags = inferJournalTagsFromText(studentText);
 
   return {
     pet_reply: "",
@@ -355,7 +434,10 @@ function mergeRiskSignals(
   const normalizedModel = normalizeRiskLevel(modelRiskLevel);
   const normalizedHeuristic = normalizeRiskLevel(heuristicRiskLevel);
 
-  if (order[normalizedHeuristic] > order[normalizedModel]) {
+  if (
+    order[normalizedHeuristic] > order[normalizedModel] &&
+    normalizedHeuristic === "HIGH"
+  ) {
     return {
       risk_level: normalizedHeuristic,
       admin_flag_reason: heuristicReason,
@@ -365,7 +447,9 @@ function mergeRiskSignals(
   return {
     risk_level: normalizedModel,
     admin_flag_reason:
-      modelReason == null ? null : String(modelReason).trim() || null,
+      normalizedModel === "NONE" || modelReason == null
+        ? null
+        : String(modelReason).trim() || null,
   };
 }
 
@@ -883,8 +967,12 @@ async function analyzeJournalConversation({
     "Do not force a question into every reply.",
     "Do not add advice, lists, diagnosis, or long analysis.",
     "Risk rules:",
+    "- Assess risk from the overall context and content of the journal entry. The generated summary may support the risk decision when it reflects the entry content, but Muni companion replies, suggested_tags, concern/theme tags, and topic labels must not create a risk flag by themselves.",
+    "- Concern/theme tags like Anxiety, Stress, Academic problems, or Mental health are topic metadata and must not make an entry LOW or HIGH by themselves.",
     "- HIGH only if there are signs of self-harm, suicidal intent, danger, abuse, or severe crisis.",
-    "- LOW for strong distress without clear immediate danger.",
+    "- LOW only when the student's own words show strong distress, inability to cope/function, persistent intense panic, or urgent need for human support without clear immediate danger.",
+    "- NONE for ordinary, mild, situational, brief, or manageable anxiety/stress/sadness when the student's own words do not show danger, inability to cope/function, persistent intense panic, or urgent need for human support.",
+    "- When unsure between NONE and LOW, choose NONE.",
     "- NONE for normal reflection or mild emotion.",
     "Write insights as 3 or 4 short complete sentences.",
     "Insights must not give advice or instructions.",
@@ -942,14 +1030,17 @@ async function analyzeJournalConversation({
     }
 
     const parsedAnalysis = providerResult.parsed || {};
-    const heuristicRisk = await riskFromSeverityWords(
-      [latestUserMessage, ...history.map((item) => item.text)].join("\n"),
-    );
-    const mergedRisk = mergeRiskSignals(
-      parsedAnalysis?.risk_level,
-      parsedAnalysis?.admin_flag_reason,
-      heuristicRisk.risk_level,
-      heuristicRisk.admin_flag_reason,
+    const studentText = getStudentJournalText(latestUserMessage, history);
+    const riskEvidenceText = getRiskEvidenceText(latestUserMessage, history);
+    const heuristicRisk = await riskFromSeverityWords(riskEvidenceText);
+    const mergedRisk = calibrateRiskSignal(
+      mergeRiskSignals(
+        parsedAnalysis?.risk_level,
+        parsedAnalysis?.admin_flag_reason,
+        heuristicRisk.risk_level,
+        heuristicRisk.admin_flag_reason,
+      ),
+      riskEvidenceText,
     );
 
     return {
@@ -1007,8 +1098,12 @@ async function analyzeJournalEntryFinal({
     "- Write one short summary sentence of the main emotional theme.",
     "- Keep it observational and non-prescriptive.",
     "Risk rules:",
+    "- Assess risk from the overall context and content of the journal entry. The generated summary may support the risk decision when it reflects the entry content, but Muni companion replies, suggested_tags, concern/theme tags, and topic labels must not create a risk flag by themselves.",
+    "- Concern/theme tags like Anxiety, Stress, Academic problems, or Mental health are topic metadata and must not make an entry LOW or HIGH by themselves.",
     "- HIGH only if there are signs of self-harm, suicidal intent, danger, abuse, or severe crisis.",
-    "- LOW for strong distress without clear immediate danger.",
+    "- LOW only when the student's own words show strong distress, inability to cope/function, persistent intense panic, or urgent need for human support without clear immediate danger.",
+    "- NONE for ordinary, mild, situational, brief, or manageable anxiety/stress/sadness when the student's own words do not show danger, inability to cope/function, persistent intense panic, or urgent need for human support.",
+    "- When unsure between NONE and LOW, choose NONE.",
     "- NONE for normal reflection or mild emotion.",
     "Insights rules:",
     "- Write 3 or 4 short complete sentences.",
@@ -1064,23 +1159,25 @@ async function analyzeJournalEntryFinal({
     }
 
     const parsed = providerResult.parsed || {};
-    const fallbackTags = inferJournalTagsFromText(
-      [latestUserMessage, ...history.map((item) => item.text)].join("\n"),
-    );
+    const studentText = getStudentJournalText(latestUserMessage, history);
+    const summaryText = normalizeWhitespace(parsed?.summary || "");
+    const riskEvidenceText = getRiskEvidenceText(latestUserMessage, history, summaryText);
+    const fallbackTags = inferJournalTagsFromText(studentText);
     const suggestedTags = normalizeJournalTags(parsed?.suggested_tags);
-    const heuristicRisk = await riskFromSeverityWords(
-      [latestUserMessage, ...history.map((item) => item.text)].join("\n"),
-    );
-    const mergedRisk = mergeRiskSignals(
-      parsed?.risk_level,
-      parsed?.admin_flag_reason,
-      heuristicRisk.risk_level,
-      heuristicRisk.admin_flag_reason,
+    const heuristicRisk = await riskFromSeverityWords(riskEvidenceText);
+    const mergedRisk = calibrateRiskSignal(
+      mergeRiskSignals(
+        parsed?.risk_level,
+        parsed?.admin_flag_reason,
+        heuristicRisk.risk_level,
+        heuristicRisk.admin_flag_reason,
+      ),
+      riskEvidenceText,
     );
 
     return {
       pet_reply: "",
-      summary: normalizeWhitespace(parsed?.summary || ""),
+      summary: summaryText,
       insights: normalizeInsights(parsed?.insights),
       suggested_tags: suggestedTags.length ? suggestedTags : fallbackTags,
       risk_level: mergedRisk.risk_level,

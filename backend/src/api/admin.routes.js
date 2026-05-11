@@ -1534,6 +1534,113 @@ router.get("/dashboard/risk-flags", async (_req, res) => {
   });
 });
 
+router.patch("/journal-entries/:entryId/flag", async (req, res) => {
+  const entryId = normalizeCompactSpaces(req.params.entryId || "");
+  const riskLevel = String(req.body?.riskLevel || "").trim().toUpperCase();
+  const adminFlagReasonProvided = Object.prototype.hasOwnProperty.call(req.body || {}, "adminFlagReason");
+  const adminFlagReason = adminFlagReasonProvided
+    ? normalizeCompactSpaces(req.body.adminFlagReason || "")
+    : null;
+  const primaryConcernProvided = Object.prototype.hasOwnProperty.call(req.body || {}, "primaryConcern");
+  const primaryConcern = primaryConcernProvided
+    ? normalizeDisplayLabel(req.body.primaryConcern || "")
+    : null;
+  const supportResponseProvided = Object.prototype.hasOwnProperty.call(req.body || {}, "supportResponse");
+  const supportResponse = supportResponseProvided
+    ? String(req.body.supportResponse || "").trim().toUpperCase()
+    : undefined;
+
+  if (!entryId) {
+    return res.status(400).json({ message: "Journal entry id is required." });
+  }
+  if (!["NONE", "LOW", "HIGH", "CRITICAL"].includes(riskLevel)) {
+    return res.status(400).json({ message: "A valid risk flag is required." });
+  }
+  if (supportResponseProvided && supportResponse && !["CONTACTED", "DECLINED"].includes(supportResponse)) {
+    return res.status(400).json({ message: "A valid intervention status is required." });
+  }
+
+  const result = await query(
+    `
+      update public.journal_entries
+      set
+        risk_level = $2,
+        admin_flag_reason = case
+          when $2 = 'NONE' then null
+          when $7::boolean is true then nullif($3, '')
+          else admin_flag_reason
+        end,
+        primary_concern = case
+          when $8::boolean is true then nullif($4, '')
+          else primary_concern
+        end,
+        support_response = case
+          when $2 = 'NONE' then null
+          when $5::boolean is false then support_response
+          when nullif($6, '') is null then null
+          else $6
+        end,
+        support_response_at = case
+          when $2 = 'NONE' then null
+          when $5::boolean is false then support_response_at
+          when nullif($6, '') is null then null
+          else coalesce(support_response_at, now())
+        end,
+        updated_at = now()
+      where id = $1
+        and deleted_by_student_at is null
+      returning
+        id,
+        student_number,
+        entry_date,
+        title,
+        summary,
+        insights,
+        risk_level,
+        admin_flag_reason,
+        primary_concern,
+        concern_tags,
+        support_response,
+        support_response_at,
+        created_at
+    `,
+    [
+      entryId,
+      riskLevel,
+      adminFlagReason,
+      primaryConcern,
+      supportResponseProvided,
+      supportResponse || null,
+      adminFlagReasonProvided,
+      primaryConcernProvided,
+    ],
+  );
+
+  if (result.rowCount === 0) {
+    return res.status(404).json({ message: "Journal entry not found." });
+  }
+
+  const row = result.rows[0];
+  return res.json({
+    entry: {
+      adminFlagReason: row.admin_flag_reason || null,
+      concernTags: getJournalTagsForAdmin(row),
+      createdAt: row.created_at,
+      entryDate: row.entry_date,
+      id: row.id,
+      insights: Array.isArray(row.insights) ? row.insights : [],
+      primaryConcern: row.primary_concern || null,
+      riskLevel: row.risk_level,
+      studentNumber: row.student_number,
+      summary: row.summary || "",
+      supportResponse: row.support_response || null,
+      supportResponseAt: row.support_response_at || null,
+      title: row.title || "",
+    },
+    message: "Journal flag updated.",
+  });
+});
+
 router.get("/risk-triggers", async (_req, res) => {
   const result = await query(
     `
@@ -2457,8 +2564,11 @@ router.get("/students/:studentNumber", async (req, res) => {
           createdAt: message.createdAt,
         }))
       : [];
+    const supportResponse = String(row.support_response || "").toUpperCase();
+    const activeRiskReview = ["LOW", "HIGH", "CRITICAL"].includes(riskLevel);
     const canViewConversation =
-      ["LOW", "HIGH", "CRITICAL"].includes(riskLevel) || Boolean(row.admin_flag_reason);
+      activeRiskReview ||
+      supportResponse === "DECLINED";
 
     return {
       id: row.id,
@@ -2482,6 +2592,11 @@ router.get("/students/:studentNumber", async (req, res) => {
   });
 
   const profile = profileResult.rows[0];
+  const flaggedEntryCount = entries.filter((entry) => {
+    const riskLevel = String(entry.riskLevel || "").toUpperCase();
+    const supportResponse = String(entry.supportResponse || "").toUpperCase();
+    return ["LOW", "HIGH", "CRITICAL"].includes(riskLevel) || supportResponse === "DECLINED";
+  }).length;
   return res.json({
     profile: {
       studentNumber: profile.student_number,
@@ -2496,10 +2611,10 @@ router.get("/students/:studentNumber", async (req, res) => {
       birthdate: profile.birthdate || null,
       createdAt: profile.created_at,
       totalEntries: entries.length,
-      flaggedEntries: entries.filter((entry) => ["LOW", "HIGH", "CRITICAL"].includes(String(entry.riskLevel || "").toUpperCase())).length,
+      flaggedEntries: flaggedEntryCount,
       status: toStudentStatus({
         total_entries: entries.length,
-        flagged_entries: entries.filter((entry) => ["LOW", "HIGH", "CRITICAL"].includes(String(entry.riskLevel || "").toUpperCase())).length,
+        flagged_entries: flaggedEntryCount,
       }),
     },
     entries,

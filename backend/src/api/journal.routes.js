@@ -642,7 +642,7 @@ async function analyzeFinalEntry({ entryId, studentNumber, existingMessages }) {
     history,
     latestUserMessage,
   });
-  const fallbackText = [latestUserMessage, ...history.map((item) => item.text)].join("\n");
+  const fallbackText = userMessages.map((item) => item.text).join("\n");
   const suggestedTags = normalizeConcernTags(analysis.suggested_tags);
 
   await query(

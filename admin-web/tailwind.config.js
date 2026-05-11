@@ -5,14 +5,14 @@ export default {
     extend: {
       colors: {
         admin: {
-          frame: "#134611",
+          frame: "#ffffff",
           surface: "#e8fccf",
           card: "#ffffff",
           ink: "#134611",
           muted: "#5f7a5f",
           border: "#b7d7a8",
-          brand: "#3e8914",
-          accent: "#3da35d",
+          brand: "#229365",
+          accent: "#229365",
           deep: "#0d2f0d",
           purple: "#134611",
           logo: "#dff3ca",

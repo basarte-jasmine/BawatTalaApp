@@ -15,7 +15,7 @@ export default function ConfirmActionModal({
       ? "bg-rose-500 hover:bg-rose-600"
       : confirmTone === "amber"
         ? "bg-amber-500 hover:bg-amber-600"
-        : "bg-emerald-500 hover:bg-emerald-600";
+        : "bg-[#229365] hover:bg-[#1b7b54]";
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title}>
