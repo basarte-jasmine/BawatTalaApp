@@ -898,6 +898,60 @@ router.post("/forgot-password/send-code", async (req, res) => {
   return res.json({ message: "Reset code sent successfully." });
 });
 
+router.post("/profile-password/send-code", async (req, res) => {
+  const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
+  const email = normalizeEmail(req.body.email || "");
+
+  if (!studentNumber && !email) {
+    return res.status(400).json({ message: "Student ID and email are required." });
+  }
+  if (!studentNumber) {
+    return res.status(400).json({ message: "Student ID is required." });
+  }
+  if (!email) {
+    return res.status(400).json({ message: "Email is required." });
+  }
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "Enter Student ID in 23-2903 format." });
+  }
+
+  const { data: profile, error: profileError } = await supabaseAdminClient
+    .from("student_profiles")
+    .select("student_number, email, is_email_verified, is_id_verified")
+    .eq("student_number", studentNumber)
+    .maybeSingle();
+
+  if (profileError) {
+    return res.status(400).json({ message: profileError.message });
+  }
+
+  const matchedAccount =
+    Boolean(profile) &&
+    normalizeEmail(profile.email || "") === email &&
+    profile.is_email_verified === true &&
+    profile.is_id_verified === true;
+
+  if (!matchedAccount) {
+    return res.status(400).json({
+      message: "Student ID and email do not match an active Bawat Tala account.",
+    });
+  }
+
+  const { error } = await supabaseAuthClient.auth.resetPasswordForEmail(email);
+  if (error) {
+    return res.status(400).json({ message: error.message || "Failed to send reset code." });
+  }
+
+  setResetSession(studentNumber, {
+    studentNumber,
+    email,
+    otpExpiresAt: Date.now() + OTP_VALIDITY_MS,
+    verifiedAt: 0,
+  });
+
+  return res.json({ message: "Reset code sent successfully." });
+});
+
 router.post("/forgot-password/resend-code", async (req, res) => {
   const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
   if (!studentNumber) {

@@ -470,7 +470,7 @@ export default function ProfileSettingsScreen() {
               title="Need a correction?"
               body="If your student details changed, send a quick request and we'll help you update the account safely."
             />
-            <PrimaryButton label="Reset Password" onPress={() => router.push("/reset-password")} />
+            <PrimaryButton label="Reset Password" onPress={() => router.push("/profile-reset-password" as never)} />
             <SecondaryButton
               label="Contact Support"
               onPress={() =>
@@ -635,7 +635,7 @@ export default function ProfileSettingsScreen() {
               }
             />
             <PrimaryButton label="Manage Journal Lock" onPress={() => router.push("/profile-settings?section=app-lock")} />
-            <SecondaryButton label="Change Password" onPress={() => router.push("/reset-password")} />
+            <SecondaryButton label="Change Password" onPress={() => router.push("/profile-reset-password" as never)} />
           </>
         ) : null}
 

@@ -1,12 +1,34 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { PasswordField } from "../components/forms/PasswordField";
 import { AuthCardLayout } from "../components/layout/AuthCardLayout";
 import { AppPrimaryButton } from "../components/ui/AppPrimaryButton";
 import { forgotPasswordReset } from "../lib/backend-api";
 
 const STRONG_PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
+
+function getPasswordStrength(value: string) {
+  const checks = [
+    value.length >= 8,
+    /[a-z]/.test(value),
+    /[A-Z]/.test(value),
+    /\d/.test(value),
+    /[^A-Za-z\d]/.test(value),
+  ];
+  const score = checks.filter(Boolean).length;
+
+  if (!value) {
+    return { label: "", color: "#D0D7DE", progress: "0%" };
+  }
+  if (score >= 5) {
+    return { label: "Strong", color: "#16803A", progress: "100%" };
+  }
+  if (score >= 3) {
+    return { label: "Good", color: "#B87312", progress: "66%" };
+  }
+  return { label: "Weak", color: "#C31A1A", progress: "33%" };
+}
 
 export default function ResetPasswordNewScreen() {
   const params = useLocalSearchParams<{ studentId?: string }>();
@@ -18,6 +40,7 @@ export default function ResetPasswordNewScreen() {
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [isBusy, setIsBusy] = useState(false);
+  const passwordStrength = getPasswordStrength(newPassword);
 
   const handleResetPassword = async () => {
     if (!newPassword) {
@@ -25,9 +48,7 @@ export default function ResetPasswordNewScreen() {
       return;
     }
     if (!STRONG_PASSWORD_PATTERN.test(newPassword)) {
-      setErrorMessage(
-        "Password must be at least 8 characters and include uppercase, lowercase, number, and symbol.",
-      );
+      setErrorMessage("Choose a stronger password.");
       return;
     }
     if (!confirmPassword) {
@@ -77,6 +98,19 @@ export default function ResetPasswordNewScreen() {
         inputWrapStyle={styles.passwordWrap}
         inputStyle={styles.passwordInput}
       />
+      {!!newPassword && (
+        <>
+          <Text style={[styles.passwordStrengthText, { color: passwordStrength.color }]}>
+            {passwordStrength.label}
+          </Text>
+          <View
+            style={[
+              styles.passwordStrengthLine,
+              { width: passwordStrength.progress, backgroundColor: passwordStrength.color },
+            ]}
+          />
+        </>
+      )}
 
       <PasswordField
         label="Confirm your new password"
@@ -141,6 +175,17 @@ const styles = StyleSheet.create({
   passwordInput: {
     fontSize: 13,
     color: "#111111",
+  },
+  passwordStrengthText: {
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: -8,
+    marginBottom: 4,
+  },
+  passwordStrengthLine: {
+    height: 3,
+    borderRadius: 999,
+    marginBottom: 12,
   },
   actionButton: {
     marginTop: 8,

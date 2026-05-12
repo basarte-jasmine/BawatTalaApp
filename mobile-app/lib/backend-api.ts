@@ -404,6 +404,17 @@ export async function forgotPasswordSendCode(
   return { ok: response.ok, message: data?.message };
 }
 
+export async function profilePasswordSendCode(
+  studentNumber: string,
+  email: string,
+): Promise<ApiResult> {
+  const { response, data } = await post("/api/auth/profile-password/send-code", {
+    studentNumber,
+    email,
+  });
+  return { ok: response.ok, message: data?.message };
+}
+
 export async function forgotPasswordResendCode(
   studentNumber: string,
 ): Promise<ApiResult> {
