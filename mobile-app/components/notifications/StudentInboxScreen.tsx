@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ConfirmationModal } from "../ui/ConfirmationModal";
@@ -18,6 +18,8 @@ import { getNotificationVisual, isAdminMessageNotification } from "../../lib/not
 type StudentInboxScreenProps = {
   variant: "messages" | "notifications";
 };
+
+const TALA_IMAGE = require("../../assets/images/Tala_Star.png");
 
 export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
   const { user } = useAuthSession();
@@ -213,7 +215,11 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
                   >
                     <View style={styles.itemRow}>
                       <View style={[styles.itemIconWrap, { backgroundColor: visual.chip }]}>
-                        <Ionicons name={visual.icon} size={18} color={visual.accent} />
+                        {visual.usesTalaLogo ? (
+                          <Image source={TALA_IMAGE} style={styles.itemTalaIcon} resizeMode="contain" />
+                        ) : (
+                          <Ionicons name={visual.icon} size={18} color={visual.accent} />
+                        )}
                       </View>
 
                       <View style={styles.itemTextWrap}>
@@ -433,6 +439,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginTop: 1,
+  },
+  itemTalaIcon: {
+    width: 25,
+    height: 25,
   },
   itemTextWrap: {
     flex: 1,

@@ -333,6 +333,29 @@ async function ensureDatabaseSchema() {
   `);
 
   await pool.query(`
+    create table if not exists public.student_referrals (
+      id uuid primary key default gen_random_uuid(),
+      student_number text not null unique,
+      referral_code text not null unique,
+      referred_by_student_number text,
+      referred_by_code text,
+      redeemed_at timestamptz,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      constraint student_referrals_code_length_check check (char_length(referral_code) = 9),
+      constraint student_referrals_no_self_referral_check check (
+        referred_by_student_number is null
+        or referred_by_student_number <> student_number
+      )
+    );
+  `);
+
+  await pool.query(`
+    create index if not exists student_referrals_referral_code_idx
+      on public.student_referrals (referral_code);
+  `);
+
+  await pool.query(`
     create table if not exists public.student_moods (
       id uuid primary key default gen_random_uuid(),
       student_number text not null,

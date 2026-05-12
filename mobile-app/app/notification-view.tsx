@@ -1,12 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   getNotificationDetailTitle,
   getNotificationFallbackRoute,
   getNotificationVisual,
 } from "../lib/notification-utils";
+
+const TALA_IMAGE = require("../assets/images/Tala_Star.png");
 
 export default function NotificationViewScreen() {
   const { createdAt, kind, message, timeLabel, title } = useLocalSearchParams<{
@@ -53,7 +55,11 @@ export default function NotificationViewScreen() {
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.heroCard}>
           <View style={[styles.heroIconBubble, { backgroundColor: visual.chip }]}>
-            <Ionicons name={visual.icon} size={20} color={visual.accent} />
+            {visual.usesTalaLogo ? (
+              <Image source={TALA_IMAGE} style={styles.heroTalaIcon} resizeMode="contain" />
+            ) : (
+              <Ionicons name={visual.icon} size={20} color={visual.accent} />
+            )}
           </View>
 
           <View style={styles.heroTextWrap}>
@@ -134,6 +140,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginTop: 2,
+  },
+  heroTalaIcon: {
+    width: 27,
+    height: 27,
   },
   heroTextWrap: {
     flex: 1,

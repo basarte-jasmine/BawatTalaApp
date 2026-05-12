@@ -25,6 +25,17 @@ export function getNotificationVisual(kind: string) {
     };
   }
 
+  if (normalized.includes("referral") || normalized.includes("reward")) {
+    return {
+      accent: "#5A8A36",
+      chip: "#EAF7DD",
+      icon: "star-outline" as const,
+      label: "Congratulations",
+      surface: "#F6FFF0",
+      usesTalaLogo: true,
+    };
+  }
+
   if (normalized.includes("appointment") || normalized.includes("schedule")) {
     return {
       accent: "#6FCB43",

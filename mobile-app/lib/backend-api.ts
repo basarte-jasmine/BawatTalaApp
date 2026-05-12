@@ -28,6 +28,15 @@ export type StudentPreferences = {
   privateJournalModeEnabled: boolean;
 };
 
+export type StudentReferral = {
+  hasRedeemed: boolean;
+  referralCode: string;
+  redeemRewardTala: number;
+  redeemedAt?: string | null;
+  referredByCode?: string | null;
+  shareRewardTala: number;
+};
+
 export type JournalMessage = {
   createdAt: string;
   id: string;
@@ -350,6 +359,37 @@ export async function resetJournalLockWithStudentId(
     ok: response.ok,
     message: data?.message,
     preferences: data?.preferences ?? null,
+  };
+}
+
+export async function fetchStudentReferral(
+  studentNumber: string,
+): Promise<ApiResult & { referral?: StudentReferral | null }> {
+  const params = new URLSearchParams({ studentNumber });
+  const { response, data } = await get(`/api/auth/referral?${params.toString()}`);
+
+  return {
+    ok: response.ok,
+    message: data?.message,
+    referral: data?.referral ?? null,
+  };
+}
+
+export async function redeemStudentReferralCode(
+  studentNumber: string,
+  referralCode: string,
+): Promise<ApiResult & { referral?: StudentReferral | null; rewardTala?: number; totalTala?: number }> {
+  const { response, data } = await post("/api/auth/referral/redeem", {
+    studentNumber,
+    referralCode,
+  });
+
+  return {
+    ok: response.ok,
+    message: data?.message,
+    referral: data?.referral ?? null,
+    rewardTala: data?.rewardTala,
+    totalTala: data?.totalTala,
   };
 }
 

@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useState, type ComponentProps } from "react";
-import { Alert, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAppPreferences } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
@@ -25,7 +25,7 @@ const APP_ROWS: SettingRow[] = [
 ];
 
 const EXTRA_ROWS: SettingRow[] = [
-  { id: "refer-friend", icon: "share-social-outline", label: "Refer a friend" },
+  { id: "refer-friend", icon: "share-social-outline", label: "Refer a friend", showChevron: true },
   { id: "app-lock", icon: "lock-closed-outline", label: "Journal Lock" },
 ];
 const APP_VERSION = "1.0.0";
@@ -61,11 +61,7 @@ export default function ProfileScreen() {
         router.push(`/profile-settings?section=${rowId}`);
         return;
       case "refer-friend":
-        await Share.share({
-          message:
-            "I've been using Bawat Tala to journal, check in with my emotions, and reach support when I need it. You can check it out at https://bawattalapro.online/",
-          title: "Share Bawat Tala",
-        });
+        router.push("/referral" as never);
         return;
       default:
         Alert.alert("Not Ready Yet", "This setting is not available right now.");

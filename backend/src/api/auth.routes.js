@@ -10,6 +10,10 @@ const LOGIN_LOCK_DURATION_MS = 10 * 60 * 1000;
 const OTP_VALIDITY_MS = 60 * 1000;
 const RESET_SESSION_MS = 10 * 60 * 1000;
 const STRONG_PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
+const REFERRAL_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const REFERRAL_CODE_LENGTH = 9;
+const REFERRAL_JOIN_REWARD_TALA = 100;
+const REFERRAL_INVITE_REWARD_TALA = 150;
 const loginAttempts = new Map();
 const resetPasswordSessions = new Map();
 const DEFAULT_STUDENT_PREFERENCES = {
@@ -160,6 +164,17 @@ function normalizePin(value) {
   return String(value || "").replace(/[^0-9]/g, "").slice(0, 4);
 }
 
+function normalizeReferralCode(value) {
+  return String(value || "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, REFERRAL_CODE_LENGTH);
+}
+
+function generateReferralCode() {
+  const bytes = randomBytes(REFERRAL_CODE_LENGTH);
+  return Array.from(bytes)
+    .map((byte) => REFERRAL_CODE_ALPHABET[byte % REFERRAL_CODE_ALPHABET.length])
+    .join("");
+}
+
 function normalizeStudentPreferences(row) {
   const settings =
     row?.settings && typeof row.settings === "object" && !Array.isArray(row.settings)
@@ -237,6 +252,84 @@ async function saveStudentPreferenceRecord({
       journalLockPinHash,
       journalLockAutoLock,
     ],
+  );
+
+  return result.rows[0] || null;
+}
+
+function normalizeReferralRecord(row) {
+  return {
+    hasRedeemed: Boolean(row?.referred_by_student_number),
+    referralCode: row?.referral_code || "",
+    redeemRewardTala: REFERRAL_JOIN_REWARD_TALA,
+    redeemedAt: row?.redeemed_at || null,
+    referredByCode: row?.referred_by_code || null,
+    shareRewardTala: REFERRAL_INVITE_REWARD_TALA,
+  };
+}
+
+async function ensureStudentReferralRecord(studentNumber) {
+  const existing = await query(
+    `
+      select referral_code, referred_by_code, referred_by_student_number, redeemed_at
+      from public.student_referrals
+      where student_number = $1
+    `,
+    [studentNumber],
+  );
+
+  if (existing.rows[0]) {
+    return existing.rows[0];
+  }
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      const inserted = await query(
+        `
+          insert into public.student_referrals (
+            student_number,
+            referral_code
+          )
+          values ($1, $2)
+          returning referral_code, referred_by_code, referred_by_student_number, redeemed_at
+        `,
+        [studentNumber, generateReferralCode()],
+      );
+
+      return inserted.rows[0];
+    } catch (error) {
+      if (error?.code === "23505") {
+        const current = await query(
+          `
+            select referral_code, referred_by_code, referred_by_student_number, redeemed_at
+            from public.student_referrals
+            where student_number = $1
+          `,
+          [studentNumber],
+        );
+
+        if (current.rows[0]) {
+          return current.rows[0];
+        }
+
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw new Error("Unable to create a unique referral code. Please try again.");
+}
+
+async function getReferralRecordByCode(referralCode) {
+  const result = await query(
+    `
+      select student_number, referral_code
+      from public.student_referrals
+      where referral_code = $1
+    `,
+    [referralCode],
   );
 
   return result.rows[0] || null;
@@ -535,6 +628,164 @@ router.post("/preferences/journal-lock/reset", async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       message: error.message || "Unable to reset journal lock.",
+    });
+  }
+});
+
+router.get("/referral", async (req, res) => {
+  const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
+
+  if (!studentNumber) {
+    return res.status(400).json({ message: "Student ID is required." });
+  }
+
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "Invalid student ID." });
+  }
+
+  try {
+    const record = await ensureStudentReferralRecord(studentNumber);
+    return res.json({ referral: normalizeReferralRecord(record) });
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message || "Unable to load referral details.",
+    });
+  }
+});
+
+router.post("/referral/redeem", async (req, res) => {
+  const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
+  const referralCode = normalizeReferralCode(req.body.referralCode || "");
+
+  if (!studentNumber) {
+    return res.status(400).json({ message: "Student ID is required." });
+  }
+
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "Invalid student ID." });
+  }
+
+  if (referralCode.length !== REFERRAL_CODE_LENGTH) {
+    return res.status(400).json({ message: "Enter a valid 9-character referral code." });
+  }
+
+  try {
+    const ownRecord = await ensureStudentReferralRecord(studentNumber);
+
+    if (ownRecord.referred_by_student_number) {
+      return res.status(409).json({
+        message: "You already redeemed a referral code.",
+        referral: normalizeReferralRecord(ownRecord),
+      });
+    }
+
+    if (ownRecord.referral_code === referralCode) {
+      return res.status(400).json({ message: "You can't use your own referral code." });
+    }
+
+    const referrerRecord = await getReferralRecordByCode(referralCode);
+    if (!referrerRecord) {
+      return res.status(404).json({ message: "Referral code was not found." });
+    }
+
+    const redemption = await query(
+      `
+        with updated_referral as (
+          update public.student_referrals
+          set
+            referred_by_student_number = $2,
+            referred_by_code = $3,
+            redeemed_at = now(),
+            updated_at = now()
+          where student_number = $1
+            and referred_by_student_number is null
+            and referral_code <> $3
+          returning student_number, referral_code, referred_by_code, referred_by_student_number, redeemed_at
+        ),
+        redeemer_reward as (
+          insert into public.student_tala_wallets (
+            student_number,
+            total_tala,
+            updated_at
+          )
+          select student_number, $4, now()
+          from updated_referral
+          on conflict (student_number)
+          do update set
+            total_tala = public.student_tala_wallets.total_tala + excluded.total_tala,
+            updated_at = now()
+          returning total_tala
+        ),
+        referrer_reward as (
+          insert into public.student_tala_wallets (
+            student_number,
+            total_tala,
+            updated_at
+          )
+          select $2, $5, now()
+          from updated_referral
+          on conflict (student_number)
+          do update set
+            total_tala = public.student_tala_wallets.total_tala + excluded.total_tala,
+            updated_at = now()
+          returning total_tala
+        ),
+        referrer_notification as (
+          insert into public.student_notifications (
+            student_number,
+            kind,
+            title,
+            message,
+            metadata
+          )
+          select
+            $2,
+            'REFERRAL_REWARD',
+            'Congratulations!',
+            'Someone joined Bawat Tala with your referral code. You earned 150 Tala.',
+            jsonb_build_object(
+              'rewardTala', $5,
+              'redeemerStudentNumber', student_number,
+              'referralCode', $3
+            )
+          from updated_referral
+          returning id
+        )
+        select
+          updated_referral.referral_code,
+          updated_referral.referred_by_code,
+          updated_referral.referred_by_student_number,
+          updated_referral.redeemed_at,
+          (select total_tala from redeemer_reward limit 1) as total_tala
+        from updated_referral
+      `,
+      [
+        studentNumber,
+        referrerRecord.student_number,
+        referrerRecord.referral_code,
+        REFERRAL_JOIN_REWARD_TALA,
+        REFERRAL_INVITE_REWARD_TALA,
+      ],
+    );
+
+    const savedRecord = redemption.rows[0];
+    if (!savedRecord) {
+      const currentRecord = await ensureStudentReferralRecord(studentNumber);
+      return res.status(409).json({
+        message: "You already redeemed a referral code.",
+        referral: normalizeReferralRecord(currentRecord),
+      });
+    }
+
+    return res.json({
+      message: `Referral code redeemed. You earned ${REFERRAL_JOIN_REWARD_TALA} Tala.`,
+      referral: normalizeReferralRecord(savedRecord),
+      rewardTala: REFERRAL_JOIN_REWARD_TALA,
+      totalTala: Number(savedRecord.total_tala || 0),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message || "Unable to redeem referral code.",
     });
   }
 });

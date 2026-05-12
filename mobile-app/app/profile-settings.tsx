@@ -8,7 +8,6 @@ import {
   Modal,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   Switch,
   Text,
@@ -843,13 +842,7 @@ export default function ProfileSettingsScreen() {
 
         <Pressable
           style={styles.shareFooter}
-          onPress={() =>
-            void Share.share({
-              message:
-                "I've been using Bawat Tala to journal, check in with my emotions, and reach support when I need it. You can check it out at https://bawattalapro.online/",
-              title: "Share Bawat Tala",
-            })
-          }
+          onPress={() => router.push("/referral" as never)}
         >
           <Ionicons name="share-social-outline" size={18} color="#4A5F72" />
           <Text style={styles.shareFooterText}>Refer a friend from here too</Text>
