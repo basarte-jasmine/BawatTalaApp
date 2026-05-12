@@ -136,6 +136,11 @@ if (databaseUrl) {
     connectionString: databaseUrl,
     ssl: { rejectUnauthorized: false },
   });
+
+  pool.on("error", (error) => {
+    const friendlyError = toFriendlyDatabaseError(error, databaseUrl);
+    console.warn("Database pool idle client error:", friendlyError.message);
+  });
 }
 
 async function removeLegacyDailyMoodUniqueness() {

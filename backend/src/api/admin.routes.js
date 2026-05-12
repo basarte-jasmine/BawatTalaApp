@@ -1166,8 +1166,11 @@ router.get("/dashboard/summary", async (req, res) => {
       `
         select id, student_number, entry_date, created_at, risk_level, support_response
         from public.journal_entries
-        where upper(coalesce(risk_level, 'NONE')) in ('LOW', 'HIGH', 'CRITICAL')
-           or support_response = 'DECLINED'
+        where deleted_by_student_at is null
+          and (
+            upper(coalesce(risk_level, 'NONE')) in ('LOW', 'MEDIUM', 'MODERATE', 'HIGH', 'CRITICAL')
+            or upper(coalesce(support_response, '')) = 'DECLINED'
+          )
       `,
     ),
     query(
@@ -1250,32 +1253,18 @@ router.get("/dashboard/summary", async (req, res) => {
   }, {});
 
   const totalStudents = safeProfiles.length;
-  const totalFlaggedEntries = new Set(
-    safeFlaggedRows
-      .map((row) => String(row.student_number || "").trim())
-      .filter(Boolean),
-  ).size;
+  const totalFlaggedEntries = safeFlaggedRows.length;
   const entriesToday = countRowsOnDate(safeJournals, "created_at", todayIso);
   const studentsThis30Days = countRowsBetweenDates(safeProfiles, "created_at", current30StartIso, getRelativeManilaIsoDate(1));
   const studentsPrevious30Days = countRowsBetweenDates(safeProfiles, "created_at", previous30StartIso, previous30EndIso);
-  const flaggedThis7Days = new Set(
-    safeFlaggedRows
-      .filter((row) => {
-        const date = normalizeDateValue(row.entry_date);
-        return date && date >= last7StartIso && date < getRelativeManilaIsoDate(1);
-      })
-      .map((row) => String(row.student_number || "").trim())
-      .filter(Boolean),
-  ).size;
-  const flaggedPrevious7Days = new Set(
-    safeFlaggedRows
-      .filter((row) => {
-        const date = normalizeDateValue(row.entry_date);
-        return date && date >= previous7StartIso && date < previous7EndIso;
-      })
-      .map((row) => String(row.student_number || "").trim())
-      .filter(Boolean),
-  ).size;
+  const flaggedThis7Days = safeFlaggedRows.filter((row) => {
+    const date = normalizeDateValue(row.entry_date);
+    return date && date >= last7StartIso && date < getRelativeManilaIsoDate(1);
+  }).length;
+  const flaggedPrevious7Days = safeFlaggedRows.filter((row) => {
+    const date = normalizeDateValue(row.entry_date);
+    return date && date >= previous7StartIso && date < previous7EndIso;
+  }).length;
   const entriesYesterday = countRowsOnDate(safeJournals, "created_at", yesterdayIso);
 
   const activeUsageSeries = toMonthlyBuckets(safeProfiles, "created_at");
@@ -1914,6 +1903,251 @@ router.post("/students/:studentNumber/notify", async (req, res) => {
   return res.json({ message: "Notification sent to student." });
 });
 
+router.get("/search", async (req, res) => {
+  const search = normalizeCompactSpaces(req.query.q || "");
+  if (!search || search.length < 2) {
+    return res.json({ students: [], entries: [] });
+  }
+
+  const pattern = `%${search}%`;
+  const [studentsResult, entriesResult, appointmentsResult, teamResult, peerCounselorsResult, riskTriggersResult] = await Promise.all([
+    query(
+      `
+        select
+          sp.student_number,
+          coalesce(nullif(sp.full_name, ''), sp.student_number) as full_name,
+          coalesce(sp.program, '') as program,
+          coalesce(sp.email, '') as email,
+          coalesce(sp.barangay, '') as barangay,
+          coalesce(sp.city, '') as city,
+          coalesce(stats.total_entries, 0) as total_entries,
+          stats.last_entry_at,
+          coalesce(stats.flagged_entries, 0) as flagged_entries
+        from public.student_profiles sp
+        left join lateral (
+          select
+            count(*)::int as total_entries,
+            max(je.created_at) as last_entry_at,
+            count(*) filter (
+              where upper(coalesce(je.risk_level, 'NONE')) in ('LOW', 'MEDIUM', 'MODERATE', 'HIGH', 'CRITICAL')
+                or upper(coalesce(je.support_response, '')) = 'DECLINED'
+            )::int as flagged_entries
+          from public.journal_entries je
+          where je.student_number = sp.student_number
+            and je.deleted_by_student_at is null
+        ) stats on true
+        where
+          coalesce(sp.full_name, '') ilike $1
+          or sp.student_number ilike $1
+          or coalesce(sp.program, '') ilike $1
+          or coalesce(sp.email, '') ilike $1
+          or coalesce(sp.barangay, '') ilike $1
+          or coalesce(sp.city, '') ilike $1
+        order by full_name asc
+        limit 8
+      `,
+      [pattern],
+    ),
+    query(
+      `
+        select
+          je.id,
+          je.student_number,
+          je.entry_date,
+          je.title,
+          je.summary,
+          je.primary_concern,
+          je.concern_tags,
+          je.risk_level,
+          je.support_response,
+          je.created_at,
+          coalesce(sp.full_name, '') as full_name,
+          coalesce(sp.program, '') as program
+        from public.journal_entries je
+        left join public.student_profiles sp on sp.student_number = je.student_number
+        where je.deleted_by_student_at is null
+          and (
+            coalesce(je.title, '') ilike $1
+            or coalesce(je.summary, '') ilike $1
+            or coalesce(je.primary_concern, '') ilike $1
+            or coalesce(je.admin_flag_reason, '') ilike $1
+            or coalesce(sp.full_name, '') ilike $1
+            or je.student_number ilike $1
+            or coalesce(sp.program, '') ilike $1
+          )
+        order by je.entry_date desc, je.created_at desc
+        limit 8
+      `,
+      [pattern],
+    ),
+    query(
+      `
+        select
+          ca.id,
+          ca.student_number,
+          ca.appointment_date,
+          ca.slot_time,
+          ca.status,
+          ca.support_type,
+          ca.concern,
+          ca.student_note,
+          coalesce(sp.full_name, '') as student_name,
+          coalesce(sp.program, '') as program,
+          coalesce(aa.full_name, pc.full_name, '') as counselor_name
+        from public.counselor_appointments ca
+        left join public.student_profiles sp on sp.student_number = ca.student_number
+        left join public.admin_accounts aa on aa.id = ca.counselor_id
+        left join public.peer_counselors pc on pc.id = ca.peer_counselor_id
+        where
+          ca.student_number ilike $1
+          or coalesce(sp.full_name, '') ilike $1
+          or coalesce(sp.program, '') ilike $1
+          or coalesce(ca.concern, '') ilike $1
+          or coalesce(ca.student_note, '') ilike $1
+          or coalesce(ca.status, '') ilike $1
+          or coalesce(ca.support_type, '') ilike $1
+          or coalesce(aa.full_name, pc.full_name, '') ilike $1
+        order by ca.appointment_date desc, ca.slot_time desc
+        limit 8
+      `,
+      [pattern],
+    ),
+    query(
+      `
+        select
+          id,
+          coalesce(full_name, email) as full_name,
+          email,
+          role,
+          is_active,
+          created_at
+        from public.admin_accounts
+        where
+          coalesce(full_name, '') ilike $1
+          or email ilike $1
+          or role ilike $1
+        order by full_name asc
+        limit 8
+      `,
+      [pattern],
+    ),
+    query(
+      `
+        select
+          id,
+          full_name,
+          email,
+          student_number,
+          program,
+          invitation_status,
+          is_active,
+          created_at
+        from public.peer_counselors
+        where
+          full_name ilike $1
+          or email ilike $1
+          or coalesce(student_number, '') ilike $1
+          or coalesce(program, '') ilike $1
+        order by full_name asc
+        limit 8
+      `,
+      [pattern],
+    ),
+    query(
+      `
+        select
+          id,
+          phrase,
+          risk_level,
+          is_enabled,
+          created_at
+        from public.risk_trigger_words
+        where
+          phrase ilike $1
+          or risk_level ilike $1
+        order by phrase asc
+        limit 8
+      `,
+      [pattern],
+    ),
+  ]);
+
+  return res.json({
+    students: studentsResult.rows.map((row) => ({
+      studentNumber: row.student_number,
+      fullName: row.full_name,
+      program: normalizeDisplayLabel(row.program || "Unspecified"),
+      email: row.email || "",
+      barangay: row.barangay || "",
+      city: row.city || "",
+      totalEntries: Number(row.total_entries || 0),
+      lastEntryAt: row.last_entry_at || null,
+      flaggedEntries: Number(row.flagged_entries || 0),
+      status: toStudentStatus(row),
+    })),
+    entries: entriesResult.rows.map((row) => ({
+      id: row.id,
+      studentNumber: row.student_number,
+      fullName: row.full_name || "",
+      program: normalizeDisplayLabel(row.program || "Unspecified"),
+      entryDate: normalizeDateValue(row.entry_date),
+      title: row.title || "",
+      summary: row.summary || "",
+      primaryConcern: row.primary_concern || null,
+      concernTags: getJournalTagsForAdmin(row),
+      riskLevel: row.risk_level || "NONE",
+      supportResponse: row.support_response || null,
+      createdAt: row.created_at,
+    })),
+    appointments: appointmentsResult.rows.map((row) => ({
+      id: row.id,
+      studentNumber: row.student_number,
+      studentName: row.student_name || row.student_number,
+      program: normalizeDisplayLabel(row.program || "Unspecified"),
+      appointmentDate: normalizeDateValue(row.appointment_date),
+      slotTime: row.slot_time,
+      status: row.status,
+      supportType: row.support_type,
+      concern: row.concern || "",
+      studentNote: row.student_note || "",
+      counselorName: row.counselor_name || "",
+    })),
+    team: [
+      ...teamResult.rows.map((row) => ({
+        id: row.id,
+        kind: "Admin",
+        fullName: row.full_name,
+        email: row.email,
+        role: toCounselorRoleLabel(row.role),
+        status: row.is_active ? "Active" : "Inactive",
+        createdAt: row.created_at,
+      })),
+      ...peerCounselorsResult.rows.map((row) => {
+        const invitationStatus = String(row.invitation_status || (row.is_active ? "ACCEPTED" : "DECLINED")).toUpperCase();
+        return {
+          id: row.id,
+          kind: "Peer Counselor",
+          fullName: row.full_name,
+          email: row.email,
+          role: "Peer Counselor",
+          studentNumber: row.student_number || "",
+          program: normalizeDisplayLabel(row.program || "Unspecified"),
+          status: invitationStatus === "PENDING" ? "Pending" : row.is_active && invitationStatus === "ACCEPTED" ? "Active" : "Declined",
+          createdAt: row.created_at,
+        };
+      }),
+    ],
+    riskTriggers: riskTriggersResult.rows.map((row) => ({
+      id: row.id,
+      phrase: row.phrase,
+      riskLevel: row.risk_level,
+      riskLabel: getRiskLevelLabel(row.risk_level),
+      isEnabled: Boolean(row.is_enabled),
+      createdAt: row.created_at,
+    })),
+  });
+});
+
 router.get("/analytics", async (req, res) => {
   const { rangeKey, startDate, endDate } = resolveAnalyticsRange(
     req.query.range,
@@ -2401,6 +2635,7 @@ router.get("/roles", async (_req, res) => {
 router.get("/students", async (req, res) => {
   const search = normalizeCompactSpaces(req.query.search || "");
   const program = normalizeCompactSpaces(req.query.program || "");
+  const status = normalizeCompactSpaces(req.query.status || "").toLowerCase();
 
   const values = [];
   const conditions = [];
@@ -2409,7 +2644,15 @@ router.get("/students", async (req, res) => {
     values.push(`%${search}%`);
     const searchIndex = values.length;
     conditions.push(
-      `(coalesce(sp.full_name, '') ilike $${searchIndex} or sp.student_number ilike $${searchIndex} or coalesce(sp.program, '') ilike $${searchIndex})`,
+      `(
+        coalesce(sp.full_name, '') ilike $${searchIndex}
+        or sp.student_number ilike $${searchIndex}
+        or coalesce(sp.program, '') ilike $${searchIndex}
+        or coalesce(sp.email, '') ilike $${searchIndex}
+        or coalesce(sp.barangay, '') ilike $${searchIndex}
+        or coalesce(sp.city, '') ilike $${searchIndex}
+        or coalesce(sp.province, '') ilike $${searchIndex}
+      )`,
     );
   }
 
@@ -2417,6 +2660,14 @@ router.get("/students", async (req, res) => {
     values.push(program);
     const programIndex = values.length;
     conditions.push(`coalesce(sp.program, '') = $${programIndex}`);
+  }
+
+  if (status === "flagged") {
+    conditions.push("coalesce(stats.flagged_entries, 0) > 0");
+  } else if (status === "active") {
+    conditions.push("coalesce(stats.flagged_entries, 0) = 0 and coalesce(stats.total_entries, 0) > 0");
+  } else if (status === "inactive") {
+    conditions.push("coalesce(stats.total_entries, 0) = 0");
   }
 
   const whereClause = conditions.length ? `where ${conditions.join(" and ")}` : "";
@@ -2443,7 +2694,7 @@ router.get("/students", async (req, res) => {
           count(*)::int as total_entries,
           max(je.created_at) as last_entry_at,
           count(*) filter (
-            where upper(coalesce(je.risk_level, 'NONE')) in ('LOW', 'HIGH', 'CRITICAL')
+            where upper(coalesce(je.risk_level, 'NONE')) in ('LOW', 'MEDIUM', 'MODERATE', 'HIGH', 'CRITICAL')
               or upper(coalesce(je.support_response, '')) = 'DECLINED'
           )::int as flagged_entries
         from public.journal_entries je
@@ -2483,6 +2734,110 @@ router.get("/students", async (req, res) => {
   const programs = [...new Set(students.map((item) => item.program).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
   return res.json({ students, programs });
+});
+
+router.get("/students/recent-entries", async (req, res) => {
+  const search = normalizeCompactSpaces(req.query.search || "");
+  const entryScope = normalizeCompactSpaces(req.query.entryScope || "all").toLowerCase();
+  const dateRange = normalizeCompactSpaces(req.query.dateRange || "all").toLowerCase();
+  const concern = normalizeCompactSpaces(req.query.concern || "");
+
+  const values = [];
+  const conditions = ["je.deleted_by_student_at is null"];
+
+  if (search) {
+    values.push(`%${search}%`);
+    const searchIndex = values.length;
+    conditions.push(
+      `(
+        coalesce(sp.full_name, '') ilike $${searchIndex}
+        or je.student_number ilike $${searchIndex}
+        or coalesce(sp.program, '') ilike $${searchIndex}
+        or coalesce(je.title, '') ilike $${searchIndex}
+        or coalesce(je.summary, '') ilike $${searchIndex}
+        or coalesce(je.primary_concern, '') ilike $${searchIndex}
+        or coalesce(je.admin_flag_reason, '') ilike $${searchIndex}
+      )`,
+    );
+  }
+
+  const flaggedCondition =
+    "(upper(coalesce(je.risk_level, 'NONE')) in ('LOW', 'MEDIUM', 'MODERATE', 'HIGH', 'CRITICAL') or upper(coalesce(je.support_response, '')) = 'DECLINED')";
+  if (entryScope === "flagged") {
+    conditions.push(flaggedCondition);
+  } else if (entryScope === "balanced") {
+    conditions.push(`not ${flaggedCondition}`);
+  }
+
+  if (dateRange === "today") {
+    conditions.push("je.entry_date = current_date");
+  } else if (dateRange === "7" || dateRange === "30") {
+    values.push(Number(dateRange));
+    const dateIndex = values.length;
+    conditions.push(`je.entry_date >= current_date - ($${dateIndex}::int - 1)`);
+  }
+
+  if (concern) {
+    values.push(concern);
+    const concernIndex = values.length;
+    conditions.push(
+      `(coalesce(je.primary_concern, '') = $${concernIndex} or exists (
+        select 1
+        from jsonb_array_elements_text(coalesce(je.concern_tags, '[]'::jsonb)) as tag(value)
+        where tag.value = $${concernIndex}
+      ))`,
+    );
+  }
+
+  const whereClause = `where ${conditions.join(" and ")}`;
+  const result = await query(
+    `
+      select
+        je.id,
+        je.student_number,
+        je.entry_date,
+        je.title,
+        je.summary,
+        je.insights,
+        je.risk_level,
+        je.admin_flag_reason,
+        je.primary_concern,
+        je.concern_tags,
+        je.support_response,
+        je.created_at,
+        je.updated_at,
+        coalesce(sp.full_name, '') as full_name,
+        coalesce(sp.program, '') as program
+      from public.journal_entries je
+      left join public.student_profiles sp on sp.student_number = je.student_number
+      ${whereClause}
+      order by je.entry_date desc, je.created_at desc
+      limit 50
+    `,
+    values,
+  );
+
+  const entries = result.rows.map((row) => ({
+    id: row.id,
+    studentNumber: row.student_number,
+    fullName: row.full_name || row.student_number,
+    program: normalizeDisplayLabel(row.program || "Unspecified"),
+    entryDate: normalizeDateValue(row.entry_date),
+    title: row.title || "",
+    summary: row.summary || "",
+    insights: normalizeStringArray(row.insights),
+    riskLevel: row.risk_level || "NONE",
+    adminFlagReason: row.admin_flag_reason || null,
+    primaryConcern: row.primary_concern || null,
+    concernTags: getJournalTagsForAdmin(row),
+    supportResponse: row.support_response || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+  const concerns = [...new Set(entries.flatMap((entry) => [entry.primaryConcern, ...entry.concernTags].filter(Boolean)))]
+    .sort((a, b) => a.localeCompare(b));
+
+  return res.json({ entries, concerns });
 });
 
 router.get("/students/:studentNumber", async (req, res) => {
@@ -2565,7 +2920,7 @@ router.get("/students/:studentNumber", async (req, res) => {
         }))
       : [];
     const supportResponse = String(row.support_response || "").toUpperCase();
-    const activeRiskReview = ["LOW", "HIGH", "CRITICAL"].includes(riskLevel);
+    const activeRiskReview = ["LOW", "MEDIUM", "MODERATE", "HIGH", "CRITICAL"].includes(riskLevel);
     const canViewConversation =
       activeRiskReview ||
       supportResponse === "DECLINED";
@@ -2595,7 +2950,7 @@ router.get("/students/:studentNumber", async (req, res) => {
   const flaggedEntryCount = entries.filter((entry) => {
     const riskLevel = String(entry.riskLevel || "").toUpperCase();
     const supportResponse = String(entry.supportResponse || "").toUpperCase();
-    return ["LOW", "HIGH", "CRITICAL"].includes(riskLevel) || supportResponse === "DECLINED";
+    return ["LOW", "MEDIUM", "MODERATE", "HIGH", "CRITICAL"].includes(riskLevel) || supportResponse === "DECLINED";
   }).length;
   return res.json({
     profile: {

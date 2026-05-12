@@ -1,22 +1,51 @@
 ﻿import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
-  AlertTriangle,
   BookOpen,
   Calendar,
+  ChevronDown,
   Clock3,
-  Mail,
+  Filter,
+  Lock,
   MapPin,
   MessageSquare,
   PenSquare,
   Search,
+  Send,
   ShieldAlert,
   Sparkles,
   UserCircle2,
+  X,
 } from "lucide-react";
 import Layout from "../components/Layout";
 import Modal from "../components/Modal";
-import { fetchAdminStudentProfile, fetchAdminStudents } from "../lib/admin-api";
+import {
+  fetchAdminStudentDirectoryEntries,
+  fetchAdminStudentProfile,
+  fetchAdminStudents,
+  sendAdminStudentNotification,
+} from "../lib/admin-api";
 import { getRiskBadgeClasses, getRiskLevelLabel } from "../lib/risk-labels";
+
+const STATUS_FILTERS = [
+  { label: "Status: All", value: "" },
+  { label: "Active", value: "active" },
+  { label: "Flagged", value: "flagged" },
+  { label: "Inactive", value: "inactive" },
+];
+
+const ENTRY_SCOPE_FILTERS = [
+  { label: "All Entries", value: "all" },
+  { label: "Flagged", value: "flagged" },
+  { label: "Balanced", value: "balanced" },
+];
+
+const ENTRY_DATE_FILTERS = [
+  { label: "Date", value: "all" },
+  { label: "Today", value: "today" },
+  { label: "Last 7 days", value: "7" },
+  { label: "Last 30 days", value: "30" },
+];
 
 function getInitials(name) {
   return String(name || "")
@@ -101,6 +130,48 @@ function canViewEntryConversation(entry) {
   return Boolean(entry?.canViewConversation);
 }
 
+function isDirectoryEntryFlagged(entry) {
+  const riskLevel = String(entry?.riskLevel || "NONE").toUpperCase();
+  const supportResponse = String(entry?.supportResponse || "").toUpperCase();
+  return ["LOW", "MEDIUM", "MODERATE", "HIGH", "CRITICAL"].includes(riskLevel) || supportResponse === "DECLINED";
+}
+
+function formatEntryTimestamp(value) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const now = new Date();
+  const sameDay =
+    parsed.getFullYear() === now.getFullYear() &&
+    parsed.getMonth() === now.getMonth() &&
+    parsed.getDate() === now.getDate();
+  const time = parsed.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  return sameDay ? `Today, ${time}` : parsed.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function getEntryPreview(entry) {
+  return entry?.summary || entry?.adminFlagReason || entry?.title || "No summary is available for this entry.";
+}
+
+function SelectShell({ value, onChange, options, className = "" }) {
+  return (
+    <label className={`relative block ${className}`}>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-11 w-full appearance-none rounded-xl border border-transparent bg-slate-50 px-4 pr-10 text-sm font-medium text-slate-700 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+    </label>
+  );
+}
+
 function ProfileStatCard({ label, tone = "slate", value }) {
   const toneClasses = {
     emerald: "border-emerald-100 bg-emerald-50/80 text-emerald-700",
@@ -126,7 +197,7 @@ function ProfileInfoTile({ label, value }) {
   );
 }
 
-function DirectoryRow({ student, onViewProfile }) {
+function DirectoryRow({ student, onMessage, onViewProfile }) {
   const isFlagged = student.status === "Flagged" || student.flaggedEntries > 0;
   const statusLabel = isFlagged ? "Flagged" : student.status;
   const avatarTone =
@@ -137,49 +208,35 @@ function DirectoryRow({ student, onViewProfile }) {
         : "bg-blue-100 text-blue-700";
 
   return (
-    <div className="rounded-[20px] border border-slate-200 bg-white px-4 py-3 shadow-sm transition hover:border-slate-300 hover:shadow-md">
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-lg font-semibold ${avatarTone}`}>
+    <div className="rounded-[20px] border border-slate-200 bg-white px-5 py-4 shadow-sm transition hover:border-slate-300 hover:shadow-md">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex min-w-0 flex-1 items-start gap-4">
+          <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-lg font-semibold ${avatarTone}`}>
             {getInitials(student.fullName)}
           </div>
 
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
-              <div className="min-w-0">
-                <h3 className="truncate text-base font-semibold leading-tight text-slate-900">{student.fullName}</h3>
-                <p className="mt-0.5 text-xs text-slate-500">{student.studentNumber}</p>
-              </div>
-
-              <div className="flex flex-wrap gap-2 xl:justify-end">
-                <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700">
-                  {student.program || "Unspecified"}
-                </span>
+          <div className="grid min-w-0 flex-1 gap-x-10 gap-y-3 text-sm text-slate-600 sm:grid-cols-2 lg:grid-cols-[minmax(16rem,1.35fr)_minmax(11rem,0.85fr)_minmax(8rem,0.6fr)_minmax(6rem,0.45fr)] lg:items-start">
+            <div className="min-w-0">
+              <h3 className="truncate text-base font-semibold leading-tight text-slate-950">{student.fullName}</h3>
+              <p className="mt-1 text-sm text-slate-500">{student.studentNumber}</p>
+              <div className="mt-2 flex flex-wrap gap-2">
                 <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium ${getStatusClasses(statusLabel)}`}>
                   {statusLabel}
                 </span>
-                {isFlagged ? (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-rose-100 bg-rose-50 px-2.5 py-1 text-[11px] font-medium text-rose-700">
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                    {student.flaggedEntries || 1} flagged {student.flaggedEntries === 1 ? "entry" : "entries"}
-                  </span>
-                ) : null}
               </div>
             </div>
 
-            <div className="mt-3 grid gap-x-5 gap-y-2 text-sm text-slate-600 sm:grid-cols-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.75fr)_minmax(0,0.65fr)]">
-              <div>
-                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Course</div>
-                <div className="mt-0.5 text-sm font-medium text-slate-800">{student.program || "Unspecified"}</div>
-              </div>
-              <div>
-                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Last Entry</div>
-                <div className="mt-0.5 text-sm font-medium text-slate-800">{formatRelativeTime(student.lastEntryAt)}</div>
-              </div>
-              <div>
-                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Entries</div>
-                <div className="mt-0.5 text-sm font-medium text-slate-800">{student.totalEntries} total</div>
-              </div>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Course</div>
+              <div className="mt-2 text-sm font-medium text-slate-800">{student.program || "Unspecified"}</div>
+            </div>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Last Entry</div>
+              <div className="mt-2 text-sm font-medium text-slate-800">{formatRelativeTime(student.lastEntryAt)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Entries</div>
+              <div className="mt-2 text-sm font-medium text-slate-800">{student.totalEntries} total</div>
             </div>
           </div>
         </div>
@@ -187,8 +244,8 @@ function DirectoryRow({ student, onViewProfile }) {
         <div className="flex shrink-0 gap-2 xl:pl-4">
           <button
             type="button"
-            disabled
-            className="min-w-[104px] rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-400"
+            onClick={() => onMessage(student)}
+            className="min-w-[104px] rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-500 transition hover:bg-white hover:text-slate-700"
           >
             Message
           </button>
@@ -199,6 +256,184 @@ function DirectoryRow({ student, onViewProfile }) {
           >
             View Profile
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MessageModal({ student, title, body, sending, onTitleChange, onBodyChange, onClose, onSend }) {
+  if (!student) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-xl overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#e7f1ed] text-sm font-bold text-[#0E5A3A]">
+              {getInitials(student.fullName)}
+            </div>
+            <div>
+              <h2 className="font-bold text-slate-900">Message {student.fullName?.split(" ")[0] || "Student"}</h2>
+              <div className="text-xs text-slate-500">{student.studentNumber} - {student.program || "Unspecified"}</div>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100" aria-label="Close message modal">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="space-y-4 px-5 py-4">
+          <label className="block text-xs font-semibold text-slate-500">
+            Title
+            <input
+              value={title}
+              onChange={(event) => onTitleChange(event.target.value)}
+              className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm focus:border-[#229365] focus:outline-none"
+            />
+          </label>
+          <label className="block text-xs font-semibold text-slate-500">
+            Message
+            <textarea
+              value={body}
+              onChange={(event) => onBodyChange(event.target.value)}
+              rows={6}
+              placeholder={`Write a message to ${student.fullName?.split(" ")[0] || "the student"}...`}
+              className="mt-1 w-full rounded-lg border border-slate-200 p-3 text-sm focus:border-[#229365] focus:outline-none"
+            />
+          </label>
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <Lock className="h-3.5 w-3.5" />
+            Encrypted and logged in the student's confidential record.
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 border-t border-slate-100 bg-slate-50 px-5 py-4">
+          <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-white">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onSend}
+            disabled={sending || !title.trim() || !body.trim()}
+            className="inline-flex items-center gap-2 rounded-lg bg-[#229365] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1b7b54] disabled:opacity-60"
+          >
+            <Send className="h-4 w-4" />
+            {sending ? "Sending..." : "Send message"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecentEntriesModal({
+  isOpen,
+  entries,
+  concerns,
+  loading,
+  error,
+  searchTerm,
+  entryScope,
+  dateRange,
+  concern,
+  onSearchChange,
+  onEntryScopeChange,
+  onDateRangeChange,
+  onConcernChange,
+  onClose,
+}) {
+  if (!isOpen) return null;
+
+  const concernOptions = [
+    { label: "Concern", value: "" },
+    ...concerns.map((item) => ({ label: item, value: item })),
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-5xl overflow-hidden rounded-[24px] bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-6 py-5">
+          <div className="flex min-w-0 flex-1 flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-wrap items-center gap-3">
+              <Filter className="h-5 w-5 text-slate-400" />
+              <SelectShell value={entryScope} onChange={onEntryScopeChange} options={ENTRY_SCOPE_FILTERS} className="w-40" />
+              <SelectShell value={dateRange} onChange={onDateRangeChange} options={ENTRY_DATE_FILTERS} className="w-36" />
+              <SelectShell value={concern} onChange={onConcernChange} options={concernOptions} className="w-44" />
+            </div>
+            <div className="relative w-full xl:w-80">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-300" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(event) => onSearchChange(event.target.value)}
+                placeholder="Search student or concern..."
+                className="h-12 w-full rounded-xl border border-transparent bg-slate-50 pl-11 pr-4 text-sm outline-none transition placeholder:text-slate-300 focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+              />
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100" aria-label="Close filters">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="max-h-[70vh] overflow-y-auto px-6 py-5">
+          <div className="mb-5 flex items-center justify-between gap-4">
+            <h2 className="text-lg font-semibold text-slate-900">Recent Entries</h2>
+            <div className="text-sm text-slate-500">Showing <span className="font-semibold text-slate-700">{entries.length}</span> entries</div>
+          </div>
+
+          {error ? <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
+          {loading ? <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-8 text-sm text-slate-500">Loading recent entries...</div> : null}
+
+          {!loading ? (
+            <div className="space-y-4">
+              {entries.length ? (
+                entries.map((entry) => {
+                  const flagged = isDirectoryEntryFlagged(entry);
+                  const tags = [entry.primaryConcern, ...(Array.isArray(entry.concernTags) ? entry.concernTags : [])]
+                    .filter(Boolean)
+                    .filter((item, index, list) => list.indexOf(item) === index);
+                  return (
+                    <div
+                      key={entry.id}
+                      className={`rounded-[16px] border px-5 py-5 ${
+                        flagged ? "border-emerald-100 bg-emerald-50" : "border-slate-200 bg-white"
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="font-semibold text-slate-900">{entry.fullName || "Unnamed Student"}</div>
+                          <div className="mt-2 flex flex-wrap gap-x-8 gap-y-1 text-sm text-slate-500">
+                            <span>{entry.program || "Unspecified"}</span>
+                            <span>{entry.studentNumber}</span>
+                          </div>
+                        </div>
+                        <div className="text-sm text-slate-400">{formatEntryTimestamp(entry.createdAt || entry.entryDate)}</div>
+                      </div>
+
+                      <div className={`mt-4 border-l-2 ${flagged ? "border-violet-300 bg-white/45" : "border-violet-200 bg-violet-50/50"} px-4 py-3`}>
+                        <div className="text-sm leading-6 text-slate-700">{getEntryPreview(entry)}</div>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {tags.length ? (
+                            tags.slice(0, 5).map((tag) => (
+                              <span key={`${entry.id}-${tag}`} className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-600">
+                                {tag}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-500">No concern tags</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                  No entries matched the current filters.
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
@@ -270,23 +505,40 @@ function EntryConversation({ entry, studentName }) {
 }
 
 export default function StudentDirectory({ onLogout, session }) {
+  const [searchParams] = useSearchParams();
   const [students, setStudents] = useState([]);
   const [programs, setPrograms] = useState([]);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState(() => searchParams.get("search") || "");
   const [selectedProgram, setSelectedProgram] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState("");
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
   const [selectedStudentNumber, setSelectedStudentNumber] = useState("");
   const [studentProfile, setStudentProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState("");
+  const [messageTarget, setMessageTarget] = useState(null);
+  const [messageTitle, setMessageTitle] = useState("Counselor Follow-up");
+  const [messageBody, setMessageBody] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const [isEntriesModalOpen, setIsEntriesModalOpen] = useState(false);
+  const [directoryEntries, setDirectoryEntries] = useState([]);
+  const [entryConcerns, setEntryConcerns] = useState([]);
+  const [entriesLoading, setEntriesLoading] = useState(false);
+  const [entriesError, setEntriesError] = useState("");
+  const [entrySearchTerm, setEntrySearchTerm] = useState("");
+  const [entryScope, setEntryScope] = useState("all");
+  const [entryDateRange, setEntryDateRange] = useState("all");
+  const [entryConcern, setEntryConcern] = useState("");
 
-  async function loadStudents(nextSearch = searchTerm, nextProgram = selectedProgram) {
+  async function loadStudents(nextSearch = searchTerm, nextProgram = selectedProgram, nextStatus = selectedStatus) {
     try {
       setLoading(true);
       const data = await fetchAdminStudents({
         search: nextSearch.trim(),
         program: nextProgram,
+        status: nextStatus,
       });
       setStudents(Array.isArray(data?.students) ? data.students : []);
       setPrograms(Array.isArray(data?.programs) ? data.programs : []);
@@ -303,12 +555,42 @@ export default function StudentDirectory({ onLogout, session }) {
   }, []);
 
   useEffect(() => {
+    const nextSearch = searchParams.get("search") || "";
+    setSearchTerm((current) => (current === nextSearch ? current : nextSearch));
+  }, [searchParams]);
+
+  useEffect(() => {
     const timeoutId = window.setTimeout(() => {
-      void loadStudents(searchTerm, selectedProgram);
+      void loadStudents(searchTerm, selectedProgram, selectedStatus);
     }, 250);
 
     return () => window.clearTimeout(timeoutId);
-  }, [searchTerm, selectedProgram]);
+  }, [searchTerm, selectedProgram, selectedStatus]);
+
+  useEffect(() => {
+    if (!isEntriesModalOpen) return undefined;
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        setEntriesLoading(true);
+        const data = await fetchAdminStudentDirectoryEntries({
+          search: entrySearchTerm.trim(),
+          entryScope,
+          dateRange: entryDateRange,
+          concern: entryConcern,
+        });
+        setDirectoryEntries(Array.isArray(data?.entries) ? data.entries : []);
+        setEntryConcerns(Array.isArray(data?.concerns) ? data.concerns : []);
+        setEntriesError("");
+      } catch (error) {
+        setEntriesError(error instanceof Error ? error.message : "Failed to load recent entries.");
+      } finally {
+        setEntriesLoading(false);
+      }
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [isEntriesModalOpen, entrySearchTerm, entryScope, entryDateRange, entryConcern]);
 
   async function handleViewProfile(studentNumber) {
     try {
@@ -321,6 +603,28 @@ export default function StudentDirectory({ onLogout, session }) {
       setProfileError(error instanceof Error ? error.message : "Failed to load student profile.");
     } finally {
       setProfileLoading(false);
+    }
+  }
+
+  async function handleSendMessage() {
+    if (!messageTarget?.studentNumber) return;
+    try {
+      setIsSending(true);
+      await sendAdminStudentNotification(messageTarget.studentNumber, {
+        title: messageTitle,
+        message: messageBody,
+        actorEmail: session?.email || "",
+        actorName: session?.name || "",
+        actorRole: "Counselor",
+      });
+      setSuccessMessage(`Message sent to ${messageTarget.fullName || messageTarget.studentNumber}.`);
+      setMessageTarget(null);
+      setMessageBody("");
+      setMessageTitle("Counselor Follow-up");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to send student notification.");
+    } finally {
+      setIsSending(false);
     }
   }
 
@@ -348,33 +652,47 @@ export default function StudentDirectory({ onLogout, session }) {
         {errorMessage ? (
           <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{errorMessage}</div>
         ) : null}
+        {successMessage ? (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{successMessage}</div>
+        ) : null}
 
-        <div className="flex flex-col items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:flex-row">
-          <div className="relative w-full lg:w-96">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <div className="flex flex-col items-center gap-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm lg:flex-row">
+          <div className="relative w-full lg:flex-1">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-300" />
             <input
               type="text"
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Search students by name, ID, or course..."
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              placeholder="Search by name, ID, or barangay..."
+              className="h-11 w-full rounded-xl border border-transparent bg-slate-50 pl-11 pr-4 text-sm outline-none transition placeholder:text-slate-300 focus:border-emerald-400 focus:bg-white focus:ring-2 focus:ring-emerald-100"
             />
           </div>
 
-          <div className="w-full lg:w-auto">
-            <select
-              value={selectedProgram}
-              onChange={(event) => setSelectedProgram(event.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 lg:min-w-[280px]"
-            >
-              <option value="">All Courses</option>
-              {programs.map((program) => (
-                <option key={program} value={program}>
-                  {program}
-                </option>
-              ))}
-            </select>
-          </div>
+          <SelectShell
+            value={selectedProgram}
+            onChange={setSelectedProgram}
+            options={[
+              { label: "Course: All", value: "" },
+              ...programs.map((program) => ({ label: program, value: program })),
+            ]}
+            className="w-full lg:w-56"
+          />
+
+          <SelectShell
+            value={selectedStatus}
+            onChange={setSelectedStatus}
+            options={STATUS_FILTERS}
+            className="w-full lg:w-44"
+          />
+
+          <button
+            type="button"
+            onClick={() => setIsEntriesModalOpen(true)}
+            className="flex h-11 w-full items-center justify-center rounded-xl bg-slate-50 text-slate-700 transition hover:bg-slate-100 lg:w-14"
+            aria-label="Open recent entry filters"
+          >
+            <Filter className="h-5 w-5" />
+          </button>
         </div>
 
         {loading ? <div className="rounded-2xl border border-slate-200 bg-white px-5 py-12 text-sm text-slate-500 shadow-sm">Loading students...</div> : null}
@@ -383,7 +701,16 @@ export default function StudentDirectory({ onLogout, session }) {
           <div className="space-y-4">
             {students.length ? (
               students.map((student) => (
-                <DirectoryRow key={student.studentNumber} student={student} onViewProfile={handleViewProfile} />
+                <DirectoryRow
+                  key={student.studentNumber}
+                  student={student}
+                  onMessage={(target) => {
+                    setMessageTarget(target);
+                    setMessageTitle("Counselor Follow-up");
+                    setMessageBody("");
+                  }}
+                  onViewProfile={handleViewProfile}
+                />
               ))
             ) : (
               <div className="rounded-2xl border border-slate-200 bg-white px-5 py-12 text-center text-sm text-slate-500 shadow-sm">
@@ -653,6 +980,34 @@ export default function StudentDirectory({ onLogout, session }) {
             </div>
           ) : null}
         </Modal>
+
+        <RecentEntriesModal
+          isOpen={isEntriesModalOpen}
+          entries={directoryEntries}
+          concerns={entryConcerns}
+          loading={entriesLoading}
+          error={entriesError}
+          searchTerm={entrySearchTerm}
+          entryScope={entryScope}
+          dateRange={entryDateRange}
+          concern={entryConcern}
+          onSearchChange={setEntrySearchTerm}
+          onEntryScopeChange={setEntryScope}
+          onDateRangeChange={setEntryDateRange}
+          onConcernChange={setEntryConcern}
+          onClose={() => setIsEntriesModalOpen(false)}
+        />
+
+        <MessageModal
+          student={messageTarget}
+          title={messageTitle}
+          body={messageBody}
+          sending={isSending}
+          onTitleChange={setMessageTitle}
+          onBodyChange={setMessageBody}
+          onClose={() => setMessageTarget(null)}
+          onSend={() => void handleSendMessage()}
+        />
       </div>
     </Layout>
   );

@@ -11,7 +11,6 @@ import {
   PhoneCall,
   User,
   Users,
-  ChevronRight,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import Card from "../components/Card";
@@ -23,8 +22,6 @@ import {
   fetchAdminRiskFlags,
   fetchAdminRoleAssignments,
 } from "../lib/admin-api";
-import { getRiskLevelLabel } from "../lib/risk-labels";
-import Modal from "../components/Modal";
 
 const SUMMARY_CARD_DEFS = [
   {
@@ -949,132 +946,6 @@ function toManilaIsoDate(value) {
   }).format(date);
 }
 
-function FlaggedEntriesModal({ entries, isOpen, onClose, onReviewAll }) {
-  const flaggedEntries = Array.isArray(entries) ? entries : [];
-  const crisisCount = flaggedEntries.filter((entry) => ["HIGH", "CRITICAL"].includes(String(entry.riskLevel || "").toUpperCase())).length;
-  const declinedCount = flaggedEntries.filter((entry) => entry.supportResponse === "DECLINED").length;
-  const contactedCount = flaggedEntries.filter((entry) => entry.supportResponse === "CONTACTED").length;
-
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="" maxWidth="max-w-4xl">
-      <div className="space-y-5">
-        <div className="flex items-start gap-4">
-          <div className="rounded-2xl bg-red-50 p-3 text-red-500">
-            <AlertTriangle className="h-6 w-6" />
-          </div>
-          <div className="flex-1">
-            <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-2xl font-bold text-slate-900">Flagged Entries</h2>
-              <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-red-600">
-                {crisisCount} Crisis / Critical Need
-              </span>
-              {declinedCount > 0 ? (
-                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-amber-700">
-                  {declinedCount} Declined contact
-                </span>
-              ) : null}
-              {contactedCount > 0 ? (
-                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-emerald-700">
-                  {contactedCount} Contacted
-                </span>
-              ) : null}
-            </div>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
-              Crisis-level journal entries and support responses captured from the student help prompt
-            </p>
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          {flaggedEntries.length ? (
-            flaggedEntries.map((entry) => {
-              const isHighRisk = ["HIGH", "CRITICAL"].includes(String(entry.riskLevel || "").toUpperCase());
-              const declinedSupport = entry.supportResponse === "DECLINED";
-              const contactedSupport = entry.supportResponse === "CONTACTED";
-              const concernLabel =
-                entry.adminFlagReason || entry.summary || getRiskLevelLabel(entry.riskLevel);
-
-              return (
-                <div key={entry.id} className="rounded-2xl border border-slate-100 bg-slate-50 px-5 py-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0 flex items-start gap-4">
-                      <span
-                        className={`mt-2 h-3 w-3 shrink-0 rounded-full ${
-                          isHighRisk
-                            ? "bg-red-500"
-                            : declinedSupport
-                              ? "bg-amber-500"
-                              : contactedSupport
-                                ? "bg-emerald-500"
-                                : "bg-slate-300"
-                        }`}
-                      />
-                      <div className="min-w-0">
-                        <div className="text-lg font-semibold leading-7 text-slate-900">
-                          {entry.fullName || entry.studentNumber}
-                        </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-400">
-                          <span className="truncate">{normalizeProgramLabel(entry.program) || "Program unavailable"}</span>
-                          <span className="text-slate-300">&bull;</span>
-                          <span>{entry.studentNumber}</span>
-                          {entry.entryDate ? (
-                            <>
-                              <span className="text-slate-300">&bull;</span>
-                              <span>{entry.entryDate}</span>
-                            </>
-                          ) : null}
-                        </div>
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                          <span
-                            className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] ${
-                              isHighRisk ? "bg-red-100 text-red-600" : "bg-slate-100 text-slate-600"
-                            }`}
-                          >
-                          {getRiskLevelLabel(entry.riskLevel)}
-                          </span>
-                          {declinedSupport ? (
-                            <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-amber-700">
-                              Declined contact
-                            </span>
-                          ) : null}
-                          {contactedSupport ? (
-                            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-emerald-700">
-                              Contacted support
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="mt-3 max-w-full rounded-2xl bg-slate-100 px-4 py-3 text-sm leading-6 text-slate-700">
-                          <span className="break-words">{concernLabel}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="shrink-0 text-right text-sm leading-6 text-slate-400">
-                      {formatRelativeTime(entry.supportResponseAt || entry.createdAt)}
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          ) : (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-              No flagged students found right now.
-            </div>
-          )}
-        </div>
-
-        <button
-          type="button"
-          onClick={onReviewAll}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#F44343] px-4 py-4 text-base font-semibold text-white transition hover:bg-[#e23939]"
-        >
-          Review All Flagged Entries
-          <ChevronRight className="h-5 w-5" />
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
 export default function Overview({ onLogout, session }) {
   const navigate = useNavigate();
   const [calendarTab, setCalendarTab] = useState("my");
@@ -1084,7 +955,6 @@ export default function Overview({ onLogout, session }) {
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [riskFlags, setRiskFlags] = useState([]);
   const [riskFlagsError, setRiskFlagsError] = useState("");
-  const [flaggedModalOpen, setFlaggedModalOpen] = useState(false);
   const [appointmentItems, setAppointmentItems] = useState([]);
   const [appointmentsError, setAppointmentsError] = useState("");
   const [roleMembers, setRoleMembers] = useState([]);
@@ -1361,7 +1231,7 @@ export default function Overview({ onLogout, session }) {
   ).length;
   const handleSummaryCardSelect = (cardTitle) => {
     if (cardTitle === "Flagged Entries") {
-      setFlaggedModalOpen(true);
+      navigate("/flagged");
       return;
     }
     if (cardTitle === "Scheduled Today") {
@@ -1677,16 +1547,6 @@ export default function Overview({ onLogout, session }) {
             </button>
           </Card>
         </div>
-
-        <FlaggedEntriesModal
-          isOpen={flaggedModalOpen}
-          onClose={() => setFlaggedModalOpen(false)}
-          entries={riskFlags}
-          onReviewAll={() => {
-            setFlaggedModalOpen(false);
-            navigate("/flagged");
-          }}
-        />
 
       </div>
     </Layout>

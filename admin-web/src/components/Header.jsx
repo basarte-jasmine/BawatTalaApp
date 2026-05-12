@@ -1,6 +1,20 @@
-import { Bell, CheckCheck, Menu, Search } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  BarChart3,
+  Bell,
+  CalendarDays,
+  CheckCheck,
+  Flag,
+  LayoutGrid,
+  Menu,
+  Search,
+  Settings,
+  ShieldCheck,
+  Users,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  fetchAdminGlobalSearch,
   fetchAdminNotifications,
   markAdminNotificationRead,
   markAllAdminNotificationsRead,
@@ -8,6 +22,25 @@ import {
 import Modal from "./Modal";
 
 const NOTIFICATION_REFRESH_MS = 60000;
+const EMPTY_GLOBAL_SEARCH_RESULTS = {
+  students: [],
+  entries: [],
+  appointments: [],
+  team: [],
+  riskTriggers: [],
+};
+
+const GLOBAL_SEARCH_PAGES = [
+  { path: "/dashboard", label: "Overview & Analytics", group: "Page", icon: LayoutGrid, keywords: ["dashboard", "overview", "analytics", "home", "summary"] },
+  { path: "/flagged", label: "Flagged Entries", group: "Page", icon: Flag, keywords: ["flagged", "risk", "critical", "support", "review"] },
+  { path: "/users", label: "Student Directory", group: "Page", icon: Users, keywords: ["students", "users", "directory", "profiles"] },
+  { path: "/appointments", label: "Guidance Scheduling", group: "Page", icon: CalendarDays, keywords: ["appointments", "calendar", "schedule", "guidance", "sessions"] },
+  { path: "/peer-counselors", label: "Peer Counselors", group: "Page", icon: Users, keywords: ["peer", "counselors", "advisers"] },
+  { path: "/reports", label: "Reports", group: "Page", icon: BarChart3, keywords: ["reports", "export", "analytics"] },
+  { path: "/roles", label: "Role Assignments", group: "System", icon: ShieldCheck, keywords: ["roles", "admins", "counselors", "permissions"] },
+  { path: "/risk-triggers", label: "Risk Triggers", group: "System", icon: Flag, keywords: ["triggers", "risk words", "keywords", "phrases"] },
+  { path: "/settings", label: "Settings", group: "System", icon: Settings, keywords: ["settings", "profile", "account", "preferences"] },
+];
 
 function getAdminProfile(session) {
   const email = String(session?.email || "").trim().toLowerCase();
@@ -112,6 +145,69 @@ function NotificationListItem({ item, onOpen }) {
   );
 }
 
+function formatSearchDate(value) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function getPageSearchResults(query) {
+  const normalized = String(query || "").trim().toLowerCase();
+  if (normalized.length < 2) return [];
+
+  return GLOBAL_SEARCH_PAGES.filter((item) => {
+    const haystack = [item.label, item.group, ...item.keywords].join(" ").toLowerCase();
+    return haystack.includes(normalized);
+  });
+}
+
+function GlobalSearchSection({ title, count, children }) {
+  return (
+    <section className="min-w-0">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{title}</div>
+        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">{count}</span>
+      </div>
+      <div className="space-y-2">{children}</div>
+    </section>
+  );
+}
+
+function GlobalSearchEmpty({ children }) {
+  return (
+    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-5 text-sm text-slate-500">
+      {children}
+    </div>
+  );
+}
+
+function GlobalSearchResultButton({ icon: Icon, title, meta, detail, badge, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex w-full gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-emerald-200 hover:bg-emerald-50/40"
+    >
+      {Icon ? (
+        <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500 group-hover:bg-emerald-100 group-hover:text-emerald-700">
+          <Icon className="h-4 w-4" />
+        </span>
+      ) : null}
+      <span className="min-w-0 flex-1">
+        <span className="flex items-start justify-between gap-3">
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-semibold text-slate-900">{title}</span>
+            {meta ? <span className="mt-1 block truncate text-xs text-slate-500">{meta}</span> : null}
+          </span>
+          {badge ? <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">{badge}</span> : null}
+        </span>
+        {detail ? <span className="mt-2 line-clamp-2 block text-sm leading-5 text-slate-600">{detail}</span> : null}
+      </span>
+    </button>
+  );
+}
+
 function useAdminNotifications(adminEmail) {
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notifications, setNotifications] = useState([]);
@@ -165,7 +261,12 @@ export default function Header({
   onMenuToggle,
   session,
 }) {
+  const navigate = useNavigate();
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+  const [globalSearchTerm, setGlobalSearchTerm] = useState("");
+  const [globalSearchResults, setGlobalSearchResults] = useState(EMPTY_GLOBAL_SEARCH_RESULTS);
+  const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
+  const [globalSearchError, setGlobalSearchError] = useState("");
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const notificationPanelRef = useRef(null);
   const adminProfile = getAdminProfile(session);
@@ -174,6 +275,17 @@ export default function Header({
   const unreadCount = useMemo(
     () => notifications.filter((item) => !item.isRead).length,
     [notifications],
+  );
+  const pageSearchResults = useMemo(() => getPageSearchResults(globalSearchTerm), [globalSearchTerm]);
+  const globalSearchResultCount = useMemo(
+    () =>
+      pageSearchResults.length +
+      globalSearchResults.students.length +
+      globalSearchResults.entries.length +
+      globalSearchResults.appointments.length +
+      globalSearchResults.team.length +
+      globalSearchResults.riskTriggers.length,
+    [globalSearchResults, pageSearchResults],
   );
 
   useEffect(() => {
@@ -191,6 +303,49 @@ export default function Header({
       document.removeEventListener("mousedown", handleOutsideClick);
     };
   }, [isNotificationsOpen]);
+
+  useEffect(() => {
+    if (!isSearchModalOpen) return undefined;
+    const query = globalSearchTerm.trim();
+    if (query.length < 2) {
+      setGlobalSearchResults(EMPTY_GLOBAL_SEARCH_RESULTS);
+      setGlobalSearchError("");
+      setGlobalSearchLoading(false);
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        setGlobalSearchLoading(true);
+        const data = await fetchAdminGlobalSearch(query);
+        setGlobalSearchResults({
+          students: Array.isArray(data?.students) ? data.students : [],
+          entries: Array.isArray(data?.entries) ? data.entries : [],
+          appointments: Array.isArray(data?.appointments) ? data.appointments : [],
+          team: Array.isArray(data?.team) ? data.team : [],
+          riskTriggers: Array.isArray(data?.riskTriggers) ? data.riskTriggers : [],
+        });
+        setGlobalSearchError("");
+      } catch (error) {
+        setGlobalSearchError(error instanceof Error ? error.message : "Search failed.");
+      } finally {
+        setGlobalSearchLoading(false);
+      }
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [globalSearchTerm, isSearchModalOpen]);
+
+  function openDirectorySearch(searchValue) {
+    const query = String(searchValue || "").trim();
+    setIsSearchModalOpen(false);
+    navigate(query ? `/users?search=${encodeURIComponent(query)}` : "/users");
+  }
+
+  function openSearchPath(path) {
+    setIsSearchModalOpen(false);
+    navigate(path);
+  }
 
   async function handleOpenNotification(item) {
     if (!item?.id || item.isRead || !adminEmail) {
@@ -314,20 +469,157 @@ export default function Header({
         </div>
       </header>
 
-      <Modal isOpen={isSearchModalOpen} onClose={() => setIsSearchModalOpen(false)} title="Global Search">
-        <div className="space-y-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              autoFocus
-              placeholder="Type to search anything..."
-              className="w-full rounded-xl border border-gray-300 bg-white py-3 pl-10 pr-4 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            />
+      <Modal isOpen={isSearchModalOpen} onClose={() => setIsSearchModalOpen(false)} title="Global Search" maxWidth="max-w-6xl">
+        <div className="space-y-5">
+          <div className="sticky top-0 z-10 -mx-6 -mt-6 border-b border-slate-100 bg-white px-6 pb-4 pt-6">
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                autoFocus
+                value={globalSearchTerm}
+                onChange={(event) => setGlobalSearchTerm(event.target.value)}
+                placeholder="Search pages, students, journal entries, appointments, team members, and risk triggers..."
+                className="h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-12 pr-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-100"
+              />
+            </div>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500">
+              <span>Global search scans admin pages and live records across the admin panel.</span>
+              {globalSearchTerm.trim().length >= 2 ? (
+                <span className="rounded-full bg-emerald-50 px-3 py-1 font-semibold text-emerald-700">
+                  {globalSearchLoading ? "Searching..." : `${globalSearchResultCount} result${globalSearchResultCount === 1 ? "" : "s"}`}
+                </span>
+              ) : null}
+            </div>
           </div>
-          <div className="py-8 text-center text-sm text-gray-500">
-            Start typing to see students, recent entries, and appointments.
-          </div>
+
+          {globalSearchError ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{globalSearchError}</div> : null}
+
+          {globalSearchTerm.trim().length < 2 ? (
+            <div className="grid gap-4 py-4 md:grid-cols-3">
+              <GlobalSearchEmpty>Search navigation, student profiles, journal summaries, appointment records, counselor accounts, and risk trigger words.</GlobalSearchEmpty>
+              <GlobalSearchEmpty>Try names, student numbers, course names, concerns, appointment status, counselor names, or system page names.</GlobalSearchEmpty>
+              <GlobalSearchEmpty>Results open the matching admin area so you can continue the workflow.</GlobalSearchEmpty>
+            </div>
+          ) : globalSearchLoading ? (
+            <div className="grid gap-4 py-4 md:grid-cols-3">
+              <GlobalSearchEmpty>Searching admin pages...</GlobalSearchEmpty>
+              <GlobalSearchEmpty>Searching student and journal records...</GlobalSearchEmpty>
+              <GlobalSearchEmpty>Searching appointments, team, and risk triggers...</GlobalSearchEmpty>
+            </div>
+          ) : (
+            <div className="grid gap-5 xl:grid-cols-[0.9fr,1.1fr]">
+              <div className="space-y-5">
+                <GlobalSearchSection title="Pages & Tools" count={pageSearchResults.length}>
+                  {pageSearchResults.length ? (
+                    pageSearchResults.map((item) => (
+                      <GlobalSearchResultButton
+                        key={item.path}
+                        icon={item.icon}
+                        title={item.label}
+                        meta={item.group}
+                        detail={`Open ${item.label}`}
+                        onClick={() => openSearchPath(item.path)}
+                      />
+                    ))
+                  ) : (
+                    <GlobalSearchEmpty>No pages matched.</GlobalSearchEmpty>
+                  )}
+                </GlobalSearchSection>
+
+                <GlobalSearchSection title="Students" count={globalSearchResults.students.length}>
+                  {globalSearchResults.students.length ? (
+                    globalSearchResults.students.map((student) => (
+                      <GlobalSearchResultButton
+                        key={student.studentNumber}
+                        icon={Users}
+                        title={student.fullName}
+                        meta={`${student.studentNumber} - ${student.program || "Unspecified"}`}
+                        detail={[student.email, student.barangay, student.city].filter(Boolean).join(" - ")}
+                        badge={student.status}
+                        onClick={() => openDirectorySearch(student.studentNumber)}
+                      />
+                    ))
+                  ) : (
+                    <GlobalSearchEmpty>No students matched.</GlobalSearchEmpty>
+                  )}
+                </GlobalSearchSection>
+
+                <GlobalSearchSection title="Team" count={globalSearchResults.team.length}>
+                  {globalSearchResults.team.length ? (
+                    globalSearchResults.team.map((member) => (
+                      <GlobalSearchResultButton
+                        key={`${member.kind}-${member.id}`}
+                        icon={ShieldCheck}
+                        title={member.fullName}
+                        meta={`${member.kind} - ${member.role}`}
+                        detail={[member.email, member.studentNumber, member.program].filter(Boolean).join(" - ")}
+                        badge={member.status}
+                        onClick={() => openSearchPath(member.kind === "Peer Counselor" ? "/peer-counselors" : "/roles")}
+                      />
+                    ))
+                  ) : (
+                    <GlobalSearchEmpty>No team members matched.</GlobalSearchEmpty>
+                  )}
+                </GlobalSearchSection>
+              </div>
+
+              <div className="space-y-5">
+                <GlobalSearchSection title="Journal Entries" count={globalSearchResults.entries.length}>
+                  {globalSearchResults.entries.length ? (
+                    globalSearchResults.entries.map((entry) => (
+                      <GlobalSearchResultButton
+                        key={entry.id}
+                        icon={Flag}
+                        title={entry.title || entry.primaryConcern || "Journal entry"}
+                        meta={`${entry.fullName || entry.studentNumber} - ${formatSearchDate(entry.entryDate)}`}
+                        detail={entry.summary || entry.primaryConcern || "Open this student's directory record."}
+                        badge={entry.riskLevel && entry.riskLevel !== "NONE" ? entry.riskLevel : undefined}
+                        onClick={() => openDirectorySearch(entry.studentNumber)}
+                      />
+                    ))
+                  ) : (
+                    <GlobalSearchEmpty>No journal entries matched.</GlobalSearchEmpty>
+                  )}
+                </GlobalSearchSection>
+
+                <GlobalSearchSection title="Appointments" count={globalSearchResults.appointments.length}>
+                  {globalSearchResults.appointments.length ? (
+                    globalSearchResults.appointments.map((appointment) => (
+                      <GlobalSearchResultButton
+                        key={appointment.id}
+                        icon={CalendarDays}
+                        title={`${appointment.studentName} - ${appointment.concern || "Appointment"}`}
+                        meta={`${formatSearchDate(appointment.appointmentDate)} ${appointment.slotTime || ""} - ${appointment.supportType || "GUIDANCE"}`}
+                        detail={[appointment.program, appointment.counselorName, appointment.studentNote].filter(Boolean).join(" - ")}
+                        badge={appointment.status}
+                        onClick={() => openSearchPath("/appointments")}
+                      />
+                    ))
+                  ) : (
+                    <GlobalSearchEmpty>No appointments matched.</GlobalSearchEmpty>
+                  )}
+                </GlobalSearchSection>
+
+                <GlobalSearchSection title="Risk Triggers" count={globalSearchResults.riskTriggers.length}>
+                  {globalSearchResults.riskTriggers.length ? (
+                    globalSearchResults.riskTriggers.map((trigger) => (
+                      <GlobalSearchResultButton
+                        key={trigger.id}
+                        icon={Flag}
+                        title={trigger.phrase}
+                        meta={trigger.riskLabel || trigger.riskLevel}
+                        badge={trigger.isEnabled ? "Enabled" : "Disabled"}
+                        onClick={() => openSearchPath("/risk-triggers")}
+                      />
+                    ))
+                  ) : (
+                    <GlobalSearchEmpty>No risk triggers matched.</GlobalSearchEmpty>
+                  )}
+                </GlobalSearchSection>
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
     </>

@@ -119,8 +119,29 @@ export async function fetchAdminStudents(params = {}) {
   if (params.program) {
     searchParams.set("program", params.program);
   }
+  if (params.status) {
+    searchParams.set("status", params.status);
+  }
   const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
   return request(`/api/admin/students${suffix}`);
+}
+
+export async function fetchAdminStudentDirectoryEntries(params = {}) {
+  const searchParams = new URLSearchParams();
+  if (params.search) {
+    searchParams.set("search", params.search);
+  }
+  if (params.entryScope) {
+    searchParams.set("entryScope", params.entryScope);
+  }
+  if (params.dateRange) {
+    searchParams.set("dateRange", params.dateRange);
+  }
+  if (params.concern) {
+    searchParams.set("concern", params.concern);
+  }
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+  return request(`/api/admin/students/recent-entries${suffix}`);
 }
 
 export async function fetchAdminStudentProfile(studentNumber) {
@@ -132,6 +153,15 @@ export async function sendAdminStudentNotification(studentNumber, payload) {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function fetchAdminGlobalSearch(query) {
+  const searchParams = new URLSearchParams();
+  if (query) {
+    searchParams.set("q", query);
+  }
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+  return request(`/api/admin/search${suffix}`);
 }
 
 export async function fetchAdminRoleAssignments() {
