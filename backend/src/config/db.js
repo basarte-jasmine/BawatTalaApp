@@ -315,6 +315,24 @@ async function ensureDatabaseSchema() {
   `);
 
   await pool.query(`
+    create table if not exists public.student_app_preferences (
+      id uuid primary key default gen_random_uuid(),
+      student_number text not null unique,
+      settings jsonb not null default '{}'::jsonb,
+      journal_lock_enabled boolean not null default false,
+      journal_lock_pin_hash text,
+      journal_lock_auto_lock boolean not null default true,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+  `);
+
+  await pool.query(`
+    create index if not exists student_app_preferences_student_number_idx
+      on public.student_app_preferences (student_number);
+  `);
+
+  await pool.query(`
     create table if not exists public.student_moods (
       id uuid primary key default gen_random_uuid(),
       student_number text not null,

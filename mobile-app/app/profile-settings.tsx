@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  Modal,
   Pressable,
   ScrollView,
   Share,
@@ -77,6 +78,7 @@ const SCREEN_COPY: Record<SettingsSection, { subtitle: string; title: string }> 
 
 const FEEDBACK_CATEGORIES = ["Bug", "Suggestion", "Question", "Support"] as const;
 const SUPPORT_EMAIL = "team@bawattalapro.online";
+const STUDENT_ID_PATTERN = /^\d{2}-\d{4}$/;
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 function isSection(value: string | undefined): value is SettingsSection {
@@ -119,7 +121,7 @@ function parseIsoDate(value?: string | null) {
 }
 
 export default function ProfileSettingsScreen() {
-  const { section } = useLocalSearchParams<{ section?: string }>();
+  const { resetPin, section } = useLocalSearchParams<{ resetPin?: string; section?: string }>();
   const activeSection: SettingsSection = isSection(section) ? section : "personal-details";
   const { title, subtitle } = SCREEN_COPY[activeSection];
   const { user } = useAuthSession();
@@ -128,9 +130,11 @@ export default function ProfileSettingsScreen() {
     appLockEnabled,
     disableAppLock,
     enableAppLock,
-    lockAppNow,
+    enableExistingAppLock,
+    hasAppLockPin,
     notificationPreviewsEnabled,
     privateJournalModeEnabled,
+    resetAppLockWithStudentId,
     setAppLockAutoLock,
     setNotificationPreviewsEnabled,
     setPrivateJournalModeEnabled,
@@ -146,9 +150,14 @@ export default function ProfileSettingsScreen() {
   const [appointment, setAppointment] = useState<CounselorAppointment | null>(null);
   const [feedbackCategory, setFeedbackCategory] = useState<(typeof FEEDBACK_CATEGORIES)[number]>("Suggestion");
   const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [currentPin, setCurrentPin] = useState("");
   const [pin, setPin] = useState("");
   const [pinConfirm, setPinConfirm] = useState("");
   const [pinError, setPinError] = useState("");
+  const [pinSaving, setPinSaving] = useState(false);
+  const [pinResetStudentId, setPinResetStudentId] = useState("");
+  const [pinResetSaving, setPinResetSaving] = useState(false);
+  const [showPinReset, setShowPinReset] = useState(false);
   const [showPinEditor, setShowPinEditor] = useState(false);
   const [draftAutoLock, setDraftAutoLock] = useState(appLockAutoLock);
   const todayParts = useMemo(() => getManilaTodayParts(), []);
@@ -158,6 +167,17 @@ export default function ProfileSettingsScreen() {
   useEffect(() => {
     setDraftAutoLock(appLockAutoLock);
   }, [appLockAutoLock]);
+
+  useEffect(() => {
+    if (activeSection === "app-lock" && resetPin === "1" && hasAppLockPin) {
+      setShowPinReset(true);
+      setShowPinEditor(false);
+      setCurrentPin("");
+      setPin("");
+      setPinConfirm("");
+      setPinError("");
+    }
+  }, [activeSection, hasAppLockPin, resetPin]);
 
   useEffect(() => {
     if (activeSection !== "personal-details" || !user?.studentNumber) return;
@@ -313,7 +333,45 @@ export default function ProfileSettingsScreen() {
     Alert.alert("Feedback Ready", "Your mail app is open. Send it there and we'll take it from there.");
   };
 
-  const handleSavePin = () => {
+  const openPinEditor = () => {
+    setShowPinEditor(true);
+    setShowPinReset(false);
+    setCurrentPin("");
+    setPin("");
+    setPinConfirm("");
+    setPinError("");
+  };
+
+  const closePinEditor = () => {
+    setShowPinEditor(false);
+    setCurrentPin("");
+    setPin("");
+    setPinConfirm("");
+    setPinError("");
+  };
+
+  const openPinReset = () => {
+    setShowPinReset(true);
+    setShowPinEditor(false);
+    setPinResetStudentId("");
+    setPinError("");
+  };
+
+  const closePinReset = () => {
+    setShowPinReset(false);
+    setPinResetStudentId("");
+    setPinError("");
+  };
+
+  const handleSavePin = async () => {
+    if (!user?.studentNumber) {
+      setPinError("Student session is missing.");
+      return;
+    }
+    if (appLockEnabled && currentPin.length !== 4) {
+      setPinError("Enter your current PIN first.");
+      return;
+    }
     if (pin.length !== 4) {
       setPinError("Use exactly 4 digits for the PIN.");
       return;
@@ -322,17 +380,60 @@ export default function ProfileSettingsScreen() {
       setPinError("PIN entries do not match yet.");
       return;
     }
-    if (appLockEnabled) {
-      updateAppLockPin(pin);
-      setAppLockAutoLock(draftAutoLock);
-    } else {
-      enableAppLock(pin, draftAutoLock);
+    setPinSaving(true);
+    const result = appLockEnabled
+      ? await updateAppLockPin(currentPin, pin)
+      : await enableAppLock(pin, draftAutoLock);
+    setPinSaving(false);
+
+    if (!result.ok) {
+      setPinError(result.message || "Unable to save Journal Lock.");
+      return;
     }
+
+    if (appLockEnabled) {
+      setAppLockAutoLock(draftAutoLock);
+    }
+    closePinEditor();
+    Alert.alert("Journal Lock Updated", "Your journal is now protected and will lock right away.");
+  };
+
+  const handleTurnOnExistingLock = async () => {
+    setPinError("");
+    setPinSaving(true);
+    const result = await enableExistingAppLock(draftAutoLock);
+    setPinSaving(false);
+
+    if (!result.ok) {
+      setPinError(result.message || "Unable to turn Journal Lock on.");
+      return;
+    }
+
+    Alert.alert("Journal Lock On", "Your existing PIN is active again.");
+  };
+
+  const handleResetJournalLockPin = async () => {
+    if (!STUDENT_ID_PATTERN.test(pinResetStudentId.trim())) {
+      setPinError("Enter Student ID in 23-2903 format.");
+      return;
+    }
+
+    setPinError("");
+    setPinResetSaving(true);
+    const result = await resetAppLockWithStudentId(pinResetStudentId);
+    setPinResetSaving(false);
+
+    if (!result.ok) {
+      setPinError(result.message || "Student ID does not match this account.");
+      return;
+    }
+
+    setCurrentPin("");
     setPin("");
     setPinConfirm("");
-    setPinError("");
     setShowPinEditor(false);
-    Alert.alert("Journal Lock Updated", "Your journal is now protected and will lock right away.");
+    closePinReset();
+    Alert.alert("Journal Lock Reset", "Your old PIN was removed. Create a new PIN when you're ready.");
   };
 
   const infoRows = [
@@ -519,11 +620,19 @@ export default function ProfileSettingsScreen() {
               />
             </Card>
             <TipCard
-              title={appLockEnabled ? "Journal Lock is on" : "Journal Lock is off"}
+              title={
+                appLockEnabled
+                  ? "Journal Lock is on"
+                  : hasAppLockPin
+                    ? "Journal Lock is off"
+                    : "Journal Lock is off"
+              }
               body={
                 appLockEnabled
                   ? "Your journal can stay protected with a 4-digit PIN whenever you leave the app or lock it manually."
-                  : "Turn it on if you want your journal kept behind a PIN without locking the rest of the app."
+                  : hasAppLockPin
+                    ? "Your saved PIN is still kept. Turn Journal Lock on again to use the same PIN."
+                    : "Turn it on if you want your journal kept behind a PIN without locking the rest of the app."
               }
             />
             <PrimaryButton label="Manage Journal Lock" onPress={() => router.push("/profile-settings?section=app-lock")} />
@@ -672,12 +781,18 @@ export default function ProfileSettingsScreen() {
               </View>
               <View style={styles.journalLockHeroCopy}>
                 <Text style={styles.journalLockHeroTitle}>
-                  {appLockEnabled ? "Your journal is protected" : "Keep your journal private"}
+                  {appLockEnabled
+                    ? "Your journal is protected"
+                    : hasAppLockPin
+                      ? "Journal Lock is paused"
+                      : "Keep your journal private"}
                 </Text>
                 <Text style={styles.journalLockHeroBody}>
                   {appLockEnabled
                     ? "Only the journal side of Bawat Tala will ask for your PIN. Everything else stays easy to reach."
-                    : "Add a 4-digit PIN so journal entries, archive pages, and writing screens stay private when you need them to."}
+                    : hasAppLockPin
+                      ? "Your PIN is still saved. Turning Journal Lock on again will use the same PIN."
+                      : "Add a 4-digit PIN so journal entries, archive pages, and writing screens stay private when you need them to."}
                 </Text>
               </View>
             </View>
@@ -689,74 +804,34 @@ export default function ProfileSettingsScreen() {
                 onValueChange={setDraftAutoLock}
               />
             </Card>
-            {!appLockEnabled || showPinEditor ? (
-              <Card title={appLockEnabled ? "Change Journal PIN" : "Create Journal PIN"}>
-                <Text style={styles.journalPinHint}>
-                  Use the same 4 digits both times. As soon as you save it, the journal will lock until you enter that PIN.
-                </Text>
-                <TextInput
-                  value={pin}
-                  onChangeText={(value) => {
-                    setPin(value.replace(/[^0-9]/g, "").slice(0, 4));
-                    if (pinError) setPinError("");
-                  }}
-                  keyboardType="number-pad"
-                  secureTextEntry
-                  maxLength={4}
-                  placeholder="Enter 4-digit PIN"
-                  placeholderTextColor="#97A1AA"
-                  style={styles.textInput}
-                />
-                <TextInput
-                  value={pinConfirm}
-                  onChangeText={(value) => {
-                    setPinConfirm(value.replace(/[^0-9]/g, "").slice(0, 4));
-                    if (pinError) setPinError("");
-                  }}
-                  keyboardType="number-pad"
-                  secureTextEntry
-                  maxLength={4}
-                  placeholder="Confirm PIN"
-                  placeholderTextColor="#97A1AA"
-                  style={[styles.textInput, styles.inputGap]}
-                />
+            {!appLockEnabled && !hasAppLockPin ? (
+              <PrimaryButton label="Create Journal PIN" onPress={openPinEditor} />
+            ) : null}
+            {!appLockEnabled && hasAppLockPin ? (
+              <>
                 {!!pinError && <Text style={styles.errorText}>{pinError}</Text>}
-                <View style={styles.pinEditorActionWrap}>
-                  <PrimaryButton label={appLockEnabled ? "Save New PIN" : "Enable Journal Lock"} onPress={handleSavePin} />
-                </View>
-              </Card>
+                <PrimaryButton
+                  label={pinSaving ? "Turning On..." : "Turn On Journal Lock"}
+                  onPress={() => void handleTurnOnExistingLock()}
+                />
+                <SecondaryButton label="Forgot PIN?" onPress={openPinReset} />
+              </>
             ) : null}
             {appLockEnabled ? (
               <>
-                <Card title="Quick Actions">
-                  <Text style={styles.helperText}>
-                    Lock the journal right now, or update your PIN any time.
-                  </Text>
-                </Card>
-                <PrimaryButton
-                  label="Lock Journal Now"
-                  onPress={() => {
-                    setAppLockAutoLock(draftAutoLock);
-                    lockAppNow();
-                  }}
-                />
-                <SecondaryButton
-                  label="Change PIN"
-                  onPress={() => {
-                    setShowPinEditor(true);
-                    setPin("");
-                    setPinConfirm("");
-                    setPinError("");
-                  }}
-                />
+                <SecondaryButton label="Change PIN" onPress={openPinEditor} />
+                <SecondaryButton label="Forgot PIN?" onPress={openPinReset} />
                 <Pressable
                   style={styles.dangerButton}
                   onPress={() => {
-                    disableAppLock();
+                    void disableAppLock();
+                    setCurrentPin("");
                     setPin("");
                     setPinConfirm("");
+                    setPinResetStudentId("");
                     setPinError("");
                     setShowPinEditor(false);
+                    setShowPinReset(false);
                   }}
                 >
                   <Text style={styles.dangerText}>Turn Off Journal Lock</Text>
@@ -780,6 +855,122 @@ export default function ProfileSettingsScreen() {
           <Text style={styles.shareFooterText}>Refer a friend from here too</Text>
         </Pressable>
       </ScrollView>
+
+      <Modal
+        animationType="fade"
+        onRequestClose={closePinEditor}
+        transparent
+        visible={activeSection === "app-lock" && showPinEditor}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>{appLockEnabled ? "Change Journal PIN" : "Create Journal PIN"}</Text>
+            <Text style={styles.modalBody}>
+              {appLockEnabled
+                ? "Enter your current PIN first, then use the same new 4 digits both times."
+                : "Use the same 4 digits both times. Your journal will lock as soon as you save it."}
+            </Text>
+            {appLockEnabled ? (
+              <TextInput
+                value={currentPin}
+                onChangeText={(value) => {
+                  setCurrentPin(value.replace(/[^0-9]/g, "").slice(0, 4));
+                  if (pinError) setPinError("");
+                }}
+                keyboardType="number-pad"
+                secureTextEntry
+                maxLength={4}
+                placeholder="Current PIN"
+                placeholderTextColor="#97A1AA"
+                style={styles.textInput}
+              />
+            ) : null}
+            <TextInput
+              value={pin}
+              onChangeText={(value) => {
+                setPin(value.replace(/[^0-9]/g, "").slice(0, 4));
+                if (pinError) setPinError("");
+              }}
+              keyboardType="number-pad"
+              secureTextEntry
+              maxLength={4}
+              placeholder={appLockEnabled ? "New 4-digit PIN" : "Enter 4-digit PIN"}
+              placeholderTextColor="#97A1AA"
+              style={[styles.textInput, appLockEnabled && styles.inputGap]}
+            />
+            <TextInput
+              value={pinConfirm}
+              onChangeText={(value) => {
+                setPinConfirm(value.replace(/[^0-9]/g, "").slice(0, 4));
+                if (pinError) setPinError("");
+              }}
+              keyboardType="number-pad"
+              secureTextEntry
+              maxLength={4}
+              placeholder="Confirm PIN"
+              placeholderTextColor="#97A1AA"
+              style={[styles.textInput, styles.inputGap]}
+            />
+            {!!pinError && <Text style={styles.errorText}>{pinError}</Text>}
+            <View style={styles.modalActions}>
+              <Pressable style={styles.modalCancelButton} onPress={closePinEditor}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalPrimaryButton, pinSaving && styles.modalButtonDisabled]}
+                onPress={() => void handleSavePin()}
+                disabled={pinSaving}
+              >
+                <Text style={styles.modalPrimaryText}>
+                  {pinSaving ? "Saving..." : appLockEnabled ? "Save PIN" : "Create PIN"}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="fade"
+        onRequestClose={closePinReset}
+        transparent
+        visible={activeSection === "app-lock" && showPinReset}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Reset Forgotten PIN</Text>
+            <Text style={styles.modalBody}>
+              Enter your dashed Student ID to remove the old Journal Lock PIN. This turns Journal Lock off until you create a new PIN.
+            </Text>
+            <TextInput
+              value={pinResetStudentId}
+              onChangeText={(value) => {
+                setPinResetStudentId(value.replace(/[^0-9-]/g, "").slice(0, 7));
+                if (pinError) setPinError("");
+              }}
+              autoCapitalize="none"
+              keyboardType="numbers-and-punctuation"
+              maxLength={7}
+              placeholder="23-2903"
+              placeholderTextColor="#97A1AA"
+              style={styles.textInput}
+            />
+            {!!pinError && <Text style={styles.errorText}>{pinError}</Text>}
+            <View style={styles.modalActions}>
+              <Pressable style={styles.modalCancelButton} onPress={closePinReset}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalPrimaryButton, pinResetSaving && styles.modalButtonDisabled]}
+                onPress={() => void handleResetJournalLockPin()}
+                disabled={pinResetSaving}
+              >
+                <Text style={styles.modalPrimaryText}>{pinResetSaving ? "Resetting..." : "Reset PIN"}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1302,6 +1493,80 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     color: "#2D4053",
+  },
+  modalBackdrop: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(33, 43, 52, 0.42)",
+    paddingHorizontal: 18,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 430,
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E1E8EF",
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 16,
+    shadowColor: "#26323C",
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 7,
+  },
+  modalTitle: {
+    color: "#304558",
+    fontSize: 19,
+    lineHeight: 25,
+    fontWeight: "800",
+    marginBottom: 6,
+  },
+  modalBody: {
+    color: "#5A6B7A",
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 14,
+  },
+  modalActions: {
+    flexDirection: "row",
+    columnGap: 10,
+    marginTop: 14,
+  },
+  modalCancelButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#DDE4EB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalCancelText: {
+    color: "#3D5569",
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "800",
+  },
+  modalPrimaryButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 999,
+    backgroundColor: "#79C943",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalButtonDisabled: {
+    opacity: 0.65,
+  },
+  modalPrimaryText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "800",
   },
   textInput: {
     minHeight: 46,

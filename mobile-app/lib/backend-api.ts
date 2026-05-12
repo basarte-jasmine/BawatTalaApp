@@ -20,6 +20,14 @@ export type StudentProfile = {
   studentNumber: string;
 };
 
+export type StudentPreferences = {
+  hasJournalLockPin: boolean;
+  journalLockAutoLock: boolean;
+  journalLockEnabled: boolean;
+  notificationPreviewsEnabled: boolean;
+  privateJournalModeEnabled: boolean;
+};
+
 export type JournalMessage = {
   createdAt: string;
   id: string;
@@ -228,6 +236,17 @@ async function post(path: string, payload: Record<string, unknown>) {
   return { response, data };
 }
 
+async function patch(path: string, payload: Record<string, unknown>) {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  return { response, data };
+}
+
 function buildLibraryBookFileUrl(studentNumber: string, bookId: string) {
   const params = new URLSearchParams({ bookId, studentNumber });
   return `${API_BASE_URL}/api/library/download-file?${params.toString()}`;
@@ -259,6 +278,78 @@ export async function fetchStudentProfile(
     ok: response.ok,
     message: data?.message,
     profile: data?.profile ?? null,
+  };
+}
+
+export async function fetchStudentPreferences(
+  studentNumber: string,
+): Promise<ApiResult & { preferences?: StudentPreferences | null }> {
+  const params = new URLSearchParams({ studentNumber });
+  const { response, data } = await get(`/api/auth/preferences?${params.toString()}`);
+
+  return {
+    ok: response.ok,
+    message: data?.message,
+    preferences: data?.preferences ?? null,
+  };
+}
+
+export async function saveStudentPreferences(
+  studentNumber: string,
+  preferences: Partial<
+    Pick<
+      StudentPreferences,
+      | "journalLockAutoLock"
+      | "journalLockEnabled"
+      | "notificationPreviewsEnabled"
+      | "privateJournalModeEnabled"
+    >
+  > & {
+    journalLockPin?: string;
+    previousJournalLockPin?: string;
+  },
+): Promise<ApiResult & { preferences?: StudentPreferences | null }> {
+  const { response, data } = await patch("/api/auth/preferences", {
+    studentNumber,
+    ...preferences,
+  });
+
+  return {
+    ok: response.ok,
+    message: data?.message,
+    preferences: data?.preferences ?? null,
+  };
+}
+
+export async function verifyJournalLockPin(
+  studentNumber: string,
+  pin: string,
+): Promise<ApiResult & { unlocked?: boolean }> {
+  const { response, data } = await post("/api/auth/preferences/journal-lock/verify", {
+    studentNumber,
+    pin,
+  });
+
+  return {
+    ok: response.ok,
+    message: data?.message,
+    unlocked: Boolean(data?.unlocked),
+  };
+}
+
+export async function resetJournalLockWithStudentId(
+  studentNumber: string,
+  studentNumberConfirmation: string,
+): Promise<ApiResult & { preferences?: StudentPreferences | null }> {
+  const { response, data } = await post("/api/auth/preferences/journal-lock/reset", {
+    studentNumber,
+    studentNumberConfirmation,
+  });
+
+  return {
+    ok: response.ok,
+    message: data?.message,
+    preferences: data?.preferences ?? null,
   };
 }
 

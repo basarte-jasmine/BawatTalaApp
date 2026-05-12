@@ -13,10 +13,9 @@ const SPACE_STEP = 5.2;
 export default function Index() {
   const { isHydrated, user } = useAuthSession();
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const titleRiseAnim = useRef(new Animated.Value(14)).current;
-  const titleScaleAnim = useRef(new Animated.Value(0.9)).current;
-  const bookScaleAnim = useRef(new Animated.Value(0.88)).current;
-  const bookFloatAnim = useRef(new Animated.Value(0)).current;
+  const logoRiseAnim = useRef(new Animated.Value(14)).current;
+  const logoScaleAnim = useRef(new Animated.Value(0.92)).current;
+  const logoFloatAnim = useRef(new Animated.Value(0)).current;
   const hasNavigatedRef = useRef(false);
 
   useEffect(() => {
@@ -27,35 +26,29 @@ export default function Index() {
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
-      Animated.timing(titleRiseAnim, {
+      Animated.timing(logoRiseAnim, {
         toValue: 0,
         duration: 900,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
-      Animated.spring(titleScaleAnim, {
+      Animated.spring(logoScaleAnim, {
         toValue: 1,
         friction: 5,
         tension: 55,
-        useNativeDriver: true,
-      }),
-      Animated.spring(bookScaleAnim, {
-        toValue: 1,
-        friction: 5,
-        tension: 52,
         useNativeDriver: true,
       }),
     ]).start();
 
     const floatLoop = Animated.loop(
       Animated.sequence([
-        Animated.timing(bookFloatAnim, {
+        Animated.timing(logoFloatAnim, {
           toValue: -6,
           duration: 1200,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
-        Animated.timing(bookFloatAnim, {
+        Animated.timing(logoFloatAnim, {
           toValue: 0,
           duration: 1200,
           easing: Easing.inOut(Easing.sin),
@@ -72,7 +65,7 @@ export default function Index() {
       clearTimeout(floatDelay);
       floatLoop.stop();
     };
-  }, [bookFloatAnim, bookScaleAnim, fadeAnim, titleRiseAnim, titleScaleAnim]);
+  }, [fadeAnim, logoFloatAnim, logoRiseAnim, logoScaleAnim]);
 
   const handlePressAnywhere = () => {
     if (hasNavigatedRef.current || !isHydrated) {
@@ -80,7 +73,28 @@ export default function Index() {
     }
 
     hasNavigatedRef.current = true;
-    router.replace(user ? "/home" : "/login");
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 360,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(logoRiseAnim, {
+        toValue: -132,
+        duration: 420,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(logoScaleAnim, {
+        toValue: 0.24,
+        duration: 420,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      router.replace(user ? "/home" : "/login");
+    });
   };
 
   const totalSpan =
@@ -125,17 +139,17 @@ export default function Index() {
           styles.centerWrap,
           {
             opacity: fadeAnim,
-            transform: [{ scale: titleScaleAnim }, { translateY: titleRiseAnim }],
+            transform: [{ scale: logoScaleAnim }, { translateY: logoRiseAnim }],
           },
         ]}
       >
         <View style={styles.arcTitleWrap}>{titleLetters}</View>
         <Animated.Image
-          source={require("../assets/images/bootup_sampleIMG.png")}
+          source={require("../assets/videos/2.gif")}
           style={[
-            styles.image,
+            styles.logo,
             {
-              transform: [{ scale: bookScaleAnim }, { translateY: bookFloatAnim }],
+              transform: [{ translateY: logoFloatAnim }],
             },
           ]}
           resizeMode="contain"
@@ -173,8 +187,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     fontFamily: "Outfit",
   },
-  image: {
-    width: Math.min(330, width * 0.84),
-    height: Math.min(170, width * 0.44),
+  logo: {
+    width: Math.min(330, width * 0.78),
+    height: Math.min(330, width * 0.78),
   },
 });

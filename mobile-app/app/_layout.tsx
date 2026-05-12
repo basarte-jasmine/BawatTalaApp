@@ -52,8 +52,8 @@ export default function RootLayout() {
   return (
     <View style={[styles.root, useDesktopFrame && styles.desktopRoot]}>
       <View style={[styles.frame, useDesktopFrame && styles.desktopFrame]}>
-        <AppPreferencesProvider>
-          <AuthSessionProvider>
+        <AuthSessionProvider>
+          <AppPreferencesProvider>
             <Stack
               screenOptions={{
                 headerShown: false,
@@ -61,8 +61,8 @@ export default function RootLayout() {
                 animationDuration: 160,
               }}
             />
-          </AuthSessionProvider>
-        </AppPreferencesProvider>
+          </AppPreferencesProvider>
+        </AuthSessionProvider>
       </View>
     </View>
   );

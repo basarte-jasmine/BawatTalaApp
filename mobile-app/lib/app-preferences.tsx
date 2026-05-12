@@ -1,14 +1,24 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  fetchStudentPreferences,
+  resetJournalLockWithStudentId,
+  saveStudentPreferences,
+  verifyJournalLockPin,
+  type StudentPreferences,
+} from "./backend-api";
+import { useAuthSession } from "./auth-session";
 
 type AppPreferencesContextValue = {
   appLockAutoLock: boolean;
   appLockEnabled: boolean;
+  hasAppLockPin: boolean;
   clearPreferences: () => void;
-  disableAppLock: () => void;
-  enableAppLock: (pin: string, autoLock: boolean) => void;
+  disableAppLock: () => Promise<{ ok: boolean; message?: string }>;
+  enableAppLock: (pin: string, autoLock: boolean) => Promise<{ ok: boolean; message?: string }>;
+  enableExistingAppLock: (autoLock: boolean) => Promise<{ ok: boolean; message?: string }>;
   isAppLocked: boolean;
   lockAppNow: () => void;
   notificationPreviewsEnabled: boolean;
@@ -16,20 +26,83 @@ type AppPreferencesContextValue = {
   setAppLockAutoLock: (value: boolean) => void;
   setNotificationPreviewsEnabled: (value: boolean) => void;
   setPrivateJournalModeEnabled: (value: boolean) => void;
-  unlockApp: (pin: string) => boolean;
-  updateAppLockPin: (pin: string) => void;
+  resetAppLockWithStudentId: (studentNumberConfirmation: string) => Promise<{ ok: boolean; message?: string }>;
+  unlockApp: (pin: string) => Promise<boolean>;
+  updateAppLockPin: (previousPin: string, pin: string) => Promise<{ ok: boolean; message?: string }>;
 };
 
 const AppPreferencesContext = createContext<AppPreferencesContextValue | null>(null);
+const DEFAULT_PREFERENCES: StudentPreferences = {
+  hasJournalLockPin: false,
+  journalLockAutoLock: true,
+  journalLockEnabled: false,
+  notificationPreviewsEnabled: true,
+  privateJournalModeEnabled: true,
+};
 
 export function AppPreferencesProvider({ children }: PropsWithChildren) {
-  const [notificationPreviewsEnabled, setNotificationPreviewsEnabled] = useState(true);
-  const [privateJournalModeEnabled, setPrivateJournalModeEnabled] = useState(true);
+  const { isHydrated, user } = useAuthSession();
+  const [notificationPreviewsEnabled, setNotificationPreviewsEnabledState] = useState(
+    DEFAULT_PREFERENCES.notificationPreviewsEnabled,
+  );
+  const [privateJournalModeEnabled, setPrivateJournalModeEnabledState] = useState(
+    DEFAULT_PREFERENCES.privateJournalModeEnabled,
+  );
   const [appLockEnabled, setAppLockEnabled] = useState(false);
-  const [appLockPin, setAppLockPin] = useState("");
-  const [appLockAutoLock, setAppLockAutoLock] = useState(true);
+  const [hasAppLockPin, setHasAppLockPin] = useState(false);
+  const [appLockAutoLock, setAppLockAutoLockState] = useState(DEFAULT_PREFERENCES.journalLockAutoLock);
   const [isAppLocked, setIsAppLocked] = useState(false);
   const appStateRef = useRef(AppState.currentState);
+  const studentNumber = user?.studentNumber || "";
+
+  const applyPreferences = useCallback((preferences: StudentPreferences) => {
+    setNotificationPreviewsEnabledState(preferences.notificationPreviewsEnabled);
+    setPrivateJournalModeEnabledState(preferences.privateJournalModeEnabled);
+    setAppLockAutoLockState(preferences.journalLockAutoLock);
+    setAppLockEnabled(preferences.journalLockEnabled);
+    setHasAppLockPin(preferences.hasJournalLockPin);
+    setIsAppLocked(preferences.journalLockEnabled);
+  }, []);
+
+  const resetPreferences = useCallback(() => {
+    applyPreferences(DEFAULT_PREFERENCES);
+    setIsAppLocked(false);
+  }, [applyPreferences]);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    if (!studentNumber) {
+      resetPreferences();
+      return;
+    }
+
+    let mounted = true;
+    void fetchStudentPreferences(studentNumber).then((result) => {
+      if (!mounted || !result.ok || !result.preferences) return;
+      applyPreferences(result.preferences);
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [applyPreferences, isHydrated, resetPreferences, studentNumber]);
+
+  const persistPreferences = useCallback(
+    async (
+      preferences: Parameters<typeof saveStudentPreferences>[1],
+    ): Promise<{ ok: boolean; message?: string; preferences?: StudentPreferences | null }> => {
+      if (!studentNumber) {
+        return { ok: false, message: "Student session is missing." };
+      }
+
+      const result = await saveStudentPreferences(studentNumber, preferences);
+      if (result.ok && result.preferences) {
+        applyPreferences(result.preferences);
+      }
+      return result;
+    },
+    [applyPreferences, studentNumber],
+  );
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
@@ -52,59 +125,98 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
     () => ({
       appLockAutoLock,
       appLockEnabled,
-      clearPreferences: () => {
-        setNotificationPreviewsEnabled(true);
-        setPrivateJournalModeEnabled(true);
-        setAppLockEnabled(false);
-        setAppLockPin("");
-        setAppLockAutoLock(true);
+      hasAppLockPin,
+      clearPreferences: resetPreferences,
+      disableAppLock: async () => {
+        const result = await persistPreferences({ journalLockEnabled: false });
+        if (!result.ok) return result;
         setIsAppLocked(false);
+        return result;
       },
-      disableAppLock: () => {
-        setAppLockEnabled(false);
-        setAppLockPin("");
-        setIsAppLocked(false);
-      },
-      enableAppLock: (pin: string, autoLock: boolean) => {
-        setAppLockPin(pin);
-        setAppLockAutoLock(autoLock);
-        setAppLockEnabled(true);
+      enableAppLock: async (pin: string, autoLock: boolean) => {
+        const result = await persistPreferences({
+          journalLockAutoLock: autoLock,
+          journalLockEnabled: true,
+          journalLockPin: pin,
+        });
+        if (!result.ok) return result;
         setIsAppLocked(true);
+        return result;
+      },
+      enableExistingAppLock: async (autoLock: boolean) => {
+        const result = await persistPreferences({
+          journalLockAutoLock: autoLock,
+          journalLockEnabled: true,
+        });
+        if (!result.ok) return result;
+        setIsAppLocked(true);
+        return result;
       },
       isAppLocked,
       lockAppNow: () => {
-        if (!appLockEnabled || !appLockPin) return;
+        if (!appLockEnabled) return;
         setIsAppLocked(true);
       },
       notificationPreviewsEnabled,
       privateJournalModeEnabled,
-      setAppLockAutoLock,
-      setNotificationPreviewsEnabled,
-      setPrivateJournalModeEnabled,
-      unlockApp: (pin: string) => {
-        if (!appLockEnabled || !appLockPin || pin !== appLockPin) {
+      setAppLockAutoLock: (nextValue: boolean) => {
+        setAppLockAutoLockState(nextValue);
+        if (appLockEnabled) {
+          void persistPreferences({ journalLockAutoLock: nextValue });
+        }
+      },
+      setNotificationPreviewsEnabled: (nextValue: boolean) => {
+        setNotificationPreviewsEnabledState(nextValue);
+        void persistPreferences({ notificationPreviewsEnabled: nextValue });
+      },
+      setPrivateJournalModeEnabled: (nextValue: boolean) => {
+        setPrivateJournalModeEnabledState(nextValue);
+        void persistPreferences({ privateJournalModeEnabled: nextValue });
+      },
+      resetAppLockWithStudentId: async (studentNumberConfirmation: string) => {
+        if (!studentNumber) {
+          return { ok: false, message: "Student session is missing." };
+        }
+        const result = await resetJournalLockWithStudentId(
+          studentNumber,
+          studentNumberConfirmation,
+        );
+        if (result.ok && result.preferences) {
+          applyPreferences(result.preferences);
+          setIsAppLocked(false);
+        }
+        return result;
+      },
+      unlockApp: async (pin: string) => {
+        if (!appLockEnabled || !studentNumber) {
           return false;
         }
+        const result = await verifyJournalLockPin(studentNumber, pin);
+        if (!result.ok || !result.unlocked) return false;
         setIsAppLocked(false);
         return true;
       },
-      updateAppLockPin: (pin: string) => {
-        setAppLockPin(pin);
-        setAppLockEnabled(Boolean(pin));
-        if (!pin) {
-          setIsAppLocked(false);
-          return;
-        }
+      updateAppLockPin: async (previousPin: string, pin: string) => {
+        const result = await persistPreferences({
+          journalLockPin: pin,
+          previousJournalLockPin: previousPin,
+        });
+        if (!result.ok) return result;
         setIsAppLocked(true);
+        return result;
       },
     }),
     [
       appLockAutoLock,
       appLockEnabled,
-      appLockPin,
+      applyPreferences,
+      hasAppLockPin,
       isAppLocked,
       notificationPreviewsEnabled,
+      persistPreferences,
       privateJournalModeEnabled,
+      resetPreferences,
+      studentNumber,
     ],
   );
 
@@ -125,6 +237,7 @@ export function JournalLockGate({ children }: PropsWithChildren) {
   const { appLockEnabled, isAppLocked, unlockApp } = useAppPreferences();
   const [pinInput, setPinInput] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [isBusy, setIsBusy] = useState(false);
 
   useEffect(() => {
     if (!isAppLocked) {
@@ -137,8 +250,12 @@ export function JournalLockGate({ children }: PropsWithChildren) {
     return <>{children}</>;
   }
 
-  const handleUnlock = () => {
-    if (unlockApp(pinInput)) {
+  const handleUnlock = async () => {
+    setIsBusy(true);
+    const unlocked = await unlockApp(pinInput);
+    setIsBusy(false);
+
+    if (unlocked) {
       setPinInput("");
       setErrorMessage("");
       return;
@@ -153,6 +270,10 @@ export function JournalLockGate({ children }: PropsWithChildren) {
       return;
     }
     router.replace("/home");
+  };
+
+  const handleForgotPin = () => {
+    router.replace("/profile-settings?section=app-lock&resetPin=1");
   };
 
   return (
@@ -195,13 +316,20 @@ export function JournalLockGate({ children }: PropsWithChildren) {
           </Pressable>
 
           <Pressable
-            style={[styles.button, pinInput.length < 4 && styles.buttonDisabled]}
+            style={[
+              styles.button,
+              (isBusy || pinInput.length < 4) && styles.buttonDisabled,
+            ]}
             onPress={handleUnlock}
-            disabled={pinInput.length < 4}
+            disabled={isBusy || pinInput.length < 4}
           >
-            <Text style={styles.buttonText}>Unlock</Text>
+            <Text style={styles.buttonText}>{isBusy ? "Checking..." : "Unlock"}</Text>
           </Pressable>
         </View>
+
+        <Pressable style={styles.forgotPinButton} onPress={handleForgotPin}>
+          <Text style={styles.forgotPinText}>Forgot PIN?</Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -315,6 +443,18 @@ const styles = StyleSheet.create({
     width: "100%",
     flexDirection: "row",
     columnGap: 10,
+  },
+  forgotPinButton: {
+    marginTop: 14,
+    minHeight: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  forgotPinText: {
+    color: "#3D5569",
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: "800",
   },
   button: {
     flex: 1,

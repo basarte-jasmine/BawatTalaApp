@@ -1,6 +1,7 @@
 const express = require("express");
 const { randomBytes, scryptSync, timingSafeEqual } = require("crypto");
 const { supabaseAdminClient, supabaseAuthClient } = require("../config/supabase");
+const { query } = require("../config/db");
 
 const router = express.Router();
 const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
@@ -11,6 +12,12 @@ const RESET_SESSION_MS = 10 * 60 * 1000;
 const STRONG_PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
 const loginAttempts = new Map();
 const resetPasswordSessions = new Map();
+const DEFAULT_STUDENT_PREFERENCES = {
+  journalLockAutoLock: true,
+  journalLockEnabled: false,
+  notificationPreviewsEnabled: true,
+  privateJournalModeEnabled: true,
+};
 
 function normalizeCompactSpaces(value) {
   return String(value || "").trim().replace(/\s+/g, " ");
@@ -145,6 +152,96 @@ async function deleteStaleAuthUsersByEmail(email) {
   return removedAny;
 }
 
+function isBoolean(value) {
+  return typeof value === "boolean";
+}
+
+function normalizePin(value) {
+  return String(value || "").replace(/[^0-9]/g, "").slice(0, 4);
+}
+
+function normalizeStudentPreferences(row) {
+  const settings =
+    row?.settings && typeof row.settings === "object" && !Array.isArray(row.settings)
+      ? row.settings
+      : {};
+  const hasJournalLockPin = Boolean(row?.journal_lock_pin_hash);
+  const journalLockEnabled = Boolean(row?.journal_lock_enabled && hasJournalLockPin);
+
+  return {
+    hasJournalLockPin,
+    journalLockAutoLock: isBoolean(row?.journal_lock_auto_lock)
+      ? row.journal_lock_auto_lock
+      : DEFAULT_STUDENT_PREFERENCES.journalLockAutoLock,
+    journalLockEnabled,
+    notificationPreviewsEnabled: isBoolean(settings.notificationPreviewsEnabled)
+      ? settings.notificationPreviewsEnabled
+      : DEFAULT_STUDENT_PREFERENCES.notificationPreviewsEnabled,
+    privateJournalModeEnabled: isBoolean(settings.privateJournalModeEnabled)
+      ? settings.privateJournalModeEnabled
+      : DEFAULT_STUDENT_PREFERENCES.privateJournalModeEnabled,
+  };
+}
+
+async function loadStudentPreferenceRecord(studentNumber) {
+  const result = await query(
+    `
+      select
+        settings,
+        journal_lock_enabled,
+        journal_lock_pin_hash,
+        journal_lock_auto_lock
+      from public.student_app_preferences
+      where student_number = $1
+    `,
+    [studentNumber],
+  );
+
+  return result.rows[0] || null;
+}
+
+async function saveStudentPreferenceRecord({
+  journalLockAutoLock,
+  journalLockEnabled,
+  journalLockPinHash,
+  settings,
+  studentNumber,
+}) {
+  const result = await query(
+    `
+      insert into public.student_app_preferences (
+        student_number,
+        settings,
+        journal_lock_enabled,
+        journal_lock_pin_hash,
+        journal_lock_auto_lock
+      )
+      values ($1, $2::jsonb, $3, $4, $5)
+      on conflict (student_number)
+      do update set
+        settings = excluded.settings,
+        journal_lock_enabled = excluded.journal_lock_enabled,
+        journal_lock_pin_hash = excluded.journal_lock_pin_hash,
+        journal_lock_auto_lock = excluded.journal_lock_auto_lock,
+        updated_at = now()
+      returning
+        settings,
+        journal_lock_enabled,
+        journal_lock_pin_hash,
+        journal_lock_auto_lock
+    `,
+    [
+      studentNumber,
+      JSON.stringify(settings),
+      journalLockEnabled,
+      journalLockPinHash,
+      journalLockAutoLock,
+    ],
+  );
+
+  return result.rows[0] || null;
+}
+
 router.post("/login", async (req, res) => {
   const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
   const password = String(req.body.password || "").trim();
@@ -252,6 +349,194 @@ router.get("/profile", async (req, res) => {
       studentNumber: data.student_number,
     },
   });
+});
+
+router.get("/preferences", async (req, res) => {
+  const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
+
+  if (!studentNumber) {
+    return res.status(400).json({ message: "Student ID is required." });
+  }
+
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "Invalid student ID." });
+  }
+
+  try {
+    const record = await loadStudentPreferenceRecord(studentNumber);
+    return res.json({
+      preferences: normalizeStudentPreferences(record),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message || "Unable to load student preferences.",
+    });
+  }
+});
+
+router.patch("/preferences", async (req, res) => {
+  const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
+
+  if (!studentNumber) {
+    return res.status(400).json({ message: "Student ID is required." });
+  }
+
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "Invalid student ID." });
+  }
+
+  try {
+    const currentRecord = await loadStudentPreferenceRecord(studentNumber);
+    const currentPreferences = normalizeStudentPreferences(currentRecord);
+    const currentSettings =
+      currentRecord?.settings && typeof currentRecord.settings === "object"
+        ? currentRecord.settings
+        : {};
+    const nextSettings = { ...currentSettings };
+
+    if (isBoolean(req.body.notificationPreviewsEnabled)) {
+      nextSettings.notificationPreviewsEnabled = req.body.notificationPreviewsEnabled;
+    }
+    if (isBoolean(req.body.privateJournalModeEnabled)) {
+      nextSettings.privateJournalModeEnabled = req.body.privateJournalModeEnabled;
+    }
+
+    let nextJournalLockEnabled = currentPreferences.journalLockEnabled;
+    let nextJournalLockPinHash = currentRecord?.journal_lock_pin_hash || null;
+    let nextJournalLockAutoLock = currentPreferences.journalLockAutoLock;
+
+    if (isBoolean(req.body.journalLockAutoLock)) {
+      nextJournalLockAutoLock = req.body.journalLockAutoLock;
+    }
+
+    if (isBoolean(req.body.journalLockEnabled)) {
+      nextJournalLockEnabled = req.body.journalLockEnabled;
+    }
+
+    const nextPin = normalizePin(req.body.journalLockPin);
+    if (req.body.journalLockPin != null) {
+      if (nextPin.length !== 4) {
+        return res.status(400).json({ message: "Use exactly 4 digits for the PIN." });
+      }
+
+      if (currentPreferences.journalLockEnabled && nextJournalLockPinHash) {
+        const previousPin = normalizePin(req.body.previousJournalLockPin);
+        if (previousPin.length !== 4 || !verifyPassword(previousPin, nextJournalLockPinHash)) {
+          return res.status(403).json({ message: "Previous PIN does not match." });
+        }
+      } else if (nextJournalLockEnabled !== true) {
+        return res.status(400).json({
+          message: "Turn on Journal Lock before changing the PIN.",
+        });
+      }
+
+      nextJournalLockPinHash = hashPassword(nextPin);
+      nextJournalLockEnabled = true;
+    }
+
+    if (nextJournalLockEnabled && !nextJournalLockPinHash) {
+      return res.status(400).json({ message: "Create a 4-digit PIN first." });
+    }
+
+    const savedRecord = await saveStudentPreferenceRecord({
+      journalLockAutoLock: nextJournalLockAutoLock,
+      journalLockEnabled: nextJournalLockEnabled,
+      journalLockPinHash: nextJournalLockPinHash,
+      settings: nextSettings,
+      studentNumber,
+    });
+
+    return res.json({
+      message: "Preferences saved.",
+      preferences: normalizeStudentPreferences(savedRecord),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message || "Unable to save student preferences.",
+    });
+  }
+});
+
+router.post("/preferences/journal-lock/verify", async (req, res) => {
+  const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
+  const pin = normalizePin(req.body.pin);
+
+  if (!studentNumber) {
+    return res.status(400).json({ message: "Student ID is required." });
+  }
+
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "Invalid student ID." });
+  }
+
+  if (pin.length !== 4) {
+    return res.status(400).json({ message: "Enter your 4-digit PIN." });
+  }
+
+  try {
+    const record = await loadStudentPreferenceRecord(studentNumber);
+    const preferences = normalizeStudentPreferences(record);
+    const pinHash = record?.journal_lock_pin_hash || "";
+
+    if (!preferences.journalLockEnabled || !pinHash) {
+      return res.status(400).json({ message: "Journal Lock is not enabled." });
+    }
+
+    if (!verifyPassword(pin, pinHash)) {
+      return res.status(403).json({ message: "That PIN doesn't match. Try again." });
+    }
+
+    return res.json({ message: "Journal unlocked.", unlocked: true });
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message || "Unable to verify journal PIN.",
+    });
+  }
+});
+
+router.post("/preferences/journal-lock/reset", async (req, res) => {
+  const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
+  const studentNumberConfirmation = normalizeCompactSpaces(req.body.studentNumberConfirmation || "");
+
+  if (!studentNumber) {
+    return res.status(400).json({ message: "Student ID is required." });
+  }
+
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "Invalid student ID." });
+  }
+
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumberConfirmation)) {
+    return res.status(400).json({ message: "Enter Student ID in 23-2903 format." });
+  }
+
+  if (studentNumberConfirmation !== studentNumber) {
+    return res.status(403).json({ message: "Student ID does not match this account." });
+  }
+
+  try {
+    const currentRecord = await loadStudentPreferenceRecord(studentNumber);
+    const currentSettings =
+      currentRecord?.settings && typeof currentRecord.settings === "object"
+        ? currentRecord.settings
+        : {};
+    const savedRecord = await saveStudentPreferenceRecord({
+      journalLockAutoLock: true,
+      journalLockEnabled: false,
+      journalLockPinHash: null,
+      settings: currentSettings,
+      studentNumber,
+    });
+
+    return res.json({
+      message: "Journal Lock was reset.",
+      preferences: normalizeStudentPreferences(savedRecord),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message || "Unable to reset journal lock.",
+    });
+  }
 });
 
 router.post("/send-otp", async (req, res) => {
