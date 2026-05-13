@@ -45,6 +45,20 @@ function pickBonusReward() {
   return BONUS_REWARDS[Math.floor(Math.random() * BONUS_REWARDS.length)];
 }
 
+function getNextCycleProgress(latestCycleDay) {
+  if (latestCycleDay >= DAILY_REWARDS.length) {
+    return {
+      activeDay: 1,
+      completedDays: 0,
+    };
+  }
+
+  return {
+    activeDay: latestCycleDay + 1,
+    completedDays: latestCycleDay,
+  };
+}
+
 async function getLatestCheckIn(studentNumber) {
   const result = await query(
     `
@@ -103,18 +117,16 @@ async function buildStatus(studentNumber) {
     };
   }
 
-  if (dayDiff === 1) {
+  if (dayDiff > 0) {
     return {
-      activeDay: latestCycleDay >= 7 ? 1 : latestCycleDay + 1,
-      completedDays: latestCycleDay >= 7 ? 0 : latestCycleDay,
+      ...getNextCycleProgress(latestCycleDay),
       todayCheckedIn: false,
       totalTala,
     };
   }
 
   return {
-    activeDay: 1,
-    completedDays: 0,
+    ...getNextCycleProgress(latestCycleDay),
     todayCheckedIn: false,
     totalTala,
   };
@@ -159,11 +171,7 @@ router.post("/", async (req, res) => {
     let cycleDay = 1;
     if (latest) {
       const latestCycleDay = Number(latest.cycle_day || 0);
-      const dayDiff = getDayDiff(latestDate, today);
-
-      if (dayDiff === 1) {
-        cycleDay = latestCycleDay >= 7 ? 1 : latestCycleDay + 1;
-      }
+      cycleDay = getNextCycleProgress(latestCycleDay).activeDay;
     }
 
     const baseReward = DAILY_REWARDS[cycleDay - 1];
