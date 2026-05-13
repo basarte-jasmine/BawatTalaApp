@@ -14,8 +14,58 @@ const OPEN_LIBRARY_DOWNLOAD_PROBE_TIMEOUT_MS = 5000;
 const OPEN_LIBRARY_DOWNLOAD_STREAM_TIMEOUT_MS = 30000;
 const OPEN_LIBRARY_DOWNLOAD_CACHE_TTL_MS = 15 * 60 * 1000;
 const MAX_BOOK_RESULTS = 24;
-const READING_REWARD_SECONDS = 5 * 60;
-const READING_REWARD_TALA = 20;
+const READING_ACHIEVEMENT_NOTIFICATION_KIND = "READING_ACHIEVEMENT_REWARD";
+const READING_ACHIEVEMENTS = [
+  {
+    key: "read_10_seconds",
+    seconds: 10,
+    rewardTala: 5,
+    title: "First Spark",
+    description: "Read for 10 seconds",
+  },
+  {
+    key: "read_30_seconds",
+    seconds: 30,
+    rewardTala: 10,
+    title: "Page Warmer",
+    description: "Read for 30 seconds",
+  },
+  {
+    key: "read_1_minute",
+    seconds: 60,
+    rewardTala: 15,
+    title: "One-Minute Focus",
+    description: "Read for 1 minute",
+  },
+  {
+    key: "read_5_minutes",
+    seconds: 5 * 60,
+    rewardTala: 20,
+    title: "Steady Reader",
+    description: "Read for 5 minutes",
+  },
+  {
+    key: "read_15_minutes",
+    seconds: 15 * 60,
+    rewardTala: 35,
+    title: "Quiet Chapter",
+    description: "Read for 15 minutes",
+  },
+  {
+    key: "read_30_minutes",
+    seconds: 30 * 60,
+    rewardTala: 50,
+    title: "Deep Reader",
+    description: "Read for 30 minutes",
+  },
+  {
+    key: "read_1_hour",
+    seconds: 60 * 60,
+    rewardTala: 80,
+    title: "Library Glow",
+    description: "Read for 1 hour",
+  },
+];
 const ACCENT_COLORS = ["#D7F0B7", "#CFE6F8", "#E8D7F2", "#F8E8BE", "#D7EBE5", "#F1D4D4"];
 const openLibraryDownloadUrlCache = new Map();
 
@@ -64,6 +114,38 @@ function truncateText(value, maxLength) {
   const text = stripHtml(value);
   if (text.length <= maxLength) return text;
   return `${text.slice(0, maxLength).trim()}...`;
+}
+
+function formatReadingDuration(seconds) {
+  if (seconds < 60) {
+    return `${seconds} second${seconds === 1 ? "" : "s"}`;
+  }
+
+  const minutes = seconds / 60;
+  if (minutes < 60) {
+    return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  }
+
+  const hours = minutes / 60;
+  return `${hours} hour${hours === 1 ? "" : "s"}`;
+}
+
+function mapReadingAchievement(achievement, claimed = false) {
+  if (!achievement) return null;
+
+  return {
+    key: achievement.key,
+    seconds: achievement.seconds,
+    rewardTala: achievement.rewardTala,
+    title: achievement.title,
+    description: achievement.description,
+    durationLabel: formatReadingDuration(achievement.seconds),
+    claimed,
+  };
+}
+
+function getReadingAchievementByKey(key) {
+  return READING_ACHIEVEMENTS.find((achievement) => achievement.key === key) || null;
 }
 
 function fetchJson(url, { headers = {}, serviceName = "Library API" } = {}) {
@@ -1110,20 +1192,81 @@ async function upsertProgress({
   return mapProgressRow(result.rows[0]);
 }
 
-async function grantReadingReward({ bookId, bookTitle, readingSeconds, studentNumber }) {
+async function createStudentNotification({
+  studentNumber,
+  kind,
+  title,
+  message,
+  metadata = {},
+}) {
+  await query(
+    `
+      insert into public.student_notifications (
+        student_number,
+        kind,
+        title,
+        message,
+        metadata
+      )
+      values ($1, $2, $3, $4, $5::jsonb)
+    `,
+    [studentNumber, kind, title, message, JSON.stringify(metadata || {})],
+  );
+}
+
+async function getClaimedReadingAchievementKeys(studentNumber) {
+  const result = await query(
+    `
+      select achievement_key
+      from public.student_library_reading_rewards
+      where student_number = $1
+        and achievement_key is not null
+      order by claimed_at asc
+    `,
+    [studentNumber],
+  );
+
+  return new Set(result.rows.map((row) => row.achievement_key).filter(Boolean));
+}
+
+async function getReadingAchievementStatus(studentNumber) {
+  const claimedKeys = await getClaimedReadingAchievementKeys(studentNumber);
+  const nextAchievement = READING_ACHIEVEMENTS.find((achievement) => !claimedKeys.has(achievement.key)) || null;
+
+  return {
+    achievements: READING_ACHIEVEMENTS.map((achievement) => mapReadingAchievement(achievement, claimedKeys.has(achievement.key))),
+    completedCount: claimedKeys.size,
+    nextAchievement: mapReadingAchievement(nextAchievement, false),
+    totalCount: READING_ACHIEVEMENTS.length,
+  };
+}
+
+async function grantReadingReward({ achievement, bookId, bookTitle, readingSeconds, studentNumber }) {
   await query(
     `
       insert into public.student_library_reading_rewards (
         student_number,
         book_id,
         book_title,
+        achievement_key,
+        achievement_title,
+        milestone_seconds,
         reading_seconds,
         reward_tala,
         claimed_at
       )
-      values ($1, $2, $3, $4, $5, now())
+      values ($1, $2, $3, $4, $5, $6, $7, $8, now())
     `,
-    [studentNumber, bookId, bookTitle || null, readingSeconds, READING_REWARD_TALA],
+    [
+      studentNumber,
+      bookId,
+      bookTitle || null,
+      achievement.key,
+      achievement.title,
+      achievement.seconds,
+      readingSeconds,
+      achievement.rewardTala,
+    ],
   );
 
   const result = await query(
@@ -1140,8 +1283,23 @@ async function grantReadingReward({ bookId, bookTitle, readingSeconds, studentNu
         updated_at = now()
       returning total_tala
     `,
-    [studentNumber, READING_REWARD_TALA],
+    [studentNumber, achievement.rewardTala],
   );
+
+  await createStudentNotification({
+    studentNumber,
+    kind: READING_ACHIEVEMENT_NOTIFICATION_KIND,
+    title: "Reading achievement unlocked",
+    message: `${achievement.title}: +${achievement.rewardTala} Tala for reading ${formatReadingDuration(achievement.seconds)}.`,
+    metadata: {
+      achievementKey: achievement.key,
+      achievementTitle: achievement.title,
+      bookId,
+      bookTitle: bookTitle || null,
+      rewardTala: achievement.rewardTala,
+      seconds: achievement.seconds,
+    },
+  });
 
   return Number(result.rows[0]?.total_tala || 0);
 }
@@ -1367,11 +1525,27 @@ router.post("/progress", async (req, res) => {
   }
 });
 
+router.get("/reading-reward/status", async (req, res) => {
+  const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
+
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "Valid student number is required." });
+  }
+
+  try {
+    const status = await getReadingAchievementStatus(studentNumber);
+    return res.json(status);
+  } catch (error) {
+    return res.status(500).json({ message: error.message || "Failed to fetch reading achievements." });
+  }
+});
+
 router.post("/reading-reward", async (req, res) => {
   const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
   const bookId = normalizeCompactSpaces(req.body.bookId || "");
   const bookTitle = normalizeCompactSpaces(req.body.bookTitle || "");
   const readingSeconds = clampInteger(Number(req.body.readingSeconds), 0, 24 * 60 * 60, 0);
+  const achievementKey = normalizeCompactSpaces(req.body.achievementKey || "");
 
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
     return res.status(400).json({ message: "Valid student number is required." });
@@ -1379,29 +1553,65 @@ router.post("/reading-reward", async (req, res) => {
   if (!bookId) {
     return res.status(400).json({ message: "Book id is required." });
   }
-  if (readingSeconds < READING_REWARD_SECONDS) {
-    return res.status(400).json({ message: "Read for 5 minutes before claiming this reward." });
-  }
 
   try {
+    const status = await getReadingAchievementStatus(studentNumber);
+    const nextAchievementKey = status.nextAchievement?.key || "";
+    const achievement = achievementKey
+      ? getReadingAchievementByKey(achievementKey)
+      : getReadingAchievementByKey(nextAchievementKey);
+
+    if (!achievement || !nextAchievementKey) {
+      return res.status(409).json({
+        ...status,
+        message: "All reading achievements have already been claimed.",
+      });
+    }
+
+    if (achievement.key !== nextAchievementKey) {
+      return res.status(409).json({
+        ...status,
+        message: "Claim the next reading achievement first.",
+      });
+    }
+
+    if (readingSeconds < achievement.seconds) {
+      return res.status(400).json({
+        ...status,
+        message: `Read for ${formatReadingDuration(achievement.seconds)} before claiming this achievement.`,
+      });
+    }
+
     const canReadInApp = await canUseInAppReader(studentNumber, bookId);
     if (!canReadInApp) {
       return res.status(403).json({ message: "Download this book before claiming reading rewards." });
     }
 
     const totalTala = await grantReadingReward({
+      achievement,
       bookId,
       bookTitle,
       readingSeconds,
       studentNumber,
     });
+    const nextStatus = await getReadingAchievementStatus(studentNumber);
 
     return res.json({
-      message: `You earned +${READING_REWARD_TALA} Tala for reading.`,
-      rewardTala: READING_REWARD_TALA,
+      ...nextStatus,
+      achievement: mapReadingAchievement(achievement, true),
+      message: `${achievement.title} unlocked. You earned +${achievement.rewardTala} Tala.`,
+      rewardTala: achievement.rewardTala,
       totalTala,
     });
   } catch (error) {
+    if (error?.code === "23505") {
+      const status = await getReadingAchievementStatus(studentNumber);
+      return res.status(409).json({
+        ...status,
+        message: "This reading achievement was already claimed.",
+      });
+    }
+
     return res.status(500).json({ message: error.message || "Failed to claim reading reward." });
   }
 });

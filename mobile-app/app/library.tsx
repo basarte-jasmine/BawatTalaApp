@@ -13,11 +13,13 @@ import {
   downloadLibraryBook,
   fetchLibraryBooks,
   fetchLibraryMyShelf,
+  fetchLibraryReadingRewardStatus,
   rateLibraryBook,
   removeLibraryBookFromShelf,
   saveLibraryBookProgress,
   type LibraryBookProgress,
   type LibraryBookRecord,
+  type ReadingAchievementReward,
 } from "../lib/backend-api";
 import { BUILT_IN_LIBRARY_BOOK_IDS, BUILT_IN_LIBRARY_BOOKS } from "../lib/builtin-library-books";
 import {
@@ -33,12 +35,80 @@ import {
 const BOOK_COVER_IMAGE = require("../assets/images/book_sample.png");
 const TALA_IMAGE = require("../assets/images/Tala_Star.png");
 const STAR_VALUES = [1, 2, 3, 4, 5];
-const READING_REWARD_SECONDS = 5 * 60;
-const READING_REWARD_TALA = 20;
 const READING_REWARD_RING_RADIUS = 25;
 const READING_REWARD_RING_SIZE = 64;
 const READING_REWARD_RING_STROKE = 5;
 const READING_REWARD_RING_CIRCUMFERENCE = 2 * Math.PI * READING_REWARD_RING_RADIUS;
+const READING_ACHIEVEMENT_FALLBACKS: ReadingAchievementReward[] = [
+  {
+    key: "read_10_seconds",
+    seconds: 10,
+    rewardTala: 5,
+    title: "First Spark",
+    description: "Read for 10 seconds",
+    durationLabel: "10 seconds",
+  },
+  {
+    key: "read_30_seconds",
+    seconds: 30,
+    rewardTala: 10,
+    title: "Page Warmer",
+    description: "Read for 30 seconds",
+    durationLabel: "30 seconds",
+  },
+  {
+    key: "read_1_minute",
+    seconds: 60,
+    rewardTala: 15,
+    title: "One-Minute Focus",
+    description: "Read for 1 minute",
+    durationLabel: "1 minute",
+  },
+  {
+    key: "read_5_minutes",
+    seconds: 5 * 60,
+    rewardTala: 20,
+    title: "Steady Reader",
+    description: "Read for 5 minutes",
+    durationLabel: "5 minutes",
+  },
+  {
+    key: "read_15_minutes",
+    seconds: 15 * 60,
+    rewardTala: 35,
+    title: "Quiet Chapter",
+    description: "Read for 15 minutes",
+    durationLabel: "15 minutes",
+  },
+  {
+    key: "read_30_minutes",
+    seconds: 30 * 60,
+    rewardTala: 50,
+    title: "Deep Reader",
+    description: "Read for 30 minutes",
+    durationLabel: "30 minutes",
+  },
+  {
+    key: "read_1_hour",
+    seconds: 60 * 60,
+    rewardTala: 80,
+    title: "Library Glow",
+    description: "Read for 1 hour",
+    durationLabel: "1 hour",
+  },
+];
+const FIRST_READING_ACHIEVEMENT = READING_ACHIEVEMENT_FALLBACKS[0];
+
+function formatReadingGoal(seconds: number) {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 60 * 60) return `${Math.round(seconds / 60)}m`;
+  return `${Math.round(seconds / 3600)}h`;
+}
+
+function getFallbackAchievementAfter(currentKey: string) {
+  const index = READING_ACHIEVEMENT_FALLBACKS.findIndex((achievement) => achievement.key === currentKey);
+  return index >= 0 ? READING_ACHIEVEMENT_FALLBACKS[index + 1] ?? null : FIRST_READING_ACHIEVEMENT;
+}
 
 type ShelfTab = "featured" | "my";
 
@@ -225,6 +295,8 @@ export default function LibraryScreen() {
   const [ratingErrorMessage, setRatingErrorMessage] = useState("");
   const [showReaderExitModal, setShowReaderExitModal] = useState(false);
   const [readingRewardSeconds, setReadingRewardSeconds] = useState(0);
+  const [nextReadingAchievement, setNextReadingAchievement] = useState<ReadingAchievementReward | null>(FIRST_READING_ACHIEVEMENT);
+  const [claimedReadingAchievement, setClaimedReadingAchievement] = useState<ReadingAchievementReward | null>(null);
   const [isClaimingReadingReward, setIsClaimingReadingReward] = useState(false);
   const [showReadingRewardModal, setShowReadingRewardModal] = useState(false);
   const [readingRewardMessage, setReadingRewardMessage] = useState("");
@@ -251,8 +323,17 @@ export default function LibraryScreen() {
   const displayedErrorMessage = activeShelf === "my" ? (myShelfBooks.length ? "" : myShelfErrorMessage) : errorMessage;
   const downloadedCount = myShelfBooks.length;
   const onlineCount = books.filter((book) => !isEpubBook(book) && getExternalReaderUrl(book)).length;
-  const readingRewardProgress = Math.min(readingRewardSeconds / READING_REWARD_SECONDS, 1);
+  const readingRewardTargetSeconds = nextReadingAchievement?.seconds ?? 0;
+  const readingRewardProgress = readingRewardTargetSeconds > 0 ? Math.min(readingRewardSeconds / readingRewardTargetSeconds, 1) : 0;
   const readingRewardStrokeOffset = READING_REWARD_RING_CIRCUMFERENCE * (1 - readingRewardProgress);
+  const readingRewardGoalLabel = nextReadingAchievement ? formatReadingGoal(nextReadingAchievement.seconds) : "";
+  const readingRewardLeaveProgressLabel =
+    nextReadingAchievement && readingRewardTargetSeconds > 0
+      ? `${Math.min(readingRewardSeconds, readingRewardTargetSeconds)}s of ${nextReadingAchievement.durationLabel}`
+      : "your current reading progress";
+  const readingRewardLeaveMessage = nextReadingAchievement
+    ? `If you leave now, ${readingRewardLeaveProgressLabel} will stop and will not count toward "${nextReadingAchievement.title}". Keep reading to finish this achievement.`
+    : "If you leave now, your current reading progress will stop.";
 
   const currentPage = readerPages[readerPageIndex] ?? null;
   const canGoPreviousPage = readerPageIndex > 0;
@@ -452,6 +533,26 @@ export default function LibraryScreen() {
     [updateBookProgress, user?.studentNumber],
   );
 
+  const loadReadingRewardStatus = useCallback(async () => {
+    if (!user?.studentNumber) {
+      setNextReadingAchievement(FIRST_READING_ACHIEVEMENT);
+      return;
+    }
+
+    try {
+      const result = await fetchLibraryReadingRewardStatus(user.studentNumber);
+      if (result.ok) {
+        setNextReadingAchievement(result.nextAchievement ?? null);
+      }
+    } catch {
+      setNextReadingAchievement((current) => current ?? FIRST_READING_ACHIEVEMENT);
+    }
+  }, [user?.studentNumber]);
+
+  useEffect(() => {
+    void loadReadingRewardStatus();
+  }, [loadReadingRewardStatus]);
+
   const handleBack = () => {
     if (router.canGoBack()) {
       router.back();
@@ -604,7 +705,9 @@ export default function LibraryScreen() {
     setReaderErrorMessage("");
     setRatingErrorMessage("");
     setReadingRewardSeconds(0);
+    setClaimedReadingAchievement(null);
     setShowReaderExitModal(false);
+    void loadReadingRewardStatus();
     try {
       const epubUri = book.localEpubUri || (
         book.bundledEpubAsset
@@ -646,12 +749,18 @@ export default function LibraryScreen() {
     setIsReaderLoading(false);
     setRatingErrorMessage("");
     setReadingRewardSeconds(0);
+    setClaimedReadingAchievement(null);
     setShowReadingRewardModal(false);
     setShowReaderExitModal(false);
   };
 
   const handleCloseBook = () => {
-    if (readingRewardSeconds > 0 && readingRewardSeconds < READING_REWARD_SECONDS && !showReadingRewardModal) {
+    if (
+      readingRewardTargetSeconds > 0 &&
+      readingRewardSeconds > 0 &&
+      readingRewardSeconds < readingRewardTargetSeconds &&
+      !showReadingRewardModal
+    ) {
       setShowReaderExitModal(true);
       return;
     }
@@ -753,7 +862,7 @@ export default function LibraryScreen() {
   };
 
   const claimReadingReward = useCallback(async () => {
-    if (readingRewardClaimRef.current || !selectedBook) return;
+    if (readingRewardClaimRef.current || !selectedBook || !nextReadingAchievement) return;
 
     readingRewardClaimRef.current = true;
     setIsClaimingReadingReward(true);
@@ -764,15 +873,25 @@ export default function LibraryScreen() {
       }
 
       const result = await claimLibraryReadingReward({
+        achievementKey: nextReadingAchievement.key,
         bookId: selectedBook.id,
         bookTitle: selectedBook.title,
-        readingSeconds: READING_REWARD_SECONDS,
+        readingSeconds: nextReadingAchievement.seconds,
         studentNumber: user.studentNumber,
       });
 
       if (result.ok) {
-        setReadingRewardMessage(result.message ?? `You earned +${READING_REWARD_TALA} Tala for reading.`);
+        const claimedAchievement = result.achievement ?? nextReadingAchievement;
+        setClaimedReadingAchievement(claimedAchievement);
+        setNextReadingAchievement(
+          result.nextAchievement === undefined
+            ? getFallbackAchievementAfter(claimedAchievement.key)
+            : result.nextAchievement,
+        );
+        setReadingRewardMessage(result.message ?? `${claimedAchievement.title} unlocked. You earned +${claimedAchievement.rewardTala} Tala.`);
         setShowReadingRewardModal(true);
+      } else if (result.nextAchievement !== undefined) {
+        setNextReadingAchievement(result.nextAchievement ?? null);
       }
       setReadingRewardSeconds(0);
     } catch {
@@ -781,27 +900,27 @@ export default function LibraryScreen() {
       setIsClaimingReadingReward(false);
       readingRewardClaimRef.current = false;
     }
-  }, [selectedBook, user?.studentNumber]);
+  }, [nextReadingAchievement, selectedBook, user?.studentNumber]);
 
   useEffect(() => {
-    if (!selectedBook || isReaderLoading || !readerPages.length || showReadingRewardModal) {
+    if (!selectedBook || !readingRewardTargetSeconds || isReaderLoading || !readerPages.length || showReadingRewardModal) {
       return undefined;
     }
 
     const timer = setInterval(() => {
-      setReadingRewardSeconds((current) => Math.min(current + 1, READING_REWARD_SECONDS));
+      setReadingRewardSeconds((current) => Math.min(current + 1, readingRewardTargetSeconds));
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isReaderLoading, readerPages.length, selectedBook, showReadingRewardModal]);
+  }, [isReaderLoading, readerPages.length, readingRewardTargetSeconds, selectedBook, showReadingRewardModal]);
 
   useEffect(() => {
-    if (readingRewardSeconds < READING_REWARD_SECONDS || isClaimingReadingReward) {
+    if (!readingRewardTargetSeconds || readingRewardSeconds < readingRewardTargetSeconds || isClaimingReadingReward) {
       return;
     }
 
     void claimReadingReward();
-  }, [claimReadingReward, isClaimingReadingReward, readingRewardSeconds]);
+  }, [claimReadingReward, isClaimingReadingReward, readingRewardSeconds, readingRewardTargetSeconds]);
 
   const renderBookCard = (book: LibraryBookRecord) => {
     const isFinished = book.progress?.status === "FINISHED";
@@ -1134,7 +1253,7 @@ export default function LibraryScreen() {
                     </>
                   )}
                 </View>
-                {!isReaderLoading && readerPages.length > 0 ? (
+                {!isReaderLoading && readerPages.length > 0 && nextReadingAchievement ? (
                   <View style={styles.readerRewardBubble} pointerEvents="none">
                     <Svg width={READING_REWARD_RING_SIZE} height={READING_REWARD_RING_SIZE} style={styles.readerRewardRing}>
                       <Circle
@@ -1166,6 +1285,9 @@ export default function LibraryScreen() {
                       ) : (
                         <Image source={TALA_IMAGE} style={styles.readerRewardIcon} resizeMode="contain" />
                       )}
+                    </View>
+                    <View style={styles.readerRewardGoalPill}>
+                      <Text style={styles.readerRewardGoalText}>{readingRewardGoalLabel}</Text>
                     </View>
                   </View>
                 ) : null}
@@ -1235,7 +1357,7 @@ export default function LibraryScreen() {
             </View>
             <Text style={styles.confirmModalTitle}>Leave reader?</Text>
             <Text style={styles.confirmModalBody}>
-              Your current Tala reading timer will reset. You will only receive the reward after the circle fills for 5 minutes.
+              {readingRewardLeaveMessage}
             </Text>
             <View style={styles.confirmModalActions}>
               <Pressable style={styles.confirmModalSecondaryButton} onPress={() => setShowReaderExitModal(false)}>
@@ -1297,12 +1419,17 @@ export default function LibraryScreen() {
         <View style={styles.rewardModalBackdrop}>
           <View style={styles.rewardModalCard}>
             <View style={styles.rewardModalIconHalo}>
-              <Image source={TALA_IMAGE} style={styles.rewardModalIcon} resizeMode="contain" />
+              <View style={styles.rewardModalArtPlaceholder}>
+                <Ionicons name="trophy-outline" size={30} color="#6E8C35" />
+                <Image source={TALA_IMAGE} style={styles.rewardModalIcon} resizeMode="contain" />
+              </View>
             </View>
-            <Text style={styles.rewardModalEyebrow}>Reading reward</Text>
-            <Text style={styles.rewardModalTitle}>+{READING_REWARD_TALA} Tala</Text>
+            <Text style={styles.rewardModalEyebrow}>Reading achievement</Text>
+            <Text style={styles.rewardModalTitle}>
+              +{claimedReadingAchievement?.rewardTala ?? 0} Tala
+            </Text>
             <Text style={styles.rewardModalBody}>
-              {readingRewardMessage || `You received ${READING_REWARD_TALA} Tala for reading for 5 minutes.`}
+              {readingRewardMessage || `${claimedReadingAchievement?.title ?? "Achievement"} unlocked.`}
             </Text>
             <Pressable style={styles.rewardModalButton} onPress={() => setShowReadingRewardModal(false)}>
               <Text style={styles.rewardModalButtonText}>Keep Reading</Text>
@@ -2211,9 +2338,9 @@ const styles = StyleSheet.create({
     right: 12,
     bottom: 12,
     width: READING_REWARD_RING_SIZE,
-    height: READING_REWARD_RING_SIZE,
+    height: READING_REWARD_RING_SIZE + 20,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "flex-start",
   },
   readerRewardRing: {
     position: "absolute",
@@ -2224,6 +2351,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 999,
+    marginTop: 11,
     backgroundColor: "#FFFDF8",
     borderWidth: 1,
     borderColor: "#E6D8BE",
@@ -2238,6 +2366,23 @@ const styles = StyleSheet.create({
   readerRewardIcon: {
     width: 24,
     height: 24,
+  },
+  readerRewardGoalPill: {
+    marginTop: 4,
+    minWidth: 38,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 253, 248, 0.94)",
+    borderWidth: 1,
+    borderColor: "#E6D8BE",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    alignItems: "center",
+  },
+  readerRewardGoalText: {
+    color: "#5B6B38",
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: "800",
   },
   readerUtilityRow: {
     flexDirection: "row",
@@ -2490,8 +2635,21 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   rewardModalIcon: {
-    width: 44,
-    height: 44,
+    position: "absolute",
+    right: -4,
+    bottom: -2,
+    width: 28,
+    height: 28,
+  },
+  rewardModalArtPlaceholder: {
+    width: 58,
+    height: 58,
+    borderRadius: 18,
+    backgroundColor: "#F8FFE8",
+    borderWidth: 1,
+    borderColor: "#DCECA9",
+    alignItems: "center",
+    justifyContent: "center",
   },
   rewardModalEyebrow: {
     color: "#8A7552",

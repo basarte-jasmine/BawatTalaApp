@@ -150,6 +150,16 @@ export type LibraryBookRecord = {
   title: string;
 };
 
+export type ReadingAchievementReward = {
+  claimed?: boolean;
+  description: string;
+  durationLabel: string;
+  key: string;
+  rewardTala: number;
+  seconds: number;
+  title: string;
+};
+
 export type CounselorDirectoryItem = {
   email: string;
   fullName: string;
@@ -679,18 +689,57 @@ export async function saveLibraryBookProgress(payload: {
 }
 
 export async function claimLibraryReadingReward(payload: {
+  achievementKey?: string;
   bookId: string;
   bookTitle?: string;
   readingSeconds: number;
   studentNumber: string;
-}): Promise<ApiResult & { rewardTala?: number; totalTala?: number }> {
+}): Promise<
+  ApiResult & {
+    achievement?: ReadingAchievementReward | null;
+    achievements?: ReadingAchievementReward[];
+    completedCount?: number;
+    nextAchievement?: ReadingAchievementReward | null;
+    rewardTala?: number;
+    totalCount?: number;
+    totalTala?: number;
+  }
+> {
   const { response, data } = await post("/api/library/reading-reward", payload);
 
   return {
     ok: response.ok,
     message: data?.message,
+    achievement: data?.achievement ?? null,
+    achievements: Array.isArray(data?.achievements) ? data.achievements : [],
+    completedCount: data?.completedCount,
+    nextAchievement: data?.nextAchievement ?? null,
     rewardTala: data?.rewardTala,
+    totalCount: data?.totalCount,
     totalTala: data?.totalTala,
+  };
+}
+
+export async function fetchLibraryReadingRewardStatus(
+  studentNumber: string,
+): Promise<
+  ApiResult & {
+    achievements?: ReadingAchievementReward[];
+    completedCount?: number;
+    nextAchievement?: ReadingAchievementReward | null;
+    totalCount?: number;
+  }
+> {
+  const params = new URLSearchParams({ studentNumber });
+  const { response, data } = await get(`/api/library/reading-reward/status?${params.toString()}`);
+
+  return {
+    ok: response.ok,
+    message: data?.message,
+    achievements: Array.isArray(data?.achievements) ? data.achievements : [],
+    completedCount: data?.completedCount,
+    nextAchievement: data?.nextAchievement ?? null,
+    totalCount: data?.totalCount,
   };
 }
 

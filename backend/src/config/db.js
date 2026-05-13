@@ -488,6 +488,9 @@ async function ensureDatabaseSchema() {
       student_number text not null,
       book_id text not null,
       book_title text,
+      achievement_key text,
+      achievement_title text,
+      milestone_seconds integer,
       reading_seconds integer not null default 300,
       reward_tala integer not null default 20,
       claimed_at timestamptz not null default now()
@@ -495,8 +498,29 @@ async function ensureDatabaseSchema() {
   `);
 
   await pool.query(`
+    alter table public.student_library_reading_rewards
+    add column if not exists achievement_key text;
+  `);
+
+  await pool.query(`
+    alter table public.student_library_reading_rewards
+    add column if not exists achievement_title text;
+  `);
+
+  await pool.query(`
+    alter table public.student_library_reading_rewards
+    add column if not exists milestone_seconds integer;
+  `);
+
+  await pool.query(`
     create index if not exists student_library_reading_rewards_student_idx
       on public.student_library_reading_rewards (student_number, claimed_at desc);
+  `);
+
+  await pool.query(`
+    create unique index if not exists student_library_reading_rewards_student_achievement_key_idx
+      on public.student_library_reading_rewards (student_number, achievement_key)
+      where achievement_key is not null;
   `);
 
   await pool.query(`
