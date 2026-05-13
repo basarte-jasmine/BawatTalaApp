@@ -6,6 +6,7 @@ import { PasswordField } from "../components/forms/PasswordField";
 import { AuthCardLayout } from "../components/layout/AuthCardLayout";
 import { AppPrimaryButton } from "../components/ui/AppPrimaryButton";
 import { forgotPasswordSendCode } from "../lib/backend-api";
+import { useAuthSession } from "../lib/auth-session";
 import {
   AUTH_MESSAGES,
   isValidStudentId,
@@ -13,6 +14,7 @@ import {
 } from "../lib/auth-validation";
 
 export default function ResetPasswordScreen() {
+  const { user } = useAuthSession();
   const [studentId, setStudentId] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -56,6 +58,10 @@ export default function ResetPasswordScreen() {
     });
   };
 
+  const handleReturn = () => {
+    router.replace(user ? "/profile" : "/login");
+  };
+
   return (
     <AuthCardLayout contentContainerStyle={styles.content} cardStyle={styles.card}>
       <Text style={styles.title}>Confirm your account</Text>
@@ -94,9 +100,9 @@ export default function ResetPasswordScreen() {
 
       {!!errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
 
-      <Pressable style={styles.backToLogin} onPress={() => router.replace("/login")}>
+      <Pressable style={styles.backToLogin} onPress={handleReturn}>
         <Text style={styles.backText}>
-          Go back to <Text style={styles.backLink}>login page</Text>
+          Go back to <Text style={styles.backLink}>{user ? "profile page" : "login page"}</Text>
         </Text>
       </Pressable>
     </AuthCardLayout>

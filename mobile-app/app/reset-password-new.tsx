@@ -5,6 +5,7 @@ import { PasswordField } from "../components/forms/PasswordField";
 import { AuthCardLayout } from "../components/layout/AuthCardLayout";
 import { AppPrimaryButton } from "../components/ui/AppPrimaryButton";
 import { forgotPasswordReset } from "../lib/backend-api";
+import { useAuthSession } from "../lib/auth-session";
 
 const STRONG_PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
 
@@ -32,6 +33,7 @@ function getPasswordStrength(value: string) {
 
 export default function ResetPasswordNewScreen() {
   const params = useLocalSearchParams<{ studentId?: string }>();
+  const { user } = useAuthSession();
   const studentId = String(params.studentId || "").trim();
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -77,8 +79,12 @@ export default function ResetPasswordNewScreen() {
 
     setSuccessMessage("Password updated successfully");
     setTimeout(() => {
-      router.replace("/login");
+      router.replace(user ? "/profile" : "/login");
     }, 1200);
+  };
+
+  const handleReturn = () => {
+    router.replace(user ? "/profile" : "/login");
   };
 
   return (
@@ -134,9 +140,9 @@ export default function ResetPasswordNewScreen() {
       {!!errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
       {!!successMessage && <Text style={styles.successText}>{successMessage}</Text>}
 
-      <Pressable style={styles.backToLogin} onPress={() => router.replace("/login")}>
+      <Pressable style={styles.backToLogin} onPress={handleReturn}>
         <Text style={styles.backText}>
-          Go back to <Text style={styles.backLink}>login page</Text>
+          Go back to <Text style={styles.backLink}>{user ? "profile page" : "login page"}</Text>
         </Text>
       </Pressable>
     </AuthCardLayout>

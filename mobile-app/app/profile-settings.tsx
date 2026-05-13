@@ -310,6 +310,10 @@ export default function ProfileSettingsScreen() {
     router.replace("/profile");
   };
 
+  const openProfilePasswordReset = (returnSection: Extract<SettingsSection, "personal-details" | "privacy-security">) => {
+    router.push(`/profile-reset-password?returnSection=${returnSection}` as never);
+  };
+
   const openSupportEmail = useCallback(async (subject: string, body: string) => {
     const url = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     const supported = await Linking.canOpenURL(url);
@@ -470,7 +474,7 @@ export default function ProfileSettingsScreen() {
               title="Need a correction?"
               body="If your student details changed, send a quick request and we'll help you update the account safely."
             />
-            <PrimaryButton label="Reset Password" onPress={() => router.push("/profile-reset-password" as never)} />
+            <PrimaryButton label="Reset Password" onPress={() => openProfilePasswordReset("personal-details")} />
             <SecondaryButton
               label="Contact Support"
               onPress={() =>
@@ -635,7 +639,7 @@ export default function ProfileSettingsScreen() {
               }
             />
             <PrimaryButton label="Manage Journal Lock" onPress={() => router.push("/profile-settings?section=app-lock")} />
-            <SecondaryButton label="Change Password" onPress={() => router.push("/profile-reset-password" as never)} />
+            <SecondaryButton label="Change Password" onPress={() => openProfilePasswordReset("privacy-security")} />
           </>
         ) : null}
 

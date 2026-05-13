@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
@@ -19,6 +19,7 @@ import {
   forgotPasswordVerifyCode,
   profilePasswordSendCode,
 } from "../lib/backend-api";
+import { useAuthSession } from "../lib/auth-session";
 import { isValidStudentId, normalizeStudentIdInput } from "../lib/auth-validation";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -27,6 +28,7 @@ const OTP_EXPIRY_SECONDS = 60;
 const STRONG_PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
 
 type Step = "account" | "code" | "password" | "done";
+type ReturnSection = "personal-details" | "privacy-security";
 
 function normalizeEmailInput(value: string) {
   return value.trim().toLowerCase();
@@ -34,6 +36,13 @@ function normalizeEmailInput(value: string) {
 
 function normalizeCodeInput(value: string) {
   return value.replace(/[^0-9]/g, "").slice(0, OTP_LENGTH);
+}
+
+function getReturnSection(value: string | undefined): ReturnSection | null {
+  if (value === "personal-details" || value === "privacy-security") {
+    return value;
+  }
+  return null;
 }
 
 function getPasswordStrength(value: string) {
@@ -59,6 +68,16 @@ function getPasswordStrength(value: string) {
 }
 
 export default function ProfileResetPasswordScreen() {
+  const { returnSection: returnSectionParam } = useLocalSearchParams<{ returnSection?: string }>();
+  const { user } = useAuthSession();
+  const returnSection = getReturnSection(returnSectionParam);
+  const returnPath = returnSection ? `/profile-settings?section=${returnSection}` : "/profile";
+  const returnLabel =
+    returnSection === "privacy-security"
+      ? "Back to Privacy & Security"
+      : returnSection === "personal-details"
+        ? "Back to Personal Details"
+        : "Back to Profile";
   const [step, setStep] = useState<Step>("account");
   const [studentId, setStudentId] = useState("");
   const [verifiedStudentId, setVerifiedStudentId] = useState("");
@@ -76,6 +95,11 @@ export default function ProfileResetPasswordScreen() {
   const passwordStrength = getPasswordStrength(newPassword);
 
   useEffect(() => {
+    setStudentId((current) => current || user?.studentNumber || "");
+    setEmail((current) => current || user?.email || "");
+  }, [user?.email, user?.studentNumber]);
+
+  useEffect(() => {
     if (resendSeconds <= 0) return;
     const timer = setInterval(() => {
       setResendSeconds((current) => (current <= 1 ? 0 : current - 1));
@@ -83,6 +107,10 @@ export default function ProfileResetPasswordScreen() {
 
     return () => clearInterval(timer);
   }, [resendSeconds]);
+
+  const handleReturnToProfile = () => {
+    router.replace(returnPath as never);
+  };
 
   const handleBack = () => {
     if (step === "password") {
@@ -93,6 +121,10 @@ export default function ProfileResetPasswordScreen() {
     if (step === "code") {
       setStep("account");
       setErrorMessage("");
+      return;
+    }
+    if (returnSection) {
+      handleReturnToProfile();
       return;
     }
     if (router.canGoBack()) {
@@ -393,12 +425,17 @@ export default function ProfileResetPasswordScreen() {
                 </View>
                 <Text style={styles.doneTitle}>Password updated successfully</Text>
                 <Text style={styles.doneBody}>Your account password has been changed.</Text>
-                <PrimaryAction label="Back to Profile" onPress={() => router.replace("/profile" as never)} />
+                <PrimaryAction label={returnLabel} onPress={handleReturnToProfile} />
               </>
             ) : null}
 
             {!!errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
             {!!successMessage && <Text style={styles.successText}>{successMessage}</Text>}
+            {step !== "done" ? (
+              <Pressable style={styles.profileReturnLink} onPress={handleReturnToProfile}>
+                <Text style={styles.profileReturnText}>{returnLabel}</Text>
+              </Pressable>
+            ) : null}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -613,5 +650,16 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: "700",
     marginTop: 2,
+  },
+  profileReturnLink: {
+    alignItems: "center",
+    paddingTop: 12,
+    paddingBottom: 2,
+  },
+  profileReturnText: {
+    color: "#2E6D7A",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "800",
   },
 });
