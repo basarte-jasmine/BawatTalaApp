@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import DateTimePicker, { DateTimePickerAndroid, type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Easing, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Defs, Ellipse, LinearGradient, Path, Rect, Stop } from "react-native-svg";
@@ -85,6 +85,9 @@ const HOME_QUOTES = [
 
 const FUTURE_BOTTLE_STORAGE_PREFIX = "@bawat-tala/future-bottle";
 const BOTTLE_MESSAGE_MAX_LENGTH = 240;
+const BOTTLE_CALENDAR_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const BOTTLE_CLOCK_HOURS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+const BOTTLE_CLOCK_MINUTES = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 
 const TALA_IMAGE = require("../assets/images/Tala_Star.png");
 const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
@@ -112,42 +115,38 @@ function parseStoredBottleDate(value: string | undefined) {
   return isValidDate(date) ? date : null;
 }
 
-function padDatePart(value: number) {
-  return String(value).padStart(2, "0");
-}
-
-function formatBottleDateInput(date: Date) {
-  return `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}`;
-}
-
-function formatBottleTimeInput(date: Date) {
-  return `${padDatePart(date.getHours())}:${padDatePart(date.getMinutes())}`;
-}
-
-function parseBottleDateTimeInput(dateInput: string, timeInput: string) {
-  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateInput.trim());
-  const timeMatch = /^(\d{1,2}):(\d{2})$/.exec(timeInput.trim());
-  if (!dateMatch || !timeMatch) return null;
-
-  const year = Number(dateMatch[1]);
-  const month = Number(dateMatch[2]);
-  const day = Number(dateMatch[3]);
-  const hour = Number(timeMatch[1]);
-  const minute = Number(timeMatch[2]);
-  const date = new Date(year, month - 1, day, hour, minute, 0, 0);
-
-  if (
-    !isValidDate(date) ||
-    date.getFullYear() !== year ||
-    date.getMonth() !== month - 1 ||
-    date.getDate() !== day ||
-    date.getHours() !== hour ||
-    date.getMinutes() !== minute
-  ) {
-    return null;
-  }
-
+function startOfBottleDay(value: Date) {
+  const date = new Date(value);
+  date.setHours(0, 0, 0, 0);
   return date;
+}
+
+function startOfBottleMonth(value: Date) {
+  return new Date(value.getFullYear(), value.getMonth(), 1);
+}
+
+function addBottleMonths(value: Date, months: number) {
+  return new Date(value.getFullYear(), value.getMonth() + months, 1);
+}
+
+function buildBottleCalendarDays(month: Date) {
+  const firstDay = startOfBottleMonth(month);
+  const gridStart = new Date(firstDay);
+  gridStart.setDate(firstDay.getDate() - firstDay.getDay());
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(gridStart);
+    date.setDate(gridStart.getDate() + index);
+    return date;
+  });
+}
+
+function isSameBottleDay(left: Date, right: Date) {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
 }
 
 function mergeBottleDate(current: Date, selectedDate: Date) {
@@ -342,8 +341,7 @@ export default function HomeScreen() {
   const [selectedDriftingBottle, setSelectedDriftingBottle] = useState<DriftingBottleNote | null>(null);
   const [bottleDraft, setBottleDraft] = useState("");
   const [bottleDeliveryAt, setBottleDeliveryAt] = useState(createDefaultBottleDeliveryDate);
-  const [bottleDateInput, setBottleDateInput] = useState(() => formatBottleDateInput(createDefaultBottleDeliveryDate()));
-  const [bottleTimeInput, setBottleTimeInput] = useState(() => formatBottleTimeInput(createDefaultBottleDeliveryDate()));
+  const [bottlePickerMonth, setBottlePickerMonth] = useState(() => startOfBottleMonth(createDefaultBottleDeliveryDate()));
   const [bottleFormMessage, setBottleFormMessage] = useState("");
   const [bottleModalMode, setBottleModalMode] = useState<BottleModalMode>("compose");
   const [bottlePickerMode, setBottlePickerMode] = useState<BottlePickerMode>(null);
@@ -381,8 +379,7 @@ export default function HomeScreen() {
   const driftingBottleProgress = driftingBottleProgressRef.current;
   const updateBottleDeliveryDraft = useCallback((nextDate: Date) => {
     setBottleDeliveryAt(nextDate);
-    setBottleDateInput(formatBottleDateInput(nextDate));
-    setBottleTimeInput(formatBottleTimeInput(nextDate));
+    setBottlePickerMonth(startOfBottleMonth(nextDate));
   }, []);
 
   useEffect(() => {
@@ -995,9 +992,6 @@ export default function HomeScreen() {
   };
 
   const getBottleDeliveryDraftDate = () => {
-    if (Platform.OS === "web") {
-      return parseBottleDateTimeInput(bottleDateInput, bottleTimeInput);
-    }
     return bottleDeliveryAt;
   };
 
@@ -1040,24 +1034,6 @@ export default function HomeScreen() {
     }
   };
 
-  const handleBottleDateInputChange = (value: string) => {
-    setBottleDateInput(value);
-    const parsedDate = parseBottleDateTimeInput(value, bottleTimeInput);
-    if (parsedDate) {
-      setBottleDeliveryAt(parsedDate);
-      setBottleFormMessage("");
-    }
-  };
-
-  const handleBottleTimeInputChange = (value: string) => {
-    setBottleTimeInput(value);
-    const parsedDate = parseBottleDateTimeInput(bottleDateInput, value);
-    if (parsedDate) {
-      setBottleDeliveryAt(parsedDate);
-      setBottleFormMessage("");
-    }
-  };
-
   const handleBottleDatePickerChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
     if (event.type === "dismissed" || !selectedDate) return;
     const nextDate = mergeBottleDate(bottleDeliveryAt, selectedDate);
@@ -1073,14 +1049,11 @@ export default function HomeScreen() {
   };
 
   const openBottleDatePicker = () => {
-    if (Platform.OS === "web") {
-      return;
-    }
-
     if (Platform.OS === "android") {
       DateTimePickerAndroid.open({
         mode: "date",
         value: bottleDeliveryAt,
+        display: "calendar",
         minimumDate: new Date(),
         onChange: handleBottleDatePickerChange,
       });
@@ -1091,14 +1064,11 @@ export default function HomeScreen() {
   };
 
   const openBottleTimePicker = () => {
-    if (Platform.OS === "web") {
-      return;
-    }
-
     if (Platform.OS === "android") {
       DateTimePickerAndroid.open({
         mode: "time",
         value: bottleDeliveryAt,
+        display: "clock",
         is24Hour: false,
         onChange: handleBottleTimePickerChange,
       });
@@ -1106,6 +1076,43 @@ export default function HomeScreen() {
     }
 
     setBottlePickerMode((current) => (current === "time" ? null : "time"));
+  };
+
+  const handleBottleCalendarDayPress = (selectedDate: Date) => {
+    if (startOfBottleDay(selectedDate).getTime() < startOfBottleDay(new Date()).getTime()) {
+      return;
+    }
+
+    const nextDate = mergeBottleDate(bottleDeliveryAt, selectedDate);
+    updateBottleDeliveryDraft(nextDate);
+    setBottleFormMessage("");
+  };
+
+  const handleBottleClockHourPress = (hour12: number) => {
+    const isPm = bottleDeliveryAt.getHours() >= 12;
+    const hour24 = (hour12 % 12) + (isPm ? 12 : 0);
+    const nextDate = new Date(bottleDeliveryAt);
+    nextDate.setHours(hour24, bottleDeliveryAt.getMinutes(), 0, 0);
+    updateBottleDeliveryDraft(nextDate);
+    setBottleFormMessage("");
+  };
+
+  const handleBottleClockMinutePress = (minute: number) => {
+    const nextDate = new Date(bottleDeliveryAt);
+    nextDate.setMinutes(minute, 0, 0);
+    updateBottleDeliveryDraft(nextDate);
+    setBottleFormMessage("");
+  };
+
+  const handleBottleClockPeriodPress = (period: "AM" | "PM") => {
+    const currentHour = bottleDeliveryAt.getHours();
+    const isCurrentlyPm = currentHour >= 12;
+    if ((period === "PM") === isCurrentlyPm) return;
+
+    const nextDate = new Date(bottleDeliveryAt);
+    nextDate.setHours(period === "PM" ? currentHour + 12 : currentHour - 12, bottleDeliveryAt.getMinutes(), 0, 0);
+    updateBottleDeliveryDraft(nextDate);
+    setBottleFormMessage("");
   };
 
   const handleOpenLibrary = () => {
@@ -1228,6 +1235,13 @@ export default function HomeScreen() {
   const bottleDeliveryDraftDate = getBottleDeliveryDraftDate();
   const bottleDraftLength = bottleDraft.trim().length;
   const isBottleDraftReady = bottleDraftLength > 0;
+  const bottleCalendarDays = useMemo(() => buildBottleCalendarDays(bottlePickerMonth), [bottlePickerMonth]);
+  const bottlePickerMonthLabel = bottlePickerMonth.toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+  const bottleSelectedHour12 = bottleDeliveryAt.getHours() % 12 || 12;
+  const bottleSelectedPeriod = bottleDeliveryAt.getHours() >= 12 ? "PM" : "AM";
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
@@ -2040,22 +2054,144 @@ export default function HomeScreen() {
                   </Pressable>
                 </View>
 
-                {Platform.OS === "web" ? (
-                  <View style={styles.bottleWebInputRow}>
-                    <TextInput
-                      value={bottleDateInput}
-                      onChangeText={handleBottleDateInputChange}
-                      placeholder="YYYY-MM-DD"
-                      placeholderTextColor="#8DA0AF"
-                      style={styles.bottleWebInput}
-                    />
-                    <TextInput
-                      value={bottleTimeInput}
-                      onChangeText={handleBottleTimeInputChange}
-                      placeholder="HH:MM"
-                      placeholderTextColor="#8DA0AF"
-                      style={styles.bottleWebInput}
-                    />
+                {Platform.OS === "web" && bottlePickerMode === "date" ? (
+                  <View style={styles.bottleInlinePickerCard}>
+                    <View style={styles.bottleCalendarHeader}>
+                      <Pressable
+                        style={styles.bottleCalendarNavButton}
+                        onPress={() => setBottlePickerMonth((current) => addBottleMonths(current, -1))}
+                        accessibilityLabel="Show previous month"
+                      >
+                        <Ionicons name="chevron-back" size={18} color="#486151" />
+                      </Pressable>
+                      <Text style={styles.bottleCalendarTitle}>{bottlePickerMonthLabel}</Text>
+                      <Pressable
+                        style={styles.bottleCalendarNavButton}
+                        onPress={() => setBottlePickerMonth((current) => addBottleMonths(current, 1))}
+                        accessibilityLabel="Show next month"
+                      >
+                        <Ionicons name="chevron-forward" size={18} color="#486151" />
+                      </Pressable>
+                    </View>
+                    <View style={styles.bottleCalendarWeekRow}>
+                      {BOTTLE_CALENDAR_WEEKDAYS.map((weekday) => (
+                        <Text key={weekday} style={styles.bottleCalendarWeekday}>
+                          {weekday}
+                        </Text>
+                      ))}
+                    </View>
+                    <View style={styles.bottleCalendarGrid}>
+                      {bottleCalendarDays.map((day) => {
+                        const isCurrentMonth = day.getMonth() === bottlePickerMonth.getMonth();
+                        const isSelected = isSameBottleDay(day, bottleDeliveryAt);
+                        const isDisabled = startOfBottleDay(day).getTime() < startOfBottleDay(new Date()).getTime();
+
+                        return (
+                          <Pressable
+                            key={day.toISOString()}
+                            style={[
+                              styles.bottleCalendarDay,
+                              !isCurrentMonth && styles.bottleCalendarDayMuted,
+                              isSelected && styles.bottleCalendarDaySelected,
+                              isDisabled && styles.bottleCalendarDayDisabled,
+                            ]}
+                            disabled={isDisabled}
+                            onPress={() => handleBottleCalendarDayPress(day)}
+                            accessibilityLabel={`Choose ${formatBottleDeliveryDate(day)}`}
+                          >
+                            <Text
+                              style={[
+                                styles.bottleCalendarDayText,
+                                !isCurrentMonth && styles.bottleCalendarDayTextMuted,
+                                isSelected && styles.bottleCalendarDayTextSelected,
+                                isDisabled && styles.bottleCalendarDayTextDisabled,
+                              ]}
+                            >
+                              {day.getDate()}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                    <Pressable style={styles.bottleInlinePickerDoneButton} onPress={() => setBottlePickerMode(null)}>
+                      <Text style={styles.bottleInlinePickerDoneText}>Done</Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+
+                {Platform.OS === "web" && bottlePickerMode === "time" ? (
+                  <View style={styles.bottleInlinePickerCard}>
+                    <View style={styles.bottleClockHeader}>
+                      <Text style={styles.bottleClockTitle}>{formatBottleDeliveryTime(bottleDeliveryAt)}</Text>
+                      <View style={styles.bottleClockPeriodRow}>
+                        {(["AM", "PM"] as const).map((period) => (
+                          <Pressable
+                            key={period}
+                            style={[
+                              styles.bottleClockPeriodButton,
+                              bottleSelectedPeriod === period && styles.bottleClockPeriodButtonActive,
+                            ]}
+                            onPress={() => handleBottleClockPeriodPress(period)}
+                          >
+                            <Text
+                              style={[
+                                styles.bottleClockPeriodText,
+                                bottleSelectedPeriod === period && styles.bottleClockPeriodTextActive,
+                              ]}
+                            >
+                              {period}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </View>
+                    <Text style={styles.bottleClockSectionLabel}>Hour</Text>
+                    <View style={styles.bottleClockGrid}>
+                      {BOTTLE_CLOCK_HOURS.map((hour) => (
+                        <Pressable
+                          key={hour}
+                          style={[
+                            styles.bottleClockChip,
+                            bottleSelectedHour12 === hour && styles.bottleClockChipActive,
+                          ]}
+                          onPress={() => handleBottleClockHourPress(hour)}
+                        >
+                          <Text
+                            style={[
+                              styles.bottleClockChipText,
+                              bottleSelectedHour12 === hour && styles.bottleClockChipTextActive,
+                            ]}
+                          >
+                            {hour}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <Text style={styles.bottleClockSectionLabel}>Minute</Text>
+                    <View style={styles.bottleClockGrid}>
+                      {BOTTLE_CLOCK_MINUTES.map((minute) => (
+                        <Pressable
+                          key={minute}
+                          style={[
+                            styles.bottleClockChip,
+                            bottleDeliveryAt.getMinutes() === minute && styles.bottleClockChipActive,
+                          ]}
+                          onPress={() => handleBottleClockMinutePress(minute)}
+                        >
+                          <Text
+                            style={[
+                              styles.bottleClockChipText,
+                              bottleDeliveryAt.getMinutes() === minute && styles.bottleClockChipTextActive,
+                            ]}
+                          >
+                            {String(minute).padStart(2, "0")}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <Pressable style={styles.bottleInlinePickerDoneButton} onPress={() => setBottlePickerMode(null)}>
+                      <Text style={styles.bottleInlinePickerDoneText}>Done</Text>
+                    </Pressable>
                   </View>
                 ) : null}
 
@@ -2064,7 +2200,7 @@ export default function HomeScreen() {
                     <DateTimePicker
                       value={bottleDeliveryAt}
                       mode={bottlePickerMode}
-                      display="spinner"
+                      display={bottlePickerMode === "date" ? "inline" : "spinner"}
                       minimumDate={bottlePickerMode === "date" ? new Date() : undefined}
                       onChange={bottlePickerMode === "date" ? handleBottleDatePickerChange : handleBottleTimePickerChange}
                     />
@@ -4106,23 +4242,6 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     fontWeight: "700",
   },
-  bottleWebInputRow: {
-    flexDirection: "row",
-    columnGap: 8,
-    marginBottom: 12,
-  },
-  bottleWebInput: {
-    flex: 1,
-    borderRadius: 14,
-    backgroundColor: "#FBFCF8",
-    borderWidth: 1,
-    borderColor: "#DEE7D8",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: "#314456",
-    fontSize: 13,
-    lineHeight: 18,
-  },
   bottleInlinePickerCard: {
     borderRadius: 16,
     backgroundColor: "#FBFCF8",
@@ -4130,6 +4249,160 @@ const styles = StyleSheet.create({
     borderColor: "#DEE7D8",
     marginBottom: 12,
     overflow: "hidden",
+    paddingHorizontal: 10,
+    paddingTop: 10,
+  },
+  bottleCalendarHeader: {
+    minHeight: 34,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  bottleCalendarNavButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#DCE8D6",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bottleCalendarTitle: {
+    flex: 1,
+    color: "#304558",
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  bottleCalendarWeekRow: {
+    flexDirection: "row",
+    marginBottom: 4,
+  },
+  bottleCalendarWeekday: {
+    width: "14.285%",
+    color: "#71806E",
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: "800",
+    textAlign: "center",
+    textTransform: "uppercase",
+  },
+  bottleCalendarGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  bottleCalendarDay: {
+    width: "14.285%",
+    aspectRatio: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 12,
+  },
+  bottleCalendarDayMuted: {
+    opacity: 0.45,
+  },
+  bottleCalendarDaySelected: {
+    backgroundColor: "#70C943",
+  },
+  bottleCalendarDayDisabled: {
+    opacity: 0.28,
+  },
+  bottleCalendarDayText: {
+    color: "#304558",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
+  },
+  bottleCalendarDayTextMuted: {
+    color: "#7B8A95",
+  },
+  bottleCalendarDayTextSelected: {
+    color: "#FFFFFF",
+    fontWeight: "900",
+  },
+  bottleCalendarDayTextDisabled: {
+    color: "#9AA6AE",
+  },
+  bottleClockHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    columnGap: 10,
+    marginBottom: 10,
+  },
+  bottleClockTitle: {
+    flex: 1,
+    color: "#304558",
+    fontSize: 20,
+    lineHeight: 25,
+    fontWeight: "900",
+  },
+  bottleClockPeriodRow: {
+    flexDirection: "row",
+    borderRadius: 999,
+    backgroundColor: "#EDF4EA",
+    borderWidth: 1,
+    borderColor: "#D6E1D0",
+    padding: 2,
+  },
+  bottleClockPeriodButton: {
+    minWidth: 42,
+    borderRadius: 999,
+    paddingVertical: 7,
+    alignItems: "center",
+  },
+  bottleClockPeriodButtonActive: {
+    backgroundColor: "#70C943",
+  },
+  bottleClockPeriodText: {
+    color: "#5E6F7E",
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: "800",
+  },
+  bottleClockPeriodTextActive: {
+    color: "#FFFFFF",
+  },
+  bottleClockSectionLabel: {
+    color: "#71806E",
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    marginBottom: 6,
+  },
+  bottleClockGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: 10,
+  },
+  bottleClockChip: {
+    minWidth: 42,
+    minHeight: 34,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#DCE8D6",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+  },
+  bottleClockChipActive: {
+    backgroundColor: "#70C943",
+    borderColor: "#70C943",
+  },
+  bottleClockChipText: {
+    color: "#304558",
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: "800",
+  },
+  bottleClockChipTextActive: {
+    color: "#FFFFFF",
   },
   bottleInlinePickerDoneButton: {
     alignSelf: "flex-end",
