@@ -32,6 +32,7 @@ const PEER_INVITATION_STATUS_VALUES = new Set(["PENDING", "ACCEPTED", "DECLINED"
 const BOOKING_SOURCES = new Set(["MOBILE_APP", "ADMIN_PANEL"]);
 const SUPPORT_TYPE_GUIDANCE = "GUIDANCE";
 const SUPPORT_TYPE_PEER = "PEER";
+const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
 
 function normalizeCompactSpaces(value) {
   return String(value || "").trim().replace(/\s+/g, " ");
@@ -2296,6 +2297,9 @@ router.post("/book", async (req, res) => {
   if (!studentNumber || !counselorId || !appointmentDate || !slotTime || !concern) {
     return res.status(400).json({ message: "Student, counselor, concern, date, and time are required." });
   }
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "Valid student number is required." });
+  }
   if (!DEFAULT_SLOT_TIMES.includes(slotTime)) {
     return res.status(400).json({ message: "Invalid appointment time." });
   }
@@ -2498,6 +2502,9 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
 
   if (!appointmentId || !studentNumber || !counselorId || !appointmentDate || !slotTime || !concern) {
     return res.status(400).json({ message: "Student, counselor, concern, date, and time are required." });
+  }
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "Valid student number is required." });
   }
   if (!DEFAULT_SLOT_TIMES.includes(slotTime)) {
     return res.status(400).json({ message: "Invalid appointment time." });
@@ -3301,6 +3308,9 @@ router.post("/admin/peer-counselors", async (req, res) => {
   if (!fullName || !email || !studentNumber || !program) {
     return res.status(400).json({ message: "Name, Gmail, student number, and program are required." });
   }
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "Valid student number is required." });
+  }
   if (!isLikelyEmailAddress(email)) {
     return res.status(400).json({ message: "A valid Gmail address is required." });
   }
@@ -3425,6 +3435,9 @@ router.patch("/admin/peer-counselors/:peerCounselorId", async (req, res) => {
 
   if (!peerCounselorId || !fullName || !email || !studentNumber || !program) {
     return res.status(400).json({ message: "Peer counselor details are required." });
+  }
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "Valid student number is required." });
   }
   if (!isLikelyEmailAddress(email)) {
     return res.status(400).json({ message: "A valid Gmail address is required." });
@@ -3650,6 +3663,9 @@ router.post("/admin/availability/day", async (req, res) => {
 
   if (!counselorId || !targetDate) {
     return res.status(400).json({ message: "Counselor and target date are required." });
+  }
+  if (targetDate < getManilaDateParts().isoDate) {
+    return res.status(400).json({ message: "Past dates cannot be edited." });
   }
 
   const counselor = await findSupportCounselorById(counselorId, supportType);

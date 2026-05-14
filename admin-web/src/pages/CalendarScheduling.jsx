@@ -34,6 +34,7 @@ import {
 import { PROGRAM_OPTIONS } from "../lib/register-data";
 
 const ACTIVITY_LOGS_PER_PAGE = 5;
+const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
 
 const PEER_FORM_INITIAL_STATE = {
   email: "",
@@ -346,9 +347,14 @@ export default function CalendarScheduling({
     try {
       setIsSubmitting(true);
       setModalError("");
+      const studentNumber = modalStudentNumber.trim();
+      if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+        setModalError("Student number must use the format 23-0000.");
+        return;
+      }
       const payload = {
         actorEmail: session?.email || "",
-        studentNumber: modalStudentNumber,
+        studentNumber,
         counselorId: modalCounselorId,
         appointmentDate: modalDate,
         slotTime: modalTime,
@@ -453,8 +459,14 @@ export default function CalendarScheduling({
     try {
       setIsSavingPeerCounselor(true);
       setPeerFormError("");
+      const studentNumber = peerForm.studentNumber.trim();
+      if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+        setPeerFormError("Student number must use the format 23-0000.");
+        return;
+      }
       const payload = {
         ...peerForm,
+        studentNumber,
         actorEmail: session?.email || "",
         specialties: [],
       };
@@ -826,12 +838,15 @@ export default function CalendarScheduling({
 
                       {row.dayTotals.map((day) => {
                         const isSelectedCounselor = row.counselor.id === selectedCounselor?.id;
-                        const isInteractive = isEditingCounselorAvailability && isSelectedCounselor;
+                        const isPastDay = day.isoDate < getTodayIsoDate();
+                        const isInteractive = isEditingCounselorAvailability && isSelectedCounselor && !isPastDay;
                         return (
                           <button
                             key={`${row.counselor.id}-${day.dayOfWeek}`}
                             type="button"
+                            disabled={isEditingCounselorAvailability && isPastDay}
                             onClick={() => {
+                              if (isPastDay && isEditingCounselorAvailability) return;
                               if (!isSelectedCounselor) {
                                 setSelectedCounselorId(row.counselor.id);
                                 return;
@@ -847,7 +862,9 @@ export default function CalendarScheduling({
                             }}
                             className={`rounded-2xl bg-slate-50 px-3 py-3 text-left transition ${
                               isInteractive ? "hover:bg-slate-100" : "hover:bg-slate-100"
-                            } ${isSelectedCounselor ? "ring-2 ring-emerald-100" : ""}`}
+                            } ${isSelectedCounselor ? "ring-2 ring-emerald-100" : ""} ${
+                              isEditingCounselorAvailability && isPastDay ? "cursor-not-allowed opacity-55" : ""
+                            }`}
                           >
                             {day.isWorkingDay ? (
                               <div className="space-y-2">
@@ -861,12 +878,12 @@ export default function CalendarScheduling({
                                   />
                                 </div>
                                 <div className="text-xs font-semibold text-slate-500">
-                                  {isInteractive ? `${formatDisplayDate(day.isoDate)}` : formatAvailabilityHours(day.openSlots)}
+                                  {isEditingCounselorAvailability ? `${formatDisplayDate(day.isoDate)}${isPastDay ? " (locked)" : ""}` : formatAvailabilityHours(day.openSlots)}
                                 </div>
                               </div>
                             ) : (
                               <div className="flex h-11 items-center justify-center rounded-xl bg-slate-100 text-sm font-medium text-slate-400">
-                                {isInteractive ? formatDisplayDate(day.isoDate) : "Off"}
+                                {isEditingCounselorAvailability ? `${formatDisplayDate(day.isoDate)}${isPastDay ? " (locked)" : ""}` : "Off"}
                               </div>
                             )}
                           </button>
@@ -1210,7 +1227,14 @@ export default function CalendarScheduling({
                   <input
                     required
                     value={peerForm.studentNumber}
-                    onChange={(event) => setPeerForm((current) => ({ ...current, studentNumber: event.target.value }))}
+                    inputMode="numeric"
+                    maxLength={7}
+                    pattern="\d{2}-\d{4}"
+                    onChange={(event) => {
+                      const digits = event.target.value.replace(/\D/g, "").slice(0, 6);
+                      const studentNumber = digits.length > 2 ? `${digits.slice(0, 2)}-${digits.slice(2)}` : digits;
+                      setPeerForm((current) => ({ ...current, studentNumber }));
+                    }}
                     className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#3DA35D]"
                     placeholder="23-0000"
                   />
@@ -1289,9 +1313,15 @@ export default function CalendarScheduling({
                 <input
                   required
                   type="text"
-                  placeholder="e.g. 21-12345"
+                  inputMode="numeric"
+                  maxLength={7}
+                  pattern="\d{2}-\d{4}"
+                  placeholder="e.g. 21-1234"
                   value={modalStudentNumber}
-                  onChange={(e) => setModalStudentNumber(e.target.value)}
+                  onChange={(e) => {
+                    const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
+                    setModalStudentNumber(digits.length > 2 ? `${digits.slice(0, 2)}-${digits.slice(2)}` : digits);
+                  }}
                   className="w-full rounded-xl border border-slate-200 p-2.5 text-sm outline-none focus:border-[#3DA35D] focus:ring-1 focus:ring-[#3DA35D]"
                 />
               </div>

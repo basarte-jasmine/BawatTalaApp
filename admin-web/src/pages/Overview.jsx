@@ -326,40 +326,36 @@ function JournalEntriesGraph({ data, onSelect }) {
 
 function ActiveUsageGraph({ data, onSelect }) {
   const max = Math.max(...data.map((item) => item.value), 1);
+  const sortedData = [...data].sort((a, b) => b.value - a.value);
 
   return (
-    <div className="h-[250px] w-full">
-      <div
-        className="grid h-full gap-4"
-        style={{ gridTemplateColumns: `repeat(${Math.max(1, data.length)}, minmax(0, 1fr))` }}
-      >
-        {data.map((item) => (
-          <div key={item.key} className="flex flex-col items-center">
-            <div className="flex h-full w-full items-end justify-center">
-              <button
-                key={item.key}
-                type="button"
-                onClick={onSelect ? () => onSelect(`Program Distribution: ${item.label}`) : undefined}
-                title={`${item.label}: ${item.value.toLocaleString()} students`}
-                className="w-full max-w-[28px] rounded-t-[6px]"
+    <div className="w-full space-y-3">
+      {sortedData.map((item) => {
+        const percent = Math.max(6, (item.value / max) * 100);
+        return (
+          <button
+            key={item.key}
+            type="button"
+            onClick={onSelect ? () => onSelect(`Program Distribution: ${item.label}`) : undefined}
+            title={`${item.label}: ${item.value.toLocaleString()} students`}
+            className="grid w-full grid-cols-[minmax(150px,0.9fr)_minmax(220px,1.6fr)_72px] items-center gap-4 rounded-lg px-2 py-2 text-left transition hover:bg-emerald-50"
+          >
+            <span className="min-w-0 truncate text-sm font-semibold text-slate-600">{item.label}</span>
+            <div className="h-8 overflow-hidden rounded-lg bg-slate-100">
+              <div
+                className="flex h-full items-center justify-end rounded-lg pr-2 text-xs font-bold text-white"
                 style={{
-                  height: `${Math.max(10, (item.value / max) * 100)}%`,
+                  width: `${percent}%`,
                   backgroundColor: item.color,
                 }}
-              />
+              >
+                {item.value.toLocaleString()}
+              </div>
             </div>
-            <span className="mt-3 text-center text-sm font-semibold text-gray-500">{item.label}</span>
-          </div>
-        ))}
-      </div>
-      <div className="mt-4 flex flex-wrap gap-4 text-xs text-gray-600">
-        {data.map((item) => (
-          <div key={item.key} className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-            <span>{item.label}</span>
-          </div>
-        ))}
-      </div>
+            <span className="text-right text-sm font-bold text-slate-700">{item.value.toLocaleString()}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }

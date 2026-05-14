@@ -755,16 +755,17 @@ export default function FlaggedEntries({ onLogout, session }) {
 
   const filteredStudents = useMemo(() => {
     const now = Date.now();
-    return groupedStudents.filter((student) => {
-      const matchesTab = studentMatchesFlag(student, activeTab);
-      const matchesConcern = concernFilter === "all" || student.concernTags.includes(concernFilter);
-      const entryDate = new Date(student.latestEntry.createdAt || student.latestEntry.entryDate).getTime();
+    const filteredEntries = entries.filter((entry) => {
+      const matchesTab = entryMatchesFlag(entry, activeTab);
+      const matchesConcern = concernFilter === "all" || getConcernTags(entry).includes(concernFilter);
+      const entryDate = new Date(entry.createdAt || entry.entryDate).getTime();
       const matchesDate =
         dateFilter === "all" ||
         (!Number.isNaN(entryDate) && now - entryDate <= Number(dateFilter) * 24 * 60 * 60 * 1000);
       return matchesTab && matchesConcern && matchesDate;
     });
-  }, [activeTab, concernFilter, dateFilter, groupedStudents]);
+    return groupEntriesByStudent(filteredEntries);
+  }, [activeTab, concernFilter, dateFilter, entries]);
 
   function resetEditState(entry) {
     setEditState({

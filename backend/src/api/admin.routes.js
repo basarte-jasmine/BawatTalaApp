@@ -1492,7 +1492,7 @@ router.get("/dashboard/risk-flags", async (_req, res) => {
       from public.journal_entries je
       left join public.student_profiles sp on sp.student_number = je.student_number
       where (
-        upper(coalesce(je.risk_level, 'NONE')) in ('LOW', 'HIGH', 'CRITICAL')
+        upper(coalesce(je.risk_level, 'NONE')) in ('LOW', 'MEDIUM', 'MODERATE', 'HIGH', 'CRITICAL')
         or upper(coalesce(je.support_response, '')) = 'DECLINED'
       )
         and je.deleted_by_student_at is null
