@@ -30,7 +30,6 @@ const REPORT_COLUMNS = [
   { key: "counselingSessions", label: "Sessions", align: "right" },
   { key: "topConcern", label: "Top Concern" },
   { key: "latestRiskLevel", label: "Latest Risk" },
-  { key: "lastEntryDate", label: "Last Entry" },
   { key: "reportStatus", label: "Status" },
 ];
 
