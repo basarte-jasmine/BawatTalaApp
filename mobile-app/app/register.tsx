@@ -13,6 +13,7 @@ import {
   Text,
   View,
 } from "react-native";
+import type { NativeScrollEvent, NativeSyntheticEvent } from "react-native";
 import { FormTextInput } from "../components/forms/FormTextInput";
 import { OtpCodeInput } from "../components/forms/OtpCodeInput";
 import { SelectField } from "../components/forms/SelectField";
@@ -155,6 +156,7 @@ export default function RegisterScreen() {
   const [policyModalVisible, setPolicyModalVisible] = useState(false);
   const [policyModalTitle, setPolicyModalTitle] = useState("");
   const [policyModalContent, setPolicyModalContent] = useState("");
+  const [hasScrolledPolicyToEnd, setHasScrolledPolicyToEnd] = useState(false);
   const [resendSeconds, setResendSeconds] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
   const [isBusy, setIsBusy] = useState(false);
@@ -382,6 +384,7 @@ export default function RegisterScreen() {
   };
 
   const openPolicyModal = (type: "terms" | "privacy") => {
+    setHasScrolledPolicyToEnd(false);
     if (type === "terms") {
       setPolicyModalTitle("Terms and Conditions");
       setPolicyModalContent(TERMS_AND_CONDITIONS_CONTENT);
@@ -390,6 +393,14 @@ export default function RegisterScreen() {
       setPolicyModalContent(PRIVACY_POLICY_CONTENT);
     }
     setPolicyModalVisible(true);
+  };
+
+  const handlePolicyScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const isAtEnd = layoutMeasurement.height + contentOffset.y >= contentSize.height - 24;
+    if (isAtEnd) {
+      setHasScrolledPolicyToEnd(true);
+    }
   };
 
   return (
@@ -744,28 +755,104 @@ export default function RegisterScreen() {
         visible={policyModalVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => setPolicyModalVisible(false)}
+        onRequestClose={() => undefined}
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{policyModalTitle}</Text>
-              <Pressable onPress={() => setPolicyModalVisible(false)}>
-                <Ionicons name="close" size={20} color="#1F2A33" />
-              </Pressable>
+              <View style={styles.modalTitleWrap}>
+                <View style={styles.modalIconWrap}>
+                  <Ionicons
+                    name={policyModalTitle.includes("Privacy") ? "shield-checkmark-outline" : "document-text-outline"}
+                    size={20}
+                    color="#4F7A35"
+                  />
+                </View>
+                <Text style={styles.modalTitle}>{policyModalTitle}</Text>
+              </View>
             </View>
-            <ScrollView style={styles.modalBody}>
-              <Text style={styles.modalBodyText}>{policyModalContent}</Text>
+            <ScrollView
+              style={styles.modalBody}
+              contentContainerStyle={styles.modalBodyContent}
+              onScroll={handlePolicyScroll}
+              scrollEventThrottle={16}
+              showsVerticalScrollIndicator={false}
+            >
+              <PolicyDocument content={policyModalContent} />
             </ScrollView>
+            <Text style={styles.policyReadHint}>
+              {hasScrolledPolicyToEnd ? "Thanks for reviewing the full notice." : "Scroll to the end to continue."}
+            </Text>
             <AppPrimaryButton
-              label="Close"
+              label={hasScrolledPolicyToEnd ? "Got it" : "Scroll to Finish"}
               onPress={() => setPolicyModalVisible(false)}
-              containerStyle={styles.modalCloseButton}
+              disabled={!hasScrolledPolicyToEnd}
+              containerStyle={[
+                styles.modalCloseButton,
+                !hasScrolledPolicyToEnd && styles.modalCloseButtonDisabled,
+              ]}
+              labelStyle={!hasScrolledPolicyToEnd && styles.modalCloseButtonTextDisabled}
             />
           </View>
         </View>
       </Modal>
     </KeyboardAvoidingView>
+  );
+}
+
+function PolicyDocument({ content }: { content: string }) {
+  return (
+    <>
+      {content
+        .trim()
+        .split("\n")
+        .map((line, index) => {
+          const text = line.trim();
+
+          if (!text) {
+            return <View key={`space-${index}`} style={styles.policySpacer} />;
+          }
+
+          if (index === 0) {
+            return (
+              <Text key={`${text}-${index}`} style={styles.policyDocumentTitle}>
+                {text}
+              </Text>
+            );
+          }
+
+          if (text.startsWith("Effective Date:") || text.startsWith("Last Updated:")) {
+            return (
+              <Text key={`${text}-${index}`} style={styles.policyMetaText}>
+                {text}
+              </Text>
+            );
+          }
+
+          if (/^\d+\./.test(text)) {
+            return (
+              <Text key={`${text}-${index}`} style={styles.policySectionTitle}>
+                {text}
+              </Text>
+            );
+          }
+
+          if (text.startsWith("- ")) {
+            return (
+              <View key={`${text}-${index}`} style={styles.policyBulletRow}>
+                <View style={styles.policyBulletDot} />
+                <Text style={styles.policyBulletText}>{text.slice(2)}</Text>
+              </View>
+            );
+          }
+
+          return (
+            <Text key={`${text}-${index}`} style={styles.policyParagraph}>
+              {text}
+            </Text>
+          );
+        })}
+    </>
   );
 }
 
@@ -816,9 +903,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   consentCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 8,
-    padding: 10,
+    backgroundColor: "#F8FCF5",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#DDECD3",
+    padding: 12,
     marginTop: 8,
     marginBottom: 16,
     shadowColor: "#5C6570",
@@ -828,10 +917,10 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   consentBody: {
-    color: "#4E4E4E",
-    fontSize: 10,
-    lineHeight: 14,
-    marginTop: 8,
+    color: "#52646F",
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 10,
   },
   checkboxRow: {
     flexDirection: "row",
@@ -839,11 +928,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   checkbox: {
-    width: 16,
-    height: 16,
-    borderRadius: 4,
+    width: 18,
+    height: 18,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: "#6E6E6E",
+    borderColor: "#8BA28A",
     marginTop: 1,
     alignItems: "center",
     justifyContent: "center",
@@ -855,13 +944,13 @@ const styles = StyleSheet.create({
   },
   checkboxText: {
     flex: 1,
-    color: "#222222",
-    fontSize: 10,
-    lineHeight: 14,
+    color: "#243442",
+    fontSize: 12,
+    lineHeight: 17,
   },
   linkText: {
-    color: "#2C7DB0",
-    fontWeight: "600",
+    color: "#2E7130",
+    fontWeight: "800",
   },
   progressRow: {
     marginBottom: 20,
@@ -971,53 +1060,135 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.45)",
+    backgroundColor: "rgba(24, 34, 42, 0.48)",
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
   },
   modalCard: {
     width: "100%",
-    maxWidth: 360,
-    maxHeight: "82%",
-    borderRadius: 10,
+    maxWidth: 390,
+    maxHeight: "86%",
+    borderRadius: 22,
     backgroundColor: "#FFFFFF",
-    padding: 12,
+    borderWidth: 1,
+    borderColor: "#E4EBE1",
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 14,
     shadowColor: "#525C67",
-    shadowOpacity: 0.16,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 7,
   },
   modalHeader: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
-    marginBottom: 8,
+    columnGap: 10,
+    marginBottom: 14,
+  },
+  modalTitleWrap: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 10,
+  },
+  modalIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    backgroundColor: "#EDF8E7",
+    borderWidth: 1,
+    borderColor: "#D8EBCB",
+    alignItems: "center",
+    justifyContent: "center",
   },
   modalTitle: {
-    color: "#1F2A33",
-    fontSize: 14,
-    fontWeight: "700",
+    flex: 1,
+    color: "#243442",
+    fontSize: 19,
+    lineHeight: 24,
+    fontWeight: "800",
   },
   modalBody: {
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    backgroundColor: "#FFFFFF",
-    shadowColor: "#919AA4",
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
+    borderRadius: 16,
+    backgroundColor: "#FAFCF8",
+    borderWidth: 1,
+    borderColor: "#E5ECE1",
+    maxHeight: 430,
   },
-  modalBodyText: {
-    color: "#2F3F4C",
-    fontSize: 11,
+  modalBodyContent: {
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 18,
+  },
+  policyDocumentTitle: {
+    color: "#243442",
+    fontSize: 17,
+    lineHeight: 23,
+    fontWeight: "800",
+    marginBottom: 8,
+  },
+  policyMetaText: {
+    color: "#66805E",
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "700",
+  },
+  policySectionTitle: {
+    color: "#2D4053",
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: "800",
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  policyParagraph: {
+    color: "#536575",
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  policyBulletRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    columnGap: 8,
+    marginTop: 4,
+  },
+  policyBulletDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: "#79C943",
+    marginTop: 7,
+  },
+  policyBulletText: {
+    flex: 1,
+    color: "#536575",
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  policySpacer: {
+    height: 4,
+  },
+  policyReadHint: {
+    color: "#627369",
+    fontSize: 12,
     lineHeight: 16,
-    paddingBottom: 12,
+    fontWeight: "700",
+    textAlign: "center",
+    marginTop: 10,
   },
   modalCloseButton: {
-    marginTop: 10,
+    marginTop: 12,
+  },
+  modalCloseButtonDisabled: {
+    backgroundColor: "#C9D8C2",
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  modalCloseButtonTextDisabled: {
+    color: "#EEF6EA",
   },
 });
