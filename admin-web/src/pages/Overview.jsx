@@ -141,15 +141,15 @@ function mapMetricTone(key, direction) {
   return "gray";
 }
 
-function buildLinePath(values, width, height) {
+function buildLinePath(values, width, height, maxOverride) {
   if (!values.length) return "";
-  const max = Math.max(...values, 1);
+  const max = Math.max(Number(maxOverride || 0), ...values, 1);
   const stepX = values.length > 1 ? width / (values.length - 1) : width;
 
   return values
     .map((value, index) => {
       const x = index * stepX;
-      const y = height - (Number(value || 0) / max) * (height - 12) - 6;
+      const y = height - (Number(value || 0) / max) * (height - 22);
       return `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
     })
     .join(" ");
@@ -537,8 +537,8 @@ function AtRiskTrendsPanel({ analytics, loading }) {
     series.find((item) => item.key === "high")?.values ||
     [];
   const riskMax = Math.max(...crisisSeries, ...distressedSeries, 1);
-  const crisisPath = buildLinePath(crisisSeries, 280, 170);
-  const distressedPath = buildLinePath(distressedSeries, 280, 170);
+  const crisisPath = buildLinePath(crisisSeries, 280, 176, riskMax);
+  const distressedPath = buildLinePath(distressedSeries, 280, 176, riskMax);
 
   if (loading) {
     return <div className="py-16 text-center text-sm text-slate-500">Loading risk trends...</div>;
@@ -563,8 +563,8 @@ function AtRiskTrendsPanel({ analytics, loading }) {
               strokeDasharray="4 5"
             />
           ))}
-          <path d={distressedPath} fill="none" stroke={RISK_COLORS.distressed} strokeWidth="3" transform="translate(10 6)" />
-          <path d={crisisPath} fill="none" stroke={RISK_COLORS.crisis} strokeWidth="3" transform="translate(10 6)" />
+          <path d={distressedPath} fill="none" stroke={RISK_COLORS.distressed} strokeWidth="3" transform="translate(10 0)" />
+          <path d={crisisPath} fill="none" stroke={RISK_COLORS.crisis} strokeWidth="3" transform="translate(10 0)" />
           {distressedSeries.map((value, index) => {
             const x = distressedSeries.length > 1 ? (280 / (distressedSeries.length - 1)) * index + 10 : 150;
             const y = 176 - (Number(value || 0) / riskMax) * 154;
@@ -1198,10 +1198,6 @@ export default function Overview({ onLogout, session }) {
     dashboardSummary?.charts?.studentDemographics?.locations?.length > 0
       ? dashboardSummary.charts.studentDemographics.locations
       : [];
-  const studentDemographicSplit =
-    dashboardSummary?.charts?.studentDemographics?.genderSplit?.length > 0
-      ? withColors(dashboardSummary.charts.studentDemographics.genderSplit, ["#2E7D32", "#43A047", "#A5D6A7"])
-      : [];
   const activeUsageSeries =
     dashboardSummary?.charts?.activeUsageByCourseYear?.series?.length > 0
       ? withColors(dashboardSummary.charts.activeUsageByCourseYear.series, ["#3E8914", "#3DA35D", "#96E072", "#134611"])
@@ -1320,7 +1316,7 @@ export default function Overview({ onLogout, session }) {
           </Card>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr,1.9fr]">
+        <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[1.1fr,1.9fr]">
           <Card title="Student Emotion Trends (Current Month)" subtitle="Daily emotion check-ins recorded from the mobile app this month">
             {moodTrendLabels.length && moodTrendData.length ? (
               <MoodTrendsChart labels={moodTrendLabels} series={moodTrendData} />
@@ -1329,38 +1325,16 @@ export default function Overview({ onLogout, session }) {
             )}
           </Card>
 
-          <Card title="Student Demographics" subtitle="Distribution by location and gender">
-            {studentDemographicLocations.length || studentDemographicSplit.length ? (
-              <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1.45fr,0.85fr]">
-                {studentDemographicLocations.length ? (
-                  <StudentDemographicsChart data={studentDemographicLocations} />
-                ) : (
-                  <EmptyState>No location data available yet.</EmptyState>
-                )}
-                <div className="flex flex-col justify-center">
-                  {studentDemographicSplit.length ? (
-                    <>
-                      <DonutChart
-                        data={studentDemographicSplit}
-                        size={180}
-                        strokeWidth={18}
-                        centerValue={studentDemographicSplit.reduce((sum, item) => sum + item.value, 0)}
-                        centerLabel="Tracked students"
-                      />
-                      <ChartLegend data={studentDemographicSplit} className="justify-start" />
-                    </>
-                  ) : (
-                    <EmptyState>No demographic split data available yet.</EmptyState>
-                  )}
-                </div>
-              </div>
+          <Card title="Student Demographics by Location" subtitle="Distribution by submitted location">
+            {studentDemographicLocations.length ? (
+              <StudentDemographicsChart data={studentDemographicLocations} />
             ) : (
               <EmptyState>No student demographic data available yet.</EmptyState>
             )}
           </Card>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.8fr,1fr]">
+        <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[1.8fr,1fr]">
           <Card title="Student Distribution by Program" subtitle="Enrolled students grouped by program">
             {activeUsageSeries.length ? (
               <ActiveUsageGraph data={activeUsageSeries} />

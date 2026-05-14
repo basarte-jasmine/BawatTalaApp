@@ -243,21 +243,65 @@ export default function AnalyticsReports({ onLogout, session }) {
     void loadAnalytics("custom", customRange);
   }
 
-  function handleExportCsv() {
-    downloadFile(
-      `student-report-${analytics?.filters?.startDate || today}-to-${analytics?.filters?.endDate || today}.csv`,
-      buildStudentReportCsv(studentRows),
-      "text/csv;charset=utf-8;",
-    );
+  async function getAnalyticsForCurrentFilters() {
+    if (rangeKey !== "custom") return analytics;
+
+    const currentStartDate = analytics?.filters?.startDate || "";
+    const currentEndDate = analytics?.filters?.endDate || "";
+    if (currentStartDate === customRange.startDate && currentEndDate === customRange.endDate) {
+      return analytics;
+    }
+
+    const data = await fetchAdminAnalytics({
+      range: "custom",
+      startDate: customRange.startDate,
+      endDate: customRange.endDate,
+    });
+    setAnalytics(data);
+    return data;
   }
 
-  function handlePrintReport() {
+  async function handleExportCsv() {
+    try {
+      setLoading(true);
+      const currentAnalytics = await getAnalyticsForCurrentFilters();
+      const rows = Array.isArray(currentAnalytics?.reports?.students) ? currentAnalytics.reports.students : [];
+      const filters = currentAnalytics?.filters || {};
+      setErrorMessage("");
+      downloadFile(
+        `student-report-${filters.startDate || today}-to-${filters.endDate || today}.csv`,
+        buildStudentReportCsv(rows),
+        "text/csv;charset=utf-8;",
+      );
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to export CSV.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handlePrintReport() {
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
-    printWindow.document.write(buildPrintHtml({ rows: studentRows, filters: analytics?.filters }));
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
+    try {
+      setLoading(true);
+      const currentAnalytics = await getAnalyticsForCurrentFilters();
+      const rows = Array.isArray(currentAnalytics?.reports?.students) ? currentAnalytics.reports.students : [];
+      setErrorMessage("");
+      printWindow.document.write(buildPrintHtml({ rows, filters: currentAnalytics?.filters }));
+      printWindow.document.close();
+      printWindow.focus();
+      printWindow.print();
+    } catch (error) {
+      printWindow.close();
+      setErrorMessage(error instanceof Error ? error.message : "Failed to prepare PDF report.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleCustomDateChange(field, value) {
+    setCustomRange((current) => ({ ...current, [field]: value }));
   }
 
   return (
@@ -298,13 +342,13 @@ export default function AnalyticsReports({ onLogout, session }) {
                 <input
                   type="date"
                   value={customRange.startDate}
-                  onChange={(event) => setCustomRange((current) => ({ ...current, startDate: event.target.value }))}
+                  onChange={(event) => handleCustomDateChange("startDate", event.target.value)}
                   className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
                 />
                 <input
                   type="date"
                   value={customRange.endDate}
-                  onChange={(event) => setCustomRange((current) => ({ ...current, endDate: event.target.value }))}
+                  onChange={(event) => handleCustomDateChange("endDate", event.target.value)}
                   className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
                 />
                 <button

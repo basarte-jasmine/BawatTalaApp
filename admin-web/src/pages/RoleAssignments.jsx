@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Edit2, Shield, Trash2, UserPlus, Users } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import ConfirmActionModal from "../components/ConfirmActionModal";
 import Layout from "../components/Layout";
 import Modal from "../components/Modal";
@@ -36,6 +37,7 @@ function getStatusClasses(status) {
 }
 
 export default function RoleAssignments({ onLogout, session }) {
+  const navigate = useNavigate();
   const [members, setMembers] = useState([]);
   const [summary, setSummary] = useState({
     counselorCount: 0,
@@ -130,6 +132,10 @@ export default function RoleAssignments({ onLogout, session }) {
   }
 
   function openEditModal(member) {
+    if (member?.memberType === "PEER") {
+      navigate("/peer-counselors");
+      return;
+    }
     if (!member?.canEdit) return;
     setEditingMember(member);
     setFormState({
@@ -291,7 +297,9 @@ export default function RoleAssignments({ onLogout, session }) {
                     </td>
                   </tr>
                 ) : filteredMembers.length ? (
-                  filteredMembers.map((member) => (
+                  filteredMembers.map((member) => {
+                    const canOpenEdit = member.canEdit || member.memberType === "PEER";
+                    return (
                     <tr key={`${member.memberType}-${member.id}`} className="hover:bg-gray-50">
                       <td className="whitespace-nowrap px-6 py-4">
                         <div className="flex items-center gap-3">
@@ -328,9 +336,9 @@ export default function RoleAssignments({ onLogout, session }) {
                           <button
                             type="button"
                             onClick={() => openEditModal(member)}
-                            disabled={!member.canEdit}
+                            disabled={!canOpenEdit}
                             className="rounded-lg p-1.5 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
-                            aria-label={`Edit ${member.fullName}`}
+                            aria-label={member.memberType === "PEER" ? `Open peer counselor editor for ${member.fullName}` : `Edit ${member.fullName}`}
                           >
                             <Edit2 className="h-4 w-4" />
                           </button>
@@ -346,7 +354,8 @@ export default function RoleAssignments({ onLogout, session }) {
                         </div>
                       </td>
                     </tr>
-                  ))
+                  );
+                  })
                 ) : (
                   <tr>
                     <td colSpan={6} className="px-6 py-10 text-center text-sm text-slate-500">

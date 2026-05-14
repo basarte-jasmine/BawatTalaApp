@@ -1990,6 +1990,24 @@ async function acceptPeerInvitation({ token, profilePictureUrl = "" }) {
   };
 }
 
+async function notifyAdminsAboutPeerInvitationAccepted(peerCounselor) {
+  const admins = await listSchedulingAdmins();
+  for (const admin of admins) {
+    await createAdminNotification({
+      adminEmail: admin.email,
+      kind: "PEER_COUNSELOR_INVITATION_ACCEPTED",
+      title: "Peer counselor invitation accepted",
+      message: `${peerCounselor.full_name || peerCounselor.email} accepted the peer counselor invitation and is now active.`,
+      metadata: {
+        peerCounselorId: peerCounselor.id,
+        peerCounselorEmail: peerCounselor.email,
+        peerCounselorName: peerCounselor.full_name,
+        supportType: SUPPORT_TYPE_PEER,
+      },
+    });
+  }
+}
+
 async function notifyAdminsAboutPeerInvitationDeclined(invitation) {
   const admins = await listSchedulingAdmins();
   for (const admin of admins) {
@@ -2121,6 +2139,11 @@ router.post("/peer-counselors/invitations/:token/accept", async (req, res) => {
     const result = await acceptPeerInvitation({ token, profilePictureUrl });
     if (!result.ok) {
       return res.status(409).json({ message: result.message || "This peer counselor invitation has already been used." });
+    }
+    try {
+      await notifyAdminsAboutPeerInvitationAccepted(result.peerCounselor);
+    } catch (error) {
+      console.warn("Failed to notify admins about accepted peer invitation:", error?.message || error);
     }
     return res.json({ message: result.message || "Invitation accepted." });
   } catch (error) {

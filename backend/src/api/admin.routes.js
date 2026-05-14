@@ -1906,7 +1906,7 @@ router.post("/students/:studentNumber/notify", async (req, res) => {
 router.get("/search", async (req, res) => {
   const search = normalizeCompactSpaces(req.query.q || "");
   if (!search || search.length < 2) {
-    return res.json({ students: [], entries: [] });
+    return res.json({ students: [], entries: [], appointments: [], team: [], riskTriggers: [] });
   }
 
   const pattern = `%${search}%`;
@@ -1944,7 +1944,7 @@ router.get("/search", async (req, res) => {
           or coalesce(sp.barangay, '') ilike $1
           or coalesce(sp.city, '') ilike $1
         order by full_name asc
-        limit 8
+        limit 12
       `,
       [pattern],
     ),
@@ -1976,7 +1976,7 @@ router.get("/search", async (req, res) => {
             or coalesce(sp.program, '') ilike $1
           )
         order by je.entry_date desc, je.created_at desc
-        limit 8
+        limit 12
       `,
       [pattern],
     ),
@@ -2008,7 +2008,7 @@ router.get("/search", async (req, res) => {
           or coalesce(ca.support_type, '') ilike $1
           or coalesce(aa.full_name, pc.full_name, '') ilike $1
         order by ca.appointment_date desc, ca.slot_time desc
-        limit 8
+        limit 12
       `,
       [pattern],
     ),
@@ -2027,7 +2027,7 @@ router.get("/search", async (req, res) => {
           or email ilike $1
           or role ilike $1
         order by full_name asc
-        limit 8
+        limit 12
       `,
       [pattern],
     ),
@@ -2049,7 +2049,7 @@ router.get("/search", async (req, res) => {
           or coalesce(student_number, '') ilike $1
           or coalesce(program, '') ilike $1
         order by full_name asc
-        limit 8
+        limit 12
       `,
       [pattern],
     ),
@@ -2066,7 +2066,7 @@ router.get("/search", async (req, res) => {
           phrase ilike $1
           or risk_level ilike $1
         order by phrase asc
-        limit 8
+        limit 12
       `,
       [pattern],
     ),
@@ -2659,7 +2659,7 @@ router.get("/students", async (req, res) => {
   if (program) {
     values.push(program);
     const programIndex = values.length;
-    conditions.push(`coalesce(sp.program, '') = $${programIndex}`);
+    conditions.push(`lower(coalesce(sp.program, '')) = lower($${programIndex})`);
   }
 
   if (status === "flagged") {
@@ -2731,7 +2731,16 @@ router.get("/students", async (req, res) => {
     status: toStudentStatus(row),
   }));
 
-  const programs = [...new Set(students.map((item) => item.program).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const programsResult = await query(
+    `
+      select distinct coalesce(program, '') as program
+      from public.student_profiles
+      where coalesce(program, '') <> ''
+      order by program asc
+    `,
+  );
+  const programs = [...new Set(programsResult.rows.map((row) => normalizeDisplayLabel(row.program)).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
 
   return res.json({ students, programs });
 });

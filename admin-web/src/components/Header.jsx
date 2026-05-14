@@ -31,7 +31,7 @@ const EMPTY_GLOBAL_SEARCH_RESULTS = {
 };
 
 const GLOBAL_SEARCH_PAGES = [
-  { path: "/dashboard", label: "Overview & Analytics", group: "Page", icon: LayoutGrid, keywords: ["dashboard", "overview", "analytics", "home", "summary"] },
+  { path: "/dashboard", label: "Overview & Analytics", group: "Page", icon: LayoutGrid, keywords: ["dashboard", "overview", "analytics", "home", "summary", "demographics", "distribution", "themes", "risk trends"] },
   { path: "/flagged", label: "Flagged Entries", group: "Page", icon: Flag, keywords: ["flagged", "risk", "critical", "support", "review"] },
   { path: "/users", label: "Student Directory", group: "Page", icon: Users, keywords: ["students", "users", "directory", "profiles"] },
   { path: "/appointments", label: "Guidance Scheduling", group: "Page", icon: CalendarDays, keywords: ["appointments", "calendar", "schedule", "guidance", "sessions"] },
@@ -347,6 +347,11 @@ export default function Header({
     navigate(path);
   }
 
+  function handleHeaderSearchChange(event) {
+    setGlobalSearchTerm(event.target.value);
+    setIsSearchModalOpen(true);
+  }
+
   async function handleOpenNotification(item) {
     if (!item?.id || item.isRead || !adminEmail) {
       return;
@@ -396,10 +401,12 @@ export default function Header({
               <Search className="pointer-events-none absolute left-3 h-4 w-4 text-gray-400 transition-colors group-hover:text-emerald-600" />
               <input
                 type="text"
-                readOnly
+                value={globalSearchTerm}
+                onFocus={() => setIsSearchModalOpen(true)}
                 onClick={() => setIsSearchModalOpen(true)}
+                onChange={handleHeaderSearchChange}
                 placeholder="Search students, entries, or settings..."
-                className="w-full cursor-text rounded-lg border border-gray-200 bg-[#FAFAF9] py-2 pl-10 pr-4 text-sm text-admin-ink transition-all hover:bg-white focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/20"
+                className="w-full rounded-lg border border-gray-200 bg-[#FAFAF9] py-2 pl-10 pr-4 text-sm text-admin-ink transition-all hover:bg-white focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/20"
               />
             </div>
 
@@ -593,7 +600,7 @@ export default function Header({
                         meta={`${formatSearchDate(appointment.appointmentDate)} ${appointment.slotTime || ""} - ${appointment.supportType || "GUIDANCE"}`}
                         detail={[appointment.program, appointment.counselorName, appointment.studentNote].filter(Boolean).join(" - ")}
                         badge={appointment.status}
-                        onClick={() => openSearchPath("/appointments")}
+                        onClick={() => openSearchPath(String(appointment.supportType || "").toUpperCase() === "PEER" ? "/peer-counselors" : "/appointments")}
                       />
                     ))
                   ) : (
