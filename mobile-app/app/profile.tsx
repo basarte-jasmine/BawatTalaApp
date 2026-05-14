@@ -290,13 +290,18 @@ const styles = StyleSheet.create({
     borderColor: "#F2FFFA",
   },
   name: {
+    width: "100%",
+    maxWidth: 300,
     color: "#304558",
     fontSize: 28,
     lineHeight: 34,
     fontWeight: "700",
+    textAlign: "center",
     marginBottom: 4,
   },
   email: {
+    width: "100%",
+    maxWidth: 300,
     color: "#5E7080",
     fontSize: 14,
     lineHeight: 20,
