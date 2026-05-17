@@ -27,6 +27,27 @@ const OTP_COOLDOWN_MS = 30 * 1000;
 const OTP_VALIDITY_MS = 60 * 1000;
 const RESET_SESSION_MS = 10 * 60 * 1000;
 const ADMIN_PROFILE_PICTURE_LIMIT_BYTES = 5 * 1024 * 1024;
+const CONSULTATION_CONCERN_CATEGORY_DEFS = [
+  { label: "Personal problems", aliases: ["personal problems", "personal problem"] },
+  { label: "Mental health", aliases: ["mental health"] },
+  { label: "Career guidance", aliases: ["career guidance", "career"] },
+  { label: "Financial", aliases: ["financial", "financial guidance", "financial concern", "financial concerns"] },
+  { label: "Burnout / Exhaustion", aliases: ["burnout", "burnout / exhaustion", "burnout/exhaustion"] },
+  { label: "Academic problems", aliases: ["academic problems", "academic problem", "academic", "academic stress"] },
+  { label: "Peer relationship", aliases: ["peer relationship", "peer"] },
+  { label: "Family relationship", aliases: ["family relationship", "family", "family issues"] },
+  { label: "Romantic relationship", aliases: ["romantic relationship", "romantic"] },
+  { label: "Anxiety", aliases: ["anxiety", "anxiety/stress", "anxiety / stress"] },
+  { label: "Stress", aliases: ["stress"] },
+  { label: "Bullying", aliases: ["bullying", "bully"] },
+  { label: "Adjustment", aliases: ["adjustment", "adjust"] },
+  { label: "Others", aliases: ["others", "other", "interpersonal relationships", "relationship", "relationships"] },
+];
+const CONSULTATION_CONCERN_CATEGORY_BY_ALIAS = new Map(
+  CONSULTATION_CONCERN_CATEGORY_DEFS.flatMap((definition) =>
+    definition.aliases.map((alias) => [alias, definition.label]),
+  ),
+);
 
 const adminLoginAttempts = new Map();
 const adminResetSessions = new Map();
@@ -203,6 +224,15 @@ function normalizeDisplayLabel(value) {
       return part.charAt(0).toUpperCase() + part.slice(1);
     })
     .join(" ");
+}
+
+function normalizeConsultationConcernCategory(value) {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+
+  return CONSULTATION_CONCERN_CATEGORY_BY_ALIAS.get(normalized) || "Others";
 }
 
 function inferYearLevelFromStudentNumber(studentNumber) {
@@ -2154,7 +2184,7 @@ router.get("/analytics", async (req, res) => {
     req.query.startDate,
     req.query.endDate,
   );
-  const [profilesResult, journalRowsResult, appointmentsResult, counselorsResult] = await Promise.all([
+  const [profilesResult, journalRowsResult, appointmentsResult, counselorsResult, peerCounselorsResult] = await Promise.all([
     query(
       `
         select
@@ -2195,13 +2225,22 @@ router.get("/analytics", async (req, res) => {
     query(
       `
         select
+          ca.id,
           ca.appointment_date,
           ca.status,
           ca.student_number,
-          aa.full_name as counselor_name,
-          aa.role as counselor_role
+          ca.concern,
+          coalesce(ca.support_type, case when ca.peer_counselor_id is not null then 'PEER' else 'GUIDANCE' end) as support_type,
+          coalesce(ca.peer_counselor_id, ca.counselor_id) as assignee_id,
+          coalesce(nullif(aa.full_name, ''), pc.full_name, 'Unassigned') as counselor_name,
+          case
+            when coalesce(ca.support_type, case when ca.peer_counselor_id is not null then 'PEER' else 'GUIDANCE' end) = 'PEER'
+              then 'PEER_COUNSELOR'
+            else coalesce(aa.role, 'COUNSELOR')
+          end as counselor_role
         from public.counselor_appointments ca
         left join public.admin_accounts aa on aa.id = ca.counselor_id
+        left join public.peer_counselors pc on pc.id = ca.peer_counselor_id
         where ca.appointment_date between $1::date and $2::date
         order by ca.appointment_date asc
       `,
@@ -2219,6 +2258,16 @@ router.get("/analytics", async (req, res) => {
         order by case when coalesce(aa.role, 'COUNSELOR') = 'HEAD_COUNSELOR' then 0 else 1 end, full_name asc
       `,
     ),
+    query(
+      `
+        select
+          pc.id,
+          coalesce(nullif(pc.full_name, ''), pc.student_number, pc.email) as full_name
+        from public.peer_counselors pc
+        where pc.is_active = true
+        order by full_name asc
+      `,
+    ),
   ]);
 
   const profileRows = profilesResult.rows || [];
@@ -2226,6 +2275,7 @@ router.get("/analytics", async (req, res) => {
   const journalRows = journalRowsResult.rows || [];
   const appointmentRows = appointmentsResult.rows || [];
   const counselors = counselorsResult.rows || [];
+  const peerCounselors = peerCounselorsResult.rows || [];
   const rangeDays = getDaysBetweenInclusive(startDate, endDate);
   const previousStartDate = addDaysToIsoDate(startDate, -rangeDays);
   const previousEndDate = addDaysToIsoDate(startDate, -1);
@@ -2335,18 +2385,48 @@ router.get("/analytics", async (req, res) => {
     }
   }
 
-  const workloadCounts = appointmentRows.reduce((acc, row) => {
-    if (!["CONFIRMED", "COMPLETED"].includes(String(row.status || "").toUpperCase())) return acc;
-    const counselorName = normalizeCompactSpaces(row.counselor_name || "Unassigned");
-    if (!counselorName) return acc;
-    acc[counselorName] = (acc[counselorName] || 0) + 1;
+  const scheduledAppointmentRows = appointmentRows.filter((row) =>
+    ["CONFIRMED", "COMPLETED"].includes(String(row.status || "").toUpperCase()),
+  );
+  const consultationCategoryCounts = Object.fromEntries(
+    CONSULTATION_CONCERN_CATEGORY_DEFS.map((definition) => [definition.label, 0]),
+  );
+
+  for (const row of scheduledAppointmentRows) {
+    const category = normalizeConsultationConcernCategory(row.concern);
+    consultationCategoryCounts[category] = (consultationCategoryCounts[category] || 0) + 1;
+  }
+
+  const consultationVolumeByCategory = CONSULTATION_CONCERN_CATEGORY_DEFS.map((definition) => ({
+    label: definition.label,
+    value: Number(consultationCategoryCounts[definition.label] || 0),
+  }));
+
+  const workloadCounts = scheduledAppointmentRows.reduce((acc, row) => {
+    const supportType = String(row.support_type || "").toUpperCase() === "PEER" ? "PEER" : "GUIDANCE";
+    const key = `${supportType}:${row.assignee_id || normalizeCompactSpaces(row.counselor_name || "Unassigned")}`;
+    acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
 
-  const counselorWorkload = counselors.map((counselor) => ({
-    label: counselor.full_name,
-    role: toCounselorRoleLabel(counselor.role),
-    value: Number(workloadCounts[counselor.full_name] || 0),
+  const workloadAssignees = [
+    ...counselors.map((counselor) => ({
+      key: `GUIDANCE:${counselor.id}`,
+      label: counselor.full_name,
+      role: toCounselorRoleLabel(counselor.role),
+      supportType: "GUIDANCE",
+    })),
+    ...peerCounselors.map((peerCounselor) => ({
+      key: `PEER:${peerCounselor.id}`,
+      label: peerCounselor.full_name,
+      role: "Peer Counselor",
+      supportType: "PEER",
+    })),
+  ];
+
+  const counselorWorkload = workloadAssignees.map((assignee) => ({
+    ...assignee,
+    value: Number(workloadCounts[assignee.key] || 0),
   }));
 
   const weeklyBuckets = buildWindowBuckets(startDate, endDate, 4);
@@ -2502,6 +2582,7 @@ router.get("/analytics", async (req, res) => {
         labels: windowBuckets.map((bucket) => bucket.label),
         series: [...concernSeriesMap.values()],
       },
+      consultationVolumeByCategory,
       counselorWorkload,
       atRiskStudentTrends: {
         labels: weeklyBuckets.map((_, index) => `W${index + 1}`),
