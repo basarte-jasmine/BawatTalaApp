@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -66,6 +66,8 @@ const AI_RETRY_LOCK_MS = 12000;
 const NCMH_HOTLINE_DIAL_URL = "tel:+639178998727";
 const NCMH_HOTLINE_DISPLAY = "0917-899-8727";
 const NCMH_HOTLINE_LANDLINE = "1553";
+const MUNI_PROMPT_TYPE_INTERVAL_MS = 34;
+const USER_ENTRY_TYPE_INTERVAL_MS = 42;
 
 function formatJournalHeaderDate(entryDate?: string) {
   const safeDate =
@@ -108,6 +110,115 @@ function uniqueTags(tags: string[]) {
   return tags.filter((tag, index, items) => Boolean(tag) && items.indexOf(tag) === index);
 }
 
+function TypewrittenMuniPrompt({ onComplete, text }: { onComplete?: () => void; text: string }) {
+  const [visibleLength, setVisibleLength] = useState(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isComplete = visibleLength >= text.length;
+
+  useEffect(() => {
+    setVisibleLength(0);
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    intervalRef.current = setInterval(() => {
+      setVisibleLength((current) => {
+        if (current >= text.length) {
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+          }
+          return current;
+        }
+        return current + 1;
+      });
+    }, MUNI_PROMPT_TYPE_INTERVAL_MS);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [text]);
+
+  useEffect(() => {
+    if (!isComplete) return;
+    onComplete?.();
+  }, [isComplete, onComplete]);
+
+  return (
+    <View>
+      <Text style={styles.leftMessageText}>
+        {text.slice(0, visibleLength)}
+        {!isComplete ? <Text style={styles.typewriterCursor}>|</Text> : null}
+      </Text>
+      {!isComplete ? (
+        <View style={styles.muniWritingRow}>
+          <Ionicons name="create-outline" size={13} color="#5B8D4E" />
+          <Text style={styles.muniWritingText}>Muni is writing...</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function TypewrittenUserEntry({ isSending, text }: { isSending: boolean; text: string }) {
+  const [visibleLength, setVisibleLength] = useState(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isComplete = visibleLength >= text.length;
+
+  useEffect(() => {
+    setVisibleLength(0);
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    if (text.length <= 0) {
+      return undefined;
+    }
+
+    intervalRef.current = setInterval(() => {
+      setVisibleLength((current) => {
+        if (current >= text.length) {
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+          }
+          return current;
+        }
+        return current + 1;
+      });
+    }, USER_ENTRY_TYPE_INTERVAL_MS);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [text]);
+
+  return (
+    <View>
+      <Text style={styles.rightMessageText}>
+        {text.slice(0, visibleLength)}
+        {isSending ? <Text style={styles.userTypewriterCursor}>|</Text> : null}
+      </Text>
+      {isSending ? (
+        <View style={styles.userWritingRow}>
+          <Text style={styles.userWritingText}>
+            {isComplete ? "Sending to Muni..." : "Writing into journal..."}
+          </Text>
+          <Ionicons name="create-outline" size={13} color="#63727F" />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 export default function WriteEntryScreen() {
   const { user } = useAuthSession();
   const { mode } = useLocalSearchParams<{ mode?: string }>();
@@ -121,6 +232,8 @@ export default function WriteEntryScreen() {
   const [isDiscarding, setIsDiscarding] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
+  const [pendingUserMessage, setPendingUserMessage] = useState("");
+  const [animatedMuniMessageId, setAnimatedMuniMessageId] = useState("");
   const [isAiRetryLocked, setIsAiRetryLocked] = useState(false);
   const [showRiskModal, setShowRiskModal] = useState(false);
   const [showExitModal, setShowExitModal] = useState(false);
@@ -234,6 +347,21 @@ export default function WriteEntryScreen() {
     if (messages.length > 0) return messages;
     return getIntroMessages(user?.firstName || "friend", aiEnabled);
   }, [aiEnabled, messages, user?.firstName]);
+  const displayMessages = useMemo(
+    () =>
+      pendingUserMessage
+        ? [
+            ...visibleMessages,
+            {
+              createdAt: "",
+              id: "pending-user-message",
+              role: "user" as const,
+              text: pendingUserMessage,
+            },
+          ]
+        : visibleMessages,
+    [pendingUserMessage, visibleMessages],
+  );
   const userParagraphs = useMemo(
     () =>
       messages
@@ -307,6 +435,9 @@ export default function WriteEntryScreen() {
     setIsSending(true);
     setErrorMessage("");
     setStatusMessage("");
+    setPendingUserMessage(trimmedMessage);
+    setAnimatedMuniMessageId("");
+    setInputValue("");
 
     const result = await sendJournalMessage({
       aiEnabled,
@@ -318,13 +449,20 @@ export default function WriteEntryScreen() {
     setIsSending(false);
 
     if (!result.ok) {
+      setPendingUserMessage("");
+      setInputValue(trimmedMessage);
       setErrorMessage(result.message ?? "Unable to save your journal entry.");
       return;
     }
 
-    setInputValue("");
+    const latestAssistantMessage = [...(result.messages ?? [])]
+      .reverse()
+      .find((item) => item.role === "assistant");
+
     setEntry(result.entry ?? null);
+    setPendingUserMessage("");
     setMessages(result.messages ?? []);
+    setAnimatedMuniMessageId(result.aiReply ? latestAssistantMessage?.id ?? "" : "");
     setStatusMessage(result.aiReply ? "" : result.message ?? "");
     setIsAiRetryLocked(
       !result.aiReply &&
@@ -727,23 +865,38 @@ export default function WriteEntryScreen() {
                         Loading your journal...
                       </Text>
                     </View>
-                  ) : visibleMessages.length > 0 ? (
-                    visibleMessages.map((line) =>
+                  ) : displayMessages.length > 0 ? (
+                    displayMessages.map((line) =>
                       line.role === "assistant" ? (
                         <View key={line.id} style={styles.leftMessageRow}>
                           <Text style={styles.messageRoleLabel}>Muni</Text>
-                          <Text style={styles.leftMessageText}>
-                            {line.text}
-                          </Text>
+                          {line.id === "intro" || line.id === animatedMuniMessageId ? (
+                            <TypewrittenMuniPrompt
+                              text={line.text}
+                              onComplete={
+                                line.id === animatedMuniMessageId
+                                  ? () => setAnimatedMuniMessageId("")
+                                  : undefined
+                              }
+                            />
+                          ) : (
+                            <Text style={styles.leftMessageText}>
+                              {line.text}
+                            </Text>
+                          )}
                         </View>
                       ) : (
                         <View key={line.id} style={styles.rightMessageRow}>
                           <Text style={[styles.messageRoleLabel, styles.messageRoleLabelSelf]}>
                             You
                           </Text>
-                          <Text style={styles.rightMessageText}>
-                            {line.text}
-                          </Text>
+                          {line.id === "pending-user-message" ? (
+                            <TypewrittenUserEntry isSending={isSending} text={line.text} />
+                          ) : (
+                            <Text style={styles.rightMessageText}>
+                              {line.text}
+                            </Text>
+                          )}
                         </View>
                       ),
                     )
@@ -868,11 +1021,7 @@ export default function WriteEntryScreen() {
             }}
             disabled={isSending || isAiRetryLocked || !canWrite}
           >
-            {isSending ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <Ionicons name="send" size={18} color="#FFFFFF" />
-            )}
+            <Ionicons name="send" size={18} color="#FFFFFF" />
           </Pressable>
         </View>
 
@@ -1423,6 +1572,22 @@ const styles = StyleSheet.create({
     lineHeight: 23,
     fontWeight: "700",
   },
+  typewriterCursor: {
+    color: "#5B8D4E",
+    fontWeight: "800",
+  },
+  muniWritingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 4,
+    marginTop: 5,
+  },
+  muniWritingText: {
+    color: "#5B8D4E",
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: "700",
+  },
   messageRoleLabel: {
     color: "#6E8D62",
     fontSize: 10,
@@ -1446,6 +1611,24 @@ const styles = StyleSheet.create({
     lineHeight: 23,
     textAlign: "right",
     fontWeight: "500",
+  },
+  userTypewriterCursor: {
+    color: "#63727F",
+    fontWeight: "800",
+  },
+  userWritingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    columnGap: 4,
+    marginTop: 5,
+  },
+  userWritingText: {
+    color: "#63727F",
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: "700",
+    textAlign: "right",
   },
   footnoteWrap: {
     minHeight: 38,
