@@ -11,6 +11,7 @@ import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { useAuthSession } from "../lib/auth-session";
 import {
   claimDailyCheckIn,
+  fetchFutureSelfMessage,
   fetchCheckInStatus,
   fetchDailyMood,
   fetchJournalEntriesByDate,
@@ -18,6 +19,7 @@ import {
   fetchStudentAppointments,
   fetchStudentNotifications,
   saveDailyMood,
+  saveFutureSelfMessage,
   type LibraryBookRecord,
 } from "../lib/backend-api";
 import { EMOTIONS } from "../lib/emotions";
@@ -810,6 +812,25 @@ export default function HomeScreen() {
     }
 
     try {
+      try {
+        const remoteResult = await fetchFutureSelfMessage(user.studentNumber);
+        if (remoteResult.ok && remoteResult.futureSelfMessage) {
+          const remoteNote: ScheduledBottleNote = {
+            id: remoteResult.futureSelfMessage.id,
+            createdAt: remoteResult.futureSelfMessage.createdAt,
+            deliveryAt: remoteResult.futureSelfMessage.deliveryAt,
+            message: remoteResult.futureSelfMessage.message,
+          };
+
+          await AsyncStorage.setItem(getFutureBottleStorageKey(user.studentNumber), JSON.stringify(remoteNote));
+          setScheduledBottleNote(remoteNote);
+          setBottleClockNow(Date.now());
+          return;
+        }
+      } catch {
+        // Local storage keeps the feature available when the backend cannot be reached.
+      }
+
       const storedValue = await AsyncStorage.getItem(getFutureBottleStorageKey(user.studentNumber));
       if (!storedValue) {
         setScheduledBottleNote(null);
@@ -825,13 +846,27 @@ export default function HomeScreen() {
         return;
       }
 
-      setScheduledBottleNote({
+      const localNote: ScheduledBottleNote = {
         id: typeof parsed.id === "string" && parsed.id ? parsed.id : `future-bottle-${deliveryAt.getTime()}`,
         createdAt: typeof parsed.createdAt === "string" && parsed.createdAt ? parsed.createdAt : new Date().toISOString(),
         deliveryAt: deliveryAt.toISOString(),
         message,
-      });
+      };
+
+      setScheduledBottleNote(localNote);
       setBottleClockNow(Date.now());
+      if (deliveryAt.getTime() > Date.now()) {
+        try {
+          await saveFutureSelfMessage({
+            deliveryAt: localNote.deliveryAt,
+            id: localNote.id,
+            message: localNote.message,
+            studentNumber: user.studentNumber,
+          });
+        } catch {
+          // The note is still available locally; sync can happen on a later visit.
+        }
+      }
     } catch {
       setScheduledBottleNote(null);
     }
@@ -1028,6 +1063,16 @@ export default function HomeScreen() {
       await AsyncStorage.setItem(getFutureBottleStorageKey(user.studentNumber), JSON.stringify(nextNote));
       setScheduledBottleNote(nextNote);
       setBottleClockNow(Date.now());
+      try {
+        await saveFutureSelfMessage({
+          deliveryAt: nextNote.deliveryAt,
+          id: nextNote.id,
+          message: nextNote.message,
+          studentNumber: user.studentNumber,
+        });
+      } catch (error) {
+        console.warn("Future Me message was saved locally but not synced:", error);
+      }
       closeBottleModal();
     } catch {
       setBottleFormMessage("Could not save this letter. Please try again.");

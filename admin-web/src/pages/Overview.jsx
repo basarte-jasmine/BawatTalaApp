@@ -7,6 +7,7 @@ import {
   Calendar as CalendarIcon,
   CheckCircle2,
   Download,
+  Mail,
   PhoneCall,
   Users,
 } from "lucide-react";
@@ -36,9 +37,20 @@ const SUMMARY_CARD_DEFS = [
     icon: Activity,
   },
   {
+    key: "futureMessages",
+    title: "Future Me Messages",
+    icon: Mail,
+  },
+  {
     key: "scheduled",
     title: "Scheduled Today",
     icon: CalendarIcon,
+  },
+  {
+    key: "muniAccuracy",
+    title: "Muni Accuracy",
+    icon: CheckCircle2,
+    valueType: "percent",
   },
 ];
 
@@ -884,11 +896,43 @@ function getCurrentMonthAnalyticsParams(date = new Date()) {
 }
 
 function getPageStylesText() {
+  const isRuleInstance = (rule, constructorName) => {
+    const RuleConstructor = window[constructorName];
+    return typeof RuleConstructor === "function" && rule instanceof RuleConstructor;
+  };
+
+  const serializeRule = (rule) => {
+    if (
+      isRuleInstance(rule, "CSSImportRule") ||
+      isRuleInstance(rule, "CSSFontFaceRule") ||
+      /url\(\s*['"]?(?!data:)/i.test(rule.cssText || "")
+    ) {
+      return "";
+    }
+
+    if ("cssRules" in rule) {
+      const nestedRules = Array.from(rule.cssRules || [])
+        .map(serializeRule)
+        .filter(Boolean)
+        .join("\n");
+      if (!nestedRules) return "";
+
+      if (isRuleInstance(rule, "CSSMediaRule")) {
+        return `@media ${rule.conditionText} {\n${nestedRules}\n}`;
+      }
+      if (isRuleInstance(rule, "CSSSupportsRule")) {
+        return `@supports ${rule.conditionText} {\n${nestedRules}\n}`;
+      }
+    }
+
+    return rule.cssText || "";
+  };
+
   return Array.from(document.styleSheets)
     .map((styleSheet) => {
       try {
         return Array.from(styleSheet.cssRules || [])
-          .map((rule) => rule.cssText)
+          .map(serializeRule)
           .join("\n");
       } catch {
         return "";
@@ -901,6 +945,7 @@ function getPageStylesText() {
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const image = new Image();
+    image.crossOrigin = "anonymous";
     image.onload = () => resolve(image);
     image.onerror = () => reject(new Error("Dashboard snapshot image could not be prepared."));
     image.src = src;
@@ -915,6 +960,7 @@ function serializeDashboardSnapshotContent(clone) {
   style.textContent = `
     ${getPageStylesText()}
     * { box-sizing: border-box; }
+    *, ::before, ::after { font-family: Arial, Helvetica, sans-serif !important; }
     body { margin: 0; background: #ffffff; }
     [data-export-ignore='true'] { display: none !important; }
   `;
@@ -924,11 +970,21 @@ function serializeDashboardSnapshotContent(clone) {
   return new XMLSerializer().serializeToString(container);
 }
 
+function sanitizeDashboardSnapshotClone(clone) {
+  clone.querySelectorAll("img, canvas, iframe, video").forEach((node) => node.remove());
+  clone.querySelectorAll("*").forEach((node) => {
+    if (node.style?.backgroundImage && /url\(/i.test(node.style.backgroundImage)) {
+      node.style.backgroundImage = "none";
+    }
+  });
+}
+
 async function captureElementCanvas(element) {
   const width = Math.ceil(element.scrollWidth);
   const height = Math.ceil(element.scrollHeight);
   const clone = element.cloneNode(true);
   clone.querySelectorAll("[data-export-ignore='true']").forEach((node) => node.remove());
+  sanitizeDashboardSnapshotClone(clone);
   clone.style.width = `${width}px`;
   clone.style.maxWidth = "none";
   clone.style.background = "#ffffff";
@@ -953,6 +1009,9 @@ async function captureElementCanvas(element) {
     context.fillStyle = "#ffffff";
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    canvas.__overviewPageBreaks = Array.from(element.children || [])
+      .map((child) => Math.ceil((child.offsetTop + child.offsetHeight + 16) * scale))
+      .filter((breakPoint) => breakPoint > 0 && breakPoint < canvas.height - 80);
     return canvas;
   } finally {
     URL.revokeObjectURL(svgUrl);
@@ -969,16 +1028,22 @@ function dataUrlToBytes(dataUrl) {
   return bytes;
 }
 
-function createPdfFromCanvas(canvas) {
+function createPdfFromCanvas(canvas, pageBreaks = []) {
   const pageWidth = 595.28;
   const pageHeight = 841.89;
   const margin = 24;
   const imageWidth = pageWidth - margin * 2;
-  const sliceHeight = Math.floor((canvas.width / imageWidth) * (pageHeight - margin * 2));
+  const maxSliceHeight = Math.floor((canvas.width / imageWidth) * (pageHeight - margin * 2));
+  const normalizedBreaks = pageBreaks
+    .map((breakPoint) => Math.round(Number(breakPoint || 0)))
+    .filter((breakPoint) => breakPoint > 0 && breakPoint < canvas.height)
+    .sort((a, b) => a - b);
   const slices = [];
 
-  for (let y = 0; y < canvas.height; y += sliceHeight) {
-    const currentHeight = Math.min(sliceHeight, canvas.height - y);
+  for (let y = 0; y < canvas.height;) {
+    const availableBreaks = normalizedBreaks.filter((breakPoint) => breakPoint > y + 240 && breakPoint <= y + maxSliceHeight);
+    const nextBreak = availableBreaks[availableBreaks.length - 1];
+    const currentHeight = Math.min(nextBreak ? nextBreak - y : maxSliceHeight, canvas.height - y);
     const sliceCanvas = document.createElement("canvas");
     sliceCanvas.width = canvas.width;
     sliceCanvas.height = currentHeight;
@@ -991,6 +1056,7 @@ function createPdfFromCanvas(canvas) {
       height: sliceCanvas.height,
       bytes: dataUrlToBytes(sliceCanvas.toDataURL("image/jpeg", 0.92)),
     });
+    y += currentHeight;
   }
 
   const encoder = new TextEncoder();
@@ -1050,6 +1116,763 @@ function createPdfFromCanvas(canvas) {
   appendString(`trailer\n<< /Size ${maxObjectId + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
 
   return new Blob(parts, { type: "application/pdf" });
+}
+
+function escapePdfText(value) {
+  return String(value ?? "")
+    .replace(/[\\()]/g, "\\$&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function createOverviewReportPdf({
+  activeUsageSeries,
+  analyticsCards,
+  barangayConcernData,
+  genderData,
+  journalEntriesData,
+  moodTrendData,
+  primaryConcernsData,
+  riskSignalCards,
+  sentimentDistributionData,
+  summaryCards,
+  todayLabel,
+}) {
+  const pageWidth = 595.28;
+  const pageHeight = 841.89;
+  const margin = 40;
+  const bottomMargin = 44;
+  const pages = [];
+  let commands = [];
+  let y = pageHeight - margin;
+
+  const beginPage = () => {
+    commands = [];
+    y = pageHeight - margin;
+    pages.push(commands);
+  };
+  const addText = (text, x = margin, size = 10, bold = false) => {
+    commands.push(`BT /${bold ? "F2" : "F1"} ${size} Tf 1 0 0 1 ${x} ${y.toFixed(2)} Tm (${escapePdfText(text)}) Tj ET`);
+  };
+  const addRule = () => {
+    commands.push(`${margin} ${(y - 8).toFixed(2)} m ${pageWidth - margin} ${(y - 8).toFixed(2)} l S`);
+    y -= 20;
+  };
+  const ensureSpace = (required = 40) => {
+    if (y - required < bottomMargin) beginPage();
+  };
+  const addWrappedText = (text, x = margin, size = 10, bold = false, maxChars = 96) => {
+    const words = String(text ?? "").split(/\s+/).filter(Boolean);
+    let line = "";
+    for (const word of words) {
+      const nextLine = line ? `${line} ${word}` : word;
+      if (nextLine.length > maxChars) {
+        ensureSpace(16);
+        addText(line, x, size, bold);
+        y -= size + 5;
+        line = word;
+      } else {
+        line = nextLine;
+      }
+    }
+    if (line) {
+      ensureSpace(16);
+      addText(line, x, size, bold);
+      y -= size + 5;
+    }
+  };
+  const addSection = (title) => {
+    ensureSpace(42);
+    y -= 8;
+    addText(title, margin, 14, true);
+    y -= 10;
+    addRule();
+  };
+  const addMetricRows = (cards) => {
+    for (const item of cards) {
+      ensureSpace(22);
+      const delta = item.delta && item.delta !== "--" ? ` (${item.delta})` : "";
+      addText(`${item.title}: ${item.value}${delta}`, margin, 11);
+      y -= 18;
+    }
+  };
+  const addChartRows = (title, rows, valueFormatter = (item) => item.value) => {
+    if (!rows?.length) return;
+    addSection(title);
+    rows.slice(0, 12).forEach((item) => {
+      const label = item.label || item.name || item.key || "Item";
+      addWrappedText(`${label}: ${valueFormatter(item)}`, margin, 10, false, 92);
+    });
+  };
+
+  beginPage();
+  addText("Bawat Tala Overview Dashboard", margin, 20, true);
+  y -= 24;
+  addText(todayLabel, margin, 11);
+  y -= 16;
+  addRule();
+
+  addSection("Dashboard Metrics");
+  addMetricRows([...summaryCards, ...analyticsCards]);
+
+  if (riskSignalCards?.length) {
+    addSection("Student Support Signals");
+    addMetricRows(riskSignalCards);
+  }
+
+  addChartRows("Journal Entries Volume", journalEntriesData);
+  addChartRows("Gender Distribution", genderData);
+  addChartRows("Mood Trends", moodTrendData, (item) =>
+    Array.isArray(item.values) ? item.values.reduce((sum, value) => sum + Number(value || 0), 0) : item.value,
+  );
+  addChartRows("Active Usage By Course Year", activeUsageSeries, (item) =>
+    Object.entries(item)
+      .filter(([key]) => !["color", "key", "label", "name"].includes(key))
+      .map(([key, value]) => `${key} ${value}`)
+      .join(", "),
+  );
+  addChartRows("Primary Student Concerns", primaryConcernsData);
+  addChartRows("Sentiment Distribution", sentimentDistributionData);
+  addChartRows("Top Concerns By Barangay", barangayConcernData, (item) =>
+    item.percent !== undefined ? `${item.value} (${item.percent}%)` : item.value,
+  );
+
+  const encoder = new TextEncoder();
+  const parts = [];
+  const offsets = [];
+  let byteOffset = 0;
+  const appendString = (value) => {
+    const bytes = encoder.encode(value);
+    parts.push(bytes);
+    byteOffset += bytes.length;
+  };
+  const appendObject = (id, content) => {
+    offsets[id] = byteOffset;
+    appendString(`${id} 0 obj\n${content}\nendobj\n`);
+  };
+
+  appendString("%PDF-1.4\n");
+  const pageIds = pages.map((_, index) => 5 + index * 2);
+  appendObject(1, "<< /Type /Catalog /Pages 2 0 R >>");
+  appendObject(2, `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageIds.length} >>`);
+  appendObject(3, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  appendObject(4, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
+
+  pages.forEach((pageCommands, index) => {
+    const pageId = 5 + index * 2;
+    const contentId = pageId + 1;
+    const content = pageCommands.join("\n");
+    appendObject(
+      pageId,
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentId} 0 R >>`,
+    );
+    appendObject(contentId, `<< /Length ${encoder.encode(content).length} >>\nstream\n${content}\nendstream`);
+  });
+
+  const xrefOffset = byteOffset;
+  const maxObjectId = 4 + pages.length * 2;
+  appendString(`xref\n0 ${maxObjectId + 1}\n0000000000 65535 f \n`);
+  for (let id = 1; id <= maxObjectId; id += 1) {
+    appendString(`${String(offsets[id] || 0).padStart(10, "0")} 00000 n \n`);
+  }
+  appendString(`trailer\n<< /Size ${maxObjectId + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
+
+  return new Blob(parts, { type: "application/pdf" });
+}
+
+function drawRoundRect(context, x, y, width, height, radius = 16) {
+  const resolvedRadius = Math.min(radius, width / 2, height / 2);
+
+  context.beginPath();
+  context.moveTo(x + resolvedRadius, y);
+  context.lineTo(x + width - resolvedRadius, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + resolvedRadius);
+  context.lineTo(x + width, y + height - resolvedRadius);
+  context.quadraticCurveTo(x + width, y + height, x + width - resolvedRadius, y + height);
+  context.lineTo(x + resolvedRadius, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - resolvedRadius);
+  context.lineTo(x, y + resolvedRadius);
+  context.quadraticCurveTo(x, y, x + resolvedRadius, y);
+  context.closePath();
+}
+
+function fillRoundRect(context, x, y, width, height, radius, fillStyle, strokeStyle = null) {
+  drawRoundRect(context, x, y, width, height, radius);
+  context.fillStyle = fillStyle;
+  context.fill();
+  if (strokeStyle) {
+    context.strokeStyle = strokeStyle;
+    context.lineWidth = 1;
+    context.stroke();
+  }
+}
+
+function drawWrappedCanvasText(context, text, x, y, maxWidth, lineHeight, maxLines = 2) {
+  const words = String(text ?? "").split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+
+  for (const word of words) {
+    const nextLine = line ? `${line} ${word}` : word;
+    if (context.measureText(nextLine).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+      if (lines.length === maxLines - 1) break;
+    } else {
+      line = nextLine;
+    }
+  }
+
+  if (line && lines.length < maxLines) lines.push(line);
+  lines.forEach((item, index) => {
+    context.fillText(item, x, y + index * lineHeight);
+  });
+  return lines.length * lineHeight;
+}
+
+function getNumericValue(item) {
+  if (Array.isArray(item?.values)) {
+    return item.values.reduce((sum, value) => sum + Number(value || 0), 0);
+  }
+
+  const rawValue = item?.value ?? item?.count;
+  if (rawValue === undefined || rawValue === null) {
+    return Object.entries(item || {}).reduce((sum, [key, value]) => {
+      if (["color", "key", "label", "name", "role", "supportType", "targetLabel"].includes(key)) {
+        return sum;
+      }
+      const numericValue = Number(value || 0);
+      return Number.isFinite(numericValue) ? sum + numericValue : sum;
+    }, 0);
+  }
+
+  const parsedValue = typeof rawValue === "number" ? rawValue : Number(String(rawValue).replace(/,/g, ""));
+  return Number.isFinite(parsedValue) ? parsedValue : 0;
+}
+
+function drawPanel(context, { x, y, width, height, title, subtitle }) {
+  fillRoundRect(context, x, y, width, height, 18, "#ffffff", "#dbe7d2");
+  context.fillStyle = "#134611";
+  context.font = "700 24px Arial, Helvetica, sans-serif";
+  context.fillText(title, x + 28, y + 42);
+  if (subtitle) {
+    context.fillStyle = "#5f7a5f";
+    context.font = "500 15px Arial, Helvetica, sans-serif";
+    context.fillText(subtitle, x + 28, y + 68);
+  }
+}
+
+function drawEmptyChartState(context, x, y, width, height, label = "No live data available yet.") {
+  fillRoundRect(context, x, y, width, height, 14, "#f8fafc", "#e2e8f0");
+  context.fillStyle = "#64748b";
+  context.font = "600 17px Arial, Helvetica, sans-serif";
+  context.textAlign = "center";
+  context.fillText(label, x + width / 2, y + height / 2);
+  context.textAlign = "left";
+}
+
+function drawMetricCards(context, cards, x, y, width) {
+  const gap = 18;
+  const columns = 4;
+  const cardWidth = (width - gap * (columns - 1)) / columns;
+  const cardHeight = 136;
+
+  cards.forEach((card, index) => {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const cardX = x + column * (cardWidth + gap);
+    const cardY = y + row * (cardHeight + gap);
+    const accent =
+      card.tone === "amber"
+        ? "#f59e0b"
+        : card.tone === "green"
+          ? "#229365"
+          : card.direction === "down"
+            ? "#64748b"
+            : "#3e8914";
+
+    fillRoundRect(context, cardX, cardY, cardWidth, cardHeight, 18, "#ffffff", "#dbe7d2");
+    fillRoundRect(context, cardX + 22, cardY + 22, 42, 42, 13, `${accent}22`);
+    context.fillStyle = accent;
+    context.beginPath();
+    context.arc(cardX + 43, cardY + 43, 8, 0, Math.PI * 2);
+    context.fill();
+
+    context.fillStyle = "#334155";
+    context.font = "700 16px Arial, Helvetica, sans-serif";
+    drawWrappedCanvasText(context, card.title, cardX + 78, cardY + 36, cardWidth - 104, 19, 2);
+
+    context.fillStyle = "#111827";
+    context.font = "800 38px Arial, Helvetica, sans-serif";
+    context.fillText(String(card.value ?? "--"), cardX + 22, cardY + 108);
+
+    context.fillStyle = accent;
+    context.font = "700 15px Arial, Helvetica, sans-serif";
+    context.textAlign = "right";
+    context.fillText(String(card.delta ?? "--"), cardX + cardWidth - 22, cardY + 108);
+    context.textAlign = "left";
+  });
+
+  return y + Math.ceil(cards.length / columns) * cardHeight + (Math.ceil(cards.length / columns) - 1) * gap;
+}
+
+function drawVerticalBarChart(context, data, x, y, width, height, options = {}) {
+  const items = (Array.isArray(data) ? data : [])
+    .map((item) => ({ ...item, value: getNumericValue(item) }))
+    .sort((a, b) => Number(b.value || 0) - Number(a.value || 0))
+    .slice(0, options.limit || 10);
+  if (!items.length) {
+    drawEmptyChartState(context, x, y, width, height);
+    return;
+  }
+
+  const left = x + 56;
+  const right = x + width - 22;
+  const top = y + 18;
+  const bottom = y + height - 72;
+  const plotWidth = right - left;
+  const plotHeight = bottom - top;
+  const max = Math.max(...items.map(getNumericValue), 1);
+
+  context.strokeStyle = "#d8e0ec";
+  context.lineWidth = 1;
+  context.fillStyle = "#64748b";
+  context.font = "700 13px Arial, Helvetica, sans-serif";
+  for (let index = 0; index <= 4; index += 1) {
+    const guide = Math.round((max * index) / 4);
+    const guideY = bottom - (plotHeight * index) / 4;
+    context.beginPath();
+    context.moveTo(left, guideY);
+    context.lineTo(right, guideY);
+    context.stroke();
+    context.fillText(String(guide), x + 12, guideY + 4);
+  }
+
+  const slot = plotWidth / items.length;
+  const barWidth = Math.min(54, slot * 0.64);
+  items.forEach((item, index) => {
+    const value = getNumericValue(item);
+    const barHeight = Math.max(4, (value / max) * plotHeight);
+    const barX = left + index * slot + (slot - barWidth) / 2;
+    const barY = bottom - barHeight;
+    const color = item.color || options.color || "#229365";
+    fillRoundRect(context, barX, barY, barWidth, barHeight, 10, color);
+
+    context.fillStyle = "#134611";
+    context.font = "800 14px Arial, Helvetica, sans-serif";
+    context.textAlign = "center";
+    context.fillText(formatMetricValue(value), barX + barWidth / 2, barY - 8);
+
+    const label = String(item.label || item.name || item.key || "").replace(/\s*\/\s*/g, "/");
+    context.save();
+    context.translate(barX + barWidth / 2, bottom + 18);
+    context.rotate(-Math.PI / 5);
+    context.fillStyle = "#334155";
+    context.font = "700 12px Arial, Helvetica, sans-serif";
+    context.fillText(label.slice(0, 18), 0, 0);
+    context.restore();
+    context.textAlign = "left";
+  });
+}
+
+function drawHorizontalBars(context, data, x, y, width, height, options = {}) {
+  const items = (Array.isArray(data) ? data : [])
+    .map((item) => ({ ...item, value: getNumericValue(item) }))
+    .sort((a, b) => Number(b.value || 0) - Number(a.value || 0))
+    .slice(0, options.limit || 8);
+  if (!items.length) {
+    drawEmptyChartState(context, x, y, width, height);
+    return;
+  }
+
+  const max = Math.max(...items.map(getNumericValue), 1);
+  const rowHeight = Math.min(42, height / items.length);
+
+  items.forEach((item, index) => {
+    const rowY = y + index * rowHeight;
+    const label = String(item.label || item.name || item.key || "Item");
+    const value = getNumericValue(item);
+    const percent = Math.max(0.04, value / max);
+
+    context.fillStyle = "#334155";
+    context.font = "700 14px Arial, Helvetica, sans-serif";
+    context.fillText(label.slice(0, 36), x, rowY + 17);
+    context.fillStyle = "#64748b";
+    context.font = "700 13px Arial, Helvetica, sans-serif";
+    context.textAlign = "right";
+    context.fillText(formatMetricValue(value), x + width, rowY + 17);
+    context.textAlign = "left";
+
+    fillRoundRect(context, x, rowY + 25, width, 10, 8, "#edf4e9");
+    fillRoundRect(context, x, rowY + 25, width * percent, 10, 8, item.color || options.color || "#229365");
+  });
+}
+
+function drawDonutCanvasChart(context, data, x, y, size) {
+  const items = (Array.isArray(data) ? data : []).map((item) => ({ ...item, value: getNumericValue(item) }));
+  if (!items.length) {
+    drawEmptyChartState(context, x, y, size + 220, size);
+    return;
+  }
+
+  const totalValue = items.reduce((sum, item) => sum + getNumericValue(item), 0);
+  const total = Math.max(1, totalValue);
+  const centerX = x + size / 2;
+  const centerY = y + size / 2;
+  let angle = -Math.PI / 2;
+
+  context.lineWidth = 34;
+  context.beginPath();
+  context.strokeStyle = "#dcfce7";
+  context.arc(centerX, centerY, size / 2 - 22, 0, Math.PI * 2);
+  context.stroke();
+
+  items.forEach((item, index) => {
+    const value = getNumericValue(item);
+    if (value <= 0) return;
+    const nextAngle = angle + (value / total) * Math.PI * 2;
+    context.beginPath();
+    context.strokeStyle = item.color || PRIMARY_STUDENT_CONCERN_COLORS[index % PRIMARY_STUDENT_CONCERN_COLORS.length];
+    context.arc(centerX, centerY, size / 2 - 22, angle, nextAngle);
+    context.stroke();
+    angle = nextAngle;
+  });
+
+  context.fillStyle = "#134611";
+  context.font = "800 34px Arial, Helvetica, sans-serif";
+  context.textAlign = "center";
+  context.fillText(formatMetricValue(totalValue), centerX, centerY + 10);
+  context.textAlign = "left";
+
+  items.slice(0, 5).forEach((item, index) => {
+    const legendY = y + 28 + index * 34;
+    fillRoundRect(context, x + size + 34, legendY - 12, 18, 18, 6, item.color || PRIMARY_STUDENT_CONCERN_COLORS[index]);
+    context.fillStyle = "#334155";
+    context.font = "700 15px Arial, Helvetica, sans-serif";
+    context.fillText(`${item.label}: ${formatMetricValue(getNumericValue(item))}`, x + size + 62, legendY + 3);
+  });
+}
+
+function drawRiskLineChart(context, trendData, x, y, width, height) {
+  const labels = trendData?.labels || [];
+  const series = trendData?.series || [];
+  const crisisValues =
+    series.find((item) => item.key === "crisis")?.values ||
+    series.find((item) => item.key === "critical")?.values ||
+    [];
+  const distressedValues =
+    series.find((item) => item.key === "distressed")?.values ||
+    series.find((item) => item.key === "high")?.values ||
+    [];
+  const pointCount = Math.max(labels.length, crisisValues.length, distressedValues.length, 0);
+
+  if (!pointCount) {
+    drawEmptyChartState(context, x, y, width, height);
+    return;
+  }
+
+  const chartLabels = Array.from({ length: pointCount }, (_, index) => labels[index] || `W${index + 1}`);
+  const values = [...crisisValues, ...distressedValues].map(Number);
+  const max = Math.max(...values, 1);
+  const left = x + 46;
+  const right = x + width - 22;
+  const top = y + 22;
+  const bottom = y + height - 48;
+  const plotWidth = right - left;
+  const plotHeight = bottom - top;
+  const xForIndex = (index) => left + (index * plotWidth) / Math.max(1, pointCount - 1);
+  const yForValue = (value) => bottom - (Number(value || 0) / max) * plotHeight;
+
+  context.strokeStyle = "#d8e0ec";
+  context.lineWidth = 1;
+  for (let index = 0; index <= 4; index += 1) {
+    const guideY = bottom - (plotHeight * index) / 4;
+    context.beginPath();
+    context.moveTo(left, guideY);
+    context.lineTo(right, guideY);
+    context.stroke();
+  }
+
+  const drawLine = (lineValues, color) => {
+    context.beginPath();
+    lineValues.forEach((value, index) => {
+      const px = xForIndex(index);
+      const py = yForValue(value);
+      if (index === 0) context.moveTo(px, py);
+      else context.lineTo(px, py);
+    });
+    context.strokeStyle = color;
+    context.lineWidth = 5;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.stroke();
+
+    lineValues.forEach((value, index) => {
+      context.beginPath();
+      context.fillStyle = "#ffffff";
+      context.strokeStyle = color;
+      context.lineWidth = 4;
+      context.arc(xForIndex(index), yForValue(value), 7, 0, Math.PI * 2);
+      context.fill();
+      context.stroke();
+    });
+  };
+
+  drawLine(distressedValues, RISK_COLORS.distressed);
+  drawLine(crisisValues, RISK_COLORS.crisis);
+
+  context.fillStyle = "#64748b";
+  context.font = "700 13px Arial, Helvetica, sans-serif";
+  context.textAlign = "center";
+  chartLabels.forEach((label, index) => {
+    context.fillText(label, xForIndex(index), bottom + 28);
+  });
+  context.textAlign = "left";
+}
+
+function drawSupportSignalCards(context, cards, x, y, width, height) {
+  const gap = 16;
+  const cardHeight = (height - gap * 2) / 3;
+  const tones = [
+    { bg: "#fef2f2", border: "#fecaca", text: "#b91c1c" },
+    { bg: "#fffbeb", border: "#fde68a", text: "#b45309" },
+    { bg: "#ecfdf5", border: "#a7f3d0", text: "#047857" },
+  ];
+
+  cards.forEach((card, index) => {
+    const tone = tones[index] || tones[2];
+    const cardY = y + index * (cardHeight + gap);
+    fillRoundRect(context, x, cardY, width, cardHeight, 16, tone.bg, tone.border);
+    context.fillStyle = tone.text;
+    context.font = "800 18px Arial, Helvetica, sans-serif";
+    context.fillText(card.title, x + 22, cardY + 34);
+    context.fillStyle = tone.text;
+    context.font = "800 38px Arial, Helvetica, sans-serif";
+    context.textAlign = "right";
+    context.fillText(String(card.value ?? "--"), x + width - 24, cardY + 58);
+    context.textAlign = "left";
+  });
+}
+
+function createOverviewDashboardCanvas({
+  activeUsageSeries,
+  analyticsCards,
+  analyticsOverview,
+  barangayConcernData,
+  genderData,
+  journalEntriesData,
+  moodTrendData,
+  primaryConcernsData,
+  riskSignalCards,
+  sentimentDistributionData,
+  studentDemographicLocations,
+  summaryCards,
+  todayLabel,
+}) {
+  const scale = 2;
+  const width = 1400;
+  const margin = 64;
+  const contentWidth = width - margin * 2;
+  const gap = 28;
+  const panelHalfWidth = (contentWidth - gap) / 2;
+  const consultationVolumeData = buildConsultationVolumeCategoryData(analyticsOverview?.charts?.consultationVolumeByCategory || []);
+  const counselorWorkloadData = analyticsOverview?.charts?.counselorWorkload || [];
+  const atRiskTrendData = analyticsOverview?.charts?.atRiskStudentTrends || {};
+  const responseRateData = analyticsOverview?.charts?.resolutionRates || [];
+  const height = 5600;
+  const pageBreaks = [];
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  canvas.width = width * scale;
+  canvas.height = height * scale;
+  context.scale(scale, scale);
+
+  context.fillStyle = "#f4f6ef";
+  context.fillRect(0, 0, width, height);
+
+  context.fillStyle = "#134611";
+  context.font = "900 46px Arial, Helvetica, sans-serif";
+  context.fillText("Overview & Analytics", margin, 82);
+  context.fillStyle = "#5f7a5f";
+  context.font = "600 19px Arial, Helvetica, sans-serif";
+  context.fillText(`Bawat Tala Overview Dashboard - ${todayLabel}`, margin, 118);
+
+  let y = 158;
+  y = drawMetricCards(context, [...summaryCards, ...analyticsCards], margin, y, contentWidth) + 44;
+
+  context.fillStyle = "#134611";
+  context.font = "900 30px Arial, Helvetica, sans-serif";
+  context.fillText("Activity and Engagement Overview", margin, y);
+  fillRoundRect(context, margin + 430, y - 16, 70, 7, 8, "#b7e4c7");
+  y += 28;
+
+  drawPanel(context, {
+    x: margin,
+    y,
+    width: panelHalfWidth,
+    height: 440,
+    title: "Journal Entries Volume",
+    subtitle: "Total journal entries per week",
+  });
+  drawVerticalBarChart(context, journalEntriesData, margin + 28, y + 92, panelHalfWidth - 56, 306, { color: "#229365" });
+
+  drawPanel(context, {
+    x: margin + panelHalfWidth + gap,
+    y,
+    width: panelHalfWidth,
+    height: 440,
+    title: "Student Gender Demographics",
+    subtitle: "Student profile distribution",
+  });
+  drawDonutCanvasChart(context, genderData, margin + panelHalfWidth + gap + 44, y + 112, 230);
+  y += 440 + gap;
+  pageBreaks.push(y * scale);
+
+  drawPanel(context, {
+    x: margin,
+    y,
+    width: contentWidth,
+    height: 450,
+    title: "Student Emotion Trends",
+    subtitle: "Total emotion check-ins recorded, ranked highest to lowest",
+  });
+  drawVerticalBarChart(context, moodTrendData, margin + 28, y + 92, contentWidth - 56, 312, { limit: 10 });
+  y += 450 + gap;
+  pageBreaks.push(y * scale);
+
+  drawPanel(context, {
+    x: margin,
+    y,
+    width: contentWidth,
+    height: 360,
+    title: "Sentiment Distribution",
+    subtitle: "Overall emotional tone from Muni sentiment analysis",
+  });
+  drawDonutCanvasChart(context, sentimentDistributionData, margin + 360, y + 92, 210);
+  y += 360 + gap;
+  pageBreaks.push(y * scale);
+
+  drawPanel(context, {
+    x: margin,
+    y,
+    width: panelHalfWidth,
+    height: 390,
+    title: "Student Demographics by Location",
+    subtitle: "Distribution by submitted location",
+  });
+  drawHorizontalBars(context, studentDemographicLocations, margin + 28, y + 96, panelHalfWidth - 56, 246, { color: "#3e8914" });
+
+  drawPanel(context, {
+    x: margin + panelHalfWidth + gap,
+    y,
+    width: panelHalfWidth,
+    height: 390,
+    title: "Student Distribution by Program",
+    subtitle: "Enrolled students grouped by program",
+  });
+  drawHorizontalBars(context, activeUsageSeries, margin + panelHalfWidth + gap + 28, y + 96, panelHalfWidth - 56, 246, {
+    color: "#229365",
+  });
+  y += 390 + gap;
+  pageBreaks.push(y * scale);
+
+  drawPanel(context, {
+    x: margin,
+    y,
+    width: contentWidth,
+    height: 450,
+    title: "Primary Student Concerns",
+    subtitle: "Derived from the most frequently occurring journal tags",
+  });
+  drawVerticalBarChart(context, primaryConcernsData, margin + 28, y + 92, contentWidth - 56, 312, { limit: 12 });
+  y += 450 + gap;
+  pageBreaks.push(y * scale);
+
+  drawPanel(context, {
+    x: margin,
+    y,
+    width: panelHalfWidth,
+    height: 390,
+    title: "Top Concerns by Barangay",
+    subtitle: "Most active barangays based on journal entries",
+  });
+  drawHorizontalBars(context, barangayConcernData, margin + 28, y + 96, panelHalfWidth - 56, 246, { color: "#229365" });
+
+  drawPanel(context, {
+    x: margin + panelHalfWidth + gap,
+    y,
+    width: panelHalfWidth,
+    height: 390,
+    title: "Support Signals",
+    subtitle: "Entries that may need faster response",
+  });
+  drawSupportSignalCards(context, riskSignalCards, margin + panelHalfWidth + gap + 28, y + 96, panelHalfWidth - 56, 246);
+  y += 390 + gap;
+  pageBreaks.push(y * scale);
+
+  drawPanel(context, {
+    x: margin,
+    y,
+    width: contentWidth,
+    height: 450,
+    title: "Consultation Volume by Category",
+    subtitle: "Current month concerns addressed in scheduled appointments",
+  });
+  drawVerticalBarChart(context, consultationVolumeData, margin + 28, y + 92, contentWidth - 56, 312, { limit: 12 });
+  y += 450 + gap;
+  pageBreaks.push(y * scale);
+
+  drawPanel(context, {
+    x: margin,
+    y,
+    width: panelHalfWidth,
+    height: 390,
+    title: "Counselor Workload",
+    subtitle: "Active cases assigned per role",
+  });
+  drawHorizontalBars(context, counselorWorkloadData, margin + 28, y + 96, panelHalfWidth - 56, 246, { color: "#20c08d" });
+
+  drawPanel(context, {
+    x: margin + panelHalfWidth + gap,
+    y,
+    width: panelHalfWidth,
+    height: 390,
+    title: "Response Within Target Time",
+    subtitle: "Counselor response speed for tagged risk cases",
+  });
+  drawHorizontalBars(
+    context,
+    responseRateData.map((item) => ({ ...item, value: Number(item.value || 0), label: `${item.label} (${item.targetLabel})` })),
+    margin + panelHalfWidth + gap + 28,
+    y + 96,
+    panelHalfWidth - 56,
+    246,
+    { color: "#20c08d" },
+  );
+  y += 390 + gap;
+  pageBreaks.push(y * scale);
+
+  drawPanel(context, {
+    x: margin,
+    y,
+    width: contentWidth,
+    height: 390,
+    title: "At-Risk Student Trends",
+    subtitle: "Weekly tracking of high and critical severity cases",
+  });
+  drawRiskLineChart(context, atRiskTrendData, margin + 28, y + 96, contentWidth - 56, 240);
+
+  y += 390 + margin;
+
+  const outputCanvas = document.createElement("canvas");
+  const outputContext = outputCanvas.getContext("2d");
+  const renderedHeight = Math.min(height, Math.ceil(y));
+  outputCanvas.width = canvas.width;
+  outputCanvas.height = renderedHeight * scale;
+  outputContext.drawImage(canvas, 0, 0, outputCanvas.width, outputCanvas.height, 0, 0, outputCanvas.width, outputCanvas.height);
+  outputCanvas.__overviewPageBreaks = pageBreaks.filter((breakPoint) => breakPoint < outputCanvas.height - 80);
+
+  return outputCanvas;
 }
 
 function downloadBlob(blob, filename) {
@@ -1199,13 +2022,23 @@ export default function Overview({ onLogout, session }) {
           ? dashboardSummary?.cards?.totalStudents
           : item.key === "entries"
             ? dashboardSummary?.cards?.totalEntries
-            : dashboardSummary?.cards?.scheduledToday;
+            : item.key === "futureMessages"
+              ? dashboardSummary?.cards?.futureSelfMessages
+              : item.key === "scheduled"
+                ? dashboardSummary?.cards?.scheduledToday
+                : dashboardSummary?.cards?.muniAccuracy;
     const direction = source?.direction || "neutral";
     const hasValue = source?.value !== undefined && source?.value !== null;
 
     return {
       ...item,
-      value: summaryLoading ? "--" : hasValue ? formatMetricValue(source.value) : "--",
+      value: summaryLoading
+        ? "--"
+        : hasValue
+          ? item.valueType === "percent"
+            ? `${formatMetricValue(source.value)}%`
+            : formatMetricValue(source.value)
+          : "--",
       delta: summaryLoading ? "--" : source?.percentageText || "--",
       direction: summaryLoading || !hasValue ? "neutral" : direction,
       tone: summaryLoading || !hasValue ? "gray" : mapMetricTone(item.key, direction),
@@ -1256,6 +2089,10 @@ export default function Overview({ onLogout, session }) {
           ["#FDBA58", "#FFD616", "#97CFDA", "#78C6A3", "#F0A0B8", "#B895C8", "#A7B4C6", "#7EA9D9", "#F19137", "#E86686"],
         )
       : [];
+  const sentimentDistributionData =
+    dashboardSummary?.charts?.sentimentDistribution?.length > 0
+      ? withColors(dashboardSummary.charts.sentimentDistribution, ["#22C55E", "#64748B", "#EF4444", "#F59E0B"])
+      : [];
   const studentDemographicLocations =
     dashboardSummary?.charts?.studentDemographics?.locations?.length > 0
       ? dashboardSummary.charts.studentDemographics.locations
@@ -1297,13 +2134,49 @@ export default function Overview({ onLogout, session }) {
 
   const handleExportPdf = async () => {
     if (!overviewExportRef.current || isExportingPdf) return;
+    if (summaryLoading || analyticsLoading) {
+      window.alert("Please wait for the dashboard charts to finish loading before exporting the PDF.");
+      return;
+    }
+
+    const todayIso = getCurrentMonthAnalyticsParams(now).endDate;
+    const reportPdfOptions = {
+      activeUsageSeries,
+      analyticsCards,
+      analyticsOverview,
+      barangayConcernData,
+      genderData,
+      journalEntriesData,
+      moodTrendData,
+      primaryConcernsData,
+      riskSignalCards: [
+        { title: "Crisis / Critical Need", value: riskFlagsError ? "--" : formatMetricValue(crisisSignalCount) },
+        { title: "Distressed / Needs Support", value: riskFlagsError ? "--" : formatMetricValue(distressedSignalCount) },
+        { title: "Contacted Support", value: riskFlagsError ? "--" : formatMetricValue(contactedSignalCount) },
+      ],
+      sentimentDistributionData,
+      studentDemographicLocations,
+      summaryCards,
+      todayLabel,
+    };
 
     try {
       setIsExportingPdf(true);
       await new Promise((resolve) => window.requestAnimationFrame(resolve));
-      const canvas = await captureElementCanvas(overviewExportRef.current);
-      const pdfBlob = createPdfFromCanvas(canvas);
-      const todayIso = getCurrentMonthAnalyticsParams(now).endDate;
+      let pdfBlob;
+      try {
+        const canvas = await captureElementCanvas(overviewExportRef.current);
+        pdfBlob = createPdfFromCanvas(canvas, canvas.__overviewPageBreaks);
+      } catch (snapshotError) {
+        console.warn("Dashboard snapshot export failed; using visual PDF renderer.", snapshotError);
+        try {
+          const visualCanvas = createOverviewDashboardCanvas(reportPdfOptions);
+          pdfBlob = createPdfFromCanvas(visualCanvas, visualCanvas.__overviewPageBreaks);
+        } catch (visualError) {
+          console.warn("Visual dashboard PDF renderer failed; using data PDF fallback.", visualError);
+          pdfBlob = createOverviewReportPdf(reportPdfOptions);
+        }
+      }
       downloadBlob(pdfBlob, `overview-dashboard-${todayIso}.pdf`);
     } catch (error) {
       console.error("Overview dashboard PDF export failed:", error);
@@ -1320,7 +2193,7 @@ export default function Overview({ onLogout, session }) {
       onLogout={onLogout}
       session={session}
     >
-      <div ref={overviewExportRef} className="mx-auto max-w-[1200px] space-y-6 bg-white pb-12">
+      <div ref={overviewExportRef} className="mx-auto max-w-[1200px] space-y-6 pb-12">
         {summaryError ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
             Dashboard summary failed to load: {summaryError}
@@ -1349,12 +2222,12 @@ export default function Overview({ onLogout, session }) {
           <button
             type="button"
             onClick={handleExportPdf}
-            disabled={isExportingPdf}
+            disabled={isExportingPdf || summaryLoading || analyticsLoading}
             data-export-ignore="true"
             className="flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
           >
             <Download className="h-4 w-4" />
-            {isExportingPdf ? "Exporting..." : "Export to PDF"}
+            {isExportingPdf ? "Exporting..." : summaryLoading || analyticsLoading ? "Preparing Charts..." : "Export to PDF"}
           </button>
         </div>
 
@@ -1362,9 +2235,6 @@ export default function Overview({ onLogout, session }) {
           {summaryCards.map((item) => (
             <MetricCard key={item.key} item={item} onSelect={handleSummaryCardSelect} />
           ))}
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {analyticsCards.map((item) => (
             <MetricCard key={item.key} item={item} />
           ))}
@@ -1418,6 +2288,27 @@ export default function Overview({ onLogout, session }) {
               <MoodTrendsChart series={moodTrendData} />
             ) : (
               <EmptyState>No emotion trend data available yet.</EmptyState>
+            )}
+          </Card>
+        </div>
+
+        <div className="grid grid-cols-1 items-start gap-6">
+          <Card
+            title="Sentiment Distribution"
+            subtitle="Overall emotional tone detected from completed journal summaries"
+            className="rounded-2xl border-admin-border"
+          >
+            {sentimentDistributionData.length ? (
+              <>
+                <DonutChart
+                  data={sentimentDistributionData}
+                  centerValue={sentimentDistributionData.reduce((sum, item) => sum + item.value, 0).toLocaleString()}
+                  centerLabel="Analyzed"
+                />
+                <ChartLegend data={sentimentDistributionData} />
+              </>
+            ) : (
+              <EmptyState>No sentiment analysis data available yet.</EmptyState>
             )}
           </Card>
         </div>

@@ -573,7 +573,32 @@ async function ensureDatabaseSchema() {
 
   await pool.query(`
     alter table public.journal_entries
+    add column if not exists summary_feedback_reason text;
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
     add column if not exists summary_rated_at timestamptz;
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    add column if not exists sentiment_label text;
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    add column if not exists sentiment_score numeric;
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    add column if not exists dominant_emotion text;
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    add column if not exists sentiment_confidence numeric;
   `);
 
   await pool.query(`
@@ -602,6 +627,62 @@ async function ensureDatabaseSchema() {
     check (
       support_response is null
       or support_response in ('CONTACTED', 'DECLINED')
+    );
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    drop constraint if exists journal_entries_summary_rating_check;
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    add constraint journal_entries_summary_rating_check
+    check (
+      summary_rating is null
+      or summary_rating in ('HELPFUL', 'NEEDS_WORK')
+    );
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    drop constraint if exists journal_entries_sentiment_label_check;
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    add constraint journal_entries_sentiment_label_check
+    check (
+      sentiment_label is null
+      or sentiment_label in ('POSITIVE', 'NEUTRAL', 'NEGATIVE', 'MIXED')
+    );
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    drop constraint if exists journal_entries_sentiment_score_check;
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    add constraint journal_entries_sentiment_score_check
+    check (
+      sentiment_score is null
+      or (sentiment_score >= -1 and sentiment_score <= 1)
+    );
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    drop constraint if exists journal_entries_sentiment_confidence_check;
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    add constraint journal_entries_sentiment_confidence_check
+    check (
+      sentiment_confidence is null
+      or (sentiment_confidence >= 0 and sentiment_confidence <= 1)
     );
   `);
 
@@ -1065,6 +1146,28 @@ async function ensureDatabaseSchema() {
   `);
 
   await pool.query(`
+    create table if not exists public.future_self_messages (
+      id text primary key,
+      student_number text not null,
+      message text not null,
+      delivery_at timestamptz not null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      deleted_at timestamptz
+    );
+  `);
+
+  await pool.query(`
+    alter table public.future_self_messages
+    add column if not exists updated_at timestamptz not null default now();
+  `);
+
+  await pool.query(`
+    alter table public.future_self_messages
+    add column if not exists deleted_at timestamptz;
+  `);
+
+  await pool.query(`
     alter table public.student_notifications
     add column if not exists deleted_at timestamptz;
   `);
@@ -1157,6 +1260,12 @@ async function ensureDatabaseSchema() {
   await pool.query(`
     create index if not exists student_notifications_student_created_at_idx
       on public.student_notifications (student_number, created_at desc);
+  `);
+
+  await pool.query(`
+    create index if not exists future_self_messages_student_updated_idx
+      on public.future_self_messages (student_number, updated_at desc)
+      where deleted_at is null;
   `);
 }
 

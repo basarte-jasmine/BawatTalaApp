@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { fetchJournalEntryById, JournalEntry, JournalMessage, rateJournalEntrySummary } from "../lib/backend-api";
 import { JournalLockGate } from "../lib/app-preferences";
@@ -11,6 +11,7 @@ import { useAuthSession } from "../lib/auth-session";
 const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
 const NOTEBOOK_RINGS = Array.from({ length: 12 }, (_, index) => index);
 const PAPER_RULES = Array.from({ length: 24 }, (_, index) => index);
+const SUMMARY_FEEDBACK_REASON_WORD_LIMIT = 250;
 
 function formatEntryHeader(entry: JournalEntry | null, createdAt?: string) {
   if (!entry) return "Journal Entry";
@@ -45,6 +46,10 @@ function formatInsightsText(insights: string[]) {
     .join(" ");
 }
 
+function countWords(value: string) {
+  return value.trim().split(/\s+/).filter(Boolean).length;
+}
+
 export default function JournalEntryViewScreen() {
   const { user } = useAuthSession();
   const { entryId } = useLocalSearchParams<{ entryId?: string }>();
@@ -53,6 +58,8 @@ export default function JournalEntryViewScreen() {
   const [messages, setMessages] = useState<JournalMessage[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [summaryFeedbackError, setSummaryFeedbackError] = useState("");
+  const [summaryFeedbackReason, setSummaryFeedbackReason] = useState("");
+  const [isNeedsWorkReasonVisible, setIsNeedsWorkReasonVisible] = useState(false);
   const [isSavingSummaryRating, setIsSavingSummaryRating] = useState(false);
 
   const loadEntry = useCallback(async () => {
@@ -60,6 +67,8 @@ export default function JournalEntryViewScreen() {
       setEntry(null);
       setMessages([]);
       setSummaryFeedbackError("");
+      setSummaryFeedbackReason("");
+      setIsNeedsWorkReasonVisible(false);
       return;
     }
 
@@ -69,6 +78,8 @@ export default function JournalEntryViewScreen() {
       setEntry(null);
       setMessages([]);
       setSummaryFeedbackError("");
+      setSummaryFeedbackReason("");
+      setIsNeedsWorkReasonVisible(false);
       return;
     }
 
@@ -76,6 +87,8 @@ export default function JournalEntryViewScreen() {
     setEntry(result.entry ?? null);
     setMessages(result.messages ?? []);
     setSummaryFeedbackError("");
+    setSummaryFeedbackReason("");
+    setIsNeedsWorkReasonVisible(false);
   }, [entryId, user?.studentNumber]);
 
   useFocusEffect(
@@ -98,6 +111,14 @@ export default function JournalEntryViewScreen() {
     () => [entry?.summary, combinedInsights].map((item) => String(item || "").trim()).filter(Boolean).join(" "),
     [combinedInsights, entry?.summary],
   );
+  const sentimentText = useMemo(() => {
+    if (!entry?.sentimentLabel) return "";
+    const label = entry.sentimentLabel.toLowerCase().replace(/^\w/, (letter) => letter.toUpperCase());
+    const emotion = entry.dominantEmotion ? ` • ${entry.dominantEmotion}` : "";
+    const confidence =
+      typeof entry.sentimentConfidence === "number" ? ` • ${Math.round(entry.sentimentConfidence * 100)}% confidence` : "";
+    return `${label}${emotion}${confidence}`;
+  }, [entry?.dominantEmotion, entry?.sentimentConfidence, entry?.sentimentLabel]);
   const hasGeneratedSummary = Boolean(aiSummaryText);
   const summaryRating = entry?.summaryRating ?? null;
   const hasSavedSummaryRating = summaryRating === "HELPFUL" || summaryRating === "NEEDS_WORK";
@@ -108,9 +129,22 @@ export default function JournalEntryViewScreen() {
   const ringGap = compact ? 40 : 44;
   const ruleTopStart = compact ? 48 : 52;
   const ruleGap = compact ? 24 : 26;
+  const summaryFeedbackReasonWordCount = countWords(summaryFeedbackReason);
+  const isSummaryFeedbackReasonOverLimit = summaryFeedbackReasonWordCount > SUMMARY_FEEDBACK_REASON_WORD_LIMIT;
 
-  const handleRateSummary = useCallback(async (rating: "HELPFUL" | "NEEDS_WORK") => {
+  const handleRateSummary = useCallback(async (rating: "HELPFUL" | "NEEDS_WORK", reason = "") => {
     if (!user?.studentNumber || !entry?.id || isSavingSummaryRating || hasSavedSummaryRating) {
+      return;
+    }
+    const trimmedReason = reason.replace(/\s+/g, " ").trim();
+    if (rating === "NEEDS_WORK" && !trimmedReason) {
+      setSummaryFeedbackError("Tell us what Muni missed or got wrong.");
+      setIsNeedsWorkReasonVisible(true);
+      return;
+    }
+    if (countWords(trimmedReason) > SUMMARY_FEEDBACK_REASON_WORD_LIMIT) {
+      setSummaryFeedbackError(`Keep your reason within ${SUMMARY_FEEDBACK_REASON_WORD_LIMIT} words.`);
+      setIsNeedsWorkReasonVisible(true);
       return;
     }
 
@@ -120,6 +154,7 @@ export default function JournalEntryViewScreen() {
     const result = await rateJournalEntrySummary({
       entryId: entry.id,
       rating,
+      reason: rating === "NEEDS_WORK" ? trimmedReason : undefined,
       studentNumber: user.studentNumber,
     });
 
@@ -130,6 +165,8 @@ export default function JournalEntryViewScreen() {
     }
 
     setEntry(result.entry);
+    setSummaryFeedbackReason("");
+    setIsNeedsWorkReasonVisible(false);
     setIsSavingSummaryRating(false);
   }, [entry?.id, hasSavedSummaryRating, isSavingSummaryRating, user?.studentNumber]);
 
@@ -179,7 +216,10 @@ export default function JournalEntryViewScreen() {
             hasSavedSummaryRating && summaryRating !== "NEEDS_WORK" && styles.summaryFeedbackButtonLocked,
           ]}
           disabled={isSavingSummaryRating || hasSavedSummaryRating}
-          onPress={() => void handleRateSummary("NEEDS_WORK")}
+          onPress={() => {
+            setSummaryFeedbackError("");
+            setIsNeedsWorkReasonVisible(true);
+          }}
         >
           <Ionicons
             name={summaryRating === "NEEDS_WORK" ? "thumbs-down" : "thumbs-down-outline"}
@@ -196,6 +236,48 @@ export default function JournalEntryViewScreen() {
           </Text>
         </Pressable>
       </View>
+
+      {isNeedsWorkReasonVisible && !hasSavedSummaryRating ? (
+        <View style={styles.summaryFeedbackReasonWrap}>
+          <TextInput
+            value={summaryFeedbackReason}
+            onChangeText={(value) => {
+              setSummaryFeedbackReason(value);
+              if (summaryFeedbackError) setSummaryFeedbackError("");
+            }}
+            multiline
+            maxLength={1800}
+            placeholder="What did Muni miss, misunderstand, or phrase badly?"
+            placeholderTextColor="#7A8A99"
+            style={[
+              styles.summaryFeedbackReasonInput,
+              isSummaryFeedbackReasonOverLimit && styles.summaryFeedbackReasonInputError,
+            ]}
+            textAlignVertical="top"
+          />
+          <View style={styles.summaryFeedbackReasonFooter}>
+            <Text
+              style={[
+                styles.summaryFeedbackReasonCount,
+                isSummaryFeedbackReasonOverLimit && styles.summaryFeedbackReasonCountError,
+              ]}
+            >
+              {summaryFeedbackReasonWordCount}/{SUMMARY_FEEDBACK_REASON_WORD_LIMIT} words
+            </Text>
+            <Pressable
+              style={[
+                styles.summaryFeedbackSubmitButton,
+                (!summaryFeedbackReason.trim() || isSummaryFeedbackReasonOverLimit || isSavingSummaryRating) &&
+                  styles.summaryFeedbackSubmitButtonDisabled,
+              ]}
+              disabled={!summaryFeedbackReason.trim() || isSummaryFeedbackReasonOverLimit || isSavingSummaryRating}
+              onPress={() => void handleRateSummary("NEEDS_WORK", summaryFeedbackReason)}
+            >
+              <Text style={styles.summaryFeedbackSubmitButtonText}>Submit reason</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
 
       <Text style={[styles.summaryFeedbackNote, summaryFeedbackError && styles.summaryFeedbackNoteError]}>
         {summaryFeedbackMessage}
@@ -301,6 +383,7 @@ export default function JournalEntryViewScreen() {
                     <View style={[styles.chatInsightBlock, compact && styles.notebookContentBlockCompact]}>
                       <Text style={styles.chatInsightHeading}>AI Summary</Text>
                       <Text style={styles.chatInsightText}>{aiSummaryText}</Text>
+                      {sentimentText ? <Text style={styles.summarySentimentText}>Sentiment: {sentimentText}</Text> : null}
                       {renderSummaryFeedback}
                     </View>
                   ) : null}
@@ -337,6 +420,7 @@ export default function JournalEntryViewScreen() {
                 <View style={styles.summaryWrap}>
                   <Text style={styles.summaryHeading}>AI Summary</Text>
                   <Text style={styles.summaryText}>{aiSummaryText}</Text>
+                  {sentimentText ? <Text style={styles.summarySentimentText}>Sentiment: {sentimentText}</Text> : null}
                   {renderSummaryFeedback}
                 </View>
               ) : null}
@@ -838,6 +922,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 22,
   },
+  summarySentimentText: {
+    color: "#4B6D52",
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "800",
+    marginTop: 9,
+  },
   summaryFeedbackWrap: {
     marginTop: 12,
     paddingTop: 12,
@@ -899,6 +990,56 @@ const styles = StyleSheet.create({
   },
   summaryFeedbackNoteError: {
     color: "#B04444",
+  },
+  summaryFeedbackReasonWrap: {
+    marginTop: 10,
+    rowGap: 8,
+  },
+  summaryFeedbackReasonInput: {
+    minHeight: 92,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#D5E0D0",
+    backgroundColor: "#FCFEF9",
+    color: "#31465A",
+    fontSize: 13,
+    lineHeight: 19,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  summaryFeedbackReasonInputError: {
+    borderColor: "#D98B7C",
+    backgroundColor: "#FFF7F3",
+  },
+  summaryFeedbackReasonFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    columnGap: 10,
+  },
+  summaryFeedbackReasonCount: {
+    color: "#6B7C88",
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: "700",
+  },
+  summaryFeedbackReasonCountError: {
+    color: "#B04444",
+  },
+  summaryFeedbackSubmitButton: {
+    borderRadius: 999,
+    backgroundColor: "#4B8F33",
+    paddingHorizontal: 13,
+    paddingVertical: 8,
+  },
+  summaryFeedbackSubmitButtonDisabled: {
+    opacity: 0.48,
+  },
+  summaryFeedbackSubmitButtonText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "800",
   },
 });
 

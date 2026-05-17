@@ -1188,10 +1188,16 @@ router.get("/dashboard/summary", async (req, res) => {
         .select("id, gender, program, barangay, created_at, student_number"),
       supabaseAdminClient
         .from("journal_entries")
-        .select("id, created_at, entry_date, summary, insights, admin_flag_reason, risk_level, student_number, primary_concern, concern_tags"),
+        .select("id, created_at, entry_date, summary, summary_rating, summary_feedback_reason, sentiment_label, sentiment_score, dominant_emotion, sentiment_confidence, insights, admin_flag_reason, risk_level, student_number, primary_concern, concern_tags"),
     ]);
 
-  const [{ rows: flaggedRows }, { rows: moodRows }, scheduledEvents, { rows: caseAssignmentRows }] = await Promise.all([
+  const [
+    { rows: flaggedRows },
+    { rows: moodRows },
+    scheduledEvents,
+    { rows: caseAssignmentRows },
+    { rows: futureSelfMessageRows },
+  ] = await Promise.all([
     query(
       `
         select id, student_number, entry_date, created_at, risk_level, support_response
@@ -1248,6 +1254,13 @@ router.get("/dashboard/summary", async (req, res) => {
         limit 4
       `,
     ),
+    query(
+      `
+        select id, created_at
+        from public.future_self_messages
+        where deleted_at is null
+      `,
+    ),
   ]);
 
   const safeProfiles = profilesError ? [] : profiles || [];
@@ -1296,6 +1309,37 @@ router.get("/dashboard/summary", async (req, res) => {
     return date && date >= previous7StartIso && date < previous7EndIso;
   }).length;
   const entriesYesterday = countRowsOnDate(safeJournals, "created_at", yesterdayIso);
+  const totalFutureSelfMessages = (futureSelfMessageRows || []).length;
+  const futureSelfMessagesToday = countRowsOnDate(futureSelfMessageRows, "created_at", todayIso);
+  const futureSelfMessagesYesterday = countRowsOnDate(futureSelfMessageRows, "created_at", yesterdayIso);
+  const ratedSummaryRows = safeJournals.filter((row) =>
+    ["HELPFUL", "NEEDS_WORK"].includes(String(row.summary_rating || "").toUpperCase()),
+  );
+  const helpfulSummaryCount = ratedSummaryRows.filter((row) => String(row.summary_rating || "").toUpperCase() === "HELPFUL").length;
+  const needsWorkSummaryCount = ratedSummaryRows.filter((row) => String(row.summary_rating || "").toUpperCase() === "NEEDS_WORK").length;
+  const muniAccuracyPercent = ratedSummaryRows.length
+    ? Math.round((helpfulSummaryCount / ratedSummaryRows.length) * 100)
+    : null;
+  const sentimentCounts = ["POSITIVE", "NEUTRAL", "NEGATIVE", "MIXED"].reduce((acc, label) => {
+    acc[label] = 0;
+    return acc;
+  }, {});
+  let sentimentConfidenceTotal = 0;
+  let sentimentConfidenceCount = 0;
+  for (const row of safeJournals) {
+    const label = String(row.sentiment_label || "").toUpperCase();
+    if (Object.prototype.hasOwnProperty.call(sentimentCounts, label)) {
+      sentimentCounts[label] += 1;
+    }
+    const confidence = Number(row.sentiment_confidence);
+    if (Number.isFinite(confidence)) {
+      sentimentConfidenceTotal += confidence;
+      sentimentConfidenceCount += 1;
+    }
+  }
+  const averageSentimentConfidence = sentimentConfidenceCount
+    ? Math.round((sentimentConfidenceTotal / sentimentConfidenceCount) * 100)
+    : null;
 
   const activeUsageSeries = toMonthlyBuckets(safeProfiles, "created_at");
   const journalEntriesSeries = buildCurrentMonthJournalSeries(safeJournals, "created_at");
@@ -1458,6 +1502,17 @@ router.get("/dashboard/summary", async (req, res) => {
         value: scheduledEvents.todayCount,
         ...buildDelta(scheduledEvents.todayCount, scheduledEvents.yesterdayCount),
       },
+      futureSelfMessages: {
+        value: totalFutureSelfMessages,
+        ...buildDelta(futureSelfMessagesToday, futureSelfMessagesYesterday),
+      },
+      muniAccuracy: {
+        value: muniAccuracyPercent,
+        direction: muniAccuracyPercent == null || muniAccuracyPercent >= 75 ? "up" : "down",
+        percentageText: ratedSummaryRows.length
+          ? `${helpfulSummaryCount}/${ratedSummaryRows.length} helpful`
+          : "No ratings yet",
+      },
       gender: genderCounts,
       course: courseCounts,
     },
@@ -1489,6 +1544,19 @@ router.get("/dashboard/summary", async (req, res) => {
         labels: currentMonthLabels,
         series: EMOTION_OPTIONS.map(({ id, label }) => ({ key: id, label, values: moodSeries[id] })),
       },
+      muniQuality: {
+        helpful: helpfulSummaryCount,
+        needsWork: needsWorkSummaryCount,
+        ratedTotal: ratedSummaryRows.length,
+        accuracyPercent: muniAccuracyPercent,
+        averageSentimentConfidence,
+      },
+      sentimentDistribution: [
+        { label: "Positive", value: sentimentCounts.POSITIVE },
+        { label: "Neutral", value: sentimentCounts.NEUTRAL },
+        { label: "Negative", value: sentimentCounts.NEGATIVE },
+        { label: "Mixed", value: sentimentCounts.MIXED },
+      ],
     },
     warnings: {
       journalEntriesUnavailable: Boolean(journalsError),

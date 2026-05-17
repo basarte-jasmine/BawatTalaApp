@@ -5,6 +5,7 @@ const authRoutes = require("./api/auth.routes");
 const appointmentRoutes = require("./api/appointment.routes");
 const { adminRouter } = require("./api/admin.routes");
 const checkinRoutes = require("./api/checkin.routes");
+const futureSelfRoutes = require("./api/future-self.routes");
 const journalRoutes = require("./api/journal.routes");
 const libraryRoutes = require("./api/library.routes");
 const moodRoutes = require("./api/mood.routes");
@@ -49,6 +50,7 @@ app.get("/health", (_req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/appointments", appointmentRoutes);
 app.use("/api/checkins", checkinRoutes);
+app.use("/api/future-self", futureSelfRoutes);
 app.use("/api/journal", journalRoutes);
 app.use("/api/library", libraryRoutes);
 app.use("/api/moods", moodRoutes);

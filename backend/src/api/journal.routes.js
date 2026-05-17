@@ -88,6 +88,12 @@ function normalizeSummaryRating(value) {
   return "";
 }
 
+function normalizeSummaryFeedbackReason(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 async function getStudentProfile(studentNumber) {
   const { data } = await supabaseAdminClient
     .from("student_profiles")
@@ -105,7 +111,9 @@ async function getStudentProfile(studentNumber) {
 async function getOpenEntryByStudentAndDate(studentNumber, entryDate) {
   const result = await query(
     `
-      select id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
+      select id, student_number, entry_date, title, summary, summary_rating, summary_feedback_reason, summary_rated_at,
+             sentiment_label, sentiment_score, dominant_emotion, sentiment_confidence,
+             insights, risk_level, admin_flag_reason,
              primary_concern, concern_tags,
              ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
              created_at, updated_at
@@ -125,7 +133,9 @@ async function createEntry(studentNumber, entryDate, aiEnabled) {
     `
       insert into public.journal_entries (student_number, entry_date, ai_enabled)
       values ($1, $2, $3)
-      returning id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
+      returning id, student_number, entry_date, title, summary, summary_rating, summary_feedback_reason, summary_rated_at,
+                sentiment_label, sentiment_score, dominant_emotion, sentiment_confidence,
+                insights, risk_level, admin_flag_reason,
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 created_at, updated_at
@@ -158,7 +168,9 @@ async function listEntryMessages(entryId) {
 async function getEntryById(studentNumber, entryId) {
   const result = await query(
     `
-      select id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
+      select id, student_number, entry_date, title, summary, summary_rating, summary_feedback_reason, summary_rated_at,
+             sentiment_label, sentiment_score, dominant_emotion, sentiment_confidence,
+             insights, risk_level, admin_flag_reason,
              primary_concern, concern_tags,
              ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
              created_at, updated_at
@@ -186,7 +198,12 @@ function mapEntryRow(row) {
     isFinished: Boolean(row.is_finished),
     primaryConcern: normalizeConcernValue(row.primary_concern) || concernTags[0] || null,
     riskLevel: String(row.risk_level || "NONE"),
+    dominantEmotion: row.dominant_emotion || null,
+    sentimentConfidence: row.sentiment_confidence == null ? null : Number(row.sentiment_confidence),
+    sentimentLabel: row.sentiment_label || null,
+    sentimentScore: row.sentiment_score == null ? null : Number(row.sentiment_score),
     summary: row.summary || "",
+    summaryFeedbackReason: row.summary_feedback_reason || null,
     summaryRatedAt: row.summary_rated_at || null,
     summaryRating: row.summary_rating || null,
     supportPromptShownAt: row.support_prompt_shown_at || null,
@@ -527,6 +544,7 @@ router.post("/entries/:entryId/summary-rating", asyncHandler(async (req, res) =>
   const studentNumber = normalizeStudentNumber(req.body.studentNumber);
   const entryId = String(req.params.entryId || "").trim();
   const summaryRating = normalizeSummaryRating(req.body.rating);
+  const feedbackReason = normalizeSummaryFeedbackReason(req.body.reason);
 
   if (!studentNumber) {
     return res.status(400).json({ message: "Student number is required." });
@@ -536,6 +554,12 @@ router.post("/entries/:entryId/summary-rating", asyncHandler(async (req, res) =>
   }
   if (!summaryRating) {
     return res.status(400).json({ message: "A valid summary rating is required." });
+  }
+  if (summaryRating === "NEEDS_WORK" && !feedbackReason) {
+    return res.status(400).json({ message: "Please add a short reason so Muni can improve future summaries." });
+  }
+  if (countWords(feedbackReason) > 250) {
+    return res.status(400).json({ message: "Summary feedback reason must be 250 words or fewer." });
   }
 
   const existingResult = await query(
@@ -561,15 +585,18 @@ router.post("/entries/:entryId/summary-rating", asyncHandler(async (req, res) =>
       update public.journal_entries
       set
         summary_rating = $3,
+        summary_feedback_reason = $4,
         summary_rated_at = now(),
         updated_at = now()
       where id = $1 and student_number = $2 and deleted_by_student_at is null
-      returning id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
+      returning id, student_number, entry_date, title, summary, summary_rating, summary_feedback_reason, summary_rated_at,
+                sentiment_label, sentiment_score, dominant_emotion, sentiment_confidence,
+                insights, risk_level, admin_flag_reason,
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 created_at, updated_at
     `,
-    [entryId, studentNumber, summaryRating],
+    [entryId, studentNumber, summaryRating, summaryRating === "NEEDS_WORK" ? feedbackReason : null],
   );
 
   return res.json({
@@ -632,6 +659,23 @@ router.post("/session/create", asyncHandler(async (req, res) => {
 async function analyzeFinalEntry({ entryId, studentNumber, existingMessages }) {
   const userMessages = existingMessages.filter((item) => item.role === "user" && String(item.text || "").trim());
   const profile = await getStudentProfile(studentNumber);
+  const feedbackResult = await query(
+    `
+      select summary_feedback_reason
+      from public.journal_entries
+      where student_number = $1
+        and id <> $2
+        and summary_rating = 'NEEDS_WORK'
+        and coalesce(summary_feedback_reason, '') <> ''
+        and deleted_by_student_at is null
+      order by summary_rated_at desc nulls last, updated_at desc
+      limit 3
+    `,
+    [studentNumber, entryId],
+  );
+  const summaryFeedbackGuidance = feedbackResult.rows
+    .map((row) => normalizeSummaryFeedbackReason(row.summary_feedback_reason))
+    .filter(Boolean);
   const latestUserMessage = userMessages[userMessages.length - 1]?.text || "";
   const history = existingMessages.map((item) => ({
     role: item.role,
@@ -641,6 +685,7 @@ async function analyzeFinalEntry({ entryId, studentNumber, existingMessages }) {
     firstName: profile.firstName,
     history,
     latestUserMessage,
+    summaryFeedbackGuidance,
   });
   const fallbackText = userMessages.map((item) => item.text).join("\n");
   const suggestedTags = normalizeConcernTags(analysis.suggested_tags);
@@ -653,6 +698,10 @@ async function analyzeFinalEntry({ entryId, studentNumber, existingMessages }) {
         insights = $3::jsonb,
         risk_level = $4,
         admin_flag_reason = $5,
+        sentiment_label = $6,
+        sentiment_score = $7,
+        dominant_emotion = $8,
+        sentiment_confidence = $9,
         updated_at = now()
       where id = $1
     `,
@@ -662,6 +711,10 @@ async function analyzeFinalEntry({ entryId, studentNumber, existingMessages }) {
       JSON.stringify(analysis.insights),
       analysis.risk_level,
       analysis.admin_flag_reason,
+      analysis.sentiment_label,
+      analysis.sentiment_score,
+      analysis.dominant_emotion,
+      analysis.sentiment_confidence,
     ],
   );
 
@@ -705,7 +758,9 @@ router.post("/session/tag-suggestions", asyncHandler(async (req, res) => {
 
   const result = await query(
     `
-      select id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
+      select id, student_number, entry_date, title, summary, summary_rating, summary_feedback_reason, summary_rated_at,
+             sentiment_label, sentiment_score, dominant_emotion, sentiment_confidence,
+             insights, risk_level, admin_flag_reason,
              primary_concern, concern_tags,
              ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
              created_at, updated_at
@@ -788,7 +843,9 @@ router.post("/session/finish", asyncHandler(async (req, res) => {
         finished_at = now(),
         updated_at = now()
       where id = $1 and student_number = $2 and is_finished = false
-      returning id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
+      returning id, student_number, entry_date, title, summary, summary_rating, summary_feedback_reason, summary_rated_at,
+                sentiment_label, sentiment_score, dominant_emotion, sentiment_confidence,
+                insights, risk_level, admin_flag_reason,
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 created_at, updated_at
@@ -876,7 +933,9 @@ router.post("/session/concerns", asyncHandler(async (req, res) => {
           concern_tags = $4::jsonb,
           updated_at = now()
       where id = $1 and student_number = $2
-      returning id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
+      returning id, student_number, entry_date, title, summary, summary_rating, summary_feedback_reason, summary_rated_at,
+                sentiment_label, sentiment_score, dominant_emotion, sentiment_confidence,
+                insights, risk_level, admin_flag_reason,
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 created_at, updated_at
@@ -915,7 +974,9 @@ router.post("/session/support-response", asyncHandler(async (req, res) => {
         support_response_at = now(),
         updated_at = now()
       where id = $1 and student_number = $2
-      returning id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
+      returning id, student_number, entry_date, title, summary, summary_rating, summary_feedback_reason, summary_rated_at,
+                sentiment_label, sentiment_score, dominant_emotion, sentiment_confidence,
+                insights, risk_level, admin_flag_reason,
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 created_at, updated_at
@@ -963,7 +1024,9 @@ router.post("/message", asyncHandler(async (req, res) => {
   if (entryId) {
       const entryResult = await query(
         `
-        select id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
+        select id, student_number, entry_date, title, summary, summary_rating, summary_feedback_reason, summary_rated_at,
+               sentiment_label, sentiment_score, dominant_emotion, sentiment_confidence,
+               insights, risk_level, admin_flag_reason,
                primary_concern, concern_tags,
                ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                created_at, updated_at
@@ -990,7 +1053,9 @@ router.post("/message", asyncHandler(async (req, res) => {
         update public.journal_entries
         set ai_enabled = $2, updated_at = now()
         where id = $1
-        returning id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
+        returning id, student_number, entry_date, title, summary, summary_rating, summary_feedback_reason, summary_rated_at,
+                  sentiment_label, sentiment_score, dominant_emotion, sentiment_confidence,
+                  insights, risk_level, admin_flag_reason,
                   primary_concern, concern_tags,
                   ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                   created_at, updated_at
@@ -1057,7 +1122,9 @@ router.post("/message", asyncHandler(async (req, res) => {
         ai_enabled = $7,
         updated_at = now()
       where id = $1
-      returning id, student_number, entry_date, title, summary, summary_rating, summary_rated_at, insights, risk_level, admin_flag_reason,
+      returning id, student_number, entry_date, title, summary, summary_rating, summary_feedback_reason, summary_rated_at,
+                sentiment_label, sentiment_score, dominant_emotion, sentiment_confidence,
+                insights, risk_level, admin_flag_reason,
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 created_at, updated_at

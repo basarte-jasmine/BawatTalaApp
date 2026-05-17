@@ -56,7 +56,12 @@ export type JournalEntry = {
   isFinished: boolean;
   primaryConcern?: string | null;
   riskLevel: "HIGH" | "LOW" | "NONE";
+  dominantEmotion?: string | null;
+  sentimentConfidence?: number | null;
+  sentimentLabel?: "POSITIVE" | "NEUTRAL" | "NEGATIVE" | "MIXED" | null;
+  sentimentScore?: number | null;
   summary: string;
+  summaryFeedbackReason?: string | null;
   summaryRatedAt?: string | null;
   summaryRating?: "HELPFUL" | "NEEDS_WORK" | null;
   supportPromptShownAt?: string | null;
@@ -182,6 +187,15 @@ export type AppNotification = {
   metadata?: Record<string, unknown>;
   timeLabel: string;
   title: string;
+};
+
+export type FutureSelfMessage = {
+  createdAt: string;
+  deliveryAt: string;
+  id: string;
+  message: string;
+  studentNumber: string;
+  updatedAt?: string;
 };
 
 function getDefaultApiBaseUrl() {
@@ -1035,6 +1049,7 @@ export async function fetchJournalEntryById(
 export async function rateJournalEntrySummary(payload: {
   entryId: string;
   rating: "HELPFUL" | "NEEDS_WORK";
+  reason?: string;
   studentNumber: string;
 }): Promise<ApiResult & { entry?: JournalEntry | null }> {
   const { entryId, ...body } = payload;
@@ -1286,5 +1301,33 @@ export async function deleteStudentNotification(
   return {
     ok: response.ok,
     message: data?.message,
+  };
+}
+
+export async function fetchFutureSelfMessage(
+  studentNumber: string,
+): Promise<ApiResult & { futureSelfMessage?: FutureSelfMessage | null }> {
+  const params = new URLSearchParams({ studentNumber });
+  const { response, data } = await get(`/api/future-self/messages/current?${params.toString()}`);
+
+  return {
+    ok: response.ok,
+    message: data?.message,
+    futureSelfMessage: data?.futureSelfMessage ?? null,
+  };
+}
+
+export async function saveFutureSelfMessage(payload: {
+  deliveryAt: string;
+  id: string;
+  message: string;
+  studentNumber: string;
+}): Promise<ApiResult & { futureSelfMessage?: FutureSelfMessage | null }> {
+  const { response, data } = await post("/api/future-self/messages", payload);
+
+  return {
+    ok: response.ok,
+    message: data?.message,
+    futureSelfMessage: data?.futureSelfMessage ?? null,
   };
 }

@@ -150,6 +150,76 @@ function normalizeRiskLevel(value) {
   return "NONE";
 }
 
+function normalizeSentimentLabel(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toUpperCase();
+  if (["POSITIVE", "NEUTRAL", "NEGATIVE", "MIXED"].includes(normalized)) {
+    return normalized;
+  }
+  return "NEUTRAL";
+}
+
+function normalizeScore(value, fallback = 0, min = -1, max = 1) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, parsed));
+}
+
+function inferFallbackSentiment(text) {
+  const value = String(text || "").toLowerCase();
+  const positiveMatches = (
+    value.match(/\b(happy|glad|grateful|thankful|hopeful|excited|proud|calm|relieved|okay|better|love|enjoy|appreciate|masaya|salamat|thank you)\b/g) || []
+  ).length;
+  const negativeMatches = (
+    value.match(/\b(sad|angry|tired|stressed|stress|anxious|anxiety|worried|scared|afraid|overwhelmed|hopeless|hurt|crying|pagod|takot|galit|malungkot|iyak)\b/g) || []
+  ).length;
+
+  if (positiveMatches > 0 && negativeMatches > 0) {
+    return {
+      dominant_emotion: negativeMatches >= positiveMatches ? "mixed stress and hope" : "mixed relief and concern",
+      sentiment_confidence: 0.55,
+      sentiment_label: "MIXED",
+      sentiment_score: normalizeScore((positiveMatches - negativeMatches) / Math.max(positiveMatches + negativeMatches, 1), 0),
+    };
+  }
+
+  if (negativeMatches > positiveMatches) {
+    return {
+      dominant_emotion: "distress",
+      sentiment_confidence: 0.55,
+      sentiment_label: "NEGATIVE",
+      sentiment_score: -0.6,
+    };
+  }
+
+  if (positiveMatches > negativeMatches) {
+    return {
+      dominant_emotion: "positive reflection",
+      sentiment_confidence: 0.55,
+      sentiment_label: "POSITIVE",
+      sentiment_score: 0.6,
+    };
+  }
+
+  return {
+    dominant_emotion: "neutral reflection",
+    sentiment_confidence: 0.45,
+    sentiment_label: "NEUTRAL",
+    sentiment_score: 0,
+  };
+}
+
+function normalizeSentimentAnalysis(value, fallbackText = "") {
+  const fallback = inferFallbackSentiment(fallbackText);
+  return {
+    dominant_emotion: normalizeWhitespace(value?.dominant_emotion || fallback.dominant_emotion).slice(0, 80),
+    sentiment_confidence: normalizeScore(value?.sentiment_confidence, fallback.sentiment_confidence, 0, 1),
+    sentiment_label: normalizeSentimentLabel(value?.sentiment_label || fallback.sentiment_label),
+    sentiment_score: normalizeScore(value?.sentiment_score, fallback.sentiment_score, -1, 1),
+  };
+}
+
 function collectStudentJournalTexts(latestUserMessage = "", history = []) {
   const texts = [];
   const addText = (value) => {
@@ -295,6 +365,7 @@ async function unavailableFinalAnalysis(latestUserMessage = "", history = []) {
     pet_reply: "",
     summary: "",
     insights: [],
+    ...inferFallbackSentiment(studentText),
     risk_level: heuristicRisk.risk_level,
     admin_flag_reason: heuristicRisk.admin_flag_reason,
     suggested_tags: fallbackTags,
@@ -1229,6 +1300,7 @@ async function analyzeJournalEntryFinal({
   firstName,
   latestUserMessage,
   history,
+  summaryFeedbackGuidance = [],
 }) {
   const systemInstruction = [
     "You are Muni, the Bawat Tala journaling companion for students.",
@@ -1248,6 +1320,10 @@ async function analyzeJournalEntryFinal({
     '  "summary": "string",',
     '  "insights": ["string", "string"],',
     '  "suggested_tags": ["string", "string"],',
+    '  "sentiment_label": "POSITIVE | NEUTRAL | NEGATIVE | MIXED",',
+    '  "sentiment_score": "number from -1 to 1",',
+    '  "dominant_emotion": "string",',
+    '  "sentiment_confidence": "number from 0 to 1",',
     '  "risk_level": "NONE | LOW | HIGH",',
     '  "admin_flag_reason": "string or null"',
     "}",
@@ -1260,6 +1336,11 @@ async function analyzeJournalEntryFinal({
     "Summary rules:",
     "- Write one short summary sentence of the main emotional theme.",
     "- Keep it observational and non-prescriptive.",
+    "Sentiment rules:",
+    "- sentiment_label describes the overall emotional tone of the student's own writing.",
+    "- sentiment_score must be between -1 and 1, where -1 is very negative, 0 is neutral or balanced, and 1 is very positive.",
+    "- dominant_emotion should be a short plain-language emotion or blended state, such as stress, anxiety, sadness, hope, gratitude, anger, mixed stress and relief, or neutral reflection.",
+    "- sentiment_confidence must be between 0 and 1 and should be lower when the entry is vague, sarcastic, very short, or mixed.",
     "Risk rules:",
     "- Assess risk from the overall context and content of the journal entry. The generated summary may support the risk decision when it reflects the entry content, but Muni companion replies, suggested_tags, concern/theme tags, and topic labels must not create a risk flag by themselves.",
     "- Concern/theme tags like Anxiety, Stress, Academic problems, or Mental health are topic metadata and must not make an entry LOW or HIGH by themselves.",
@@ -1271,6 +1352,12 @@ async function analyzeJournalEntryFinal({
     "Insights rules:",
     "- Write 3 or 4 short complete sentences.",
     "- Keep them reflective and non-prescriptive.",
+    Array.isArray(summaryFeedbackGuidance) && summaryFeedbackGuidance.length
+      ? `Recent student feedback on earlier Muni summaries to learn from: ${summaryFeedbackGuidance
+          .slice(0, 3)
+          .map((item, index) => `${index + 1}. ${item}`)
+          .join(" | ")}`
+      : "No prior student summary feedback is available for this student.",
   ].join("\n");
 
   const contents = [
@@ -1303,6 +1390,10 @@ async function analyzeJournalEntryFinal({
         '"summary"',
         '"insights"',
         '"suggested_tags"',
+        '"sentiment_label"',
+        '"sentiment_score"',
+        '"dominant_emotion"',
+        '"sentiment_confidence"',
         '"risk_level"',
         '"admin_flag_reason"',
       ],
@@ -1327,6 +1418,7 @@ async function analyzeJournalEntryFinal({
     const riskEvidenceText = getRiskEvidenceText(latestUserMessage, history, summaryText);
     const fallbackTags = inferJournalTagsFromText(studentText);
     const suggestedTags = normalizeJournalTags(parsed?.suggested_tags);
+    const sentimentAnalysis = normalizeSentimentAnalysis(parsed, studentText);
     const heuristicRisk = await riskFromSeverityWords(riskEvidenceText);
     const mergedRisk = calibrateRiskSignal(
       mergeRiskSignals(
@@ -1342,6 +1434,7 @@ async function analyzeJournalEntryFinal({
       pet_reply: "",
       summary: summaryText,
       insights: normalizeInsights(parsed?.insights),
+      ...sentimentAnalysis,
       suggested_tags: suggestedTags.length ? suggestedTags : fallbackTags,
       risk_level: mergedRisk.risk_level,
       admin_flag_reason: mergedRisk.admin_flag_reason,
