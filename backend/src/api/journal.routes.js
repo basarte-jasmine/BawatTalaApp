@@ -278,14 +278,6 @@ async function cleanupStaleEmptyDrafts(studentNumber) {
       delete from public.journal_entries je
       where je.student_number = $1
         and je.is_finished = false
-        and je.deleted_by_student_at is null
-        and not exists (
-          select 1
-          from public.journal_entry_messages jem
-          where jem.entry_id = je.id
-            and jem.role = 'user'
-            and btrim(coalesce(jem.message_text, '')) <> ''
-        )
       returning je.id
     `,
     [studentNumber],
@@ -297,18 +289,7 @@ async function cleanupStaleEmptyDrafts(studentNumber) {
 function buildVisibleEntriesWhereClause(alias = "je") {
   return `
     ${alias}.deleted_by_student_at is null
-    and (
-      ${alias}.is_finished = true
-      or exists (
-        select 1
-        from public.journal_entry_messages visible_messages
-        where visible_messages.entry_id = ${alias}.id
-          and visible_messages.role = 'user'
-          and btrim(coalesce(visible_messages.message_text, '')) <> ''
-      )
-      or btrim(coalesce(${alias}.summary, '')) <> ''
-      or btrim(coalesce(${alias}.title, '')) <> ''
-    )
+    and ${alias}.is_finished = true
   `;
 }
 
@@ -817,8 +798,9 @@ router.post("/session/finish", asyncHandler(async (req, res) => {
   const hasStoredAnalysis =
     Boolean(String(entry.summary || "").trim()) ||
     (Array.isArray(entry.insights) && entry.insights.length > 0);
+  const hasStoredSentiment = Boolean(String(entry.sentiment_label || "").trim());
 
-  if (!hasStoredAnalysis || finalTags.length === 0) {
+  if (!hasStoredAnalysis || !hasStoredSentiment || finalTags.length === 0) {
     analysis = await analyzeFinalEntry({ entryId, existingMessages, studentNumber });
     if (finalTags.length === 0) {
       finalTags = normalizeConcernTags(analysis.suggested_tags);

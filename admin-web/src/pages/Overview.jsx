@@ -2093,6 +2093,7 @@ export default function Overview({ onLogout, session }) {
     dashboardSummary?.charts?.sentimentDistribution?.length > 0
       ? withColors(dashboardSummary.charts.sentimentDistribution, ["#22C55E", "#64748B", "#EF4444", "#F59E0B"])
       : [];
+  const hasSentimentDistributionData = sentimentDistributionData.some((item) => Number(item.value || 0) > 0);
   const studentDemographicLocations =
     dashboardSummary?.charts?.studentDemographics?.locations?.length > 0
       ? dashboardSummary.charts.studentDemographics.locations
@@ -2298,7 +2299,7 @@ export default function Overview({ onLogout, session }) {
             subtitle="Overall emotional tone detected from completed journal summaries"
             className="rounded-2xl border-admin-border"
           >
-            {sentimentDistributionData.length ? (
+            {hasSentimentDistributionData ? (
               <>
                 <DonutChart
                   data={sentimentDistributionData}

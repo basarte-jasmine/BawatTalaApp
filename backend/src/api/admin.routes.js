@@ -274,6 +274,39 @@ function getJournalTagsForAdmin(row) {
 }
 
 const MANILA_TIME_ZONE = "Asia/Manila";
+const SENTIMENT_LABELS = ["POSITIVE", "NEUTRAL", "NEGATIVE", "MIXED"];
+
+function getJournalSentimentText(row) {
+  return [
+    row?.summary,
+    row?.dominant_emotion,
+    row?.admin_flag_reason,
+    ...(Array.isArray(row?.insights) ? row.insights : []),
+  ]
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+function inferDashboardSentimentLabel(row) {
+  const storedLabel = String(row?.sentiment_label || "").trim().toUpperCase();
+  if (SENTIMENT_LABELS.includes(storedLabel)) return storedLabel;
+
+  const text = getJournalSentimentText(row).toLowerCase();
+  if (!text) return "";
+
+  const positiveMatches = (
+    text.match(/\b(happy|glad|grateful|thankful|hopeful|excited|proud|calm|relieved|okay|better|love|enjoy|appreciate|masaya|salamat|thank you)\b/g) || []
+  ).length;
+  const negativeMatches = (
+    text.match(/\b(sad|angry|tired|stressed|stress|anxious|anxiety|worried|scared|afraid|overwhelmed|hopeless|hurt|crying|pagod|takot|galit|malungkot|iyak)\b/g) || []
+  ).length;
+
+  if (positiveMatches > 0 && negativeMatches > 0) return "MIXED";
+  if (negativeMatches > positiveMatches) return "NEGATIVE";
+  if (positiveMatches > negativeMatches) return "POSITIVE";
+  return "NEUTRAL";
+}
 
 function getManilaDateParts(date = new Date()) {
   const formatter = new Intl.DateTimeFormat("en-CA", {
@@ -1188,7 +1221,7 @@ router.get("/dashboard/summary", async (req, res) => {
         .select("id, gender, program, barangay, created_at, student_number"),
       supabaseAdminClient
         .from("journal_entries")
-        .select("id, created_at, entry_date, summary, summary_rating, summary_feedback_reason, sentiment_label, sentiment_score, dominant_emotion, sentiment_confidence, insights, admin_flag_reason, risk_level, student_number, primary_concern, concern_tags"),
+        .select("id, created_at, entry_date, summary, summary_rating, summary_feedback_reason, sentiment_label, sentiment_score, dominant_emotion, sentiment_confidence, insights, admin_flag_reason, risk_level, student_number, primary_concern, concern_tags, is_finished, deleted_by_student_at"),
     ]);
 
   const [
@@ -1203,6 +1236,7 @@ router.get("/dashboard/summary", async (req, res) => {
         select id, student_number, entry_date, created_at, risk_level, support_response
         from public.journal_entries
         where deleted_by_student_at is null
+          and is_finished = true
           and (
             upper(coalesce(risk_level, 'NONE')) in ('LOW', 'MEDIUM', 'MODERATE', 'HIGH', 'CRITICAL')
             or upper(coalesce(support_response, '')) = 'DECLINED'
@@ -1248,8 +1282,11 @@ router.get("/dashboard/summary", async (req, res) => {
           order by ca.appointment_date desc, ca.created_at desc
           limit 1
         ) case_assignment on true
-        where je.risk_level = 'HIGH'
-           or je.support_response in ('DECLINED', 'CONTACTED')
+        where je.is_finished = true
+          and (
+            je.risk_level = 'HIGH'
+            or je.support_response in ('DECLINED', 'CONTACTED')
+          )
         order by coalesce(je.support_response_at, je.created_at) desc
         limit 4
       `,
@@ -1264,7 +1301,8 @@ router.get("/dashboard/summary", async (req, res) => {
   ]);
 
   const safeProfiles = profilesError ? [] : profiles || [];
-  const safeJournals = journalsError ? [] : journals || [];
+  const safeJournals = (journalsError ? [] : journals || []).filter((row) => !row.deleted_by_student_at);
+  const completedJournals = safeJournals.filter((row) => Boolean(row.is_finished));
   const safeFlaggedRows = flaggedRows || [];
   const safeMoodRows = moodRows || [];
 
@@ -1297,7 +1335,7 @@ router.get("/dashboard/summary", async (req, res) => {
 
   const totalStudents = safeProfiles.length;
   const totalFlaggedEntries = safeFlaggedRows.length;
-  const entriesToday = countRowsOnDate(safeJournals, "created_at", todayIso);
+  const entriesToday = countRowsOnDate(completedJournals, "created_at", todayIso);
   const studentsThis30Days = countRowsBetweenDates(safeProfiles, "created_at", current30StartIso, getRelativeManilaIsoDate(1));
   const studentsPrevious30Days = countRowsBetweenDates(safeProfiles, "created_at", previous30StartIso, previous30EndIso);
   const flaggedThis7Days = safeFlaggedRows.filter((row) => {
@@ -1308,11 +1346,11 @@ router.get("/dashboard/summary", async (req, res) => {
     const date = normalizeDateValue(row.entry_date);
     return date && date >= previous7StartIso && date < previous7EndIso;
   }).length;
-  const entriesYesterday = countRowsOnDate(safeJournals, "created_at", yesterdayIso);
+  const entriesYesterday = countRowsOnDate(completedJournals, "created_at", yesterdayIso);
   const totalFutureSelfMessages = (futureSelfMessageRows || []).length;
   const futureSelfMessagesToday = countRowsOnDate(futureSelfMessageRows, "created_at", todayIso);
   const futureSelfMessagesYesterday = countRowsOnDate(futureSelfMessageRows, "created_at", yesterdayIso);
-  const ratedSummaryRows = safeJournals.filter((row) =>
+  const ratedSummaryRows = completedJournals.filter((row) =>
     ["HELPFUL", "NEEDS_WORK"].includes(String(row.summary_rating || "").toUpperCase()),
   );
   const helpfulSummaryCount = ratedSummaryRows.filter((row) => String(row.summary_rating || "").toUpperCase() === "HELPFUL").length;
@@ -1320,14 +1358,14 @@ router.get("/dashboard/summary", async (req, res) => {
   const muniAccuracyPercent = ratedSummaryRows.length
     ? Math.round((helpfulSummaryCount / ratedSummaryRows.length) * 100)
     : null;
-  const sentimentCounts = ["POSITIVE", "NEUTRAL", "NEGATIVE", "MIXED"].reduce((acc, label) => {
+  const sentimentCounts = SENTIMENT_LABELS.reduce((acc, label) => {
     acc[label] = 0;
     return acc;
   }, {});
   let sentimentConfidenceTotal = 0;
   let sentimentConfidenceCount = 0;
-  for (const row of safeJournals) {
-    const label = String(row.sentiment_label || "").toUpperCase();
+  for (const row of completedJournals) {
+    const label = inferDashboardSentimentLabel(row);
     if (Object.prototype.hasOwnProperty.call(sentimentCounts, label)) {
       sentimentCounts[label] += 1;
     }
@@ -1342,7 +1380,7 @@ router.get("/dashboard/summary", async (req, res) => {
     : null;
 
   const activeUsageSeries = toMonthlyBuckets(safeProfiles, "created_at");
-  const journalEntriesSeries = buildCurrentMonthJournalSeries(safeJournals, "created_at");
+  const journalEntriesSeries = buildCurrentMonthJournalSeries(completedJournals, "created_at");
   const moodCountsByDate = new Map();
 
   for (const row of safeMoodRows) {
@@ -1361,7 +1399,7 @@ router.get("/dashboard/summary", async (req, res) => {
     .sort((a, b) => b.value - a.value);
 
   const topBarangayConcerns = new Map();
-  for (const journal of safeJournals) {
+  for (const journal of completedJournals) {
     const profile = safeProfiles.find(
       (item) => String(item.student_number || "").trim() === String(journal.student_number || "").trim(),
     );
@@ -1417,7 +1455,7 @@ router.get("/dashboard/summary", async (req, res) => {
       ...Object.fromEntries(topPrograms.map((item) => [item.label, Number(group[item.label] || 0)])),
     }));
 
-  const concernCounts = safeJournals.reduce((acc, row) => {
+  const concernCounts = completedJournals.reduce((acc, row) => {
     const tags = getJournalTagsForAdmin(row);
     for (const tag of tags) {
       acc[tag] = (acc[tag] || 0) + 1;
@@ -1495,8 +1533,8 @@ router.get("/dashboard/summary", async (req, res) => {
         ...buildDelta(studentsThis30Days, studentsPrevious30Days),
       },
       totalEntries: {
-        value: safeJournals.length,
-        ...buildDelta(safeJournals.length, Math.max(0, safeJournals.length - entriesToday)),
+        value: completedJournals.length,
+        ...buildDelta(completedJournals.length, Math.max(0, completedJournals.length - entriesToday)),
       },
       scheduledToday: {
         value: scheduledEvents.todayCount,
@@ -1593,6 +1631,7 @@ router.get("/dashboard/risk-flags", async (_req, res) => {
         upper(coalesce(je.risk_level, 'NONE')) in ('LOW', 'MEDIUM', 'MODERATE', 'HIGH', 'CRITICAL')
         or upper(coalesce(je.support_response, '')) = 'DECLINED'
       )
+        and je.is_finished = true
         and je.deleted_by_student_at is null
       order by je.entry_date desc, je.created_at desc
       limit 100
@@ -1675,6 +1714,7 @@ router.patch("/journal-entries/:entryId/flag", async (req, res) => {
         end,
         updated_at = now()
       where id = $1
+        and is_finished = true
         and deleted_by_student_at is null
       returning
         id,
@@ -2032,6 +2072,7 @@ router.get("/search", async (req, res) => {
             )::int as flagged_entries
           from public.journal_entries je
           where je.student_number = sp.student_number
+            and je.is_finished = true
             and je.deleted_by_student_at is null
         ) stats on true
         where
@@ -2064,6 +2105,7 @@ router.get("/search", async (req, res) => {
         from public.journal_entries je
         left join public.student_profiles sp on sp.student_number = je.student_number
         where je.deleted_by_student_at is null
+          and je.is_finished = true
           and (
             coalesce(je.title, '') ilike $1
             or coalesce(je.summary, '') ilike $1
@@ -2286,6 +2328,8 @@ router.get("/analytics", async (req, res) => {
           support_response_at
         from public.journal_entries
         where entry_date between $1::date and $2::date
+          and is_finished = true
+          and deleted_by_student_at is null
         order by entry_date asc, created_at asc
       `,
       [startDate, endDate],
@@ -2354,6 +2398,8 @@ router.get("/analytics", async (req, res) => {
         select count(*)::int as total
         from public.journal_entries
         where entry_date between $1::date and $2::date
+          and is_finished = true
+          and deleted_by_student_at is null
       `,
       [previousStartDate, previousEndDate],
     ),
@@ -2380,6 +2426,8 @@ router.get("/analytics", async (req, res) => {
           select distinct student_number
           from public.journal_entries
           where entry_date between $1::date and $2::date
+            and is_finished = true
+            and deleted_by_student_at is null
         `,
         [previousStartDate, previousEndDate],
       )
@@ -2848,6 +2896,7 @@ router.get("/students", async (req, res) => {
           )::int as flagged_entries
         from public.journal_entries je
         where je.student_number = sp.student_number
+          and je.is_finished = true
           and je.deleted_by_student_at is null
       ) stats on true
       ${whereClause}
@@ -2901,7 +2950,7 @@ router.get("/students/recent-entries", async (req, res) => {
   const concern = normalizeCompactSpaces(req.query.concern || "");
 
   const values = [];
-  const conditions = ["je.deleted_by_student_at is null"];
+  const conditions = ["je.deleted_by_student_at is null", "je.is_finished = true"];
 
   if (search) {
     values.push(`%${search}%`);
@@ -3061,6 +3110,7 @@ router.get("/students/:studentNumber", async (req, res) => {
       left join public.journal_entry_messages jem on jem.entry_id = je.id
       where je.student_number = $1
         and je.deleted_by_student_at is null
+        and je.is_finished = true
       group by je.id
       order by je.entry_date desc, je.created_at desc
     `,

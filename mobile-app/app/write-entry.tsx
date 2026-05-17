@@ -418,6 +418,53 @@ export default function WriteEntryScreen() {
     [entry?.id, user?.studentNumber],
   );
 
+  const finishRiskEntryWithSupport = useCallback(
+    async (response: "CONTACTED" | "DECLINED") => {
+      if (!user?.studentNumber || !entry?.id) {
+        return true;
+      }
+
+      setIsSavingSupportResponse(true);
+
+      const supportResult = await saveJournalSupportResponse({
+        entryId: entry.id,
+        response,
+        studentNumber: user.studentNumber,
+      });
+
+      if (!supportResult.ok) {
+        setIsSavingSupportResponse(false);
+        setErrorMessage(supportResult.message ?? "Unable to save your support response.");
+        return false;
+      }
+
+      let nextEntry = supportResult.entry ?? entry;
+
+      if (!nextEntry.isFinished) {
+        const fallbackTags = uniqueTags(nextEntry.concernTags?.length ? nextEntry.concernTags : ["Mental health"]);
+        const finishResult = await finishJournalEntry({
+          concernTags: fallbackTags,
+          entryId: nextEntry.id,
+          primaryConcern: fallbackTags[0] ?? "Mental health",
+          studentNumber: user.studentNumber,
+        });
+
+        if (!finishResult.ok) {
+          setIsSavingSupportResponse(false);
+          setErrorMessage(finishResult.message ?? "Unable to finish this journal entry.");
+          return false;
+        }
+
+        nextEntry = finishResult.entry ?? nextEntry;
+      }
+
+      setEntry(nextEntry);
+      setIsSavingSupportResponse(false);
+      return true;
+    },
+    [entry, user?.studentNumber],
+  );
+
   const handleDismissRiskModal = useCallback(async () => {
     if (isSavingSupportResponse) {
       return;
@@ -436,6 +483,11 @@ export default function WriteEntryScreen() {
       return;
     }
 
+    const saved = await finishRiskEntryWithSupport("CONTACTED");
+    if (!saved) {
+      return;
+    }
+
     try {
       const canOpen = await Linking.canOpenURL(NCMH_HOTLINE_DIAL_URL);
       if (!canOpen) {
@@ -443,11 +495,6 @@ export default function WriteEntryScreen() {
           "Call NCMH Hotline",
           `Please call ${NCMH_HOTLINE_LANDLINE} or ${NCMH_HOTLINE_DISPLAY} for immediate support.`,
         );
-        return;
-      }
-
-      const saved = await saveSupportDecision("CONTACTED");
-      if (!saved) {
         return;
       }
 
@@ -459,30 +506,35 @@ export default function WriteEntryScreen() {
         `Please call ${NCMH_HOTLINE_LANDLINE} or ${NCMH_HOTLINE_DISPLAY} for immediate support.`,
       );
     }
-  }, [isSavingSupportResponse, saveSupportDecision]);
+  }, [finishRiskEntryWithSupport, isSavingSupportResponse]);
 
   const handleOpenCounseling = useCallback(async () => {
     if (isSavingSupportResponse) {
       return;
     }
 
-    const saved = await saveSupportDecision("CONTACTED");
+    const saved = await finishRiskEntryWithSupport("CONTACTED");
     if (!saved) {
       return;
     }
 
     setShowRiskModal(false);
     router.push("/consult?track=professional&skipIntro=1");
-  }, [isSavingSupportResponse, saveSupportDecision]);
+  }, [finishRiskEntryWithSupport, isSavingSupportResponse]);
 
-  const handleOpenWellnessTools = useCallback(() => {
+  const handleOpenWellnessTools = useCallback(async () => {
     if (isSavingSupportResponse) {
+      return;
+    }
+
+    const saved = await finishRiskEntryWithSupport("CONTACTED");
+    if (!saved) {
       return;
     }
 
     setShowRiskModal(false);
     router.push("/wellness-tools");
-  }, [isSavingSupportResponse]);
+  }, [finishRiskEntryWithSupport, isSavingSupportResponse]);
 
   const handleConfirmTagsAndFinish = async () => {
     if (!user?.studentNumber || !entry?.id || isFinishing || isSavingTags) {
