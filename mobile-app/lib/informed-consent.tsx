@@ -173,31 +173,37 @@ export function InformedConsentGate({ children, feature }: InformedConsentGatePr
           </View>
         </View>
 
-        <Text style={styles.body}>{copy.body}</Text>
+        <ScrollView
+          style={styles.detailsScroll}
+          contentContainerStyle={styles.detailsContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.body}>{copy.body}</Text>
 
-        <View style={styles.sectionStack}>
-          {copy.sections.map((section, sectionIndex) => (
-            <View key={section.title} style={styles.noticePanel}>
-              <View style={styles.sectionHeader}>
-                <View style={styles.sectionNumber}>
-                  <Text style={styles.sectionNumberText}>{sectionIndex + 1}</Text>
+          <View style={styles.sectionStack}>
+            {copy.sections.map((section, sectionIndex) => (
+              <View key={section.title} style={styles.noticePanel}>
+                <View style={styles.sectionHeader}>
+                  <View style={styles.sectionNumber}>
+                    <Text style={styles.sectionNumberText}>{sectionIndex + 1}</Text>
+                  </View>
+                  <Text style={styles.sectionTitle}>{section.title}</Text>
                 </View>
-                <Text style={styles.sectionTitle}>{section.title}</Text>
+
+                {section.items.map((item) => (
+                  <View key={item} style={styles.noticeRow}>
+                    <Ionicons name="checkmark-circle" size={16} color="#67B73A" style={styles.noticeIcon} />
+                    <Text style={styles.noticeText}>{item}</Text>
+                  </View>
+                ))}
               </View>
+            ))}
+          </View>
 
-              {section.items.map((item) => (
-                <View key={item} style={styles.noticeRow}>
-                  <Ionicons name="checkmark-circle" size={16} color="#67B73A" style={styles.noticeIcon} />
-                  <Text style={styles.noticeText}>{item}</Text>
-                </View>
-              ))}
-            </View>
-          ))}
-        </View>
-
-        <Text style={styles.confirmationText}>
-          By tapping Agree, you confirm that you understand this notice and allow Bawat Tala to save, process, sync, and use this information for the purposes described above.
-        </Text>
+          <Text style={styles.confirmationText}>
+            By tapping Agree, you confirm that you understand this notice and allow Bawat Tala to save, process, sync, and use this information for the purposes described above.
+          </Text>
+        </ScrollView>
 
         <View style={styles.actions}>
           <Pressable style={styles.secondaryButton} onPress={handleLeave} disabled={isSaving}>
@@ -233,9 +239,9 @@ export function InformedConsentGate({ children, feature }: InformedConsentGatePr
     <View style={styles.screen}>
       <View style={styles.glowTop} />
       <View style={styles.glowBottom} />
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <View style={styles.screenContent}>
         {content}
-      </ScrollView>
+      </View>
     </View>
   );
 }
@@ -272,11 +278,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#E6F1FF",
     opacity: 0.82,
   },
-  scrollContent: {
-    flexGrow: 1,
+  screenContent: {
+    flex: 1,
     justifyContent: "center",
     paddingHorizontal: 14,
-    paddingVertical: 18,
+    paddingTop: 18,
+    paddingBottom: 124,
   },
   card: {
     width: "100%",
@@ -289,6 +296,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 15,
+    maxHeight: "100%",
     shadowColor: "#43505C",
     shadowOpacity: 0.14,
     shadowRadius: 10,
@@ -342,6 +350,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     marginBottom: 10,
+  },
+  detailsScroll: {
+    flexShrink: 1,
+  },
+  detailsContent: {
+    paddingBottom: 2,
   },
   sectionStack: {
     rowGap: 8,
@@ -401,11 +415,11 @@ const styles = StyleSheet.create({
     color: "#687887",
     fontSize: 11,
     lineHeight: 16,
-    marginBottom: 12,
   },
   actions: {
     flexDirection: "row",
     columnGap: 10,
+    marginTop: 12,
   },
   secondaryButton: {
     flex: 1,

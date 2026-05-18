@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, ImageSourcePropType, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { useAuthSession } from "../lib/auth-session";
 import { fetchMonthlyMoods, type MoodEntryRecord } from "../lib/backend-api";
 import { EMOTION_META, EMOTION_ORDER, createEmotionCounts, normalizeEmotionId } from "../lib/emotions";
@@ -554,6 +555,7 @@ export default function MoodOverviewScreen() {
         </View>
       </Modal>
       </InformedConsentGate>
+      <HomeBottomNav activeTab="home" />
     </SafeAreaView>
   );
 }
@@ -600,7 +602,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 10,
     paddingTop: 12,
-    paddingBottom: 22,
+    paddingBottom: 118,
   },
   summaryCard: {
     borderRadius: 22,
