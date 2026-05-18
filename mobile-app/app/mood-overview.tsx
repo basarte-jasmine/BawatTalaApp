@@ -30,7 +30,7 @@ type CalendarDay = {
 
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
-const INSIGHT_FOOTNOTE = "Summary by Muni, your virtual companion. Bawat Tala is not a substitute for professional mental health care.";
+const INSIGHT_FOOTNOTE = "Summary by Muni, an AI companion. Muni is not a psychometrician or a substitute for professional mental health care.";
 
 const MIN_YEAR = 2026;
 const MIN_MONTH_INDEX = 0;

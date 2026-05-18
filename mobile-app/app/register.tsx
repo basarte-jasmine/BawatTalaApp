@@ -62,7 +62,7 @@ When you upload a school ID image, the image may be sent to an OCR service so te
 Your full journal conversation is not routinely shown to admins or counselors. However, Bawat Tala may generate summaries, summary notes, concern labels, and risk flags from journal entries for student support workflows. If an entry is flagged by high-risk indicators, trigger words, or other safety signals, authorized counselors or admins may review the full conversation to assess whether counseling or safety follow-up is needed.
 
 5. AI and Automated Processing
-Journal text may be processed by Bawat Tala's configured AI or automated review tools to generate Muni replies, summaries, summary notes, and safety flags.
+Journal text may be processed by Bawat Tala's configured AI or automated review tools to generate Muni replies, summaries, summary notes, and safety flags. Muni is artificial intelligence, not a psychometrician, therapist, counselor, diagnosis, clinical assessment, or emergency service.
 
 6. Email, Appointments, and Integrations
 Bawat Tala may send verification, password reset, and appointment-related messages through configured service providers. Google Calendar data is only used when an authorized admin connects Google for scheduling features.
@@ -74,7 +74,7 @@ You agree not to use the service for impersonation, fraud, harassment, unlawful 
 We may update, modify, or temporarily suspend parts of the service for maintenance, security improvements, and feature updates. While we implement reasonable safeguards, no digital system can guarantee absolute uninterrupted operation.
 
 9. Emergency Limitation
-Bawat Tala is not an emergency hotline or substitute for urgent medical or mental health care.
+Bawat Tala is not an emergency hotline or substitute for urgent medical or mental health care. Do not rely too much on Muni for serious or urgent concerns.
 
 10. Updates to Terms
 These terms may be updated as needed. Continued use of the platform after updates constitutes acceptance of the revised terms.
@@ -108,6 +108,8 @@ Your data may be stored or processed through:
 - Google Gemini and/or Groq for Muni replies, summaries, summary notes, and safety flagging
 - Resend or another configured email provider for appointment-related emails
 - Google Calendar only when an authorized admin connects Google for scheduling
+
+Muni is artificial intelligence and is not a psychometrician, therapist, counselor, diagnosis, clinical assessment, or emergency service.
 
 3. Why We Process Your Data
 We process personal data to:

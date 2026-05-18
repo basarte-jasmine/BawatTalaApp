@@ -729,7 +729,7 @@ export default function ProfileSettingsScreen() {
               />
               <Faq
                 question="Will Muni read my entries automatically?"
-                answer="Muni responds inside journaling flows and summaries. You stay in control of what you write and finish."
+                answer="Muni is artificial intelligence. It responds inside journaling flows and summaries, but it is not a psychometrician or professional care. You stay in control of what you write and finish."
                 bordered
               />
             </Card>

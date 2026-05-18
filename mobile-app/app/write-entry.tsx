@@ -909,8 +909,7 @@ export default function WriteEntryScreen() {
 
                 <View style={styles.footnoteWrap}>
                   <Text style={styles.footnoteText}>
-                    Muni is on. Replies stay brief, specific, and focused on
-                    reflection inside Bawat Tala.
+                    Muni is AI. Replies are for reflection only and are not psychometrician or professional advice.
                   </Text>
                 </View>
               </View>
@@ -976,7 +975,7 @@ export default function WriteEntryScreen() {
 
             <Text style={styles.plainFootnote}>
               Muni is off. Your journal will be saved without Muni&apos;s replies.
-              Muni will still provide a summary when you finish your entry.
+              Muni AI may still summarize when you finish, but it is not a psychometrician.
             </Text>
           </View>
         )}

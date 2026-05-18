@@ -45,7 +45,7 @@ const CONSENT_COPY: Record<
         title: "How it may be used",
         items: [
           "To show your journal history, calendar, entry details, Muni summaries, reflections, and tags.",
-          "To let Muni analyze entries for supportive replies, summaries, emotion patterns, and safety prompts.",
+          "To let Muni, an artificial intelligence companion, analyze entries for supportive replies, summaries, emotion patterns, and safety prompts.",
           "To sync your entries to your account when internet is available.",
         ],
       },
@@ -60,7 +60,8 @@ const CONSENT_COPY: Record<
       {
         title: "Important limits",
         items: [
-          "Muni can be helpful for reflection, but it can be wrong and is not a therapist, counselor, diagnosis, or emergency service.",
+          "Muni is artificial intelligence. It can be helpful for reflection, but it can be wrong and should not be relied on too much.",
+          "Muni is not a psychometrician, therapist, counselor, diagnosis, clinical assessment, or emergency service.",
           "If you may hurt yourself or someone else, contact local emergency services, a trusted person, or a qualified mental health professional right away.",
         ],
       },
@@ -84,7 +85,7 @@ const CONSENT_COPY: Record<
       {
         title: "How it may be used",
         items: [
-          "To build your emotion calendar, daily check-in trail, monthly totals, and Muni reflections.",
+          "To build your emotion calendar, daily check-in trail, monthly totals, and Muni AI reflections.",
           "To sync emotion check-ins to your account when internet is available.",
           "To support app dashboards, reports, and wellness insights connected to student support workflows.",
         ],
@@ -94,7 +95,7 @@ const CONSENT_COPY: Record<
         items: [
           "Emotion data is linked to your student account and may be processed by the app backend.",
           "Authorized school support/admin users may see related mood records, counts, or analytics for wellness monitoring and support.",
-          "Emotion history is for self-awareness only and is not a diagnosis or clinical assessment.",
+          "Muni is artificial intelligence, not a psychometrician or mental health professional. Emotion history is for self-awareness only and is not a diagnosis or clinical assessment.",
         ],
       },
     ],

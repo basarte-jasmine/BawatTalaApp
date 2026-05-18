@@ -225,8 +225,7 @@ export default function JournalScreen() {
               </View>
 
               <Text style={[styles.reflectionFootnote, compact && styles.reflectionFootnoteCompact]} numberOfLines={2}>
-                Summary by Muni, your virtual companion. Bawat Tala is not a substitute for professional mental health
-                care.
+                Summary by Muni, an AI companion. Muni is not a psychometrician or a substitute for professional care.
               </Text>
             </View>
           </View>
