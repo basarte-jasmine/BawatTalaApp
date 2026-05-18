@@ -303,15 +303,15 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: 10,
     paddingTop: 12,
-    paddingBottom: 112,
+    paddingBottom: 158,
   },
   contentCompact: {
     paddingTop: 8,
-    paddingBottom: 102,
+    paddingBottom: 148,
   },
   contentVeryCompact: {
     paddingTop: 6,
-    paddingBottom: 94,
+    paddingBottom: 138,
   },
   topSection: {
     flexShrink: 0,
