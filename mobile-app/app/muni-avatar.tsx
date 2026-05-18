@@ -5,7 +5,6 @@ import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { useAuthSession } from "../lib/auth-session";
 import { fetchCheckInStatus } from "../lib/backend-api";
 import {
@@ -29,6 +28,13 @@ import {
 type AvatarMode = "wardrobe" | "shop";
 type PurchaseNotice = {
   itemLabel: string;
+};
+
+const SECTION_META: Record<keyof MuniLoadout, { icon: string }> = {
+  background: { icon: "image-outline" },
+  eye: { icon: "eye-outline" },
+  head: { icon: "sparkles-outline" },
+  outfit: { icon: "shirt-outline" },
 };
 
 export default function MuniAvatarScreen() {
@@ -79,11 +85,18 @@ export default function MuniAvatarScreen() {
   const equippedEyeStyle = getEyeAccessoryStyle(equippedItems.eye);
   const hasUnsavedChanges = !areMuniLoadoutsEqual(equippedItems, savedItems);
   const availableTala = Math.max(0, totalTala - spentTala);
+  const ownedItemCount = COLLECTION_SECTIONS.reduce((sum, section) => sum + ownedItems[section.id].length, 0);
+  const totalItemCount = COLLECTION_SECTIONS.reduce((sum, section) => sum + section.options.length, 0);
+  const equippedItemCount = Object.values(equippedItems).filter(Boolean).length;
 
   const handleSaveLoadout = useCallback(() => {
+    if (!hasUnsavedChanges) {
+      return;
+    }
+
     saveMuniLoadout(equippedItems);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
-  }, [equippedItems]);
+  }, [equippedItems, hasUnsavedChanges]);
 
   const handleEquipItem = useCallback((sectionId: keyof MuniLoadout, optionId: string) => {
     setEquippedItems((current) => ({
@@ -114,69 +127,108 @@ export default function MuniAvatarScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
+    <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
       <View style={styles.topBar}>
         <Pressable style={styles.backButton} accessibilityLabel="Go back" onPress={handleBack}>
-          <Ionicons name="chevron-back" size={28} color="#37424F" />
+          <Ionicons name="chevron-back" size={26} color="#304456" />
         </Pressable>
-        <Text style={styles.topTitle}>Avatar</Text>
+        <Text style={styles.topTitle}>Muni Wardrobe</Text>
         <View style={styles.topBarSpacer} />
       </View>
 
-      <View style={styles.previewSection}>
-        <View style={styles.heroCard}>
-          {equippedBackgroundSource ? (
-            <View style={styles.heroBackgroundFrame}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.previewSection}>
+          <View style={styles.heroCard}>
+            {equippedBackgroundSource ? (
               <Image source={equippedBackgroundSource} style={styles.heroBackgroundImage} resizeMode="cover" />
+            ) : null}
+            <View style={styles.heroOverlay} />
+
+            <View style={styles.heroTopRow}>
+              <View style={styles.talaPill}>
+                <Image source={TALA_IMAGE} style={styles.talaIcon} resizeMode="contain" />
+                <Text style={styles.talaText}>{availableTala.toLocaleString("en-US")}</Text>
+              </View>
+
+              <Pressable
+                style={[styles.saveButton, hasUnsavedChanges ? styles.saveButtonActive : styles.saveButtonSaved]}
+                accessibilityLabel="Save outfit"
+                disabled={!hasUnsavedChanges}
+                onPress={handleSaveLoadout}
+              >
+                <Ionicons
+                  name={hasUnsavedChanges ? "checkmark-circle" : "checkmark-circle-outline"}
+                  size={18}
+                  color={hasUnsavedChanges ? "#FFFFFF" : "#5E7259"}
+                />
+                <Text style={[styles.saveButtonText, hasUnsavedChanges && styles.saveButtonTextActive]}>
+                  {hasUnsavedChanges ? "Save look" : "Saved"}
+                </Text>
+              </Pressable>
             </View>
-          ) : null}
-          <View style={styles.heroOverlay} />
 
-          <View style={styles.talaPill}>
-            <Image source={TALA_IMAGE} style={styles.talaIcon} resizeMode="contain" />
-            <Text style={styles.talaText}>{availableTala.toLocaleString("en-US")}</Text>
+            <View style={styles.muniPreviewWrap}>
+              <Image source={MUNI_IMAGE} style={styles.muniBaseImage} resizeMode="contain" />
+              {equippedOutfitSource ? (
+                <Image source={equippedOutfitSource} style={styles.muniAccessoryImage} resizeMode="contain" />
+              ) : null}
+              {equippedEyeSource ? (
+                <Image
+                  source={equippedEyeSource}
+                  style={[styles.muniAccessoryImage, equippedEyeStyle]}
+                  resizeMode="contain"
+                />
+              ) : null}
+              {equippedHeadSource ? (
+                <Image
+                  source={equippedHeadSource}
+                  style={[styles.muniAccessoryImage, equippedHeadStyle]}
+                  resizeMode="contain"
+                />
+              ) : null}
+            </View>
+
+            <View style={styles.heroStatsRow}>
+              <View style={styles.heroStatPill}>
+                <Text style={styles.heroStatValue}>{equippedItemCount}/4</Text>
+                <Text style={styles.heroStatLabel}>Equipped</Text>
+              </View>
+              <View style={styles.heroStatPill}>
+                <Text style={styles.heroStatValue}>
+                  {ownedItemCount}/{totalItemCount}
+                </Text>
+                <Text style={styles.heroStatLabel}>Owned</Text>
+              </View>
+            </View>
           </View>
 
-          <Pressable
-            style={[styles.circleBadge, hasUnsavedChanges && styles.circleBadgeActive]}
-            accessibilityLabel="Save outfit"
-            onPress={handleSaveLoadout}
-          >
-            <Ionicons name="checkmark" size={24} color="#FFFFFF" />
-          </Pressable>
-
-          <View style={styles.muniPreviewWrap}>
-            <Image source={MUNI_IMAGE} style={styles.muniBaseImage} resizeMode="contain" />
-            {equippedOutfitSource ? (
-              <Image source={equippedOutfitSource} style={styles.muniAccessoryImage} resizeMode="contain" />
-            ) : null}
-            {equippedEyeSource ? (
-              <Image
-                source={equippedEyeSource}
-                style={[styles.muniAccessoryImage, equippedEyeStyle]}
-                resizeMode="contain"
+          <View style={styles.collectionHeader}>
+            <View style={styles.collectionTitleWrap}>
+              <Text style={styles.collectionKicker}>{activeMode === "wardrobe" ? "Wardrobe" : "Shop"}</Text>
+              <Text style={styles.collectionTitle}>{activeMode === "wardrobe" ? "Your collection" : "New pieces"}</Text>
+            </View>
+            <View style={styles.collectionCountPill}>
+              <Ionicons
+                name={activeMode === "wardrobe" ? "shirt-outline" : "bag-handle-outline"}
+                size={15}
+                color="#507143"
               />
-            ) : null}
-            {equippedHeadSource ? (
-              <Image
-                source={equippedHeadSource}
-                style={[styles.muniAccessoryImage, equippedHeadStyle]}
-                resizeMode="contain"
-              />
-            ) : null}
+              <Text style={styles.collectionCountText}>
+                {activeMode === "wardrobe" ? `${ownedItemCount} owned` : `${availableTala} Tala`}
+              </Text>
+            </View>
           </View>
-        </View>
 
-        <View style={styles.collectionBadgeWrap}>
-          <Text style={styles.collectionBadge}>{activeMode === "wardrobe" ? "Your Wardrobe" : "Muni Shop"}</Text>
-        </View>
-
-        <View style={styles.modeSwitchWrap}>
           <View style={styles.modeSwitch}>
             <Pressable
               style={[styles.modeButton, activeMode === "wardrobe" && styles.modeButtonActive]}
               onPress={() => setActiveMode("wardrobe")}
             >
+              <Ionicons
+                name={activeMode === "wardrobe" ? "shirt" : "shirt-outline"}
+                size={17}
+                color={activeMode === "wardrobe" ? "#FFFFFF" : "#62746A"}
+              />
               <Text style={[styles.modeButtonText, activeMode === "wardrobe" && styles.modeButtonTextActive]}>
                 Wardrobe
               </Text>
@@ -185,26 +237,35 @@ export default function MuniAvatarScreen() {
               style={[styles.modeButton, activeMode === "shop" && styles.modeButtonActive]}
               onPress={() => setActiveMode("shop")}
             >
+              <Ionicons
+                name={activeMode === "shop" ? "bag-handle" : "bag-handle-outline"}
+                size={17}
+                color={activeMode === "shop" ? "#FFFFFF" : "#62746A"}
+              />
               <Text style={[styles.modeButtonText, activeMode === "shop" && styles.modeButtonTextActive]}>Shop</Text>
             </Pressable>
           </View>
-          <Text style={styles.modeHelperText}>
-            {activeMode === "wardrobe"
-              ? "Equip the pieces you already own."
-              : "Use Tala to unlock new looks for Muni."}
-          </Text>
         </View>
-      </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {COLLECTION_SECTIONS.map((section) => (
-          <View key={section.id} style={styles.sectionBlock}>
-            <Text style={styles.sectionTitle}>{section.label}</Text>
-            {activeMode === "wardrobe" ? (
-              <View style={styles.optionRow}>
-                {section.options
-                  .filter((option) => ownedItems[section.id].includes(option.id))
-                  .map((option) => {
+        {COLLECTION_SECTIONS.map((section) => {
+          const ownedOptions = section.options.filter((option) => ownedItems[section.id].includes(option.id));
+          const sectionCount = activeMode === "wardrobe" ? `${ownedOptions.length}/${section.options.length}` : `${section.options.length}`;
+
+          return (
+            <View key={section.id} style={styles.sectionBlock}>
+              <View style={styles.sectionHeader}>
+                <View style={styles.sectionTitleRow}>
+                  <View style={styles.sectionIconBadge}>
+                    <Ionicons name={SECTION_META[section.id].icon as any} size={16} color="#527144" />
+                  </View>
+                  <Text style={styles.sectionTitle}>{section.label}</Text>
+                </View>
+                <Text style={styles.sectionCountText}>{sectionCount}</Text>
+              </View>
+
+              {activeMode === "wardrobe" ? (
+                <View style={styles.optionRow}>
+                  {ownedOptions.map((option) => {
                     const selected = equippedItems[section.id] === option.id;
                     return (
                       <Pressable
@@ -212,80 +273,104 @@ export default function MuniAvatarScreen() {
                         style={[styles.optionCard, selected && styles.optionCardSelected]}
                         onPress={() => handleEquipItem(section.id, option.id)}
                       >
-                        <Image
-                          source={option.source}
-                          style={section.id === "background" ? styles.backgroundOptionImage : styles.optionImage}
-                          resizeMode="contain"
-                        />
+                        <View
+                          style={[
+                            styles.optionImageWell,
+                            section.id === "background" && styles.optionImageWellBackground,
+                          ]}
+                        >
+                          <Image
+                            source={option.source}
+                            style={section.id === "background" ? styles.backgroundOptionImage : styles.optionImage}
+                            resizeMode={section.id === "background" ? "cover" : "contain"}
+                          />
+                        </View>
+                        <Text style={[styles.optionLabel, selected && styles.optionLabelSelected]} numberOfLines={1}>
+                          {option.label ?? option.id}
+                        </Text>
                         {selected ? (
                           <View style={styles.checkBadge}>
-                            <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                            <Ionicons name="checkmark" size={15} color="#FFFFFF" />
                           </View>
                         ) : null}
                       </Pressable>
                     );
                   })}
-              </View>
-            ) : (
-              <View style={styles.shopGrid}>
-                {section.options.map((option) => {
-                  const owned = ownedItems[section.id].includes(option.id);
-                  const selected = equippedItems[section.id] === option.id;
-                  const canAfford = availableTala >= option.price;
-                  return (
-                    <View
-                      key={option.id}
-                      style={[
-                        styles.shopCard,
-                        owned && styles.shopCardOwned,
-                        selected && owned && styles.shopCardSelected,
-                      ]}
-                    >
-                      <View style={styles.shopImageWrap}>
-                        <Image
-                          source={option.source}
-                          style={section.id === "background" ? styles.shopBackgroundImage : styles.shopOptionImage}
-                          resizeMode="contain"
-                        />
-                      </View>
-                      <Text style={styles.shopLabel} numberOfLines={2}>
-                        {option.label ?? option.id}
-                      </Text>
-                      {owned ? (
-                        <View style={styles.shopOwnedInfo}>
-                          <View style={[styles.shopStatusChip, selected && styles.shopStatusChipActive]}>
-                            <Text style={[styles.shopStatusText, selected && styles.shopStatusTextActive]}>
-                              {selected ? "Equipped" : "Owned"}
-                            </Text>
-                          </View>
-                          <Text style={styles.shopOwnedHint}>
-                            {selected ? "Currently on Muni" : "Ready in your wardrobe"}
-                          </Text>
+                </View>
+              ) : (
+                <View style={styles.shopGrid}>
+                  {section.options.map((option) => {
+                    const owned = ownedItems[section.id].includes(option.id);
+                    const selected = equippedItems[section.id] === option.id;
+                    const canAfford = availableTala >= option.price;
+                    return (
+                      <View
+                        key={option.id}
+                        style={[
+                          styles.shopCard,
+                          owned && styles.shopCardOwned,
+                          selected && owned && styles.shopCardSelected,
+                        ]}
+                      >
+                        <View style={styles.shopImageWrap}>
+                          <Image
+                            source={option.source}
+                            style={section.id === "background" ? styles.shopBackgroundImage : styles.shopOptionImage}
+                            resizeMode={section.id === "background" ? "cover" : "contain"}
+                          />
                         </View>
-                      ) : (
-                        <>
-                          <View style={styles.priceRow}>
-                            <Image source={TALA_IMAGE} style={styles.shopPriceIcon} resizeMode="contain" />
-                            <Text style={styles.shopPriceText}>{option.price}</Text>
-                          </View>
-                          <Pressable
-                            style={[styles.buyButton, !canAfford && styles.buyButtonDisabled]}
-                            disabled={!canAfford}
-                            onPress={() => handleBuyItem(section.id, option)}
-                          >
-                            <Text style={[styles.buyButtonText, !canAfford && styles.buyButtonTextDisabled]}>
-                              {canAfford ? "Buy Now" : "Not enough Tala"}
-                            </Text>
-                          </Pressable>
-                        </>
-                      )}
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-          </View>
-        ))}
+                        <Text style={styles.shopLabel} numberOfLines={2}>
+                          {option.label ?? option.id}
+                        </Text>
+
+                        {owned ? (
+                          <>
+                            <View style={[styles.shopStatusChip, selected && styles.shopStatusChipActive]}>
+                              <Ionicons
+                                name={selected ? "checkmark-circle" : "checkmark-circle-outline"}
+                                size={14}
+                                color={selected ? "#FFFFFF" : "#5C7257"}
+                              />
+                              <Text style={[styles.shopStatusText, selected && styles.shopStatusTextActive]}>
+                                {selected ? "Equipped" : "Owned"}
+                              </Text>
+                            </View>
+                            <Pressable
+                              style={[styles.wearButton, selected && styles.wearButtonSelected]}
+                              disabled={selected}
+                              onPress={() => handleEquipItem(section.id, option.id)}
+                            >
+                              <Text style={[styles.wearButtonText, selected && styles.wearButtonTextSelected]}>
+                                {selected ? "On Muni" : "Wear"}
+                              </Text>
+                            </Pressable>
+                          </>
+                        ) : (
+                          <>
+                            <View style={styles.priceRow}>
+                              <Image source={TALA_IMAGE} style={styles.shopPriceIcon} resizeMode="contain" />
+                              <Text style={styles.shopPriceText}>{option.price}</Text>
+                            </View>
+                            <Pressable
+                              style={[styles.buyButton, !canAfford && styles.buyButtonDisabled]}
+                              disabled={!canAfford}
+                              onPress={() => handleBuyItem(section.id, option)}
+                            >
+                              <Ionicons name="bag-add-outline" size={14} color={canAfford ? "#FFFFFF" : "#8A9583"} />
+                              <Text style={[styles.buyButtonText, !canAfford && styles.buyButtonTextDisabled]}>
+                                {canAfford ? "Unlock" : "Need Tala"}
+                              </Text>
+                            </Pressable>
+                          </>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          );
+        })}
       </ScrollView>
 
       <Modal
@@ -301,9 +386,7 @@ export default function MuniAvatarScreen() {
             </View>
             <Text style={styles.unlockTitle}>New item unlocked!</Text>
             <Text style={styles.unlockBody}>
-              {purchaseNotice
-                ? `${purchaseNotice.itemLabel} is now unlocked and ready in your wardrobe.`
-                : ""}
+              {purchaseNotice ? `${purchaseNotice.itemLabel} is now unlocked and ready in your wardrobe.` : ""}
             </Text>
 
             <Pressable style={styles.unlockButton} onPress={() => setPurchaseNotice(null)}>
@@ -312,8 +395,6 @@ export default function MuniAvatarScreen() {
           </View>
         </View>
       </Modal>
-
-      <HomeBottomNav activeTab="muni" />
     </SafeAreaView>
   );
 }
@@ -321,173 +402,255 @@ export default function MuniAvatarScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#F5F9F1",
   },
   topBar: {
-    height: 52,
+    height: 56,
     borderBottomWidth: 1,
-    borderBottomColor: "#D3D5D7",
-    backgroundColor: "#FFFFFF",
+    borderBottomColor: "#DDE7D7",
+    backgroundColor: "#FEFFFC",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 4,
+    paddingHorizontal: 8,
     shadowColor: "#5C6570",
-    shadowOpacity: 0.12,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
   backButton: {
-    width: 36,
-    height: 36,
+    width: 38,
+    height: 38,
+    borderRadius: 999,
+    backgroundColor: "#F1F6EE",
+    borderWidth: 1,
+    borderColor: "#E0EADC",
     alignItems: "center",
     justifyContent: "center",
   },
   topTitle: {
-    color: "#33475C",
+    color: "#304558",
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: "700",
+    fontWeight: "800",
   },
   topBarSpacer: {
-    width: 36,
-    height: 36,
+    width: 38,
+    height: 38,
   },
   scroll: {
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 96,
+    paddingBottom: 26,
   },
   previewSection: {
-    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 18,
   },
   heroCard: {
-    height: 260,
-    backgroundColor: "#FFFFFF",
-    borderBottomWidth: 3,
-    borderBottomColor: "#7B5A4C",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 12,
+    height: 292,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "#D8E6D0",
+    backgroundColor: "#DDEFD6",
     position: "relative",
     overflow: "hidden",
-  },
-  heroBackgroundFrame: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 0,
-    overflow: "hidden",
+    shadowColor: "#677566",
+    shadowOpacity: 0.14,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 4,
   },
   heroBackgroundImage: {
+    ...StyleSheet.absoluteFillObject,
     width: "100%",
     height: "100%",
   },
   heroOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: "rgba(255, 255, 255, 0.16)",
     zIndex: 1,
   },
-  talaPill: {
+  heroTopRow: {
     position: "absolute",
-    top: 8,
-    left: 6,
-    minWidth: 90,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: "#F2EB9F",
+    top: 12,
+    left: 12,
+    right: 12,
+    zIndex: 4,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    columnGap: 10,
+  },
+  talaPill: {
+    minWidth: 96,
+    height: 38,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 251, 205, 0.94)",
+    borderWidth: 1,
+    borderColor: "rgba(222, 199, 86, 0.6)",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 8,
-    columnGap: 3,
+    paddingHorizontal: 12,
+    columnGap: 5,
   },
   talaIcon: {
-    width: 16,
-    height: 16,
+    width: 17,
+    height: 17,
   },
   talaText: {
-    color: "#445463",
-    fontSize: 33 / 2,
-    lineHeight: 22,
-    fontWeight: "700",
+    color: "#465665",
+    fontSize: 16,
+    lineHeight: 21,
+    fontWeight: "800",
   },
-  circleBadge: {
-    position: "absolute",
-    top: 10,
-    right: 8,
-    width: 46,
-    height: 46,
+  saveButton: {
+    minWidth: 104,
+    height: 38,
     borderRadius: 999,
-    backgroundColor: "#7CCB58",
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 3,
+    paddingHorizontal: 12,
+    columnGap: 5,
   },
-  circleBadgeActive: {
-    backgroundColor: "#69C642",
+  saveButtonActive: {
+    backgroundColor: "#70C943",
+    borderWidth: 1,
+    borderColor: "#5CB72F",
+    shadowColor: "#5C8B43",
+    shadowOpacity: 0.18,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  saveButtonSaved: {
+    backgroundColor: "rgba(255, 255, 255, 0.88)",
+    borderWidth: 1,
+    borderColor: "rgba(218, 231, 212, 0.92)",
+  },
+  saveButtonText: {
+    color: "#5E7259",
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: "800",
+  },
+  saveButtonTextActive: {
+    color: "#FFFFFF",
   },
   muniPreviewWrap: {
-    width: 180,
-    height: 180,
-    marginTop: 28,
-    position: "relative",
-    alignSelf: "center",
-    zIndex: 2,
+    position: "absolute",
+    left: "50%",
+    bottom: 54,
+    width: 190,
+    height: 190,
+    marginLeft: -95,
+    zIndex: 3,
   },
   muniBaseImage: {
     position: "absolute",
     top: 0,
     left: 0,
-    width: 180,
-    height: 180,
+    width: 190,
+    height: 190,
     zIndex: 2,
   },
   muniAccessoryImage: {
     position: "absolute",
     top: 0,
     left: 0,
-    width: 180,
-    height: 180,
+    width: 190,
+    height: 190,
     zIndex: 3,
   },
-  collectionBadgeWrap: {
-    alignItems: "center",
-    marginTop: -10,
-    marginBottom: 8,
+  heroStatsRow: {
+    position: "absolute",
+    left: 12,
+    right: 12,
+    bottom: 12,
+    zIndex: 4,
+    flexDirection: "row",
+    columnGap: 8,
   },
-  collectionBadge: {
-    minWidth: 132,
-    height: 34,
-    borderRadius: 8,
-    borderWidth: 4,
-    borderColor: "#7B5A4C",
-    backgroundColor: "#F7F7F7",
-    textAlign: "center",
-    textAlignVertical: "center",
-    color: "#34475A",
-    fontSize: 17,
-    lineHeight: 34 - 4,
-    fontWeight: "700",
+  heroStatPill: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.88)",
+    borderWidth: 1,
+    borderColor: "rgba(224, 234, 220, 0.9)",
     paddingHorizontal: 10,
-    overflow: "hidden",
+    paddingVertical: 7,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 6,
   },
-  modeSwitchWrap: {
+  heroStatValue: {
+    color: "#304558",
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: "900",
+  },
+  heroStatLabel: {
+    color: "#607181",
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: "700",
+  },
+  collectionHeader: {
+    marginTop: 18,
+    marginBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    columnGap: 12,
+  },
+  collectionTitleWrap: {
+    flex: 1,
+  },
+  collectionKicker: {
+    color: "#6F845C",
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  collectionTitle: {
+    marginTop: 2,
+    color: "#304558",
+    fontSize: 23,
+    lineHeight: 29,
+    fontWeight: "900",
+  },
+  collectionCountPill: {
+    minHeight: 34,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#DDE9D7",
     paddingHorizontal: 12,
-    paddingBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 5,
+  },
+  collectionCountText: {
+    color: "#507143",
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: "800",
   },
   modeSwitch: {
-    height: 48,
+    height: 50,
     borderRadius: 18,
-    backgroundColor: "#EFF5EA",
+    backgroundColor: "#E9F2E4",
     borderWidth: 1,
-    borderColor: "#D7E7C7",
+    borderColor: "#D6E6CF",
     padding: 4,
     flexDirection: "row",
     columnGap: 6,
@@ -497,11 +660,13 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
+    flexDirection: "row",
+    columnGap: 6,
   },
   modeButtonActive: {
-    backgroundColor: "#7CCB58",
-    shadowColor: "#74B451",
-    shadowOpacity: 0.14,
+    backgroundColor: "#70C943",
+    shadowColor: "#5D9742",
+    shadowOpacity: 0.16,
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
@@ -510,134 +675,200 @@ const styles = StyleSheet.create({
     color: "#62746A",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "700",
+    fontWeight: "800",
   },
   modeButtonTextActive: {
     color: "#FFFFFF",
   },
-  modeHelperText: {
-    marginTop: 8,
-    color: "#6D7E74",
-    fontSize: 13,
-    lineHeight: 18,
-    textAlign: "center",
-  },
   sectionBlock: {
-    marginBottom: 16,
+    marginBottom: 18,
+    paddingHorizontal: 14,
+  },
+  sectionHeader: {
+    marginBottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  sectionTitleRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 8,
+  },
+  sectionIconBadge: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    backgroundColor: "#EAF5E3",
+    borderWidth: 1,
+    borderColor: "#D7E7CF",
+    alignItems: "center",
+    justifyContent: "center",
   },
   sectionTitle: {
-    color: "#324254",
-    fontSize: 32 / 2,
+    color: "#304558",
+    fontSize: 17,
     lineHeight: 22,
-    fontWeight: "700",
-    marginBottom: 8,
-    paddingHorizontal: 6,
+    fontWeight: "900",
+  },
+  sectionCountText: {
+    color: "#6B7B88",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "800",
   },
   optionRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     rowGap: 10,
     columnGap: 8,
-    paddingHorizontal: 5,
   },
   optionCard: {
-    width: "23%",
-    aspectRatio: 0.95,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: "#4A6C2B",
-    backgroundColor: "#F2F2F2",
+    width: "31.4%",
+    minHeight: 124,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#DDE8D8",
+    backgroundColor: "#FFFFFF",
     position: "relative",
+    padding: 7,
+    shadowColor: "#71806E",
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  optionCardSelected: {
+    borderColor: "#70C943",
+    backgroundColor: "#F7FCF3",
+  },
+  optionImageWell: {
+    height: 78,
+    borderRadius: 14,
+    backgroundColor: "#F4F7F2",
+    borderWidth: 1,
+    borderColor: "#E4ECE0",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
   },
-  optionCardSelected: {
-    borderColor: "#68AD3B",
+  optionImageWellBackground: {
+    backgroundColor: "#DDEFD6",
   },
   optionImage: {
-    width: "76%",
-    height: "76%",
+    width: "78%",
+    height: "78%",
   },
   backgroundOptionImage: {
-    width: "200%",
-    height: "150%",
+    width: "100%",
+    height: "100%",
+  },
+  optionLabel: {
+    marginTop: 7,
+    color: "#405368",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  optionLabelSelected: {
+    color: "#2F6F25",
+  },
+  checkBadge: {
+    position: "absolute",
+    top: 7,
+    right: 7,
+    width: 22,
+    height: 22,
+    borderRadius: 999,
+    backgroundColor: "#70C943",
+    borderWidth: 1,
+    borderColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
   },
   shopGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     rowGap: 12,
     columnGap: 10,
-    paddingHorizontal: 6,
   },
   shopCard: {
     width: "48%",
     alignSelf: "flex-start",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "#D7E7C7",
+    borderColor: "#DDE8D8",
     backgroundColor: "#FFFFFF",
     paddingHorizontal: 10,
     paddingTop: 10,
     paddingBottom: 12,
-    shadowColor: "#6C7D6D",
+    shadowColor: "#71806E",
     shadowOpacity: 0.08,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 7,
+    shadowOffset: { width: 0, height: 3 },
     elevation: 2,
   },
   shopCardOwned: {
-    backgroundColor: "#F7FBF2",
+    backgroundColor: "#F7FCF3",
   },
   shopCardSelected: {
-    borderColor: "#7CCB58",
+    borderColor: "#70C943",
   },
   shopImageWrap: {
-    height: 72,
-    borderRadius: 14,
-    backgroundColor: "#F7F7F7",
+    height: 86,
+    borderRadius: 15,
+    backgroundColor: "#F4F7F2",
+    borderWidth: 1,
+    borderColor: "#E4ECE0",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
-    marginBottom: 8,
+    marginBottom: 9,
   },
   shopOptionImage: {
     width: "76%",
     height: "76%",
   },
   shopBackgroundImage: {
-    width: "180%",
-    height: "140%",
+    width: "100%",
+    height: "100%",
   },
   shopLabel: {
-    color: "#33475C",
+    minHeight: 36,
+    color: "#304558",
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: "700",
-    marginBottom: 6,
+    fontWeight: "900",
+    marginBottom: 8,
   },
   priceRow: {
+    minHeight: 28,
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 4,
+    columnGap: 5,
     marginBottom: 8,
   },
   shopPriceIcon: {
-    width: 14,
-    height: 14,
+    width: 15,
+    height: 15,
   },
   shopPriceText: {
-    color: "#4A5C4B",
+    color: "#4F6047",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "700",
+    fontWeight: "900",
   },
   buyButton: {
-    height: 32,
+    minHeight: 34,
     borderRadius: 999,
-    backgroundColor: "#7CCB58",
+    backgroundColor: "#70C943",
     alignItems: "center",
     justifyContent: "center",
+    flexDirection: "row",
+    columnGap: 5,
+    paddingHorizontal: 10,
   },
   buyButtonDisabled: {
     backgroundColor: "#E4ECD9",
@@ -646,40 +877,57 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
+    fontWeight: "900",
   },
   buyButtonTextDisabled: {
     color: "#8A9583",
   },
-  shopOwnedInfo: {
-    marginTop: 2,
-  },
   shopStatusChip: {
-    height: 30,
+    minHeight: 28,
     borderRadius: 999,
     backgroundColor: "#E8F4DF",
     alignItems: "center",
     justifyContent: "center",
     alignSelf: "flex-start",
-    paddingHorizontal: 14,
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    columnGap: 4,
+    marginBottom: 8,
   },
   shopStatusChipActive: {
-    backgroundColor: "#7CCB58",
+    backgroundColor: "#70C943",
   },
   shopStatusText: {
     color: "#5C7257",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
+    fontWeight: "900",
   },
   shopStatusTextActive: {
     color: "#FFFFFF",
   },
-  shopOwnedHint: {
-    marginTop: 6,
-    color: "#71806F",
-    fontSize: 11,
-    lineHeight: 15,
+  wearButton: {
+    minHeight: 34,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#D8E6D0",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+  },
+  wearButtonSelected: {
+    backgroundColor: "#F0F7EA",
+    borderColor: "#D8E6D0",
+  },
+  wearButtonText: {
+    color: "#355468",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "900",
+  },
+  wearButtonTextSelected: {
+    color: "#5D7258",
   },
   modalBackdrop: {
     flex: 1,
@@ -707,7 +955,7 @@ const styles = StyleSheet.create({
     width: 58,
     height: 58,
     borderRadius: 999,
-    backgroundColor: "#7CCB58",
+    backgroundColor: "#70C943",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 14,
@@ -716,7 +964,7 @@ const styles = StyleSheet.create({
     color: "#33475C",
     fontSize: 22,
     lineHeight: 28,
-    fontWeight: "700",
+    fontWeight: "800",
     textAlign: "center",
   },
   unlockBody: {
@@ -732,7 +980,7 @@ const styles = StyleSheet.create({
     minWidth: 140,
     minHeight: 42,
     borderRadius: 999,
-    backgroundColor: "#7CCB58",
+    backgroundColor: "#70C943",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 18,
@@ -741,17 +989,6 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: "700",
-  },
-  checkBadge: {
-    position: "absolute",
-    top: 6,
-    right: 6,
-    width: 21,
-    height: 21,
-    borderRadius: 999,
-    backgroundColor: "#E3C92B",
-    alignItems: "center",
-    justifyContent: "center",
+    fontWeight: "800",
   },
 });
