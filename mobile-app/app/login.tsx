@@ -48,7 +48,7 @@ export default function LoginScreen() {
     setIsBusy(false);
 
     if (!result.ok) {
-      setErrorMessage(result.message ?? "Invalid username or password. Please try again.");
+      setErrorMessage("Invalid student ID or password.");
       return;
     }
 
@@ -83,8 +83,6 @@ export default function LoginScreen() {
         onChangeText={setPassword}
         showPassword={showPassword}
         onToggleVisibility={() => setShowPassword((prev) => !prev)}
-        placeholder="MM/DD/YYYY"
-        placeholderTextColor="#8D8D8D"
         containerStyle={styles.passwordContainer}
         inputWrapStyle={styles.passwordWrap}
         inputStyle={styles.passwordInput}

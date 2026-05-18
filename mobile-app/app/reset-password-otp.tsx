@@ -13,7 +13,7 @@ export default function ResetPasswordOtpScreen() {
   const params = useLocalSearchParams<{ studentId?: string }>();
   const studentId = String(params.studentId || "").trim();
   const [otpCode, setOtpCode] = useState("");
-  const [resendSeconds, setResendSeconds] = useState(30);
+  const [resendSeconds, setResendSeconds] = useState(60);
   const [otpExpiresAt, setOtpExpiresAt] = useState(Date.now() + OTP_EXPIRY_SECONDS * 1000);
   const [errorMessage, setErrorMessage] = useState("");
   const [isBusy, setIsBusy] = useState(false);
@@ -71,7 +71,7 @@ export default function ResetPasswordOtpScreen() {
       return;
     }
 
-    setResendSeconds(30);
+    setResendSeconds(60);
     setOtpExpiresAt(Date.now() + OTP_EXPIRY_SECONDS * 1000);
     setOtpCode("");
     setErrorMessage("");

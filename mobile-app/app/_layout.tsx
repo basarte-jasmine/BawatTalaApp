@@ -2,7 +2,15 @@ import { Stack } from "expo-router";
 import { useEffect } from "react";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
-import { StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import {
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
+  type TextInputProps,
+  type TextProps,
+} from "react-native";
 import { AuthSessionProvider } from "../lib/auth-session";
 import { AppPreferencesProvider } from "../lib/app-preferences";
 import { warmBackend } from "../lib/backend-api";
@@ -13,16 +21,21 @@ const DESKTOP_FRAME_BREAKPOINT = 768;
 void SplashScreen.preventAutoHideAsync();
 
 let textDefaultsApplied = false;
+type ComponentWithDefaults<Props> = {
+  defaultProps?: Partial<Props>;
+};
 
 function applyGlobalTypography() {
   if (textDefaultsApplied) return;
   textDefaultsApplied = true;
 
-  Text.defaultProps = Text.defaultProps ?? {};
-  Text.defaultProps.style = [{ fontFamily: "Outfit" }, Text.defaultProps.style];
+  const textComponent = Text as typeof Text & ComponentWithDefaults<TextProps>;
+  textComponent.defaultProps = textComponent.defaultProps ?? {};
+  textComponent.defaultProps.style = [{ fontFamily: "Outfit" }, textComponent.defaultProps.style];
 
-  TextInput.defaultProps = TextInput.defaultProps ?? {};
-  TextInput.defaultProps.style = [{ fontFamily: "Outfit" }, TextInput.defaultProps.style];
+  const textInputComponent = TextInput as typeof TextInput & ComponentWithDefaults<TextInputProps>;
+  textInputComponent.defaultProps = textInputComponent.defaultProps ?? {};
+  textInputComponent.defaultProps.style = [{ fontFamily: "Outfit" }, textInputComponent.defaultProps.style];
 }
 
 export default function RootLayout() {

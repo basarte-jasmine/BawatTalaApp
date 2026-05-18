@@ -23,7 +23,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const STRONG_PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
 const LOGIN_ATTEMPTS_LIMIT = 3;
 const LOGIN_LOCK_DURATION_MS = 5 * 60 * 1000;
-const OTP_COOLDOWN_MS = 30 * 1000;
+const OTP_COOLDOWN_MS = 60 * 1000;
 const OTP_VALIDITY_MS = 60 * 1000;
 const RESET_SESSION_MS = 10 * 60 * 1000;
 const ADMIN_PROFILE_PICTURE_LIMIT_BYTES = 5 * 1024 * 1024;

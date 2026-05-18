@@ -3561,6 +3561,13 @@ router.get("/notifications", async (req, res) => {
   if (!studentNumber) {
     return res.status(400).json({ message: "Student number is required." });
   }
+  const category = String(req.query.category || "").trim().toLowerCase();
+  const categoryFilter =
+    category === "messages"
+      ? "and kind = 'ADMIN_MESSAGE'"
+      : category === "notifications"
+        ? "and kind <> 'ADMIN_MESSAGE'"
+        : "";
 
   const result = await query(
     `
@@ -3568,6 +3575,7 @@ router.get("/notifications", async (req, res) => {
       from public.student_notifications
       where student_number = $1
         and deleted_at is null
+        ${categoryFilter}
       order by created_at desc
       limit 50
     `,
@@ -3616,6 +3624,13 @@ router.post("/notifications/read-all", async (req, res) => {
   if (!studentNumber) {
     return res.status(400).json({ message: "Student number is required." });
   }
+  const category = String(req.body.category || "").trim().toLowerCase();
+  const categoryFilter =
+    category === "messages"
+      ? "and kind = 'ADMIN_MESSAGE'"
+      : category === "notifications"
+        ? "and kind <> 'ADMIN_MESSAGE'"
+        : "";
 
   await query(
     `
@@ -3623,6 +3638,7 @@ router.post("/notifications/read-all", async (req, res) => {
       set is_read = true, read_at = now()
       where student_number = $1
         and is_read = false
+        ${categoryFilter}
     `,
     [studentNumber],
   );

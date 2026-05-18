@@ -35,11 +35,19 @@ export function FormTextInput({
       <Text style={[styles.label, labelStyle]}>{label}</Text>
       {useWrappedInput ? (
         <View style={[styles.inputWrap, inputWrapStyle]}>
-          <TextInput style={[styles.inputField, inputStyle]} {...inputProps} />
+          <TextInput
+            underlineColorAndroid="transparent"
+            style={[styles.inputField, styles.nativeInputReset, inputStyle]}
+            {...inputProps}
+          />
           {rightAdornment}
         </View>
       ) : (
-        <TextInput style={[styles.input, inputStyle]} {...inputProps} />
+        <TextInput
+          underlineColorAndroid="transparent"
+          style={[styles.input, styles.nativeInputReset, inputStyle]}
+          {...inputProps}
+        />
       )}
     </View>
   );
@@ -62,6 +70,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#111111",
     marginBottom: 12,
+  },
+  nativeInputReset: {
+    outlineWidth: 0,
   },
   inputWrap: {
     minHeight: 38,

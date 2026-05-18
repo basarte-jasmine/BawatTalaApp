@@ -20,15 +20,15 @@ function getPasswordStrength(value: string) {
   const score = checks.filter(Boolean).length;
 
   if (!value) {
-    return { label: "", color: "#D0D7DE", progress: "0%" };
+    return { label: "", color: "#D0D7DE", progress: 0 };
   }
   if (score >= 5) {
-    return { label: "Strong", color: "#16803A", progress: "100%" };
+    return { label: "Strong", color: "#16803A", progress: "100%" as const };
   }
   if (score >= 3) {
-    return { label: "Good", color: "#B87312", progress: "66%" };
+    return { label: "Good", color: "#B87312", progress: "66%" as const };
   }
-  return { label: "Weak", color: "#C31A1A", progress: "33%" };
+  return { label: "Weak", color: "#C31A1A", progress: "33%" as const };
 }
 
 export default function ResetPasswordNewScreen() {

@@ -190,6 +190,8 @@ export type AppNotification = {
   title: string;
 };
 
+export type StudentNotificationCategory = "messages" | "notifications";
+
 export type FutureSelfMessage = {
   createdAt: string;
   deliveryAt: string;
@@ -1890,8 +1892,12 @@ export async function fetchStudentAppointments(
 
 export async function fetchStudentNotifications(
   studentNumber: string,
+  category?: StudentNotificationCategory,
 ): Promise<ApiResult & { notifications?: AppNotification[]; unreadCount?: number }> {
   const params = new URLSearchParams({ studentNumber });
+  if (category) {
+    params.set("category", category);
+  }
   const { response, data } = await get(`/api/appointments/notifications?${params.toString()}`);
 
   return {
@@ -1916,8 +1922,9 @@ export async function markStudentNotificationRead(
 
 export async function markAllStudentNotificationsRead(
   studentNumber: string,
+  category?: StudentNotificationCategory,
 ): Promise<ApiResult> {
-  const { response, data } = await post("/api/appointments/notifications/read-all", { studentNumber });
+  const { response, data } = await post("/api/appointments/notifications/read-all", { studentNumber, category });
 
   return {
     ok: response.ok,

@@ -56,15 +56,15 @@ function getPasswordStrength(value: string) {
   const score = checks.filter(Boolean).length;
 
   if (!value) {
-    return { label: "", color: "#DDE4EB", progress: "0%" };
+    return { label: "", color: "#DDE4EB", progress: 0 };
   }
   if (score >= 5) {
-    return { label: "Strong", color: "#4E9B37", progress: "100%" };
+    return { label: "Strong", color: "#4E9B37", progress: "100%" as const };
   }
   if (score >= 3) {
-    return { label: "Good", color: "#D89921", progress: "66%" };
+    return { label: "Good", color: "#D89921", progress: "66%" as const };
   }
-  return { label: "Weak", color: "#D24C59", progress: "33%" };
+  return { label: "Weak", color: "#D24C59", progress: "33%" as const };
 }
 
 export default function ProfileResetPasswordScreen() {
@@ -170,7 +170,7 @@ export default function ProfileResetPasswordScreen() {
     setEmail(emailValue);
     setOtpCode("");
     setOtpExpiresAt(Date.now() + OTP_EXPIRY_SECONDS * 1000);
-    setResendSeconds(30);
+    setResendSeconds(60);
     setSuccessMessage("Verification code sent to your email.");
     setStep("code");
   };
@@ -222,7 +222,7 @@ export default function ProfileResetPasswordScreen() {
 
     setOtpCode("");
     setOtpExpiresAt(Date.now() + OTP_EXPIRY_SECONDS * 1000);
-    setResendSeconds(30);
+    setResendSeconds(60);
     setSuccessMessage("A new verification code was sent.");
   };
 

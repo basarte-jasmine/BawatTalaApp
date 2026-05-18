@@ -1,6 +1,9 @@
 const express = require("express");
 const { randomBytes, scryptSync, timingSafeEqual } = require("crypto");
-const { supabaseAdminClient, supabaseAuthClient } = require("../config/supabase");
+const {
+  supabaseAdminClient,
+  supabaseAuthClient,
+} = require("../config/supabase");
 const { query } = require("../config/db");
 
 const router = express.Router();
@@ -9,7 +12,8 @@ const LOGIN_ATTEMPTS_LIMIT = 3;
 const LOGIN_LOCK_DURATION_MS = 10 * 60 * 1000;
 const OTP_VALIDITY_MS = 60 * 1000;
 const RESET_SESSION_MS = 10 * 60 * 1000;
-const STRONG_PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
+const STRONG_PASSWORD_PATTERN =
+  /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
 const REFERRAL_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const REFERRAL_CODE_LENGTH = 9;
 const REFERRAL_JOIN_REWARD_TALA = 100;
@@ -24,7 +28,9 @@ const DEFAULT_STUDENT_PREFERENCES = {
 };
 
 function normalizeCompactSpaces(value) {
-  return String(value || "").trim().replace(/\s+/g, " ");
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, " ");
 }
 
 function normalizeUpperText(value) {
@@ -99,7 +105,10 @@ function registerFailedAttempt(key) {
   const updatedCount = state.count + 1;
 
   if (updatedCount >= LOGIN_ATTEMPTS_LIMIT) {
-    loginAttempts.set(key, { count: 0, lockUntil: now + LOGIN_LOCK_DURATION_MS });
+    loginAttempts.set(key, {
+      count: 0,
+      lockUntil: now + LOGIN_LOCK_DURATION_MS,
+    });
     return true;
   }
 
@@ -139,7 +148,8 @@ async function deleteStaleAuthUsersByEmail(email) {
     );
 
     for (const user of matchingUsers) {
-      const { error: deleteError } = await supabaseAdminClient.auth.admin.deleteUser(user.id);
+      const { error: deleteError } =
+        await supabaseAdminClient.auth.admin.deleteUser(user.id);
       if (deleteError) {
         throw deleteError;
       }
@@ -161,11 +171,16 @@ function isBoolean(value) {
 }
 
 function normalizePin(value) {
-  return String(value || "").replace(/[^0-9]/g, "").slice(0, 4);
+  return String(value || "")
+    .replace(/[^0-9]/g, "")
+    .slice(0, 4);
 }
 
 function normalizeReferralCode(value) {
-  return String(value || "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, REFERRAL_CODE_LENGTH);
+  return String(value || "")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .toUpperCase()
+    .slice(0, REFERRAL_CODE_LENGTH);
 }
 
 function generateReferralCode() {
@@ -177,11 +192,15 @@ function generateReferralCode() {
 
 function normalizeStudentPreferences(row) {
   const settings =
-    row?.settings && typeof row.settings === "object" && !Array.isArray(row.settings)
+    row?.settings &&
+    typeof row.settings === "object" &&
+    !Array.isArray(row.settings)
       ? row.settings
       : {};
   const hasJournalLockPin = Boolean(row?.journal_lock_pin_hash);
-  const journalLockEnabled = Boolean(row?.journal_lock_enabled && hasJournalLockPin);
+  const journalLockEnabled = Boolean(
+    row?.journal_lock_enabled && hasJournalLockPin,
+  );
 
   return {
     hasJournalLockPin,
@@ -340,7 +359,9 @@ router.post("/login", async (req, res) => {
   const password = String(req.body.password || "").trim();
 
   if (!studentNumber && !password) {
-    return res.status(400).json({ message: "Please enter your username and password." });
+    return res
+      .status(400)
+      .json({ message: "Please enter your username and password." });
   }
 
   if (!studentNumber) {
@@ -352,7 +373,7 @@ router.post("/login", async (req, res) => {
   }
 
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
-    return res.status(400).json({ message: "Invalid email or password." });
+    return res.status(400).json({ message: "Invalid student ID or password." });
   }
 
   const loginKey = `${studentNumber}:${req.ip || "unknown"}`;
@@ -366,7 +387,9 @@ router.post("/login", async (req, res) => {
 
   const { data, error } = await supabaseAdminClient
     .from("student_profiles")
-    .select("student_number, full_name, email, password_hash, birthdate, is_email_verified, is_id_verified")
+    .select(
+      "student_number, full_name, email, password_hash, birthdate, is_email_verified, is_id_verified",
+    )
     .eq("student_number", studentNumber)
     .maybeSingle();
 
@@ -416,7 +439,9 @@ router.get("/profile", async (req, res) => {
 
   const { data, error } = await supabaseAdminClient
     .from("student_profiles")
-    .select("student_number, full_name, email, program, region, province, city, barangay, street, birthdate")
+    .select(
+      "student_number, full_name, email, program, region, province, city, barangay, street, birthdate",
+    )
     .eq("student_number", studentNumber)
     .maybeSingle();
 
@@ -488,10 +513,12 @@ router.patch("/preferences", async (req, res) => {
     const nextSettings = { ...currentSettings };
 
     if (isBoolean(req.body.notificationPreviewsEnabled)) {
-      nextSettings.notificationPreviewsEnabled = req.body.notificationPreviewsEnabled;
+      nextSettings.notificationPreviewsEnabled =
+        req.body.notificationPreviewsEnabled;
     }
     if (isBoolean(req.body.privateJournalModeEnabled)) {
-      nextSettings.privateJournalModeEnabled = req.body.privateJournalModeEnabled;
+      nextSettings.privateJournalModeEnabled =
+        req.body.privateJournalModeEnabled;
     }
 
     let nextJournalLockEnabled = currentPreferences.journalLockEnabled;
@@ -509,13 +536,20 @@ router.patch("/preferences", async (req, res) => {
     const nextPin = normalizePin(req.body.journalLockPin);
     if (req.body.journalLockPin != null) {
       if (nextPin.length !== 4) {
-        return res.status(400).json({ message: "Use exactly 4 digits for the PIN." });
+        return res
+          .status(400)
+          .json({ message: "Use exactly 4 digits for the PIN." });
       }
 
       if (currentPreferences.journalLockEnabled && nextJournalLockPinHash) {
         const previousPin = normalizePin(req.body.previousJournalLockPin);
-        if (previousPin.length !== 4 || !verifyPassword(previousPin, nextJournalLockPinHash)) {
-          return res.status(403).json({ message: "Previous PIN does not match." });
+        if (
+          previousPin.length !== 4 ||
+          !verifyPassword(previousPin, nextJournalLockPinHash)
+        ) {
+          return res
+            .status(403)
+            .json({ message: "Previous PIN does not match." });
         }
       } else if (nextJournalLockEnabled !== true) {
         return res.status(400).json({
@@ -576,7 +610,9 @@ router.post("/preferences/journal-lock/verify", async (req, res) => {
     }
 
     if (!verifyPassword(pin, pinHash)) {
-      return res.status(403).json({ message: "That PIN doesn't match. Try again." });
+      return res
+        .status(403)
+        .json({ message: "That PIN doesn't match. Try again." });
     }
 
     return res.json({ message: "Journal unlocked.", unlocked: true });
@@ -589,7 +625,9 @@ router.post("/preferences/journal-lock/verify", async (req, res) => {
 
 router.post("/preferences/journal-lock/reset", async (req, res) => {
   const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
-  const studentNumberConfirmation = normalizeCompactSpaces(req.body.studentNumberConfirmation || "");
+  const studentNumberConfirmation = normalizeCompactSpaces(
+    req.body.studentNumberConfirmation || "",
+  );
 
   if (!studentNumber) {
     return res.status(400).json({ message: "Student ID is required." });
@@ -600,11 +638,15 @@ router.post("/preferences/journal-lock/reset", async (req, res) => {
   }
 
   if (!STUDENT_NUMBER_PATTERN.test(studentNumberConfirmation)) {
-    return res.status(400).json({ message: "Enter Student ID in 23-2903 format." });
+    return res
+      .status(400)
+      .json({ message: "Enter Student ID in 23-2903 format." });
   }
 
   if (studentNumberConfirmation !== studentNumber) {
-    return res.status(403).json({ message: "Student ID does not match this account." });
+    return res
+      .status(403)
+      .json({ message: "Student ID does not match this account." });
   }
 
   try {
@@ -666,7 +708,9 @@ router.post("/referral/redeem", async (req, res) => {
   }
 
   if (referralCode.length !== REFERRAL_CODE_LENGTH) {
-    return res.status(400).json({ message: "Enter a valid 9-character referral code." });
+    return res
+      .status(400)
+      .json({ message: "Enter a valid 9-character referral code." });
   }
 
   try {
@@ -680,7 +724,9 @@ router.post("/referral/redeem", async (req, res) => {
     }
 
     if (ownRecord.referral_code === referralCode) {
-      return res.status(400).json({ message: "You can't use your own referral code." });
+      return res
+        .status(400)
+        .json({ message: "You can't use your own referral code." });
     }
 
     const referrerRecord = await getReferralRecordByCode(referralCode);
@@ -796,15 +842,17 @@ router.post("/send-otp", async (req, res) => {
     return res.status(400).json({ message: "Email is required." });
   }
 
-  const { data: existingProfile, error: existingProfileError } = await supabaseAdminClient
-    .from("student_profiles")
-    .select("id")
-    .eq("email", email)
-    .maybeSingle();
+  const { data: existingProfile, error: existingProfileError } =
+    await supabaseAdminClient
+      .from("student_profiles")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
 
   if (existingProfileError) {
     return res.status(500).json({
-      message: existingProfileError.message || "Unable to validate email status.",
+      message:
+        existingProfileError.message || "Unable to validate email status.",
     });
   }
 
@@ -847,7 +895,9 @@ router.post("/forgot-password/send-code", async (req, res) => {
   const password = normalizeCompactSpaces(req.body.password || "");
 
   if (!studentNumber && !password) {
-    return res.status(400).json({ message: "Please enter your username and password." });
+    return res
+      .status(400)
+      .json({ message: "Please enter your username and password." });
   }
   if (!studentNumber) {
     return res.status(400).json({ message: "Student ID is required." });
@@ -856,12 +906,14 @@ router.post("/forgot-password/send-code", async (req, res) => {
     return res.status(400).json({ message: "Password is required." });
   }
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
-    return res.status(400).json({ message: "Invalid email or password." });
+    return res.status(400).json({ message: "Invalid student ID or password." });
   }
 
   const { data: profile, error: profileError } = await supabaseAdminClient
     .from("student_profiles")
-    .select("student_number, email, password_hash, is_email_verified, is_id_verified")
+    .select(
+      "student_number, email, password_hash, is_email_verified, is_id_verified",
+    )
     .eq("student_number", studentNumber)
     .maybeSingle();
 
@@ -885,7 +937,9 @@ router.post("/forgot-password/send-code", async (req, res) => {
   const { error } = await supabaseAuthClient.auth.resetPasswordForEmail(email);
 
   if (error) {
-    return res.status(400).json({ message: error.message || "Failed to send reset code." });
+    return res
+      .status(400)
+      .json({ message: error.message || "Failed to send reset code." });
   }
 
   setResetSession(studentNumber, {
@@ -903,7 +957,9 @@ router.post("/profile-password/send-code", async (req, res) => {
   const email = normalizeEmail(req.body.email || "");
 
   if (!studentNumber && !email) {
-    return res.status(400).json({ message: "Student ID and email are required." });
+    return res
+      .status(400)
+      .json({ message: "Student ID and email are required." });
   }
   if (!studentNumber) {
     return res.status(400).json({ message: "Student ID is required." });
@@ -912,7 +968,9 @@ router.post("/profile-password/send-code", async (req, res) => {
     return res.status(400).json({ message: "Email is required." });
   }
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
-    return res.status(400).json({ message: "Enter Student ID in 23-2903 format." });
+    return res
+      .status(400)
+      .json({ message: "Enter Student ID in 23-2903 format." });
   }
 
   const { data: profile, error: profileError } = await supabaseAdminClient
@@ -933,13 +991,16 @@ router.post("/profile-password/send-code", async (req, res) => {
 
   if (!matchedAccount) {
     return res.status(400).json({
-      message: "Student ID and email do not match an active Bawat Tala account.",
+      message:
+        "Student ID and email do not match an active Bawat Tala account.",
     });
   }
 
   const { error } = await supabaseAuthClient.auth.resetPasswordForEmail(email);
   if (error) {
-    return res.status(400).json({ message: error.message || "Failed to send reset code." });
+    return res
+      .status(400)
+      .json({ message: error.message || "Failed to send reset code." });
   }
 
   setResetSession(studentNumber, {
@@ -960,13 +1021,19 @@ router.post("/forgot-password/resend-code", async (req, res) => {
 
   const session = getResetSession(studentNumber);
   if (!session) {
-    return res.status(400).json({ message: "Please confirm your account first." });
+    return res
+      .status(400)
+      .json({ message: "Please confirm your account first." });
   }
 
-  const { error } = await supabaseAuthClient.auth.resetPasswordForEmail(session.email);
+  const { error } = await supabaseAuthClient.auth.resetPasswordForEmail(
+    session.email,
+  );
 
   if (error) {
-    return res.status(400).json({ message: error.message || "Failed to send reset code." });
+    return res
+      .status(400)
+      .json({ message: error.message || "Failed to send reset code." });
   }
 
   setResetSession(studentNumber, {
@@ -982,7 +1049,9 @@ router.post("/verify-otp", async (req, res) => {
   const token = String(req.body.token || "").trim();
 
   if (!email || !token) {
-    return res.status(400).json({ message: "Email and OTP token are required." });
+    return res
+      .status(400)
+      .json({ message: "Email and OTP token are required." });
   }
 
   const { error } = await supabaseAuthClient.auth.verifyOtp({
@@ -1002,16 +1071,22 @@ router.post("/forgot-password/verify-code", async (req, res) => {
   const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
   const token = String(req.body.token || "").trim();
   if (!studentNumber || !token) {
-    return res.status(400).json({ message: "Student ID and OTP token are required." });
+    return res
+      .status(400)
+      .json({ message: "Student ID and OTP token are required." });
   }
 
   const session = getResetSession(studentNumber);
   if (!session) {
-    return res.status(400).json({ message: "Please confirm your account first." });
+    return res
+      .status(400)
+      .json({ message: "Please confirm your account first." });
   }
   if (Date.now() > session.otpExpiresAt) {
     clearResetSession(studentNumber);
-    return res.status(400).json({ message: "The code has expired or is invalid. Please try again." });
+    return res.status(400).json({
+      message: "The code has expired or is invalid. Please try again.",
+    });
   }
 
   const { error } = await supabaseAuthClient.auth.verifyOtp({
@@ -1021,7 +1096,9 @@ router.post("/forgot-password/verify-code", async (req, res) => {
   });
 
   if (error) {
-    return res.status(400).json({ message: "The code has expired or is invalid. Please try again." });
+    return res.status(400).json({
+      message: "The code has expired or is invalid. Please try again.",
+    });
   }
 
   setResetSession(studentNumber, {
@@ -1051,19 +1128,29 @@ router.post("/register-profile", async (req, res) => {
     is_id_verified: true,
   };
 
-  if (!payload.full_name || !payload.student_number || !payload.email || !password) {
-    return res.status(400).json({ message: "Missing required profile fields." });
+  if (
+    !payload.full_name ||
+    !payload.student_number ||
+    !payload.email ||
+    !password
+  ) {
+    return res
+      .status(400)
+      .json({ message: "Missing required profile fields." });
   }
 
   if (!payload.gender) {
     return res.status(400).json({ message: "Invalid gender value." });
   }
 
-  const { data: existingProfile, error: existingProfileError } = await supabaseAdminClient
-    .from("student_profiles")
-    .select("id, email, student_number")
-    .or(`email.eq.${payload.email},student_number.eq.${payload.student_number}`)
-    .maybeSingle();
+  const { data: existingProfile, error: existingProfileError } =
+    await supabaseAdminClient
+      .from("student_profiles")
+      .select("id, email, student_number")
+      .or(
+        `email.eq.${payload.email},student_number.eq.${payload.student_number}`,
+      )
+      .maybeSingle();
 
   if (existingProfileError && existingProfileError.code !== "PGRST116") {
     return res.status(400).json({ message: existingProfileError.message });
@@ -1082,7 +1169,9 @@ router.post("/register-profile", async (req, res) => {
     }
   }
 
-  const { error } = await supabaseAdminClient.from("student_profiles").insert(payload);
+  const { error } = await supabaseAdminClient
+    .from("student_profiles")
+    .insert(payload);
 
   if (error) {
     if (error.code === "23505") {
@@ -1109,7 +1198,8 @@ router.post("/forgot-password/reset", async (req, res) => {
   }
   if (!STRONG_PASSWORD_PATTERN.test(newPassword)) {
     return res.status(400).json({
-      message: "Password must be at least 8 characters and include uppercase, lowercase, number, and symbol.",
+      message:
+        "Password must be at least 8 characters and include uppercase, lowercase, number, and symbol.",
     });
   }
   if (newPassword !== confirmPassword) {
@@ -1118,11 +1208,15 @@ router.post("/forgot-password/reset", async (req, res) => {
 
   const session = getResetSession(studentNumber);
   if (!session || !session.verifiedAt) {
-    return res.status(400).json({ message: "Please verify your reset code first." });
+    return res
+      .status(400)
+      .json({ message: "Please verify your reset code first." });
   }
   if (Date.now() > session.verifiedAt + RESET_SESSION_MS) {
     clearResetSession(studentNumber);
-    return res.status(400).json({ message: "Reset session expired. Please request a new code." });
+    return res
+      .status(400)
+      .json({ message: "Reset session expired. Please request a new code." });
   }
 
   const { error } = await supabaseAdminClient

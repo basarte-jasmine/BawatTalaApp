@@ -195,7 +195,7 @@ export default function Index() {
           <View style={[styles.logoStage, { minHeight: logoSize + 34 }]}>
             <View style={[styles.logoShelf, { width: logoSize + 48, height: logoSize + 28 }]} />
             <Animated.Image
-              source={require("../assets/videos/2.gif")}
+              source={require("../assets/videos/final.gif")}
               style={[
                 styles.logo,
                 {

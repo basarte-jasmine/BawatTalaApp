@@ -48,7 +48,7 @@ const SUMMARY_CARD_DEFS = [
   },
   {
     key: "muniAccuracy",
-    title: "Muni Accuracy",
+    title: "Muni Feedback",
     icon: CheckCircle2,
     valueType: "percent",
   },

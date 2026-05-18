@@ -4,7 +4,7 @@ export const AUTH_MESSAGES = {
   enterUsernameAndPassword: "Please enter your username and password.",
   studentIdRequired: "Student ID is required.",
   passwordRequired: "Password is required.",
-  invalidEmailOrPassword: "Invalid email or password.",
+  invalidEmailOrPassword: "Invalid student ID or password.",
 } as const;
 
 export function normalizeStudentIdInput(value: string) {

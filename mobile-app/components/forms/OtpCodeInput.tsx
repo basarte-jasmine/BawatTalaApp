@@ -1,12 +1,12 @@
 import { useMemo, useRef } from "react";
-import { StyleProp, StyleSheet, TextInput, View, ViewStyle } from "react-native";
+import { StyleProp, StyleSheet, TextInput, TextStyle, View, ViewStyle } from "react-native";
 
 type OtpCodeInputProps = {
   length: number;
   value: string;
   onChangeCode: (value: string) => void;
   containerStyle?: StyleProp<ViewStyle>;
-  boxStyle?: StyleProp<ViewStyle>;
+  boxStyle?: StyleProp<TextStyle>;
 };
 
 export function OtpCodeInput({

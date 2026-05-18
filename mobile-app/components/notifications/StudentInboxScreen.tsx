@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -11,6 +11,7 @@ import {
   AppNotification,
   deleteStudentNotification,
   fetchStudentNotifications,
+  markAllStudentNotificationsRead,
   markStudentNotificationRead,
 } from "../../lib/backend-api";
 import { getNotificationVisual, isAdminMessageNotification } from "../../lib/notification-utils";
@@ -20,11 +21,14 @@ type StudentInboxScreenProps = {
 };
 
 const TALA_IMAGE = require("../../assets/images/Tala_Star.png");
+const inboxCache = new Map<string, AppNotification[]>();
 
 export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
   const { user } = useAuthSession();
-  const [items, setItems] = useState<AppNotification[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = user?.studentNumber ? `${user.studentNumber}:${variant}` : "";
+  const cachedItems = cacheKey ? inboxCache.get(cacheKey) : undefined;
+  const [items, setItems] = useState<AppNotification[]>(() => cachedItems ?? []);
+  const [loading, setLoading] = useState(() => !cachedItems);
   const [pendingDeleteNotificationId, setPendingDeleteNotificationId] = useState<string | null>(null);
 
   const isMessageInbox = variant === "messages";
@@ -51,6 +55,12 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
   );
   const unreadCount = useMemo(() => visibleItems.filter((item) => !item.isRead).length, [visibleItems]);
 
+  useEffect(() => {
+    const nextCachedItems = cacheKey ? inboxCache.get(cacheKey) : undefined;
+    setItems(nextCachedItems ?? []);
+    setLoading(!nextCachedItems);
+  }, [cacheKey]);
+
   const handleBack = () => {
     if (router.canGoBack()) {
       router.back();
@@ -66,11 +76,22 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
       return;
     }
 
-    setLoading(true);
-    const result = await fetchStudentNotifications(user.studentNumber);
-    setItems(Array.isArray(result.notifications) ? result.notifications : []);
-    setLoading(false);
-  }, [user?.studentNumber]);
+    const hasCachedItems = cacheKey ? inboxCache.has(cacheKey) : false;
+    setLoading(!hasCachedItems);
+    try {
+      const result = await fetchStudentNotifications(user.studentNumber, variant);
+      if (!result.ok) {
+        return;
+      }
+      const nextItems = Array.isArray(result.notifications) ? result.notifications : [];
+      if (cacheKey) {
+        inboxCache.set(cacheKey, nextItems);
+      }
+      setItems(nextItems);
+    } finally {
+      setLoading(false);
+    }
+  }, [cacheKey, user?.studentNumber, variant]);
 
   useFocusEffect(
     useCallback(() => {
@@ -86,21 +107,18 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
       return;
     }
 
-    const results = await Promise.all(
-      unreadItems.map(async (item) => ({
-        id: item.id,
-        result: await markStudentNotificationRead(user.studentNumber!, item.id),
-      })),
-    );
-
-    const successfulIds = new Set(results.filter((entry) => entry.result.ok).map((entry) => entry.id));
-    if (!successfulIds.size) {
+    const result = await markAllStudentNotificationsRead(user.studentNumber, variant);
+    if (!result.ok) {
       return;
     }
 
-    setItems((current) =>
-      current.map((item) => (successfulIds.has(item.id) ? { ...item, isRead: true } : item)),
-    );
+    setItems((current) => {
+      const nextItems = current.map((item) => (visibleItems.some((entry) => entry.id === item.id) ? { ...item, isRead: true } : item));
+      if (cacheKey) {
+        inboxCache.set(cacheKey, nextItems);
+      }
+      return nextItems;
+    });
   };
 
   const handleOpenNotification = async (item: AppNotification) => {
@@ -108,7 +126,13 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
     if (!item.isRead) {
       const result = await markStudentNotificationRead(user.studentNumber, item.id);
       if (result.ok) {
-        setItems((current) => current.map((entry) => (entry.id === item.id ? { ...entry, isRead: true } : entry)));
+        setItems((current) => {
+          const nextItems = current.map((entry) => (entry.id === item.id ? { ...entry, isRead: true } : entry));
+          if (cacheKey) {
+            inboxCache.set(cacheKey, nextItems);
+          }
+          return nextItems;
+        });
       }
     }
 
@@ -128,7 +152,13 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
     if (!user?.studentNumber || !pendingDeleteNotificationId) return;
     const result = await deleteStudentNotification(user.studentNumber, pendingDeleteNotificationId);
     if (result.ok) {
-      setItems((current) => current.filter((item) => item.id !== pendingDeleteNotificationId));
+      setItems((current) => {
+        const nextItems = current.filter((item) => item.id !== pendingDeleteNotificationId);
+        if (cacheKey) {
+          inboxCache.set(cacheKey, nextItems);
+        }
+        return nextItems;
+      });
     }
     setPendingDeleteNotificationId(null);
   };

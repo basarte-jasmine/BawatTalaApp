@@ -193,7 +193,11 @@ export default function RegisterScreen() {
   const handleBack = () => {
     setErrorMessage("");
     if (step === 1) {
-      router.back();
+      if (router.canGoBack()) {
+        router.back();
+        return;
+      }
+      router.replace("/login");
       return;
     }
     setStep((prev) => prev - 1);
@@ -292,7 +296,7 @@ export default function RegisterScreen() {
       return;
     }
 
-    setResendSeconds(30);
+    setResendSeconds(60);
     setOtpExpiresAt(Date.now() + OTP_EXPIRY_SECONDS * 1000);
     setOtpCode("");
     setStep(5);
@@ -722,8 +726,7 @@ export default function RegisterScreen() {
               if (step === 2) {
                 if (!canProceedStepTwo) {
                   setErrorMessage(
-                    "Please enter a valid name, student number, and program.",
-                    "Please select a gender.",
+                    "Please enter a valid name, student number, program, and gender.",
                   );
                   return;
                 }
