@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 16.18.0"
+    "version": ">= 16.18.0",
+    "appVersionSource": "local"
   },
   "build": {
     "development": {
@@ -9,15 +10,18 @@
     },
     "preview": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://bawattalaapp.onrender.com"
+      },
       "android": {
         "buildType": "apk"
       }
     },
     "production": {
-      "autoIncrement": true
-    },
-    "env": {
-      "EXPO_PUBLIC_API_BASE_URL": "https://bawattalaapp.onrender.com"
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://bawattalaapp.onrender.com"
+      }
     }
   }
 }
