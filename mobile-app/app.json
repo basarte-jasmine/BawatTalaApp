@@ -7,7 +7,7 @@
     "icon": "./assets/images/BT_Logo.png",
     "scheme": "bawattala",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
     },
@@ -15,7 +15,6 @@
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/BT_Logo.png",
-        "backgroundImage": "./assets/images/bootup_sampleIMG.png",
         "monochromeImage": "./assets/images/BT_Logo.png"
       },
       "edgeToEdgeEnabled": true,
@@ -50,6 +49,11 @@
     "experiments": {
       "typedRoutes": true
     },
-    "extra": {}
+    "extra": {
+      "eas": {
+        "projectId": "8154e998-fbce-46a8-82ce-9896a9bd16bf"
+      }
+    },
+    "owner": "jasmine67"
   }
 }
