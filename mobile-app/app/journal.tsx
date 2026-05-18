@@ -8,6 +8,7 @@ import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { fetchJournalCalendar, fetchJournalEntriesByDate } from "../lib/backend-api";
 import { JournalLockGate } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
+import { InformedConsentGate } from "../lib/informed-consent";
 import { getManilaTodayParts } from "../lib/manila-date";
 
 type WeekDayItem = {
@@ -140,6 +141,7 @@ export default function JournalScreen() {
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <JournalLockGate>
+        <InformedConsentGate feature="journal">
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={[styles.content, compact && styles.contentCompact, veryCompact && styles.contentVeryCompact]}
@@ -281,6 +283,7 @@ export default function JournalScreen() {
             </View>
           </View>
         </Modal>
+        </InformedConsentGate>
       </JournalLockGate>
 
       <HomeBottomNav activeTab="journal" />

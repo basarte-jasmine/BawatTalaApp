@@ -7,6 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuthSession } from "../lib/auth-session";
 import { fetchMonthlyMoods, type MoodEntryRecord } from "../lib/backend-api";
 import { EMOTION_META, EMOTION_ORDER, createEmotionCounts, normalizeEmotionId } from "../lib/emotions";
+import { InformedConsentGate } from "../lib/informed-consent";
 import { getManilaTodayParts } from "../lib/manila-date";
 
 type MoodStat = {
@@ -293,6 +294,7 @@ export default function MoodOverviewScreen() {
         <View style={styles.topBarSpacer} />
       </View>
 
+      <InformedConsentGate feature="mood">
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.dailyCard}>
           <View style={styles.dailyHeader}>
@@ -551,6 +553,7 @@ export default function MoodOverviewScreen() {
           </View>
         </View>
       </Modal>
+      </InformedConsentGate>
     </SafeAreaView>
   );
 }
