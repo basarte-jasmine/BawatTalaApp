@@ -1,13 +1,13 @@
 {
   "expo": {
     "name": "Bawat Tala",
-    "slug": "mobile-app",
+    "slug": "bawat-tala",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/BT_Logo.png",
     "scheme": "bawattala",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true
     },
@@ -48,13 +48,8 @@
       "expo-video"
     ],
     "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
+      "typedRoutes": true
     },
-    "extra": {
-      "eas": {
-        "projectId": "7482bb47-4244-4d1f-a7b7-1ce2c1ef7b18"
-      }
-    }
+    "extra": {}
   }
 }
