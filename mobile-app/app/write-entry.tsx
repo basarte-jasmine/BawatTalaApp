@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -246,6 +247,8 @@ export default function WriteEntryScreen() {
   const [activeJournalEmotionId, setActiveJournalEmotionId] = useState<string | null>(null);
   const [isSavingJournalEmotion, setIsSavingJournalEmotion] = useState(false);
   const [showEmotionPicker, setShowEmotionPicker] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [inputFocused, setInputFocused] = useState(false);
 
   const selectedJournalEmotion = useMemo(
     () => EMOTIONS.find((emotion) => emotion.id === selectedJournalEmotionId) ?? EMOTIONS[0],
@@ -339,6 +342,21 @@ export default function WriteEntryScreen() {
     if (showTagReviewModal) return;
     setSelectedTags(entry?.concernTags ?? []);
   }, [entry?.concernTags, showTagReviewModal]);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const showSubscription = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+      setKeyboardVisible(false);
+      setInputFocused(false);
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (!isAiRetryLocked) return undefined;
@@ -791,16 +809,17 @@ export default function WriteEntryScreen() {
       ? "Write something first before finishing."
       : "";
   const canFinishEntry = !isEntryFinished && !isFinishing && !isSending && !isAnalyzingTags && !isSavingTags && !finishValidationMessage;
+  const liftComposer = keyboardVisible || inputFocused;
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <JournalLockGate>
         <KeyboardAvoidingView
-          style={styles.content}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={[styles.content, liftComposer && styles.contentKeyboardVisible]}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
         {aiEnabled ? (
-          <View style={styles.pageWrap}>
+          <View style={[styles.pageWrap, liftComposer && styles.pageWrapKeyboardVisible]}>
             <View style={styles.notebookShell}>
               <View style={styles.spineColumn}>
                 {NOTEBOOK_RINGS.map((ring) => (
@@ -929,7 +948,7 @@ export default function WriteEntryScreen() {
             </View>
           </View>
         ) : (
-          <View style={styles.plainCard}>
+          <View style={[styles.plainCard, liftComposer && styles.plainCardKeyboardVisible]}>
             <View style={styles.plainHeaderRow}>
               <Text style={styles.plainDateText}>{formatJournalHeaderDate(entry?.entryDate)}</Text>
 
@@ -993,10 +1012,12 @@ export default function WriteEntryScreen() {
           </View>
         )}
 
-        <View style={styles.inputCard}>
+        <View style={[styles.inputCard, liftComposer && styles.inputCardKeyboardVisible]}>
           <TextInput
             value={inputValue}
             onChangeText={setInputValue}
+            onFocus={() => setInputFocused(true)}
+            onBlur={() => setInputFocused(false)}
             placeholder="Write what happened today..."
             placeholderTextColor="#7B8893"
             multiline
@@ -1041,23 +1062,25 @@ export default function WriteEntryScreen() {
           </Pressable>
         </View>
 
-        <View style={styles.actionRow}>
-          <Pressable
-            style={[styles.finishButton, !canFinishEntry && styles.finishButtonDisabled]}
-            onPress={() => {
-              void handleRequestFinish();
-            }}
-            disabled={!canFinishEntry}
-          >
-            <Text style={styles.finishButtonText}>
-              {isAnalyzingTags ? "Analyzing..." : isFinishing ? "Saving..." : "Finish Entry"}
-            </Text>
-          </Pressable>
+        {!liftComposer ? (
+          <View style={styles.actionRow}>
+            <Pressable
+              style={[styles.finishButton, !canFinishEntry && styles.finishButtonDisabled]}
+              onPress={() => {
+                void handleRequestFinish();
+              }}
+              disabled={!canFinishEntry}
+            >
+              <Text style={styles.finishButtonText}>
+                {isAnalyzingTags ? "Analyzing..." : isFinishing ? "Saving..." : "Finish Entry"}
+              </Text>
+            </Pressable>
 
-          <Pressable style={styles.exitButton} onPress={handleRequestExit}>
-            <Text style={styles.exitButtonText}>Exit</Text>
-          </Pressable>
-        </View>
+            <Pressable style={styles.exitButton} onPress={handleRequestExit}>
+              <Text style={styles.exitButtonText}>Exit</Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         {errorMessage ? (
           <Text style={styles.errorText}>{errorMessage}</Text>
@@ -1398,6 +1421,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingBottom: 18,
   },
+  contentKeyboardVisible: {
+    paddingBottom: 6,
+  },
   pageWrap: {
     flex: 1,
     minHeight: 420,
@@ -1409,6 +1435,10 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 5 },
     elevation: 4,
+  },
+  pageWrapKeyboardVisible: {
+    minHeight: 0,
+    marginBottom: 6,
   },
   notebookShell: {
     flex: 1,
@@ -1681,6 +1711,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     elevation: 3,
   },
+  plainCardKeyboardVisible: {
+    marginBottom: 6,
+  },
   plainHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1738,6 +1771,9 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     columnGap: 10,
     marginBottom: 8,
+  },
+  inputCardKeyboardVisible: {
+    marginBottom: 0,
   },
   input: {
     flex: 1,

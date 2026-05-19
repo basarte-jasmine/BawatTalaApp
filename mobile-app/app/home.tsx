@@ -4,7 +4,7 @@ import DateTimePicker, { DateTimePickerAndroid, type DateTimePickerEvent } from 
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Easing, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { Animated, Easing, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, Ellipse, LinearGradient, Path, Rect, Stop } from "react-native-svg";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
@@ -2078,8 +2078,12 @@ export default function HomeScreen() {
         animationType="fade"
         onRequestClose={closeBottleModal}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.bottleModalCard}>
+        <KeyboardAvoidingView
+          style={styles.modalKeyboardAvoidingView}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.bottleModalCard}>
             {bottleModalMode === "status" && scheduledBottleNote && scheduledBottleDeliveryDate ? (
               <>
                 <View style={styles.bottleModalHeader}>
@@ -2394,8 +2398,9 @@ export default function HomeScreen() {
                 </View>
               </>
             )}
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal
@@ -3019,6 +3024,9 @@ const styles = StyleSheet.create({
     fontSize: 17,
     lineHeight: 22,
     fontWeight: "700",
+  },
+  modalKeyboardAvoidingView: {
+    flex: 1,
   },
   modalBackdrop: {
     flex: 1,
