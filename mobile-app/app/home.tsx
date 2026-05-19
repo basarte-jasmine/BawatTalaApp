@@ -90,6 +90,7 @@ const BOTTLE_MESSAGE_MAX_LENGTH = 240;
 const BOTTLE_CALENDAR_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const BOTTLE_CLOCK_HOURS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 const BOTTLE_CLOCK_MINUTES = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+const FUTURE_BOTTLE_PRELOAD_DISTANCE = 420;
 
 const TALA_IMAGE = require("../assets/images/Tala_Star.png");
 const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
@@ -316,6 +317,7 @@ export default function HomeScreen() {
   const headerHeight = tiny ? 72 : compact ? 78 : 84;
   const islandSceneHeight = tiny ? 218 : compact ? 238 : 256;
   const waterSceneHeight = Math.max(520, Math.round(height * 0.95));
+  const futureBottleSceneHeight = islandSceneHeight + waterSceneHeight - 2;
   const rewardGap = 4;
   const rewardTileWidth = Math.floor((frameWidth - 44 - rewardGap * 6) / 7);
   const rewardTileHeight = rewardTileWidth + 30;
@@ -339,6 +341,9 @@ export default function HomeScreen() {
   const [showRecentEntriesFilterModal, setShowRecentEntriesFilterModal] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
   const [bottomNavTransparent, setBottomNavTransparent] = useState(false);
+  const [shouldRenderFutureBottleScene, setShouldRenderFutureBottleScene] = useState(false);
+  const [futureBottleSceneActive, setFutureBottleSceneActive] = useState(false);
+  const [futureBottleSceneTopY, setFutureBottleSceneTopY] = useState<number | null>(null);
   const [showConsultOverlay, setShowConsultOverlay] = useState(false);
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
   const [showBottleModal, setShowBottleModal] = useState(false);
@@ -361,7 +366,8 @@ export default function HomeScreen() {
   const headerSwitchOff = tiny ? 154 : compact ? 174 : 202;
   const idleValues = useRef(EMOTIONS.map(() => new Animated.Value(0))).current;
   const pressScales = useRef(EMOTIONS.map(() => new Animated.Value(1))).current;
-  const waveDrift = useRef(new Animated.Value(0)).current;
+  const quoteWaveDrift = useRef(new Animated.Value(0)).current;
+  const futureBottleDrift = useRef(new Animated.Value(0)).current;
   const welcomeOpacity = useRef(new Animated.Value(0)).current;
   const welcomeScale = useRef(new Animated.Value(0.92)).current;
   const welcomeTranslateY = useRef(new Animated.Value(22)).current;
@@ -417,13 +423,13 @@ export default function HomeScreen() {
   useEffect(() => {
     const driftLoop = Animated.loop(
       Animated.sequence([
-        Animated.timing(waveDrift, {
+        Animated.timing(quoteWaveDrift, {
           toValue: 1,
           duration: 3600,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
-        Animated.timing(waveDrift, {
+        Animated.timing(quoteWaveDrift, {
           toValue: 0,
           duration: 3600,
           easing: Easing.inOut(Easing.sin),
@@ -437,9 +443,46 @@ export default function HomeScreen() {
     return () => {
       driftLoop.stop();
     };
-  }, [waveDrift]);
+  }, [quoteWaveDrift]);
 
   useEffect(() => {
+    if (!futureBottleSceneActive) {
+      futureBottleDrift.stopAnimation();
+      return;
+    }
+
+    const driftLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(futureBottleDrift, {
+          toValue: 1,
+          duration: 3600,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(futureBottleDrift, {
+          toValue: 0,
+          duration: 3600,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+
+    driftLoop.start();
+
+    return () => {
+      driftLoop.stop();
+    };
+  }, [futureBottleDrift, futureBottleSceneActive]);
+
+  useEffect(() => {
+    if (!futureBottleSceneActive) {
+      driftingBottleProgress.forEach((value, index) => {
+        value.setValue(DRIFTING_BOTTLE_NOTES[index]?.initialProgress ?? 0);
+      });
+      return;
+    }
+
     const loops = driftingBottleProgress.map((value, index) => {
       const note = DRIFTING_BOTTLE_NOTES[index];
       value.setValue(note.initialProgress);
@@ -467,7 +510,7 @@ export default function HomeScreen() {
     return () => {
       loops.forEach((loop) => loop.stop());
     };
-  }, [driftingBottleProgress]);
+  }, [driftingBottleProgress, futureBottleSceneActive]);
 
   useEffect(() => {
     const driftLoop = Animated.loop(
@@ -951,6 +994,25 @@ export default function HomeScreen() {
     }).start();
   };
 
+  const updateFutureBottleVisibility = useCallback(
+    (offsetY: number, sceneTopY = futureBottleSceneTopY) => {
+      if (sceneTopY === null) {
+        return;
+      }
+
+      const viewportTopY = offsetY;
+      const viewportBottomY = offsetY + height;
+      const sceneBottomY = sceneTopY + futureBottleSceneHeight;
+      const isNearScene =
+        viewportBottomY + FUTURE_BOTTLE_PRELOAD_DISTANCE >= sceneTopY &&
+        viewportTopY - FUTURE_BOTTLE_PRELOAD_DISTANCE <= sceneBottomY;
+
+      setShouldRenderFutureBottleScene((current) => current || isNearScene);
+      setFutureBottleSceneActive((current) => (current === isNearScene ? current : isNearScene));
+    },
+    [futureBottleSceneHeight, futureBottleSceneTopY, height],
+  );
+
   const handleHomeScroll = (offsetY: number) => {
     scrollOffsetYRef.current = offsetY;
     setHasScrolled((currentHasScrolled) => {
@@ -958,15 +1020,19 @@ export default function HomeScreen() {
       return offsetY > headerSwitchOn;
     });
 
+    updateFutureBottleVisibility(offsetY);
+
     setBottomNavTransparent(
       waterZoneStartY !== null && offsetY + height - 64 >= waterZoneStartY,
     );
   };
 
-  const handleWaterSceneLayout = (sceneTopY: number) => {
+  const handleFutureBottleSceneLayout = (sceneTopY: number) => {
+    setFutureBottleSceneTopY((current) => (current === sceneTopY ? current : sceneTopY));
     const nextWaterZoneStartY = sceneTopY + islandSceneHeight;
     setWaterZoneStartY(nextWaterZoneStartY);
     setBottomNavTransparent(scrollOffsetYRef.current + height - 64 >= nextWaterZoneStartY);
+    updateFutureBottleVisibility(scrollOffsetYRef.current, sceneTopY);
   };
 
   const closeConsultOverlay = () => {
@@ -1200,11 +1266,11 @@ export default function HomeScreen() {
     setShowCheckInResultModal(true);
   };
 
-  const waveTranslateX = waveDrift.interpolate({
+  const waveTranslateX = quoteWaveDrift.interpolate({
     inputRange: [0, 1],
     outputRange: [-22, 22],
   });
-  const waveTranslateXReverse = waveDrift.interpolate({
+  const waveTranslateXReverse = quoteWaveDrift.interpolate({
     inputRange: [0, 1],
     outputRange: [16, -16],
   });
@@ -1252,27 +1318,27 @@ export default function HomeScreen() {
     inputRange: [0, 1],
     outputRange: [-3, 3],
   });
-  const seaWaveTranslate = waveDrift.interpolate({
+  const seaWaveTranslate = futureBottleDrift.interpolate({
     inputRange: [0, 1],
     outputRange: [-44, 44],
   });
-  const seaWaveTranslateReverse = waveDrift.interpolate({
+  const seaWaveTranslateReverse = futureBottleDrift.interpolate({
     inputRange: [0, 1],
     outputRange: [28, -28],
   });
-  const driftingBottleBob = waveDrift.interpolate({
+  const driftingBottleBob = futureBottleDrift.interpolate({
     inputRange: [0, 0.5, 1],
     outputRange: [0, -10, 0],
   });
-  const driftingBottleBobReverse = waveDrift.interpolate({
+  const driftingBottleBobReverse = futureBottleDrift.interpolate({
     inputRange: [0, 0.5, 1],
     outputRange: [0, 8, 0],
   });
-  const driftingBottleTilt = waveDrift.interpolate({
+  const driftingBottleTilt = futureBottleDrift.interpolate({
     inputRange: [0, 0.5, 1],
     outputRange: ["-4deg", "3deg", "-4deg"],
   });
-  const driftingBottleTiltReverse = waveDrift.interpolate({
+  const driftingBottleTiltReverse = futureBottleDrift.interpolate({
     inputRange: [0, 0.5, 1],
     outputRange: ["3deg", "-3deg", "3deg"],
   });
@@ -1786,8 +1852,9 @@ export default function HomeScreen() {
 
         <View
           style={styles.futureBottleScene}
-          onLayout={(event) => handleWaterSceneLayout(event.nativeEvent.layout.y)}
+          onLayout={(event) => handleFutureBottleSceneLayout(event.nativeEvent.layout.y)}
         >
+          {shouldRenderFutureBottleScene ? (
           <View style={styles.futureBottleScenePressable}>
             <View style={[styles.futureBottleSceneSky, { minHeight: islandSceneHeight }]}>
               <View style={styles.futureBottleSkyFill} />
@@ -1926,6 +1993,9 @@ export default function HomeScreen() {
               ))}
             </View>
           </View>
+          ) : (
+            <View style={[styles.futureBottlePlaceholder, { minHeight: futureBottleSceneHeight }]} />
+          )}
         </View>
 
       </ScrollView>
@@ -3695,6 +3765,9 @@ const styles = StyleSheet.create({
     marginHorizontal: -12,
     marginTop: 10,
     overflow: "hidden",
+  },
+  futureBottlePlaceholder: {
+    backgroundColor: "#F7FAF6",
   },
   futureBottleScenePressable: {
     overflow: "hidden",
