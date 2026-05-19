@@ -214,6 +214,14 @@ function mapEntryRow(row) {
   };
 }
 
+function buildEntryContentText(messages) {
+  return (Array.isArray(messages) ? messages : [])
+    .filter((item) => item.role === "user")
+    .map((item) => String(item.text || "").trim())
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 async function removeOrSoftDeleteEntry({ studentNumber, entryId, requireOpen }) {
   const entryLookup = await query(
     `
@@ -524,7 +532,10 @@ router.get("/entries/:entryId", asyncHandler(async (req, res) => {
   }
 
   return res.json({
-    entry: mapEntryRow(entry),
+    entry: {
+      ...mapEntryRow(entry),
+      contentText: buildEntryContentText(messages),
+    },
     messages,
   });
 }));
