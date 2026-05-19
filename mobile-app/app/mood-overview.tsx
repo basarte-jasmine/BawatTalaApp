@@ -7,7 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { useAuthSession } from "../lib/auth-session";
 import { fetchMonthlyMoods, type MoodEntryRecord } from "../lib/backend-api";
-import { EMOTION_META, EMOTION_ORDER, createEmotionCounts, normalizeEmotionId } from "../lib/emotions";
+import { EMOTION_META, EMOTION_ORDER, createEmotionCounts, getEmotionImageSource, normalizeEmotionId } from "../lib/emotions";
 import { InformedConsentGate } from "../lib/informed-consent";
 import { getManilaTodayParts } from "../lib/manila-date";
 
@@ -133,7 +133,7 @@ export default function MoodOverviewScreen() {
         id,
         color: EMOTION_META[id].color,
         count: monthlyCounts[id] ?? 0,
-        image: EMOTION_META[id].image,
+        image: getEmotionImageSource(EMOTION_META[id]),
         label: EMOTION_META[id].label,
       })),
     [monthlyCounts],

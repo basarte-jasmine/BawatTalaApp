@@ -22,7 +22,7 @@ import {
   saveFutureSelfMessage,
   type LibraryBookRecord,
 } from "../lib/backend-api";
-import { EMOTIONS } from "../lib/emotions";
+import { EMOTIONS, getEmotionImageSource } from "../lib/emotions";
 import { getManilaTodayParts } from "../lib/manila-date";
 import { isAdminMessageNotification } from "../lib/notification-utils";
 
@@ -1496,42 +1496,46 @@ export default function HomeScreen() {
           ) : null}
 
           <View style={styles.moodRow}>
-            {EMOTIONS.map((mood, index) => (
-              <View key={mood.label} style={styles.moodItem}>
-                <Pressable
-                  onPress={() => handleMoodSelect(mood.id)}
-                  onPressIn={() => handleMoodPressIn(index)}
-                  onPressOut={() => handleMoodPressOut(index)}
-                >
-                  <Animated.View
-                    style={[
-                      styles.moodFace,
-                      { borderColor: mood.color },
-                      {
-                        transform: [
-                          {
-                            translateY: idleValues[index].interpolate({
-                              inputRange: [0, 1],
-                              outputRange: [0, -4],
-                            }),
-                          },
-                          { scale: pressScales[index] },
-                        ],
-                      },
-                    ]}
+            {EMOTIONS.map((mood, index) => {
+              const moodImageSource = getEmotionImageSource(mood, pendingMoodId === mood.id || latestMoodId === mood.id);
+
+              return (
+                <View key={mood.label} style={styles.moodItem}>
+                  <Pressable
+                    onPress={() => handleMoodSelect(mood.id)}
+                    onPressIn={() => handleMoodPressIn(index)}
+                    onPressOut={() => handleMoodPressOut(index)}
                   >
-                    {mood.image ? (
-                      <Image source={mood.image} style={styles.moodIcon} resizeMode="contain" />
-                    ) : (
-                      <View style={styles.moodIconPlaceholder} />
-                    )}
-                  </Animated.View>
-                </Pressable>
-                <Text style={styles.moodLabel} numberOfLines={2}>
-                  {mood.label}
-                </Text>
-              </View>
-            ))}
+                    <Animated.View
+                      style={[
+                        styles.moodFace,
+                        { borderColor: mood.color },
+                        {
+                          transform: [
+                            {
+                              translateY: idleValues[index].interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [0, -4],
+                              }),
+                            },
+                            { scale: pressScales[index] },
+                          ],
+                        },
+                      ]}
+                    >
+                      {moodImageSource ? (
+                        <Image source={moodImageSource} style={styles.moodIcon} resizeMode="contain" />
+                      ) : (
+                        <View style={styles.moodIconPlaceholder} />
+                      )}
+                    </Animated.View>
+                  </Pressable>
+                  <Text style={styles.moodLabel} numberOfLines={2}>
+                    {mood.label}
+                  </Text>
+                </View>
+              );
+            })}
           </View>
 
           <Pressable style={styles.moodHistoryButton} onPress={() => router.push("/mood-overview")}>

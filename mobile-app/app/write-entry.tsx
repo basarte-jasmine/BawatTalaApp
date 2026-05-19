@@ -34,7 +34,7 @@ import {
   sendJournalMessage,
   suggestJournalTags,
 } from "../lib/backend-api";
-import { EMOTIONS } from "../lib/emotions";
+import { EMOTIONS, getEmotionImageSource } from "../lib/emotions";
 import { getManilaTodayParts } from "../lib/manila-date";
 
 const NOTEBOOK_RINGS = Array.from({ length: 12 }, (_, index) => index);
@@ -243,6 +243,7 @@ export default function WriteEntryScreen() {
   const [isSavingTags, setIsSavingTags] = useState(false);
   const [isSavingSupportResponse, setIsSavingSupportResponse] = useState(false);
   const [selectedJournalEmotionId, setSelectedJournalEmotionId] = useState(EMOTIONS[0]?.id ?? "");
+  const [activeJournalEmotionId, setActiveJournalEmotionId] = useState<string | null>(null);
   const [isSavingJournalEmotion, setIsSavingJournalEmotion] = useState(false);
   const [showEmotionPicker, setShowEmotionPicker] = useState(false);
 
@@ -250,16 +251,22 @@ export default function WriteEntryScreen() {
     () => EMOTIONS.find((emotion) => emotion.id === selectedJournalEmotionId) ?? EMOTIONS[0],
     [selectedJournalEmotionId],
   );
+  const selectedJournalEmotionImageSource = getEmotionImageSource(
+    selectedJournalEmotion,
+    activeJournalEmotionId === selectedJournalEmotion?.id,
+  );
 
   const loadJournalEmotion = useCallback(async () => {
     if (!user?.studentNumber) {
       setSelectedJournalEmotionId(EMOTIONS[0]?.id ?? "");
+      setActiveJournalEmotionId(null);
       return;
     }
 
     const result = await fetchDailyMood(user.studentNumber, getManilaTodayParts().isoDate);
     if (result.ok && result.entry?.moodId) {
       setSelectedJournalEmotionId(result.entry.moodId);
+      setActiveJournalEmotionId(null);
     }
   }, [user?.studentNumber]);
 
@@ -501,6 +508,7 @@ export default function WriteEntryScreen() {
     if (!user?.studentNumber || !canWrite || isSavingJournalEmotion) return;
 
     setSelectedJournalEmotionId(emotionId);
+    setActiveJournalEmotionId(emotionId);
     setIsSavingJournalEmotion(true);
     setErrorMessage("");
 
@@ -508,12 +516,14 @@ export default function WriteEntryScreen() {
     setIsSavingJournalEmotion(false);
 
     if (!result.ok) {
+      setActiveJournalEmotionId(null);
       setErrorMessage(result.message ?? "Unable to save your emotion right now.");
       return;
     }
 
     if (result.entry?.moodId) {
       setSelectedJournalEmotionId(result.entry.moodId);
+      setActiveJournalEmotionId(result.entry.moodId);
     }
 
     setStatusMessage("Emotion check-in saved for today.");
@@ -1006,8 +1016,12 @@ export default function WriteEntryScreen() {
           >
             {isSavingJournalEmotion ? (
               <ActivityIndicator color="#5AA63D" size="small" />
-            ) : selectedJournalEmotion?.image ? (
-              <Image source={selectedJournalEmotion.image} style={styles.emotionMenuImage} resizeMode="contain" />
+            ) : selectedJournalEmotionImageSource ? (
+              <Image
+                source={selectedJournalEmotionImageSource}
+                style={styles.emotionMenuImage}
+                resizeMode="contain"
+              />
             ) : (
               <Ionicons name="menu-outline" size={20} color="#53685A" />
             )}
@@ -1094,32 +1108,36 @@ export default function WriteEntryScreen() {
               </View>
 
               <View style={styles.emotionPickerGrid}>
-                {EMOTIONS.map((emotion) => (
-                  <Pressable
-                    key={emotion.id}
-                    style={styles.emotionPickerOption}
-                    onPress={() => {
-                      void handleSelectJournalEmotion(emotion.id);
-                    }}
-                    disabled={isSavingJournalEmotion}
-                  >
-                    <View
-                      style={[
-                        styles.emotionPickerIcon,
-                        { borderColor: emotion.color },
-                      ]}
+                {EMOTIONS.map((emotion) => {
+                  const emotionImageSource = getEmotionImageSource(emotion, activeJournalEmotionId === emotion.id);
+
+                  return (
+                    <Pressable
+                      key={emotion.id}
+                      style={styles.emotionPickerOption}
+                      onPress={() => {
+                        void handleSelectJournalEmotion(emotion.id);
+                      }}
+                      disabled={isSavingJournalEmotion}
                     >
-                      {emotion.image ? (
-                        <Image source={emotion.image} style={styles.emotionPickerImage} resizeMode="contain" />
-                      ) : (
-                        <View style={[styles.emotionPickerFallback, { backgroundColor: emotion.color }]} />
-                      )}
-                    </View>
-                    <Text style={styles.emotionPickerLabel} numberOfLines={2}>
-                      {emotion.label}
-                    </Text>
-                  </Pressable>
-                ))}
+                      <View
+                        style={[
+                          styles.emotionPickerIcon,
+                          { borderColor: emotion.color },
+                        ]}
+                      >
+                        {emotionImageSource ? (
+                          <Image source={emotionImageSource} style={styles.emotionPickerImage} resizeMode="contain" />
+                        ) : (
+                          <View style={[styles.emotionPickerFallback, { backgroundColor: emotion.color }]} />
+                        )}
+                      </View>
+                      <Text style={styles.emotionPickerLabel} numberOfLines={2}>
+                        {emotion.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
             </View>
           </View>
