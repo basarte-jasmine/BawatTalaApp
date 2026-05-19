@@ -41,6 +41,12 @@ function getDayDiff(previousDate, nextDate) {
   return Math.round((next.getTime() - previous.getTime()) / (24 * 60 * 60 * 1000));
 }
 
+function isValidIsoDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 function pickBonusReward() {
   return BONUS_REWARDS[Math.floor(Math.random() * BONUS_REWARDS.length)];
 }
@@ -69,6 +75,37 @@ async function getLatestCheckIn(studentNumber) {
       limit 1
     `,
     [studentNumber],
+  );
+
+  return result.rows[0] || null;
+}
+
+async function getCheckInByDate(studentNumber, checkInDate) {
+  const result = await query(
+    `
+      select to_char(check_in_date, 'YYYY-MM-DD') as check_in_date, cycle_day, total_reward, bonus_reward
+      from public.student_daily_checkins
+      where student_number = $1
+        and check_in_date = $2::date
+      limit 1
+    `,
+    [studentNumber, checkInDate],
+  );
+
+  return result.rows[0] || null;
+}
+
+async function getLatestCheckInBefore(studentNumber, checkInDate) {
+  const result = await query(
+    `
+      select to_char(check_in_date, 'YYYY-MM-DD') as check_in_date, cycle_day, total_reward, bonus_reward
+      from public.student_daily_checkins
+      where student_number = $1
+        and check_in_date < $2::date
+      order by check_in_date desc
+      limit 1
+    `,
+    [studentNumber, checkInDate],
   );
 
   return result.rows[0] || null;
@@ -155,20 +192,32 @@ router.post("/", async (req, res) => {
   }
 
   const today = getCurrentManilaDateParts().isoDate;
+  const requestedCheckInDate = normalizeCompactSpaces(req.body.checkInDate || today);
+
+  if (!isValidIsoDate(requestedCheckInDate)) {
+    return res.status(400).json({ message: "Valid check-in date is required." });
+  }
+
+  if (getDayDiff(today, requestedCheckInDate) > 0) {
+    return res.status(400).json({ message: "Future check-ins cannot be claimed." });
+  }
 
   try {
-    const latest = await getLatestCheckIn(studentNumber);
-    const latestDate = latest ? String(latest.check_in_date || "") : "";
+    const existingCheckIn = await getCheckInByDate(studentNumber, requestedCheckInDate);
 
-    if (latestDate === today) {
+    if (existingCheckIn) {
       const status = await buildStatus(studentNumber);
       return res.status(409).json({
         ...status,
-        message: "Today's check-in has already been claimed.",
+        message:
+          requestedCheckInDate === today
+            ? "Today's check-in has already been claimed."
+            : "This check-in date has already been claimed.",
       });
     }
 
     let cycleDay = 1;
+    const latest = await getLatestCheckInBefore(studentNumber, requestedCheckInDate);
     if (latest) {
       const latestCycleDay = Number(latest.cycle_day || 0);
       cycleDay = getNextCycleProgress(latestCycleDay).activeDay;
@@ -191,7 +240,7 @@ router.post("/", async (req, res) => {
         )
         values ($1, $2::date, $3, $4, $5, $6, now())
       `,
-      [studentNumber, today, cycleDay, baseReward, bonusReward, totalReward],
+      [studentNumber, requestedCheckInDate, cycleDay, baseReward, bonusReward, totalReward],
     );
 
     await query(
@@ -223,7 +272,10 @@ router.post("/", async (req, res) => {
       const status = await buildStatus(studentNumber);
       return res.status(409).json({
         ...status,
-        message: "Today's check-in has already been claimed.",
+        message:
+          requestedCheckInDate === today
+            ? "Today's check-in has already been claimed."
+            : "This check-in date has already been claimed.",
       });
     }
 

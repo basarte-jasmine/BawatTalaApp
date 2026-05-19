@@ -1271,7 +1271,8 @@ export default function HomeScreen() {
 
     const bonusMessage =
       (result.bonusReward ?? 0) > 0 ? ` Bonus reward: +${result.bonusReward} Tala.` : "";
-    setCheckInResultMessage(`You earned +${result.totalReward ?? result.todayReward ?? 0} Tala today.${bonusMessage}`);
+    const syncMessage = result.savedOffline ? " Saved offline and will sync when you are online." : "";
+    setCheckInResultMessage(`You earned +${result.totalReward ?? result.todayReward ?? 0} Tala today.${bonusMessage}${syncMessage}`);
     setShowCheckInResultModal(true);
   };
 

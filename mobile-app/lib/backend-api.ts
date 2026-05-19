@@ -248,8 +248,35 @@ type StoredMoodData = {
   entries: Record<string, MoodEntryRecord & { syncStatus?: "pending" | "synced" }>;
 };
 
+type CheckInStatusSnapshot = {
+  activeDay?: number;
+  completedDays?: number;
+  statusDate?: string;
+  todayBonusReward?: number;
+  todayCheckedIn?: boolean;
+  todayReward?: number;
+  totalTala?: number;
+};
+
+type StoredCheckInClaim = {
+  baseReward: number;
+  bonusReward: number;
+  checkInDate: string;
+  createdAt: string;
+  cycleDay: number;
+  syncStatus?: "pending" | "synced";
+  totalReward: number;
+};
+
+type StoredCheckInData = {
+  pendingClaims: Record<string, StoredCheckInClaim>;
+  status?: CheckInStatusSnapshot;
+};
+
 const LOCAL_JOURNAL_STORAGE_PREFIX = "bawattala.localJournal.";
 const LOCAL_MOOD_STORAGE_PREFIX = "bawattala.localMoods.";
+const LOCAL_CHECKIN_STORAGE_PREFIX = "bawattala.localCheckIns.";
+const DAILY_CHECKIN_REWARDS = [10, 20, 30, 50, 70, 100, 150];
 
 function getLocalJournalStorageKey(studentNumber: string) {
   return `${LOCAL_JOURNAL_STORAGE_PREFIX}${studentNumber}`;
@@ -259,6 +286,10 @@ function getLocalMoodStorageKey(studentNumber: string) {
   return `${LOCAL_MOOD_STORAGE_PREFIX}${studentNumber}`;
 }
 
+function getLocalCheckInStorageKey(studentNumber: string) {
+  return `${LOCAL_CHECKIN_STORAGE_PREFIX}${studentNumber}`;
+}
+
 function getNowIsoString() {
   return new Date().toISOString();
 }
@@ -266,6 +297,48 @@ function getNowIsoString() {
 function getTodayIsoDate() {
   const date = new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function getManilaTodayIsoDate(date = new Date()) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Manila",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(date);
+
+    const year = Number(parts.find((part) => part.type === "year")?.value ?? "0");
+    const month = Number(parts.find((part) => part.type === "month")?.value ?? "1");
+    const day = Number(parts.find((part) => part.type === "day")?.value ?? "1");
+
+    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  } catch {
+    const utcTime = date.getTime() + date.getTimezoneOffset() * 60 * 1000;
+    const manilaDate = new Date(utcTime + 8 * 60 * 60 * 1000);
+    const year = manilaDate.getUTCFullYear();
+    const month = manilaDate.getUTCMonth() + 1;
+    const day = manilaDate.getUTCDate();
+
+    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
+}
+
+function getDayDiff(previousDate: string, nextDate: string) {
+  const previous = new Date(`${previousDate}T00:00:00Z`);
+  const next = new Date(`${nextDate}T00:00:00Z`);
+  return Math.round((next.getTime() - previous.getTime()) / (24 * 60 * 60 * 1000));
+}
+
+function getNextCheckInProgress(latestCycleDay: number) {
+  if (latestCycleDay >= DAILY_CHECKIN_REWARDS.length) {
+    return { activeDay: 1, completedDays: 0 };
+  }
+
+  return {
+    activeDay: Math.max(1, latestCycleDay + 1),
+    completedDays: Math.max(0, latestCycleDay),
+  };
 }
 
 function createLocalJournalEntry(studentNumber: string, aiEnabled: boolean): StoredJournalEntry {
@@ -525,6 +598,194 @@ async function syncPendingMoodEntries(studentNumber: string) {
       return;
     }
   }
+}
+
+function normalizeCheckInStatus(
+  data: Partial<CheckInStatusSnapshot>,
+  statusDate = getManilaTodayIsoDate(),
+): CheckInStatusSnapshot {
+  return {
+    activeDay: Number(data.activeDay ?? 1),
+    completedDays: Number(data.completedDays ?? 0),
+    statusDate,
+    todayBonusReward: data.todayBonusReward === undefined ? undefined : Number(data.todayBonusReward),
+    todayCheckedIn: Boolean(data.todayCheckedIn),
+    todayReward: data.todayReward === undefined ? undefined : Number(data.todayReward),
+    totalTala: Number(data.totalTala ?? 0),
+  };
+}
+
+async function readLocalCheckInData(studentNumber: string): Promise<StoredCheckInData> {
+  const storedValue = await AsyncStorage.getItem(getLocalCheckInStorageKey(studentNumber));
+  if (!storedValue) return { pendingClaims: {} };
+
+  try {
+    const parsed = JSON.parse(storedValue);
+    return {
+      pendingClaims:
+        parsed?.pendingClaims && typeof parsed.pendingClaims === "object"
+          ? parsed.pendingClaims
+          : {},
+      status:
+        parsed?.status && typeof parsed.status === "object"
+          ? parsed.status
+          : undefined,
+    };
+  } catch {
+    return { pendingClaims: {} };
+  }
+}
+
+async function writeLocalCheckInData(studentNumber: string, data: StoredCheckInData) {
+  await AsyncStorage.setItem(getLocalCheckInStorageKey(studentNumber), JSON.stringify(data));
+}
+
+async function cacheCheckInStatus(
+  studentNumber: string,
+  status: Partial<CheckInStatusSnapshot>,
+  statusDate = getManilaTodayIsoDate(),
+) {
+  const data = await readLocalCheckInData(studentNumber);
+  data.status = normalizeCheckInStatus(status, statusDate);
+  await writeLocalCheckInData(studentNumber, data);
+}
+
+function buildEffectiveLocalCheckInStatus(
+  data: StoredCheckInData,
+  today = getManilaTodayIsoDate(),
+): CheckInStatusSnapshot {
+  const storedStatus = data.status;
+  const storedStatusDate = storedStatus?.statusDate;
+  const storedCompletedDays = Number(storedStatus?.completedDays ?? 0);
+  const storedTotalTala = Number(storedStatus?.totalTala ?? 0);
+  const shouldCarryToday =
+    storedStatusDate === today ||
+    (storedStatusDate ? getDayDiff(storedStatusDate, today) < 0 : false);
+  const baseProgress =
+    !shouldCarryToday && storedStatus?.todayCheckedIn
+      ? getNextCheckInProgress(storedCompletedDays)
+      : {
+          activeDay: Number(storedStatus?.activeDay ?? 1),
+          completedDays: storedCompletedDays,
+        };
+  const status: CheckInStatusSnapshot = {
+    ...baseProgress,
+    todayCheckedIn: shouldCarryToday ? Boolean(storedStatus?.todayCheckedIn) : false,
+    totalTala: storedTotalTala,
+  };
+
+  if (shouldCarryToday && storedStatus?.todayReward !== undefined) {
+    status.todayReward = Number(storedStatus.todayReward);
+  }
+  if (shouldCarryToday && storedStatus?.todayBonusReward !== undefined) {
+    status.todayBonusReward = Number(storedStatus.todayBonusReward);
+  }
+
+  const pendingClaims = Object.values(data.pendingClaims ?? {})
+    .filter((claim) => claim.syncStatus === "pending" && getDayDiff(claim.checkInDate, today) >= 0)
+    .sort((left, right) => left.checkInDate.localeCompare(right.checkInDate));
+
+  for (const claim of pendingClaims) {
+    status.totalTala = Number(status.totalTala ?? 0) + Number(claim.totalReward ?? 0);
+
+    if (claim.checkInDate === today) {
+      status.activeDay = claim.cycleDay >= DAILY_CHECKIN_REWARDS.length ? 1 : claim.cycleDay + 1;
+      status.completedDays = claim.cycleDay;
+      status.todayBonusReward = claim.bonusReward;
+      status.todayCheckedIn = true;
+      status.todayReward = claim.totalReward;
+      continue;
+    }
+
+    const nextProgress = getNextCheckInProgress(claim.cycleDay);
+    status.activeDay = nextProgress.activeDay;
+    status.completedDays = nextProgress.completedDays;
+    status.todayBonusReward = undefined;
+    status.todayCheckedIn = false;
+    status.todayReward = undefined;
+  }
+
+  return status;
+}
+
+async function syncPendingCheckIns(studentNumber: string) {
+  const data = await readLocalCheckInData(studentNumber);
+  const pendingClaims = Object.values(data.pendingClaims ?? {})
+    .filter((claim) => claim.syncStatus === "pending")
+    .sort((left, right) => left.checkInDate.localeCompare(right.checkInDate));
+
+  for (const claim of pendingClaims) {
+    try {
+      const result = await post("/api/checkins", {
+        studentNumber,
+        checkInDate: claim.checkInDate,
+      });
+
+      if (!result.response.ok && result.response.status !== 409) {
+        await writeLocalCheckInData(studentNumber, data);
+        return false;
+      }
+
+      delete data.pendingClaims[claim.checkInDate];
+      data.status = normalizeCheckInStatus(result.data ?? {}, getManilaTodayIsoDate());
+      await writeLocalCheckInData(studentNumber, data);
+    } catch {
+      await writeLocalCheckInData(studentNumber, data);
+      return false;
+    }
+  }
+
+  return true;
+}
+
+async function claimLocalDailyCheckIn(studentNumber: string) {
+  const today = getManilaTodayIsoDate();
+  const data = await readLocalCheckInData(studentNumber);
+  const currentStatus = buildEffectiveLocalCheckInStatus(data, today);
+
+  if (currentStatus.todayCheckedIn) {
+    return {
+      ok: false,
+      message: "Today's check-in has already been claimed on this device.",
+      ...currentStatus,
+    };
+  }
+
+  const cycleDay = Math.min(
+    Math.max(Number(currentStatus.activeDay ?? 1), 1),
+    DAILY_CHECKIN_REWARDS.length,
+  );
+  const baseReward = DAILY_CHECKIN_REWARDS[cycleDay - 1] ?? DAILY_CHECKIN_REWARDS[0];
+  const bonusReward = 0;
+  const totalReward = baseReward + bonusReward;
+  const claim: StoredCheckInClaim = {
+    baseReward,
+    bonusReward,
+    checkInDate: today,
+    createdAt: getNowIsoString(),
+    cycleDay,
+    syncStatus: "pending",
+    totalReward,
+  };
+  data.pendingClaims[today] = claim;
+
+  const nextStatus = buildEffectiveLocalCheckInStatus(data, today);
+  await writeLocalCheckInData(studentNumber, data);
+
+  return {
+    ok: true,
+    message: "Check-in saved offline. It will sync when your connection returns.",
+    activeDay: nextStatus.activeDay,
+    baseReward,
+    bonusReward,
+    completedDays: nextStatus.completedDays,
+    savedOffline: true,
+    todayBonusReward: nextStatus.todayBonusReward,
+    todayCheckedIn: nextStatus.todayCheckedIn,
+    todayReward: nextStatus.todayReward,
+    totalReward,
+    totalTala: nextStatus.totalTala,
+  };
 }
 
 function shouldWarmBackend() {
@@ -1167,18 +1428,55 @@ export async function fetchCheckInStatus(
   }
 > {
   const params = new URLSearchParams({ studentNumber });
-  const { response, data } = await get(`/api/checkins/status?${params.toString()}`);
+  try {
+    await syncPendingCheckIns(studentNumber);
+    const { response, data } = await get(`/api/checkins/status?${params.toString()}`);
 
-  return {
-    ok: response.ok,
-    message: data?.message,
-    activeDay: data?.activeDay,
-    completedDays: data?.completedDays,
-    todayBonusReward: data?.todayBonusReward,
-    todayCheckedIn: data?.todayCheckedIn,
-    todayReward: data?.todayReward,
-    totalTala: data?.totalTala,
-  };
+    if (response.ok) {
+      await cacheCheckInStatus(studentNumber, data ?? {});
+    }
+
+    const localData = await readLocalCheckInData(studentNumber);
+    const hasPendingClaims = Object.values(localData.pendingClaims ?? {}).some(
+      (claim) => claim.syncStatus === "pending",
+    );
+    if (hasPendingClaims) {
+      const localStatus = buildEffectiveLocalCheckInStatus(localData);
+      return {
+        ok: true,
+        message: data?.message,
+        activeDay: localStatus.activeDay,
+        completedDays: localStatus.completedDays,
+        todayBonusReward: localStatus.todayBonusReward,
+        todayCheckedIn: localStatus.todayCheckedIn,
+        todayReward: localStatus.todayReward,
+        totalTala: localStatus.totalTala,
+      };
+    }
+
+    return {
+      ok: response.ok,
+      message: data?.message,
+      activeDay: data?.activeDay,
+      completedDays: data?.completedDays,
+      todayBonusReward: data?.todayBonusReward,
+      todayCheckedIn: data?.todayCheckedIn,
+      todayReward: data?.todayReward,
+      totalTala: data?.totalTala,
+    };
+  } catch {
+    const localStatus = buildEffectiveLocalCheckInStatus(await readLocalCheckInData(studentNumber));
+    return {
+      ok: true,
+      message: "Showing check-in status saved on this device.",
+      activeDay: localStatus.activeDay,
+      completedDays: localStatus.completedDays,
+      todayBonusReward: localStatus.todayBonusReward,
+      todayCheckedIn: localStatus.todayCheckedIn,
+      todayReward: localStatus.todayReward,
+      totalTala: localStatus.totalTala,
+    };
+  }
 }
 
 export async function claimDailyCheckIn(
@@ -1194,23 +1492,36 @@ export async function claimDailyCheckIn(
     todayReward?: number;
     totalReward?: number;
     totalTala?: number;
+    savedOffline?: boolean;
   }
 > {
-  const { response, data } = await post("/api/checkins", { studentNumber });
+  try {
+    await syncPendingCheckIns(studentNumber);
+    const { response, data } = await post("/api/checkins", {
+      studentNumber,
+      checkInDate: getManilaTodayIsoDate(),
+    });
 
-  return {
-    ok: response.ok,
-    message: data?.message,
-    activeDay: data?.activeDay,
-    baseReward: data?.baseReward,
-    bonusReward: data?.bonusReward,
-    completedDays: data?.completedDays,
-    todayBonusReward: data?.todayBonusReward,
-    todayCheckedIn: data?.todayCheckedIn,
-    todayReward: data?.todayReward,
-    totalReward: data?.totalReward,
-    totalTala: data?.totalTala,
-  };
+    if (response.ok || response.status === 409) {
+      await cacheCheckInStatus(studentNumber, data ?? {});
+    }
+
+    return {
+      ok: response.ok,
+      message: data?.message,
+      activeDay: data?.activeDay,
+      baseReward: data?.baseReward,
+      bonusReward: data?.bonusReward,
+      completedDays: data?.completedDays,
+      todayBonusReward: data?.todayBonusReward,
+      todayCheckedIn: data?.todayCheckedIn,
+      todayReward: data?.todayReward,
+      totalReward: data?.totalReward,
+      totalTala: data?.totalTala,
+    };
+  } catch {
+    return claimLocalDailyCheckIn(studentNumber);
+  }
 }
 
 export async function fetchTodayJournalSession(
