@@ -34,12 +34,13 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/bootup_sampleIMG.png",
-          "imageWidth": 160,
+          "image": "./assets/images/BT_Logo.png",
+          "imageWidth": 170,
           "resizeMode": "contain",
           "backgroundColor": "#F8FFF8",
           "dark": {
-            "backgroundColor": "#101815"
+            "image": "./assets/images/BT_Logo.png",
+            "backgroundColor": "#F8FFF8"
           }
         }
       ],

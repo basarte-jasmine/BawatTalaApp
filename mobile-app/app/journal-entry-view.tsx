@@ -36,14 +36,31 @@ function getUserParagraphs(messages: JournalMessage[]) {
 }
 
 function hasAssistantMessages(messages: JournalMessage[]) {
-  return messages.some((message) => message.role === "assistant");
+  return messages.some((message) => message.role === "assistant" && String(message.text || "").trim());
 }
 
-function formatInsightsText(insights: string[]) {
-  return insights
-    .map((item) => String(item || "").trim())
+function formatSummaryText(summary: string | undefined, insights: string[]) {
+  const parts = [summary, ...insights]
+    .map((item) => String(item || "").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const seen = new Set<string>();
+  return parts
+    .filter((item) => {
+      const key = item.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join(" ");
+}
+
+function summarizeParagraphs(paragraphs: string[]) {
+  const text = paragraphs
+    .map((item) => item.replace(/\s+/g, " ").trim())
     .filter(Boolean)
     .join(" ");
+  if (!text) return "";
+  return text.length > 220 ? `${text.slice(0, 217).trim()}...` : text;
 }
 
 function countWords(value: string) {
@@ -97,29 +114,34 @@ export default function JournalEntryViewScreen() {
     }, [loadEntry]),
   );
 
-  const paragraphs = useMemo(() => getUserParagraphs(messages), [messages]);
-  const createdAt = messages.find((message) => message.role === "user")?.createdAt ?? entry?.createdAt;
-  const usedChatbot = useMemo(
-    () => Boolean(entry?.aiEnabled) && hasAssistantMessages(messages),
-    [entry?.aiEnabled, messages],
+  const visibleMessages = useMemo(
+    () => messages.filter((message) => String(message.text || "").trim()),
+    [messages],
   );
-  const combinedInsights = useMemo(
-    () => formatInsightsText(entry?.insights ?? []),
-    [entry?.insights],
+  const paragraphs = useMemo(() => getUserParagraphs(visibleMessages), [visibleMessages]);
+  const createdAt = messages.find((message) => message.role === "user")?.createdAt ?? entry?.createdAt;
+  const storedSummaryText = useMemo(
+    () => formatSummaryText(entry?.summary, entry?.insights ?? []),
+    [entry?.insights, entry?.summary],
   );
   const aiSummaryText = useMemo(
-    () => [entry?.summary, combinedInsights].map((item) => String(item || "").trim()).filter(Boolean).join(" "),
-    [combinedInsights, entry?.summary],
+    () => storedSummaryText || summarizeParagraphs(paragraphs),
+    [paragraphs, storedSummaryText],
+  );
+  const usedChatbot = useMemo(
+    () => Boolean(entry?.aiEnabled) && (hasAssistantMessages(visibleMessages) || Boolean(storedSummaryText)),
+    [entry?.aiEnabled, storedSummaryText, visibleMessages],
   );
   const sentimentText = useMemo(() => {
     if (!entry?.sentimentLabel) return "";
     const label = entry.sentimentLabel.toLowerCase().replace(/^\w/, (letter) => letter.toUpperCase());
-    const emotion = entry.dominantEmotion ? ` • ${entry.dominantEmotion}` : "";
+    const emotion = entry.dominantEmotion ? ` \u2022 ${entry.dominantEmotion}` : "";
     const confidence =
-      typeof entry.sentimentConfidence === "number" ? ` • ${Math.round(entry.sentimentConfidence * 100)}% confidence` : "";
+      typeof entry.sentimentConfidence === "number" ? ` \u2022 ${Math.round(entry.sentimentConfidence * 100)}% confidence` : "";
     return `${label}${emotion}${confidence}`;
   }, [entry?.dominantEmotion, entry?.sentimentConfidence, entry?.sentimentLabel]);
   const hasGeneratedSummary = Boolean(aiSummaryText);
+  const hasStoredSummary = Boolean(storedSummaryText);
   const summaryRating = entry?.summaryRating ?? null;
   const hasSavedSummaryRating = summaryRating === "HELPFUL" || summaryRating === "NEEDS_WORK";
   const entryTags = entry?.concernTags ?? [];
@@ -180,7 +202,7 @@ export default function JournalEntryViewScreen() {
           ? "Thanks. You marked this summary as needing work."
           : "Your feedback helps Muni improve future summaries.";
 
-  const renderSummaryFeedback = hasGeneratedSummary ? (
+  const renderSummaryFeedback = hasStoredSummary ? (
     <View style={styles.summaryFeedbackWrap}>
       <Text style={styles.summaryFeedbackPrompt}>Did Muni get this summary right?</Text>
 
@@ -365,18 +387,22 @@ export default function JournalEntryViewScreen() {
                 >
                   {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
-                  {messages.map((line) =>
-                    line.role === "assistant" ? (
-                      <View key={line.id} style={[styles.leftMessageRow, compact && styles.leftMessageRowCompact]}>
-                        <Text style={styles.messageRoleLabel}>Muni</Text>
-                        <Text style={styles.leftMessageText}>{line.text}</Text>
-                      </View>
-                    ) : (
-                      <View key={line.id} style={[styles.rightMessageRow, compact && styles.rightMessageRowCompact]}>
-                        <Text style={[styles.messageRoleLabel, styles.messageRoleLabelSelf]}>You</Text>
-                        <Text style={styles.rightMessageText}>{line.text}</Text>
-                      </View>
-                    ),
+                  {visibleMessages.length > 0 ? (
+                    visibleMessages.map((line) =>
+                      line.role === "assistant" ? (
+                        <View key={line.id} style={[styles.leftMessageRow, compact && styles.leftMessageRowCompact]}>
+                          <Text style={styles.messageRoleLabel}>Muni</Text>
+                          <Text style={styles.leftMessageText}>{line.text}</Text>
+                        </View>
+                      ) : (
+                        <View key={line.id} style={[styles.rightMessageRow, compact && styles.rightMessageRowCompact]}>
+                          <Text style={[styles.messageRoleLabel, styles.messageRoleLabelSelf]}>You</Text>
+                          <Text style={styles.rightMessageText}>{line.text}</Text>
+                        </View>
+                      ),
+                    )
+                  ) : (
+                    <Text style={styles.emptyConversationText}>No saved conversation text found for this entry.</Text>
                   )}
 
                   {hasGeneratedSummary ? (
@@ -893,6 +919,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     marginBottom: 10,
+  },
+  emptyConversationText: {
+    color: "#5D6C76",
+    fontSize: 13,
+    lineHeight: 19,
+    marginLeft: 22,
+    marginRight: 10,
+    marginTop: 4,
   },
   paragraphText: {
     color: "#31465A",

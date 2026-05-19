@@ -5,7 +5,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Easing, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, Ellipse, LinearGradient, Path, Rect, Stop } from "react-native-svg";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { useAuthSession } from "../lib/auth-session";
@@ -302,6 +302,7 @@ const DRIFTING_BOTTLE_NOTES: DriftingBottleNote[] = [
 export default function HomeScreen() {
   const { user } = useAuthSession();
   const { height, width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const { consultConfirmed, appointmentId, welcome } = useLocalSearchParams<{
     consultConfirmed?: string;
     appointmentId?: string;
@@ -311,6 +312,7 @@ export default function HomeScreen() {
   const tiny = height < 680;
   const libraryCompact = width < 380;
   const frameWidth = Math.min(width, 412);
+  const stickyHeaderTop = Math.max(insets.top + 8, 12);
   const headerHeight = tiny ? 72 : compact ? 78 : 84;
   const islandSceneHeight = tiny ? 218 : compact ? 238 : 256;
   const waterSceneHeight = Math.max(520, Math.round(height * 0.95));
@@ -1290,7 +1292,7 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
-      <View style={[styles.stickyHeader, hasScrolled ? styles.stickyHeaderScrolled : styles.stickyHeaderTop]}>
+      <View style={[styles.stickyHeader, { top: stickyHeaderTop }, hasScrolled ? styles.stickyHeaderScrolled : styles.stickyHeaderTop]}>
         <Pressable
           style={styles.headerLeft}
           accessibilityLabel="Open profile"

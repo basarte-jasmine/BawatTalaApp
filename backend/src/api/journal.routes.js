@@ -509,12 +509,20 @@ router.get("/entries/:entryId", asyncHandler(async (req, res) => {
     return res.status(400).json({ message: "Entry id is required." });
   }
 
-  const entry = await getEntryById(studentNumber, entryId);
+  let entry = await getEntryById(studentNumber, entryId);
   if (!entry) {
     return res.status(404).json({ message: "Journal entry not found." });
   }
 
   const messages = await listEntryMessages(entry.id);
+  const needsFinalAnalysis =
+    Boolean(entry.is_finished) &&
+    (!String(entry.summary || "").trim() || !String(entry.sentiment_label || "").trim());
+  if (needsFinalAnalysis) {
+    await analyzeFinalEntry({ entryId: entry.id, existingMessages: messages, studentNumber });
+    entry = await getEntryById(studentNumber, entryId) || entry;
+  }
+
   return res.json({
     entry: mapEntryRow(entry),
     messages,
@@ -754,6 +762,7 @@ router.post("/session/tag-suggestions", asyncHandler(async (req, res) => {
 
   return res.json({
     entry: mapEntryRow(result.rows[0]),
+    messages: existingMessages,
     suggestedTags: analysis.suggested_tags,
     tagOptions: JOURNAL_TAG_OPTIONS,
     message: "Journal tags suggested.",
@@ -837,6 +846,7 @@ router.post("/session/finish", asyncHandler(async (req, res) => {
 
   return res.json({
     entry: mapEntryRow(result.rows[0]),
+    messages: existingMessages,
     message: "Journal entry finished.",
   });
 }));

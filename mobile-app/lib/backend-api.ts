@@ -327,9 +327,11 @@ async function upsertLocalJournalRecord(
 ) {
   if (!entry?.id) return;
   const data = await readLocalJournalData(studentNumber);
+  const existingRecord = data.entries[entry.id];
+  const nextMessages = messages.length > 0 ? messages : existingRecord?.messages ?? [];
   data.entries[entry.id] = {
     entry: { ...entry, syncStatus },
-    messages,
+    messages: nextMessages,
   };
   await writeLocalJournalData(studentNumber, data);
 }
@@ -427,6 +429,7 @@ async function syncPendingJournalEntries(studentNumber: string) {
           throw new Error("Unable to finish synced journal entry.");
         }
         remoteEntry = finishResult.data?.entry ?? remoteEntry;
+        remoteMessages = finishResult.data?.messages ?? remoteMessages;
       }
 
       delete data.entries[record.entry.id];
@@ -1342,7 +1345,7 @@ export async function finishJournalEntry(payload: {
   entryId: string;
   primaryConcern?: string;
   studentNumber: string;
-}): Promise<ApiResult & { entry?: JournalEntry }> {
+}): Promise<ApiResult & { entry?: JournalEntry; messages?: JournalMessage[] }> {
   try {
     if (payload.entryId.startsWith("local-")) {
       throw new Error("Local journal entry.");
@@ -1354,13 +1357,18 @@ export async function finishJournalEntry(payload: {
 
     if (response.ok) {
       const localRecord = await getLocalJournalRecord(payload.studentNumber, payload.entryId);
-      await upsertLocalJournalRecord(payload.studentNumber, data?.entry ?? null, localRecord?.messages ?? []);
+      await upsertLocalJournalRecord(
+        payload.studentNumber,
+        data?.entry ?? null,
+        data?.messages?.length ? data.messages : localRecord?.messages ?? [],
+      );
     }
 
     return {
       ok: response.ok,
       message: data?.message,
       entry: data?.entry,
+      messages: data?.messages ?? [],
     };
   } catch {
     const record = await getLocalJournalRecord(payload.studentNumber, payload.entryId);
@@ -1386,6 +1394,7 @@ export async function finishJournalEntry(payload: {
       ok: true,
       message: "Saved offline. This entry will sync when your connection returns.",
       entry,
+      messages: record.messages,
     };
   }
 }
@@ -1405,7 +1414,11 @@ export async function suggestJournalTags(payload: {
 
     if (response.ok && data?.entry) {
       const localRecord = await getLocalJournalRecord(payload.studentNumber, payload.entryId);
-      await upsertLocalJournalRecord(payload.studentNumber, data.entry, localRecord?.messages ?? []);
+      await upsertLocalJournalRecord(
+        payload.studentNumber,
+        data.entry,
+        data?.messages?.length ? data.messages : localRecord?.messages ?? [],
+      );
     }
 
     return {
@@ -1543,7 +1556,7 @@ export async function fetchRecentJournalEntries(
         insights: [],
         isFinished: Boolean(entry.isFinished),
         riskLevel: "NONE",
-        summary: entry.summary,
+        summary: entry.summary || entry.preview || "",
         title: entry.title,
         updatedAt: entry.createdAt,
       }, [], "synced");

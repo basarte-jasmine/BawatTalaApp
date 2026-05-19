@@ -704,6 +704,9 @@ export default function WriteEntryScreen() {
 
     setShowTagReviewModal(false);
     setEntry(result.entry ?? null);
+    if (result.messages) {
+      setMessages(result.messages);
+    }
     router.replace(`/journal-entry-view?entryId=${encodeURIComponent(result.entry?.id ?? entry.id)}`);
   };
 

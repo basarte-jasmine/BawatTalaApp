@@ -353,6 +353,29 @@ function parseProviderJson(text) {
   return parseGeminiJson(text);
 }
 
+function getFallbackFinalSummary(studentText, sentimentAnalysis = {}) {
+  const text = String(studentText || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) {
+    return "This journal entry was saved, but Muni could not create a fuller summary yet.";
+  }
+
+  const dominantEmotion = String(sentimentAnalysis.dominant_emotion || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  const firstSentence = text.match(/[^.!?]+[.!?]?/)?.[0] || text;
+  const excerpt = firstSentence.length > 150
+    ? `${firstSentence.slice(0, 147).trim()}...`
+    : firstSentence.trim();
+  const theme = dominantEmotion && dominantEmotion !== "neutral reflection"
+    ? ` around ${dominantEmotion}`
+    : "";
+
+  return `This entry reflects${theme} through the thought: ${excerpt}`;
+}
+
 async function unavailableFinalAnalysis(latestUserMessage = "", history = []) {
   const studentText = getStudentJournalText(latestUserMessage, history);
   const heuristicRisk = calibrateRiskSignal(
@@ -360,12 +383,13 @@ async function unavailableFinalAnalysis(latestUserMessage = "", history = []) {
     studentText,
   );
   const fallbackTags = inferJournalTagsFromText(studentText);
+  const fallbackSentiment = inferFallbackSentiment(studentText);
 
   return {
     pet_reply: "",
-    summary: "",
+    summary: getFallbackFinalSummary(studentText, fallbackSentiment),
     insights: [],
-    ...inferFallbackSentiment(studentText),
+    ...fallbackSentiment,
     risk_level: heuristicRisk.risk_level,
     admin_flag_reason: heuristicRisk.admin_flag_reason,
     suggested_tags: fallbackTags,
@@ -1412,13 +1436,14 @@ async function analyzeJournalEntryFinal({
       return await unavailableFinalAnalysis(latestUserMessage, history);
     }
 
-    const parsed = providerResult.parsed || {};
     const studentText = getStudentJournalText(latestUserMessage, history);
-    const summaryText = normalizeWhitespace(parsed?.summary || "");
+    const parsed = providerResult.parsed || {};
+    const sentimentAnalysis = normalizeSentimentAnalysis(parsed, studentText);
+    const summaryText = normalizeWhitespace(parsed?.summary || "") ||
+      getFallbackFinalSummary(studentText, sentimentAnalysis);
     const riskEvidenceText = getRiskEvidenceText(latestUserMessage, history, summaryText);
     const fallbackTags = inferJournalTagsFromText(studentText);
     const suggestedTags = normalizeJournalTags(parsed?.suggested_tags);
-    const sentimentAnalysis = normalizeSentimentAnalysis(parsed, studentText);
     const heuristicRisk = await riskFromSeverityWords(riskEvidenceText);
     const mergedRisk = calibrateRiskSignal(
       mergeRiskSignals(
