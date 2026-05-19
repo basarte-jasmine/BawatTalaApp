@@ -49,6 +49,7 @@ export type JournalEntry = {
   adminFlagReason: string | null;
   aiEnabled: boolean;
   concernTags: string[];
+  contentText?: string;
   createdAt: string;
   entryDate: string;
   finishedAt: string | null;
@@ -56,6 +57,7 @@ export type JournalEntry = {
   insights: string[];
   isFinished: boolean;
   primaryConcern?: string | null;
+  preview?: string;
   riskLevel: "HIGH" | "LOW" | "NONE";
   dominantEmotion?: string | null;
   sentimentConfidence?: number | null;
@@ -296,6 +298,27 @@ function summarizeLocalMessages(messages: JournalMessage[]) {
 
   if (!text) return "";
   return text.length > 180 ? `${text.slice(0, 177).trim()}...` : text;
+}
+
+function buildPreviewJournalMessages(entry?: {
+  createdAt?: string;
+  id?: string;
+  preview?: string;
+  summary?: string;
+  title?: string;
+} | null): JournalMessage[] {
+  const preview = String(entry?.preview || entry?.summary || entry?.title || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!entry?.id || !preview) return [];
+  return [
+    {
+      createdAt: entry.createdAt || getNowIsoString(),
+      id: `preview-${entry.id}`,
+      role: "user",
+      text: preview,
+    },
+  ];
 }
 
 async function readLocalJournalData(studentNumber: string): Promise<StoredJournalData> {
@@ -1549,17 +1572,19 @@ export async function fetchRecentJournalEntries(
         adminFlagReason: null,
         aiEnabled: false,
         concernTags: [],
+        contentText: entry.preview || entry.summary || "",
         createdAt: entry.createdAt,
         entryDate: entry.entryDate,
         finishedAt: null,
         id: entry.id,
         insights: [],
         isFinished: Boolean(entry.isFinished),
+        preview: entry.preview,
         riskLevel: "NONE",
         summary: entry.summary || entry.preview || "",
         title: entry.title,
         updatedAt: entry.createdAt,
-      }, [], "synced");
+      }, buildPreviewJournalMessages(entry), "synced");
     }
 
     return {
@@ -1612,15 +1637,21 @@ export async function fetchJournalEntryById(
     await syncPendingJournalEntries(studentNumber);
     const params = new URLSearchParams({ studentNumber });
     const { response, data } = await get(`/api/journal/entries/${entryId}?${params.toString()}`);
+    const localRecord = await getLocalJournalRecord(studentNumber, entryId);
+    const responseMessages = Array.isArray(data?.messages) && data.messages.length > 0
+      ? data.messages
+      : localRecord?.messages?.length
+        ? localRecord.messages
+        : buildPreviewJournalMessages(data?.entry);
     if (response.ok) {
-      await upsertLocalJournalRecord(studentNumber, data?.entry ?? null, data?.messages ?? []);
+      await upsertLocalJournalRecord(studentNumber, data?.entry ?? null, responseMessages);
     }
 
     return {
       ok: response.ok,
       message: data?.message,
       entry: data?.entry ?? null,
-      messages: data?.messages ?? [],
+      messages: responseMessages,
     };
   } catch {
     const record = await getLocalJournalRecord(studentNumber, entryId);
@@ -1706,7 +1737,30 @@ export async function fetchJournalEntriesByDate(
     }
 
     const localEntries = (await getLocalFinishedJournalEntries(studentNumber)).filter((entry) => entry.entryDate === date);
-    const entries = mergeJournalEntryLists(data?.entries ?? [], localEntries);
+    const remoteEntries = data?.entries ?? [];
+    for (const entry of remoteEntries) {
+      const record = await getLocalJournalRecord(studentNumber, entry.id);
+      if (record) continue;
+      await upsertLocalJournalRecord(studentNumber, {
+        adminFlagReason: null,
+        aiEnabled: false,
+        concernTags: [],
+        contentText: entry.preview || entry.summary || "",
+        createdAt: entry.createdAt,
+        entryDate: entry.entryDate,
+        finishedAt: null,
+        id: entry.id,
+        insights: Array.isArray(entry.insights) ? entry.insights : [],
+        isFinished: Boolean(entry.isFinished),
+        preview: entry.preview,
+        riskLevel: "NONE",
+        summary: entry.summary || entry.preview || "",
+        title: entry.title,
+        updatedAt: entry.createdAt,
+      }, buildPreviewJournalMessages(entry), "synced");
+    }
+
+    const entries = mergeJournalEntryLists(remoteEntries, localEntries);
     return {
       ok: response.ok,
       message: data?.message,

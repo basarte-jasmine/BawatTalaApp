@@ -31,12 +31,15 @@ function formatEntryHeader(entry: JournalEntry | null, createdAt?: string) {
 function getUserParagraphs(messages: JournalMessage[]) {
   return messages
     .filter((message) => message.role === "user")
-    .map((message) => message.text.trim())
+    .flatMap((message) => splitParagraphs(message.text))
     .filter(Boolean);
 }
 
-function hasAssistantMessages(messages: JournalMessage[]) {
-  return messages.some((message) => message.role === "assistant" && String(message.text || "").trim());
+function splitParagraphs(value: string | undefined) {
+  return String(value || "")
+    .split(/\n{2,}|\r\n{2,}/)
+    .map((item) => item.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
 }
 
 function formatSummaryText(summary: string | undefined, insights: string[]) {
@@ -61,6 +64,18 @@ function summarizeParagraphs(paragraphs: string[]) {
     .join(" ");
   if (!text) return "";
   return text.length > 220 ? `${text.slice(0, 217).trim()}...` : text;
+}
+
+function getEntryFallbackParagraphs(entry: JournalEntry | null) {
+  const contentText = splitParagraphs(entry?.contentText);
+  if (contentText.length > 0) return contentText;
+
+  const previewText = String(entry?.preview || "").replace(/\s+/g, " ").trim();
+  if (previewText && previewText !== String(entry?.summary || "").replace(/\s+/g, " ").trim()) {
+    return [previewText];
+  }
+
+  return [];
 }
 
 function countWords(value: string) {
@@ -118,7 +133,21 @@ export default function JournalEntryViewScreen() {
     () => messages.filter((message) => String(message.text || "").trim()),
     [messages],
   );
-  const paragraphs = useMemo(() => getUserParagraphs(visibleMessages), [visibleMessages]);
+  const fallbackParagraphs = useMemo(() => getEntryFallbackParagraphs(entry), [entry]);
+  const messageParagraphs = useMemo(() => getUserParagraphs(visibleMessages), [visibleMessages]);
+  const paragraphs = messageParagraphs.length > 0 ? messageParagraphs : fallbackParagraphs;
+  const displayMessages = useMemo<JournalMessage[]>(
+    () =>
+      visibleMessages.length > 0
+        ? visibleMessages
+        : fallbackParagraphs.map((paragraph, index) => ({
+            createdAt: entry?.createdAt || "",
+            id: `fallback-user-${index}`,
+            role: "user",
+            text: paragraph,
+          })),
+    [entry?.createdAt, fallbackParagraphs, visibleMessages],
+  );
   const createdAt = messages.find((message) => message.role === "user")?.createdAt ?? entry?.createdAt;
   const storedSummaryText = useMemo(
     () => formatSummaryText(entry?.summary, entry?.insights ?? []),
@@ -129,8 +158,8 @@ export default function JournalEntryViewScreen() {
     [paragraphs, storedSummaryText],
   );
   const usedChatbot = useMemo(
-    () => Boolean(entry?.aiEnabled) && (hasAssistantMessages(visibleMessages) || Boolean(storedSummaryText)),
-    [entry?.aiEnabled, storedSummaryText, visibleMessages],
+    () => Boolean(entry?.aiEnabled),
+    [entry?.aiEnabled],
   );
   const sentimentText = useMemo(() => {
     if (!entry?.sentimentLabel) return "";
@@ -387,8 +416,8 @@ export default function JournalEntryViewScreen() {
                 >
                   {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
-                  {visibleMessages.length > 0 ? (
-                    visibleMessages.map((line) =>
+                  {displayMessages.length > 0 ? (
+                    displayMessages.map((line) =>
                       line.role === "assistant" ? (
                         <View key={line.id} style={[styles.leftMessageRow, compact && styles.leftMessageRowCompact]}>
                           <Text style={styles.messageRoleLabel}>Muni</Text>
