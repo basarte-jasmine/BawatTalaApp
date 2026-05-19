@@ -334,7 +334,7 @@ export default function HomeScreen() {
   const [moodSaveStatus, setMoodSaveStatus] = useState("");
   const [moodSaveStatusTone, setMoodSaveStatusTone] = useState<"success" | "error">("success");
   const [pendingMoodId, setPendingMoodId] = useState<string | null>(null);
-  const [showMoodConfirmModal, setShowMoodConfirmModal] = useState(false);
+  const [isSavingMood, setIsSavingMood] = useState(false);
   const [recentEntries, setRecentEntries] = useState<RecentEntryCard[]>([]);
   const [libraryPreviewBooks, setLibraryPreviewBooks] = useState<LibraryBookRecord[]>([]);
   const [recentEntriesSort, setRecentEntriesSort] = useState<HomeRecentFilter>("newest");
@@ -924,6 +924,7 @@ export default function HomeScreen() {
       ? 148
       : Math.min(displayedRecentEntries.length * 104 + 20, compact ? 300 : 372);
   const latestMoodLabel = latestMoodId ? EMOTIONS.find((emotion) => emotion.id === latestMoodId)?.label ?? "" : "";
+  const pendingMood = pendingMoodId ? EMOTIONS.find((emotion) => emotion.id === pendingMoodId) ?? null : null;
 
   useFocusEffect(
     useCallback(() => {
@@ -938,41 +939,40 @@ export default function HomeScreen() {
   );
 
   const handleMoodSelect = (moodId: string) => {
-    if (!user?.studentNumber) {
+    if (!user?.studentNumber || isSavingMood) {
       return;
     }
 
     setPendingMoodId(moodId);
     setMoodSaveStatus("");
-    setShowMoodConfirmModal(true);
   };
 
   const handleConfirmMood = async () => {
     if (!user?.studentNumber || !pendingMoodId) {
-      setShowMoodConfirmModal(false);
       setPendingMoodId(null);
       return;
     }
 
+    setIsSavingMood(true);
     const result = await saveDailyMood(user.studentNumber, pendingMoodId, getManilaTodayParts().isoDate, "INPUT");
+    setIsSavingMood(false);
+
     if (result.ok) {
       setLatestMoodId(result.entry?.moodId ?? pendingMoodId);
       setTodayMoodCheckInCount((current) => current + 1);
       setMoodSaveStatus("Saved. You can add another emotion anytime today.");
       setMoodSaveStatusTone("success");
       void loadTodayMood();
+      setPendingMoodId(null);
     } else {
       setMoodSaveStatus(result.message ?? "Emotion was not saved. Please try again.");
       setMoodSaveStatusTone("error");
       void loadTodayMood();
     }
-
-    setShowMoodConfirmModal(false);
-    setPendingMoodId(null);
   };
 
   const handleCancelMoodConfirm = () => {
-    setShowMoodConfirmModal(false);
+    if (isSavingMood) return;
     setPendingMoodId(null);
   };
 
@@ -1603,6 +1603,32 @@ export default function HomeScreen() {
               );
             })}
           </View>
+
+          {pendingMood ? (
+            <View style={[styles.moodConfirmBar, { borderColor: pendingMood.color }]}>
+              <Text style={styles.moodConfirmText} numberOfLines={2}>
+                Add {pendingMood.label} to today&apos;s check-ins?
+              </Text>
+              <View style={styles.moodConfirmActions}>
+                <Pressable
+                  style={styles.moodConfirmSecondaryButton}
+                  onPress={handleCancelMoodConfirm}
+                  disabled={isSavingMood}
+                >
+                  <Text style={styles.moodConfirmSecondaryText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.moodConfirmPrimaryButton, isSavingMood && styles.moodConfirmPrimaryButtonDisabled]}
+                  onPress={() => {
+                    void handleConfirmMood();
+                  }}
+                  disabled={isSavingMood}
+                >
+                  <Text style={styles.moodConfirmPrimaryText}>{isSavingMood ? "Saving..." : "Save"}</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
 
           <Pressable style={styles.moodHistoryButton} onPress={() => router.push("/mood-overview")}>
             <Text style={styles.moodHistoryButtonText}>Emotion History</Text>
@@ -2431,34 +2457,6 @@ export default function HomeScreen() {
       </Modal>
 
       <Modal
-        visible={showMoodConfirmModal}
-        transparent
-        animationType="fade"
-        onRequestClose={handleCancelMoodConfirm}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalBody}>Add this emotion to today&apos;s check-ins?</Text>
-
-            <View style={styles.modalActions}>
-              <Pressable style={styles.modalSecondaryButton} onPress={handleCancelMoodConfirm}>
-                <Text style={styles.modalSecondaryText}>Cancel</Text>
-              </Pressable>
-
-              <Pressable
-                style={styles.modalPrimaryButton}
-                onPress={() => {
-                  void handleConfirmMood();
-                }}
-              >
-                <Text style={styles.modalPrimaryText}>Confirm</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
         visible={showRecentEntriesFilterModal}
         transparent
         animationType="fade"
@@ -2938,6 +2936,59 @@ const styles = StyleSheet.create({
     minHeight: 30,
     textAlign: "center",
     fontWeight: "700",
+  },
+  moodConfirmBar: {
+    borderRadius: 18,
+    borderWidth: 1,
+    backgroundColor: "#FBFDF8",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+    rowGap: 10,
+  },
+  moodConfirmText: {
+    color: "#31465A",
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  moodConfirmActions: {
+    flexDirection: "row",
+    columnGap: 8,
+  },
+  moodConfirmSecondaryButton: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#DCE6DE",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  moodConfirmPrimaryButton: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: 999,
+    backgroundColor: "#70C943",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  moodConfirmPrimaryButtonDisabled: {
+    backgroundColor: "#A8D88E",
+  },
+  moodConfirmSecondaryText: {
+    color: "#526474",
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: "800",
+  },
+  moodConfirmPrimaryText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: "800",
   },
   moodHistoryButton: {
     height: 40,
