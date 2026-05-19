@@ -35,6 +35,7 @@ import { PROGRAM_OPTIONS } from "../lib/register-data";
 
 const ACTIVITY_LOGS_PER_PAGE = 5;
 const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
+const COUNSELING_TYPE_OPTIONS = ["1-on-1", "Group"];
 
 const PEER_FORM_INITIAL_STATE = {
   email: "",
@@ -78,6 +79,7 @@ export default function CalendarScheduling({
   const [modalDate, setModalDate] = useState("");
   const [modalTime, setModalTime] = useState("");
   const [modalConcern, setModalConcern] = useState("");
+  const [modalCounselingType, setModalCounselingType] = useState("1-on-1");
   const [modalNote, setModalNote] = useState("");
   const [modalGenderPreference, setModalGenderPreference] = useState("No Preference");
   const [editingAppointmentId, setEditingAppointmentId] = useState("");
@@ -337,6 +339,7 @@ export default function CalendarScheduling({
     setModalDate(appointment?.appointmentDate || selectedDate || getTodayIsoDate());
     setModalTime(appointment?.slotTime || "");
     setModalConcern(appointment?.concern || "");
+    setModalCounselingType(appointment?.counselingType || "1-on-1");
     setModalNote(appointment?.studentNote || "");
     setModalGenderPreference(appointment?.counselorGenderPreference || "No Preference");
     setModalError("");
@@ -359,6 +362,7 @@ export default function CalendarScheduling({
         appointmentDate: modalDate,
         slotTime: modalTime,
         concern: modalConcern,
+        counselingType: isPeerSupport ? "" : modalCounselingType,
         studentNote: modalNote,
         counselorGenderPreference: modalGenderPreference,
         bookingSource: "ADMIN_PANEL",
@@ -1090,6 +1094,11 @@ export default function CalendarScheduling({
                         <div>
                           <div className="font-semibold text-slate-700">{appointment.studentName}</div>
                           <div className="mt-1">{appointment.program || appointment.studentNumber}</div>
+                          {!isPeerSupport && appointment.counselingType ? (
+                            <div className="mt-1 text-xs font-semibold text-emerald-700">
+                              Counseling type: {appointment.counselingType}
+                            </div>
+                          ) : null}
                           {String(appointment.status || "").toUpperCase() === "PENDING" && appointment.decisionDueAt ? (
                             <div className="mt-1 text-xs font-semibold text-amber-700">
                               Respond by {formatDisplayDate(appointment.decisionDueAt.slice(0, 10))}
@@ -1395,6 +1404,22 @@ export default function CalendarScheduling({
                   })}
                 </select>
               </div>
+
+              {!isPeerSupport ? (
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-slate-700">Counseling Type</label>
+                  <select
+                    required
+                    value={modalCounselingType}
+                    onChange={(e) => setModalCounselingType(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 p-2.5 text-sm outline-none focus:border-[#3DA35D]"
+                  >
+                    {COUNSELING_TYPE_OPTIONS.map((item) => (
+                      <option key={`counseling-type-${item}`} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
 
               <div>
                 <label className="mb-1 block text-sm font-semibold text-slate-700">Note (Optional)</label>

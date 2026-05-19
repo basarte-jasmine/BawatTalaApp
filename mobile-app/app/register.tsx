@@ -43,7 +43,6 @@ import {
 
 const TOTAL_STEPS = 5;
 const OTP_LENGTH = 8;
-const OTP_EXPIRY_SECONDS = 60;
 const TERMS_AND_CONDITIONS_CONTENT = `Bawat Tala Terms and Conditions
 
 Effective Date: April 23, 2026
@@ -150,7 +149,6 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [otpCode, setOtpCode] = useState("");
-  const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
   const [scanPreviewUri, setScanPreviewUri] = useState("");
   const [scanMessage, setScanMessage] = useState("");
   const [hasValidIdScan, setHasValidIdScan] = useState(false);
@@ -296,8 +294,7 @@ export default function RegisterScreen() {
       return;
     }
 
-    setResendSeconds(60);
-    setOtpExpiresAt(Date.now() + OTP_EXPIRY_SECONDS * 1000);
+    setResendSeconds(result.resendAfterSeconds ?? 60);
     setOtpCode("");
     setStep(5);
   };
@@ -306,10 +303,6 @@ export default function RegisterScreen() {
     setErrorMessage("");
     if (otpCode.trim().length !== OTP_LENGTH) {
       setErrorMessage("Please enter the 8-digit OTP.");
-      return;
-    }
-    if (otpExpiresAt && Date.now() > otpExpiresAt) {
-      setErrorMessage("The code has expired or is invalid. Please try again.");
       return;
     }
 
@@ -322,7 +315,7 @@ export default function RegisterScreen() {
       setIsBusy(false);
       const message = (verifyResult.message ?? "").toLowerCase();
       if (message.includes("expired") || message.includes("invalid")) {
-        setErrorMessage("The code has expired or is invalid. Please try again.");
+        setErrorMessage("The code is invalid. Please check the latest email code and try again.");
       } else {
         setErrorMessage(verifyResult.message ?? "OTP verification failed.");
       }

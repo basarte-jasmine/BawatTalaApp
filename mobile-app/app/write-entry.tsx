@@ -52,9 +52,6 @@ const CONCERN_TAG_OPTIONS = [
   "Mental health",
   "Academic problems",
   "Interpersonal relationships",
-  "Peer",
-  "Family",
-  "Romantic",
   "Career guidance",
   "Financial guidance",
   "Anxiety",
@@ -63,6 +60,8 @@ const CONCERN_TAG_OPTIONS = [
   "Adjustment",
   "Others",
 ];
+const INTERPERSONAL_TAG = "Interpersonal relationships";
+const INTERPERSONAL_RELATIONSHIP_TAGS = ["Peer", "Family", "Romantic"];
 const AI_RETRY_LOCK_MS = 12000;
 const NCMH_HOTLINE_DIAL_URL = "tel:+639178998727";
 const NCMH_HOTLINE_DISPLAY = "0917-899-8727";
@@ -109,6 +108,15 @@ function getIntroMessages(
 
 function uniqueTags(tags: string[]) {
   return tags.filter((tag, index, items) => Boolean(tag) && items.indexOf(tag) === index);
+}
+
+function normalizeTagsForReview(tags: string[]) {
+  const normalizedTags = uniqueTags(tags);
+  const hasRelationshipSubtype = normalizedTags.some((tag) => INTERPERSONAL_RELATIONSHIP_TAGS.includes(tag));
+  if (!hasRelationshipSubtype || normalizedTags.includes(INTERPERSONAL_TAG)) {
+    return normalizedTags;
+  }
+  return uniqueTags([...normalizedTags, INTERPERSONAL_TAG]);
 }
 
 function TypewrittenMuniPrompt({ onComplete, text }: { onComplete?: () => void; text: string }) {
@@ -239,6 +247,7 @@ export default function WriteEntryScreen() {
   const [showRiskModal, setShowRiskModal] = useState(false);
   const [showExitModal, setShowExitModal] = useState(false);
   const [showTagReviewModal, setShowTagReviewModal] = useState(false);
+  const [showRelationshipTagModal, setShowRelationshipTagModal] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isAnalyzingTags, setIsAnalyzingTags] = useState(false);
   const [isSavingTags, setIsSavingTags] = useState(false);
@@ -556,6 +565,33 @@ export default function WriteEntryScreen() {
     );
   };
 
+  const handleTagOptionPress = (tag: string) => {
+    if (tag !== INTERPERSONAL_TAG) {
+      toggleSelectedTag(tag);
+      return;
+    }
+
+    if (selectedTags.includes(INTERPERSONAL_TAG)) {
+      setSelectedTags((current) =>
+        current.filter((item) => item !== INTERPERSONAL_TAG && !INTERPERSONAL_RELATIONSHIP_TAGS.includes(item)),
+      );
+      return;
+    }
+
+    setShowRelationshipTagModal(true);
+  };
+
+  const handleRelationshipTagSelect = (tag: string) => {
+    setSelectedTags((current) =>
+      uniqueTags([
+        ...current.filter((item) => !INTERPERSONAL_RELATIONSHIP_TAGS.includes(item)),
+        INTERPERSONAL_TAG,
+        tag,
+      ]),
+    );
+    setShowRelationshipTagModal(false);
+  };
+
   const saveSupportDecision = useCallback(
     async (response: "CONTACTED" | "DECLINED") => {
       if (!user?.studentNumber || !entry?.id) {
@@ -793,7 +829,7 @@ export default function WriteEntryScreen() {
       return;
     }
 
-    const suggestedTags = uniqueTags(
+    const suggestedTags = normalizeTagsForReview(
       (result.suggestedTags?.length ? result.suggestedTags : result.entry?.concernTags) ?? [],
     );
     setEntry(result.entry ?? activeEntry);
@@ -1285,6 +1321,7 @@ export default function WriteEntryScreen() {
           animationType="fade"
           onRequestClose={() => {
             if (isSavingTags) return;
+            setShowRelationshipTagModal(false);
             setShowTagReviewModal(false);
           }}
         >
@@ -1323,7 +1360,7 @@ export default function WriteEntryScreen() {
                       <Pressable
                         key={tag}
                         style={[styles.concernOption, isSelected && styles.concernOptionSelected]}
-                        onPress={() => toggleSelectedTag(tag)}
+                        onPress={() => handleTagOptionPress(tag)}
                         disabled={isSavingTags}
                       >
                         <Text style={[styles.concernOptionText, isSelected && styles.concernOptionTextSelected]}>
@@ -1338,7 +1375,10 @@ export default function WriteEntryScreen() {
               <View style={styles.modalActions}>
                 <Pressable
                   style={styles.modalSecondaryButton}
-                  onPress={() => setShowTagReviewModal(false)}
+                  onPress={() => {
+                    setShowRelationshipTagModal(false);
+                    setShowTagReviewModal(false);
+                  }}
                   disabled={isSavingTags}
                 >
                   <Text style={styles.modalSecondaryText}>Keep Editing</Text>
@@ -1358,6 +1398,44 @@ export default function WriteEntryScreen() {
                   )}
                 </Pressable>
               </View>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={showRelationshipTagModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowRelationshipTagModal(false)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={[styles.modalCard, styles.relationshipTagModalCard]}>
+              <Text style={styles.concernTitle}>Choose relationship type</Text>
+              <Text style={styles.concernSubtitle}>
+                Select the relationship tag that best matches this journal entry.
+              </Text>
+
+              <View style={styles.relationshipTagList}>
+                {INTERPERSONAL_RELATIONSHIP_TAGS.map((tag) => {
+                  const isSelected = selectedTags.includes(tag);
+                  return (
+                    <Pressable
+                      key={`relationship-tag-${tag}`}
+                      style={[styles.relationshipTagOption, isSelected && styles.relationshipTagOptionSelected]}
+                      onPress={() => handleRelationshipTagSelect(tag)}
+                    >
+                      <Text style={[styles.relationshipTagOptionText, isSelected && styles.relationshipTagOptionTextSelected]}>
+                        {tag}
+                      </Text>
+                      {isSelected ? <Ionicons name="checkmark-circle" size={20} color="#2E6B23" /> : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <Pressable style={styles.relationshipTagCancelButton} onPress={() => setShowRelationshipTagModal(false)}>
+                <Text style={styles.modalSecondaryText}>Cancel</Text>
+              </Pressable>
             </View>
           </View>
         </Modal>
@@ -1906,6 +1984,9 @@ const styles = StyleSheet.create({
     maxWidth: 380,
     maxHeight: "82%",
   },
+  relationshipTagModalCard: {
+    maxWidth: 340,
+  },
   concernTitle: {
     color: "#34465A",
     fontSize: 16,
@@ -1970,6 +2051,43 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
     marginBottom: 8,
     textTransform: "uppercase",
+  },
+  relationshipTagList: {
+    rowGap: 10,
+    marginBottom: 12,
+  },
+  relationshipTagOption: {
+    minHeight: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#C9D2DA",
+    backgroundColor: "#FFFFFF",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+  },
+  relationshipTagOptionSelected: {
+    borderColor: "#7BCB46",
+    backgroundColor: "#F1FAEA",
+  },
+  relationshipTagOptionText: {
+    color: "#3E556B",
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: "700",
+  },
+  relationshipTagOptionTextSelected: {
+    color: "#2E6B23",
+  },
+  relationshipTagCancelButton: {
+    minHeight: 40,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#CDD5C7",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
   },
   errorText: {
     color: "#B04444",

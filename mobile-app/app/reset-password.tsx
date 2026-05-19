@@ -2,7 +2,6 @@ import { router } from "expo-router";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text } from "react-native";
 import { FormTextInput } from "../components/forms/FormTextInput";
-import { PasswordField } from "../components/forms/PasswordField";
 import { AuthCardLayout } from "../components/layout/AuthCardLayout";
 import { AppPrimaryButton } from "../components/ui/AppPrimaryButton";
 import { forgotPasswordSendCode } from "../lib/backend-api";
@@ -13,48 +12,60 @@ import {
   normalizeStudentIdInput,
 } from "../lib/auth-validation";
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function normalizeEmailInput(value: string) {
+  return value.trim().toLowerCase();
+}
+
 export default function ResetPasswordScreen() {
   const { user } = useAuthSession();
   const [studentId, setStudentId] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+  const [email, setEmail] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isBusy, setIsBusy] = useState(false);
 
   const handleConfirmAccount = async () => {
     const studentNumber = normalizeStudentIdInput(studentId);
-    const passwordValue = password.trim();
+    const emailValue = normalizeEmailInput(email);
 
-    if (!studentNumber && !passwordValue) {
-      setErrorMessage(AUTH_MESSAGES.enterUsernameAndPassword);
+    if (!studentNumber && !emailValue) {
+      setErrorMessage("Student ID and email are required.");
       return;
     }
     if (!studentNumber) {
       setErrorMessage(AUTH_MESSAGES.studentIdRequired);
       return;
     }
-    if (!passwordValue) {
-      setErrorMessage(AUTH_MESSAGES.passwordRequired);
+    if (!emailValue) {
+      setErrorMessage("Email is required.");
       return;
     }
     if (!isValidStudentId(studentNumber)) {
-      setErrorMessage(AUTH_MESSAGES.invalidEmailOrPassword);
+      setErrorMessage("Enter Student ID in 23-2903 format.");
+      return;
+    }
+    if (!EMAIL_PATTERN.test(emailValue)) {
+      setErrorMessage("Enter a valid email address.");
       return;
     }
 
     setErrorMessage("");
     setIsBusy(true);
-    const result = await forgotPasswordSendCode(studentNumber, passwordValue);
+    const result = await forgotPasswordSendCode(studentNumber, emailValue);
     setIsBusy(false);
 
     if (!result.ok) {
-      setErrorMessage(result.message ?? "The account could not be verified. Please check your details.");
+      setErrorMessage(result.message ?? "Student ID and email do not match an active Bawat Tala account.");
       return;
     }
 
     router.push({
       pathname: "/reset-password-otp",
-      params: { studentId: studentNumber },
+      params: {
+        resendAfterSeconds: String(result.resendAfterSeconds ?? 60),
+        studentId: studentNumber,
+      },
     });
   };
 
@@ -79,17 +90,15 @@ export default function ResetPasswordScreen() {
         labelStyle={styles.label}
       />
 
-      <PasswordField
-        label="Password"
-        value={password}
-        onChangeText={setPassword}
-        showPassword={showPassword}
-        onToggleVisibility={() => setShowPassword((prev) => !prev)}
-        placeholder="Enter your password"
+      <FormTextInput
+        label="Email"
+        value={email}
+        onChangeText={setEmail}
+        placeholder="Enter your account email"
         placeholderTextColor="#8D8D8D"
-        containerStyle={styles.passwordContainer}
-        inputWrapStyle={styles.passwordWrap}
-        inputStyle={styles.passwordInput}
+        autoCapitalize="none"
+        keyboardType="email-address"
+        labelStyle={styles.label}
       />
 
       <AppPrimaryButton
@@ -135,16 +144,6 @@ const styles = StyleSheet.create({
   label: {
     color: "#111111",
     fontSize: 12,
-  },
-  passwordContainer: {
-    marginBottom: 0,
-  },
-  passwordWrap: {
-    marginBottom: 0,
-  },
-  passwordInput: {
-    fontSize: 13,
-    color: "#111111",
   },
   actionButton: {
     marginTop: 18,

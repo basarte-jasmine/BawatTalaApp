@@ -32,6 +32,8 @@ const PEER_INVITATION_STATUS_VALUES = new Set(["PENDING", "ACCEPTED", "DECLINED"
 const BOOKING_SOURCES = new Set(["MOBILE_APP", "ADMIN_PANEL"]);
 const SUPPORT_TYPE_GUIDANCE = "GUIDANCE";
 const SUPPORT_TYPE_PEER = "PEER";
+const COUNSELING_TYPE_OPTIONS = ["1-on-1", "Group"];
+const COUNSELING_TYPE_VALUES = new Set(COUNSELING_TYPE_OPTIONS);
 const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
 
 function normalizeCompactSpaces(value) {
@@ -120,6 +122,19 @@ function normalizeSupportType(value) {
     return SUPPORT_TYPE_PEER;
   }
   return SUPPORT_TYPE_GUIDANCE;
+}
+
+function normalizeCounselingType(value) {
+  const normalized = normalizeCompactSpaces(value).toLowerCase();
+  if (!normalized) return "";
+  if (["1 on 1", "1-on-1", "one on one", "one-on-one", "individual"].includes(normalized)) {
+    return "1-on-1";
+  }
+  if (["group", "by group", "group session"].includes(normalized)) {
+    return "Group";
+  }
+  const exact = COUNSELING_TYPE_OPTIONS.find((item) => item.toLowerCase() === normalized);
+  return exact || "";
 }
 
 function normalizePeerGender(value) {
@@ -471,6 +486,7 @@ function getAppointmentNotificationMetadata(appointment, extra = {}) {
     appointmentId: appointment?.id || null,
     counselorId: appointment?.counselor_id || appointment?.peer_counselor_id || null,
     counselorName: getAppointmentCounselorName(appointment),
+    counselingType: appointment?.counseling_type || appointment?.counselingType || null,
     supportType,
     ...extra,
   };
@@ -481,9 +497,10 @@ function buildAppointmentSummaryRows(appointment) {
     { label: "Client", value: appointment.student_name || appointment.student_full_name || appointment.student_number || "Student" },
     { label: "Date", value: formatDateLong(appointment.appointment_date) },
     { label: "Time", value: toReadableTime(appointment.slot_time) },
+    appointment.counseling_type ? { label: "Counseling Type", value: appointment.counseling_type } : null,
     { label: "Concern", value: appointment.concern },
     { label: "Assigned Counselor", value: getAppointmentCounselorName(appointment) },
-  ];
+  ].filter(Boolean);
 }
 
 async function sendAppointmentEmail({
@@ -539,6 +556,7 @@ async function sendAppointmentEmail({
     `Client: ${appointment.student_name || appointment.student_full_name || appointment.student_number || "Student"}`,
     `Date: ${formatDateLong(appointment.appointment_date)}`,
     `Time: ${toReadableTime(appointment.slot_time)}`,
+    appointment.counseling_type ? `Counseling Type: ${appointment.counseling_type}` : "",
     `Concern: ${appointment.concern}`,
     `Assigned Counselor: ${getAppointmentCounselorName(appointment)}`,
     ctaText ? `Note: ${ctaText}` : "",
@@ -904,6 +922,7 @@ async function processUpcomingConfirmedAppointmentReminders() {
         ca.peer_counselor_id,
         coalesce(ca.peer_counselor_id, ca.counselor_id) as counselor_id,
         coalesce(ca.support_type, case when ca.peer_counselor_id is not null then 'PEER' else 'GUIDANCE' end) as support_type,
+        ca.counseling_type,
         ca.concern,
         ca.appointment_date,
         ca.slot_time,
@@ -1001,6 +1020,7 @@ async function processPendingAppointmentExpiryWarnings() {
         ca.peer_counselor_id,
         coalesce(ca.peer_counselor_id, ca.counselor_id) as counselor_id,
         coalesce(ca.support_type, case when ca.peer_counselor_id is not null then 'PEER' else 'GUIDANCE' end) as support_type,
+        ca.counseling_type,
         ca.concern,
         ca.appointment_date,
         ca.slot_time,
@@ -1093,6 +1113,7 @@ async function expirePendingAppointments() {
         ca.id,
         ca.student_number,
         ca.concern,
+        ca.counseling_type,
         ca.appointment_date,
         ca.slot_time,
         ca.created_at,
@@ -1422,6 +1443,7 @@ async function findAppointmentById(appointmentId) {
         ca.peer_counselor_id,
         coalesce(ca.peer_counselor_id, ca.counselor_id) as counselor_id,
         coalesce(ca.support_type, case when ca.peer_counselor_id is not null then 'PEER' else 'GUIDANCE' end) as support_type,
+        ca.counseling_type,
         ca.concern,
         ca.appointment_date,
         ca.slot_time,
@@ -1461,6 +1483,7 @@ function toAppointmentResponse(row) {
     studentNumber: row.student_number,
     studentName: row.student_name || row.student_number,
     supportType: normalizeSupportType(row.support_type),
+    counselingType: row.counseling_type || "",
     concern: row.concern,
     appointmentDate: normalizeDateValue(row.appointment_date),
     appointmentDateLabel: formatDateLong(row.appointment_date),
@@ -2289,6 +2312,8 @@ router.post("/book", async (req, res) => {
   const slotTime = normalizeSlotTime(req.body.slotTime || "");
   const concern = normalizeConcern(req.body.concern || "");
   const studentNote = String(req.body.studentNote || "").trim();
+  const rawCounselingType = String(req.body.counselingType || req.body.appointmentType || "").trim();
+  const counselingType = normalizeCounselingType(rawCounselingType);
   const counselorGenderPreference = String(req.body.counselorGenderPreference || "No Preference").trim();
   const bookingSource = String(req.body.bookingSource || "MOBILE_APP").trim().toUpperCase();
   const actorEmail = String(req.body.actorEmail || "").trim().toLowerCase();
@@ -2325,6 +2350,10 @@ router.post("/book", async (req, res) => {
   if (isPeerSupportType(supportType) && !PEER_CONCERN_VALUES.has(concern)) {
     return res.status(400).json({ message: "That concern is not available for peer counseling." });
   }
+  if (!isPeerSupportType(supportType) && rawCounselingType && !COUNSELING_TYPE_VALUES.has(counselingType)) {
+    return res.status(400).json({ message: "Choose a valid counseling type." });
+  }
+  const resolvedCounselingType = isPeerSupportType(supportType) ? null : counselingType || "1-on-1";
 
   await ensureDefaultAvailability(counselorId, supportType);
   const isEnabled = await isCounselorSlotEnabledForDate(counselorId, appointmentDate, slotTime, supportType);
@@ -2369,6 +2398,7 @@ router.post("/book", async (req, res) => {
         counselor_id,
         peer_counselor_id,
         support_type,
+        counseling_type,
         concern,
         appointment_date,
         slot_time,
@@ -2378,14 +2408,15 @@ router.post("/book", async (req, res) => {
         booking_source,
         created_by_admin_email
       )
-      values ($1, $2, $3, $4, $5, $6::date, $7, $8, $9, $10, $11, $12)
-      returning id, student_number, concern, appointment_date, slot_time, status, student_note, counselor_gender_preference, booking_source, created_by_admin_email, created_at
+      values ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $12, $13)
+      returning id, student_number, counseling_type, concern, appointment_date, slot_time, status, student_note, counselor_gender_preference, booking_source, created_by_admin_email, created_at
     `,
     [
       studentNumber,
       isPeerSupportType(supportType) ? null : counselorId,
       isPeerSupportType(supportType) ? counselorId : null,
       supportType,
+      resolvedCounselingType,
       concern,
       appointmentDate,
       slotTime,
@@ -2462,6 +2493,7 @@ router.post("/book", async (req, res) => {
     appointment: {
       id: appointment.id,
       studentNumber: appointment.student_number,
+      counselingType: appointment.counseling_type || "",
       concern: appointment.concern,
       appointmentDate: appointment.appointment_date,
       appointmentDateLabel: formatDateLong(appointment.appointment_date),
@@ -2496,6 +2528,8 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
   const slotTime = normalizeSlotTime(req.body.slotTime || "");
   const concern = normalizeConcern(req.body.concern || "");
   const studentNote = String(req.body.studentNote || "").trim();
+  const rawCounselingType = String(req.body.counselingType || req.body.appointmentType || "").trim();
+  const counselingType = normalizeCounselingType(rawCounselingType);
   const counselorGenderPreference = String(req.body.counselorGenderPreference || "No Preference").trim();
   const actorEmail = String(req.body.actorEmail || "").trim().toLowerCase();
   const requestedSupportType = normalizeSupportType(req.body.supportType || "");
@@ -2526,6 +2560,12 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
   if (isPeerSupportType(supportType) && !PEER_CONCERN_VALUES.has(concern)) {
     return res.status(400).json({ message: "That concern is not available for peer counseling." });
   }
+  if (!isPeerSupportType(supportType) && rawCounselingType && !COUNSELING_TYPE_VALUES.has(counselingType)) {
+    return res.status(400).json({ message: "Choose a valid counseling type." });
+  }
+  const resolvedCounselingType = isPeerSupportType(supportType)
+    ? null
+    : counselingType || existingAppointment.counseling_type || "1-on-1";
 
   await ensureDefaultAvailability(counselorId, supportType);
   const isEnabled = await isCounselorSlotEnabledForDate(counselorId, appointmentDate, slotTime, supportType);
@@ -2579,12 +2619,13 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
         counselor_id = $3,
         peer_counselor_id = $4,
         support_type = $5,
-        concern = $6,
-        appointment_date = $7::date,
-        slot_time = $8,
-        status = $9,
-        student_note = $10,
-        counselor_gender_preference = $11,
+        counseling_type = $6,
+        concern = $7,
+        appointment_date = $8::date,
+        slot_time = $9,
+        status = $10,
+        student_note = $11,
+        counselor_gender_preference = $12,
         updated_at = now()
       where id = $1::uuid
       returning id
@@ -2595,6 +2636,7 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
       isPeerSupportType(supportType) ? null : counselorId,
       isPeerSupportType(supportType) ? counselorId : null,
       supportType,
+      resolvedCounselingType,
       concern,
       appointmentDate,
       slotTime,
@@ -2976,6 +3018,7 @@ router.get("/student", async (req, res) => {
       select
         ca.id,
         ca.concern,
+        ca.counseling_type,
         ca.appointment_date,
         ca.slot_time,
         ca.status,
@@ -3002,6 +3045,7 @@ router.get("/student", async (req, res) => {
   const appointments = result.rows.map((row) => ({
     id: row.id,
     concern: row.concern,
+    counselingType: row.counseling_type || "",
     appointmentDate: normalizeDateValue(row.appointment_date),
     appointmentDateLabel: formatDateLong(row.appointment_date),
     slotTime: row.slot_time,
@@ -3068,6 +3112,7 @@ router.get("/admin/overview", async (req, res) => {
         ca.id,
         ca.student_number,
         ca.concern,
+        ca.counseling_type,
         ca.appointment_date,
         ca.slot_time,
         ca.status,
@@ -3136,6 +3181,7 @@ router.get("/admin/overview", async (req, res) => {
     studentName: row.student_name,
     program: row.program || "",
     concern: row.concern,
+    counselingType: row.counseling_type || "",
     appointmentDate: normalizeDateValue(row.appointment_date),
     appointmentDateLabel: formatDateLong(row.appointment_date),
     slotTime: row.slot_time,

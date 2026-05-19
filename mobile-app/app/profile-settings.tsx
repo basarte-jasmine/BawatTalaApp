@@ -578,6 +578,9 @@ export default function ProfileSettingsScreen() {
                   <Text style={styles.scheduleUpcomingMeta}>
                     {appointment.appointmentDateLabel} - {appointment.slotLabel}
                   </Text>
+                  {appointment.counselingType ? (
+                    <Text style={styles.scheduleUpcomingMeta}>Counseling type: {appointment.counselingType}</Text>
+                  ) : null}
                   <Text style={styles.scheduleUpcomingMeta}>{appointment.concern}</Text>
                 </View>
               </View>
@@ -692,6 +695,9 @@ export default function ProfileSettingsScreen() {
                 <View style={styles.summaryBlock}>
                   <Text style={styles.summaryTitle}>{appointment.counselor.fullName}</Text>
                   <Text style={styles.summaryText}>{appointment.concern}</Text>
+                  {appointment.counselingType ? (
+                    <Text style={styles.summaryText}>Counseling type: {appointment.counselingType}</Text>
+                  ) : null}
                   <Text style={styles.summaryText}>
                     {appointment.appointmentDateLabel} - {appointment.slotLabel}
                   </Text>

@@ -71,7 +71,7 @@ export function OtpCodeInput({
           onKeyPress={({ nativeEvent }) => handleKeyPress(index, nativeEvent.key)}
           keyboardType="number-pad"
           textContentType="oneTimeCode"
-          maxLength={1}
+          maxLength={length}
           style={[styles.box, boxStyle]}
         />
       ))}

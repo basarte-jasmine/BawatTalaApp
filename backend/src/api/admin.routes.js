@@ -3,6 +3,7 @@ const { randomBytes, scryptSync, timingSafeEqual } = require("crypto");
 const { google } = require("googleapis");
 const { supabaseAdminClient, supabaseAuthClient } = require("../config/supabase");
 const { query } = require("../config/db");
+const { sendPasswordResetCodeEmail } = require("../services/auth-email.service");
 const { EMOTION_OPTIONS, createEmotionCounts, normalizeEmotionId } = require("../constants/emotions");
 const {
   JOURNAL_TAG_OPTIONS,
@@ -110,6 +111,35 @@ function setResetSession(email, session) {
 
 function clearResetSession(email) {
   adminResetSessions.delete(email);
+}
+
+async function sendAdminRecoveryCode(email, context) {
+  const { data, error } = await supabaseAdminClient.auth.admin.generateLink({
+    type: "recovery",
+    email,
+  });
+
+  if (error) {
+    return { ok: false, message: error.message || "Failed to generate code." };
+  }
+
+  const token = data?.properties?.email_otp;
+  if (!token) {
+    return { ok: false, message: "Failed to generate code." };
+  }
+
+  const emailResult = await sendPasswordResetCodeEmail({
+    to: email,
+    code: token,
+    expiresInSeconds: Math.ceil(OTP_VALIDITY_MS / 1000),
+    context,
+  });
+
+  if (!emailResult.ok) {
+    return { ok: false, message: "Failed to send code." };
+  }
+
+  return { ok: true };
 }
 
 async function writeAdminActivityLog({
@@ -1048,16 +1078,16 @@ router.post("/forgot-password/send-code", async (req, res) => {
     return res.status(400).json({ message: "Invalid email or password. Please try again." });
   }
 
-  const { error } = await supabaseAuthClient.auth.resetPasswordForEmail(email);
-
-  if (error) {
-    return res.status(400).json({ message: error.message || "Failed to send code." });
+  const sendResult = await sendAdminRecoveryCode(email, `admin forgot password [${email}]`);
+  if (!sendResult.ok) {
+    return res.status(400).json({ message: sendResult.message || "Failed to send code." });
   }
 
+  const now = Date.now();
   setResetSession(email, {
     email,
-    otpExpiresAt: Date.now() + OTP_VALIDITY_MS,
-    resendAvailableAt: Date.now() + OTP_COOLDOWN_MS,
+    otpExpiresAt: now + OTP_VALIDITY_MS,
+    resendAvailableAt: now + OTP_COOLDOWN_MS,
     verifiedAt: 0,
   });
 
@@ -1082,15 +1112,16 @@ router.post("/forgot-password/resend-code", async (req, res) => {
     return res.status(429).json({ message: `Please wait ${remaining}s before resending.` });
   }
 
-  const { error } = await supabaseAuthClient.auth.resetPasswordForEmail(email);
-  if (error) {
-    return res.status(400).json({ message: error.message || "Failed to resend code." });
+  const sendResult = await sendAdminRecoveryCode(email, `admin forgot password resend [${email}]`);
+  if (!sendResult.ok) {
+    return res.status(400).json({ message: sendResult.message || "Failed to resend code." });
   }
 
+  const now = Date.now();
   setResetSession(email, {
     ...session,
-    otpExpiresAt: Date.now() + OTP_VALIDITY_MS,
-    resendAvailableAt: Date.now() + OTP_COOLDOWN_MS,
+    otpExpiresAt: now + OTP_VALIDITY_MS,
+    resendAvailableAt: now + OTP_COOLDOWN_MS,
   });
 
   return res.json({
@@ -1121,7 +1152,7 @@ router.post("/forgot-password/verify-code", async (req, res) => {
     type: "recovery",
   });
   if (error) {
-    return res.status(400).json({ message: "The code has expired or is invalid. Please try again." });
+    return res.status(400).json({ message: "The code is invalid. Please check the latest email code and try again." });
   }
 
   setResetSession(email, {
@@ -2154,6 +2185,7 @@ router.get("/search", async (req, res) => {
           ca.status,
           ca.support_type,
           ca.concern,
+          ca.counseling_type,
           ca.student_note,
           coalesce(sp.full_name, '') as student_name,
           coalesce(sp.program, '') as program,
@@ -2167,6 +2199,7 @@ router.get("/search", async (req, res) => {
           or coalesce(sp.full_name, '') ilike $1
           or coalesce(sp.program, '') ilike $1
           or coalesce(ca.concern, '') ilike $1
+          or coalesce(ca.counseling_type, '') ilike $1
           or coalesce(ca.student_note, '') ilike $1
           or coalesce(ca.status, '') ilike $1
           or coalesce(ca.support_type, '') ilike $1
@@ -2273,6 +2306,7 @@ router.get("/search", async (req, res) => {
       status: row.status,
       supportType: row.support_type,
       concern: row.concern || "",
+      counselingType: row.counseling_type || "",
       studentNote: row.student_note || "",
       counselorName: row.counselor_name || "",
     })),

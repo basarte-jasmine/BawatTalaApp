@@ -1,8 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { VideoView, useVideoPlayer } from "expo-video";
+import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
-import { useEffect, useState, type ComponentProps } from "react";
+import { useCallback, useEffect, useState, type ComponentProps } from "react";
 import {
+  BackHandler,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -91,7 +93,7 @@ export default function WellnessGroundingScreen() {
     };
   }, [meditationPlayer]);
 
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     meditationPlayer.pause();
 
     if (router.canGoBack()) {
@@ -100,7 +102,18 @@ export default function WellnessGroundingScreen() {
     }
 
     router.replace("/wellness-tools");
-  };
+  }, [meditationPlayer]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+        handleBack();
+        return true;
+      });
+
+      return () => subscription.remove();
+    }, [handleBack]),
+  );
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>

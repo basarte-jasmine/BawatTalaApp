@@ -1895,11 +1895,11 @@ export default function HomeScreen() {
           {shouldRenderFutureBottleScene ? (
           <View style={styles.futureBottleScenePressable}>
             <View style={[styles.futureBottleSceneSky, { minHeight: islandSceneHeight }]}>
-              <View style={styles.futureBottleSkyFill} />
-              <View style={styles.futureBottleSkyBlobOne} />
-              <View style={styles.futureBottleSkyBlobTwo} />
-              <View style={styles.futureBottleTopGlow} />
-              <Svg width="100%" height="100%" viewBox="0 0 412 112" preserveAspectRatio="none" style={styles.futureBottleSceneTopBlend}>
+              <View style={styles.futureBottleSkyFill} pointerEvents="none" />
+              <View style={styles.futureBottleSkyBlobOne} pointerEvents="none" />
+              <View style={styles.futureBottleSkyBlobTwo} pointerEvents="none" />
+              <View style={styles.futureBottleTopGlow} pointerEvents="none" />
+              <Svg width="100%" height="100%" viewBox="0 0 412 112" preserveAspectRatio="none" style={styles.futureBottleSceneTopBlend} pointerEvents="none">
                 <Defs>
                   <LinearGradient id="shoreTopBlend" x1="0%" y1="0%" x2="0%" y2="100%">
                     <Stop offset="0%" stopColor="#F7FAF6" stopOpacity={1} />
@@ -1911,7 +1911,7 @@ export default function HomeScreen() {
                 <Path d="M0,0 H412 V74 C344,104 264,70 182,82 C104,94 38,92 0,80 Z" fill="url(#shoreTopBlend)" />
               </Svg>
 
-              <View style={styles.futureBottleInfoCard}>
+              <Pressable style={styles.futureBottleInfoCard} onPress={openBottleModal} accessibilityLabel="Open future self message">
                 <Text style={[styles.sectionEyebrow, styles.futureBottleEyebrow]}>Future Self</Text>
                 <Text style={styles.futureBottleInfoTitle}>Dear Future Me</Text>
                 <Text style={styles.futureBottleInfoSubtitle}>
@@ -1931,7 +1931,7 @@ export default function HomeScreen() {
                     </Text>
                   </View>
                 ) : null}
-              </View>
+              </Pressable>
             </View>
 
             <Pressable
@@ -1942,10 +1942,10 @@ export default function HomeScreen() {
               <Image source={ISLAND_IMAGE} style={styles.futureBottleIslandArt} resizeMode="contain" />
             </Pressable>
             
-            {scheduledBottleNote ? <View style={[styles.futureBottleNoteGlow, { top: islandSceneHeight + 8 }]} /> : null}
+            {scheduledBottleNote ? <View style={[styles.futureBottleNoteGlow, { top: islandSceneHeight + 8 }]} pointerEvents="none" /> : null}
 
             <View style={[styles.futureBottleWaterScene, { minHeight: waterSceneHeight }]}>
-              <Svg width="100%" height="100%" viewBox="0 0 412 620" preserveAspectRatio="none" style={styles.futureBottleWaterGradient}>
+              <Svg width="100%" height="100%" viewBox="0 0 412 620" preserveAspectRatio="none" style={styles.futureBottleWaterGradient} pointerEvents="none">
                 <Defs>
                   <LinearGradient id="shoreWater" x1="0%" y1="0%" x2="0%" y2="100%">
                     <Stop offset="0%" stopColor="#6DD1D9" />
@@ -1959,7 +1959,7 @@ export default function HomeScreen() {
                 <Ellipse cx="216" cy="436" rx="198" ry="78" fill="rgba(124, 214, 227, 0.12)" />
               </Svg>
 
-              <Animated.View style={[styles.futureBottleWaterWaveFill, { transform: [{ translateX: seaWaveTranslate }] }]}>
+              <Animated.View style={[styles.futureBottleWaterWaveFill, { transform: [{ translateX: seaWaveTranslate }] }]} pointerEvents="none">
                 <Svg width="100%" height="104" viewBox="0 0 412 104" preserveAspectRatio="none">
                   <Path
                     d="M0,42 C44,8 102,66 164,38 C226,10 288,8 348,28 C372,36 392,44 412,38 L412,104 L0,104 Z"
@@ -1968,7 +1968,7 @@ export default function HomeScreen() {
                 </Svg>
               </Animated.View>
 
-              <Animated.View style={[styles.futureBottleWaterWaveLine, { transform: [{ translateX: seaWaveTranslateReverse }] }]}>
+              <Animated.View style={[styles.futureBottleWaterWaveLine, { transform: [{ translateX: seaWaveTranslateReverse }] }]} pointerEvents="none">
                 <Svg width="100%" height="70" viewBox="0 0 412 70" preserveAspectRatio="none">
                   <Path
                     d="M0,30 C54,6 118,48 188,24 C256,2 324,12 412,32"
@@ -1979,7 +1979,7 @@ export default function HomeScreen() {
                 </Svg>
               </Animated.View>
 
-              <Animated.View style={[styles.futureBottleWaterWaveSoft, { transform: [{ translateX: seaWaveTranslate }] }]}>
+              <Animated.View style={[styles.futureBottleWaterWaveSoft, { transform: [{ translateX: seaWaveTranslate }] }]} pointerEvents="none">
                 <Svg width="100%" height="90" viewBox="0 0 412 90" preserveAspectRatio="none">
                   <Path
                     d="M0,40 C78,62 128,12 198,34 C272,56 336,60 412,40"
@@ -2022,6 +2022,7 @@ export default function HomeScreen() {
                     <Pressable
                       style={styles.driftingBottleButton}
                       onPress={() => setSelectedDriftingBottle(note)}
+                      hitSlop={16}
                       accessibilityLabel={`Open drifting letter: ${note.sender}`}
                     >
                       <Image source={BOTTLE_IMAGE} style={styles.driftingBottleImage} resizeMode="contain" />
@@ -2561,6 +2562,11 @@ export default function HomeScreen() {
               <Text style={styles.consultInfoText}>
                 <Text style={styles.consultInfoLabel}>Concern:</Text> {upcomingAppointment?.concern || "--"}
               </Text>
+              {upcomingAppointment?.counselingType ? (
+                <Text style={styles.consultInfoText}>
+                  <Text style={styles.consultInfoLabel}>Type:</Text> {upcomingAppointment.counselingType}
+                </Text>
+              ) : null}
               <Text style={styles.consultInfoText}>
                 <Text style={styles.consultInfoLabel}>Counselor:</Text>{" "}
                 {upcomingAppointment?.counselor?.fullName || "Guidance Counselor"}

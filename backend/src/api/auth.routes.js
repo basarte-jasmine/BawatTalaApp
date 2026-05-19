@@ -5,11 +5,14 @@ const {
   supabaseAuthClient,
 } = require("../config/supabase");
 const { query } = require("../config/db");
+const { sendPasswordResetCodeEmail } = require("../services/auth-email.service");
 
 const router = express.Router();
 const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const LOGIN_ATTEMPTS_LIMIT = 3;
 const LOGIN_LOCK_DURATION_MS = 10 * 60 * 1000;
+const OTP_COOLDOWN_MS = 60 * 1000;
 const OTP_VALIDITY_MS = 60 * 1000;
 const RESET_SESSION_MS = 10 * 60 * 1000;
 const STRONG_PASSWORD_PATTERN =
@@ -19,6 +22,7 @@ const REFERRAL_CODE_LENGTH = 9;
 const REFERRAL_JOIN_REWARD_TALA = 100;
 const REFERRAL_INVITE_REWARD_TALA = 150;
 const loginAttempts = new Map();
+const registrationOtpSessions = new Map();
 const resetPasswordSessions = new Map();
 const DEFAULT_STUDENT_PREFERENCES = {
   journalLockAutoLock: true,
@@ -126,6 +130,47 @@ function setResetSession(studentNumber, session) {
 
 function clearResetSession(studentNumber) {
   resetPasswordSessions.delete(studentNumber);
+}
+
+function getRegistrationOtpSession(email) {
+  return registrationOtpSessions.get(email) || null;
+}
+
+function setRegistrationOtpSession(email, session) {
+  registrationOtpSessions.set(email, session);
+}
+
+function clearRegistrationOtpSession(email) {
+  registrationOtpSessions.delete(email);
+}
+
+async function sendRecoveryCode(email, context) {
+  const { data, error } = await supabaseAdminClient.auth.admin.generateLink({
+    type: "recovery",
+    email,
+  });
+
+  if (error) {
+    return { ok: false, message: error.message || "Failed to generate reset code." };
+  }
+
+  const token = data?.properties?.email_otp;
+  if (!token) {
+    return { ok: false, message: "Failed to generate reset code." };
+  }
+
+  const emailResult = await sendPasswordResetCodeEmail({
+    to: email,
+    code: token,
+    expiresInSeconds: Math.ceil(OTP_VALIDITY_MS / 1000),
+    context,
+  });
+
+  if (!emailResult.ok) {
+    return { ok: false, message: "Failed to send reset code." };
+  }
+
+  return { ok: true };
 }
 
 async function deleteStaleAuthUsersByEmail(email) {
@@ -906,6 +951,12 @@ router.post("/send-otp", async (req, res) => {
     });
   }
 
+  const currentOtpSession = getRegistrationOtpSession(email);
+  if (currentOtpSession && Date.now() < currentOtpSession.resendAvailableAt) {
+    const remaining = Math.ceil((currentOtpSession.resendAvailableAt - Date.now()) / 1000);
+    return res.status(429).json({ message: `Please wait ${remaining}s before resending.` });
+  }
+
   try {
     await deleteStaleAuthUsersByEmail(email);
   } catch (error) {
@@ -931,33 +982,44 @@ router.post("/send-otp", async (req, res) => {
     return res.status(400).json({ message: msg });
   }
 
-  return res.json({ message: "OTP sent successfully." });
+  const now = Date.now();
+  setRegistrationOtpSession(email, {
+    email,
+    otpExpiresAt: now + OTP_VALIDITY_MS,
+    resendAvailableAt: now + OTP_COOLDOWN_MS,
+  });
+
+  return res.json({
+    message: "OTP sent successfully.",
+    resendAfterSeconds: Math.ceil(OTP_COOLDOWN_MS / 1000),
+  });
 });
 
 router.post("/forgot-password/send-code", async (req, res) => {
   const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
-  const password = normalizeCompactSpaces(req.body.password || "");
+  const email = normalizeEmail(req.body.email || "");
 
-  if (!studentNumber && !password) {
+  if (!studentNumber && !email) {
     return res
       .status(400)
-      .json({ message: "Please enter your username and password." });
+      .json({ message: "Student ID and email are required." });
   }
   if (!studentNumber) {
     return res.status(400).json({ message: "Student ID is required." });
   }
-  if (!password) {
-    return res.status(400).json({ message: "Password is required." });
+  if (!email) {
+    return res.status(400).json({ message: "Email is required." });
   }
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
-    return res.status(400).json({ message: "Invalid student ID or password." });
+    return res.status(400).json({ message: "Enter Student ID in 23-2903 format." });
+  }
+  if (!EMAIL_PATTERN.test(email)) {
+    return res.status(400).json({ message: "Enter a valid email address." });
   }
 
   const { data: profile, error: profileError } = await supabaseAdminClient
     .from("student_profiles")
-    .select(
-      "student_number, email, password_hash, is_email_verified, is_id_verified",
-    )
+    .select("student_number, email, is_email_verified, is_id_verified")
     .eq("student_number", studentNumber)
     .maybeSingle();
 
@@ -967,33 +1029,36 @@ router.post("/forgot-password/send-code", async (req, res) => {
 
   const canReset =
     Boolean(profile) &&
-    verifyPassword(password, profile.password_hash) &&
+    normalizeEmail(profile.email || "") === email &&
     profile.is_email_verified === true &&
     profile.is_id_verified === true;
 
   if (!canReset) {
     return res.status(400).json({
-      message: "The account could not be verified. Please check your details.",
+      message: "Student ID and email do not match an active Bawat Tala account.",
     });
   }
 
-  const email = normalizeEmail(profile.email);
-  const { error } = await supabaseAuthClient.auth.resetPasswordForEmail(email);
-
-  if (error) {
+  const sendResult = await sendRecoveryCode(email, `student forgot password [${studentNumber}]`);
+  if (!sendResult.ok) {
     return res
       .status(400)
-      .json({ message: error.message || "Failed to send reset code." });
+      .json({ message: sendResult.message || "Failed to send reset code." });
   }
 
+  const now = Date.now();
   setResetSession(studentNumber, {
     studentNumber,
     email,
-    otpExpiresAt: Date.now() + OTP_VALIDITY_MS,
+    otpExpiresAt: now + OTP_VALIDITY_MS,
+    resendAvailableAt: now + OTP_COOLDOWN_MS,
     verifiedAt: 0,
   });
 
-  return res.json({ message: "Reset code sent successfully." });
+  return res.json({
+    message: "Reset code sent successfully.",
+    resendAfterSeconds: Math.ceil(OTP_COOLDOWN_MS / 1000),
+  });
 });
 
 router.post("/profile-password/send-code", async (req, res) => {
@@ -1040,21 +1105,26 @@ router.post("/profile-password/send-code", async (req, res) => {
     });
   }
 
-  const { error } = await supabaseAuthClient.auth.resetPasswordForEmail(email);
-  if (error) {
+  const sendResult = await sendRecoveryCode(email, `student profile password [${studentNumber}]`);
+  if (!sendResult.ok) {
     return res
       .status(400)
-      .json({ message: error.message || "Failed to send reset code." });
+      .json({ message: sendResult.message || "Failed to send reset code." });
   }
 
+  const now = Date.now();
   setResetSession(studentNumber, {
     studentNumber,
     email,
-    otpExpiresAt: Date.now() + OTP_VALIDITY_MS,
+    otpExpiresAt: now + OTP_VALIDITY_MS,
+    resendAvailableAt: now + OTP_COOLDOWN_MS,
     verifiedAt: 0,
   });
 
-  return res.json({ message: "Reset code sent successfully." });
+  return res.json({
+    message: "Reset code sent successfully.",
+    resendAfterSeconds: Math.ceil(OTP_COOLDOWN_MS / 1000),
+  });
 });
 
 router.post("/forgot-password/resend-code", async (req, res) => {
@@ -1069,23 +1139,29 @@ router.post("/forgot-password/resend-code", async (req, res) => {
       .status(400)
       .json({ message: "Please confirm your account first." });
   }
-
-  const { error } = await supabaseAuthClient.auth.resetPasswordForEmail(
-    session.email,
-  );
-
-  if (error) {
-    return res
-      .status(400)
-      .json({ message: error.message || "Failed to send reset code." });
+  if (Date.now() < session.resendAvailableAt) {
+    const remaining = Math.ceil((session.resendAvailableAt - Date.now()) / 1000);
+    return res.status(429).json({ message: `Please wait ${remaining}s before resending.` });
   }
 
+  const sendResult = await sendRecoveryCode(session.email, `student forgot password resend [${studentNumber}]`);
+  if (!sendResult.ok) {
+    return res
+      .status(400)
+      .json({ message: sendResult.message || "Failed to send reset code." });
+  }
+
+  const now = Date.now();
   setResetSession(studentNumber, {
     ...session,
-    otpExpiresAt: Date.now() + OTP_VALIDITY_MS,
+    otpExpiresAt: now + OTP_VALIDITY_MS,
+    resendAvailableAt: now + OTP_COOLDOWN_MS,
   });
 
-  return res.json({ message: "Reset code sent successfully." });
+  return res.json({
+    message: "Reset code sent successfully.",
+    resendAfterSeconds: Math.ceil(OTP_COOLDOWN_MS / 1000),
+  });
 });
 
 router.post("/verify-otp", async (req, res) => {
@@ -1098,6 +1174,17 @@ router.post("/verify-otp", async (req, res) => {
       .json({ message: "Email and OTP token are required." });
   }
 
+  const session = getRegistrationOtpSession(email);
+  if (!session) {
+    return res.status(400).json({ message: "Please request a verification code first." });
+  }
+  if (Date.now() > session.otpExpiresAt) {
+    clearRegistrationOtpSession(email);
+    return res.status(400).json({
+      message: "The code has expired or is invalid. Please try again.",
+    });
+  }
+
   const { error } = await supabaseAuthClient.auth.verifyOtp({
     email,
     token,
@@ -1105,9 +1192,12 @@ router.post("/verify-otp", async (req, res) => {
   });
 
   if (error) {
-    return res.status(400).json({ message: error.message });
+    return res.status(400).json({
+      message: "The code is invalid. Please check the latest email code and try again.",
+    });
   }
 
+  clearRegistrationOtpSession(email);
   return res.json({ message: "OTP verified." });
 });
 
@@ -1141,7 +1231,7 @@ router.post("/forgot-password/verify-code", async (req, res) => {
 
   if (error) {
     return res.status(400).json({
-      message: "The code has expired or is invalid. Please try again.",
+      message: "The code is invalid. Please check the latest email code and try again.",
     });
   }
 

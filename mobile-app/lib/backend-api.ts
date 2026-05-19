@@ -78,6 +78,7 @@ export type CounselorAppointment = {
   appointmentDate: string;
   appointmentDateLabel: string;
   concern: string;
+  counselingType?: string;
   counselor: {
     fullName: string;
     gender: string;
@@ -402,10 +403,8 @@ function buildPreviewJournalMessages(entry?: {
   createdAt?: string;
   id?: string;
   preview?: string;
-  summary?: string;
-  title?: string;
 } | null): JournalMessage[] {
-  const preview = String(entry?.contentText || entry?.preview || entry?.summary || entry?.title || "")
+  const preview = String(entry?.contentText || entry?.preview || "")
     .replace(/\s+/g, " ")
     .trim();
   if (!entry?.id || !preview) return [];
@@ -875,9 +874,13 @@ function buildLibraryBookFileUrl(studentNumber: string, bookId: string) {
   return `${API_BASE_URL}/api/library/download-file?${params.toString()}`;
 }
 
-export async function sendOtp(email: string): Promise<ApiResult> {
+export async function sendOtp(email: string): Promise<ApiResult & { resendAfterSeconds?: number }> {
   const { response, data } = await post("/api/auth/send-otp", { email });
-  return { ok: response.ok, message: data?.message };
+  return {
+    ok: response.ok,
+    message: data?.message,
+    resendAfterSeconds: Number(data?.resendAfterSeconds ?? 0) || undefined,
+  };
 }
 
 export async function loginWithStudentId(
@@ -1009,33 +1012,45 @@ export async function redeemStudentReferralCode(
 
 export async function forgotPasswordSendCode(
   studentNumber: string,
-  password: string,
-): Promise<ApiResult> {
+  email: string,
+): Promise<ApiResult & { resendAfterSeconds?: number }> {
   const { response, data } = await post("/api/auth/forgot-password/send-code", {
+    email,
     studentNumber,
-    password,
   });
-  return { ok: response.ok, message: data?.message };
+  return {
+    ok: response.ok,
+    message: data?.message,
+    resendAfterSeconds: Number(data?.resendAfterSeconds ?? 0) || undefined,
+  };
 }
 
 export async function profilePasswordSendCode(
   studentNumber: string,
   email: string,
-): Promise<ApiResult> {
+): Promise<ApiResult & { resendAfterSeconds?: number }> {
   const { response, data } = await post("/api/auth/profile-password/send-code", {
     studentNumber,
     email,
   });
-  return { ok: response.ok, message: data?.message };
+  return {
+    ok: response.ok,
+    message: data?.message,
+    resendAfterSeconds: Number(data?.resendAfterSeconds ?? 0) || undefined,
+  };
 }
 
 export async function forgotPasswordResendCode(
   studentNumber: string,
-): Promise<ApiResult> {
+): Promise<ApiResult & { resendAfterSeconds?: number }> {
   const { response, data } = await post("/api/auth/forgot-password/resend-code", {
     studentNumber,
   });
-  return { ok: response.ok, message: data?.message };
+  return {
+    ok: response.ok,
+    message: data?.message,
+    resendAfterSeconds: Number(data?.resendAfterSeconds ?? 0) || undefined,
+  };
 }
 
 export async function forgotPasswordVerifyCode(
@@ -1911,7 +1926,7 @@ export async function fetchRecentJournalEntries(
         adminFlagReason: null,
         aiEnabled: false,
         concernTags: [],
-        contentText: entry.preview || entry.summary || "",
+        contentText: entry.preview || "",
         createdAt: entry.createdAt,
         entryDate: entry.entryDate,
         finishedAt: null,
@@ -1920,7 +1935,7 @@ export async function fetchRecentJournalEntries(
         isFinished: Boolean(entry.isFinished),
         preview: entry.preview,
         riskLevel: "NONE",
-        summary: entry.summary || entry.preview || "",
+        summary: entry.summary || "",
         title: entry.title,
         updatedAt: entry.createdAt,
       }, buildPreviewJournalMessages(entry), "synced");
@@ -2090,7 +2105,7 @@ export async function fetchJournalEntriesByDate(
         adminFlagReason: null,
         aiEnabled: false,
         concernTags: [],
-        contentText: entry.preview || entry.summary || "",
+        contentText: entry.preview || "",
         createdAt: entry.createdAt,
         entryDate: entry.entryDate,
         finishedAt: null,
@@ -2099,7 +2114,7 @@ export async function fetchJournalEntriesByDate(
         isFinished: Boolean(entry.isFinished),
         preview: entry.preview,
         riskLevel: "NONE",
-        summary: entry.summary || entry.preview || "",
+        summary: entry.summary || "",
         title: entry.title,
         updatedAt: entry.createdAt,
       }, buildPreviewJournalMessages(entry), "synced");
@@ -2272,6 +2287,7 @@ export async function fetchAppointmentAvailability(
 export async function bookCounselorAppointment(payload: {
   appointmentDate: string;
   concern: string;
+  counselingType?: string;
   counselorGenderPreference: string;
   counselorId: string;
   slotTime: string;

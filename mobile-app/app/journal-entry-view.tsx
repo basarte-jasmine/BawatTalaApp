@@ -52,6 +52,13 @@ function splitParagraphs(value: string | undefined) {
     .filter(Boolean);
 }
 
+function isSyntheticSummaryPreview(message: JournalMessage, entry: JournalEntry | null) {
+  const summaryText = String(entry?.summary || "").replace(/\s+/g, " ").trim().toLowerCase();
+  if (!summaryText) return false;
+  const messageText = String(message.text || "").replace(/\s+/g, " ").trim().toLowerCase();
+  return String(message.id || "").startsWith("preview-") && messageText === summaryText;
+}
+
 function formatSummaryText(summary: string | undefined, insights: string[]) {
   const parts = [summary, ...insights]
     .map((item) => String(item || "").replace(/\s+/g, " ").trim())
@@ -77,19 +84,15 @@ function summarizeParagraphs(paragraphs: string[]) {
 }
 
 function getEntryFallbackParagraphs(entry: JournalEntry | null) {
-  const contentText = splitParagraphs(entry?.contentText);
+  const summaryText = String(entry?.summary || "").replace(/\s+/g, " ").trim().toLowerCase();
+  const contentValue = String(entry?.contentText || "").replace(/\s+/g, " ").trim();
+  const contentText = contentValue.toLowerCase() === summaryText ? [] : splitParagraphs(contentValue);
   if (contentText.length > 0) return contentText;
 
   const previewText = String(entry?.preview || "").replace(/\s+/g, " ").trim();
-  if (previewText) {
+  if (previewText && previewText.toLowerCase() !== summaryText) {
     return [previewText];
   }
-
-  const summaryText = splitParagraphs(entry?.summary);
-  if (summaryText.length > 0) return summaryText;
-
-  const titleText = String(entry?.title || "").replace(/\s+/g, " ").trim();
-  if (titleText && titleText.toLowerCase() !== "journal entry") return [titleText];
 
   return [];
 }
@@ -151,8 +154,8 @@ export default function JournalEntryViewScreen() {
   );
 
   const visibleMessages = useMemo(
-    () => messages.filter((message) => String(message.text || "").trim()),
-    [messages],
+    () => messages.filter((message) => String(message.text || "").trim() && !isSyntheticSummaryPreview(message, entry)),
+    [entry, messages],
   );
   const fallbackParagraphs = useMemo(() => getEntryFallbackParagraphs(entry), [entry]);
   const messageParagraphs = useMemo(() => getUserParagraphs(visibleMessages), [visibleMessages]);

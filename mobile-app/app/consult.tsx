@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -46,7 +47,7 @@ type AvailabilityDay = {
 };
 
 type SupportTrack = "professional" | "peer";
-type PeerSessionType = "group" | "one_on_one";
+type CounselingSessionType = "group" | "one_on_one";
 
 const TOTAL_STEPS = 4;
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
@@ -73,20 +74,20 @@ const DEFAULT_CONCERN_SUBCATEGORIES = {
   [INTERPERSONAL_RELATIONSHIP_CONCERN]: INTERPERSONAL_RELATIONSHIP_SUBCONCERNS,
 };
 const GENDER_PREFERENCE = ["No Preference", "Female Counselor", "Male Counselor"];
-const STEP_LABELS = ["Concern", "Preference", "Counselor", "Date & Time"];
-const PEER_STEP_LABELS = ["Concern", "Format & Preference", "Peer Counselor", "Date & Time"];
+const STEP_LABELS = ["Concern", "Type & Preference", "Counselor", "Date & Time"];
+const PEER_STEP_LABELS = ["Concern", "Preference", "Peer Counselor", "Date & Time"];
 const PEER_EXCLUDED_CONCERNS = new Set(["Career guidance", "Financial guidance"]);
-const PEER_SESSION_OPTIONS: { id: PeerSessionType; title: string; description: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+const COUNSELING_TYPE_OPTIONS: { id: CounselingSessionType; title: string; description: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   {
     id: "one_on_one",
     title: "1-on-1",
-    description: "Talk privately with a peer counselor in a scheduled support session.",
+    description: "Meet privately with a guidance counselor in a scheduled support session.",
     icon: "person-outline",
   },
   {
     id: "group",
-    title: "Group",
-    description: "Join a guided peer support conversation with students who want shared support.",
+    title: "By group",
+    description: "Join a guided counseling conversation with students who want shared support.",
     icon: "people-outline",
   },
 ];
@@ -147,7 +148,7 @@ function normalizeSupportTrack(value: string | undefined): SupportTrack | null {
   return null;
 }
 
-function getPeerSessionLabel(type: PeerSessionType) {
+function getCounselingTypeLabel(type: CounselingSessionType) {
   return type === "group" ? "Group" : "1-on-1";
 }
 
@@ -171,10 +172,11 @@ export default function ConsultScreen() {
   const [concernSubcategories, setConcernSubcategories] = useState<Record<string, string[]>>(DEFAULT_CONCERN_SUBCATEGORIES);
   const [selectedConcern, setSelectedConcern] = useState("Anxiety");
   const [selectedRelationshipConcern, setSelectedRelationshipConcern] = useState(INTERPERSONAL_RELATIONSHIP_SUBCONCERNS[0]);
+  const [showRelationshipConcernModal, setShowRelationshipConcernModal] = useState(false);
   const [otherConcern, setOtherConcern] = useState("");
   const [selectedGender, setSelectedGender] = useState("No Preference");
   const [selectedTrack, setSelectedTrack] = useState<SupportTrack>(initialTrack ?? "professional");
-  const [selectedPeerSessionType, setSelectedPeerSessionType] = useState<PeerSessionType>("one_on_one");
+  const [selectedCounselingType, setSelectedCounselingType] = useState<CounselingSessionType>("one_on_one");
   const [counselors, setCounselors] = useState<CounselorCard[]>([]);
   const [loadingCounselors, setLoadingCounselors] = useState(true);
   const [loadingAvailability, setLoadingAvailability] = useState(false);
@@ -281,7 +283,7 @@ export default function ConsultScreen() {
     selectedTrack === "peer" ? "Find a calmer conversation with a peer counselor" : "Schedule a consultation that fits your day";
   const supportDescription =
     selectedTrack === "peer"
-      ? "Choose group support or a 1-on-1 peer counselor session when you want a gentler first step."
+      ? "Choose a peer counselor session when you want a gentler first step."
       : "We'll guide you through four quick steps to find the right counselor and an open time slot.";
 
   useEffect(() => {
@@ -423,8 +425,8 @@ export default function ConsultScreen() {
     }
 
     if (step === 2) {
-      if (selectedTrack === "peer" && !selectedPeerSessionType) {
-        setErrorMessage("Please choose a peer counseling format.");
+      if (selectedTrack === "professional" && !selectedCounselingType) {
+        setErrorMessage("Please choose a counseling type.");
         return;
       }
       setStep(3);
@@ -457,19 +459,14 @@ export default function ConsultScreen() {
           : selectedConcern === "Others"
             ? "Others"
             : selectedConcern;
-      const resolvedStudentNote =
-        selectedTrack === "peer"
-          ? [`Peer counseling format: ${getPeerSessionLabel(selectedPeerSessionType)}`, studentNote.trim()]
-              .filter(Boolean)
-              .join("\n\n")
-          : studentNote.trim();
       const result = await bookCounselorAppointment({
         appointmentDate: selectedDayAvailability.date,
         concern: resolvedConcern,
+        counselingType: selectedTrack === "professional" ? getCounselingTypeLabel(selectedCounselingType) : undefined,
         counselorGenderPreference: selectedGender,
         counselorId: selectedCounselor,
         slotTime: selectedTime,
-        studentNote: resolvedStudentNote,
+        studentNote: studentNote.trim(),
         studentNumber: user.studentNumber,
         supportType: selectedTrack === "peer" ? "PEER" : "GUIDANCE",
       });
@@ -691,6 +688,7 @@ export default function ConsultScreen() {
                               setSelectedRelationshipConcern((current) =>
                                 relationshipOptions.includes(current) ? current : relationshipOptions[0] ?? "",
                               );
+                              setShowRelationshipConcernModal(true);
                             }
                           }}
                         >
@@ -711,56 +709,23 @@ export default function ConsultScreen() {
                   ) : null}
 
                   {selectedConcern === INTERPERSONAL_RELATIONSHIP_CONCERN ? (
-                    <View style={styles.relationshipDropdown}>
-                      {(concernSubcategories[INTERPERSONAL_RELATIONSHIP_CONCERN] ?? INTERPERSONAL_RELATIONSHIP_SUBCONCERNS).map((item) => {
-                        const isSelected = selectedRelationshipConcern === item;
-                        return (
-                          <Pressable
-                            key={item}
-                            style={[styles.relationshipOption, isSelected && styles.relationshipOptionActive]}
-                            onPress={() => setSelectedRelationshipConcern(item)}
-                          >
-                            <Text style={[styles.relationshipOptionText, isSelected && styles.relationshipOptionTextActive]}>
-                              {item}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
+                    <Pressable style={styles.relationshipSelectionButton} onPress={() => setShowRelationshipConcernModal(true)}>
+                      <Text style={styles.relationshipSelectionLabel}>Relationship concern</Text>
+                      <Text style={styles.relationshipSelectionValue}>{selectedRelationshipConcern || "Choose type"}</Text>
+                      <Ionicons name="chevron-forward" size={18} color="#4A7A33" />
+                    </Pressable>
                   ) : null}
                 </>
               ) : null}
 
               {!loadingCounselors && supportsStepFlow && step === 2 && selectedTrack === "peer" ? (
                 <>
-                  <Text style={styles.stepTitle}>Choose Peer Counseling Format</Text>
+                  <Text style={styles.stepTitle}>Peer Counselor Preference</Text>
                   <Text style={styles.stepSubTitle}>
-                    Pick how you want to meet with peer support before choosing a peer counselor.
+                    Let us know if you have a gender preference before we show your available peer counselors.
                   </Text>
 
-                  <View style={styles.peerFormatList}>
-                    {PEER_SESSION_OPTIONS.map((item) => {
-                      const selected = selectedPeerSessionType === item.id;
-                      return (
-                        <Pressable
-                          key={item.id}
-                          style={[styles.peerFormatCard, selected && styles.peerFormatCardActive]}
-                          onPress={() => setSelectedPeerSessionType(item.id)}
-                        >
-                          <View style={[styles.peerFormatIconWrap, selected && styles.peerFormatIconWrapActive]}>
-                            <Ionicons name={item.icon} size={22} color={selected ? "#2E6F24" : "#50687A"} />
-                          </View>
-                          <View style={styles.peerFormatCopy}>
-                            <Text style={[styles.peerFormatTitle, selected && styles.peerFormatTitleActive]}>{item.title}</Text>
-                            <Text style={styles.peerFormatText}>{item.description}</Text>
-                          </View>
-                          {selected ? <Ionicons name="checkmark-circle" size={24} color="#2E6F24" /> : null}
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-
-                  <Text style={[styles.sectionLabel, styles.typeSectionLabel]}>Peer Counselor Preference</Text>
+                  <Text style={styles.sectionLabel}>Gender Preference</Text>
                   {GENDER_PREFERENCE.map((item) => {
                     const selected = selectedGender === item;
                     return (
@@ -778,10 +743,33 @@ export default function ConsultScreen() {
 
               {!loadingCounselors && supportsStepFlow && step === 2 && selectedTrack === "professional" ? (
                 <>
-                  <Text style={styles.stepTitle}>Counselor Preference</Text>
+                  <Text style={styles.stepTitle}>Counseling Type & Preference</Text>
                   <Text style={styles.stepSubTitle}>
-                    Let us know if you have a gender preference before we show your available counselors.
+                    Choose the counseling format and let us know if you have a gender preference before we show your available counselors.
                   </Text>
+
+                  <Text style={styles.sectionLabel}>Counseling Type</Text>
+                  <View style={styles.peerFormatList}>
+                    {COUNSELING_TYPE_OPTIONS.map((item) => {
+                      const selected = selectedCounselingType === item.id;
+                      return (
+                        <Pressable
+                          key={item.id}
+                          style={[styles.peerFormatCard, selected && styles.peerFormatCardActive]}
+                          onPress={() => setSelectedCounselingType(item.id)}
+                        >
+                          <View style={[styles.peerFormatIconWrap, selected && styles.peerFormatIconWrapActive]}>
+                            <Ionicons name={item.icon} size={22} color={selected ? "#2E6F24" : "#50687A"} />
+                          </View>
+                          <View style={styles.peerFormatCopy}>
+                            <Text style={[styles.peerFormatTitle, selected && styles.peerFormatTitleActive]}>{item.title}</Text>
+                            <Text style={styles.peerFormatText}>{item.description}</Text>
+                          </View>
+                          {selected ? <Ionicons name="checkmark-circle" size={24} color="#2E6F24" /> : null}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
 
                   <Text style={styles.sectionLabel}>Gender Preference</Text>
                   {GENDER_PREFERENCE.map((item) => {
@@ -987,6 +975,45 @@ export default function ConsultScreen() {
           </>
         )}
       </ScrollView>
+
+      <Modal
+        visible={showRelationshipConcernModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowRelationshipConcernModal(false)}
+      >
+        <View style={styles.relationshipModalBackdrop}>
+          <View style={styles.relationshipModalCard}>
+            <Text style={styles.relationshipModalTitle}>Choose relationship concern</Text>
+            <Text style={styles.relationshipModalText}>
+              Select the relationship area that best matches this request.
+            </Text>
+
+            {(concernSubcategories[INTERPERSONAL_RELATIONSHIP_CONCERN] ?? INTERPERSONAL_RELATIONSHIP_SUBCONCERNS).map((item) => {
+              const isSelected = selectedRelationshipConcern === item;
+              return (
+                <Pressable
+                  key={item}
+                  style={[styles.relationshipModalOption, isSelected && styles.relationshipModalOptionActive]}
+                  onPress={() => {
+                    setSelectedRelationshipConcern(item);
+                    setShowRelationshipConcernModal(false);
+                  }}
+                >
+                  <Text style={[styles.relationshipModalOptionText, isSelected && styles.relationshipModalOptionTextActive]}>
+                    {item}
+                  </Text>
+                  {isSelected ? <Ionicons name="checkmark-circle" size={20} color="#2E6F24" /> : null}
+                </Pressable>
+              );
+            })}
+
+            <Pressable style={styles.relationshipModalCancelButton} onPress={() => setShowRelationshipConcernModal(false)}>
+              <Text style={styles.relationshipModalCancelText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       <HomeBottomNav activeTab="profile" />
     </SafeAreaView>
@@ -1447,6 +1474,7 @@ const styles = StyleSheet.create({
   },
   peerFormatList: {
     rowGap: 12,
+    marginBottom: 14,
   },
   peerFormatCard: {
     minHeight: 96,
@@ -1542,36 +1570,96 @@ const styles = StyleSheet.create({
     color: "#36495D",
     fontSize: 15,
   },
-  relationshipDropdown: {
+  relationshipSelectionButton: {
+    minHeight: 58,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#DDE5EA",
-    backgroundColor: "#F9FBFC",
-    padding: 8,
-    rowGap: 8,
+    borderColor: "#CFE5C1",
+    backgroundColor: "#F6FBF1",
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 10,
+    paddingHorizontal: 12,
+    marginBottom: 4,
   },
-  relationshipOption: {
-    minHeight: 44,
-    borderRadius: 12,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#DFE7EC",
+  relationshipSelectionLabel: {
+    color: "#58705A",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  relationshipSelectionValue: {
+    flex: 1,
+    color: "#2E6F24",
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "800",
+    textAlign: "right",
+  },
+  relationshipModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(27, 37, 45, 0.45)",
+    alignItems: "center",
     justifyContent: "center",
+    padding: 18,
+  },
+  relationshipModalCard: {
+    width: "100%",
+    maxWidth: 340,
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+    padding: 18,
+    rowGap: 10,
+  },
+  relationshipModalTitle: {
+    color: "#31465A",
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "800",
+  },
+  relationshipModalText: {
+    color: "#617282",
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 2,
+  },
+  relationshipModalOption: {
+    minHeight: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#DDE5EA",
+    backgroundColor: "#FFFFFF",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 12,
   },
-  relationshipOptionActive: {
+  relationshipModalOptionActive: {
     borderColor: "#78C74A",
     backgroundColor: "#F3FAEE",
   },
-  relationshipOptionText: {
+  relationshipModalOptionText: {
     color: "#33475C",
     fontSize: 14,
     lineHeight: 20,
-    fontWeight: "600",
-  },
-  relationshipOptionTextActive: {
-    color: "#2E6F24",
     fontWeight: "700",
+  },
+  relationshipModalOptionTextActive: {
+    color: "#2E6F24",
+  },
+  relationshipModalCancelButton: {
+    minHeight: 44,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+  relationshipModalCancelText: {
+    color: "#617282",
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "800",
   },
   sectionLabel: {
     color: "#35495D",
@@ -1580,9 +1668,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: 8,
     marginTop: 4,
-  },
-  typeSectionLabel: {
-    marginTop: 16,
   },
   preferenceCard: {
     minHeight: 56,

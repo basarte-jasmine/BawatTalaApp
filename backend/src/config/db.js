@@ -980,6 +980,7 @@ async function ensureDatabaseSchema() {
       counselor_id uuid references public.admin_accounts(id) on delete restrict,
       peer_counselor_id uuid references public.peer_counselors(id) on delete restrict,
       support_type text not null default 'GUIDANCE',
+      counseling_type text,
       concern text not null,
       appointment_date date not null,
       slot_time text not null,
@@ -995,6 +996,10 @@ async function ensureDatabaseSchema() {
       updated_at timestamptz not null default now(),
       constraint counselor_appointments_status_check check (status in ('PENDING', 'CONFIRMED', 'DECLINED', 'COMPLETED', 'CANCELLED')),
       constraint counselor_appointments_support_type_check check (support_type in ('GUIDANCE', 'PEER')),
+      constraint counselor_appointments_counseling_type_check check (
+        counseling_type is null
+        or counseling_type in ('1-on-1', 'Group')
+      ),
       constraint counselor_appointments_assignee_check check (
         (support_type = 'GUIDANCE' and counselor_id is not null and peer_counselor_id is null)
         or (support_type = 'PEER' and peer_counselor_id is not null and counselor_id is null)
@@ -1020,6 +1025,11 @@ async function ensureDatabaseSchema() {
   await pool.query(`
     alter table public.counselor_appointments
     add column if not exists support_type text not null default 'GUIDANCE';
+  `);
+
+  await pool.query(`
+    alter table public.counselor_appointments
+    add column if not exists counseling_type text;
   `);
 
   await pool.query(`
@@ -1073,6 +1083,20 @@ async function ensureDatabaseSchema() {
     alter table public.counselor_appointments
     add constraint counselor_appointments_support_type_check
     check (support_type in ('GUIDANCE', 'PEER'));
+  `);
+
+  await pool.query(`
+    alter table public.counselor_appointments
+    drop constraint if exists counselor_appointments_counseling_type_check;
+  `);
+
+  await pool.query(`
+    alter table public.counselor_appointments
+    add constraint counselor_appointments_counseling_type_check
+    check (
+      counseling_type is null
+      or counseling_type in ('1-on-1', 'Group')
+    );
   `);
 
   await pool.query(`

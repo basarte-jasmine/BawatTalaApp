@@ -7,14 +7,18 @@ import { AppPrimaryButton } from "../components/ui/AppPrimaryButton";
 import { forgotPasswordResendCode, forgotPasswordVerifyCode } from "../lib/backend-api";
 
 const OTP_LENGTH = 8;
-const OTP_EXPIRY_SECONDS = 60;
+
+function getInitialResendSeconds(value?: string) {
+  const parsed = Math.ceil(Number(value || 60));
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 60;
+}
 
 export default function ResetPasswordOtpScreen() {
-  const params = useLocalSearchParams<{ studentId?: string }>();
+  const params = useLocalSearchParams<{ resendAfterSeconds?: string; studentId?: string }>();
   const studentId = String(params.studentId || "").trim();
+  const initialResendSeconds = getInitialResendSeconds(String(params.resendAfterSeconds || ""));
   const [otpCode, setOtpCode] = useState("");
-  const [resendSeconds, setResendSeconds] = useState(60);
-  const [otpExpiresAt, setOtpExpiresAt] = useState(Date.now() + OTP_EXPIRY_SECONDS * 1000);
+  const [resendSeconds, setResendSeconds] = useState(initialResendSeconds);
   const [errorMessage, setErrorMessage] = useState("");
   const [isBusy, setIsBusy] = useState(false);
 
@@ -38,10 +42,6 @@ export default function ResetPasswordOtpScreen() {
       setErrorMessage("Please enter the 8-digit OTP.");
       return;
     }
-    if (Date.now() > otpExpiresAt) {
-      setErrorMessage("The code has expired or is invalid. Please try again");
-      return;
-    }
 
     setErrorMessage("");
     setIsBusy(true);
@@ -49,7 +49,7 @@ export default function ResetPasswordOtpScreen() {
     setIsBusy(false);
 
     if (!result.ok) {
-      setErrorMessage(result.message ?? "The code has expired or is invalid. Please try again");
+      setErrorMessage(result.message ?? "The code is invalid. Please check the latest email code and try again.");
       return;
     }
 
@@ -71,8 +71,7 @@ export default function ResetPasswordOtpScreen() {
       return;
     }
 
-    setResendSeconds(60);
-    setOtpExpiresAt(Date.now() + OTP_EXPIRY_SECONDS * 1000);
+    setResendSeconds(result.resendAfterSeconds ?? 60);
     setOtpCode("");
     setErrorMessage("");
   };

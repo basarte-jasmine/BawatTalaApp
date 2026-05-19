@@ -598,7 +598,7 @@ export default function Header({
                         icon={CalendarDays}
                         title={`${appointment.studentName} - ${appointment.concern || "Appointment"}`}
                         meta={`${formatSearchDate(appointment.appointmentDate)} ${appointment.slotTime || ""} - ${appointment.supportType || "GUIDANCE"}`}
-                        detail={[appointment.program, appointment.counselorName, appointment.studentNote].filter(Boolean).join(" - ")}
+                        detail={[appointment.program, appointment.counselorName, appointment.counselingType, appointment.studentNote].filter(Boolean).join(" - ")}
                         badge={appointment.status}
                         onClick={() => openSearchPath(String(appointment.supportType || "").toUpperCase() === "PEER" ? "/peer-counselors" : "/appointments")}
                       />

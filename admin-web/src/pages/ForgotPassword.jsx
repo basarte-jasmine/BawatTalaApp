@@ -10,7 +10,7 @@ import {
 } from "../lib/admin-api";
 import { EMAIL_PATTERN, validateResetPassword } from "../lib/admin-validation";
 
-const RESEND_SECONDS = 30;
+const RESEND_SECONDS = 60;
 const OTP_LENGTH = 8;
 
 export default function ForgotPassword() {
@@ -52,10 +52,10 @@ export default function ForgotPassword() {
 
     try {
       setPending(true);
-      await sendAdminResetCode({ email: trimmedEmail });
+      const result = await sendAdminResetCode({ email: trimmedEmail });
       setMessage("Verification code sent.");
       setStep("otp");
-      setResendCountdown(RESEND_SECONDS);
+      setResendCountdown(result?.resendAfterSeconds || RESEND_SECONDS);
     } catch (requestError) {
       setError(requestError.message || "Failed to send code.");
     } finally {
@@ -79,7 +79,7 @@ export default function ForgotPassword() {
       setMessage("Code verified.");
       setStep("password");
     } catch (requestError) {
-      setError(requestError.message || "The code has expired or is invalid. Please try again.");
+      setError(requestError.message || "The code is invalid. Please check the latest email code and try again.");
     } finally {
       setPending(false);
     }
@@ -90,9 +90,9 @@ export default function ForgotPassword() {
     setMessage("");
     try {
       setPending(true);
-      await resendAdminResetCode({ email: email.trim() });
+      const result = await resendAdminResetCode({ email: email.trim() });
       setMessage("Code resent successfully.");
-      setResendCountdown(RESEND_SECONDS);
+      setResendCountdown(result?.resendAfterSeconds || RESEND_SECONDS);
     } catch (requestError) {
       setError(requestError.message || "Failed to resend code.");
     } finally {

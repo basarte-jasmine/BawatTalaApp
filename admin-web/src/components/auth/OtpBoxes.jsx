@@ -10,6 +10,21 @@ export default function OtpBoxes({ length = 6, value, onChange }) {
     onChange(next.join(""));
   }
 
+  function setDigitsFrom(index, rawValue) {
+    const digits = rawValue.replace(/\D/g, "").slice(0, length - index);
+    if (!digits) {
+      setChar(index, "");
+      return;
+    }
+
+    const next = chars.slice();
+    digits.split("").forEach((digit, offset) => {
+      next[index + offset] = digit;
+    });
+    onChange(next.join(""));
+    inputRefs.current[Math.min(index + digits.length, length - 1)]?.focus();
+  }
+
   return (
     <div className="flex justify-center gap-2">
       {chars.map((char, index) => (
@@ -21,14 +36,14 @@ export default function OtpBoxes({ length = 6, value, onChange }) {
           type="text"
           inputMode="numeric"
           pattern="[0-9]*"
-          maxLength={1}
+          maxLength={length}
           value={char}
           onChange={(event) => {
-            const digit = event.target.value.replace(/\D/g, "").slice(-1);
-            setChar(index, digit);
-            if (digit && inputRefs.current[index + 1]) {
-              inputRefs.current[index + 1].focus();
-            }
+            setDigitsFrom(index, event.target.value);
+          }}
+          onPaste={(event) => {
+            event.preventDefault();
+            setDigitsFrom(index, event.clipboardData.getData("text"));
           }}
           onKeyDown={(event) => {
             if (event.key === "Backspace" && !chars[index] && inputRefs.current[index - 1]) {

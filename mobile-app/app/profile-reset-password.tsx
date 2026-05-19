@@ -24,7 +24,6 @@ import { isValidStudentId, normalizeStudentIdInput } from "../lib/auth-validatio
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const OTP_LENGTH = 8;
-const OTP_EXPIRY_SECONDS = 60;
 const STRONG_PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
 
 type Step = "account" | "code" | "password" | "done";
@@ -84,7 +83,6 @@ export default function ProfileResetPasswordScreen() {
   const [email, setEmail] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [resendSeconds, setResendSeconds] = useState(0);
-  const [otpExpiresAt, setOtpExpiresAt] = useState(0);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -169,8 +167,7 @@ export default function ProfileResetPasswordScreen() {
     setVerifiedStudentId(studentNumber);
     setEmail(emailValue);
     setOtpCode("");
-    setOtpExpiresAt(Date.now() + OTP_EXPIRY_SECONDS * 1000);
-    setResendSeconds(60);
+    setResendSeconds(result.resendAfterSeconds ?? 60);
     setSuccessMessage("Verification code sent to your email.");
     setStep("code");
   };
@@ -185,10 +182,6 @@ export default function ProfileResetPasswordScreen() {
       setErrorMessage("Enter the 8-digit verification code.");
       return;
     }
-    if (Date.now() > otpExpiresAt) {
-      setErrorMessage("The code has expired. Send a new code and try again.");
-      return;
-    }
 
     setErrorMessage("");
     setSuccessMessage("");
@@ -197,7 +190,7 @@ export default function ProfileResetPasswordScreen() {
     setIsBusy(false);
 
     if (!result.ok) {
-      setErrorMessage(result.message || "The code is invalid or expired.");
+      setErrorMessage(result.message || "The code is invalid. Please check the latest email code and try again.");
       return;
     }
 
@@ -221,8 +214,7 @@ export default function ProfileResetPasswordScreen() {
     }
 
     setOtpCode("");
-    setOtpExpiresAt(Date.now() + OTP_EXPIRY_SECONDS * 1000);
-    setResendSeconds(60);
+    setResendSeconds(result.resendAfterSeconds ?? 60);
     setSuccessMessage("A new verification code was sent.");
   };
 
