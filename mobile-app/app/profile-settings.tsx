@@ -379,6 +379,10 @@ export default function ProfileSettingsScreen() {
       setPinError("Use exactly 4 digits for the PIN.");
       return;
     }
+    if (appLockEnabled && pin === currentPin) {
+      setPinError("Choose a new PIN that is different from your current PIN.");
+      return;
+    }
     if (pin !== pinConfirm) {
       setPinError("PIN entries do not match yet.");
       return;
@@ -864,7 +868,7 @@ export default function ProfileSettingsScreen() {
             <Text style={styles.modalTitle}>{appLockEnabled ? "Change Journal PIN" : "Create Journal PIN"}</Text>
             <Text style={styles.modalBody}>
               {appLockEnabled
-                ? "Enter your current PIN first, then use the same new 4 digits both times."
+                ? "Enter your current PIN first, then choose different new 4 digits and confirm them."
                 : "Use the same 4 digits both times. Your journal will lock as soon as you save it."}
             </Text>
             {appLockEnabled ? (

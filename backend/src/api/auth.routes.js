@@ -217,6 +217,12 @@ function normalizeStudentPreferences(row) {
   };
 }
 
+function getPreviousJournalLockPinHash(settings) {
+  return typeof settings?.previousJournalLockPinHash === "string"
+    ? settings.previousJournalLockPinHash
+    : "";
+}
+
 async function loadStudentPreferenceRecord(studentNumber) {
   const result = await query(
     `
@@ -541,6 +547,9 @@ router.patch("/preferences", async (req, res) => {
           .json({ message: "Use exactly 4 digits for the PIN." });
       }
 
+      const previousJournalLockPinHash =
+        getPreviousJournalLockPinHash(currentSettings);
+
       if (currentPreferences.journalLockEnabled && nextJournalLockPinHash) {
         const previousPin = normalizePin(req.body.previousJournalLockPin);
         if (
@@ -551,9 +560,33 @@ router.patch("/preferences", async (req, res) => {
             .status(403)
             .json({ message: "Previous PIN does not match." });
         }
+
+        if (verifyPassword(nextPin, nextJournalLockPinHash)) {
+          return res.status(400).json({
+            message: "Choose a new PIN that is different from your current PIN.",
+          });
+        }
+
+        if (
+          previousJournalLockPinHash &&
+          verifyPassword(nextPin, previousJournalLockPinHash)
+        ) {
+          return res.status(400).json({
+            message: "Choose a new PIN that is different from your previous PIN.",
+          });
+        }
+
+        nextSettings.previousJournalLockPinHash = nextJournalLockPinHash;
       } else if (nextJournalLockEnabled !== true) {
         return res.status(400).json({
           message: "Turn on Journal Lock before changing the PIN.",
+        });
+      } else if (
+        previousJournalLockPinHash &&
+        verifyPassword(nextPin, previousJournalLockPinHash)
+      ) {
+        return res.status(400).json({
+          message: "Choose a new PIN that is different from your previous PIN.",
         });
       }
 
@@ -655,11 +688,16 @@ router.post("/preferences/journal-lock/reset", async (req, res) => {
       currentRecord?.settings && typeof currentRecord.settings === "object"
         ? currentRecord.settings
         : {};
+    const nextSettings = { ...currentSettings };
+    if (currentRecord?.journal_lock_pin_hash) {
+      nextSettings.previousJournalLockPinHash =
+        currentRecord.journal_lock_pin_hash;
+    }
     const savedRecord = await saveStudentPreferenceRecord({
       journalLockAutoLock: true,
       journalLockEnabled: false,
       journalLockPinHash: null,
-      settings: currentSettings,
+      settings: nextSettings,
       studentNumber,
     });
 
