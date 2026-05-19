@@ -297,7 +297,7 @@ export default function ProfileResetPasswordScreen() {
                 : step === "code"
                   ? "Type the verification code sent to your email."
                   : step === "password"
-                    ? "Create a strong new password for your account."
+                    ? "Create a strong password you have not used recently."
                     : "Your new password is ready to use the next time you sign in."}
             </Text>
           </View>

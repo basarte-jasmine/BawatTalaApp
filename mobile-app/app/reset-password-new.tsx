@@ -90,7 +90,7 @@ export default function ResetPasswordNewScreen() {
   return (
     <AuthCardLayout contentContainerStyle={styles.content} cardStyle={styles.card}>
       <Text style={styles.title}>Reset your password</Text>
-      <Text style={styles.subtitle}>Enter and confirm your new password below.</Text>
+      <Text style={styles.subtitle}>Enter and confirm a password you have not used recently.</Text>
 
       <PasswordField
         label="Enter your new password"

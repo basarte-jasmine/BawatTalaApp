@@ -223,6 +223,12 @@ function getPreviousJournalLockPinHash(settings) {
     : "";
 }
 
+function getPreviousAccountPasswordHash(settings) {
+  return typeof settings?.previousAccountPasswordHash === "string"
+    ? settings.previousAccountPasswordHash
+    : "";
+}
+
 async function loadStudentPreferenceRecord(studentNumber) {
   const result = await query(
     `
@@ -1257,13 +1263,80 @@ router.post("/forgot-password/reset", async (req, res) => {
       .json({ message: "Reset session expired. Please request a new code." });
   }
 
+  const { data: profile, error: profileError } = await supabaseAdminClient
+    .from("student_profiles")
+    .select("student_number, password_hash")
+    .eq("student_number", studentNumber)
+    .maybeSingle();
+
+  if (profileError) {
+    return res.status(400).json({ message: profileError.message });
+  }
+  if (!profile?.password_hash) {
+    return res.status(404).json({ message: "Student profile not found." });
+  }
+
+  if (verifyPassword(newPassword, profile.password_hash)) {
+    return res.status(400).json({
+      message: "Choose a new password that is different from your current password.",
+    });
+  }
+
+  let currentPreferenceRecord = null;
+  try {
+    currentPreferenceRecord = await loadStudentPreferenceRecord(studentNumber);
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message || "Unable to check previous account password.",
+    });
+  }
+  const currentPreferences = normalizeStudentPreferences(
+    currentPreferenceRecord,
+  );
+  const currentSettings =
+    currentPreferenceRecord?.settings &&
+    typeof currentPreferenceRecord.settings === "object"
+      ? currentPreferenceRecord.settings
+      : {};
+  const previousAccountPasswordHash =
+    getPreviousAccountPasswordHash(currentSettings);
+
+  if (
+    previousAccountPasswordHash &&
+    verifyPassword(newPassword, previousAccountPasswordHash)
+  ) {
+    return res.status(400).json({
+      message: "Choose a new password that is different from your previous password.",
+    });
+  }
+
+  const nextPasswordHash = hashPassword(newPassword);
   const { error } = await supabaseAdminClient
     .from("student_profiles")
-    .update({ password_hash: hashPassword(newPassword) })
+    .update({ password_hash: nextPasswordHash })
     .eq("student_number", studentNumber);
 
   if (error) {
     return res.status(400).json({ message: error.message });
+  }
+
+  try {
+    await saveStudentPreferenceRecord({
+      journalLockAutoLock: currentPreferences.journalLockAutoLock,
+      journalLockEnabled: currentPreferences.journalLockEnabled,
+      journalLockPinHash:
+        currentPreferenceRecord?.journal_lock_pin_hash || null,
+      settings: {
+        ...currentSettings,
+        previousAccountPasswordHash: profile.password_hash,
+      },
+      studentNumber,
+    });
+  } catch (error) {
+    console.warn(
+      "Unable to save previous account password history:",
+      error?.message || error,
+    );
   }
 
   clearResetSession(studentNumber);
