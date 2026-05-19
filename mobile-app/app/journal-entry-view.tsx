@@ -30,9 +30,19 @@ function formatEntryHeader(entry: JournalEntry | null, createdAt?: string) {
 
 function getUserParagraphs(messages: JournalMessage[]) {
   return messages
-    .filter((message) => message.role === "user")
+    .filter((message) => isUserJournalMessage(message))
     .flatMap((message) => splitParagraphs(message.text))
     .filter(Boolean);
+}
+
+function isUserJournalMessage(message: JournalMessage) {
+  const role = String(message.role || "").toLowerCase();
+  return role === "user" || role === "student";
+}
+
+function isAssistantJournalMessage(message: JournalMessage) {
+  const role = String(message.role || "").toLowerCase();
+  return role === "assistant" || role === "muni";
 }
 
 function splitParagraphs(value: string | undefined) {
@@ -159,7 +169,7 @@ export default function JournalEntryViewScreen() {
           })),
     [entry?.createdAt, fallbackParagraphs, visibleMessages],
   );
-  const createdAt = messages.find((message) => message.role === "user")?.createdAt ?? entry?.createdAt;
+  const createdAt = messages.find((message) => isUserJournalMessage(message))?.createdAt ?? entry?.createdAt;
   const storedSummaryText = useMemo(
     () => formatSummaryText(entry?.summary, entry?.insights ?? []),
     [entry?.insights, entry?.summary],
@@ -434,7 +444,7 @@ export default function JournalEntryViewScreen() {
                     </View>
                   ) : displayMessages.length > 0 ? (
                     displayMessages.map((line) =>
-                      line.role === "assistant" ? (
+                      isAssistantJournalMessage(line) ? (
                         <View key={line.id} style={[styles.leftMessageRow, compact && styles.leftMessageRowCompact]}>
                           <Text style={styles.messageRoleLabel}>Muni</Text>
                           <Text style={styles.leftMessageText}>{line.text}</Text>

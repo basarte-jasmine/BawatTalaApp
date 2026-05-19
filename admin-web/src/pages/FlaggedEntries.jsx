@@ -20,6 +20,7 @@ import Layout from "../components/Layout";
 import {
   fetchAdminRiskFlags,
   fetchAdminStudentProfile,
+  openAdminStudentJournalEntry,
   sendAdminStudentNotification,
   updateAdminJournalFlag,
 } from "../lib/admin-api";
@@ -307,7 +308,7 @@ function EntryCard({ entry, index, isSelected, onSelect }) {
   );
 }
 
-function JournalEntryViewer({ entry }) {
+function JournalEntryViewer({ entry, onOpenJournal }) {
   const visibleMessages = Array.isArray(entry?.messages) ? entry.messages.filter((message) => message.text) : [];
 
   if (visibleMessages.length) {
@@ -336,6 +337,25 @@ function JournalEntryViewer({ entry }) {
             </div>
           );
         })}
+      </div>
+    );
+  }
+
+  if (entry?.canOpenJournal) {
+    return (
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800">
+        <div className="flex items-start gap-2">
+          <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>Journal Lock is on for this student. Only the summary is available until the student's Journal Lock PIN is entered.</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => onOpenJournal?.(entry)}
+          className="mt-4 inline-flex items-center gap-2 rounded-lg bg-[#229365] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1b7b54]"
+        >
+          <Lock className="h-4 w-4" />
+          Open Journal
+        </button>
       </div>
     );
   }
@@ -502,6 +522,7 @@ function ReviewModal({
   onSaveEdit,
   onMessage,
   onMarkResolved,
+  onOpenJournal,
   onRemoveFlag,
 }) {
   if (!student) return null;
@@ -551,7 +572,7 @@ function ReviewModal({
                 <div>
                   <h3 className="text-sm font-bold text-slate-800">Flagged Journal Entry</h3>
                   <div className="mt-3">
-                    <JournalEntryViewer entry={selectedEntry} />
+                    <JournalEntryViewer entry={selectedEntry} onOpenJournal={onOpenJournal} />
                   </div>
                 </div>
 
@@ -603,6 +624,58 @@ function ReviewModal({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function JournalUnlockModal({ entry, error, pin, saving, onClose, onPinChange, onSubmit }) {
+  if (!entry) return null;
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+      <form onSubmit={onSubmit} className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="border-b border-slate-100 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+              <Lock className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="font-bold text-slate-900">Open Journal</h2>
+              <div className="mt-1 text-xs text-slate-500">{entry.title || "Locked flagged entry"}</div>
+            </div>
+          </div>
+        </div>
+        <div className="space-y-4 px-5 py-4">
+          <p className="text-sm leading-6 text-slate-600">
+            Enter the student's 4-digit Journal Lock PIN to view this flagged journal conversation.
+          </p>
+          <label className="block text-xs font-semibold text-slate-500">
+            Journal PIN
+            <input
+              autoFocus
+              value={pin}
+              onChange={(event) => onPinChange(event.target.value.replace(/[^0-9]/g, "").slice(0, 4))}
+              inputMode="numeric"
+              maxLength={4}
+              type="password"
+              className="mt-1 h-11 w-full rounded-xl border border-slate-200 px-3 text-center text-lg font-bold tracking-[0.35em] text-slate-900 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+            />
+          </label>
+          {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
+        </div>
+        <div className="flex justify-end gap-3 border-t border-slate-100 bg-slate-50 px-5 py-4">
+          <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-white">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={saving || pin.length < 4}
+            className="rounded-lg bg-[#229365] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1b7b54] disabled:opacity-60"
+          >
+            {saving ? "Opening..." : "Open Journal"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -695,6 +768,10 @@ export default function FlaggedEntries({ onLogout, session }) {
   const [savingFlag, setSavingFlag] = useState(false);
   const [resolveCandidate, setResolveCandidate] = useState(null);
   const [removeCandidate, setRemoveCandidate] = useState(null);
+  const [journalUnlockTarget, setJournalUnlockTarget] = useState(null);
+  const [journalUnlockPin, setJournalUnlockPin] = useState("");
+  const [journalUnlockError, setJournalUnlockError] = useState("");
+  const [journalUnlockSaving, setJournalUnlockSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -941,6 +1018,35 @@ export default function FlaggedEntries({ onLogout, session }) {
     }
   }
 
+  function mergeUnlockedEntry(unlockedEntry) {
+    if (!unlockedEntry?.id) return;
+    setEntries((current) => current.map((entry) => (entry.id === unlockedEntry.id ? { ...entry, ...unlockedEntry } : entry)));
+    setReviewEntries((current) => current.map((entry) => (entry.id === unlockedEntry.id ? { ...entry, ...unlockedEntry } : entry)));
+    setSelectedEntry((current) => (current?.id === unlockedEntry.id ? { ...current, ...unlockedEntry } : current));
+  }
+
+  async function handleOpenJournal(event) {
+    event.preventDefault();
+    const studentNumber = selectedStudent?.studentNumber || journalUnlockTarget?.studentNumber;
+    if (!studentNumber || !journalUnlockTarget?.id) return;
+
+    try {
+      setJournalUnlockSaving(true);
+      const data = await openAdminStudentJournalEntry(studentNumber, journalUnlockTarget.id, journalUnlockPin);
+      if (data?.entry) {
+        mergeUnlockedEntry(data.entry);
+      }
+      setJournalUnlockTarget(null);
+      setJournalUnlockPin("");
+      setJournalUnlockError("");
+      setSuccessMessage("Journal opened for this flagged entry.");
+    } catch (error) {
+      setJournalUnlockError(error instanceof Error ? error.message : "Failed to open journal.");
+    } finally {
+      setJournalUnlockSaving(false);
+    }
+  }
+
   return (
     <Layout
       title="Flagged Entries"
@@ -1040,6 +1146,9 @@ export default function FlaggedEntries({ onLogout, session }) {
           setReviewEntries([]);
           setReviewFilter("All");
           setEditingFlag(false);
+          setJournalUnlockTarget(null);
+          setJournalUnlockPin("");
+          setJournalUnlockError("");
         }}
         onSelectEntry={handleSelectEntry}
         onFilterChange={handleReviewFilterChange}
@@ -1056,7 +1165,26 @@ export default function FlaggedEntries({ onLogout, session }) {
           setMessageBody("");
         }}
         onMarkResolved={() => setResolveCandidate(selectedEntry)}
+        onOpenJournal={(entry) => {
+          setJournalUnlockTarget(entry);
+          setJournalUnlockPin("");
+          setJournalUnlockError("");
+        }}
         onRemoveFlag={() => setRemoveCandidate(selectedEntry)}
+      />
+
+      <JournalUnlockModal
+        entry={journalUnlockTarget}
+        error={journalUnlockError}
+        pin={journalUnlockPin}
+        saving={journalUnlockSaving}
+        onClose={() => {
+          setJournalUnlockTarget(null);
+          setJournalUnlockPin("");
+          setJournalUnlockError("");
+        }}
+        onPinChange={setJournalUnlockPin}
+        onSubmit={(event) => void handleOpenJournal(event)}
       />
 
       <MessageModal

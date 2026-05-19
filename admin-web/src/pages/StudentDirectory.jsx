@@ -20,12 +20,13 @@ import {
 import Layout from "../components/Layout";
 import Modal from "../components/Modal";
 import {
+  openAdminStudentJournalEntry,
   fetchAdminStudentDirectoryEntries,
   fetchAdminStudentProfile,
   fetchAdminStudents,
   sendAdminStudentNotification,
 } from "../lib/admin-api";
-import { getRiskBadgeClasses, getRiskLevelLabel } from "../lib/risk-labels";
+import { getRiskBadgeClasses, getRiskLevelLabel, normalizeRiskLevel } from "../lib/risk-labels";
 
 const STATUS_FILTERS = [
   { label: "Status: All", value: "" },
@@ -45,6 +46,13 @@ const ENTRY_DATE_FILTERS = [
   { label: "Today", value: "today" },
   { label: "Last 7 days", value: "7" },
   { label: "Last 30 days", value: "30" },
+];
+
+const PROFILE_ENTRY_FILTERS = [
+  { label: "Entries: All", value: "all" },
+  { label: "Normal", value: "normal" },
+  { label: "Needs Support", value: "support" },
+  { label: "Critical Case", value: "critical" },
 ];
 
 function getInitials(name) {
@@ -130,8 +138,21 @@ function canViewEntryConversation(entry) {
   return Boolean(entry?.canViewConversation);
 }
 
+function getProfileEntryStatus(entry) {
+  const riskLevel = normalizeRiskLevel(entry?.riskLevel);
+  const supportResponse = String(entry?.supportResponse || "").toUpperCase();
+  if (["HIGH", "CRITICAL"].includes(riskLevel)) return "critical";
+  if (["LOW", "MEDIUM", "MODERATE"].includes(riskLevel) || supportResponse === "DECLINED") return "support";
+  return "normal";
+}
+
+function profileEntryMatchesFilter(entry, filter) {
+  if (!filter || filter === "all") return true;
+  return getProfileEntryStatus(entry) === filter;
+}
+
 function isDirectoryEntryFlagged(entry) {
-  const riskLevel = String(entry?.riskLevel || "NONE").toUpperCase();
+  const riskLevel = normalizeRiskLevel(entry?.riskLevel);
   const supportResponse = String(entry?.supportResponse || "").toUpperCase();
   return ["LOW", "MEDIUM", "MODERATE", "HIGH", "CRITICAL"].includes(riskLevel) || supportResponse === "DECLINED";
 }
@@ -325,6 +346,58 @@ function MessageModal({ student, title, body, sending, onTitleChange, onBodyChan
   );
 }
 
+function JournalUnlockModal({ entry, error, pin, saving, onClose, onPinChange, onSubmit }) {
+  if (!entry) return null;
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+      <form onSubmit={onSubmit} className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="border-b border-slate-100 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+              <Lock className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="font-bold text-slate-900">Open Journal</h2>
+              <div className="mt-1 text-xs text-slate-500">{entry.title || "Locked flagged entry"}</div>
+            </div>
+          </div>
+        </div>
+        <div className="space-y-4 px-5 py-4">
+          <p className="text-sm leading-6 text-slate-600">
+            Enter the student's 4-digit Journal Lock PIN to view this flagged journal conversation.
+          </p>
+          <label className="block text-xs font-semibold text-slate-500">
+            Journal PIN
+            <input
+              autoFocus
+              value={pin}
+              onChange={(event) => onPinChange(event.target.value.replace(/[^0-9]/g, "").slice(0, 4))}
+              inputMode="numeric"
+              maxLength={4}
+              type="password"
+              className="mt-1 h-11 w-full rounded-xl border border-slate-200 px-3 text-center text-lg font-bold tracking-[0.35em] text-slate-900 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+            />
+          </label>
+          {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
+        </div>
+        <div className="flex justify-end gap-3 border-t border-slate-100 bg-slate-50 px-5 py-4">
+          <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-white">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={saving || pin.length < 4}
+            className="rounded-lg bg-[#229365] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1b7b54] disabled:opacity-60"
+          >
+            {saving ? "Opening..." : "Open Journal"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function RecentEntriesModal({
   isOpen,
   entries,
@@ -440,15 +513,29 @@ function RecentEntriesModal({
   );
 }
 
-function EntryConversation({ entry, studentName }) {
+function EntryConversation({ entry, studentName, onOpenJournal }) {
   const messages = Array.isArray(entry.messages) ? entry.messages : [];
   const canViewConversation = canViewEntryConversation(entry);
 
   if (!canViewConversation) {
+    const lockedFlaggedEntry = Boolean(entry?.canOpenJournal);
     return (
       <div className="rounded-[18px] border border-dashed border-amber-200 bg-amber-50 px-4 py-5 text-sm leading-6 text-amber-800">
-        Journal content is hidden for privacy. Only entries flagged for counseling review, such as high-risk or
-        trigger-word detections, allow the full conversation to be viewed by authorized staff.
+        <div>
+          {lockedFlaggedEntry
+            ? "Journal Lock is on for this student. Only the summary is available until the student's Journal Lock PIN is entered."
+            : "Journal content is hidden for privacy. Only entries flagged for counseling review, such as high-risk or trigger-word detections, allow the full conversation to be viewed by authorized staff."}
+        </div>
+        {lockedFlaggedEntry ? (
+          <button
+            type="button"
+            onClick={() => onOpenJournal?.(entry)}
+            className="mt-4 inline-flex items-center gap-2 rounded-lg bg-[#229365] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1b7b54]"
+          >
+            <Lock className="h-4 w-4" />
+            Open Journal
+          </button>
+        ) : null}
       </div>
     );
   }
@@ -518,6 +605,11 @@ export default function StudentDirectory({ onLogout, session }) {
   const [studentProfile, setStudentProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState("");
+  const [profileEntryFilter, setProfileEntryFilter] = useState("all");
+  const [journalUnlockTarget, setJournalUnlockTarget] = useState(null);
+  const [journalUnlockPin, setJournalUnlockPin] = useState("");
+  const [journalUnlockError, setJournalUnlockError] = useState("");
+  const [journalUnlockSaving, setJournalUnlockSaving] = useState(false);
   const [messageTarget, setMessageTarget] = useState(null);
   const [messageTitle, setMessageTitle] = useState("Counselor Follow-up");
   const [messageBody, setMessageBody] = useState("");
@@ -595,6 +687,7 @@ export default function StudentDirectory({ onLogout, session }) {
   async function handleViewProfile(studentNumber) {
     try {
       setSelectedStudentNumber(studentNumber);
+      setProfileEntryFilter("all");
       setProfileLoading(true);
       const data = await fetchAdminStudentProfile(studentNumber);
       setStudentProfile(data);
@@ -603,6 +696,37 @@ export default function StudentDirectory({ onLogout, session }) {
       setProfileError(error instanceof Error ? error.message : "Failed to load student profile.");
     } finally {
       setProfileLoading(false);
+    }
+  }
+
+  async function handleOpenJournal(event) {
+    event.preventDefault();
+    if (!journalUnlockTarget?.id || !studentProfile?.profile?.studentNumber) return;
+
+    try {
+      setJournalUnlockSaving(true);
+      const data = await openAdminStudentJournalEntry(
+        studentProfile.profile.studentNumber,
+        journalUnlockTarget.id,
+        journalUnlockPin,
+      );
+      if (data?.entry) {
+        setStudentProfile((current) => {
+          if (!current?.entries) return current;
+          return {
+            ...current,
+            entries: current.entries.map((entry) => (entry.id === data.entry.id ? { ...entry, ...data.entry } : entry)),
+          };
+        });
+      }
+      setJournalUnlockTarget(null);
+      setJournalUnlockPin("");
+      setJournalUnlockError("");
+      setSuccessMessage("Journal opened for this flagged entry.");
+    } catch (error) {
+      setJournalUnlockError(error instanceof Error ? error.message : "Failed to open journal.");
+    } finally {
+      setJournalUnlockSaving(false);
     }
   }
 
@@ -631,6 +755,10 @@ export default function StudentDirectory({ onLogout, session }) {
   const profileEntries = useMemo(
     () => (Array.isArray(studentProfile?.entries) ? studentProfile.entries : []),
     [studentProfile],
+  );
+  const filteredProfileEntries = useMemo(
+    () => profileEntries.filter((entry) => profileEntryMatchesFilter(entry, profileEntryFilter)),
+    [profileEntries, profileEntryFilter],
   );
   const latestEntry = profileEntries[0] || null;
   const aiEntryCount = profileEntries.filter((entry) => getEntryMode(entry) === "ai").length;
@@ -726,6 +854,10 @@ export default function StudentDirectory({ onLogout, session }) {
             setSelectedStudentNumber("");
             setStudentProfile(null);
             setProfileError("");
+            setProfileEntryFilter("all");
+            setJournalUnlockTarget(null);
+            setJournalUnlockPin("");
+            setJournalUnlockError("");
           }}
           title={studentProfile?.profile?.fullName || "Student Profile"}
           maxWidth="max-w-6xl"
@@ -849,16 +981,24 @@ export default function StudentDirectory({ onLogout, session }) {
                       <div className="text-lg font-semibold text-slate-900">Journal Entries</div>
                       <div className="mt-1 text-sm text-slate-500">Complete journal history with summaries, summary notes, tags, and risk flags.</div>
                     </div>
-                    <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm">
-                      <PenSquare className="h-3.5 w-3.5" />
-                      {profileEntries.length} saved {profileEntries.length === 1 ? "entry" : "entries"}
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <SelectShell
+                        value={profileEntryFilter}
+                        onChange={setProfileEntryFilter}
+                        options={PROFILE_ENTRY_FILTERS}
+                        className="w-full sm:w-44"
+                      />
+                      <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 shadow-sm">
+                        <PenSquare className="h-3.5 w-3.5" />
+                        {filteredProfileEntries.length} of {profileEntries.length} saved {profileEntries.length === 1 ? "entry" : "entries"}
+                      </div>
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-4 px-5 py-5">
-                  {profileEntries.length ? (
-                    profileEntries.map((entry) => (
+                  {filteredProfileEntries.length ? (
+                    filteredProfileEntries.map((entry) => (
                       <div key={entry.id} className="overflow-hidden rounded-[26px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#fbfcfd_100%)] shadow-[0_18px_48px_-38px_rgba(15,23,42,0.45)]">
                         <div className="border-b border-slate-100 bg-[radial-gradient(circle_at_top_left,_rgba(187,247,208,0.32),_transparent_25%),linear-gradient(135deg,#ffffff_0%,#f8fafc_100%)] px-5 py-4">
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -920,7 +1060,15 @@ export default function StudentDirectory({ onLogout, session }) {
                                       : 0} messages
                                 </div>
                               </div>
-                              <EntryConversation entry={entry} studentName={studentProfile.profile.fullName} />
+                              <EntryConversation
+                                entry={entry}
+                                studentName={studentProfile.profile.fullName}
+                                onOpenJournal={(targetEntry) => {
+                                  setJournalUnlockTarget(targetEntry);
+                                  setJournalUnlockPin("");
+                                  setJournalUnlockError("");
+                                }}
+                              />
                             </section>
                           </div>
 
@@ -972,7 +1120,7 @@ export default function StudentDirectory({ onLogout, session }) {
                     ))
                   ) : (
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                      This student does not have journal entries yet.
+                      {profileEntries.length ? "No journal entries matched this filter." : "This student does not have journal entries yet."}
                     </div>
                   )}
                 </div>
@@ -996,6 +1144,20 @@ export default function StudentDirectory({ onLogout, session }) {
           onDateRangeChange={setEntryDateRange}
           onConcernChange={setEntryConcern}
           onClose={() => setIsEntriesModalOpen(false)}
+        />
+
+        <JournalUnlockModal
+          entry={journalUnlockTarget}
+          error={journalUnlockError}
+          pin={journalUnlockPin}
+          saving={journalUnlockSaving}
+          onClose={() => {
+            setJournalUnlockTarget(null);
+            setJournalUnlockPin("");
+            setJournalUnlockError("");
+          }}
+          onPinChange={setJournalUnlockPin}
+          onSubmit={(event) => void handleOpenJournal(event)}
         />
 
         <MessageModal

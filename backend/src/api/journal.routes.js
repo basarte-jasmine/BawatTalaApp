@@ -72,6 +72,15 @@ function countWords(value) {
     .filter(Boolean).length;
 }
 
+function summarizeJournalMessages(messages) {
+  const text = buildEntryContentText(messages)
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return "";
+  const excerpt = text.length > 220 ? `${text.slice(0, 217).trim()}...` : text;
+  return `This entry reflects: ${excerpt}`;
+}
+
 function normalizeConcernValue(value) {
   return normalizeJournalTag(value);
 }
@@ -1096,7 +1105,7 @@ router.post("/message", asyncHandler(async (req, res) => {
 
     aiReply = analysis.pet_reply;
     aiMessage = analysis.unavailable_reason || null;
-    summary = analysis.summary;
+    summary = String(analysis.summary || "").trim() || summary || summarizeJournalMessages(currentMessages);
     insights = analysis.insights;
     riskLevel = analysis.risk_level;
     adminFlagReason = analysis.admin_flag_reason;

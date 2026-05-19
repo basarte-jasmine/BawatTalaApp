@@ -374,13 +374,14 @@ function summarizeLocalMessages(messages: JournalMessage[]) {
 }
 
 function buildPreviewJournalMessages(entry?: {
+  contentText?: string;
   createdAt?: string;
   id?: string;
   preview?: string;
   summary?: string;
   title?: string;
 } | null): JournalMessage[] {
-  const preview = String(entry?.preview || entry?.summary || entry?.title || "")
+  const preview = String(entry?.contentText || entry?.preview || entry?.summary || entry?.title || "")
     .replace(/\s+/g, " ")
     .trim();
   if (!entry?.id || !preview) return [];

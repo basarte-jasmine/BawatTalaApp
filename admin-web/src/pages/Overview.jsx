@@ -2300,14 +2300,16 @@ export default function Overview({ onLogout, session }) {
             className="rounded-2xl border-admin-border"
           >
             {hasSentimentDistributionData ? (
-              <>
-                <DonutChart
-                  data={sentimentDistributionData}
-                  centerValue={sentimentDistributionData.reduce((sum, item) => sum + item.value, 0).toLocaleString()}
-                  centerLabel="Analyzed"
-                />
-                <ChartLegend data={sentimentDistributionData} />
-              </>
+              <div className="mx-auto flex w-full max-w-[720px] flex-col items-center justify-center gap-5 py-3 lg:flex-row lg:gap-8">
+                <div className="w-full max-w-[320px] shrink-0 lg:w-[320px]">
+                  <DonutChart
+                    data={sentimentDistributionData}
+                    centerValue={sentimentDistributionData.reduce((sum, item) => sum + item.value, 0).toLocaleString()}
+                    centerLabel="Analyzed"
+                  />
+                </div>
+                <ChartLegend data={sentimentDistributionData} className="w-full max-w-[260px] shrink-0 lg:mx-0" />
+              </div>
             ) : (
               <EmptyState>No sentiment analysis data available yet.</EmptyState>
             )}

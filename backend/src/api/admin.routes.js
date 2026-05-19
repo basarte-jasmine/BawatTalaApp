@@ -571,6 +571,30 @@ function isUuid(value) {
   );
 }
 
+function normalizePin(value) {
+  return String(value || "").replace(/[^0-9]/g, "").slice(0, 4);
+}
+
+function isJournalLockEnabled(row) {
+  return Boolean(row?.journal_lock_enabled && row?.journal_lock_pin_hash);
+}
+
+function canAdminReviewJournalConversation(riskLevel, supportResponse) {
+  const normalizedRiskLevel = String(riskLevel || "NONE").toUpperCase();
+  const normalizedSupportResponse = String(supportResponse || "").toUpperCase();
+  return ["LOW", "MEDIUM", "MODERATE", "HIGH", "CRITICAL"].includes(normalizedRiskLevel) ||
+    normalizedSupportResponse === "DECLINED";
+}
+
+function serializeAdminJournalMessage(message) {
+  return {
+    createdAt: message.createdAt || message.created_at,
+    id: message.id,
+    role: message.role,
+    text: message.text || message.message_text || "",
+  };
+}
+
 function parseRiskTriggerPayload(body, existing = {}) {
   const phrase =
     Object.prototype.hasOwnProperty.call(body, "phrase")
@@ -3047,6 +3071,126 @@ router.get("/students/recent-entries", async (req, res) => {
   return res.json({ entries, concerns });
 });
 
+router.post("/students/:studentNumber/journal-entries/:entryId/open", async (req, res) => {
+  const studentNumber = normalizeCompactSpaces(req.params.studentNumber || "");
+  const entryId = normalizeCompactSpaces(req.params.entryId || "");
+  const pin = normalizePin(req.body?.pin);
+
+  if (!studentNumber) {
+    return res.status(400).json({ message: "Student number is required." });
+  }
+  if (!entryId) {
+    return res.status(400).json({ message: "Journal entry id is required." });
+  }
+  if (pin.length !== 4) {
+    return res.status(400).json({ message: "Enter the student's 4-digit journal PIN." });
+  }
+
+  const preferenceResult = await query(
+    `
+      select journal_lock_enabled, journal_lock_pin_hash
+      from public.student_app_preferences
+      where student_number = $1
+      limit 1
+    `,
+    [studentNumber],
+  );
+  const preference = preferenceResult.rows[0] || null;
+  const pinHash = preference?.journal_lock_pin_hash || "";
+
+  if (!isJournalLockEnabled(preference)) {
+    return res.status(400).json({ message: "Journal Lock is not enabled for this student." });
+  }
+
+  if (!verifyPassword(pin, pinHash)) {
+    return res.status(403).json({ message: "That PIN doesn't match. Try again." });
+  }
+
+  const entryResult = await query(
+    `
+      select
+        je.id,
+        je.entry_date,
+        je.title,
+        je.summary,
+        je.insights,
+        je.risk_level,
+        je.admin_flag_reason,
+        je.primary_concern,
+        je.concern_tags,
+        je.support_response,
+        je.support_response_at,
+        je.created_at,
+        je.updated_at,
+        coalesce(
+          jsonb_agg(
+            jsonb_build_object(
+              'id', jem.id,
+              'role', jem.role,
+              'text', jem.message_text,
+              'createdAt', jem.created_at
+            )
+            order by jem.created_at asc, jem.id asc
+          ) filter (where jem.id is not null),
+          '[]'::jsonb
+        ) as messages
+      from public.journal_entries je
+      left join public.journal_entry_messages jem on jem.entry_id = je.id
+      where je.id = $1
+        and je.student_number = $2
+        and je.deleted_by_student_at is null
+        and je.is_finished = true
+      group by je.id
+      limit 1
+    `,
+    [entryId, studentNumber],
+  );
+
+  if (entryResult.rowCount === 0) {
+    return res.status(404).json({ message: "Journal entry not found." });
+  }
+
+  const row = entryResult.rows[0];
+  const riskLevel = String(row.risk_level || "NONE").toUpperCase();
+  const supportResponse = String(row.support_response || "").toUpperCase();
+
+  if (!canAdminReviewJournalConversation(riskLevel, supportResponse)) {
+    return res.status(403).json({ message: "Normal journal entries remain protected." });
+  }
+
+  const messages = Array.isArray(row.messages)
+    ? row.messages.map(serializeAdminJournalMessage)
+    : [];
+
+  return res.json({
+    entry: {
+      adminFlagReason: row.admin_flag_reason || null,
+      canOpenJournal: false,
+      canViewConversation: true,
+      concernTags: getJournalTagsForAdmin(row),
+      conversationHidden: false,
+      createdAt: row.created_at,
+      entryDate: normalizeDateValue(row.entry_date),
+      id: row.id,
+      insights: normalizeStringArray(row.insights),
+      journalLockEnabled: true,
+      journalLockRequired: false,
+      journalUnlocked: true,
+      messageCount: messages.length,
+      messages,
+      primaryConcern: row.primary_concern || null,
+      riskLevel,
+      studentNumber,
+      summary: row.summary || "",
+      supportResponse: row.support_response || null,
+      supportResponseAt: row.support_response_at || null,
+      title: row.title || "",
+      updatedAt: row.updated_at,
+    },
+    message: "Journal opened.",
+  });
+});
+
 router.get("/students/:studentNumber", async (req, res) => {
   const studentNumber = normalizeCompactSpaces(req.params.studentNumber || "");
   if (!studentNumber) {
@@ -3077,6 +3221,18 @@ router.get("/students/:studentNumber", async (req, res) => {
   if (profileResult.rowCount === 0) {
     return res.status(404).json({ message: "Student profile not found." });
   }
+
+  const preferenceResult = await query(
+    `
+      select journal_lock_enabled, journal_lock_pin_hash
+      from public.student_app_preferences
+      where student_number = $1
+      limit 1
+    `,
+    [studentNumber],
+  );
+  const preference = preferenceResult.rows[0] || null;
+  const journalLockEnabled = isJournalLockEnabled(preference);
 
   const entriesResult = await query(
     `
@@ -3120,18 +3276,12 @@ router.get("/students/:studentNumber", async (req, res) => {
   const entries = entriesResult.rows.map((row) => {
     const riskLevel = String(row.risk_level || "NONE").toUpperCase();
     const allMessages = Array.isArray(row.messages)
-      ? row.messages.map((message) => ({
-          id: message.id,
-          role: message.role,
-          text: message.text,
-          createdAt: message.createdAt,
-        }))
+      ? row.messages.map(serializeAdminJournalMessage)
       : [];
     const supportResponse = String(row.support_response || "").toUpperCase();
-    const activeRiskReview = ["LOW", "MEDIUM", "MODERATE", "HIGH", "CRITICAL"].includes(riskLevel);
-    const canViewConversation =
-      activeRiskReview ||
-      supportResponse === "DECLINED";
+    const canReviewConversation = canAdminReviewJournalConversation(riskLevel, supportResponse);
+    const canViewConversation = canReviewConversation && !journalLockEnabled;
+    const canOpenJournal = canReviewConversation && journalLockEnabled;
 
     return {
       id: row.id,
@@ -3147,7 +3297,11 @@ router.get("/students/:studentNumber", async (req, res) => {
       supportResponseAt: row.support_response_at || null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      canOpenJournal,
       canViewConversation,
+      journalLockEnabled,
+      journalLockRequired: canOpenJournal && allMessages.length > 0,
+      journalUnlocked: false,
       conversationHidden: !canViewConversation && allMessages.length > 0,
       messageCount: allMessages.length,
       messages: canViewConversation ? allMessages : [],
@@ -3173,6 +3327,8 @@ router.get("/students/:studentNumber", async (req, res) => {
       street: profile.street || "",
       birthdate: profile.birthdate || null,
       createdAt: profile.created_at,
+      hasJournalLockPin: Boolean(preference?.journal_lock_pin_hash),
+      journalLockEnabled,
       totalEntries: entries.length,
       flaggedEntries: flaggedEntryCount,
       status: toStudentStatus({
