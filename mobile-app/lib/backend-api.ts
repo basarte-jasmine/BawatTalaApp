@@ -373,6 +373,30 @@ function summarizeLocalMessages(messages: JournalMessage[]) {
   return text.length > 180 ? `${text.slice(0, 177).trim()}...` : text;
 }
 
+function normalizeJournalMessage(value: unknown): JournalMessage | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  const roleText = String(raw.role || "").trim().toLowerCase();
+  const role = roleText === "assistant" || roleText === "muni" ? "assistant" : "user";
+  const text = String(raw.text || raw.messageText || raw.message_text || raw.content || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return null;
+
+  return {
+    createdAt: String(raw.createdAt || raw.created_at || getNowIsoString()),
+    id: String(raw.id || `message-${Date.now()}-${Math.random().toString(36).slice(2)}`),
+    role,
+    text,
+  };
+}
+
+function normalizeJournalMessages(values: unknown): JournalMessage[] {
+  return Array.isArray(values)
+    ? values.map(normalizeJournalMessage).filter((message): message is JournalMessage => Boolean(message))
+    : [];
+}
+
 function buildPreviewJournalMessages(entry?: {
   contentText?: string;
   createdAt?: string;
@@ -425,7 +449,10 @@ async function upsertLocalJournalRecord(
   if (!entry?.id) return;
   const data = await readLocalJournalData(studentNumber);
   const existingRecord = data.entries[entry.id];
-  const nextMessages = messages.length > 0 ? messages : existingRecord?.messages ?? [];
+  const normalizedMessages = normalizeJournalMessages(messages);
+  const nextMessages = normalizedMessages.length > 0
+    ? normalizedMessages
+    : normalizeJournalMessages(existingRecord?.messages);
   data.entries[entry.id] = {
     entry: { ...entry, syncStatus },
     messages: nextMessages,
@@ -1937,7 +1964,8 @@ export async function fetchJournalEntryById(
 > {
   if (entryId.startsWith("local-")) {
     const record = await getLocalJournalRecord(studentNumber, entryId);
-    const messages = record?.messages?.length ? record.messages : buildPreviewJournalMessages(record?.entry);
+    const localMessages = normalizeJournalMessages(record?.messages);
+    const messages = localMessages.length ? localMessages : buildPreviewJournalMessages(record?.entry);
     return {
       ok: Boolean(record),
       message: record ? "Loaded offline journal entry." : "Unable to load this offline entry.",
@@ -1951,10 +1979,12 @@ export async function fetchJournalEntryById(
     const params = new URLSearchParams({ studentNumber });
     const { response, data } = await get(`/api/journal/entries/${entryId}?${params.toString()}`);
     const localRecord = await getLocalJournalRecord(studentNumber, entryId);
-    const responseMessages = Array.isArray(data?.messages) && data.messages.length > 0
-      ? data.messages
-      : localRecord?.messages?.length
-        ? localRecord.messages
+    const remoteMessages = normalizeJournalMessages(data?.messages);
+    const localMessages = normalizeJournalMessages(localRecord?.messages);
+    const responseMessages = remoteMessages.length > 0
+      ? remoteMessages
+      : localMessages.length > 0
+        ? localMessages
         : buildPreviewJournalMessages(data?.entry);
     if (response.ok) {
       await upsertLocalJournalRecord(studentNumber, data?.entry ?? null, responseMessages);
@@ -1968,7 +1998,8 @@ export async function fetchJournalEntryById(
     };
   } catch {
     const record = await getLocalJournalRecord(studentNumber, entryId);
-    const messages = record?.messages?.length ? record.messages : buildPreviewJournalMessages(record?.entry);
+    const localMessages = normalizeJournalMessages(record?.messages);
+    const messages = localMessages.length ? localMessages : buildPreviewJournalMessages(record?.entry);
     return {
       ok: Boolean(record),
       message: record ? "Loaded journal entry saved on this device." : "Unable to load this journal entry offline.",

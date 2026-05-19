@@ -175,8 +175,8 @@ export default function JournalEntryViewScreen() {
     [entry?.insights, entry?.summary],
   );
   const aiSummaryText = useMemo(
-    () => storedSummaryText || summarizeParagraphs(paragraphs),
-    [paragraphs, storedSummaryText],
+    () => storedSummaryText || summarizeParagraphs(paragraphs) || (entry?.aiEnabled ? "Muni saved this journal entry, but the summary text is still being prepared." : ""),
+    [entry?.aiEnabled, paragraphs, storedSummaryText],
   );
   const usedChatbot = useMemo(
     () => Boolean(entry?.aiEnabled),
@@ -797,6 +797,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 58,
+    zIndex: 0,
   },
   ruleLine: {
     position: "absolute",
@@ -812,16 +813,19 @@ const styles = StyleSheet.create({
     left: 30,
     width: 1,
     backgroundColor: "#E7BFC2",
+    zIndex: 0,
   },
   marginLineCompact: {
     left: 24,
   },
   conversationScroll: {
     flex: 1,
+    zIndex: 2,
   },
   conversationContent: {
     paddingBottom: 16,
     paddingTop: 4,
+    flexGrow: 1,
     rowGap: 8,
   },
   conversationContentCompact: {
