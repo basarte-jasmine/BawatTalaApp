@@ -393,32 +393,41 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
-    const loops = idleValues.map((value, index) => {
-      const loop = Animated.loop(
-        Animated.sequence([
-          Animated.delay(index * 120),
-          Animated.timing(value, {
-            toValue: 1,
-            duration: 1150,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-          Animated.timing(value, {
-            toValue: 0,
-            duration: 1150,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-        ]),
-      );
-      loop.start();
-      return loop;
-    });
+    idleValues.forEach((value) => value.setValue(0));
+    if (!pendingMoodId) {
+      return;
+    }
+
+    const activeMoodIndex = EMOTIONS.findIndex((emotion) => emotion.id === pendingMoodId);
+    const activeMoodValue = idleValues[activeMoodIndex];
+    if (!activeMoodValue) {
+      return;
+    }
+
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(activeMoodValue, {
+          toValue: 1,
+          duration: 1150,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(activeMoodValue, {
+          toValue: 0,
+          duration: 1150,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+
+    loop.start();
 
     return () => {
-      loops.forEach((loop) => loop.stop());
+      loop.stop();
+      activeMoodValue.setValue(0);
     };
-  }, [idleValues]);
+  }, [idleValues, pendingMoodId]);
 
   useEffect(() => {
     const driftLoop = Animated.loop(
@@ -1563,7 +1572,14 @@ export default function HomeScreen() {
 
           <View style={styles.moodRow}>
             {EMOTIONS.map((mood, index) => {
-              const moodImageSource = getEmotionImageSource(mood, pendingMoodId === mood.id || latestMoodId === mood.id);
+              const isMoodActive = pendingMoodId === mood.id;
+              const moodImageSource = getEmotionImageSource(mood, isMoodActive);
+              const moodTranslateY = isMoodActive
+                ? idleValues[index].interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, -4],
+                  })
+                : 0;
 
               return (
                 <View key={mood.label} style={styles.moodItem}>
@@ -1578,12 +1594,7 @@ export default function HomeScreen() {
                         { borderColor: mood.color },
                         {
                           transform: [
-                            {
-                              translateY: idleValues[index].interpolate({
-                                inputRange: [0, 1],
-                                outputRange: [0, -4],
-                              }),
-                            },
+                            { translateY: moodTranslateY },
                             { scale: pressScales[index] },
                           ],
                         },
