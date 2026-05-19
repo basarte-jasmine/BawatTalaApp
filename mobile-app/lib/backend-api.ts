@@ -1625,11 +1625,12 @@ export async function fetchJournalEntryById(
 > {
   if (entryId.startsWith("local-")) {
     const record = await getLocalJournalRecord(studentNumber, entryId);
+    const messages = record?.messages?.length ? record.messages : buildPreviewJournalMessages(record?.entry);
     return {
       ok: Boolean(record),
       message: record ? "Loaded offline journal entry." : "Unable to load this offline entry.",
       entry: record?.entry ?? null,
-      messages: record?.messages ?? [],
+      messages,
     };
   }
 
@@ -1655,11 +1656,12 @@ export async function fetchJournalEntryById(
     };
   } catch {
     const record = await getLocalJournalRecord(studentNumber, entryId);
+    const messages = record?.messages?.length ? record.messages : buildPreviewJournalMessages(record?.entry);
     return {
       ok: Boolean(record),
       message: record ? "Loaded journal entry saved on this device." : "Unable to load this journal entry offline.",
       entry: record?.entry ?? null,
-      messages: record?.messages ?? [],
+      messages,
     };
   }
 }

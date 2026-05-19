@@ -2,6 +2,7 @@ import { Stack } from "expo-router";
 import { useEffect } from "react";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
+import { StatusBar } from "expo-status-bar";
 import {
   StyleSheet,
   Text,
@@ -64,6 +65,7 @@ export default function RootLayout() {
 
   return (
     <View style={[styles.root, useDesktopFrame && styles.desktopRoot]}>
+      <StatusBar style="dark" backgroundColor="#F7FAF4" />
       <View style={[styles.frame, useDesktopFrame && styles.desktopFrame]}>
         <AuthSessionProvider>
           <AppPreferencesProvider>

@@ -71,9 +71,15 @@ function getEntryFallbackParagraphs(entry: JournalEntry | null) {
   if (contentText.length > 0) return contentText;
 
   const previewText = String(entry?.preview || "").replace(/\s+/g, " ").trim();
-  if (previewText && previewText !== String(entry?.summary || "").replace(/\s+/g, " ").trim()) {
+  if (previewText) {
     return [previewText];
   }
+
+  const summaryText = splitParagraphs(entry?.summary);
+  if (summaryText.length > 0) return summaryText;
+
+  const titleText = String(entry?.title || "").replace(/\s+/g, " ").trim();
+  if (titleText && titleText.toLowerCase() !== "journal entry") return [titleText];
 
   return [];
 }
@@ -89,6 +95,7 @@ export default function JournalEntryViewScreen() {
   const [entry, setEntry] = useState<JournalEntry | null>(null);
   const [messages, setMessages] = useState<JournalMessage[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
+  const [isLoadingEntry, setIsLoadingEntry] = useState(true);
   const [summaryFeedbackError, setSummaryFeedbackError] = useState("");
   const [summaryFeedbackReason, setSummaryFeedbackReason] = useState("");
   const [isNeedsWorkReasonVisible, setIsNeedsWorkReasonVisible] = useState(false);
@@ -98,17 +105,20 @@ export default function JournalEntryViewScreen() {
     if (!user?.studentNumber || !entryId) {
       setEntry(null);
       setMessages([]);
+      setIsLoadingEntry(false);
       setSummaryFeedbackError("");
       setSummaryFeedbackReason("");
       setIsNeedsWorkReasonVisible(false);
       return;
     }
 
+    setIsLoadingEntry(true);
     const result = await fetchJournalEntryById(user.studentNumber, entryId);
     if (!result.ok) {
       setErrorMessage(result.message ?? "Unable to load this journal entry.");
       setEntry(null);
       setMessages([]);
+      setIsLoadingEntry(false);
       setSummaryFeedbackError("");
       setSummaryFeedbackReason("");
       setIsNeedsWorkReasonVisible(false);
@@ -118,6 +128,7 @@ export default function JournalEntryViewScreen() {
     setErrorMessage("");
     setEntry(result.entry ?? null);
     setMessages(result.messages ?? []);
+    setIsLoadingEntry(false);
     setSummaryFeedbackError("");
     setSummaryFeedbackReason("");
     setIsNeedsWorkReasonVisible(false);
@@ -416,7 +427,12 @@ export default function JournalEntryViewScreen() {
                 >
                   {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
-                  {displayMessages.length > 0 ? (
+                  {isLoadingEntry ? (
+                    <View style={[styles.notebookStateCard, compact && styles.notebookStateCardCompact]}>
+                      <Ionicons name="book-outline" size={20} color="#4B8F33" />
+                      <Text style={styles.notebookStateTitle}>Loading journal entry...</Text>
+                    </View>
+                  ) : displayMessages.length > 0 ? (
                     displayMessages.map((line) =>
                       line.role === "assistant" ? (
                         <View key={line.id} style={[styles.leftMessageRow, compact && styles.leftMessageRowCompact]}>
@@ -431,7 +447,13 @@ export default function JournalEntryViewScreen() {
                       ),
                     )
                   ) : (
-                    <Text style={styles.emptyConversationText}>No saved conversation text found for this entry.</Text>
+                    <View style={[styles.notebookStateCard, compact && styles.notebookStateCardCompact]}>
+                      <Ionicons name="document-text-outline" size={20} color="#6E8D62" />
+                      <Text style={styles.notebookStateTitle}>No saved conversation text found</Text>
+                      <Text style={styles.notebookStateText}>
+                        This entry may only have saved tags or summary data on this device.
+                      </Text>
+                    </View>
                   )}
 
                   {hasGeneratedSummary ? (
@@ -461,14 +483,25 @@ export default function JournalEntryViewScreen() {
             <ScrollView style={styles.bodyScroll} contentContainerStyle={styles.bodyContent} showsVerticalScrollIndicator={false}>
               {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
-              {paragraphs.length > 0 ? (
+              {isLoadingEntry ? (
+                <View style={styles.emptyContentCard}>
+                  <Ionicons name="book-outline" size={20} color="#4B8F33" />
+                  <Text style={styles.emptyContentTitle}>Loading journal entry...</Text>
+                </View>
+              ) : paragraphs.length > 0 ? (
                 paragraphs.map((paragraph, index) => (
                   <Text key={`${index}-${paragraph.slice(0, 16)}`} style={styles.paragraphText}>
                     {paragraph}
                   </Text>
                 ))
               ) : (
-                <Text style={styles.paragraphText}>No saved journal content found for this entry.</Text>
+                <View style={styles.emptyContentCard}>
+                  <Ionicons name="document-text-outline" size={20} color="#6E8D62" />
+                  <Text style={styles.emptyContentTitle}>No saved journal content found</Text>
+                  <Text style={styles.emptyContentText}>
+                    This entry may only have saved tags or summary data on this device.
+                  </Text>
+                </View>
               )}
 
               {hasGeneratedSummary ? (
@@ -949,19 +982,66 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: 10,
   },
-  emptyConversationText: {
-    color: "#5D6C76",
-    fontSize: 13,
-    lineHeight: 19,
+  notebookStateCard: {
     marginLeft: 22,
     marginRight: 10,
     marginTop: 4,
+    marginBottom: 10,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#DCE8D2",
+    backgroundColor: "#F7FBF2",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+    rowGap: 6,
+  },
+  notebookStateCardCompact: {
+    marginLeft: 16,
+    marginRight: 6,
+    paddingHorizontal: 12,
+  },
+  notebookStateTitle: {
+    color: "#34475A",
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  notebookStateText: {
+    color: "#5D6C76",
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: "center",
   },
   paragraphText: {
     color: "#31465A",
     fontSize: 15,
     lineHeight: 24,
     marginBottom: 18,
+  },
+  emptyContentCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#DCE8D2",
+    backgroundColor: "#F7FBF2",
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+    alignItems: "center",
+    rowGap: 6,
+  },
+  emptyContentTitle: {
+    color: "#34475A",
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  emptyContentText: {
+    color: "#5D6C76",
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: "center",
   },
   summaryWrap: {
     marginTop: 10,
