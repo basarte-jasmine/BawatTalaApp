@@ -274,10 +274,26 @@ type StoredCheckInData = {
   status?: CheckInStatusSnapshot;
 };
 
+type StoredStudentPreferences = {
+  journalLockPin?: string | null;
+  pendingPreferences?: (Partial<StudentPreferences> & { journalLockPin?: string }) | null;
+  preferences?: StudentPreferences | null;
+  syncStatus?: "pending" | "synced";
+  updatedAt?: string;
+};
+
 const LOCAL_JOURNAL_STORAGE_PREFIX = "bawattala.localJournal.";
 const LOCAL_MOOD_STORAGE_PREFIX = "bawattala.localMoods.";
 const LOCAL_CHECKIN_STORAGE_PREFIX = "bawattala.localCheckIns.";
+const LOCAL_PREFERENCES_STORAGE_PREFIX = "bawattala.localPreferences.";
 const DAILY_CHECKIN_REWARDS = [10, 20, 30, 50, 70, 100, 150];
+const DEFAULT_STUDENT_PREFERENCES: StudentPreferences = {
+  hasJournalLockPin: false,
+  journalLockAutoLock: true,
+  journalLockEnabled: false,
+  notificationPreviewsEnabled: true,
+  privateJournalModeEnabled: true,
+};
 
 function getLocalJournalStorageKey(studentNumber: string) {
   return `${LOCAL_JOURNAL_STORAGE_PREFIX}${studentNumber}`;
@@ -289,6 +305,10 @@ function getLocalMoodStorageKey(studentNumber: string) {
 
 function getLocalCheckInStorageKey(studentNumber: string) {
   return `${LOCAL_CHECKIN_STORAGE_PREFIX}${studentNumber}`;
+}
+
+function getLocalPreferencesStorageKey(studentNumber: string) {
+  return `${LOCAL_PREFERENCES_STORAGE_PREFIX}${studentNumber}`;
 }
 
 function getNowIsoString() {
@@ -815,6 +835,101 @@ async function claimLocalDailyCheckIn(studentNumber: string) {
   };
 }
 
+function normalizeStudentPreferences(value?: Partial<StudentPreferences> | null): StudentPreferences {
+  return {
+    hasJournalLockPin: Boolean(value?.hasJournalLockPin),
+    journalLockAutoLock:
+      value?.journalLockAutoLock === undefined
+        ? DEFAULT_STUDENT_PREFERENCES.journalLockAutoLock
+        : Boolean(value.journalLockAutoLock),
+    journalLockEnabled: Boolean(value?.journalLockEnabled),
+    notificationPreviewsEnabled:
+      value?.notificationPreviewsEnabled === undefined
+        ? DEFAULT_STUDENT_PREFERENCES.notificationPreviewsEnabled
+        : Boolean(value.notificationPreviewsEnabled),
+    privateJournalModeEnabled:
+      value?.privateJournalModeEnabled === undefined
+        ? DEFAULT_STUDENT_PREFERENCES.privateJournalModeEnabled
+        : Boolean(value.privateJournalModeEnabled),
+  };
+}
+
+async function readLocalStudentPreferences(studentNumber: string): Promise<StoredStudentPreferences> {
+  const storedValue = await AsyncStorage.getItem(getLocalPreferencesStorageKey(studentNumber));
+  if (!storedValue) return {};
+
+  try {
+    const parsed = JSON.parse(storedValue);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+async function writeLocalStudentPreferences(studentNumber: string, data: StoredStudentPreferences) {
+  await AsyncStorage.setItem(getLocalPreferencesStorageKey(studentNumber), JSON.stringify({
+    ...data,
+    updatedAt: getNowIsoString(),
+  }));
+}
+
+async function cacheStudentPreferences(
+  studentNumber: string,
+  preferences?: Partial<StudentPreferences> | null,
+  journalLockPin?: string,
+  syncStatus: "pending" | "synced" = "synced",
+  pendingPreferences?: StoredStudentPreferences["pendingPreferences"],
+) {
+  const current = await readLocalStudentPreferences(studentNumber);
+  const normalized = normalizeStudentPreferences({
+    ...(current.preferences ?? DEFAULT_STUDENT_PREFERENCES),
+    ...(preferences ?? {}),
+  });
+  await writeLocalStudentPreferences(studentNumber, {
+    ...current,
+    journalLockPin:
+      journalLockPin !== undefined
+        ? journalLockPin
+        : normalized.hasJournalLockPin
+          ? current.journalLockPin ?? null
+          : null,
+    pendingPreferences:
+      pendingPreferences === undefined
+        ? current.pendingPreferences ?? null
+        : pendingPreferences,
+    preferences: normalized,
+    syncStatus,
+  });
+}
+
+async function syncPendingStudentPreferences(studentNumber: string) {
+  const local = await readLocalStudentPreferences(studentNumber);
+  if (local.syncStatus !== "pending" || !local.pendingPreferences) {
+    return true;
+  }
+
+  try {
+    const { response, data } = await patch("/api/auth/preferences", {
+      studentNumber,
+      ...local.pendingPreferences,
+    });
+    if (!response.ok) {
+      return false;
+    }
+
+    await cacheStudentPreferences(
+      studentNumber,
+      data?.preferences ?? local.preferences ?? DEFAULT_STUDENT_PREFERENCES,
+      local.pendingPreferences.journalLockPin ?? local.journalLockPin ?? undefined,
+      "synced",
+      null,
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function shouldWarmBackend() {
   return API_BASE_URL.includes(".onrender.com");
 }
@@ -831,6 +946,30 @@ export async function warmBackend(): Promise<void> {
   }
 
   await backendWarmupPromise;
+}
+
+export async function syncOfflineStudentData(studentNumber: string): Promise<ApiResult> {
+  try {
+    const [preferencesSynced, checkInsSynced] = await Promise.all([
+      syncPendingStudentPreferences(studentNumber),
+      syncPendingCheckIns(studentNumber),
+    ]);
+    await syncPendingMoodEntries(studentNumber);
+    await syncPendingJournalEntries(studentNumber);
+
+    return {
+      ok: preferencesSynced && checkInsSynced,
+      message:
+        preferencesSynced && checkInsSynced
+          ? "Offline data synced."
+          : "Some offline data is still waiting to sync.",
+    };
+  } catch {
+    return {
+      ok: false,
+      message: "Offline data will sync when your connection returns.",
+    };
+  }
 }
 
 async function get(path: string) {
@@ -911,13 +1050,27 @@ export async function fetchStudentPreferences(
   studentNumber: string,
 ): Promise<ApiResult & { preferences?: StudentPreferences | null }> {
   const params = new URLSearchParams({ studentNumber });
-  const { response, data } = await get(`/api/auth/preferences?${params.toString()}`);
+  try {
+    await syncPendingStudentPreferences(studentNumber);
+    const { response, data } = await get(`/api/auth/preferences?${params.toString()}`);
 
-  return {
-    ok: response.ok,
-    message: data?.message,
-    preferences: data?.preferences ?? null,
-  };
+    if (response.ok && data?.preferences) {
+      await cacheStudentPreferences(studentNumber, data.preferences);
+    }
+
+    return {
+      ok: response.ok,
+      message: data?.message,
+      preferences: data?.preferences ?? null,
+    };
+  } catch {
+    const local = await readLocalStudentPreferences(studentNumber);
+    return {
+      ok: Boolean(local.preferences),
+      message: local.preferences ? "Showing preferences saved on this device." : "Unable to load preferences offline.",
+      preferences: local.preferences ?? null,
+    };
+  }
 }
 
 export async function saveStudentPreferences(
@@ -935,32 +1088,104 @@ export async function saveStudentPreferences(
     previousJournalLockPin?: string;
   },
 ): Promise<ApiResult & { preferences?: StudentPreferences | null }> {
-  const { response, data } = await patch("/api/auth/preferences", {
-    studentNumber,
-    ...preferences,
-  });
+  try {
+    await syncPendingStudentPreferences(studentNumber);
+    const { response, data } = await patch("/api/auth/preferences", {
+      studentNumber,
+      ...preferences,
+    });
 
-  return {
-    ok: response.ok,
-    message: data?.message,
-    preferences: data?.preferences ?? null,
-  };
+    if (response.ok && data?.preferences) {
+      await cacheStudentPreferences(studentNumber, data.preferences, preferences.journalLockPin);
+    }
+
+    return {
+      ok: response.ok,
+      message: data?.message,
+      preferences: data?.preferences ?? null,
+    };
+  } catch {
+    const local = await readLocalStudentPreferences(studentNumber);
+    if (preferences.previousJournalLockPin && local.journalLockPin !== preferences.previousJournalLockPin) {
+      return { ok: false, message: "Previous PIN does not match this device." };
+    }
+
+    const nextPreferences = normalizeStudentPreferences({
+      ...(local.preferences ?? DEFAULT_STUDENT_PREFERENCES),
+      ...preferences,
+      hasJournalLockPin:
+        preferences.journalLockPin !== undefined || local.preferences?.hasJournalLockPin === true,
+      journalLockEnabled:
+        preferences.journalLockEnabled ??
+        local.preferences?.journalLockEnabled ??
+        DEFAULT_STUDENT_PREFERENCES.journalLockEnabled,
+    });
+    if (preferences.journalLockPin !== undefined) {
+      nextPreferences.hasJournalLockPin = true;
+    }
+    if (preferences.journalLockEnabled === false) {
+      nextPreferences.journalLockEnabled = false;
+    }
+
+    const pendingPreferences = {
+      ...preferences,
+      journalLockPin: preferences.journalLockPin,
+    };
+    delete pendingPreferences.previousJournalLockPin;
+
+    await cacheStudentPreferences(
+      studentNumber,
+      nextPreferences,
+      preferences.journalLockPin,
+      "pending",
+      pendingPreferences,
+    );
+
+    return {
+      ok: true,
+      message: "Saved on this device. It will sync when your connection returns.",
+      preferences: nextPreferences,
+    };
+  }
 }
 
 export async function verifyJournalLockPin(
   studentNumber: string,
   pin: string,
 ): Promise<ApiResult & { unlocked?: boolean }> {
-  const { response, data } = await post("/api/auth/preferences/journal-lock/verify", {
-    studentNumber,
-    pin,
-  });
+  try {
+    const { response, data } = await post("/api/auth/preferences/journal-lock/verify", {
+      studentNumber,
+      pin,
+    });
 
-  return {
-    ok: response.ok,
-    message: data?.message,
-    unlocked: Boolean(data?.unlocked),
-  };
+    if (response.ok && data?.unlocked) {
+      const local = await readLocalStudentPreferences(studentNumber);
+      await cacheStudentPreferences(
+        studentNumber,
+        local.preferences ?? { hasJournalLockPin: true, journalLockEnabled: true },
+        pin,
+        local.syncStatus ?? "synced",
+        local.pendingPreferences,
+      );
+    }
+
+    return {
+      ok: response.ok,
+      message: data?.message,
+      unlocked: Boolean(data?.unlocked),
+    };
+  } catch {
+    const local = await readLocalStudentPreferences(studentNumber);
+    const unlocked = Boolean(local.journalLockPin && local.journalLockPin === pin);
+    return {
+      ok: unlocked,
+      message: unlocked
+        ? "Unlocked with the PIN saved on this device."
+        : "Connect once after setting your PIN so this device can unlock your journal offline.",
+      unlocked,
+    };
+  }
 }
 
 export async function resetJournalLockWithStudentId(
@@ -971,6 +1196,10 @@ export async function resetJournalLockWithStudentId(
     studentNumber,
     studentNumberConfirmation,
   });
+
+  if (response.ok && data?.preferences) {
+    await cacheStudentPreferences(studentNumber, data.preferences, undefined, "synced", null);
+  }
 
   return {
     ok: response.ok,

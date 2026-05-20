@@ -15,6 +15,7 @@ import {
 import { AuthSessionProvider } from "../lib/auth-session";
 import { AppPreferencesProvider } from "../lib/app-preferences";
 import { warmBackend } from "../lib/backend-api";
+import { OfflineSyncProvider } from "../lib/offline-sync";
 
 const APP_MAX_WIDTH = 412;
 const DESKTOP_FRAME_BREAKPOINT = 768;
@@ -69,13 +70,15 @@ export default function RootLayout() {
       <View style={[styles.frame, useDesktopFrame && styles.desktopFrame]}>
         <AuthSessionProvider>
           <AppPreferencesProvider>
-            <Stack
-              screenOptions={{
-                headerShown: false,
-                animation: "fade_from_bottom",
-                animationDuration: 160,
-              }}
-            />
+            <OfflineSyncProvider>
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  animation: "fade_from_bottom",
+                  animationDuration: 160,
+                }}
+              />
+            </OfflineSyncProvider>
           </AppPreferencesProvider>
         </AuthSessionProvider>
       </View>

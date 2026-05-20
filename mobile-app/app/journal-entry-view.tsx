@@ -1,12 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { fetchJournalEntryById, JournalEntry, JournalMessage, rateJournalEntrySummary } from "../lib/backend-api";
 import { JournalLockGate } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
+import { useOfflineSync } from "../lib/offline-sync";
 
 const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
 const NOTEBOOK_RINGS = Array.from({ length: 12 }, (_, index) => index);
@@ -103,6 +104,7 @@ function countWords(value: string) {
 
 export default function JournalEntryViewScreen() {
   const { user } = useAuthSession();
+  const { isSyncing, refreshKey, syncNow } = useOfflineSync();
   const { entryId } = useLocalSearchParams<{ entryId?: string }>();
   const { width } = useWindowDimensions();
   const [entry, setEntry] = useState<JournalEntry | null>(null);
@@ -113,6 +115,7 @@ export default function JournalEntryViewScreen() {
   const [summaryFeedbackReason, setSummaryFeedbackReason] = useState("");
   const [isNeedsWorkReasonVisible, setIsNeedsWorkReasonVisible] = useState(false);
   const [isSavingSummaryRating, setIsSavingSummaryRating] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const loadEntry = useCallback(async () => {
     if (!user?.studentNumber || !entryId) {
@@ -152,6 +155,18 @@ export default function JournalEntryViewScreen() {
       void loadEntry();
     }, [loadEntry]),
   );
+
+  useEffect(() => {
+    if (!user?.studentNumber || !entryId) return;
+    void loadEntry();
+  }, [entryId, loadEntry, refreshKey, user?.studentNumber]);
+
+  const handleRefreshEntry = useCallback(async () => {
+    setIsRefreshing(true);
+    await syncNow();
+    await loadEntry();
+    setIsRefreshing(false);
+  }, [loadEntry, syncNow]);
 
   const visibleMessages = useMemo(
     () => messages.filter((message) => String(message.text || "").trim() && !isSyntheticSummaryPreview(message, entry)),
@@ -437,6 +452,14 @@ export default function JournalEntryViewScreen() {
                   style={styles.conversationScroll}
                   contentContainerStyle={[styles.conversationContent, compact && styles.conversationContentCompact]}
                   showsVerticalScrollIndicator={false}
+                  refreshControl={
+                    <RefreshControl
+                      refreshing={isRefreshing || isSyncing}
+                      onRefresh={handleRefreshEntry}
+                      colors={["#73CD44"]}
+                      tintColor="#73CD44"
+                    />
+                  }
                 >
                   {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
@@ -493,7 +516,19 @@ export default function JournalEntryViewScreen() {
           </View>
         ) : (
           <View style={[styles.card, compact && styles.cardCompact]}>
-            <ScrollView style={styles.bodyScroll} contentContainerStyle={styles.bodyContent} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={styles.bodyScroll}
+              contentContainerStyle={styles.bodyContent}
+              showsVerticalScrollIndicator={false}
+              refreshControl={
+                <RefreshControl
+                  refreshing={isRefreshing || isSyncing}
+                  onRefresh={handleRefreshEntry}
+                  colors={["#73CD44"]}
+                  tintColor="#73CD44"
+                />
+              }
+            >
               {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
               {isLoadingEntry ? (

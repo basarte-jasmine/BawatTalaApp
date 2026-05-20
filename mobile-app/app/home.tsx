@@ -4,7 +4,7 @@ import DateTimePicker, { DateTimePickerAndroid, type DateTimePickerEvent } from 
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Easing, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { Animated, Easing, Image, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, Ellipse, LinearGradient, Path, Rect, Stop } from "react-native-svg";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
@@ -25,6 +25,7 @@ import {
 import { EMOTIONS, getEmotionImageSource } from "../lib/emotions";
 import { getManilaTodayParts } from "../lib/manila-date";
 import { isAdminMessageNotification } from "../lib/notification-utils";
+import { useOfflineSync } from "../lib/offline-sync";
 
 type DailyCheckinReward = {
   id: string;
@@ -302,6 +303,7 @@ const DRIFTING_BOTTLE_NOTES: DriftingBottleNote[] = [
 
 export default function HomeScreen() {
   const { user } = useAuthSession();
+  const { isSyncing, refreshKey, syncNow } = useOfflineSync();
   const { height, width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { consultConfirmed, appointmentId, welcome } = useLocalSearchParams<{
@@ -335,6 +337,7 @@ export default function HomeScreen() {
   const [moodSaveStatusTone, setMoodSaveStatusTone] = useState<"success" | "error">("success");
   const [pendingMoodId, setPendingMoodId] = useState<string | null>(null);
   const [isSavingMood, setIsSavingMood] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [recentEntries, setRecentEntries] = useState<RecentEntryCard[]>([]);
   const [libraryPreviewBooks, setLibraryPreviewBooks] = useState<LibraryBookRecord[]>([]);
   const [recentEntriesSort, setRecentEntriesSort] = useState<HomeRecentFilter>("newest");
@@ -935,17 +938,35 @@ export default function HomeScreen() {
   const latestMoodLabel = latestMoodId ? EMOTIONS.find((emotion) => emotion.id === latestMoodId)?.label ?? "" : "";
   const pendingMood = pendingMoodId ? EMOTIONS.find((emotion) => emotion.id === pendingMoodId) ?? null : null;
 
+  const loadHomeData = useCallback(async () => {
+    await Promise.all([
+      loadTodayMood(),
+      loadCheckInStatus(),
+      loadRecentEntries(),
+      loadUpcomingAppointment(),
+      loadLibraryPreview(),
+      loadNotifications(),
+      loadScheduledBottleNote(),
+    ]);
+  }, [loadCheckInStatus, loadLibraryPreview, loadNotifications, loadRecentEntries, loadScheduledBottleNote, loadTodayMood, loadUpcomingAppointment]);
+
   useFocusEffect(
     useCallback(() => {
-      void loadTodayMood();
-      void loadCheckInStatus();
-      void loadRecentEntries();
-      void loadUpcomingAppointment();
-      void loadLibraryPreview();
-      void loadNotifications();
-      void loadScheduledBottleNote();
-    }, [loadCheckInStatus, loadLibraryPreview, loadNotifications, loadRecentEntries, loadScheduledBottleNote, loadTodayMood, loadUpcomingAppointment]),
+      void loadHomeData();
+    }, [loadHomeData]),
   );
+
+  useEffect(() => {
+    if (!user?.studentNumber) return;
+    void loadHomeData();
+  }, [loadHomeData, refreshKey, user?.studentNumber]);
+
+  const handleRefreshHome = useCallback(async () => {
+    setIsRefreshing(true);
+    await syncNow();
+    await loadHomeData();
+    setIsRefreshing(false);
+  }, [loadHomeData, syncNow]);
 
   const handleMoodSelect = (moodId: string) => {
     if (!user?.studentNumber || isSavingMood) {
@@ -1423,6 +1444,14 @@ export default function HomeScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing || isSyncing}
+            onRefresh={handleRefreshHome}
+            colors={["#73CD44"]}
+            tintColor="#73CD44"
+          />
+        }
         onScroll={(event) => handleHomeScroll(event.nativeEvent.contentOffset.y)}
       >
         <View style={[styles.quoteHero, compact && styles.quoteHeroCompact, tiny && styles.quoteHeroTiny]}>

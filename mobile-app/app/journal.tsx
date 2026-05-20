@@ -1,8 +1,8 @@
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
-import { useCallback, useMemo, useState } from "react";
-import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Image, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { fetchJournalCalendar, fetchJournalEntriesByDate } from "../lib/backend-api";
@@ -10,6 +10,7 @@ import { JournalLockGate } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
 import { InformedConsentGate } from "../lib/informed-consent";
 import { getManilaTodayParts } from "../lib/manila-date";
+import { useOfflineSync } from "../lib/offline-sync";
 
 type WeekDayItem = {
   date: number;
@@ -70,6 +71,7 @@ function formatLongDate(isoDate: string) {
 
 export default function JournalScreen() {
   const { user } = useAuthSession();
+  const { isSyncing, refreshKey, syncNow } = useOfflineSync();
   const { height } = useWindowDimensions();
   const compact = height < 760;
   const veryCompact = height < 700;
@@ -79,6 +81,7 @@ export default function JournalScreen() {
   const [insightText, setInsightText] = useState(
     "There is no journal summary for this date yet.",
   );
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [showFullInsightModal, setShowFullInsightModal] = useState(false);
 
   const selectedDay = useMemo(
@@ -121,6 +124,18 @@ export default function JournalScreen() {
     }, [loadWeekData, weekAnchorDate]),
   );
 
+  useEffect(() => {
+    if (!user?.studentNumber) return;
+    void loadWeekData(weekAnchorDate);
+  }, [loadWeekData, refreshKey, user?.studentNumber, weekAnchorDate]);
+
+  const handleRefreshJournal = useCallback(async () => {
+    setIsRefreshing(true);
+    await syncNow();
+    await loadWeekData(weekAnchorDate);
+    setIsRefreshing(false);
+  }, [loadWeekData, syncNow, weekAnchorDate]);
+
   const handleMoveWeek = useCallback((direction: -1 | 1) => {
     const [year, month, day] = weekAnchorDate.split("-").map(Number);
     const nextDate = new Date(year, month - 1, day);
@@ -146,6 +161,14 @@ export default function JournalScreen() {
           style={styles.scroll}
           contentContainerStyle={[styles.content, compact && styles.contentCompact, veryCompact && styles.contentVeryCompact]}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing || isSyncing}
+              onRefresh={handleRefreshJournal}
+              colors={["#73CD44"]}
+              tintColor="#73CD44"
+            />
+          }
         >
         <View style={[styles.topSection, compact && styles.topSectionCompact]}>
           <View style={[styles.calendarCard, compact && styles.calendarCardCompact]}>

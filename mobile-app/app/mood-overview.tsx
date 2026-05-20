@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Image, ImageSourcePropType, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, ImageSourcePropType, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { useAuthSession } from "../lib/auth-session";
@@ -10,6 +10,7 @@ import { fetchMonthlyMoods, type MoodEntryRecord } from "../lib/backend-api";
 import { EMOTION_META, EMOTION_ORDER, createEmotionCounts, getEmotionImageSource, normalizeEmotionId } from "../lib/emotions";
 import { InformedConsentGate } from "../lib/informed-consent";
 import { getManilaTodayParts } from "../lib/manila-date";
+import { useOfflineSync } from "../lib/offline-sync";
 
 type MoodStat = {
   color: string;
@@ -69,6 +70,7 @@ function formatMoodSourceLabel(value?: string) {
 
 export default function MoodOverviewScreen() {
   const { user } = useAuthSession();
+  const { isSyncing, refreshKey, syncNow } = useOfflineSync();
   const [now, setNow] = useState(() => getManilaTodayParts());
   const initialMonth = useMemo(() => {
     const currentYear = now.year;
@@ -88,6 +90,7 @@ export default function MoodOverviewScreen() {
   const [totalCheckIns, setTotalCheckIns] = useState(0);
   const [selectedDayNumber, setSelectedDayNumber] = useState(now.day);
   const [showDailyRecordsModal, setShowDailyRecordsModal] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -126,6 +129,20 @@ export default function MoodOverviewScreen() {
       void loadMonth();
     }, [loadMonth]),
   );
+
+  useEffect(() => {
+    if (!user?.studentNumber) return;
+    setNow(getManilaTodayParts());
+    void loadMonth();
+  }, [loadMonth, refreshKey, user?.studentNumber]);
+
+  const handleRefreshMoods = useCallback(async () => {
+    setIsRefreshing(true);
+    await syncNow();
+    setNow(getManilaTodayParts());
+    await loadMonth();
+    setIsRefreshing(false);
+  }, [loadMonth, syncNow]);
 
   const moodStats: MoodStat[] = useMemo(
     () =>
@@ -296,7 +313,19 @@ export default function MoodOverviewScreen() {
       </View>
 
       <InformedConsentGate feature="mood">
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing || isSyncing}
+            onRefresh={handleRefreshMoods}
+            colors={["#73CD44"]}
+            tintColor="#73CD44"
+          />
+        }
+      >
         <View style={styles.dailyCard}>
           <View style={styles.dailyHeader}>
             <View style={styles.summaryHeaderCopy}>

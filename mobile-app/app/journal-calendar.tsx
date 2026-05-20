@@ -1,13 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { fetchJournalCalendar, fetchJournalEntriesByDate } from "../lib/backend-api";
 import { JournalLockGate } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
 import { getManilaTodayParts } from "../lib/manila-date";
+import { useOfflineSync } from "../lib/offline-sync";
 
 type CalendarEntryItem = {
   createdAt: string;
@@ -78,12 +79,14 @@ function formatEntryTime(createdAt: string) {
 
 export default function JournalCalendarScreen() {
   const { user } = useAuthSession();
+  const { isSyncing, refreshKey, syncNow } = useOfflineSync();
   const manilaToday = getManilaTodayParts();
   const [selectedYear, setSelectedYear] = useState(Math.max(MIN_YEAR, manilaToday.year));
   const [entryCountsByMonth, setEntryCountsByMonth] = useState<Record<number, Record<number, number>>>({});
   const [selectedDate, setSelectedDate] = useState(manilaToday.isoDate);
   const [selectedEntries, setSelectedEntries] = useState<CalendarEntryItem[]>([]);
   const [showEntriesModal, setShowEntriesModal] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const months = useMemo(() => buildMonths(selectedYear), [selectedYear]);
 
@@ -131,6 +134,22 @@ export default function JournalCalendarScreen() {
     }, [loadCalendar, loadEntriesForDate, selectedDate, selectedYear]),
   );
 
+  useEffect(() => {
+    if (!user?.studentNumber) return;
+    void loadCalendar(selectedYear);
+    void loadEntriesForDate(selectedDate);
+  }, [loadCalendar, loadEntriesForDate, refreshKey, selectedDate, selectedYear, user?.studentNumber]);
+
+  const handleRefreshCalendar = useCallback(async () => {
+    setIsRefreshing(true);
+    await syncNow();
+    await Promise.all([
+      loadCalendar(selectedYear),
+      loadEntriesForDate(selectedDate),
+    ]);
+    setIsRefreshing(false);
+  }, [loadCalendar, loadEntriesForDate, selectedDate, selectedYear, syncNow]);
+
   const handleChangeYear = useCallback((nextYear: number) => {
     if (nextYear < MIN_YEAR) {
       return;
@@ -167,7 +186,19 @@ export default function JournalCalendarScreen() {
       </View>
 
       <JournalLockGate>
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing || isSyncing}
+              onRefresh={handleRefreshCalendar}
+              colors={["#73CD44"]}
+              tintColor="#73CD44"
+            />
+          }
+        >
         <View style={styles.heroCard}>
           <View style={styles.heroCopy}>
             <Text style={styles.heroEyebrow}>YEAR VIEW</Text>

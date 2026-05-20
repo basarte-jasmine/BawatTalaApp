@@ -1,8 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
@@ -11,6 +11,7 @@ import { deleteJournalEntry, fetchRecentJournalEntries } from "../lib/backend-ap
 import { JournalLockGate } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
 import { getManilaTodayParts } from "../lib/manila-date";
+import { useOfflineSync } from "../lib/offline-sync";
 
 const BOOK_IMAGE = require("../assets/images/book_sample.png");
 
@@ -83,6 +84,7 @@ function formatCreatedAtTime(createdAt: string) {
 
 export default function JournalEntriesScreen() {
   const { user } = useAuthSession();
+  const { isSyncing, refreshKey, syncNow } = useOfflineSync();
   const [entries, setEntries] = useState<RecentEntryItem[]>([]);
   const [progress, setProgress] = useState({
     monthlyCount: 0,
@@ -90,6 +92,7 @@ export default function JournalEntriesScreen() {
     totalCount: 0,
   });
   const [pendingDeleteEntryId, setPendingDeleteEntryId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const loadEntries = useCallback(async () => {
     if (!user?.studentNumber) {
@@ -120,6 +123,18 @@ export default function JournalEntriesScreen() {
       void loadEntries();
     }, [loadEntries]),
   );
+
+  useEffect(() => {
+    if (!user?.studentNumber) return;
+    void loadEntries();
+  }, [loadEntries, refreshKey, user?.studentNumber]);
+
+  const handleRefreshEntries = useCallback(async () => {
+    setIsRefreshing(true);
+    await syncNow();
+    await loadEntries();
+    setIsRefreshing(false);
+  }, [loadEntries, syncNow]);
 
   const progressItems = [
     { id: "today", value: String(progress.todayCount), label: "Today's Entries" },
@@ -163,7 +178,19 @@ export default function JournalEntriesScreen() {
       </View>
 
       <JournalLockGate>
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing || isSyncing}
+              onRefresh={handleRefreshEntries}
+              colors={["#73CD44"]}
+              tintColor="#73CD44"
+            />
+          }
+        >
         <View style={styles.progressCard}>
           <View style={styles.progressHeader}>
             <View>
