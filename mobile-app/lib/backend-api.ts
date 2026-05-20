@@ -472,8 +472,15 @@ async function upsertLocalJournalRecord(
   const nextMessages = normalizedMessages.length > 0
     ? normalizedMessages
     : normalizeJournalMessages(existingRecord?.messages);
+  const hasAssistantMessages = nextMessages.some((message) => message.role === "assistant");
+  const nextEntry = {
+    ...(existingRecord?.entry ?? {}),
+    ...entry,
+    aiEnabled: Boolean(entry.aiEnabled || existingRecord?.entry?.aiEnabled || hasAssistantMessages),
+    syncStatus,
+  };
   data.entries[entry.id] = {
-    entry: { ...entry, syncStatus },
+    entry: nextEntry,
     messages: nextMessages,
   };
   await writeLocalJournalData(studentNumber, data);
@@ -2230,6 +2237,15 @@ export async function fetchJournalEntryById(
       : localMessages.length > 0
         ? localMessages
         : buildPreviewJournalMessages(data?.entry);
+    if (!response.ok) {
+      const fallbackMessages = localMessages.length ? localMessages : buildPreviewJournalMessages(localRecord?.entry);
+      return {
+        ok: Boolean(localRecord),
+        message: localRecord ? "Loaded journal entry saved on this device." : data?.message,
+        entry: localRecord?.entry ?? null,
+        messages: fallbackMessages,
+      };
+    }
     if (response.ok) {
       await upsertLocalJournalRecord(studentNumber, data?.entry ?? null, responseMessages);
     }

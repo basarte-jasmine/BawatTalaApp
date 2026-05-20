@@ -46,6 +46,10 @@ function isAssistantJournalMessage(message: JournalMessage) {
   return role === "assistant" || role === "muni";
 }
 
+function getAssistantMessages(messages: JournalMessage[]) {
+  return messages.filter((message) => isAssistantJournalMessage(message) && String(message.text || "").trim());
+}
+
 function splitParagraphs(value: string | undefined) {
   return String(value || "")
     .split(/\n{2,}|\r\n{2,}/)
@@ -168,23 +172,27 @@ export default function JournalEntryViewScreen() {
     setIsRefreshing(false);
   }, [loadEntry, syncNow]);
 
-  const visibleMessages = useMemo(
-    () => messages.filter((message) => String(message.text || "").trim() && !isSyntheticSummaryPreview(message, entry)),
-    [entry, messages],
-  );
+  const visibleMessages = useMemo(() => {
+    const nonEmptyMessages = messages.filter((message) => String(message.text || "").trim());
+    const withoutSyntheticPreviews = nonEmptyMessages.filter((message) => !isSyntheticSummaryPreview(message, entry));
+    return withoutSyntheticPreviews.length > 0 ? withoutSyntheticPreviews : nonEmptyMessages;
+  }, [entry, messages]);
   const fallbackParagraphs = useMemo(() => getEntryFallbackParagraphs(entry), [entry]);
   const messageParagraphs = useMemo(() => getUserParagraphs(visibleMessages), [visibleMessages]);
   const paragraphs = messageParagraphs.length > 0 ? messageParagraphs : fallbackParagraphs;
+  const assistantMessages = useMemo(() => getAssistantMessages(messages), [messages]);
   const displayMessages = useMemo<JournalMessage[]>(
     () =>
       visibleMessages.length > 0
         ? visibleMessages
-        : fallbackParagraphs.map((paragraph, index) => ({
+        : fallbackParagraphs.length > 0
+          ? fallbackParagraphs.map((paragraph, index) => ({
             createdAt: entry?.createdAt || "",
             id: `fallback-user-${index}`,
             role: "user",
             text: paragraph,
-          })),
+          }))
+          : [],
     [entry?.createdAt, fallbackParagraphs, visibleMessages],
   );
   const createdAt = messages.find((message) => isUserJournalMessage(message))?.createdAt ?? entry?.createdAt;
@@ -197,8 +205,8 @@ export default function JournalEntryViewScreen() {
     [entry?.aiEnabled, paragraphs, storedSummaryText],
   );
   const usedChatbot = useMemo(
-    () => Boolean(entry?.aiEnabled),
-    [entry?.aiEnabled],
+    () => Boolean(entry?.aiEnabled || assistantMessages.length > 0),
+    [assistantMessages.length, entry?.aiEnabled],
   );
   const sentimentText = useMemo(() => {
     if (!entry?.sentimentLabel) return "";
