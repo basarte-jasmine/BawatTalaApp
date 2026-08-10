@@ -14,6 +14,8 @@ const OPEN_LIBRARY_DOWNLOAD_PROBE_TIMEOUT_MS = 5000;
 const OPEN_LIBRARY_DOWNLOAD_STREAM_TIMEOUT_MS = 30000;
 const OPEN_LIBRARY_DOWNLOAD_CACHE_TTL_MS = 15 * 60 * 1000;
 const MAX_BOOK_RESULTS = 24;
+const WELLBEING_BOOK_PATTERN = /\b(self[ -]?help|personal development|personal growth|clinical psychology|counseling psychology|positive psychology|mental health|emotional health|emotional intelligence|well[ -]?being|mindfulness|meditation|stress management|anxiety|depression|trauma|grief|resilience|self[ -]?esteem|self[ -]?compassion|coping|burnout|habit|motivation|happiness|therapy|counseling|relationships?)\b/i;
+const NON_WELLBEING_BOOK_PATTERN = /\b(fiction|novel|novels|stories|literature|fantasy|magic|witchcraft|wizards|romance fiction|erotic fiction|detective and mystery|murder|thriller|suspense|juvenile fiction|young adult fiction|children's stories|drama|poetry|comics|comic books|graphic novels)\b/i;
 const READING_ACHIEVEMENT_NOTIFICATION_KIND = "READING_ACHIEVEMENT_REWARD";
 const READING_ACHIEVEMENTS = [
   {
@@ -613,6 +615,22 @@ function getOpenLibraryCoverUrl(book, sourceId) {
 function getOpenLibraryCategory(book) {
   const subjects = Array.isArray(book.subject) ? book.subject : [];
   return subjects.find((subject) => /psychology|mental|health|wellbeing|stress|anxiety|mind/i.test(subject)) || subjects[0] || "Open Library";
+}
+
+function isWellbeingLibraryBook(book) {
+  const subjects = Array.isArray(book.subject) ? book.subject : [];
+  const normalizedTitle = normalizeCompactSpaces(book.title);
+  const normalizedSubjects = subjects.map((value) => normalizeCompactSpaces(value)).filter(Boolean);
+  const searchableText = [normalizedTitle, ...normalizedSubjects]
+    .map((value) => normalizeCompactSpaces(value))
+    .filter(Boolean)
+    .join(" ");
+
+  if (NON_WELLBEING_BOOK_PATTERN.test(searchableText)) {
+    return false;
+  }
+
+  return WELLBEING_BOOK_PATTERN.test(searchableText);
 }
 
 function getOpenLibraryEpubFile(files = []) {
@@ -1323,7 +1341,8 @@ router.get("/books", async (req, res) => {
       headers: getOpenLibraryHeaders(),
       serviceName: "Open Library",
     });
-    const selectedItems = await getOpenLibraryDisplayItems(Array.isArray(data.docs) ? data.docs : [], maxResults);
+    const relevantItems = (Array.isArray(data.docs) ? data.docs : []).filter(isWellbeingLibraryBook);
+    const selectedItems = await getOpenLibraryDisplayItems(relevantItems, maxResults);
     const bookIds = selectedItems
       .map((item, index) => getOpenLibraryBookId(item, item.sourceId, index))
       .filter(Boolean);
@@ -1339,7 +1358,7 @@ router.get("/books", async (req, res) => {
     return res.json({
       books,
       query: searchQuery,
-      totalItems: Number(data.numFound || books.length),
+      totalItems: books.length,
     });
   } catch (error) {
     return res.status(502).json({ message: error.message || "Failed to load library books." });
