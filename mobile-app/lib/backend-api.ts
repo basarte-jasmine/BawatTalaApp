@@ -1884,6 +1884,8 @@ export async function sendJournalMessage(payload: {
   aiEnabled: boolean;
   entryId?: string;
   message: string;
+  messages?: JournalMessage[];
+  requireExistingEntry?: boolean;
   studentNumber: string;
 }): Promise<
   ApiResult & {
@@ -1903,6 +1905,8 @@ export async function sendJournalMessage(payload: {
       aiEnabled: payload.aiEnabled,
       entryId: payload.entryId ?? "",
       message: payload.message,
+      messages: payload.messages ?? [],
+      requireExistingEntry: payload.requireExistingEntry === true,
       studentNumber: payload.studentNumber,
     });
 
@@ -1920,10 +1924,18 @@ export async function sendJournalMessage(payload: {
   } catch {
     const data = await readLocalJournalData(payload.studentNumber);
     const existingRecord = payload.entryId ? data.entries[payload.entryId] : null;
+    const submittedMessages = normalizeJournalMessages(payload.messages);
+    if (payload.requireExistingEntry && !existingRecord && submittedMessages.length === 0) {
+      return {
+        ok: false,
+        message: "Voice journal session was not found on this device.",
+        messages: [],
+      };
+    }
     const entry = existingRecord?.entry ?? createLocalJournalEntry(payload.studentNumber, payload.aiEnabled);
     const now = getNowIsoString();
     const messages = [
-      ...(existingRecord?.messages ?? []),
+      ...(submittedMessages.length ? submittedMessages : existingRecord?.messages ?? []),
       {
         createdAt: now,
         id: `local-message-${Date.now()}`,
@@ -1956,6 +1968,8 @@ export async function sendJournalMessage(payload: {
 export async function finishJournalEntry(payload: {
   concernTags?: string[];
   entryId: string;
+  forceAnalyze?: boolean;
+  messages?: JournalMessage[];
   primaryConcern?: string;
   studentNumber: string;
 }): Promise<ApiResult & { entry?: JournalEntry; messages?: JournalMessage[] }> {
@@ -1990,7 +2004,9 @@ export async function finishJournalEntry(payload: {
     }
 
     const now = getNowIsoString();
-    const summary = record.entry.summary || summarizeLocalMessages(record.messages);
+    const submittedMessages = normalizeJournalMessages(payload.messages);
+    const messages = submittedMessages.length ? submittedMessages : record.messages;
+    const summary = record.entry.summary || summarizeLocalMessages(messages);
     const entry: StoredJournalEntry = {
       ...record.entry,
       concernTags: payload.concernTags ?? record.entry.concernTags,
@@ -2002,12 +2018,12 @@ export async function finishJournalEntry(payload: {
       syncStatus: "pending",
       updatedAt: now,
     };
-    await upsertLocalJournalRecord(payload.studentNumber, entry, record.messages, "pending");
+    await upsertLocalJournalRecord(payload.studentNumber, entry, messages, "pending");
     return {
       ok: true,
       message: "Saved offline. This entry will sync when your connection returns.",
       entry,
-      messages: record.messages,
+      messages,
     };
   }
 }
@@ -2553,14 +2569,23 @@ export async function fetchStudentAppointments(
   studentNumber: string,
 ): Promise<ApiResult & { appointments?: CounselorAppointment[]; upcomingAppointment?: CounselorAppointment | null }> {
   const params = new URLSearchParams({ studentNumber });
-  const { response, data } = await get(`/api/appointments/student?${params.toString()}`);
+  try {
+    const { response, data } = await get(`/api/appointments/student?${params.toString()}`);
 
-  return {
-    ok: response.ok,
-    message: data?.message,
-    appointments: data?.appointments ?? [],
-    upcomingAppointment: data?.upcomingAppointment ?? null,
-  };
+    return {
+      ok: response.ok,
+      message: data?.message,
+      appointments: data?.appointments ?? [],
+      upcomingAppointment: data?.upcomingAppointment ?? null,
+    };
+  } catch {
+    return {
+      ok: false,
+      message: "Unable to load appointments while offline.",
+      appointments: [],
+      upcomingAppointment: null,
+    };
+  }
 }
 
 export async function fetchStudentNotifications(
@@ -2571,14 +2596,23 @@ export async function fetchStudentNotifications(
   if (category) {
     params.set("category", category);
   }
-  const { response, data } = await get(`/api/appointments/notifications?${params.toString()}`);
+  try {
+    const { response, data } = await get(`/api/appointments/notifications?${params.toString()}`);
 
-  return {
-    ok: response.ok,
-    message: data?.message,
-    notifications: data?.notifications ?? [],
-    unreadCount: Number(data?.unreadCount ?? 0),
-  };
+    return {
+      ok: response.ok,
+      message: data?.message,
+      notifications: data?.notifications ?? [],
+      unreadCount: Number(data?.unreadCount ?? 0),
+    };
+  } catch {
+    return {
+      ok: false,
+      message: "Unable to load notifications while offline.",
+      notifications: [],
+      unreadCount: 0,
+    };
+  }
 }
 
 export async function markStudentNotificationRead(

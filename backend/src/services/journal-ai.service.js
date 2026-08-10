@@ -1192,7 +1192,8 @@ async function analyzeJournalConversation({
     patterns.startedWithParang
       ? "A recent Muni reply started with 'Parang'. Do not start this reply with 'Parang'."
       : "Avoid making 'Parang' the default opening.",
-    "Conversation history is included for continuity. Use recent history for memory and thread tracking, but prioritize the latest user message.",
+    "Conversation history is one ongoing journal conversation. Treat each latest message as the next turn in the same thread, not as a new entry or unrelated topic.",
+    "Use recent history for memory and thread tracking, but prioritize the latest user message.",
     `Recent Muni reply openings to avoid repeating: ${recentAssistantOpenings.length ? recentAssistantOpenings.join(" | ") : "none"}`,
     `Recent Muni first words to avoid repeating: ${recentAssistantFirstWords.length ? recentAssistantFirstWords.join(" | ") : "none"}`,
     `Latest message is a short agreement: ${latestMessageIsShortAgreement ? "yes" : "no"}`,

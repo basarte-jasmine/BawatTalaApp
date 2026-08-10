@@ -72,6 +72,18 @@ function countWords(value) {
     .filter(Boolean).length;
 }
 
+function normalizeVoiceSessionMessages(value) {
+  if (!Array.isArray(value)) return null;
+
+  return value
+    .slice(0, 100)
+    .map((item) => ({
+      role: item?.role === "assistant" ? "assistant" : item?.role === "user" ? "user" : "",
+      text: String(item?.text || "").trim().slice(0, 12000),
+    }))
+    .filter((item) => item.role && item.text);
+}
+
 function summarizeJournalMessages(messages) {
   const text = buildEntryContentText(messages)
     .replace(/\s+/g, " ")
@@ -172,6 +184,28 @@ async function listEntryMessages(entryId) {
     role: row.role,
     text: row.message_text,
   }));
+}
+
+async function replaceEntryMessagesFromTranscript({ entryId, studentNumber, messages }) {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return;
+  }
+
+  await query(
+    `
+      with deleted as (
+        delete from public.journal_entry_messages
+        where entry_id = $1 and student_number = $2
+        returning id
+      )
+      insert into public.journal_entry_messages (entry_id, student_number, role, message_text, created_at)
+      select $1, $2, item->>'role', item->>'text', now() - interval '1 second' + ((turn_order - 1) * interval '1 millisecond')
+      from jsonb_array_elements($3::jsonb) with ordinality as transcript(item, turn_order)
+      cross join (select count(*) from deleted) deletion
+      order by turn_order
+    `,
+    [entryId, studentNumber, JSON.stringify(messages)],
+  );
 }
 
 async function getEntryById(studentNumber, entryId) {
@@ -295,6 +329,13 @@ async function cleanupStaleEmptyDrafts(studentNumber) {
       delete from public.journal_entries je
       where je.student_number = $1
         and je.is_finished = false
+        and je.created_at < now() - interval '2 hours'
+        and not exists (
+          select 1
+          from public.journal_entry_messages jem
+          where jem.entry_id = je.id
+          limit 1
+        )
       returning je.id
     `,
     [studentNumber],
@@ -794,6 +835,8 @@ router.post("/session/finish", asyncHandler(async (req, res) => {
   const entryId = String(req.body.entryId || "").trim();
   const requestedTags = normalizeConcernTags(req.body.concernTags);
   const requestedPrimary = normalizeConcernValue(req.body.primaryConcern);
+  const forceAnalyze = req.body.forceAnalyze === true;
+  const voiceMessages = normalizeVoiceSessionMessages(req.body.messages);
 
   if (!studentNumber) {
     return res.status(400).json({ message: "Student number is required." });
@@ -808,6 +851,10 @@ router.post("/session/finish", asyncHandler(async (req, res) => {
   }
   if (entry.is_finished) {
     return res.status(400).json({ message: "This journal entry is already finished." });
+  }
+
+  if (voiceMessages) {
+    await replaceEntryMessagesFromTranscript({ entryId, messages: voiceMessages, studentNumber });
   }
 
   const existingMessages = await listEntryMessages(entryId);
@@ -829,9 +876,9 @@ router.post("/session/finish", asyncHandler(async (req, res) => {
     (Array.isArray(entry.insights) && entry.insights.length > 0);
   const hasStoredSentiment = Boolean(String(entry.sentiment_label || "").trim());
 
-  if (!hasStoredAnalysis || !hasStoredSentiment || finalTags.length === 0) {
+  if (forceAnalyze || !hasStoredAnalysis || !hasStoredSentiment || finalTags.length === 0) {
     analysis = await analyzeFinalEntry({ entryId, existingMessages, studentNumber });
-    if (finalTags.length === 0) {
+    if (forceAnalyze || finalTags.length === 0) {
       finalTags = normalizeConcernTags(analysis.suggested_tags);
     }
   }
@@ -1011,6 +1058,8 @@ router.post("/message", asyncHandler(async (req, res) => {
   const aiEnabled = req.body.aiEnabled !== false;
   const message = String(req.body.message || "").trim();
   const entryId = String(req.body.entryId || "").trim();
+  const requireExistingEntry = req.body.requireExistingEntry === true;
+  const submittedMessages = normalizeVoiceSessionMessages(req.body.messages) || [];
   const wordCount = countWords(message);
 
   if (!studentNumber) {
@@ -1018,6 +1067,9 @@ router.post("/message", asyncHandler(async (req, res) => {
   }
   if (!message) {
     return res.status(400).json({ message: "Message is required." });
+  }
+  if (requireExistingEntry && !entryId) {
+    return res.status(400).json({ message: "Voice journal session is missing." });
   }
   if (wordCount > JOURNAL_MAX_WORDS) {
     return res.status(400).json({
@@ -1049,16 +1101,30 @@ router.post("/message", asyncHandler(async (req, res) => {
       [entryId, studentNumber],
     );
     entry = entryResult.rows[0] || null;
+    if (!entry && requireExistingEntry) {
+      if (submittedMessages.length === 0) {
+        return res.status(404).json({ message: "Voice journal session was not found." });
+      }
+      entry = await createEntry(studentNumber, today, aiEnabled);
+      await replaceEntryMessagesFromTranscript({
+        entryId: entry.id,
+        messages: submittedMessages,
+        studentNumber,
+      });
+    }
     if (entry?.is_finished) {
       return res.status(400).json({ message: "This journal entry is already finished." });
     }
   }
 
-  if (!entry) {
+  if (!entry && !requireExistingEntry) {
     entry = await getOpenEntryByStudentAndDate(studentNumber, today);
   }
-  if (!entry) {
+  if (!entry && !requireExistingEntry) {
     entry = await createEntry(studentNumber, today, aiEnabled);
+  }
+  if (!entry) {
+    return res.status(404).json({ message: "Journal entry not found." });
   } else if (Boolean(entry.ai_enabled) !== aiEnabled) {
     const updateAiResult = await query(
       `

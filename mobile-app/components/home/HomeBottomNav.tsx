@@ -36,7 +36,7 @@ export function HomeBottomNav({ activeTab, transparent = false }: HomeBottomNavP
     activeTab ??
     (pathname.startsWith("/journal")
       ? "journal"
-      : pathname.startsWith("/muni-avatar")
+      : pathname.startsWith("/muni-avatar") || pathname.startsWith("/muni-voice")
         ? "muni"
       : pathname.startsWith("/consult")
         ? "profile"
@@ -50,10 +50,10 @@ export function HomeBottomNav({ activeTab, transparent = false }: HomeBottomNavP
   };
 
   const handleMicPress = () => {
-    if (pathname === "/write-entry") {
+    if (pathname === "/muni-voice") {
       return;
     }
-    router.push("/write-entry?mode=new");
+    router.push("/muni-voice" as never);
   };
 
   const renderTab = (item: NavItem) => {
@@ -124,7 +124,7 @@ export function HomeBottomNav({ activeTab, transparent = false }: HomeBottomNavP
             derivedActiveTab === "muni" && styles.centerActionButtonActive,
             transparent && styles.centerActionButtonTransparent,
           ]}
-          accessibilityLabel="Start a new journal entry"
+          accessibilityLabel="Start Muni voice"
           accessibilityRole="button"
           accessibilityState={{ selected: derivedActiveTab === "muni" }}
           hitSlop={8}

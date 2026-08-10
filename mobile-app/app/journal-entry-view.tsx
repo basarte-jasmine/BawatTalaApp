@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { fetchJournalEntryById, JournalEntry, JournalMessage, rateJournalEntrySummary } from "../lib/backend-api";
@@ -120,8 +120,19 @@ export default function JournalEntryViewScreen() {
   const [isNeedsWorkReasonVisible, setIsNeedsWorkReasonVisible] = useState(false);
   const [isSavingSummaryRating, setIsSavingSummaryRating] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const entryRef = useRef<JournalEntry | null>(null);
+  const messagesRef = useRef<JournalMessage[]>([]);
+  const handledRefreshKeyRef = useRef(refreshKey);
 
-  const loadEntry = useCallback(async () => {
+  useEffect(() => {
+    entryRef.current = entry;
+  }, [entry]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  const loadEntry = useCallback(async (options?: { forceLoading?: boolean }) => {
     if (!user?.studentNumber || !entryId) {
       setEntry(null);
       setMessages([]);
@@ -132,12 +143,19 @@ export default function JournalEntryViewScreen() {
       return;
     }
 
-    setIsLoadingEntry(true);
+    const currentEntry = entryRef.current;
+    const currentMessages = messagesRef.current;
+    const shouldShowLoading = options?.forceLoading ?? (!currentEntry && currentMessages.length === 0);
+    if (shouldShowLoading) {
+      setIsLoadingEntry(true);
+    }
     const result = await fetchJournalEntryById(user.studentNumber, entryId);
     if (!result.ok) {
       setErrorMessage(result.message ?? "Unable to load this journal entry.");
-      setEntry(null);
-      setMessages([]);
+      if (!currentEntry) {
+        setEntry(null);
+        setMessages([]);
+      }
       setIsLoadingEntry(false);
       setSummaryFeedbackError("");
       setSummaryFeedbackReason("");
@@ -162,13 +180,15 @@ export default function JournalEntryViewScreen() {
 
   useEffect(() => {
     if (!user?.studentNumber || !entryId) return;
-    void loadEntry();
+    if (handledRefreshKeyRef.current === refreshKey) return;
+    handledRefreshKeyRef.current = refreshKey;
+    void loadEntry({ forceLoading: false });
   }, [entryId, loadEntry, refreshKey, user?.studentNumber]);
 
   const handleRefreshEntry = useCallback(async () => {
     setIsRefreshing(true);
     await syncNow();
-    await loadEntry();
+    await loadEntry({ forceLoading: false });
     setIsRefreshing(false);
   }, [loadEntry, syncNow]);
 
