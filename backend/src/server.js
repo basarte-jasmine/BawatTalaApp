@@ -18,8 +18,19 @@ const { ensureDefaultAdminAccount } = require("./api/admin.routes");
 const appointmentRoutes = require("./api/appointment.routes");
 
 const port = Number(process.env.PORT || 4000);
+const skipStartupTasks =
+  process.argv.includes("--skip-startup-tasks") ||
+  String(process.env.SKIP_STARTUP_TASKS || "").trim().toLowerCase() === "true";
 
 async function runStartupTasks() {
+  if (skipStartupTasks) {
+    console.log("Backend startup tasks skipped. Run without --skip-startup-tasks to apply database schema checks.");
+    if (typeof appointmentRoutes.startPendingAppointmentExpiryWorker === "function") {
+      appointmentRoutes.startPendingAppointmentExpiryWorker();
+    }
+    return;
+  }
+
   try {
     await ensureDatabaseSchema();
     await ensureDefaultAdminAccount();

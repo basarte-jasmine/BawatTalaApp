@@ -16,7 +16,9 @@ async function request(path, options = {}) {
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data?.message || "Request failed.");
+    const error = new Error(data?.message || "Request failed.");
+    error.status = response.status;
+    throw error;
   }
   return data;
 }
@@ -25,6 +27,16 @@ export async function adminLogin(payload) {
   return request("/api/admin/login", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchAdminSession() {
+  return request("/api/admin/session");
+}
+
+export async function adminLogout() {
+  return request("/api/admin/logout", {
+    method: "POST",
   });
 }
 
@@ -198,6 +210,20 @@ export async function createAdminRoleMember(payload) {
   });
 }
 
+export async function verifyAdminRoleMemberCode(payload) {
+  return request("/api/admin/roles/verify-code", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function resendAdminRoleMemberCode(payload) {
+  return request("/api/admin/roles/resend-code", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function updateAdminRoleMember(memberId, payload) {
   return request(`/api/admin/roles/${memberId}`, {
     method: "PATCH",
@@ -231,6 +257,23 @@ export async function fetchAdminAppointmentsOverview(date, supportType = "GUIDAN
   }
   const suffix = params.toString() ? `?${params.toString()}` : "";
   return request(`/api/appointments/admin/overview${suffix}`);
+}
+
+export async function fetchAppointmentAvailability({ counselorId, month, studentNumber = "", supportType = "GUIDANCE" }) {
+  const params = new URLSearchParams();
+  if (counselorId) {
+    params.set("counselorId", counselorId);
+  }
+  if (month) {
+    params.set("month", month);
+  }
+  if (studentNumber) {
+    params.set("studentNumber", studentNumber);
+  }
+  if (supportType) {
+    params.set("supportType", supportType);
+  }
+  return request(`/api/appointments/availability?${params.toString()}`);
 }
 
 export async function fetchAdminNotifications(email) {

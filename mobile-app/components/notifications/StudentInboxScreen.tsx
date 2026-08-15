@@ -13,6 +13,7 @@ import {
   fetchStudentNotifications,
   markAllStudentNotificationsRead,
   markStudentNotificationRead,
+  StudentNotificationCategory,
 } from "../../lib/backend-api";
 import { getNotificationVisual, isAdminMessageNotification } from "../../lib/notification-utils";
 
@@ -22,10 +23,25 @@ type StudentInboxScreenProps = {
 
 const TALA_IMAGE = require("../../assets/images/Tala_Star.png");
 const inboxCache = new Map<string, AppNotification[]>();
+const NOTIFICATION_FILTERS: Array<{ key: StudentNotificationCategory; label: string }> = [
+  { key: "notifications", label: "All" },
+  { key: "guidance", label: "Guidance" },
+  { key: "peer", label: "Peer" },
+];
+
+function getNotificationRoute(item: AppNotification) {
+  const metadata = item.metadata || {};
+  if (metadata.route === "/consult" || String(item.kind || "").includes("APPOINTMENT")) {
+    return "/consult";
+  }
+  return "";
+}
 
 export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
   const { user } = useAuthSession();
-  const cacheKey = user?.studentNumber ? `${user.studentNumber}:${variant}` : "";
+  const [notificationFilter, setNotificationFilter] = useState<StudentNotificationCategory>("notifications");
+  const requestCategory = variant === "messages" ? "messages" : notificationFilter;
+  const cacheKey = user?.studentNumber ? `${user.studentNumber}:${requestCategory}` : "";
   const cachedItems = cacheKey ? inboxCache.get(cacheKey) : undefined;
   const [items, setItems] = useState<AppNotification[]>(() => cachedItems ?? []);
   const [loading, setLoading] = useState(() => !cachedItems);
@@ -79,7 +95,7 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
     const hasCachedItems = cacheKey ? inboxCache.has(cacheKey) : false;
     setLoading(!hasCachedItems);
     try {
-      const result = await fetchStudentNotifications(user.studentNumber, variant);
+      const result = await fetchStudentNotifications(user.studentNumber, requestCategory);
       if (!result.ok) {
         return;
       }
@@ -91,7 +107,7 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
     } finally {
       setLoading(false);
     }
-  }, [cacheKey, user?.studentNumber, variant]);
+  }, [cacheKey, requestCategory, user?.studentNumber]);
 
   useFocusEffect(
     useCallback(() => {
@@ -107,7 +123,7 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
       return;
     }
 
-    const result = await markAllStudentNotificationsRead(user.studentNumber, variant);
+    const result = await markAllStudentNotificationsRead(user.studentNumber, requestCategory);
     if (!result.ok) {
       return;
     }
@@ -134,6 +150,12 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
           return nextItems;
         });
       }
+    }
+
+    const targetRoute = getNotificationRoute(item);
+    if (targetRoute) {
+      router.push(targetRoute);
+      return;
     }
 
     router.push({
@@ -195,6 +217,23 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
             <Text style={styles.summaryBody}>{summaryBody}</Text>
           </View>
         </View>
+
+        {!isMessageInbox ? (
+          <View style={styles.filterRow}>
+            {NOTIFICATION_FILTERS.map((filter) => {
+              const isActive = notificationFilter === filter.key;
+              return (
+                <Pressable
+                  key={filter.key}
+                  style={[styles.filterButton, isActive && styles.filterButtonActive]}
+                  onPress={() => setNotificationFilter(filter.key)}
+                >
+                  <Text style={[styles.filterButtonText, isActive && styles.filterButtonTextActive]}>{filter.label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
 
         <View style={styles.dayRow}>
           <Text style={styles.dayLabel}>{isMessageInbox ? "Admin inbox" : "Recent"}</Text>
@@ -384,6 +423,34 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     columnGap: 10,
+  },
+  filterRow: {
+    marginTop: 12,
+    flexDirection: "row",
+    columnGap: 8,
+  },
+  filterButton: {
+    minHeight: 34,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#DDE9D5",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterButtonActive: {
+    borderColor: "#6FAE46",
+    backgroundColor: "#EAF7DD",
+  },
+  filterButtonText: {
+    color: "#65746C",
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: "700",
+  },
+  filterButtonTextActive: {
+    color: "#4B7F34",
   },
   dayLabel: {
     color: "#324254",

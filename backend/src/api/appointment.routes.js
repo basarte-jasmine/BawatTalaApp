@@ -484,9 +484,11 @@ function getAppointmentNotificationMetadata(appointment, extra = {}) {
   const supportType = normalizeSupportType(appointment?.support_type);
   return {
     appointmentId: appointment?.id || null,
+    appointmentDate: normalizeDateValue(appointment?.appointment_date || appointment?.appointmentDate),
     counselorId: appointment?.counselor_id || appointment?.peer_counselor_id || null,
     counselorName: getAppointmentCounselorName(appointment),
     counselingType: appointment?.counseling_type || appointment?.counselingType || null,
+    route: "/consult",
     supportType,
     ...extra,
   };
@@ -500,6 +502,9 @@ function buildAppointmentSummaryRows(appointment) {
     appointment.counseling_type ? { label: "Counseling Type", value: appointment.counseling_type } : null,
     { label: "Concern", value: appointment.concern },
     { label: "Assigned Counselor", value: getAppointmentCounselorName(appointment) },
+    !isPeerSupportType(appointment.support_type) && appointment.student_note
+      ? { label: "Note", value: appointment.student_note }
+      : null,
   ].filter(Boolean);
 }
 
@@ -737,7 +742,8 @@ async function findAdminByEmail(email) {
         id,
         email,
         coalesce(nullif(full_name, ''), split_part(email, '@', 1)) as full_name,
-        coalesce(nullif(role, ''), 'COUNSELOR') as role
+        coalesce(nullif(role, ''), 'COUNSELOR') as role,
+        coalesce(settings, '{}'::jsonb) as settings
       from public.admin_accounts
       where lower(email) = $1
       limit 1
@@ -2336,9 +2342,9 @@ router.post("/book", async (req, res) => {
   if (appointmentDate < todayIsoDate) {
     return res.status(400).json({ message: "You cannot book a past appointment date." });
   }
-  if (bookingSource === "MOBILE_APP" && appointmentDate < getMinimumStudentBookingDate()) {
+  if (appointmentDate < getMinimumStudentBookingDate()) {
     return res.status(400).json({
-      message: `Appointments must be booked at least ${MOBILE_BOOKING_LEAD_DAYS} days ahead so counselors have 24 hours to respond.`,
+      message: `Appointments must be booked at least ${MOBILE_BOOKING_LEAD_DAYS} days ahead.`,
     });
   }
 
@@ -2347,6 +2353,10 @@ router.post("/book", async (req, res) => {
     return res.status(404).json({ message: "Counselor not found." });
   }
   const supportType = normalizeSupportType(counselor.support_type);
+  const student = await findStudentProfileByStudentNumber(studentNumber);
+  if (!student) {
+    return res.status(404).json({ message: "Student number is not registered." });
+  }
   if (isPeerSupportType(supportType) && !PEER_CONCERN_VALUES.has(concern)) {
     return res.status(400).json({ message: "That concern is not available for peer counseling." });
   }
@@ -2354,6 +2364,7 @@ router.post("/book", async (req, res) => {
     return res.status(400).json({ message: "Choose a valid counseling type." });
   }
   const resolvedCounselingType = isPeerSupportType(supportType) ? null : counselingType || "1-on-1";
+  const resolvedStudentNote = isPeerSupportType(supportType) ? "" : studentNote;
 
   await ensureDefaultAvailability(counselorId, supportType);
   const isEnabled = await isCounselorSlotEnabledForDate(counselorId, appointmentDate, slotTime, supportType);
@@ -2421,7 +2432,7 @@ router.post("/book", async (req, res) => {
       appointmentDate,
       slotTime,
       bookingSource === "ADMIN_PANEL" ? "CONFIRMED" : "PENDING",
-      studentNote || null,
+      resolvedStudentNote || null,
       counselorGenderPreference || null,
       bookingSource,
       actorAdmin?.email || null,
@@ -2430,7 +2441,6 @@ router.post("/book", async (req, res) => {
 
   const appointment = insertResult.rows[0];
   const fullAppointment = await findAppointmentById(appointment.id);
-  const student = await findStudentProfileByStudentNumber(studentNumber);
   if (bookingSource === "ADMIN_PANEL") {
     await writeAdminActivityLog({
       actionType: "APPOINTMENT_CREATED",
@@ -2460,10 +2470,14 @@ router.post("/book", async (req, res) => {
       student,
       kind: "APPOINTMENT_CONFIRMED",
       title: "Appointment confirmed",
-      message: `Your session with ${counselor.full_name} is set for ${formatDateLong(appointment.appointment_date)} at ${toReadableTime(appointment.slot_time)}.`,
+      message: resolvedStudentNote
+        ? `Your session with ${counselor.full_name} is set for ${formatDateLong(appointment.appointment_date)} at ${toReadableTime(appointment.slot_time)}. Note from guidance: ${resolvedStudentNote}`
+        : `Your session with ${counselor.full_name} is set for ${formatDateLong(appointment.appointment_date)} at ${toReadableTime(appointment.slot_time)}.`,
       emailSubject: "Your counseling appointment is confirmed",
       emailIntro: `Your counseling appointment with ${counselor.full_name} has been confirmed.`,
-      emailCta: "Please arrive a few minutes early for your session.",
+      emailCta: resolvedStudentNote
+        ? `Please arrive a few minutes early for your session. Note from guidance: ${resolvedStudentNote}`
+        : "Please arrive a few minutes early for your session.",
     });
     if (isPeerSupportType(supportType)) {
       await notifyPeerCounselorAboutScheduledAppointment({
@@ -2546,6 +2560,11 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
   if (appointmentDate < getManilaDateParts().isoDate) {
     return res.status(400).json({ message: "You cannot move an appointment to a past date." });
   }
+  if (appointmentDate < getMinimumStudentBookingDate()) {
+    return res.status(400).json({
+      message: `Appointments must be booked at least ${MOBILE_BOOKING_LEAD_DAYS} days ahead so counselors have 24 hours to respond.`,
+    });
+  }
 
   const existingAppointment = await findAppointmentById(appointmentId);
   if (!existingAppointment) {
@@ -2557,6 +2576,10 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
     return res.status(404).json({ message: "Counselor not found." });
   }
   const supportType = normalizeSupportType(counselor.support_type);
+  const student = await findStudentProfileByStudentNumber(studentNumber);
+  if (!student) {
+    return res.status(404).json({ message: "Student number is not registered." });
+  }
   if (isPeerSupportType(supportType) && !PEER_CONCERN_VALUES.has(concern)) {
     return res.status(400).json({ message: "That concern is not available for peer counseling." });
   }
@@ -2566,6 +2589,7 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
   const resolvedCounselingType = isPeerSupportType(supportType)
     ? null
     : counselingType || existingAppointment.counseling_type || "1-on-1";
+  const resolvedStudentNote = isPeerSupportType(supportType) ? "" : studentNote;
 
   await ensureDefaultAvailability(counselorId, supportType);
   const isEnabled = await isCounselorSlotEnabledForDate(counselorId, appointmentDate, slotTime, supportType);
@@ -2641,7 +2665,7 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
       appointmentDate,
       slotTime,
       nextStatus,
-      studentNote || null,
+      resolvedStudentNote || null,
       counselorGenderPreference || null,
     ],
   );
@@ -2651,7 +2675,6 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
     return res.status(404).json({ message: "Appointment not found after update." });
   }
 
-  const student = await findStudentProfileByStudentNumber(studentNumber);
   await writeAdminActivityLog({
     actionType: "APPOINTMENT_UPDATED",
     actorEmail: actorAdmin?.email || actorEmail,
@@ -2684,8 +2707,12 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
     title: nextStatus === "CONFIRMED" && isRescheduledRequestState ? "Appointment rescheduled and confirmed" : "Appointment updated",
     message:
       nextStatus === "CONFIRMED" && isRescheduledRequestState
-        ? `Your counselor moved your session to ${formatDateLong(updatedAppointment.appointment_date)} at ${toReadableTime(updatedAppointment.slot_time)}. The new schedule is already confirmed.`
-        : `Your session is now on ${formatDateLong(updatedAppointment.appointment_date)} at ${toReadableTime(updatedAppointment.slot_time)} with ${counselor.full_name}.`,
+        ? resolvedStudentNote
+          ? `Your counselor moved your session to ${formatDateLong(updatedAppointment.appointment_date)} at ${toReadableTime(updatedAppointment.slot_time)}. The new schedule is already confirmed. Note from guidance: ${resolvedStudentNote}`
+          : `Your counselor moved your session to ${formatDateLong(updatedAppointment.appointment_date)} at ${toReadableTime(updatedAppointment.slot_time)}. The new schedule is already confirmed.`
+        : resolvedStudentNote
+          ? `Your session is now on ${formatDateLong(updatedAppointment.appointment_date)} at ${toReadableTime(updatedAppointment.slot_time)} with ${counselor.full_name}. Note from guidance: ${resolvedStudentNote}`
+          : `Your session is now on ${formatDateLong(updatedAppointment.appointment_date)} at ${toReadableTime(updatedAppointment.slot_time)} with ${counselor.full_name}.`,
     emailSubject:
       nextStatus === "CONFIRMED" && isRescheduledRequestState
         ? "Your counseling appointment was rescheduled and confirmed"
@@ -2696,8 +2723,12 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
         : `${counselor.full_name} updated your counseling appointment.`,
     emailCta:
       nextStatus === "CONFIRMED" && isRescheduledRequestState
-        ? "Please review the updated confirmed schedule in the app."
-        : "Please review the new schedule details in the app.",
+        ? resolvedStudentNote
+          ? `Please review the updated confirmed schedule in the app. Note from guidance: ${resolvedStudentNote}`
+          : "Please review the updated confirmed schedule in the app."
+        : resolvedStudentNote
+          ? `Please review the new schedule details in the app. Note from guidance: ${resolvedStudentNote}`
+          : "Please review the new schedule details in the app.",
   });
 
   if (isPeerSupportType(supportType) && nextStatus === "CONFIRMED") {
@@ -2879,6 +2910,7 @@ router.post("/admin/:appointmentId/cancel", async (req, res) => {
   await expirePendingAppointments();
   const appointmentId = String(req.params.appointmentId || "").trim();
   const actorEmail = String(req.body.actorEmail || "").trim().toLowerCase();
+  const cancellationReason = String(req.body.cancellationReason || "").trim();
 
   if (!appointmentId) {
     return res.status(400).json({ message: "Appointment id is required." });
@@ -2890,6 +2922,11 @@ router.post("/admin/:appointmentId/cancel", async (req, res) => {
   }
 
   const actorAdmin = await findAdminByEmail(actorEmail);
+  const requiresCancelReason = actorAdmin?.settings?.privacy?.requireCancelReason !== false;
+  if (requiresCancelReason && !cancellationReason) {
+    return res.status(400).json({ message: "Cancellation reason is required." });
+  }
+
   await query(
     `
       update public.counselor_appointments
@@ -2906,7 +2943,9 @@ router.post("/admin/:appointmentId/cancel", async (req, res) => {
     actorRole: toRoleLabel(actorAdmin?.role || "COUNSELOR"),
     entityType: "APPOINTMENT",
     title: `${actorAdmin?.full_name || actorEmail || "Admin"} cancelled ${toReadableTime(existingAppointment.slot_time)}`,
-    description: `${existingAppointment.student_number} cancelled with ${existingAppointment.counselor_name} on ${formatDateLong(existingAppointment.appointment_date)}`,
+    description: cancellationReason
+      ? `${existingAppointment.student_number} cancelled with ${existingAppointment.counselor_name} on ${formatDateLong(existingAppointment.appointment_date)}. Reason: ${cancellationReason}`
+      : `${existingAppointment.student_number} cancelled with ${existingAppointment.counselor_name} on ${formatDateLong(existingAppointment.appointment_date)}`,
     metadata: {
       actorAdminId: actorAdmin?.id || null,
       appointmentId,
@@ -2917,6 +2956,7 @@ router.post("/admin/:appointmentId/cancel", async (req, res) => {
       supportType: existingAppointment.support_type,
       slotTime: existingAppointment.slot_time,
       studentNumber: existingAppointment.student_number,
+      cancellationReason,
     },
   });
 
@@ -2929,6 +2969,7 @@ router.post("/admin/:appointmentId/cancel", async (req, res) => {
       appointmentId,
       counselorId: existingAppointment.counselor_id,
       counselorName: existingAppointment.counselor_name,
+      cancellationReason,
     },
   });
   await notifyPeerCounselorAboutCancelledAppointment({
@@ -3363,6 +3404,9 @@ router.post("/admin/peer-counselors", async (req, res) => {
   if (!gender) {
     return res.status(400).json({ message: "Please choose Male or Female for the peer counselor." });
   }
+  if (!(await findStudentProfileByStudentNumber(studentNumber))) {
+    return res.status(404).json({ message: "Peer counselor student number is not registered." });
+  }
 
   const actorAdmin = await findAdminByEmail(actorEmail);
   const invitationToken = createPeerInviteToken();
@@ -3491,6 +3535,9 @@ router.patch("/admin/peer-counselors/:peerCounselorId", async (req, res) => {
   if (!gender) {
     return res.status(400).json({ message: "Please choose Male or Female for the peer counselor." });
   }
+  if (!(await findStudentProfileByStudentNumber(studentNumber))) {
+    return res.status(404).json({ message: "Peer counselor student number is not registered." });
+  }
 
   const actorAdmin = await findAdminByEmail(actorEmail);
   const updateResult = await query(
@@ -3611,6 +3658,10 @@ router.get("/notifications", async (req, res) => {
   const categoryFilter =
     category === "messages"
       ? "and kind = 'ADMIN_MESSAGE'"
+      : category === "guidance"
+        ? "and kind <> 'ADMIN_MESSAGE' and coalesce(metadata->>'supportType', 'GUIDANCE') = 'GUIDANCE'"
+        : category === "peer"
+          ? "and kind <> 'ADMIN_MESSAGE' and metadata->>'supportType' = 'PEER'"
       : category === "notifications"
         ? "and kind <> 'ADMIN_MESSAGE'"
         : "";
@@ -3674,6 +3725,10 @@ router.post("/notifications/read-all", async (req, res) => {
   const categoryFilter =
     category === "messages"
       ? "and kind = 'ADMIN_MESSAGE'"
+      : category === "guidance"
+        ? "and kind <> 'ADMIN_MESSAGE' and coalesce(metadata->>'supportType', 'GUIDANCE') = 'GUIDANCE'"
+        : category === "peer"
+          ? "and kind <> 'ADMIN_MESSAGE' and metadata->>'supportType' = 'PEER'"
       : category === "notifications"
         ? "and kind <> 'ADMIN_MESSAGE'"
         : "";

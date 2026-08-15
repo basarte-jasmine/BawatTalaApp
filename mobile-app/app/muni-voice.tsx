@@ -3,6 +3,7 @@ import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { MuniAvatar } from "../components/muni/MuniAvatar";
 import {
   createJournalSession,
   discardEmptyJournalEntry,
@@ -42,7 +43,6 @@ type BrowserSpeechRecognition = {
   stop: () => void;
 };
 
-const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
 const MICROPHONE_IMAGE = require("../assets/images/microphone_sample.png");
 const POSITIVE_TAG_OPTIONS = [
   "Gratitude / Appreciation",
@@ -66,6 +66,7 @@ const CONCERN_TAG_OPTIONS = [
 ];
 const INTERPERSONAL_TAG = "Interpersonal relationships";
 const INTERPERSONAL_RELATIONSHIP_TAGS = ["Peer", "Family", "Romantic"];
+const VOICE_RECORDING_MAX_MS = 5 * 60 * 1000;
 
 function getSpeechRecognitionConstructor() {
   if (Platform.OS !== "web" || typeof window === "undefined") return null;
@@ -111,6 +112,10 @@ export default function MuniVoiceScreen() {
   const sessionStartedRef = useRef(false);
   const finalTranscriptRef = useRef("");
   const latestTranscriptRef = useRef("");
+  const recordingStartedAtRef = useRef(0);
+  const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shouldCancelRecordingRef = useRef(false);
+  const shouldSendRecordingRef = useRef(false);
   const [entry, setEntry] = useState<JournalEntry | null>(null);
   const [messages, setMessages] = useState<JournalMessage[]>([]);
   const [transcript, setTranscript] = useState("");
@@ -218,6 +223,13 @@ export default function MuniVoiceScreen() {
     }
   }, []);
 
+  const clearRecordingTimeout = useCallback(() => {
+    if (recordingTimeoutRef.current) {
+      clearTimeout(recordingTimeoutRef.current);
+      recordingTimeoutRef.current = null;
+    }
+  }, []);
+
   const speakReply = useCallback((reply: string) => {
     if (Platform.OS !== "web" || typeof window === "undefined" || !("speechSynthesis" in window)) {
       setVoiceState("idle");
@@ -282,12 +294,16 @@ export default function MuniVoiceScreen() {
   useEffect(() => {
     void loadSession();
     return () => {
+      clearRecordingTimeout();
+      shouldCancelRecordingRef.current = true;
       recognitionRef.current?.stop();
       stopSpeaking();
     };
-  }, [loadSession, stopSpeaking]);
+  }, [clearRecordingTimeout, loadSession, stopSpeaking]);
 
   const handleBack = useCallback(() => {
+    shouldCancelRecordingRef.current = true;
+    clearRecordingTimeout();
     recognitionRef.current?.stop();
     stopSpeaking();
     if (router.canGoBack()) {
@@ -295,7 +311,7 @@ export default function MuniVoiceScreen() {
       return;
     }
     router.replace("/home");
-  }, [stopSpeaking]);
+  }, [clearRecordingTimeout, stopSpeaking]);
 
   const sendTranscriptToMuni = useCallback(async (spokenText: string) => {
     if (!user?.studentNumber) {
@@ -350,6 +366,8 @@ export default function MuniVoiceScreen() {
       return;
     }
 
+    shouldCancelRecordingRef.current = true;
+    clearRecordingTimeout();
     recognitionRef.current?.stop();
     stopSpeaking();
     setIsAnalyzingTags(true);
@@ -380,7 +398,7 @@ export default function MuniVoiceScreen() {
     } finally {
       setIsAnalyzingTags(false);
     }
-  }, [entry, hasUserMessages, isAnalyzingTags, isSavingJournal, setActiveEntry, stopSpeaking, user?.studentNumber]);
+  }, [clearRecordingTimeout, entry, hasUserMessages, isAnalyzingTags, isSavingJournal, setActiveEntry, stopSpeaking, user?.studentNumber]);
 
   const handleConfirmTagsAndFinish = useCallback(async () => {
     if (!user?.studentNumber || !entry?.id || isSavingJournal || isSavingTags) return;
@@ -433,6 +451,8 @@ export default function MuniVoiceScreen() {
       return;
     }
 
+    shouldCancelRecordingRef.current = true;
+    clearRecordingTimeout();
     recognitionRef.current?.stop();
     stopSpeaking();
     setIsDiscardingJournal(true);
@@ -459,7 +479,7 @@ export default function MuniVoiceScreen() {
     setConversationMessages([]);
     setActiveEntry(null);
     router.replace("/home");
-  }, [entry?.id, handleBack, hasUserMessages, isDiscardingJournal, setActiveEntry, setConversationMessages, stopSpeaking, user?.studentNumber]);
+  }, [clearRecordingTimeout, entry?.id, handleBack, hasUserMessages, isDiscardingJournal, setActiveEntry, setConversationMessages, stopSpeaking, user?.studentNumber]);
 
   const handleStartListening = () => {
     if (!speechSupported) {
@@ -475,12 +495,16 @@ export default function MuniVoiceScreen() {
 
     finalTranscriptRef.current = "";
     latestTranscriptRef.current = "";
+    shouldCancelRecordingRef.current = false;
+    shouldSendRecordingRef.current = false;
+    recordingStartedAtRef.current = Date.now();
+    clearRecordingTimeout();
     setTranscript("");
-    setStatusMessage("Listening...");
+    setStatusMessage("Listening... tap Stop and Send when you are done.");
     setVoiceState("listening");
 
     const recognition: BrowserSpeechRecognition = new Recognition();
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = "en-PH";
     recognition.maxAlternatives = 1;
@@ -505,21 +529,53 @@ export default function MuniVoiceScreen() {
     };
 
     recognition.onerror = (event) => {
+      clearRecordingTimeout();
       setVoiceState("error");
       setStatusMessage(event.error === "not-allowed" ? "Microphone permission was blocked." : "Voice input stopped. Try again.");
     };
 
     recognition.onend = () => {
       recognitionRef.current = null;
+      clearRecordingTimeout();
+      if (shouldCancelRecordingRef.current) {
+        shouldCancelRecordingRef.current = false;
+        shouldSendRecordingRef.current = false;
+        finalTranscriptRef.current = "";
+        latestTranscriptRef.current = "";
+        setTranscript("");
+        setVoiceState("idle");
+        setStatusMessage("Recording cancelled.");
+        return;
+      }
+
+      const shouldSend = shouldSendRecordingRef.current || Date.now() - recordingStartedAtRef.current >= VOICE_RECORDING_MAX_MS;
+      if (!shouldSend) {
+        setVoiceState("idle");
+        setStatusMessage("Voice input stopped. Tap Start Listening to continue.");
+        return;
+      }
+
+      shouldSendRecordingRef.current = false;
       const spokenText = finalTranscriptRef.current || latestTranscriptRef.current;
       void sendTranscriptToMuni(spokenText);
     };
 
     recognitionRef.current = recognition;
+    recordingTimeoutRef.current = setTimeout(() => {
+      shouldSendRecordingRef.current = true;
+      recognitionRef.current?.stop();
+    }, VOICE_RECORDING_MAX_MS);
     recognition.start();
   };
 
   const handleStopListening = () => {
+    shouldSendRecordingRef.current = true;
+    recognitionRef.current?.stop();
+  };
+
+  const handleCancelListening = () => {
+    shouldCancelRecordingRef.current = true;
+    clearRecordingTimeout();
     recognitionRef.current?.stop();
   };
 
@@ -547,7 +603,7 @@ export default function MuniVoiceScreen() {
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
           <View style={styles.muniCircle}>
-            <Image source={MUNI_IMAGE} style={styles.muniImage} resizeMode="contain" />
+            <MuniAvatar style={styles.muniImage} />
           </View>
           <Text style={styles.heading}>Muni Voice</Text>
           <Text style={styles.subheading}>
@@ -585,45 +641,19 @@ export default function MuniVoiceScreen() {
             </Pressable>
           ) : null}
 
+          {voiceState === "listening" ? (
+            <Pressable style={styles.cancelRecordingButton} onPress={handleCancelListening}>
+              <Ionicons name="close-circle-outline" size={18} color="#8A4F4A" />
+              <Text style={styles.cancelRecordingButtonText}>Cancel Recording</Text>
+            </Pressable>
+          ) : null}
+
           {voiceState === "speaking" ? (
             <Pressable style={styles.secondaryButton} onPress={stopSpeaking}>
               <Ionicons name="volume-mute-outline" size={18} color="#365368" />
               <Text style={styles.secondaryButtonText}>Stop Voice</Text>
             </Pressable>
           ) : null}
-        </View>
-
-        <View style={styles.chatPanel}>
-          <View style={styles.chatHeaderRow}>
-            <View>
-              <Text style={styles.chatEyebrow}>Voice Journal Draft</Text>
-              <Text style={styles.chatTitle}>Conversation</Text>
-            </View>
-            <Text style={styles.chatCount}>{messages.length} turns</Text>
-          </View>
-
-          <View style={styles.chatTranscript}>
-            {messages.length ? (
-              messages.map((item) => {
-                const isUser = item.role === "user";
-                return (
-                  <View
-                    key={item.id}
-                    style={[styles.messageBubble, isUser ? styles.userBubble : styles.muniBubble]}
-                  >
-                    <Text style={[styles.messageLabel, isUser && styles.userMessageLabel]}>
-                      {isUser ? "You" : "Muni"}
-                    </Text>
-                    <Text style={[styles.messageText, isUser && styles.userMessageText]}>{item.text}</Text>
-                  </View>
-                );
-              })
-            ) : (
-              <Text style={styles.emptyTranscriptText}>
-                Your spoken conversation will appear here as text before you save it.
-              </Text>
-            )}
-          </View>
 
           <View style={styles.journalActions}>
             <Pressable
@@ -663,13 +693,6 @@ export default function MuniVoiceScreen() {
               )}
             </Pressable>
           </View>
-        </View>
-
-        <View style={styles.notePanel}>
-          <Ionicons name="globe-outline" size={18} color="#5A7A50" />
-          <Text style={styles.noteText}>
-            Web Speech API availability depends on the browser. Chrome and Edge usually work best.
-          </Text>
         </View>
       </ScrollView>
 
@@ -975,94 +998,31 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: "800",
   },
-  chatPanel: {
-    borderRadius: 20,
-    backgroundColor: "#FFFDF8",
+  cancelRecordingButton: {
+    marginTop: 8,
+    minHeight: 40,
+    alignSelf: "stretch",
+    borderRadius: 999,
+    backgroundColor: "#FFF7F5",
     borderWidth: 1,
-    borderColor: "#DCE9D9",
-    padding: 14,
-  },
-  chatHeaderRow: {
+    borderColor: "#E7C9C3",
+    alignItems: "center",
+    justifyContent: "center",
     flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    columnGap: 10,
-    marginBottom: 12,
+    columnGap: 6,
   },
-  chatEyebrow: {
-    color: "#6A805E",
-    fontSize: 11,
-    lineHeight: 14,
-    fontWeight: "900",
-    textTransform: "uppercase",
-  },
-  chatTitle: {
-    color: "#304558",
-    fontSize: 20,
-    lineHeight: 25,
-    fontWeight: "900",
-  },
-  chatCount: {
-    color: "#6C7D88",
-    fontSize: 12,
-    lineHeight: 16,
+  cancelRecordingButtonText: {
+    color: "#8A4F4A",
+    fontSize: 14,
+    lineHeight: 18,
     fontWeight: "800",
-    paddingTop: 4,
-  },
-  chatTranscript: {
-    rowGap: 10,
-    paddingVertical: 6,
-  },
-  messageBubble: {
-    maxWidth: "86%",
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  muniBubble: {
-    alignSelf: "flex-start",
-    backgroundColor: "#F2F8ED",
-    borderColor: "#D8E9CB",
-  },
-  userBubble: {
-    alignSelf: "flex-end",
-    backgroundColor: "#F4F7FA",
-    borderColor: "#DDE5EC",
-  },
-  messageLabel: {
-    color: "#5A7A50",
-    fontSize: 10,
-    lineHeight: 13,
-    fontWeight: "900",
-    textTransform: "uppercase",
-    marginBottom: 4,
-  },
-  userMessageLabel: {
-    color: "#63727F",
-    textAlign: "right",
-  },
-  messageText: {
-    color: "#304558",
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  userMessageText: {
-    textAlign: "right",
-  },
-  emptyTranscriptText: {
-    color: "#687787",
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 16,
   },
   journalActions: {
     flexDirection: "row",
     alignItems: "stretch",
     columnGap: 10,
-    marginTop: 12,
+    alignSelf: "stretch",
+    marginTop: 14,
   },
   discardButton: {
     flex: 0.8,
@@ -1103,22 +1063,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 19,
     fontWeight: "900",
-  },
-  notePanel: {
-    borderRadius: 16,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#DDE8D8",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    flexDirection: "row",
-    columnGap: 8,
-  },
-  noteText: {
-    flex: 1,
-    color: "#5F7180",
-    fontSize: 13,
-    lineHeight: 19,
   },
   modalBackdrop: {
     flex: 1,

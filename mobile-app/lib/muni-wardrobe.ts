@@ -72,7 +72,6 @@ export const COLLECTION_SECTIONS: MuniCollectionSection[] = [
   },
 ];
 
-export const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
 export const TALA_IMAGE = require("../assets/images/Tala_Star.png");
 
 let savedMuniLoadout: MuniLoadout = { ...DEFAULT_MUNI_LOADOUT };

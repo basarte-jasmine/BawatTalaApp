@@ -49,6 +49,23 @@ textarea {
   transition: all 0.3s ease;
 }
 
+.bt-admin-compact .bt-card {
+  padding: 1rem;
+}
+
+.bt-admin-compact .bt-card-lg {
+  padding: 1.25rem;
+}
+
+.bt-admin-reduce-motion *,
+.bt-admin-reduce-motion *::before,
+.bt-admin-reduce-motion *::after {
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+}
+
 /* Focus states */
 button:focus-visible,
 a:focus-visible,

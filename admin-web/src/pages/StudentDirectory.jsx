@@ -26,6 +26,7 @@ import {
   fetchAdminStudents,
   sendAdminStudentNotification,
 } from "../lib/admin-api";
+import { maskStudentNumber, useAdminPreferences } from "../lib/admin-preferences";
 import { getRiskBadgeClasses, getRiskLevelLabel, normalizeRiskLevel } from "../lib/risk-labels";
 
 const STATUS_FILTERS = [
@@ -54,6 +55,7 @@ const PROFILE_ENTRY_FILTERS = [
   { label: "Needs Support", value: "support" },
   { label: "Critical Case", value: "critical" },
 ];
+const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
 
 function getInitials(name) {
   return String(name || "")
@@ -218,7 +220,7 @@ function ProfileInfoTile({ label, value }) {
   );
 }
 
-function DirectoryRow({ student, onMessage, onViewProfile }) {
+function DirectoryRow({ student, onMessage, onViewProfile, maskStudentNumbers = false }) {
   const isFlagged = student.status === "Flagged" || student.flaggedEntries > 0;
   const statusLabel = isFlagged ? "Flagged" : student.status;
   const avatarTone =
@@ -239,7 +241,7 @@ function DirectoryRow({ student, onMessage, onViewProfile }) {
           <div className="grid min-w-0 flex-1 gap-x-10 gap-y-3 text-sm text-slate-600 sm:grid-cols-2 lg:grid-cols-[minmax(16rem,1.35fr)_minmax(11rem,0.85fr)_minmax(8rem,0.6fr)_minmax(6rem,0.45fr)] lg:items-start">
             <div className="min-w-0">
               <h3 className="truncate text-base font-semibold leading-tight text-slate-950">{student.fullName}</h3>
-              <p className="mt-1 text-sm text-slate-500">{student.studentNumber}</p>
+              <p className="mt-1 text-sm text-slate-500">{maskStudentNumber(student.studentNumber, maskStudentNumbers)}</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium ${getStatusClasses(statusLabel)}`}>
                   {statusLabel}
@@ -283,7 +285,7 @@ function DirectoryRow({ student, onMessage, onViewProfile }) {
   );
 }
 
-function MessageModal({ student, title, body, sending, onTitleChange, onBodyChange, onClose, onSend }) {
+function MessageModal({ student, title, body, sending, maskStudentNumbers = false, onTitleChange, onBodyChange, onClose, onSend }) {
   if (!student) return null;
 
   return (
@@ -296,7 +298,7 @@ function MessageModal({ student, title, body, sending, onTitleChange, onBodyChan
             </div>
             <div>
               <h2 className="font-bold text-slate-900">Message {student.fullName?.split(" ")[0] || "Student"}</h2>
-              <div className="text-xs text-slate-500">{student.studentNumber} - {student.program || "Unspecified"}</div>
+              <div className="text-xs text-slate-500">{maskStudentNumber(student.studentNumber, maskStudentNumbers)} - {student.program || "Unspecified"}</div>
             </div>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100" aria-label="Close message modal">
@@ -409,6 +411,7 @@ function RecentEntriesModal({
   dateRange,
   concern,
   onSearchChange,
+  maskStudentNumbers = false,
   onEntryScopeChange,
   onDateRangeChange,
   onConcernChange,
@@ -477,7 +480,7 @@ function RecentEntriesModal({
                           <div className="font-semibold text-slate-900">{entry.fullName || "Unnamed Student"}</div>
                           <div className="mt-2 flex flex-wrap gap-x-8 gap-y-1 text-sm text-slate-500">
                             <span>{entry.program || "Unspecified"}</span>
-                            <span>{entry.studentNumber}</span>
+                            <span>{maskStudentNumber(entry.studentNumber, maskStudentNumbers)}</span>
                           </div>
                         </div>
                         <div className="text-sm text-slate-400">{formatEntryTimestamp(entry.createdAt || entry.entryDate)}</div>
@@ -593,6 +596,8 @@ function EntryConversation({ entry, studentName, onOpenJournal }) {
 
 export default function StudentDirectory({ onLogout, session }) {
   const [searchParams] = useSearchParams();
+  const { preferences } = useAdminPreferences();
+  const shouldMaskStudentNumbers = Boolean(preferences.privacy.maskStudentNumbers);
   const [students, setStudents] = useState([]);
   const [programs, setPrograms] = useState([]);
   const [searchTerm, setSearchTerm] = useState(() => searchParams.get("search") || "");
@@ -649,6 +654,13 @@ export default function StudentDirectory({ onLogout, session }) {
   useEffect(() => {
     const nextSearch = searchParams.get("search") || "";
     setSearchTerm((current) => (current === nextSearch ? current : nextSearch));
+  }, [searchParams]);
+
+  useEffect(() => {
+    const studentNumber = searchParams.get("student") || "";
+    if (STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+      void handleViewProfile(studentNumber);
+    }
   }, [searchParams]);
 
   useEffect(() => {
@@ -739,7 +751,7 @@ export default function StudentDirectory({ onLogout, session }) {
         message: messageBody,
         actorEmail: session?.email || "",
         actorName: session?.name || "",
-        actorRole: "Counselor",
+        actorRole: session?.roleLabel || session?.role || "Counselor",
       });
       setSuccessMessage(`Message sent to ${messageTarget.fullName || messageTarget.studentNumber}.`);
       setMessageTarget(null);
@@ -832,6 +844,7 @@ export default function StudentDirectory({ onLogout, session }) {
                 <DirectoryRow
                   key={student.studentNumber}
                   student={student}
+                  maskStudentNumbers={shouldMaskStudentNumbers}
                   onMessage={(target) => {
                     setMessageTarget(target);
                     setMessageTitle("Counselor Follow-up");
@@ -889,7 +902,7 @@ export default function StudentDirectory({ onLogout, session }) {
                           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-slate-500">
                             <span className="inline-flex items-center gap-1.5">
                               <UserCircle2 className="h-4 w-4" />
-                              {studentProfile.profile.studentNumber}
+                              {maskStudentNumber(studentProfile.profile.studentNumber, shouldMaskStudentNumbers)}
                             </span>
                             <span>{studentProfile.profile.program || "Unspecified"}</span>
                             <span>{studentProfile.profile.email || "No email provided"}</span>
@@ -941,7 +954,7 @@ export default function StudentDirectory({ onLogout, session }) {
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
                       <ProfileInfoTile label="Program" value={studentProfile.profile.program || "Unspecified"} />
                       <ProfileInfoTile label="Email" value={studentProfile.profile.email || "Not provided"} />
-                      <ProfileInfoTile label="Student Number" value={studentProfile.profile.studentNumber} />
+                      <ProfileInfoTile label="Student Number" value={maskStudentNumber(studentProfile.profile.studentNumber, shouldMaskStudentNumbers)} />
                       <ProfileInfoTile label="Birthdate" value={formatDate(studentProfile.profile.birthdate)} />
                     </div>
                   </div>
@@ -1139,6 +1152,7 @@ export default function StudentDirectory({ onLogout, session }) {
           entryScope={entryScope}
           dateRange={entryDateRange}
           concern={entryConcern}
+          maskStudentNumbers={shouldMaskStudentNumbers}
           onSearchChange={setEntrySearchTerm}
           onEntryScopeChange={setEntryScope}
           onDateRangeChange={setEntryDateRange}
@@ -1165,6 +1179,7 @@ export default function StudentDirectory({ onLogout, session }) {
           title={messageTitle}
           body={messageBody}
           sending={isSending}
+          maskStudentNumbers={shouldMaskStudentNumbers}
           onTitleChange={setMessageTitle}
           onBodyChange={setMessageBody}
           onClose={() => setMessageTarget(null)}

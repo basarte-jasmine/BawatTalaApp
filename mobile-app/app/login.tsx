@@ -13,6 +13,22 @@ import {
 } from "../lib/auth-validation";
 import { useAuthSession } from "../lib/auth-session";
 
+function getLoginErrorMessage(message?: string) {
+  const normalized = String(message || "").toLowerCase();
+
+  if (normalized.includes("verify")) {
+    return "Please verify your account before logging in.";
+  }
+  if (normalized.includes("too many")) {
+    return "Too many login attempts. Please try again later.";
+  }
+  if (normalized.includes("server") || normalized.includes("connection") || normalized.includes("network")) {
+    return "We could not connect right now. Please try again.";
+  }
+
+  return "Invalid student ID or password.";
+}
+
 export default function LoginScreen() {
   const { setUser } = useAuthSession();
   const [studentId, setStudentId] = useState("");
@@ -48,7 +64,7 @@ export default function LoginScreen() {
     setIsBusy(false);
 
     if (!result.ok) {
-      setErrorMessage("Invalid student ID or password.");
+      setErrorMessage(getLoginErrorMessage(result.message));
       return;
     }
 

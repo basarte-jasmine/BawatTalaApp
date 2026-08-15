@@ -245,6 +245,7 @@ export default function WriteEntryScreen() {
   const [animatedMuniMessageId, setAnimatedMuniMessageId] = useState("");
   const [isAiRetryLocked, setIsAiRetryLocked] = useState(false);
   const [showRiskModal, setShowRiskModal] = useState(false);
+  const [riskModalRedirectEntryId, setRiskModalRedirectEntryId] = useState<string | null>(null);
   const [showExitModal, setShowExitModal] = useState(false);
   const [showTagReviewModal, setShowTagReviewModal] = useState(false);
   const [showRelationshipTagModal, setShowRelationshipTagModal] = useState(false);
@@ -667,6 +668,16 @@ export default function WriteEntryScreen() {
     [entry, user?.studentNumber],
   );
 
+  const navigateToFinishedRiskEntry = useCallback(() => {
+    if (!riskModalRedirectEntryId) {
+      return;
+    }
+
+    const entryId = riskModalRedirectEntryId;
+    setRiskModalRedirectEntryId(null);
+    router.replace(`/journal-entry-view?entryId=${encodeURIComponent(entryId)}`);
+  }, [riskModalRedirectEntryId]);
+
   const handleDismissRiskModal = useCallback(async () => {
     if (isSavingSupportResponse) {
       return;
@@ -678,7 +689,8 @@ export default function WriteEntryScreen() {
     }
 
     setShowRiskModal(false);
-  }, [isSavingSupportResponse, saveSupportDecision]);
+    navigateToFinishedRiskEntry();
+  }, [isSavingSupportResponse, navigateToFinishedRiskEntry, saveSupportDecision]);
 
   const handleCallHotline = useCallback(async () => {
     if (isSavingSupportResponse) {
@@ -697,6 +709,8 @@ export default function WriteEntryScreen() {
           "Call NCMH Hotline",
           `Please call ${NCMH_HOTLINE_LANDLINE} or ${NCMH_HOTLINE_DISPLAY} for immediate support.`,
         );
+        setShowRiskModal(false);
+        navigateToFinishedRiskEntry();
         return;
       }
 
@@ -707,8 +721,10 @@ export default function WriteEntryScreen() {
         "Call NCMH Hotline",
         `Please call ${NCMH_HOTLINE_LANDLINE} or ${NCMH_HOTLINE_DISPLAY} for immediate support.`,
       );
+      setShowRiskModal(false);
+      navigateToFinishedRiskEntry();
     }
-  }, [finishRiskEntryWithSupport, isSavingSupportResponse]);
+  }, [finishRiskEntryWithSupport, isSavingSupportResponse, navigateToFinishedRiskEntry]);
 
   const handleOpenCounseling = useCallback(async () => {
     if (isSavingSupportResponse) {
@@ -721,6 +737,7 @@ export default function WriteEntryScreen() {
     }
 
     setShowRiskModal(false);
+    setRiskModalRedirectEntryId(null);
     router.push("/consult?track=professional&skipIntro=1");
   }, [finishRiskEntryWithSupport, isSavingSupportResponse]);
 
@@ -735,6 +752,7 @@ export default function WriteEntryScreen() {
     }
 
     setShowRiskModal(false);
+    setRiskModalRedirectEntryId(null);
     router.push("/wellness-tools");
   }, [finishRiskEntryWithSupport, isSavingSupportResponse]);
 
@@ -770,6 +788,11 @@ export default function WriteEntryScreen() {
     setEntry(result.entry ?? null);
     if (result.messages) {
       setMessages(result.messages);
+    }
+    if (result.entry?.riskLevel === "HIGH") {
+      setRiskModalRedirectEntryId(result.entry.id);
+      setShowRiskModal(true);
+      return;
     }
     router.replace(`/journal-entry-view?entryId=${encodeURIComponent(result.entry?.id ?? entry.id)}`);
   };

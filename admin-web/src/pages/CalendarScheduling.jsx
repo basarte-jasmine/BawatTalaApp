@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Edit2, Plus, RefreshCw, Trash2, UserPlus, Users, X } from "lucide-react";
 import ConfirmActionModal from "../components/ConfirmActionModal";
 import Layout from "../components/Layout";
@@ -9,7 +10,9 @@ import {
   COUNSELOR_COLORS,
   formatDisplayDate,
   getAvailableSlotsForDate,
+  getMinimumBookingIsoDate,
   getConcernClassName,
+  isBlockedByBookingLeadTime,
   getWeekDatesForIso,
   getMonthKey,
   getMonthTitle,
@@ -26,11 +29,13 @@ import {
   declineAdminAppointment,
   deleteAdminAppointment,
   deleteAdminPeerCounselor,
+  fetchAppointmentAvailability,
   fetchAdminAppointmentsOverview,
   updateAdminPeerCounselor,
   updateAdminDayAvailability,
   updateAdminAppointment,
 } from "../lib/admin-api";
+import { maskStudentNumber, useAdminPreferences } from "../lib/admin-preferences";
 import { PROGRAM_OPTIONS } from "../lib/register-data";
 
 const ACTIVITY_LOGS_PER_PAGE = 5;
@@ -52,6 +57,10 @@ export default function CalendarScheduling({
   title,
   subtitle,
 }) {
+  const [searchParams] = useSearchParams();
+  const { preferences } = useAdminPreferences();
+  const shouldMaskStudentNumbers = Boolean(preferences.privacy.maskStudentNumbers);
+  const requiresCancelReason = Boolean(preferences.privacy.requireCancelReason);
   const normalizedSupportType = String(supportType || "GUIDANCE").toUpperCase() === "PEER" ? "PEER" : "GUIDANCE";
   const isPeerSupport = normalizedSupportType === "PEER";
   const pageTitle = title || (isPeerSupport ? "Peer Counselor Scheduling" : "Guidance Calendar & Scheduling");
@@ -60,7 +69,7 @@ export default function CalendarScheduling({
     : "Manage guidance appointments, counseling sessions, and counselor availability.");
   const counselorLabel = isPeerSupport ? "Peer Counselor" : "Counselor";
   const counselorLabelPlural = isPeerSupport ? "Peer Counselors" : "Counselors";
-  const [selectedDate, setSelectedDate] = useState(getTodayIsoDate);
+  const [selectedDate, setSelectedDate] = useState(() => searchParams.get("date") || getTodayIsoDate());
   const [selectedMonth, setSelectedMonth] = useState(() => new Date());
   const [selectedCounselorId, setSelectedCounselorId] = useState("");
   const [overview, setOverview] = useState(null);
@@ -86,7 +95,10 @@ export default function CalendarScheduling({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [modalError, setModalError] = useState("");
   const [modalLoadingSlots, setModalLoadingSlots] = useState(false);
+  const [modalAvailabilityData, setModalAvailabilityData] = useState(null);
+  const [modalAvailabilityError, setModalAvailabilityError] = useState("");
   const [cancelAppointmentId, setCancelAppointmentId] = useState("");
+  const [cancelReason, setCancelReason] = useState("");
   const [deleteAppointmentId, setDeleteAppointmentId] = useState("");
   const [dayAvailabilityAction, setDayAvailabilityAction] = useState(null);
   const [peerForm, setPeerForm] = useState(PEER_FORM_INITIAL_STATE);
@@ -187,7 +199,24 @@ export default function CalendarScheduling({
   const modalAvailability = Array.isArray(modalOverview?.availability) ? modalOverview.availability : [];
   const modalAvailabilityOverrides = Array.isArray(modalOverview?.availabilityOverrides) ? modalOverview.availabilityOverrides : [];
   const modalSlotTimes = Array.isArray(modalOverview?.slotTimes) ? modalOverview.slotTimes : slotTimes;
-  const modalAvailableSlots = useMemo(
+  const modalAvailabilityDay = useMemo(
+    () =>
+      Array.isArray(modalAvailabilityData?.days)
+        ? modalAvailabilityData.days.find((day) => day.date === modalDate) || null
+        : null,
+    [modalAvailabilityData, modalDate],
+  );
+  const modalEndpointSlots = useMemo(
+    () =>
+      Array.isArray(modalAvailabilityDay?.availableSlots)
+        ? modalAvailabilityDay.availableSlots.map((slot) => ({
+            value: slot.time,
+            label: slot.label,
+          }))
+        : null,
+    [modalAvailabilityDay],
+  );
+  const modalOverviewSlots = useMemo(
     () =>
       getAvailableSlotsForDate({
         availability: modalAvailability,
@@ -197,9 +226,11 @@ export default function CalendarScheduling({
         ignoreAppointmentId: editingAppointmentId,
         monthAppointments: modalMonthAppointments,
         slotTimes: modalSlotTimes,
+        studentNumber: modalStudentNumber.trim(),
       }),
-    [editingAppointmentId, modalAvailability, modalAvailabilityOverrides, modalCounselorId, modalDate, modalMonthAppointments, modalSlotTimes],
+    [editingAppointmentId, modalAvailability, modalAvailabilityOverrides, modalCounselorId, modalDate, modalMonthAppointments, modalSlotTimes, modalStudentNumber],
   );
+  const modalAvailableSlots = modalEndpointSlots || modalOverviewSlots;
 
   const appointmentCountByDate = useMemo(() => {
     const counts = new Map();
@@ -265,7 +296,13 @@ export default function CalendarScheduling({
   }, [activityLogsPage, totalActivityLogPages]);
 
   useEffect(() => {
-    let isMounted = true;
+    const requestedDate = searchParams.get("date") || "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
+      setSelectedDate(requestedDate);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
     if (!isModalOpen || !modalDate) {
       return undefined;
     }
@@ -275,9 +312,41 @@ export default function CalendarScheduling({
     }
 
     async function loadModalMonth() {
+      await loadOverviewForMonth(modalMonth, { silent: true });
+    }
+
+    void loadModalMonth();
+
+    return undefined;
+  }, [isModalOpen, modalDate, overviewCache]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const studentNumber = modalStudentNumber.trim();
+    if (!isModalOpen || !modalCounselorId || !modalDate) {
+      setModalAvailabilityData(null);
+      setModalLoadingSlots(false);
+      return undefined;
+    }
+
+    async function loadModalAvailability() {
       try {
         setModalLoadingSlots(true);
-        await loadOverviewForMonth(modalMonth, { silent: true });
+        setModalAvailabilityError("");
+        const data = await fetchAppointmentAvailability({
+          counselorId: modalCounselorId,
+          month: modalMonthKey,
+          studentNumber,
+          supportType: normalizedSupportType,
+        });
+        if (isMounted) {
+          setModalAvailabilityData(data);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setModalAvailabilityData(null);
+          setModalAvailabilityError(error instanceof Error ? error.message : "Failed to load available times.");
+        }
       } finally {
         if (isMounted) {
           setModalLoadingSlots(false);
@@ -285,12 +354,12 @@ export default function CalendarScheduling({
       }
     }
 
-    void loadModalMonth();
+    void loadModalAvailability();
 
     return () => {
       isMounted = false;
     };
-  }, [isModalOpen, modalDate, overviewCache]);
+  }, [isModalOpen, modalCounselorId, modalDate, modalMonthKey, modalStudentNumber, normalizedSupportType]);
 
   useEffect(() => {
     if (!modalAvailableSlots.some((slot) => slot.value === modalTime)) {
@@ -332,16 +401,21 @@ export default function CalendarScheduling({
   }
 
   function handleOpenModal(appointment = null) {
+    const fallbackDate = selectedDate && selectedDate >= getMinimumBookingIsoDate()
+      ? selectedDate
+      : getMinimumBookingIsoDate();
     setIsModalOpen(true);
     setEditingAppointmentId(appointment?.id || "");
     setModalStudentNumber(appointment?.studentNumber || "");
     setModalCounselorId(appointment?.counselorId || selectedCounselor?.id || selectedCounselorId || "");
-    setModalDate(appointment?.appointmentDate || selectedDate || getTodayIsoDate());
+    setModalDate(appointment?.appointmentDate || fallbackDate);
     setModalTime(appointment?.slotTime || "");
     setModalConcern(appointment?.concern || "");
     setModalCounselingType(appointment?.counselingType || "1-on-1");
-    setModalNote(appointment?.studentNote || "");
+    setModalNote(isPeerSupport ? "" : appointment?.studentNote || "");
     setModalGenderPreference(appointment?.counselorGenderPreference || "No Preference");
+    setModalAvailabilityData(null);
+    setModalAvailabilityError("");
     setModalError("");
   }
 
@@ -355,6 +429,10 @@ export default function CalendarScheduling({
         setModalError("Student number must use the format 23-0000.");
         return;
       }
+      if (modalDate < getMinimumBookingIsoDate()) {
+        setModalError("Appointments must be set at least 2 days ahead.");
+        return;
+      }
       const payload = {
         actorEmail: session?.email || "",
         studentNumber,
@@ -363,7 +441,7 @@ export default function CalendarScheduling({
         slotTime: modalTime,
         concern: modalConcern,
         counselingType: isPeerSupport ? "" : modalCounselingType,
-        studentNote: modalNote,
+        studentNote: isPeerSupport ? "" : modalNote,
         counselorGenderPreference: modalGenderPreference,
         bookingSource: "ADMIN_PANEL",
         supportType: normalizedSupportType,
@@ -388,8 +466,16 @@ export default function CalendarScheduling({
 
   async function handleCancelAppointment(appointmentId) {
     try {
-      await cancelAdminAppointment(appointmentId, { actorEmail: session?.email || "" });
+      if (requiresCancelReason && !cancelReason.trim()) {
+        setErrorMessage("Cancellation reason is required.");
+        return;
+      }
+      await cancelAdminAppointment(appointmentId, {
+        actorEmail: session?.email || "",
+        cancellationReason: cancelReason.trim(),
+      });
       setCancelAppointmentId("");
+      setCancelReason("");
       await refreshOverview();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to cancel appointment.");
@@ -622,6 +708,7 @@ export default function CalendarScheduling({
                 <div className="grid grid-cols-7 gap-px overflow-hidden rounded-b-2xl bg-slate-200">
                   {calendarCells.map((cell, index) => {
                     const isSelected = cell?.isoDate === selectedDate;
+                    const isDateBlocked = Boolean(cell?.isoDate && isBlockedByBookingLeadTime(cell.isoDate));
                     const appointmentCount = cell?.isoDate ? appointmentCountByDate.get(cell.isoDate) || 0 : 0;
                     return (
                       <button
@@ -633,8 +720,12 @@ export default function CalendarScheduling({
                           setAppointmentsModalDate(cell.isoDate);
                         }}
                         disabled={!cell?.isoDate}
-                        className={`min-h-[112px] bg-white px-4 py-4 text-left transition ${
-                          cell?.isoDate ? "hover:bg-emerald-50" : "cursor-default"
+                        className={`min-h-[112px] px-4 py-4 text-left transition ${
+                          !cell?.isoDate
+                            ? "cursor-default bg-white"
+                            : isDateBlocked
+                              ? "bg-slate-100 text-slate-400 hover:bg-slate-100"
+                              : "bg-white hover:bg-emerald-50"
                         }`}
                       >
                         {cell ? (
@@ -642,7 +733,11 @@ export default function CalendarScheduling({
                             <div className="flex items-start justify-between">
                               <span
                                 className={`flex h-10 w-10 items-center justify-center rounded-full text-base font-semibold ${
-                                  isSelected ? "bg-[#4B82F0] text-white" : "text-slate-700"
+                                  isSelected
+                                    ? "bg-[#4B82F0] text-white"
+                                    : isDateBlocked
+                                      ? "text-slate-400"
+                                      : "text-slate-700"
                                 }`}
                               >
                                 {cell.day}
@@ -1016,7 +1111,7 @@ export default function CalendarScheduling({
                             {isPeerSupport ? (
                               <>
                                 <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600">
-                                  {item.studentNumber || "No student number"}
+                                  {item.studentNumber ? maskStudentNumber(item.studentNumber, shouldMaskStudentNumbers) : "No student number"}
                                 </span>
                                 <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600">
                                   {item.program || "No program"}
@@ -1093,7 +1188,7 @@ export default function CalendarScheduling({
                       <div className="mt-4 grid gap-3 text-sm text-slate-500 sm:grid-cols-[1fr,auto]">
                         <div>
                           <div className="font-semibold text-slate-700">{appointment.studentName}</div>
-                          <div className="mt-1">{appointment.program || appointment.studentNumber}</div>
+                          <div className="mt-1">{appointment.program || maskStudentNumber(appointment.studentNumber, shouldMaskStudentNumbers)}</div>
                           {!isPeerSupport && appointment.counselingType ? (
                             <div className="mt-1 text-xs font-semibold text-emerald-700">
                               Counseling type: {appointment.counselingType}
@@ -1356,7 +1451,7 @@ export default function CalendarScheduling({
                   <input
                     required
                     type="date"
-                    min={getTodayIsoDate()}
+                    min={getMinimumBookingIsoDate()}
                     value={modalDate}
                     onChange={(e) => setModalDate(e.target.value)}
                     className="w-full rounded-xl border border-slate-200 p-2.5 text-sm outline-none focus:border-[#3DA35D]"
@@ -1371,12 +1466,21 @@ export default function CalendarScheduling({
                     className="w-full rounded-xl border border-slate-200 p-2.5 text-sm outline-none focus:border-[#3DA35D]"
                   >
                     <option value="">
-                      {modalLoadingSlots ? "Loading times..." : modalAvailableSlots.length ? "Select Time" : "No open times"}
+                      {isBlockedByBookingLeadTime(modalDate)
+                        ? "Date is too soon"
+                        : modalLoadingSlots && !modalAvailableSlots.length
+                        ? "Loading times..."
+                        : modalAvailableSlots.length
+                          ? "Select Time"
+                          : "No open times"}
                     </option>
                     {modalAvailableSlots.map((s) => (
                       <option key={`modal-time-${s.value}`} value={s.value}>{s.label}</option>
                     ))}
                   </select>
+                  {modalAvailabilityError ? (
+                    <p className="mt-1 text-xs font-semibold text-red-600">{modalAvailabilityError}</p>
+                  ) : null}
                 </div>
               </div>
 
@@ -1421,16 +1525,18 @@ export default function CalendarScheduling({
                 </div>
               ) : null}
 
-              <div>
-                <label className="mb-1 block text-sm font-semibold text-slate-700">Note (Optional)</label>
-                <textarea
-                  value={modalNote}
-                  onChange={(e) => setModalNote(e.target.value)}
-                  placeholder="Any additional details..."
-                  className="w-full rounded-xl border border-slate-200 p-2.5 text-sm outline-none focus:border-[#3DA35D]"
-                  rows={2}
-                />
-              </div>
+              {!isPeerSupport ? (
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-slate-700">Note (Optional)</label>
+                  <textarea
+                    value={modalNote}
+                    onChange={(e) => setModalNote(e.target.value)}
+                    placeholder="Any additional details..."
+                    className="w-full resize-none rounded-xl border border-slate-200 p-2.5 text-sm outline-none focus:border-[#3DA35D]"
+                    rows={2}
+                  />
+                </div>
+              ) : null}
 
               <div className="flex justify-end gap-3 pt-4">
                 <button
@@ -1459,10 +1565,18 @@ export default function CalendarScheduling({
 
       <ConfirmActionModal
         isOpen={Boolean(cancelAppointmentId)}
-        onClose={() => setCancelAppointmentId("")}
+        onClose={() => {
+          setCancelAppointmentId("");
+          setCancelReason("");
+        }}
         onConfirm={() => void handleCancelAppointment(cancelAppointmentId)}
         title="Cancel Appointment"
         description="Cancel this appointment and keep it listed as cancelled?"
+        inputLabel={requiresCancelReason ? "Cancellation reason" : ""}
+        inputPlaceholder="Add the internal reason for cancelling this appointment."
+        inputRequired={requiresCancelReason}
+        inputValue={cancelReason}
+        onInputChange={setCancelReason}
         cancelLabel="Keep"
         confirmLabel="Confirm Cancel"
         confirmTone="amber"

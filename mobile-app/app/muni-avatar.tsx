@@ -5,16 +5,14 @@ import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { useAuthSession } from "../lib/auth-session";
 import { fetchCheckInStatus } from "../lib/backend-api";
 import {
   areMuniLoadoutsEqual,
   COLLECTION_SECTIONS,
-  getEyeAccessoryStyle,
-  getHeadAccessoryStyle,
   getMuniCollectionSource,
   getSavedMuniLoadout,
-  MUNI_IMAGE,
   MuniCollectionOption,
   MuniLoadout,
   purchaseMuniItem,
@@ -78,11 +76,6 @@ export default function MuniAvatarScreen() {
   }, [savedItems]);
 
   const equippedBackgroundSource = getMuniCollectionSource("background", equippedItems.background);
-  const equippedHeadSource = getMuniCollectionSource("head", equippedItems.head);
-  const equippedEyeSource = getMuniCollectionSource("eye", equippedItems.eye);
-  const equippedOutfitSource = getMuniCollectionSource("outfit", equippedItems.outfit);
-  const equippedHeadStyle = getHeadAccessoryStyle(equippedItems.head);
-  const equippedEyeStyle = getEyeAccessoryStyle(equippedItems.eye);
   const hasUnsavedChanges = !areMuniLoadoutsEqual(equippedItems, savedItems);
   const availableTala = Math.max(0, totalTala - spentTala);
   const ownedItemCount = COLLECTION_SECTIONS.reduce((sum, section) => sum + ownedItems[section.id].length, 0);
@@ -168,24 +161,7 @@ export default function MuniAvatarScreen() {
             </View>
 
             <View style={styles.muniPreviewWrap}>
-              <Image source={MUNI_IMAGE} style={styles.muniBaseImage} resizeMode="contain" />
-              {equippedOutfitSource ? (
-                <Image source={equippedOutfitSource} style={styles.muniAccessoryImage} resizeMode="contain" />
-              ) : null}
-              {equippedEyeSource ? (
-                <Image
-                  source={equippedEyeSource}
-                  style={[styles.muniAccessoryImage, equippedEyeStyle]}
-                  resizeMode="contain"
-                />
-              ) : null}
-              {equippedHeadSource ? (
-                <Image
-                  source={equippedHeadSource}
-                  style={[styles.muniAccessoryImage, equippedHeadStyle]}
-                  resizeMode="contain"
-                />
-              ) : null}
+              <MuniAvatar loadout={equippedItems} style={styles.muniPreviewAvatar} />
             </View>
 
             <View style={styles.heroStatsRow}>
@@ -546,26 +522,14 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: "50%",
     bottom: 54,
-    width: 190,
-    height: 190,
-    marginLeft: -95,
+    width: 205,
+    height: 205,
+    marginLeft: -102.5,
     zIndex: 3,
   },
-  muniBaseImage: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    width: 190,
-    height: 190,
-    zIndex: 2,
-  },
-  muniAccessoryImage: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    width: 190,
-    height: 190,
-    zIndex: 3,
+  muniPreviewAvatar: {
+    width: 205,
+    height: 205,
   },
   heroStatsRow: {
     position: "absolute",

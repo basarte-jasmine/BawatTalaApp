@@ -26,6 +26,22 @@ export function getTodayIsoDate() {
   }).format(new Date());
 }
 
+export function addDaysToIsoDate(isoDate, days) {
+  const date = new Date(`${isoDate}T12:00:00+08:00`);
+  if (Number.isNaN(date.getTime())) return isoDate;
+  date.setUTCDate(date.getUTCDate() + days);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+export function getMinimumBookingIsoDate() {
+  return addDaysToIsoDate(getTodayIsoDate(), 2);
+}
+
 export function getMonthTitle(date) {
   return date.toLocaleDateString("en-US", {
     month: "long",
@@ -125,6 +141,10 @@ export function isPastIsoDate(isoDate) {
   return isoDate < getTodayIsoDate();
 }
 
+export function isBlockedByBookingLeadTime(isoDate) {
+  return isoDate < getMinimumBookingIsoDate();
+}
+
 export function getAvailableSlotsForDate({
   availability,
   availabilityOverrides = [],
@@ -133,8 +153,10 @@ export function getAvailableSlotsForDate({
   monthAppointments,
   slotTimes,
   ignoreAppointmentId = "",
+  studentNumber = "",
 }) {
   if (!counselorId || !isoDate) return [];
+  if (isBlockedByBookingLeadTime(isoDate)) return [];
   const availabilityMap = buildAvailabilityMap(availability, counselorId);
   const overrideMap = buildAvailabilityOverrideMap(availabilityOverrides, counselorId);
   const dayOfWeek = new Date(`${isoDate}T12:00:00+08:00`).getUTCDay();
@@ -149,6 +171,14 @@ export function getAvailableSlotsForDate({
       )
       .map((item) => `${item.appointmentDate}:${item.slotTime}`),
   );
+  const studentHasAppointmentOnDate = Boolean(studentNumber) && monthAppointments.some(
+    (item) =>
+      item.studentNumber === studentNumber &&
+      item.appointmentDate === isoDate &&
+      item.id !== ignoreAppointmentId &&
+      ["PENDING", "CONFIRMED"].includes(String(item.status || "").toUpperCase()),
+  );
+  if (studentHasAppointmentOnDate) return [];
 
   return slotTimes.filter((slot) => {
     const overrideKey = `${isoDate}:${slot.value}`;

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
+import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { fetchJournalCalendar, fetchJournalEntriesByDate } from "../lib/backend-api";
 import { JournalLockGate } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
@@ -22,7 +23,6 @@ type WeekDayItem = {
   label: string;
 };
 
-const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
 const BOOK_IMAGE = require("../assets/images/book_sample.png");
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
@@ -244,7 +244,7 @@ export default function JournalScreen() {
 
             <View style={[styles.reflectionFooterRow, compact && styles.reflectionFooterRowCompact]}>
               <View style={[styles.companionWrap, compact && styles.companionWrapCompact]}>
-                <Image source={MUNI_IMAGE} style={[styles.companionImage, compact && styles.companionImageCompact]} resizeMode="contain" />
+                <MuniAvatar style={[styles.companionImage, compact && styles.companionImageCompact]} />
               </View>
 
               <Text style={[styles.reflectionFootnote, compact && styles.reflectionFootnoteCompact]} numberOfLines={2}>
@@ -291,7 +291,7 @@ export default function JournalScreen() {
                 </View>
 
                 <View style={styles.modalCompanionWrap}>
-                  <Image source={MUNI_IMAGE} style={styles.modalCompanionImage} resizeMode="contain" />
+                  <MuniAvatar style={styles.modalCompanionImage} />
                 </View>
               </View>
 

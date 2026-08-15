@@ -4,7 +4,8 @@
   "private": true,
   "main": "src/server.js",
   "scripts": {
-    "dev": "node src/server.js",
+    "dev": "node src/server.js --skip-startup-tasks",
+    "dev:schema": "node src/server.js",
     "start": "node src/server.js",
     "seed:student": "node scripts/seed-default-student.js"
   },

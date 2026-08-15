@@ -3,6 +3,7 @@ import { Bell, Palette, Shield, User } from "lucide-react";
 import Layout from "../components/Layout";
 import Modal from "../components/Modal";
 import { fetchAdminSettings, updateAdminSettings } from "../lib/admin-api";
+import { useAdminPreferences } from "../lib/admin-preferences";
 
 const PROFILE_PICTURE_LIMIT_BYTES = 5 * 1024 * 1024;
 
@@ -78,6 +79,7 @@ function ToggleRow({ label, description, checked, onChange, disabled = false }) 
 }
 
 export default function Settings({ onLogout, session }) {
+  const { setPreferences } = useAdminPreferences();
   const [pageSession, setPageSession] = useState(session);
   const [activeTab, setActiveTab] = useState("profile");
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -167,6 +169,8 @@ export default function Settings({ onLogout, session }) {
           email: data?.profile?.email || current?.email || "",
           name: data?.profile?.fullName || current?.name || "",
           pictureUrl: data?.profile?.profilePictureUrl || current?.pictureUrl || "",
+          role: data?.profile?.role || current?.role || "",
+          roleLabel: data?.profile?.roleLabel || current?.roleLabel || "",
         }));
         setPendingProfilePictureUpload(null);
         setErrorMessage("");
@@ -303,9 +307,10 @@ export default function Settings({ onLogout, session }) {
         email: data?.profile?.email || formState.email,
         name: data?.profile?.fullName || formState.fullName,
         pictureUrl: data?.profile?.profilePictureUrl || formState.profilePictureUrl,
+        role: data?.profile?.role || pageSession?.role || "",
+        roleLabel: data?.profile?.roleLabel || pageSession?.roleLabel || "",
       };
       setPageSession(nextSession);
-      window.localStorage.setItem("bt_admin_session", JSON.stringify(nextSession));
       setFormState((current) => ({
         ...current,
         roleLabel: data?.profile?.roleLabel || current.roleLabel,
@@ -335,6 +340,7 @@ export default function Settings({ onLogout, session }) {
         }),
       );
       setSuccessMessage(data?.message || "Settings saved successfully.");
+      setPreferences(data?.preferences || payload.preferences);
       setErrorMessage("");
       setIsConfirmOpen(false);
     } catch (error) {
@@ -361,7 +367,7 @@ export default function Settings({ onLogout, session }) {
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
           <div className="space-y-6">
-            <div className="rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="bt-card-lg rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex items-center gap-4">
                 {formState.profilePictureUrl ? (
                   <img
@@ -398,7 +404,7 @@ export default function Settings({ onLogout, session }) {
               </div>
             </div>
 
-            <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="bt-card rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="space-y-2">
                 {tabs.map((tab) => {
                   const Icon = tab.icon;
@@ -422,7 +428,7 @@ export default function Settings({ onLogout, session }) {
             </div>
           </div>
 
-          <div className="rounded-[1.5rem] border border-slate-200 bg-white shadow-sm">
+          <div className="bt-card-lg rounded-[1.5rem] border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-200 px-6 py-5">
               <div className="text-lg font-semibold text-slate-900">
                 {tabs.find((tab) => tab.id === activeTab)?.label || "Settings"}

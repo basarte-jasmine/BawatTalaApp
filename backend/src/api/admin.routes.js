@@ -52,6 +52,7 @@ const CONSULTATION_CONCERN_CATEGORY_BY_ALIAS = new Map(
 
 const adminLoginAttempts = new Map();
 const adminResetSessions = new Map();
+const adminRoleVerificationSessions = new Map();
 
 function normalizeCompactSpaces(value) {
   return String(value || "").trim().replace(/\s+/g, " ");
@@ -111,6 +112,18 @@ function setResetSession(email, session) {
 
 function clearResetSession(email) {
   adminResetSessions.delete(email);
+}
+
+function getRoleVerificationSession(email) {
+  return adminRoleVerificationSessions.get(email) || null;
+}
+
+function setRoleVerificationSession(email, session) {
+  adminRoleVerificationSessions.set(email, session);
+}
+
+function clearRoleVerificationSession(email) {
+  adminRoleVerificationSessions.delete(email);
 }
 
 async function sendAdminRecoveryCode(email, context) {
@@ -197,7 +210,7 @@ async function ensureDefaultAdminAccount() {
   const defaultEmail = normalizeEmail(
     process.env.ADMIN_DEFAULT_EMAIL || "basartejasmine@gmail.com",
   );
-  const defaultPassword = String(process.env.ADMIN_DEFAULT_PASSWORD || "DemoAdmin123*");
+  const configuredDefaultPassword = String(process.env.ADMIN_DEFAULT_PASSWORD || "");
   const defaultFullName = String(process.env.ADMIN_DEFAULT_FULL_NAME || "Jasmine Batumbakal");
   const defaultRole = "HEAD_COUNSELOR";
   const defaultGender = String(process.env.ADMIN_DEFAULT_GENDER || "Female");
@@ -223,9 +236,25 @@ async function ensureDefaultAdminAccount() {
         values ($1, $2, $3, $4, $5, true)
         on conflict (email) do nothing
       `,
-      [defaultEmail, hashPassword(defaultPassword), defaultFullName, defaultRole, defaultGender],
+      [
+        defaultEmail,
+        hashPassword(configuredDefaultPassword || generateTemporaryPassword()),
+        defaultFullName,
+        defaultRole,
+        defaultGender,
+      ],
     );
   }
+
+  await query(
+    `
+      update public.admin_accounts
+      set role = 'COUNSELOR', updated_at = now()
+      where role = 'HEAD_COUNSELOR'
+        and lower(email) <> $1
+    `,
+    [defaultEmail],
+  );
 }
 
 function toMonthlyBuckets(rows, dateKey) {
@@ -665,6 +694,19 @@ function serializeRiskTrigger(row) {
   };
 }
 
+function buildAdminSessionPayload(admin) {
+  if (!admin) return null;
+  const role = String(admin.role || "COUNSELOR").toUpperCase();
+  return {
+    id: admin.id,
+    email: admin.email,
+    name: admin.full_name || admin.name || "",
+    pictureUrl: admin.profile_picture_url || admin.pictureUrl || "",
+    role,
+    roleLabel: role === "HEAD_COUNSELOR" ? "Head Counselor" : "Counselor",
+  };
+}
+
 function getActorPayload(body = {}) {
   return {
     actorEmail: normalizeEmail(body.actorEmail || ""),
@@ -710,6 +752,25 @@ function formatShortLabel(isoDate) {
   });
 }
 
+function formatShortRangeLabel(startIsoDate, endIsoDate) {
+  if (startIsoDate === endIsoDate) return formatShortLabel(startIsoDate);
+
+  const start = new Date(`${startIsoDate}T00:00:00Z`);
+  const end = new Date(`${endIsoDate}T00:00:00Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return `${startIsoDate} - ${endIsoDate}`;
+  }
+
+  const startMonth = start.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" });
+  const endMonth = end.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" });
+  const startDay = start.getUTCDate();
+  const endDay = end.getUTCDate();
+
+  return startMonth === endMonth
+    ? `${startMonth} ${startDay}-${endDay}`
+    : `${startMonth} ${startDay} - ${endMonth} ${endDay}`;
+}
+
 function resolveAnalyticsRange(queryValue, customStartRaw, customEndRaw) {
   const todayIso = getRelativeManilaIsoDate(0);
   const normalized = String(queryValue || "30d").trim().toLowerCase();
@@ -750,6 +811,30 @@ function buildWindowBuckets(startIsoDate, endIsoDate, bucketCount = 4) {
           ? formatShortLabel(bucketDates[0])
           : `${formatShortLabel(bucketDates[0])} - ${formatShortLabel(bucketDates[bucketDates.length - 1])}`,
     });
+  }
+
+  return buckets;
+}
+
+function buildWeeklyBuckets(startIsoDate, endIsoDate) {
+  const buckets = [];
+  let bucketStart = startIsoDate;
+
+  while (bucketStart <= endIsoDate) {
+    const start = new Date(`${bucketStart}T00:00:00Z`);
+    if (Number.isNaN(start.getTime())) break;
+
+    const daysUntilSaturday = 6 - start.getUTCDay();
+    const calendarWeekEnd = addDaysToIsoDate(bucketStart, daysUntilSaturday);
+    const bucketEnd = calendarWeekEnd > endIsoDate ? endIsoDate : calendarWeekEnd;
+
+    buckets.push({
+      startDate: bucketStart,
+      endDate: bucketEnd,
+      label: formatShortRangeLabel(bucketStart, bucketEnd),
+    });
+
+    bucketStart = addDaysToIsoDate(bucketEnd, 1);
   }
 
   return buckets;
@@ -834,8 +919,9 @@ async function getScheduledEventCounts() {
 function getOAuthClient(req) {
   const clientId = process.env.GOOGLE_CLIENT_ID || "";
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET || "";
+  const localApiBaseUrl = `http://localhost:${process.env.PORT || 4002}`;
   const redirectUri =
-    process.env.GOOGLE_REDIRECT_URI || "http://localhost:4001/api/admin/appointments/google/callback";
+    process.env.GOOGLE_REDIRECT_URI || `${localApiBaseUrl}/api/admin/appointments/google/callback`;
 
   if (!clientId || !clientSecret) return null;
 
@@ -851,9 +937,10 @@ function getOAuthClient(req) {
 function getGoogleLoginClient() {
   const clientId = process.env.GOOGLE_CLIENT_ID || "";
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET || "";
+  const localApiBaseUrl = `http://localhost:${process.env.PORT || 4002}`;
   const redirectUri =
     process.env.GOOGLE_LOGIN_REDIRECT_URI ||
-    "http://localhost:4001/api/admin/oauth/google/callback";
+    `${localApiBaseUrl}/api/admin/oauth/google/callback`;
   if (!clientId || !clientSecret) return null;
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 }
@@ -917,15 +1004,51 @@ router.post("/login", async (req, res) => {
     description: "Admin login recorded from the admin panel.",
     metadata: { loginMethod: "password" },
   });
+
+  req.session.admin = buildAdminSessionPayload(admin);
+
   return res.json({
     message: "Login successful.",
-    admin: {
-      id: admin.id,
-      email: admin.email,
-      name: admin.full_name,
-      pictureUrl: admin.profile_picture_url || "",
-    },
+    admin: req.session.admin,
   });
+});
+
+router.get("/session", async (req, res) => {
+  const sessionAdmin = buildAdminSessionPayload(req.session?.admin);
+  if (!sessionAdmin?.email) {
+    return res.status(401).json({ message: "Please sign in again." });
+  }
+
+  const result = await query(
+    `
+      select
+        id,
+        email,
+        coalesce(nullif(full_name, ''), split_part(email, '@', 1)) as full_name,
+        coalesce(role, 'COUNSELOR') as role,
+        coalesce(profile_picture_url, '') as profile_picture_url,
+        is_active
+      from public.admin_accounts
+      where lower(email) = $1
+      limit 1
+    `,
+    [normalizeEmail(sessionAdmin.email)],
+  );
+
+  const adminRow = result.rows[0];
+  if (!adminRow?.is_active) {
+    req.session.admin = null;
+    return res.status(401).json({ message: "Please sign in again." });
+  }
+
+  const admin = buildAdminSessionPayload(adminRow);
+  req.session.admin = admin;
+  return res.json({ admin });
+});
+
+router.post("/logout", (req, res) => {
+  req.session = null;
+  return res.json({ message: "Logged out." });
 });
 
 router.get("/oauth/google/start", (req, res) => {
@@ -1040,6 +1163,11 @@ router.get("/oauth/google/callback", async (req, res) => {
         [admin.id, effectivePictureUrl || null, JSON.stringify(nextSettings)],
       );
     }
+
+    req.session.admin = buildAdminSessionPayload({
+      ...admin,
+      profile_picture_url: effectivePictureUrl,
+    });
 
     const redirectParams = new URLSearchParams({
       oauth: "success",
@@ -2603,7 +2731,7 @@ router.get("/analytics", async (req, res) => {
     value: Number(workloadCounts[assignee.key] || 0),
   }));
 
-  const weeklyBuckets = buildWindowBuckets(startDate, endDate, 4);
+  const weeklyBuckets = buildWeeklyBuckets(startDate, endDate);
   const crisisRiskSeries = Array(weeklyBuckets.length).fill(0);
   const distressedRiskSeries = Array(weeklyBuckets.length).fill(0);
 
@@ -2759,7 +2887,8 @@ router.get("/analytics", async (req, res) => {
       consultationVolumeByCategory,
       counselorWorkload,
       atRiskStudentTrends: {
-        labels: weeklyBuckets.map((_, index) => `W${index + 1}`),
+        labels: weeklyBuckets.map((bucket) => bucket.label),
+        buckets: weeklyBuckets,
         series: [
           { key: "crisis", label: "Crisis / Critical Need", values: crisisRiskSeries },
           { key: "distressed", label: "Distressed / Needs Support", values: distressedRiskSeries },
@@ -2840,15 +2969,15 @@ router.get("/roles", async (_req, res) => {
     roleLabel: toRoleManagementLabel(row.role),
     department: row.role === "HEAD_COUNSELOR" ? "Administration" : "Counseling Office",
     assignedStudents: Number(row.assigned_students || 0),
-    status: row.is_active ? "Active" : "Inactive",
+    status: row.is_active ? "Active" : "Pending",
     isActive: Boolean(row.is_active),
     profilePictureUrl: row.profile_picture_url || "",
     gender: row.gender,
     specialties: Array.isArray(row.specialties) ? row.specialties : [],
     createdAt: row.created_at,
     memberType: "ADMIN",
-    canEdit: true,
-    canDelete: true,
+    canEdit: row.role !== "HEAD_COUNSELOR",
+    canDelete: row.role !== "HEAD_COUNSELOR",
   }));
   const peerMembers = peerMembersResult.rows.map((row) => {
     const invitationStatus = String(row.invitation_status || (row.is_active ? "ACCEPTED" : "DECLINED")).toUpperCase();
@@ -2871,7 +3000,7 @@ router.get("/roles", async (_req, res) => {
       program: row.program || "",
       createdAt: row.created_at,
       memberType: "PEER",
-      canEdit: false,
+      canEdit: true,
       canDelete: false,
     };
   });
@@ -3589,6 +3718,8 @@ router.post("/roles", async (req, res) => {
   const fullName = normalizeCompactSpaces(req.body.fullName || "");
   const gender = normalizeCompactSpaces(req.body.gender || "Prefer not to say");
   const role = String(req.body.role || "COUNSELOR").trim().toUpperCase();
+  const password = String(req.body.password || "");
+  const confirmPassword = String(req.body.confirmPassword || "");
 
   if (!email || !EMAIL_PATTERN.test(email)) {
     return res.status(400).json({ message: "A valid email is required." });
@@ -3596,11 +3727,25 @@ router.post("/roles", async (req, res) => {
   if (!fullName) {
     return res.status(400).json({ message: "Full name is required." });
   }
-  if (!["HEAD_COUNSELOR", "COUNSELOR"].includes(role)) {
+  if (role !== "COUNSELOR") {
     return res.status(400).json({ message: "Selected role is not available yet." });
   }
   if (!["Male", "Female", "Prefer not to say"].includes(gender)) {
     return res.status(400).json({ message: "Invalid gender value." });
+  }
+  if (!password) {
+    return res.status(400).json({ message: "Password is required." });
+  }
+  if (!confirmPassword) {
+    return res.status(400).json({ message: "Confirm your password." });
+  }
+  if (!STRONG_PASSWORD_PATTERN.test(password)) {
+    return res.status(400).json({
+      message: "Password must be at least 8 characters and include uppercase, lowercase, number, and symbol.",
+    });
+  }
+  if (password !== confirmPassword) {
+    return res.status(400).json({ message: "Passwords do not match." });
   }
 
   const existing = await query("select id from public.admin_accounts where email = $1 limit 1", [email]);
@@ -3608,7 +3753,11 @@ router.post("/roles", async (req, res) => {
     return res.status(409).json({ message: "That email is already registered." });
   }
 
-  const temporaryPassword = generateTemporaryPassword();
+  const sendResult = await sendAdminRecoveryCode(email, `guidance admin account verification [${email}]`);
+  if (!sendResult.ok) {
+    return res.status(400).json({ message: sendResult.message || "Failed to send verification code." });
+  }
+
   const insertResult = await query(
     `
       insert into public.admin_accounts (
@@ -3619,13 +3768,21 @@ router.post("/roles", async (req, res) => {
         gender,
         is_active
       )
-      values ($1, $2, $3, $4, $5, true)
+      values ($1, $2, $3, $4, $5, false)
       returning id, email, full_name, role, gender, is_active, created_at
     `,
-    [email, hashPassword(temporaryPassword), fullName, role, gender],
+    [email, hashPassword(password), fullName, role, gender],
   );
 
   const member = insertResult.rows[0];
+  const now = Date.now();
+  setRoleVerificationSession(email, {
+    email,
+    memberId: member.id,
+    otpExpiresAt: now + OTP_VALIDITY_MS,
+    resendAvailableAt: now + OTP_COOLDOWN_MS,
+  });
+
   await writeAdminActivityLog({
     actionType: "ROLE_MEMBER_CREATED",
     actorEmail: email,
@@ -3641,8 +3798,8 @@ router.post("/roles", async (req, res) => {
   });
 
   return res.status(201).json({
-    message: "Team member created.",
-    temporaryPassword,
+    message: "Team member created. Enter the email verification code to activate the account.",
+    resendAfterSeconds: Math.ceil(OTP_COOLDOWN_MS / 1000),
     member: {
       id: member.id,
       email: member.email,
@@ -3651,12 +3808,83 @@ router.post("/roles", async (req, res) => {
       roleLabel: toRoleManagementLabel(member.role),
       department: member.role === "HEAD_COUNSELOR" ? "Administration" : "Counseling Office",
       assignedStudents: 0,
-      status: "Active",
-      isActive: true,
+      status: "Pending",
+      isActive: false,
       gender: member.gender,
       specialties: [],
       createdAt: member.created_at,
     },
+  });
+});
+
+router.post("/roles/verify-code", async (req, res) => {
+  const email = normalizeEmail(req.body.email || "");
+  const token = String(req.body.token || "").trim();
+  if (!email || !token) {
+    return res.status(400).json({ message: "Email and verification code are required." });
+  }
+
+  const session = getRoleVerificationSession(email);
+  if (!session) {
+    return res.status(400).json({ message: "Please create the account and request a code first." });
+  }
+  if (Date.now() > session.otpExpiresAt) {
+    clearRoleVerificationSession(email);
+    return res.status(400).json({ message: "The code has expired or is invalid. Please try again." });
+  }
+
+  const { error } = await supabaseAuthClient.auth.verifyOtp({
+    email,
+    token,
+    type: "recovery",
+  });
+  if (error) {
+    return res.status(400).json({ message: "The code is invalid. Please check the latest email code and try again." });
+  }
+
+  await query(
+    `
+      update public.admin_accounts
+      set is_active = true, updated_at = now()
+      where id = $1 and email = $2
+    `,
+    [session.memberId, email],
+  );
+
+  clearRoleVerificationSession(email);
+  return res.json({ message: "Email verified. Guidance account is now active." });
+});
+
+router.post("/roles/resend-code", async (req, res) => {
+  const email = normalizeEmail(req.body.email || "");
+  if (!email) {
+    return res.status(400).json({ message: "Email is required." });
+  }
+
+  const session = getRoleVerificationSession(email);
+  if (!session) {
+    return res.status(400).json({ message: "Please create the account and request a code first." });
+  }
+  if (Date.now() < session.resendAvailableAt) {
+    const remaining = Math.ceil((session.resendAvailableAt - Date.now()) / 1000);
+    return res.status(429).json({ message: `Please wait ${remaining}s before resending.` });
+  }
+
+  const sendResult = await sendAdminRecoveryCode(email, `guidance admin account verification resend [${email}]`);
+  if (!sendResult.ok) {
+    return res.status(400).json({ message: sendResult.message || "Failed to resend code." });
+  }
+
+  const now = Date.now();
+  setRoleVerificationSession(email, {
+    ...session,
+    otpExpiresAt: now + OTP_VALIDITY_MS,
+    resendAvailableAt: now + OTP_COOLDOWN_MS,
+  });
+
+  return res.json({
+    message: "Code resent successfully.",
+    resendAfterSeconds: Math.ceil(OTP_COOLDOWN_MS / 1000),
   });
 });
 
@@ -3673,7 +3901,7 @@ router.patch("/roles/:memberId", async (req, res) => {
   if (!fullName) {
     return res.status(400).json({ message: "Full name is required." });
   }
-  if (!["HEAD_COUNSELOR", "COUNSELOR"].includes(role)) {
+  if (role !== "COUNSELOR") {
     return res.status(400).json({ message: "Selected role is not available yet." });
   }
   if (!["Male", "Female", "Prefer not to say"].includes(gender)) {

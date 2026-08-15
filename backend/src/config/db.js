@@ -1291,6 +1291,12 @@ async function ensureDatabaseSchema() {
       on public.future_self_messages (student_number, updated_at desc)
       where deleted_at is null;
   `);
+
+  await pool.query(`
+    create index if not exists future_self_messages_student_delivery_idx
+      on public.future_self_messages (student_number, delivery_at asc)
+      where deleted_at is null;
+  `);
 }
 
 async function query(text, params = []) {

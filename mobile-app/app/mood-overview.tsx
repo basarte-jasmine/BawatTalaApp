@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, ImageSourcePropType, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
+import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { useAuthSession } from "../lib/auth-session";
 import { fetchMonthlyMoods, type MoodEntryRecord } from "../lib/backend-api";
 import { EMOTION_META, EMOTION_ORDER, createEmotionCounts, getEmotionImageSource, normalizeEmotionId } from "../lib/emotions";
@@ -30,7 +31,6 @@ type CalendarDay = {
 };
 
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
-const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
 const INSIGHT_FOOTNOTE = "Summary by Muni, an AI companion. Muni is not a psychometrician or a substitute for professional mental health care.";
 
 const MIN_YEAR = 2026;
@@ -483,7 +483,7 @@ export default function MoodOverviewScreen() {
 
         <View style={styles.insightCard}>
           <View style={styles.insightImageWrap}>
-            <Image source={MUNI_IMAGE} style={styles.insightImage} resizeMode="contain" />
+            <MuniAvatar style={styles.insightImage} />
           </View>
 
           <View style={styles.insightTextWrap}>

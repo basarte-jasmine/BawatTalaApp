@@ -193,7 +193,7 @@ export type AppNotification = {
   title: string;
 };
 
-export type StudentNotificationCategory = "messages" | "notifications";
+export type StudentNotificationCategory = "guidance" | "messages" | "notifications" | "peer";
 
 export type FutureSelfMessage = {
   createdAt: string;
@@ -1033,11 +1033,18 @@ export async function loginWithStudentId(
   studentNumber: string,
   password: string,
 ): Promise<ApiResult & { user?: AuthUser }> {
-  const { response, data } = await post("/api/auth/login", {
-    studentNumber,
-    password,
-  });
-  return { ok: response.ok, message: data?.message, user: data?.user };
+  try {
+    const { response, data } = await post("/api/auth/login", {
+      studentNumber,
+      password,
+    });
+    return { ok: response.ok, message: data?.message, user: data?.user };
+  } catch {
+    return {
+      ok: false,
+      message: "Unable to reach the server. Please check your connection and try again.",
+    };
+  }
 }
 
 export async function fetchStudentProfile(
@@ -2662,6 +2669,19 @@ export async function fetchFutureSelfMessage(
     ok: response.ok,
     message: data?.message,
     futureSelfMessage: data?.futureSelfMessage ?? null,
+  };
+}
+
+export async function fetchFutureSelfMessages(
+  studentNumber: string,
+): Promise<ApiResult & { futureSelfMessages?: FutureSelfMessage[] }> {
+  const params = new URLSearchParams({ studentNumber });
+  const { response, data } = await get(`/api/future-self/messages?${params.toString()}`);
+
+  return {
+    ok: response.ok,
+    message: data?.message,
+    futureSelfMessages: Array.isArray(data?.futureSelfMessages) ? data.futureSelfMessages : [],
   };
 }
 

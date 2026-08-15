@@ -1,22 +1,35 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Edit2, Shield, Trash2, UserPlus, Users } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { AlertTriangle, Edit2, Trash2, UserPlus, Users } from "lucide-react";
+import OtpBoxes from "../components/auth/OtpBoxes";
 import ConfirmActionModal from "../components/ConfirmActionModal";
 import Layout from "../components/Layout";
 import Modal from "../components/Modal";
 import {
+  createAdminPeerCounselor,
   createAdminRoleMember,
   deleteAdminRoleMember,
   fetchAdminRoleAssignments,
+  resendAdminRoleMemberCode,
+  updateAdminPeerCounselor,
   updateAdminRoleMember,
+  verifyAdminRoleMemberCode,
 } from "../lib/admin-api";
+import { EMAIL_PATTERN, validateResetPassword } from "../lib/admin-validation";
+import { PROGRAM_OPTIONS } from "../lib/register-data";
 
+const OTP_LENGTH = 8;
+const RESEND_SECONDS = 60;
+const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
 const DEFAULT_FORM = {
+  confirmPassword: "",
   email: "",
   fullName: "",
   gender: "Prefer not to say",
   isActive: true,
+  password: "",
+  program: "",
   role: "COUNSELOR",
+  studentNumber: "",
 };
 
 function getInitials(name) {
@@ -36,8 +49,25 @@ function getStatusClasses(status) {
   return "border-slate-200 bg-slate-100 text-slate-600";
 }
 
+function FieldError({ message }) {
+  return message ? <p className="text-xs font-semibold text-red-600">{message}</p> : null;
+}
+
+function getServerFieldError(message) {
+  const text = String(message || "");
+  const normalized = text.toLowerCase();
+  if (normalized.includes("full name") || normalized.includes("name,")) return { fullName: text };
+  if (normalized.includes("email") || normalized.includes("gmail") || normalized.includes("already registered")) return { email: text };
+  if (normalized.includes("student number")) return { studentNumber: text };
+  if (normalized.includes("program")) return { program: text };
+  if (normalized.includes("gender") || normalized.includes("male or female")) return { gender: text };
+  if (normalized.includes("role")) return { role: text };
+  if (normalized.includes("confirm") || normalized.includes("match")) return { confirmPassword: text };
+  if (normalized.includes("password")) return { password: text };
+  return { form: text || "Failed to save role assignment." };
+}
+
 export default function RoleAssignments({ onLogout, session }) {
-  const navigate = useNavigate();
   const [members, setMembers] = useState([]);
   const [summary, setSummary] = useState({
     counselorCount: 0,
@@ -49,11 +79,22 @@ export default function RoleAssignments({ onLogout, session }) {
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
-  const [temporaryPassword, setTemporaryPassword] = useState("");
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [formErrors, setFormErrors] = useState({});
   const [formState, setFormState] = useState(DEFAULT_FORM);
+  const [otp, setOtp] = useState("");
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState("");
+  const [resendCountdown, setResendCountdown] = useState(0);
+
+  useEffect(() => {
+    if (!resendCountdown) return;
+    const interval = setInterval(() => {
+      setResendCountdown((current) => Math.max(0, current - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [resendCountdown]);
 
   async function loadMembers() {
     try {
@@ -98,14 +139,6 @@ export default function RoleAssignments({ onLogout, session }) {
 
   const roleCards = [
     {
-      title: "Super Admin",
-      count: summary.superAdminCount,
-      icon: Shield,
-      iconClass: "text-emerald-800",
-      bgClass: "bg-emerald-100",
-      borderClass: "border-emerald-200",
-    },
-    {
       title: "School Counselor",
       count: summary.counselorCount,
       icon: Users,
@@ -114,7 +147,7 @@ export default function RoleAssignments({ onLogout, session }) {
       borderClass: "border-green-200",
     },
     {
-      title: "Peer Advisor",
+      title: "Peer Counselor",
       count: summary.peerAdvisorCount,
       icon: Users,
       iconClass: "text-lime-700",
@@ -123,42 +156,95 @@ export default function RoleAssignments({ onLogout, session }) {
     },
   ];
 
+  function updateFormField(field, value) {
+    setFormState((current) => ({ ...current, [field]: value }));
+    setFormErrors((current) => {
+      if (!current[field] && !current.form) return current;
+      const next = { ...current };
+      delete next[field];
+      delete next.form;
+      return next;
+    });
+  }
+
   function openCreateModal() {
     setEditingMember(null);
     setFormState(DEFAULT_FORM);
-    setTemporaryPassword("");
+    setFormErrors({});
+    setOtp("");
+    setPendingVerificationEmail("");
+    setResendCountdown(0);
     setErrorMessage("");
     setIsFormOpen(true);
   }
 
   function openEditModal(member) {
-    if (member?.memberType === "PEER") {
-      navigate("/peer-counselors");
-      return;
-    }
-    if (!member?.canEdit) return;
+    if (!member?.canEdit && member?.memberType !== "PEER") return;
     setEditingMember(member);
     setFormState({
       email: member.email || "",
       fullName: member.fullName || "",
-      gender: member.gender || "Prefer not to say",
+      gender: member.gender || (member.memberType === "PEER" ? "" : "Prefer not to say"),
       isActive: Boolean(member.isActive),
-      role: member.role || "COUNSELOR",
+      password: "",
+      confirmPassword: "",
+      program: member.program || "",
+      role: member.memberType === "PEER" ? "PEER_COUNSELOR" : member.role || "COUNSELOR",
+      studentNumber: member.studentNumber || "",
     });
-    setTemporaryPassword("");
+    setFormErrors({});
+    setOtp("");
+    setPendingVerificationEmail("");
+    setResendCountdown(0);
     setErrorMessage("");
     setIsFormOpen(true);
   }
 
   async function handleSaveMember() {
+    const nextErrors = {};
+
     if (!formState.fullName.trim()) {
-      setErrorMessage("Full name is required.");
+      nextErrors.fullName = "Full name is required.";
+    }
+    if (!formState.email.trim()) {
+      nextErrors.email = "Email address is required.";
+    } else if (!EMAIL_PATTERN.test(formState.email.trim())) {
+      nextErrors.email = "Please enter a valid email address.";
+    }
+    if (!formState.role) {
+      nextErrors.role = "Role is required.";
+    }
+    if (!formState.gender) {
+      nextErrors.gender = "Gender is required.";
+    }
+    const isPeerRole = formState.role === "PEER_COUNSELOR";
+    if (isPeerRole) {
+      if (!formState.studentNumber.trim()) {
+        nextErrors.studentNumber = "Student number is required.";
+      } else if (!STUDENT_NUMBER_PATTERN.test(formState.studentNumber.trim())) {
+        nextErrors.studentNumber = "Student number must use the format 23-0000.";
+      }
+      if (!formState.program.trim()) {
+        nextErrors.program = "Program is required.";
+      }
+      if (!["Male", "Female"].includes(formState.gender)) {
+        nextErrors.gender = "Please choose Male or Female for the peer counselor.";
+      }
+    }
+    if (!editingMember && !isPeerRole) {
+      const passwordMessage = validateResetPassword({
+        newPassword: formState.password,
+        confirmPassword: formState.confirmPassword,
+      });
+      if (passwordMessage) {
+        nextErrors[passwordMessage.toLowerCase().includes("confirm") || passwordMessage.toLowerCase().includes("match") ? "confirmPassword" : "password"] = passwordMessage;
+      }
+    }
+    if (Object.keys(nextErrors).length) {
+      setFormErrors(nextErrors);
       return;
     }
-    if (!editingMember && !formState.email.trim()) {
-      setErrorMessage("Email address is required.");
-      return;
-    }
+    setFormErrors({});
 
     try {
       setIsSaving(true);
@@ -167,20 +253,91 @@ export default function RoleAssignments({ onLogout, session }) {
         fullName: formState.fullName.trim(),
         gender: formState.gender,
         isActive: Boolean(formState.isActive),
+        password: formState.password,
+        confirmPassword: formState.confirmPassword,
         role: formState.role,
       };
-      const data = editingMember
-        ? await updateAdminRoleMember(editingMember.id, payload)
-        : await createAdminRoleMember(payload);
+      const data = isPeerRole
+        ? editingMember
+          ? await updateAdminPeerCounselor(editingMember.id, {
+              actorEmail: session?.email || "",
+              email: payload.email,
+              fullName: payload.fullName,
+              gender: payload.gender,
+              isActive: payload.isActive,
+              program: formState.program.trim(),
+              specialties: [],
+              studentNumber: formState.studentNumber.trim(),
+            })
+          : await createAdminPeerCounselor({
+              actorEmail: session?.email || "",
+              email: payload.email,
+              fullName: payload.fullName,
+              gender: payload.gender,
+              program: formState.program.trim(),
+              specialties: [],
+              studentNumber: formState.studentNumber.trim(),
+            })
+        : editingMember
+          ? await updateAdminRoleMember(editingMember.id, payload)
+          : await createAdminRoleMember(payload);
 
       setSuccessMessage(data?.message || "Role assignment saved.");
-      setTemporaryPassword(data?.temporaryPassword || "");
+      if (!editingMember && !isPeerRole) {
+        setPendingVerificationEmail(payload.email);
+        setOtp("");
+        setResendCountdown(data?.resendAfterSeconds || RESEND_SECONDS);
+      } else {
+        setIsFormOpen(false);
+        setEditingMember(null);
+        setFormState(DEFAULT_FORM);
+      }
+      await loadMembers();
+    } catch (error) {
+      setFormErrors(getServerFieldError(error instanceof Error ? error.message : "Failed to save role assignment."));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleVerifyMemberCode() {
+    setFormErrors({});
+    if (!pendingVerificationEmail) return;
+    if (otp.length !== OTP_LENGTH) {
+      setFormErrors({ otp: "Please enter the 8-digit verification code." });
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      const data = await verifyAdminRoleMemberCode({
+        email: pendingVerificationEmail,
+        token: otp,
+      });
+      setSuccessMessage(data?.message || "Email verified. Account is now active.");
       setIsFormOpen(false);
       setEditingMember(null);
       setFormState(DEFAULT_FORM);
+      setPendingVerificationEmail("");
+      setOtp("");
+      setResendCountdown(0);
       await loadMembers();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to save role assignment.");
+      setFormErrors({ otp: error instanceof Error ? error.message : "Failed to verify code." });
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleResendMemberCode() {
+    if (!pendingVerificationEmail) return;
+    try {
+      setIsSaving(true);
+      const data = await resendAdminRoleMemberCode({ email: pendingVerificationEmail });
+      setSuccessMessage(data?.message || "Code resent successfully.");
+      setResendCountdown(data?.resendAfterSeconds || RESEND_SECONDS);
+    } catch (error) {
+      setFormErrors({ otp: error instanceof Error ? error.message : "Failed to resend code." });
     } finally {
       setIsSaving(false);
     }
@@ -220,11 +377,6 @@ export default function RoleAssignments({ onLogout, session }) {
             {successMessage}
           </div>
         ) : null}
-        {temporaryPassword ? (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            Temporary password for the new account: <span className="font-bold">{temporaryPassword}</span>
-          </div>
-        ) : null}
 
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div>
@@ -243,7 +395,7 @@ export default function RoleAssignments({ onLogout, session }) {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           {roleCards.map((role) => {
             const Icon = role.icon;
             return (
@@ -374,68 +526,173 @@ export default function RoleAssignments({ onLogout, session }) {
             setIsFormOpen(false);
             setEditingMember(null);
             setFormState(DEFAULT_FORM);
+            setFormErrors({});
+            setPendingVerificationEmail("");
+            setOtp("");
+            setResendCountdown(0);
           }}
-          title={editingMember ? "Edit Team Member" : "Add Team Member"}
+          title={pendingVerificationEmail ? "Verify Guidance Account" : editingMember ? "Edit Team Member" : "Add Team Member"}
         >
           <div className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-gray-700">Full Name</label>
-              <input
-                type="text"
-                value={formState.fullName}
-                onChange={(event) => setFormState((current) => ({ ...current, fullName: event.target.value }))}
-                className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-gray-700">Email Address</label>
-              <input
-                type="email"
-                value={formState.email}
-                disabled={Boolean(editingMember)}
-                onChange={(event) => setFormState((current) => ({ ...current, email: event.target.value }))}
-                className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-slate-50 disabled:text-slate-500"
-              />
-            </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-gray-700">Role</label>
-                <select
-                  value={formState.role}
-                  onChange={(event) => setFormState((current) => ({ ...current, role: event.target.value }))}
-                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                >
-                  <option value="HEAD_COUNSELOR">Super Admin</option>
-                  <option value="COUNSELOR">School Counselor</option>
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-gray-700">Gender</label>
-                <select
-                  value={formState.gender}
-                  onChange={(event) => setFormState((current) => ({ ...current, gender: event.target.value }))}
-                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                >
-                  <option value="Female">Female</option>
-                  <option value="Male">Male</option>
-                  <option value="Prefer not to say">Prefer not to say</option>
-                </select>
-              </div>
-            </div>
-            {editingMember ? (
-              <label className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <span>
-                  <span className="block text-sm font-semibold text-slate-800">Active account</span>
-                  <span className="block text-xs text-slate-500">Inactive members stay in history but lose active status.</span>
-                </span>
-                <input
-                  type="checkbox"
-                  checked={formState.isActive}
-                  onChange={(event) => setFormState((current) => ({ ...current, isActive: event.target.checked }))}
-                  className="h-4 w-4 rounded border-slate-300 text-emerald-700 focus:ring-emerald-600"
+            <FieldError message={formErrors.form} />
+            {pendingVerificationEmail ? (
+              <div className="space-y-4">
+                <p className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                  Enter the 8-digit code sent to {pendingVerificationEmail}.
+                </p>
+                <OtpBoxes
+                  value={otp}
+                  onChange={(nextOtp) => {
+                    setOtp(nextOtp);
+                    setFormErrors((current) => {
+                      if (!current.otp && !current.form) return current;
+                      const next = { ...current };
+                      delete next.otp;
+                      delete next.form;
+                      return next;
+                    });
+                  }}
+                  length={OTP_LENGTH}
                 />
-              </label>
-            ) : null}
+                <FieldError message={formErrors.otp} />
+                <button
+                  type="button"
+                  onClick={() => void handleResendMemberCode()}
+                  disabled={isSaving || resendCountdown > 0}
+                  className="w-full rounded-xl border border-gray-300 py-2 text-sm font-semibold text-gray-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {resendCountdown > 0 ? `Resend Code in ${resendCountdown}s` : "Resend Code"}
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-gray-700">Full Name</label>
+                  <input
+                    type="text"
+                    value={formState.fullName}
+                    onChange={(event) => updateFormField("fullName", event.target.value)}
+                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <FieldError message={formErrors.fullName} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-gray-700">Email Address</label>
+                  <input
+                    type="email"
+                    value={formState.email}
+                    disabled={Boolean(editingMember) && editingMember?.memberType !== "PEER"}
+                    onChange={(event) => updateFormField("email", event.target.value)}
+                    className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:bg-slate-50 disabled:text-slate-500"
+                  />
+                  <FieldError message={formErrors.email} />
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-gray-700">Role</label>
+                    <select
+                      value={formState.role}
+                      disabled={Boolean(editingMember)}
+                      onChange={(event) => {
+                        const nextRole = event.target.value;
+                        setFormState((current) => ({
+                          ...current,
+                          gender: nextRole === "PEER_COUNSELOR" ? "" : current.gender || "Prefer not to say",
+                          role: nextRole,
+                        }));
+                        setFormErrors({});
+                      }}
+                      className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="COUNSELOR">School Counselor</option>
+                      <option value="PEER_COUNSELOR">Peer Counselor</option>
+                    </select>
+                    <FieldError message={formErrors.role} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-gray-700">Gender</label>
+                    <select
+                      value={formState.gender}
+                      onChange={(event) => updateFormField("gender", event.target.value)}
+                      className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      {formState.role === "PEER_COUNSELOR" ? <option value="">Select Gender</option> : null}
+                      <option value="Female">Female</option>
+                      <option value="Male">Male</option>
+                      {formState.role !== "PEER_COUNSELOR" ? <option value="Prefer not to say">Prefer not to say</option> : null}
+                    </select>
+                    <FieldError message={formErrors.gender} />
+                  </div>
+                </div>
+                {formState.role === "PEER_COUNSELOR" ? (
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium text-gray-700">Student Number</label>
+                      <input
+                        type="text"
+                        value={formState.studentNumber}
+                        onChange={(event) => updateFormField("studentNumber", event.target.value)}
+                        placeholder="23-0000"
+                        className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                      <FieldError message={formErrors.studentNumber} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium text-gray-700">Program</label>
+                      <select
+                        value={formState.program}
+                        onChange={(event) => updateFormField("program", event.target.value)}
+                        className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      >
+                        <option value="">Select Program</option>
+                        {PROGRAM_OPTIONS.map((program) => (
+                          <option key={`role-peer-program-${program}`} value={program}>{program}</option>
+                        ))}
+                      </select>
+                      <FieldError message={formErrors.program} />
+                    </div>
+                  </div>
+                ) : null}
+                {!editingMember && formState.role !== "PEER_COUNSELOR" ? (
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium text-gray-700">Password</label>
+                      <input
+                        type="password"
+                        value={formState.password}
+                        onChange={(event) => updateFormField("password", event.target.value)}
+                        className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                      <FieldError message={formErrors.password} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium text-gray-700">Confirm Password</label>
+                      <input
+                        type="password"
+                        value={formState.confirmPassword}
+                        onChange={(event) => updateFormField("confirmPassword", event.target.value)}
+                        className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                      <FieldError message={formErrors.confirmPassword} />
+                    </div>
+                  </div>
+                ) : null}
+                {editingMember ? (
+                  <label className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <span>
+                      <span className="block text-sm font-semibold text-slate-800">Active account</span>
+                      <span className="block text-xs text-slate-500">Inactive members stay in history but lose active status.</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={formState.isActive}
+                      onChange={(event) => setFormState((current) => ({ ...current, isActive: event.target.checked }))}
+                      className="h-4 w-4 rounded border-slate-300 text-emerald-700 focus:ring-emerald-600"
+                    />
+                  </label>
+                ) : null}
+              </>
+            )}
 
             <div className="flex justify-end gap-3 pt-2">
               <button
@@ -444,6 +701,10 @@ export default function RoleAssignments({ onLogout, session }) {
                   setIsFormOpen(false);
                   setEditingMember(null);
                   setFormState(DEFAULT_FORM);
+                  setFormErrors({});
+                  setPendingVerificationEmail("");
+                  setOtp("");
+                  setResendCountdown(0);
                 }}
                 className="rounded-xl px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100"
               >
@@ -451,11 +712,11 @@ export default function RoleAssignments({ onLogout, session }) {
               </button>
               <button
                 type="button"
-                onClick={() => void handleSaveMember()}
+                onClick={() => pendingVerificationEmail ? void handleVerifyMemberCode() : void handleSaveMember()}
                 disabled={isSaving}
                 className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
               >
-                {isSaving ? "Saving..." : "Save Member"}
+                {isSaving ? "Saving..." : pendingVerificationEmail ? "Verify Account" : "Save Member"}
               </button>
             </div>
           </div>

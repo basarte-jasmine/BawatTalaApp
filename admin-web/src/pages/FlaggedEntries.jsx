@@ -24,6 +24,7 @@ import {
   sendAdminStudentNotification,
   updateAdminJournalFlag,
 } from "../lib/admin-api";
+import { maskStudentNumber, useAdminPreferences } from "../lib/admin-preferences";
 
 const CRITICAL = "#EF4444";
 const SUPPORT = "#FBBF24";
@@ -232,7 +233,7 @@ function FilterTabs({ activeTab, counts, onChange }) {
   );
 }
 
-function FlaggedStudentRow({ student, onReview }) {
+function FlaggedStudentRow({ student, onReview, maskStudentNumbers = false }) {
   return (
     <tr className="border-b border-emerald-100 bg-white text-sm shadow-sm last:border-b-0">
       <td className="rounded-l-xl px-4 py-4">
@@ -242,7 +243,7 @@ function FlaggedStudentRow({ student, onReview }) {
           </div>
           <div>
             <div className="font-bold text-slate-900">{student.fullName}</div>
-            <div className="text-xs text-slate-500">{student.studentNumber}</div>
+            <div className="text-xs text-slate-500">{maskStudentNumber(student.studentNumber, maskStudentNumbers)}</div>
           </div>
         </div>
       </td>
@@ -524,6 +525,7 @@ function ReviewModal({
   onMarkResolved,
   onOpenJournal,
   onRemoveFlag,
+  maskStudentNumbers = false,
 }) {
   if (!student) return null;
 
@@ -535,7 +537,7 @@ function ReviewModal({
             <div>
               <h2 className="text-xl font-bold text-slate-900">{student.fullName}</h2>
               <div className="mt-2 flex flex-wrap gap-2 text-sm text-slate-500">
-                <span>{student.studentNumber}</span>
+                <span>{maskStudentNumber(student.studentNumber, maskStudentNumbers)}</span>
                 <span>-</span>
                 <span>{student.program || "Unspecified"}</span>
                 <span>-</span>
@@ -680,7 +682,7 @@ function JournalUnlockModal({ entry, error, pin, saving, onClose, onPinChange, o
   );
 }
 
-function MessageModal({ student, title, body, sending, onTitleChange, onBodyChange, onClose, onSend }) {
+function MessageModal({ student, title, body, sending, maskStudentNumbers = false, onTitleChange, onBodyChange, onClose, onSend }) {
   if (!student) return null;
 
   return (
@@ -693,7 +695,7 @@ function MessageModal({ student, title, body, sending, onTitleChange, onBodyChan
             </div>
             <div>
               <h2 className="font-bold text-slate-900">Message {student.fullName?.split(" ")[0] || "Student"}</h2>
-              <div className="text-xs text-slate-500">{student.studentNumber} - {student.program || "Unspecified"}</div>
+              <div className="text-xs text-slate-500">{maskStudentNumber(student.studentNumber, maskStudentNumbers)} - {student.program || "Unspecified"}</div>
             </div>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100">
@@ -744,6 +746,8 @@ function MessageModal({ student, title, body, sending, onTitleChange, onBodyChan
 }
 
 export default function FlaggedEntries({ onLogout, session }) {
+  const { preferences } = useAdminPreferences();
+  const shouldMaskStudentNumbers = Boolean(preferences.privacy.maskStudentNumbers);
   const [entries, setEntries] = useState([]);
   const [activeTab, setActiveTab] = useState("All");
   const [dateFilter, setDateFilter] = useState("all");
@@ -1005,7 +1009,7 @@ export default function FlaggedEntries({ onLogout, session }) {
         message: messageBody,
         actorEmail: session?.email || "",
         actorName: session?.name || "",
-        actorRole: "Counselor",
+        actorRole: session?.roleLabel || session?.role || "Counselor",
       });
       setSuccessMessage(`Message sent to ${messageTarget.fullName || messageTarget.studentNumber}.`);
       setMessageTarget(null);
@@ -1115,7 +1119,12 @@ export default function FlaggedEntries({ onLogout, session }) {
                 </tr>
               ) : filteredStudents.length ? (
                 filteredStudents.map((student) => (
-                  <FlaggedStudentRow key={student.studentNumber || student.fullName} student={student} onReview={handleReviewStudent} />
+                  <FlaggedStudentRow
+                    key={student.studentNumber || student.fullName}
+                    student={student}
+                    maskStudentNumbers={shouldMaskStudentNumbers}
+                    onReview={handleReviewStudent}
+                  />
                 ))
               ) : (
                 <tr>
@@ -1171,6 +1180,7 @@ export default function FlaggedEntries({ onLogout, session }) {
           setJournalUnlockError("");
         }}
         onRemoveFlag={() => setRemoveCandidate(selectedEntry)}
+        maskStudentNumbers={shouldMaskStudentNumbers}
       />
 
       <JournalUnlockModal
@@ -1192,6 +1202,7 @@ export default function FlaggedEntries({ onLogout, session }) {
         title={messageTitle}
         body={messageBody}
         sending={isSending}
+        maskStudentNumbers={shouldMaskStudentNumbers}
         onTitleChange={setMessageTitle}
         onBodyChange={setMessageBody}
         onClose={() => setMessageTarget(null)}

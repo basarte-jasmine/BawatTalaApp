@@ -28,6 +28,7 @@ function normalizeMessage(value) {
     .slice(0, 500);
 }
 
+
 function parseDeliveryAt(value) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
@@ -64,6 +65,26 @@ router.get("/messages/current", asyncHandler(async (req, res) => {
   );
 
   return res.json({ futureSelfMessage: mapMessageRow(result.rows[0]) });
+}));
+
+router.get("/messages", asyncHandler(async (req, res) => {
+  const studentNumber = normalizeStudentNumber(req.query.studentNumber);
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "Valid student number is required." });
+  }
+
+  const result = await query(
+    `
+      select id, student_number, message, delivery_at, created_at, updated_at
+      from public.future_self_messages
+      where student_number = $1
+        and deleted_at is null
+      order by delivery_at asc, created_at asc
+    `,
+    [studentNumber],
+  );
+
+  return res.json({ futureSelfMessages: result.rows.map(mapMessageRow) });
 }));
 
 router.post("/messages", asyncHandler(async (req, res) => {

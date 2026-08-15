@@ -4,12 +4,12 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { fetchJournalEntryById, JournalEntry, JournalMessage, rateJournalEntrySummary } from "../lib/backend-api";
 import { JournalLockGate } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
 import { useOfflineSync } from "../lib/offline-sync";
 
-const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
 const NOTEBOOK_RINGS = Array.from({ length: 12 }, (_, index) => index);
 const PAPER_RULES = Array.from({ length: 24 }, (_, index) => index);
 const SUMMARY_FEEDBACK_REASON_WORD_LIMIT = 250;
@@ -536,7 +536,7 @@ export default function JournalEntryViewScreen() {
                   </Text>
 
                   <View style={styles.muniBadge}>
-                    <Image source={MUNI_IMAGE} style={styles.muniBadgeImage} resizeMode="contain" />
+                    <MuniAvatar style={styles.muniBadgeImage} />
                   </View>
                 </View>
               </View>

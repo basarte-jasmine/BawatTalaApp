@@ -454,13 +454,9 @@ router.post("/login", async (req, res) => {
     return res.status(400).json({ message: error.message });
   }
 
-  const isValidCredentials =
-    Boolean(data) &&
-    verifyPassword(password, data.password_hash) &&
-    data.is_email_verified === true &&
-    data.is_id_verified === true;
+  const hasValidPassword = Boolean(data) && verifyPassword(password, data.password_hash);
 
-  if (!isValidCredentials) {
+  if (!hasValidPassword) {
     const isLocked = registerFailedAttempt(loginKey);
     if (isLocked) {
       return res.status(429).json({
@@ -469,6 +465,12 @@ router.post("/login", async (req, res) => {
     }
     return res.status(400).json({
       message: "Invalid username or password. Please try again.",
+    });
+  }
+
+  if (data.is_email_verified !== true || data.is_id_verified !== true) {
+    return res.status(403).json({
+      message: "Please verify your account before logging in.",
     });
   }
 

@@ -15,6 +15,7 @@ const app = express();
 const corsOrigin = process.env.CORS_ORIGIN || "*";
 const allowCredentials = true;
 const isProduction = String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
+const adminSessionDays = Number(process.env.ADMIN_SESSION_DAYS || 30);
 
 const parsedCorsOrigin =
   corsOrigin === "*"
@@ -35,7 +36,7 @@ app.use(
   cookieSession({
     name: "bt_admin_session",
     keys: [process.env.COOKIE_SESSION_SECRET || "dev-cookie-secret"],
-    maxAge: 24 * 60 * 60 * 1000,
+    maxAge: adminSessionDays * 24 * 60 * 60 * 1000,
     httpOnly: true,
     sameSite: isProduction ? "none" : "lax",
     secure: isProduction,

@@ -8,10 +8,12 @@ import { Animated, Easing, Image, KeyboardAvoidingView, Modal, Platform, Pressab
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, Ellipse, LinearGradient, Path, Rect, Stop } from "react-native-svg";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
+import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { useAuthSession } from "../lib/auth-session";
 import {
   claimDailyCheckIn,
   fetchFutureSelfMessage,
+  fetchFutureSelfMessages,
   fetchCheckInStatus,
   fetchDailyMood,
   fetchJournalEntriesByDate,
@@ -94,7 +96,6 @@ const BOTTLE_CLOCK_MINUTES = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 const FUTURE_BOTTLE_PRELOAD_DISTANCE = 420;
 
 const TALA_IMAGE = require("../assets/images/Tala_Star.png");
-const MUNI_IMAGE = require("../assets/images/MUNI_default.png");
 const ISLAND_IMAGE = require("../assets/images/island_sample.png");
 const BOTTLE_IMAGE = require("../assets/images/bottle_sample.png");
 
@@ -117,6 +118,58 @@ function parseStoredBottleDate(value: string | undefined) {
   if (!value) return null;
   const date = new Date(value);
   return isValidDate(date) ? date : null;
+}
+
+
+function normalizeScheduledBottleNote(value: unknown): ScheduledBottleNote | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Partial<ScheduledBottleNote>;
+  const deliveryAt = parseStoredBottleDate(raw.deliveryAt);
+  const message = typeof raw.message === "string" ? raw.message.trim() : "";
+  if (!deliveryAt || !message) return null;
+
+  return {
+    id: typeof raw.id === "string" && raw.id ? raw.id : `future-bottle-${deliveryAt.getTime()}`,
+    createdAt: typeof raw.createdAt === "string" && raw.createdAt ? raw.createdAt : new Date().toISOString(),
+    deliveryAt: deliveryAt.toISOString(),
+    message,
+  };
+}
+
+function sortBottleNotes(notes: ScheduledBottleNote[]) {
+  return [...notes].sort((left, right) => {
+    const leftDate = parseStoredBottleDate(left.deliveryAt)?.getTime() ?? 0;
+    const rightDate = parseStoredBottleDate(right.deliveryAt)?.getTime() ?? 0;
+    return leftDate - rightDate || left.createdAt.localeCompare(right.createdAt);
+  });
+}
+
+function parseStoredBottleNotes(value: string | null) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as Partial<ScheduledBottleNote> | Partial<ScheduledBottleNote>[];
+    const parsedNotes = Array.isArray(parsed) ? parsed : [parsed];
+    return sortBottleNotes(
+      parsedNotes
+        .map((note) => normalizeScheduledBottleNote(note))
+        .filter((note): note is ScheduledBottleNote => Boolean(note)),
+    );
+  } catch {
+    return [];
+  }
+}
+
+function mergeBottleNoteLists(...noteLists: ScheduledBottleNote[][]) {
+  const notesById = new Map<string, ScheduledBottleNote>();
+  for (const noteList of noteLists) {
+    for (const note of noteList) {
+      notesById.set(note.id, {
+        ...notesById.get(note.id),
+        ...note,
+      });
+    }
+  }
+  return sortBottleNotes(Array.from(notesById.values()));
 }
 
 function startOfBottleDay(value: Date) {
@@ -350,6 +403,7 @@ export default function HomeScreen() {
   const [showConsultOverlay, setShowConsultOverlay] = useState(false);
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
   const [showBottleModal, setShowBottleModal] = useState(false);
+  const [showBottleShelfModal, setShowBottleShelfModal] = useState(false);
   const [selectedDriftingBottle, setSelectedDriftingBottle] = useState<DriftingBottleNote | null>(null);
   const [bottleDraft, setBottleDraft] = useState("");
   const [bottleDeliveryAt, setBottleDeliveryAt] = useState(createDefaultBottleDeliveryDate);
@@ -358,7 +412,7 @@ export default function HomeScreen() {
   const [bottleModalMode, setBottleModalMode] = useState<BottleModalMode>("compose");
   const [bottlePickerMode, setBottlePickerMode] = useState<BottlePickerMode>(null);
   const [editingBottleNoteId, setEditingBottleNoteId] = useState<string | null>(null);
-  const [scheduledBottleNote, setScheduledBottleNote] = useState<ScheduledBottleNote | null>(null);
+  const [scheduledBottleNotes, setScheduledBottleNotes] = useState<ScheduledBottleNote[]>([]);
   const [bottleClockNow, setBottleClockNow] = useState(() => Date.now());
   const [waterZoneStartY, setWaterZoneStartY] = useState<number | null>(null);
   const [quoteIndex, setQuoteIndex] = useState(0);
@@ -864,55 +918,70 @@ export default function HomeScreen() {
 
   const loadScheduledBottleNote = useCallback(async () => {
     if (!user?.studentNumber) {
-      setScheduledBottleNote(null);
+      setScheduledBottleNotes([]);
       return;
     }
 
     try {
-      try {
-        const remoteResult = await fetchFutureSelfMessage(user.studentNumber);
-        if (remoteResult.ok && remoteResult.futureSelfMessage) {
-          const remoteNote: ScheduledBottleNote = {
-            id: remoteResult.futureSelfMessage.id,
-            createdAt: remoteResult.futureSelfMessage.createdAt,
-            deliveryAt: remoteResult.futureSelfMessage.deliveryAt,
-            message: remoteResult.futureSelfMessage.message,
-          };
+      const storedValue = await AsyncStorage.getItem(getFutureBottleStorageKey(user.studentNumber));
+      const localNotes = parseStoredBottleNotes(storedValue);
 
-          await AsyncStorage.setItem(getFutureBottleStorageKey(user.studentNumber), JSON.stringify(remoteNote));
-          setScheduledBottleNote(remoteNote);
+      try {
+        const remoteResult = await fetchFutureSelfMessages(user.studentNumber);
+        if (remoteResult.ok) {
+          const remoteNotes = sortBottleNotes(
+            (remoteResult.futureSelfMessages ?? [])
+              .map((note) => normalizeScheduledBottleNote(note))
+              .filter((note): note is ScheduledBottleNote => Boolean(note)),
+          );
+          const mergedNotes = mergeBottleNoteLists(localNotes, remoteNotes);
+
+          await AsyncStorage.setItem(getFutureBottleStorageKey(user.studentNumber), JSON.stringify(mergedNotes));
+          setScheduledBottleNotes(mergedNotes);
           setBottleClockNow(Date.now());
+          for (const localNote of localNotes) {
+            const deliveryAt = parseStoredBottleDate(localNote.deliveryAt);
+            if (!deliveryAt || deliveryAt.getTime() <= Date.now()) continue;
+            try {
+              await saveFutureSelfMessage({
+                deliveryAt: localNote.deliveryAt,
+                id: localNote.id,
+                message: localNote.message,
+                studentNumber: user.studentNumber,
+              });
+            } catch {
+              // The note is still available locally; sync can happen on a later visit.
+            }
+          }
           return;
         }
       } catch {
-        // Local storage keeps the feature available when the backend cannot be reached.
+        try {
+          const remoteResult = await fetchFutureSelfMessage(user.studentNumber);
+          const remoteNote = normalizeScheduledBottleNote(remoteResult.futureSelfMessage);
+          if (remoteResult.ok && remoteNote) {
+            const remoteNotes = mergeBottleNoteLists(localNotes, [remoteNote]);
+            await AsyncStorage.setItem(getFutureBottleStorageKey(user.studentNumber), JSON.stringify(remoteNotes));
+            setScheduledBottleNotes(remoteNotes);
+            setBottleClockNow(Date.now());
+            return;
+          }
+        } catch {
+          // Local storage keeps the feature available when the backend cannot be reached.
+        }
       }
 
-      const storedValue = await AsyncStorage.getItem(getFutureBottleStorageKey(user.studentNumber));
-      if (!storedValue) {
-        setScheduledBottleNote(null);
+      if (!localNotes.length) {
+        setScheduledBottleNotes([]);
         return;
       }
 
-      const parsed = JSON.parse(storedValue) as Partial<ScheduledBottleNote>;
-      const deliveryAt = parseStoredBottleDate(parsed.deliveryAt);
-      const message = typeof parsed.message === "string" ? parsed.message.trim() : "";
-
-      if (!deliveryAt || !message) {
-        setScheduledBottleNote(null);
-        return;
-      }
-
-      const localNote: ScheduledBottleNote = {
-        id: typeof parsed.id === "string" && parsed.id ? parsed.id : `future-bottle-${deliveryAt.getTime()}`,
-        createdAt: typeof parsed.createdAt === "string" && parsed.createdAt ? parsed.createdAt : new Date().toISOString(),
-        deliveryAt: deliveryAt.toISOString(),
-        message,
-      };
-
-      setScheduledBottleNote(localNote);
+      await AsyncStorage.setItem(getFutureBottleStorageKey(user.studentNumber), JSON.stringify(localNotes));
+      setScheduledBottleNotes(localNotes);
       setBottleClockNow(Date.now());
-      if (deliveryAt.getTime() > Date.now()) {
+      for (const localNote of localNotes) {
+        const deliveryAt = parseStoredBottleDate(localNote.deliveryAt);
+        if (!deliveryAt || deliveryAt.getTime() <= Date.now()) continue;
         try {
           await saveFutureSelfMessage({
             deliveryAt: localNote.deliveryAt,
@@ -925,7 +994,7 @@ export default function HomeScreen() {
         }
       }
     } catch {
-      setScheduledBottleNote(null);
+      setScheduledBottleNotes([]);
     }
   }, [user?.studentNumber]);
 
@@ -1074,11 +1143,15 @@ export default function HomeScreen() {
     setShowWelcomeModal(false);
   };
 
+  const getArrivedBottleNotes = (notes: ScheduledBottleNote[], nowMs = Date.now()) => {
+    return notes.filter((note) => {
+      const deliveryAt = parseStoredBottleDate(note.deliveryAt);
+      return Boolean(deliveryAt && deliveryAt.getTime() <= nowMs);
+    });
+  };
+
   const openBottleModal = () => {
-    if (scheduledBottleNote) {
-      const deliveryAt = parseStoredBottleDate(scheduledBottleNote.deliveryAt) ?? createDefaultBottleDeliveryDate();
-      setBottleDraft(scheduledBottleNote.message);
-      updateBottleDeliveryDraft(deliveryAt);
+    if (getArrivedBottleNotes(scheduledBottleNotes).length) {
       setBottleModalMode("status");
       setEditingBottleNoteId(null);
     } else {
@@ -1093,6 +1166,18 @@ export default function HomeScreen() {
     setShowBottleModal(true);
   };
 
+  const openBottleShelfModal = () => {
+    setShowBottleModal(false);
+    setBottlePickerMode(null);
+    setBottleFormMessage("");
+    setBottleClockNow(Date.now());
+    setShowBottleShelfModal(true);
+  };
+
+  const closeBottleShelfModal = () => {
+    setShowBottleShelfModal(false);
+  };
+
   const closeBottleModal = () => {
     setShowBottleModal(false);
     setBottleDraft("");
@@ -1100,18 +1185,6 @@ export default function HomeScreen() {
     setBottleFormMessage("");
     setBottlePickerMode(null);
     setEditingBottleNoteId(null);
-    setBottleModalMode("compose");
-  };
-
-  const handleEditBottleNote = () => {
-    if (!scheduledBottleNote) return;
-
-    const deliveryAt = parseStoredBottleDate(scheduledBottleNote.deliveryAt) ?? createDefaultBottleDeliveryDate();
-    setBottleDraft(scheduledBottleNote.message);
-    updateBottleDeliveryDraft(deliveryAt);
-    setEditingBottleNoteId(scheduledBottleNote.id);
-    setBottleFormMessage("");
-    setBottlePickerMode(null);
     setBottleModalMode("compose");
   };
 
@@ -1150,16 +1223,21 @@ export default function HomeScreen() {
     const nextNote: ScheduledBottleNote = {
       id: editingBottleNoteId ?? `future-bottle-${Date.now()}`,
       createdAt:
-        editingBottleNoteId && scheduledBottleNote?.id === editingBottleNoteId
-          ? scheduledBottleNote.createdAt
+        editingBottleNoteId
+          ? scheduledBottleNotes.find((note) => note.id === editingBottleNoteId)?.createdAt ?? new Date().toISOString()
           : new Date().toISOString(),
       message: trimmedMessage,
       deliveryAt: deliveryAt.toISOString(),
     };
 
     try {
-      await AsyncStorage.setItem(getFutureBottleStorageKey(user.studentNumber), JSON.stringify(nextNote));
-      setScheduledBottleNote(nextNote);
+      const nextNotes = sortBottleNotes(
+        editingBottleNoteId
+          ? scheduledBottleNotes.map((note) => (note.id === editingBottleNoteId ? nextNote : note))
+          : [...scheduledBottleNotes, nextNote],
+      );
+      await AsyncStorage.setItem(getFutureBottleStorageKey(user.studentNumber), JSON.stringify(nextNotes));
+      setScheduledBottleNotes(nextNotes);
       setBottleClockNow(Date.now());
       try {
         await saveFutureSelfMessage({
@@ -1171,7 +1249,12 @@ export default function HomeScreen() {
       } catch (error) {
         console.warn("Future Me message was saved locally but not synced:", error);
       }
-      closeBottleModal();
+      setBottleDraft("");
+      updateBottleDeliveryDraft(createDefaultBottleDeliveryDate());
+      setBottleFormMessage("");
+      setBottlePickerMode(null);
+      setEditingBottleNoteId(null);
+      setBottleModalMode("status");
     } catch {
       setBottleFormMessage("Could not save this letter. Please try again.");
     }
@@ -1374,8 +1457,23 @@ export default function HomeScreen() {
     outputRange: ["3deg", "-3deg", "3deg"],
   });
   const driftingBottleTravelDistance = frameWidth + 168;
-  const scheduledBottleDeliveryDate = scheduledBottleNote ? parseStoredBottleDate(scheduledBottleNote.deliveryAt) : null;
-  const hasBottleArrived = Boolean(scheduledBottleDeliveryDate && scheduledBottleDeliveryDate.getTime() <= bottleClockNow);
+  const arrivedBottleNotes = getArrivedBottleNotes(scheduledBottleNotes, bottleClockNow);
+  const pendingBottleNotes = scheduledBottleNotes.filter((note) => {
+    const deliveryAt = parseStoredBottleDate(note.deliveryAt);
+    return Boolean(deliveryAt && deliveryAt.getTime() > bottleClockNow);
+  });
+  const latestArrivedBottleNote = [...arrivedBottleNotes].reverse()[0] ?? null;
+  const latestArrivedBottleDeliveryDate = latestArrivedBottleNote ? parseStoredBottleDate(latestArrivedBottleNote.deliveryAt) : null;
+  const nextPendingBottleNote = pendingBottleNotes[0] ?? null;
+  const nextPendingBottleDeliveryDate = nextPendingBottleNote ? parseStoredBottleDate(nextPendingBottleNote.deliveryAt) : null;
+  const bottleStatusSummary =
+    pendingBottleNotes.length && arrivedBottleNotes.length
+      ? `${pendingBottleNotes.length} pending, ${arrivedBottleNotes.length} arrived`
+      : pendingBottleNotes.length
+        ? `${pendingBottleNotes.length} pending`
+        : arrivedBottleNotes.length
+          ? `${arrivedBottleNotes.length} arrived`
+          : "";
   const bottleDeliveryDraftDate = getBottleDeliveryDraftDate();
   const bottleDraftLength = bottleDraft.trim().length;
   const isBottleDraftReady = bottleDraftLength > 0;
@@ -1571,7 +1669,7 @@ export default function HomeScreen() {
         <View style={styles.moodCard}>
           <View style={styles.surfaceGlow} />
           <View style={styles.moodHeaderRow}>
-            <Image source={MUNI_IMAGE} style={styles.moodPetArt} resizeMode="contain" />
+            <MuniAvatar style={styles.moodPetArt} />
             <View style={styles.moodHeaderTextWrap}>
               <Text style={styles.sectionEyebrow}>Emotions</Text>
               <Text style={styles.moodHeading}>What emotions are showing up today?</Text>
@@ -1946,17 +2044,17 @@ export default function HomeScreen() {
                 <Text style={styles.futureBottleInfoSubtitle}>
                   Leave a note for later and let it drift back to you.
                 </Text>
-                {scheduledBottleDeliveryDate ? (
-                  <View style={[styles.futureBottleStatusPill, hasBottleArrived && styles.futureBottleStatusPillArrived]}>
+                {bottleStatusSummary ? (
+                  <View style={[styles.futureBottleStatusPill, arrivedBottleNotes.length > 0 && !pendingBottleNotes.length && styles.futureBottleStatusPillArrived]}>
                     <Ionicons
-                      name={hasBottleArrived ? "mail-open-outline" : "time-outline"}
+                      name={arrivedBottleNotes.length > 0 && !pendingBottleNotes.length ? "mail-open-outline" : "time-outline"}
                       size={13}
-                      color={hasBottleArrived ? "#2F6F25" : "#355368"}
+                      color={arrivedBottleNotes.length > 0 && !pendingBottleNotes.length ? "#2F6F25" : "#355368"}
                     />
-                    <Text style={[styles.futureBottleStatusPillText, hasBottleArrived && styles.futureBottleStatusPillTextArrived]} numberOfLines={2}>
-                      {hasBottleArrived
-                        ? "Your letter arrived"
-                        : getBottleCountdownLabel(scheduledBottleDeliveryDate, bottleClockNow)}
+                    <Text style={[styles.futureBottleStatusPillText, arrivedBottleNotes.length > 0 && !pendingBottleNotes.length && styles.futureBottleStatusPillTextArrived]} numberOfLines={2}>
+                      {nextPendingBottleDeliveryDate
+                        ? getBottleCountdownLabel(nextPendingBottleDeliveryDate, bottleClockNow)
+                        : bottleStatusSummary}
                     </Text>
                   </View>
                 ) : null}
@@ -1971,7 +2069,7 @@ export default function HomeScreen() {
               <Image source={ISLAND_IMAGE} style={styles.futureBottleIslandArt} resizeMode="contain" />
             </Pressable>
             
-            {scheduledBottleNote ? <View style={[styles.futureBottleNoteGlow, { top: islandSceneHeight + 8 }]} pointerEvents="none" /> : null}
+            {scheduledBottleNotes.length ? <View style={[styles.futureBottleNoteGlow, { top: islandSceneHeight + 8 }]} pointerEvents="none" /> : null}
 
             <View style={[styles.futureBottleWaterScene, { minHeight: waterSceneHeight }]}>
               <Svg width="100%" height="100%" viewBox="0 0 412 620" preserveAspectRatio="none" style={styles.futureBottleWaterGradient} pointerEvents="none">
@@ -2115,18 +2213,14 @@ export default function HomeScreen() {
         >
           <View style={styles.modalBackdrop}>
             <View style={styles.bottleModalCard}>
-            {bottleModalMode === "status" && scheduledBottleNote && scheduledBottleDeliveryDate ? (
+            {bottleModalMode === "status" && latestArrivedBottleNote && latestArrivedBottleDeliveryDate ? (
               <>
                 <View style={styles.bottleModalHeader}>
                   <View style={styles.bottleModalTextWrap}>
                     <Text style={styles.bottleModalEyebrow}>For future you</Text>
-                    <Text style={styles.bottleModalTitle}>
-                      {hasBottleArrived ? "Your bottle arrived" : "Your bottle is sealed"}
-                    </Text>
+                    <Text style={styles.bottleModalTitle}>Your bottle arrived</Text>
                     <Text style={styles.bottleModalDescription}>
-                      {hasBottleArrived
-                        ? "A note from your past self is ready."
-                        : "It will open when the date and time you chose arrives."}
+                      A note from your past self is ready.
                     </Text>
                   </View>
 
@@ -2136,38 +2230,30 @@ export default function HomeScreen() {
                 </View>
 
                 <View style={styles.bottleStatusCard}>
-                  <View style={[styles.bottleStatusIconWrap, hasBottleArrived && styles.bottleStatusIconWrapArrived]}>
-                    <Ionicons
-                      name={hasBottleArrived ? "mail-open-outline" : "lock-closed-outline"}
-                      size={24}
-                      color={hasBottleArrived ? "#2F6F25" : "#355368"}
-                    />
+                  <View style={[styles.bottleStatusIconWrap, styles.bottleStatusIconWrapArrived]}>
+                    <Ionicons name="mail-open-outline" size={24} color="#2F6F25" />
                   </View>
-                  <Text style={styles.bottleStatusTitle}>
-                    {hasBottleArrived ? "Dear future me" : getBottleCountdownLabel(scheduledBottleDeliveryDate, bottleClockNow)}
-                  </Text>
-
-                  {hasBottleArrived ? (
-                    <View style={styles.bottleDeliveredMessageCard}>
-                      <Text style={styles.bottleDeliveredMessageText}>{scheduledBottleNote.message}</Text>
-                    </View>
-                  ) : (
-                    <Text style={styles.bottleStatusBody}>
-                      Your message is saved and will return on {formatBottleDeliveryDateTime(scheduledBottleDeliveryDate)}.
-                    </Text>
-                  )}
+                  <Text style={styles.bottleStatusTitle}>Dear future me</Text>
+                  <View style={styles.bottleDeliveredMessageCard}>
+                    <Text style={styles.bottleDeliveredMessageText}>{latestArrivedBottleNote.message}</Text>
+                  </View>
 
                   <View style={styles.bottleStatusDateRow}>
                     <View style={styles.bottleStatusDateItem}>
                       <Text style={styles.bottleStatusDateLabel}>Date</Text>
-                      <Text style={styles.bottleStatusDateValue}>{formatBottleDeliveryDate(scheduledBottleDeliveryDate)}</Text>
+                      <Text style={styles.bottleStatusDateValue}>{formatBottleDeliveryDate(latestArrivedBottleDeliveryDate)}</Text>
                     </View>
                     <View style={styles.bottleStatusDateItem}>
                       <Text style={styles.bottleStatusDateLabel}>Time</Text>
-                      <Text style={styles.bottleStatusDateValue}>{formatBottleDeliveryTime(scheduledBottleDeliveryDate)}</Text>
+                      <Text style={styles.bottleStatusDateValue}>{formatBottleDeliveryTime(latestArrivedBottleDeliveryDate)}</Text>
                     </View>
                   </View>
                 </View>
+
+                <Pressable style={styles.bottleShelfOpenButton} onPress={openBottleShelfModal}>
+                  <Ionicons name="albums-outline" size={15} color="#2F6F25" />
+                  <Text style={styles.bottleShelfOpenText}>Show All Bottles</Text>
+                </Pressable>
 
                 <View style={styles.modalActions}>
                   <Pressable style={styles.modalSecondaryButton} onPress={closeBottleModal}>
@@ -2175,9 +2261,9 @@ export default function HomeScreen() {
                   </Pressable>
                   <Pressable
                     style={styles.modalPrimaryButton}
-                    onPress={hasBottleArrived ? handleWriteAnotherBottleNote : handleEditBottleNote}
+                    onPress={handleWriteAnotherBottleNote}
                   >
-                    <Text style={styles.modalPrimaryText}>{hasBottleArrived ? "Write Another" : "Edit Delivery"}</Text>
+                    <Text style={styles.modalPrimaryText}>Write Another</Text>
                   </Pressable>
                 </View>
               </>
@@ -2199,6 +2285,12 @@ export default function HomeScreen() {
                   </Pressable>
                 </View>
 
+                <ScrollView
+                  style={styles.bottleComposeScroll}
+                  contentContainerStyle={styles.bottleComposeContent}
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                >
                 <View style={styles.bottleInputCard}>
                   <TextInput
                     multiline
@@ -2411,6 +2503,14 @@ export default function HomeScreen() {
                 </View>
 
                 {bottleFormMessage ? <Text style={styles.bottleFormMessage}>{bottleFormMessage}</Text> : null}
+                </ScrollView>
+
+                {scheduledBottleNotes.length ? (
+                  <Pressable style={styles.bottleShelfOpenButton} onPress={openBottleShelfModal}>
+                    <Ionicons name="albums-outline" size={15} color="#2F6F25" />
+                    <Text style={styles.bottleShelfOpenText}>Show All Bottles</Text>
+                  </Pressable>
+                ) : null}
 
                 <View style={styles.modalActions}>
                   <Pressable style={styles.modalSecondaryButton} onPress={closeBottleModal}>
@@ -2432,6 +2532,116 @@ export default function HomeScreen() {
             </View>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
+        visible={showBottleShelfModal}
+        transparent
+        animationType="fade"
+        onRequestClose={closeBottleShelfModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.bottleModalCard}>
+            <View style={styles.bottleModalHeader}>
+              <View style={styles.bottleModalTextWrap}>
+                <Text style={styles.bottleModalEyebrow}>For future you</Text>
+                <Text style={styles.bottleModalTitle}>Future bottle shelf</Text>
+                <Text style={styles.bottleModalDescription}>
+                  Pending bottles stay sealed. Arrived bottles are ready to read.
+                </Text>
+              </View>
+
+              <Pressable style={styles.bottleModalCloseButton} onPress={closeBottleShelfModal} accessibilityLabel="Close bottle shelf">
+                <Ionicons name="close" size={18} color="#52606C" />
+              </Pressable>
+            </View>
+
+            <ScrollView style={styles.bottleShelfScroll} contentContainerStyle={styles.bottleShelfContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.bottleShelfSummaryRow}>
+                <View style={styles.bottleShelfSummaryChip}>
+                  <Ionicons name="time-outline" size={14} color="#355368" />
+                  <Text style={styles.bottleShelfSummaryText}>{pendingBottleNotes.length} pending</Text>
+                </View>
+                <View style={styles.bottleShelfSummaryChip}>
+                  <Ionicons name="mail-open-outline" size={14} color="#2F6F25" />
+                  <Text style={styles.bottleShelfSummaryText}>{arrivedBottleNotes.length} arrived</Text>
+                </View>
+              </View>
+
+              <Text style={styles.bottleShelfSectionTitle}>Pending</Text>
+              {pendingBottleNotes.length ? (
+                pendingBottleNotes.map((note) => {
+                  const deliveryAt = parseStoredBottleDate(note.deliveryAt);
+                  if (!deliveryAt) return null;
+
+                  return (
+                    <View key={note.id} style={styles.bottleShelfNoteCard}>
+                      <View style={styles.bottleShelfNoteHeader}>
+                        <View style={styles.bottleShelfNoteIcon}>
+                          <Ionicons name="lock-closed-outline" size={17} color="#355368" />
+                        </View>
+                        <View style={styles.bottleShelfNoteTextWrap}>
+                          <Text style={styles.bottleShelfNoteTitle}>{getBottleCountdownLabel(deliveryAt, bottleClockNow)}</Text>
+                          <Text style={styles.bottleShelfNoteMeta}>{formatBottleDeliveryDateTime(deliveryAt)}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.bottleShelfLockedText}>Sealed until delivery.</Text>
+                    </View>
+                  );
+                })
+              ) : (
+                <View style={styles.bottleShelfEmptyCard}>
+                  <Text style={styles.bottleShelfEmptyText}>No pending bottles.</Text>
+                </View>
+              )}
+
+              <Text style={styles.bottleShelfSectionTitle}>Arrived</Text>
+              {arrivedBottleNotes.length ? (
+                arrivedBottleNotes.map((note) => {
+                  const deliveryAt = parseStoredBottleDate(note.deliveryAt);
+                  if (!deliveryAt) return null;
+
+                  return (
+                    <View key={note.id} style={[styles.bottleShelfNoteCard, styles.bottleShelfArrivedCard]}>
+                      <View style={styles.bottleShelfNoteHeader}>
+                        <View style={[styles.bottleShelfNoteIcon, styles.bottleShelfNoteIconArrived]}>
+                          <Ionicons name="mail-open-outline" size={17} color="#2F6F25" />
+                        </View>
+                        <View style={styles.bottleShelfNoteTextWrap}>
+                          <Text style={styles.bottleShelfNoteTitle}>Dear future me</Text>
+                          <Text style={styles.bottleShelfNoteMeta}>{formatBottleDeliveryDateTime(deliveryAt)}</Text>
+                        </View>
+                      </View>
+                      <View style={styles.bottleDeliveredMessageCard}>
+                        <Text style={styles.bottleDeliveredMessageText}>{note.message}</Text>
+                      </View>
+                    </View>
+                  );
+                })
+              ) : (
+                <View style={styles.bottleShelfEmptyCard}>
+                  <Text style={styles.bottleShelfEmptyText}>No arrived bottles yet.</Text>
+                </View>
+              )}
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <Pressable style={styles.modalSecondaryButton} onPress={closeBottleShelfModal}>
+                <Text style={styles.modalSecondaryText}>Close</Text>
+              </Pressable>
+              <Pressable
+                style={styles.modalPrimaryButton}
+                onPress={() => {
+                  setShowBottleShelfModal(false);
+                  handleWriteAnotherBottleNote();
+                  setShowBottleModal(true);
+                }}
+              >
+                <Text style={styles.modalPrimaryText}>Write Another</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
       </Modal>
 
       <Modal
@@ -3070,6 +3280,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 22,
+    paddingVertical: 18,
   },
   welcomeBackdrop: {
     flex: 1,
@@ -3165,6 +3376,7 @@ const styles = StyleSheet.create({
   modalActions: {
     flexDirection: "row",
     columnGap: 10,
+    flexShrink: 0,
   },
   modalSecondaryButton: {
     flex: 1,
@@ -4349,6 +4561,7 @@ const styles = StyleSheet.create({
   bottleModalCard: {
     width: "100%",
     maxWidth: 356,
+    maxHeight: "86%",
     borderRadius: 24,
     backgroundColor: "#FFFFFF",
     paddingHorizontal: 18,
@@ -4359,6 +4572,7 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 6 },
     elevation: 6,
+    overflow: "hidden",
   },
   bottleModalHeader: {
     flexDirection: "row",
@@ -4704,6 +4918,136 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginTop: -6,
     marginBottom: 12,
+  },
+  bottleComposeScroll: {
+    flexShrink: 1,
+    marginBottom: 16,
+  },
+  bottleComposeContent: {
+    paddingBottom: 2,
+  },
+  bottleShelfOpenButton: {
+    minHeight: 38,
+    borderRadius: 999,
+    backgroundColor: "#F3FAEF",
+    borderWidth: 1,
+    borderColor: "#CFE8C4",
+    paddingHorizontal: 14,
+    marginBottom: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 7,
+    flexShrink: 0,
+  },
+  bottleShelfOpenText: {
+    color: "#2F6F25",
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: "800",
+  },
+  bottleShelfScroll: {
+    maxHeight: 460,
+    marginBottom: 16,
+  },
+  bottleShelfContent: {
+    paddingBottom: 4,
+  },
+  bottleShelfSummaryRow: {
+    flexDirection: "row",
+    columnGap: 8,
+    marginBottom: 14,
+  },
+  bottleShelfSummaryChip: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: 14,
+    backgroundColor: "#F3FAEF",
+    borderWidth: 1,
+    borderColor: "#D4E8CB",
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 6,
+  },
+  bottleShelfSummaryText: {
+    color: "#40576A",
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: "800",
+  },
+  bottleShelfSectionTitle: {
+    color: "#304558",
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "800",
+    marginBottom: 8,
+  },
+  bottleShelfNoteCard: {
+    borderRadius: 18,
+    backgroundColor: "#F8FBF6",
+    borderWidth: 1,
+    borderColor: "#DCE9D9",
+    paddingHorizontal: 13,
+    paddingTop: 12,
+    paddingBottom: 12,
+    marginBottom: 12,
+  },
+  bottleShelfArrivedCard: {
+    backgroundColor: "#FBFDF8",
+  },
+  bottleShelfNoteHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 10,
+    marginBottom: 10,
+  },
+  bottleShelfNoteIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 13,
+    backgroundColor: "#EDF6E7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bottleShelfNoteIconArrived: {
+    backgroundColor: "#E9F7DD",
+  },
+  bottleShelfNoteTextWrap: {
+    flex: 1,
+  },
+  bottleShelfNoteTitle: {
+    color: "#304558",
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "800",
+  },
+  bottleShelfNoteMeta: {
+    color: "#667789",
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 1,
+  },
+  bottleShelfLockedText: {
+    color: "#5D7080",
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  bottleShelfEmptyCard: {
+    borderRadius: 16,
+    backgroundColor: "#F6F8F5",
+    borderWidth: 1,
+    borderColor: "#E1E9DD",
+    paddingHorizontal: 13,
+    paddingVertical: 12,
+    marginBottom: 12,
+  },
+  bottleShelfEmptyText: {
+    color: "#667789",
+    fontSize: 13,
+    lineHeight: 18,
   },
   bottleStatusCard: {
     borderRadius: 20,

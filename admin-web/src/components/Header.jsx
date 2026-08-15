@@ -19,6 +19,7 @@ import {
   markAdminNotificationRead,
   markAllAdminNotificationsRead,
 } from "../lib/admin-api";
+import { maskStudentNumber, useAdminPreferences } from "../lib/admin-preferences";
 import Modal from "./Modal";
 
 const NOTIFICATION_REFRESH_MS = 60000;
@@ -44,15 +45,6 @@ const GLOBAL_SEARCH_PAGES = [
 
 function getAdminProfile(session) {
   const email = String(session?.email || "").trim().toLowerCase();
-  if (email === "basartejasmine@gmail.com") {
-    return {
-      initials: "JB",
-      name: session?.name || "Jasmine Batumbakal",
-      role: "Head Counselor",
-      pictureUrl: session?.pictureUrl || "",
-    };
-  }
-
   const displayName = String(session?.name || "").trim();
   const localPart = email.split("@")[0] || "Counselor";
   const words = (displayName || localPart)
@@ -65,7 +57,7 @@ function getAdminProfile(session) {
   return {
     initials,
     name,
-    role: "Counselor",
+    role: session?.roleLabel || (String(session?.role || "").toUpperCase() === "HEAD_COUNSELOR" ? "Head Counselor" : "Counselor"),
     pictureUrl: session?.pictureUrl || "",
   };
 }
@@ -116,15 +108,16 @@ function NotificationBellButton({ unreadCount, onClick }) {
   );
 }
 
-function NotificationListItem({ item, onOpen }) {
+function NotificationListItem({ item, highlightUnread = true, onOpen }) {
   const isRead = Boolean(item?.isRead);
+  const emphasizeUnread = highlightUnread && !isRead;
 
   return (
     <button
       type="button"
       onClick={() => void onOpen(item)}
       className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
-        isRead
+        isRead || !emphasizeUnread
           ? "border-[#edf2ea] bg-white hover:border-[#d6e2cf]"
           : "border-[#dce9d3] bg-[#f6fbf3] shadow-[inset_0_0_0_1px_rgba(111,174,70,0.08)] hover:border-[#bfd5b2]"
       }`}
@@ -132,7 +125,7 @@ function NotificationListItem({ item, onOpen }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className={`h-2.5 w-2.5 rounded-full ${isRead ? "bg-[#d0d9ca]" : "bg-[#6a994e]"}`} />
+            <span className={`h-2.5 w-2.5 rounded-full ${isRead || !emphasizeUnread ? "bg-[#d0d9ca]" : "bg-[#6a994e]"}`} />
             <p className="truncate text-sm font-semibold text-admin-ink">{item.title}</p>
           </div>
           <p className="mt-2 text-sm leading-6 text-[#516152]">{item.message}</p>
@@ -268,13 +261,27 @@ export default function Header({
   const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
   const [globalSearchError, setGlobalSearchError] = useState("");
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [notificationFilter, setNotificationFilter] = useState("ALL");
+  const [notificationError, setNotificationError] = useState("");
   const notificationPanelRef = useRef(null);
+  const { preferences } = useAdminPreferences();
+  const shouldMaskStudentNumbers = Boolean(preferences.privacy.maskStudentNumbers);
   const adminProfile = getAdminProfile(session);
   const adminEmail = String(session?.email || "").trim().toLowerCase();
   const { notifications, notificationsLoading, setNotifications } = useAdminNotifications(adminEmail);
+  const filteredNotifications = useMemo(() => {
+    const visibleNotifications = preferences.notifications.cancellationAlerts
+      ? notifications
+      : notifications.filter((item) => {
+          const haystack = [item.kind, item.title, item.message].join(" ").toLowerCase();
+          return !haystack.includes("cancel");
+        });
+    if (notificationFilter === "ALL") return visibleNotifications;
+    return visibleNotifications.filter((item) => String(item.metadata?.supportType || "GUIDANCE").toUpperCase() === notificationFilter);
+  }, [notificationFilter, notifications, preferences.notifications.cancellationAlerts]);
   const unreadCount = useMemo(
-    () => notifications.filter((item) => !item.isRead).length,
-    [notifications],
+    () => filteredNotifications.filter((item) => !item.isRead).length,
+    [filteredNotifications],
   );
   const pageSearchResults = useMemo(() => getPageSearchResults(globalSearchTerm), [globalSearchTerm]);
   const globalSearchResultCount = useMemo(
@@ -342,6 +349,17 @@ export default function Header({
     navigate(query ? `/users?search=${encodeURIComponent(query)}` : "/users");
   }
 
+  function openStudentProfile(studentNumber, fallbackSearch = "") {
+    const normalizedStudentNumber = String(studentNumber || "").trim();
+    const fallback = String(fallbackSearch || "").trim();
+    setIsSearchModalOpen(false);
+    navigate(normalizedStudentNumber
+      ? `/users?student=${encodeURIComponent(normalizedStudentNumber)}`
+      : fallback
+        ? `/users?search=${encodeURIComponent(fallback)}`
+        : "/users");
+  }
+
   function openSearchPath(path) {
     setIsSearchModalOpen(false);
     navigate(path);
@@ -353,16 +371,29 @@ export default function Header({
   }
 
   async function handleOpenNotification(item) {
-    if (!item?.id || item.isRead || !adminEmail) {
-      return;
+    if (!item?.id) return;
+
+    if (!item.isRead && adminEmail) {
+      try {
+        await markAdminNotificationRead(item.id, adminEmail);
+        setNotifications((current) =>
+          current.map((entry) => (entry.id === item.id ? { ...entry, isRead: true } : entry)),
+        );
+        setNotificationError("");
+      } catch (error) {
+        setNotificationError(error instanceof Error ? error.message : "Notification could not be marked as read.");
+        return;
+      }
     }
 
-    try {
-      await markAdminNotificationRead(item.id, adminEmail);
-      setNotifications((current) =>
-        current.map((entry) => (entry.id === item.id ? { ...entry, isRead: true } : entry)),
-      );
-    } catch (_error) {}
+    const supportType = String(item.metadata?.supportType || "").toUpperCase();
+    const appointmentId = item.metadata?.appointmentId;
+    if (supportType === "PEER") {
+      navigate("/peer-counselors");
+    } else if (appointmentId || supportType === "GUIDANCE") {
+      navigate("/appointments");
+    }
+    setIsNotificationsOpen(false);
   }
 
   async function handleMarkAllNotificationsRead() {
@@ -373,7 +404,10 @@ export default function Header({
     try {
       await markAllAdminNotificationsRead(adminEmail);
       setNotifications((current) => current.map((item) => ({ ...item, isRead: true })));
-    } catch (_error) {}
+      setNotificationError("");
+    } catch (error) {
+      setNotificationError(error instanceof Error ? error.message : "Notifications could not be marked as read.");
+    }
   }
 
   return (
@@ -439,14 +473,46 @@ export default function Header({
                     <div className="max-h-[24rem] overflow-y-auto px-3 py-3">
                       {notificationsLoading ? (
                         <NotificationEmptyState>Loading notifications...</NotificationEmptyState>
-                      ) : notifications.length ? (
-                        <div className="space-y-2">
-                          {notifications.map((item) => (
-                            <NotificationListItem key={item.id} item={item} onOpen={handleOpenNotification} />
-                          ))}
-                        </div>
                       ) : (
-                        <NotificationEmptyState>No notifications yet.</NotificationEmptyState>
+                        <div className="space-y-2">
+                          <div className="flex gap-2 px-1 pb-2">
+                            {[
+                              ["ALL", "All"],
+                              ["GUIDANCE", "Guidance"],
+                              ["PEER", "Peer"],
+                            ].map(([value, label]) => (
+                              <button
+                                key={value}
+                                type="button"
+                                onClick={() => setNotificationFilter(value)}
+                                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                                  notificationFilter === value
+                                    ? "border-[#8fc27a] bg-[#edf7e8] text-[#386641]"
+                                    : "border-slate-200 bg-white text-slate-500 hover:border-[#cbdcc5]"
+                                }`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                          {filteredNotifications.length ? (
+                            filteredNotifications.map((item) => (
+                              <NotificationListItem
+                                key={item.id}
+                                item={item}
+                                highlightUnread={preferences.appearance.highlightUnread}
+                                onOpen={handleOpenNotification}
+                              />
+                            ))
+                          ) : (
+                            <NotificationEmptyState>No notifications for this filter.</NotificationEmptyState>
+                          )}
+                          {notificationError ? (
+                            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                              {notificationError}
+                            </div>
+                          ) : null}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -541,10 +607,10 @@ export default function Header({
                         key={student.studentNumber}
                         icon={Users}
                         title={student.fullName}
-                        meta={`${student.studentNumber} - ${student.program || "Unspecified"}`}
+                        meta={`${maskStudentNumber(student.studentNumber, shouldMaskStudentNumbers)} - ${student.program || "Unspecified"}`}
                         detail={[student.email, student.barangay, student.city].filter(Boolean).join(" - ")}
                         badge={student.status}
-                        onClick={() => openDirectorySearch(student.studentNumber)}
+                        onClick={() => openStudentProfile(student.studentNumber)}
                       />
                     ))
                   ) : (
@@ -560,7 +626,7 @@ export default function Header({
                         icon={ShieldCheck}
                         title={member.fullName}
                         meta={`${member.kind} - ${member.role}`}
-                        detail={[member.email, member.studentNumber, member.program].filter(Boolean).join(" - ")}
+                        detail={[member.email, maskStudentNumber(member.studentNumber, shouldMaskStudentNumbers), member.program].filter(Boolean).join(" - ")}
                         badge={member.status}
                         onClick={() => openSearchPath(member.kind === "Peer Counselor" ? "/peer-counselors" : "/roles")}
                       />
@@ -582,7 +648,7 @@ export default function Header({
                         meta={`${entry.fullName || entry.studentNumber} - ${formatSearchDate(entry.entryDate)}`}
                         detail={entry.summary || entry.primaryConcern || "Open this student's directory record."}
                         badge={entry.riskLevel && entry.riskLevel !== "NONE" ? entry.riskLevel : undefined}
-                        onClick={() => openDirectorySearch(entry.studentNumber)}
+                        onClick={() => openStudentProfile(entry.studentNumber, entry.fullName)}
                       />
                     ))
                   ) : (
@@ -600,7 +666,7 @@ export default function Header({
                         meta={`${formatSearchDate(appointment.appointmentDate)} ${appointment.slotTime || ""} - ${appointment.supportType || "GUIDANCE"}`}
                         detail={[appointment.program, appointment.counselorName, appointment.counselingType, appointment.studentNote].filter(Boolean).join(" - ")}
                         badge={appointment.status}
-                        onClick={() => openSearchPath(String(appointment.supportType || "").toUpperCase() === "PEER" ? "/peer-counselors" : "/appointments")}
+                        onClick={() => openSearchPath(`${String(appointment.supportType || "").toUpperCase() === "PEER" ? "/peer-counselors" : "/appointments"}${appointment.appointmentDate ? `?date=${encodeURIComponent(String(appointment.appointmentDate).slice(0, 10))}` : ""}`)}
                       />
                     ))
                   ) : (

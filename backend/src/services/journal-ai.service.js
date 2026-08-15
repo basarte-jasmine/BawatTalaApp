@@ -66,7 +66,7 @@ const GEMINI_RATE_LIMIT_COOLDOWN_MS = Math.max(
 );
 const GROQ_MODELS = parseModelList(
   process.env.GROQ_MODELS || process.env.GROQ_MODEL,
-  ["llama-3.3-70b-versatile"],
+  ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
 );
 const OLLAMA_MODELS = parseConfiguredModelList(
   process.env.OLLAMA_MODELS || process.env.OLLAMA_MODEL,

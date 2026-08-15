@@ -183,7 +183,7 @@ export default function ForgotPassword() {
                   type={showNewPassword ? "text" : "password"}
                   value={newPassword}
                   onChange={(event) => setNewPassword(event.target.value)}
-                  placeholder="••••••••"
+                  placeholder="New password"
                   className="h-11 w-full rounded-lg border border-admin-border px-3 pr-11 text-admin-ink focus:border-admin-brand focus:outline-none focus:ring-2 focus:ring-admin-brand/20"
                 />
                 <button
@@ -202,7 +202,7 @@ export default function ForgotPassword() {
                   type={showConfirmPassword ? "text" : "password"}
                   value={confirmPassword}
                   onChange={(event) => setConfirmPassword(event.target.value)}
-                  placeholder="••••••••"
+                  placeholder="Confirm password"
                   className="h-11 w-full rounded-lg border border-admin-border px-3 pr-11 text-admin-ink focus:border-admin-brand focus:outline-none focus:ring-2 focus:ring-admin-brand/20"
                 />
                 <button

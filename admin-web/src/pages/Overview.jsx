@@ -141,7 +141,7 @@ function MetricCard({ item, onSelect }) {
       : item.tone === "gray"
         ? "bg-gray-100 text-gray-600"
         : "bg-emerald-50 text-emerald-600";
-  const className = `rounded-xl border border-gray-100 bg-white p-5 text-left shadow-sm transition-colors ${
+  const className = `bt-card rounded-xl border border-gray-100 bg-white p-5 text-left shadow-sm transition-colors ${
     onSelect ? "hover:border-emerald-200" : ""
   }`;
   const content = (
