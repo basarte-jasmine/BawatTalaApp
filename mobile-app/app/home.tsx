@@ -89,6 +89,7 @@ const HOME_QUOTES = [
 ];
 
 const FUTURE_BOTTLE_STORAGE_PREFIX = "@bawat-tala/future-bottle";
+const DRIFTING_BOTTLE_WARNING_STORAGE_PREFIX = "@bawat-tala/drifting-bottle-warning";
 const BOTTLE_MESSAGE_MAX_LENGTH = 240;
 const BOTTLE_CALENDAR_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const BOTTLE_CLOCK_HOURS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
@@ -101,6 +102,10 @@ const BOTTLE_IMAGE = require("../assets/images/bottle_sample.png");
 
 function getFutureBottleStorageKey(studentNumber: string) {
   return `${FUTURE_BOTTLE_STORAGE_PREFIX}:${studentNumber}`;
+}
+
+function getDriftingBottleWarningStorageKey(studentNumber: string) {
+  return `${DRIFTING_BOTTLE_WARNING_STORAGE_PREFIX}:${studentNumber}`;
 }
 
 function isValidDate(value: Date) {
@@ -405,6 +410,9 @@ export default function HomeScreen() {
   const [showBottleModal, setShowBottleModal] = useState(false);
   const [showBottleShelfModal, setShowBottleShelfModal] = useState(false);
   const [selectedDriftingBottle, setSelectedDriftingBottle] = useState<DriftingBottleNote | null>(null);
+  const [hasConfirmedDriftingBottleWarning, setHasConfirmedDriftingBottleWarning] = useState(false);
+  const [skipDriftingBottleWarning, setSkipDriftingBottleWarning] = useState(false);
+  const [rememberDriftingBottleWarningChoice, setRememberDriftingBottleWarningChoice] = useState(false);
   const [bottleDraft, setBottleDraft] = useState("");
   const [bottleDeliveryAt, setBottleDeliveryAt] = useState(createDefaultBottleDeliveryDate);
   const [bottlePickerMonth, setBottlePickerMonth] = useState(() => startOfBottleMonth(createDefaultBottleDeliveryDate()));
@@ -448,6 +456,30 @@ export default function HomeScreen() {
     setBottleDeliveryAt(nextDate);
     setBottlePickerMonth(startOfBottleMonth(nextDate));
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadDriftingBottleWarningPreference() {
+      if (!user?.studentNumber) {
+        setSkipDriftingBottleWarning(false);
+        setRememberDriftingBottleWarningChoice(false);
+        return;
+      }
+
+      const storedValue = await AsyncStorage.getItem(getDriftingBottleWarningStorageKey(user.studentNumber));
+      if (!isMounted) return;
+      const shouldSkipWarning = storedValue === "1";
+      setSkipDriftingBottleWarning(shouldSkipWarning);
+      setRememberDriftingBottleWarningChoice(shouldSkipWarning);
+    }
+
+    void loadDriftingBottleWarningPreference();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.studentNumber]);
 
   useEffect(() => {
     idleValues.forEach((value) => value.setValue(0));
@@ -1186,6 +1218,26 @@ export default function HomeScreen() {
     setBottlePickerMode(null);
     setEditingBottleNoteId(null);
     setBottleModalMode("compose");
+  };
+
+  const openDriftingBottleWarning = (note: DriftingBottleNote) => {
+    setSelectedDriftingBottle(note);
+    setHasConfirmedDriftingBottleWarning(skipDriftingBottleWarning);
+    setRememberDriftingBottleWarningChoice(skipDriftingBottleWarning);
+  };
+
+  const closeDriftingBottleModal = () => {
+    setSelectedDriftingBottle(null);
+    setHasConfirmedDriftingBottleWarning(false);
+    setRememberDriftingBottleWarningChoice(skipDriftingBottleWarning);
+  };
+
+  const handleOpenDriftingBottle = async () => {
+    if (rememberDriftingBottleWarningChoice && user?.studentNumber) {
+      await AsyncStorage.setItem(getDriftingBottleWarningStorageKey(user.studentNumber), "1");
+      setSkipDriftingBottleWarning(true);
+    }
+    setHasConfirmedDriftingBottleWarning(true);
   };
 
   const handleWriteAnotherBottleNote = () => {
@@ -2148,7 +2200,7 @@ export default function HomeScreen() {
                   >
                     <Pressable
                       style={styles.driftingBottleButton}
-                      onPress={() => setSelectedDriftingBottle(note)}
+                      onPress={() => openDriftingBottleWarning(note)}
                       hitSlop={16}
                       accessibilityLabel={`Open drifting letter: ${note.sender}`}
                     >
@@ -2170,33 +2222,75 @@ export default function HomeScreen() {
         visible={Boolean(selectedDriftingBottle)}
         transparent
         animationType="fade"
-        onRequestClose={() => setSelectedDriftingBottle(null)}
+        onRequestClose={closeDriftingBottleModal}
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.driftingBottleModalCard}>
             <View style={styles.driftingBottleModalHeader}>
               <View style={styles.driftingBottleModalTitleWrap}>
-                <Text style={styles.driftingBottleModalEyebrow}>Shared letter</Text>
+                <Text style={styles.driftingBottleModalEyebrow}>
+                  {hasConfirmedDriftingBottleWarning ? "Shared letter" : "Before you open this bottle"}
+                </Text>
                 <Text style={styles.driftingBottleModalTitle}>
-                  {selectedDriftingBottle?.sender ?? "From another shore"}
+                  {hasConfirmedDriftingBottleWarning
+                    ? selectedDriftingBottle?.sender ?? "From another shore"
+                    : "A quick note first"}
                 </Text>
               </View>
 
               <Pressable
                 style={styles.bottleModalCloseButton}
-                onPress={() => setSelectedDriftingBottle(null)}
+                onPress={closeDriftingBottleModal}
                 accessibilityLabel="Close drifting letter"
               >
                 <Ionicons name="close" size={18} color="#52606C" />
               </Pressable>
             </View>
 
-            <View style={styles.driftingBottleModalBody}>
-              <Image source={BOTTLE_IMAGE} style={styles.driftingBottleModalImage} resizeMode="contain" />
-              <Text style={styles.driftingBottleModalMessage}>
-                {selectedDriftingBottle?.message ?? ""}
-              </Text>
-            </View>
+            {hasConfirmedDriftingBottleWarning ? (
+              <View style={styles.driftingBottleModalBody}>
+                <Image source={BOTTLE_IMAGE} style={styles.driftingBottleModalImage} resizeMode="contain" />
+                <Text style={styles.driftingBottleModalMessage}>
+                  {selectedDriftingBottle?.message ?? ""}
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.driftingBottleWarningCard}>
+                <View style={styles.driftingBottleWarningIcon}>
+                  <Ionicons name="alert-circle-outline" size={24} color="#52765B" />
+                </View>
+                <Text style={styles.driftingBottleWarningText}>
+                  This message was created by another user, so we cannot guarantee what it contains. It may include sensitive, inappropriate, or upsetting content.
+                </Text>
+                <Text style={styles.driftingBottleWarningSubtext}>
+                  Open it only if you feel comfortable viewing user-generated content.
+                </Text>
+                <View style={styles.driftingBottleWarningActions}>
+                  <Pressable
+                    style={styles.driftingBottleWarningOpenButton}
+                    onPress={() => void handleOpenDriftingBottle()}
+                  >
+                    <Text style={styles.driftingBottleWarningOpenText}>Open Bottle</Text>
+                  </Pressable>
+                  <Pressable style={styles.driftingBottleWarningBackButton} onPress={closeDriftingBottleModal}>
+                    <Text style={styles.driftingBottleWarningBackText}>Go Back</Text>
+                  </Pressable>
+                </View>
+                <Pressable
+                  style={styles.driftingBottleWarningCheckboxRow}
+                  onPress={() => setRememberDriftingBottleWarningChoice((current) => !current)}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: rememberDriftingBottleWarningChoice }}
+                >
+                  <Ionicons
+                    name={rememberDriftingBottleWarningChoice ? "checkbox" : "square-outline"}
+                    size={16}
+                    color={rememberDriftingBottleWarningChoice ? "#6E9B61" : "#8B98A3"}
+                  />
+                  <Text style={styles.driftingBottleWarningCheckboxText}>Do not show this again</Text>
+                </Pressable>
+              </View>
+            )}
           </View>
         </View>
       </Modal>
@@ -4326,6 +4420,87 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 23,
     textAlign: "center",
+  },
+  driftingBottleWarningCard: {
+    borderRadius: 20,
+    backgroundColor: "#FBFCF8",
+    borderWidth: 1,
+    borderColor: "#E7ECE2",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    alignItems: "center",
+  },
+  driftingBottleWarningIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 999,
+    backgroundColor: "#EDF6E7",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  driftingBottleWarningText: {
+    color: "#344B5E",
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: "center",
+  },
+  driftingBottleWarningSubtext: {
+    color: "#607181",
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: "center",
+    marginTop: 8,
+  },
+  driftingBottleWarningCheckboxRow: {
+    alignSelf: "center",
+    minHeight: 28,
+    borderRadius: 999,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 6,
+    paddingHorizontal: 8,
+    marginTop: 10,
+    opacity: 0.82,
+  },
+  driftingBottleWarningCheckboxText: {
+    color: "#6F7F8A",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "600",
+  },
+  driftingBottleWarningActions: {
+    width: "100%",
+    rowGap: 10,
+    marginTop: 16,
+  },
+  driftingBottleWarningOpenButton: {
+    minHeight: 44,
+    borderRadius: 999,
+    backgroundColor: "#70C943",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  driftingBottleWarningOpenText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "800",
+  },
+  driftingBottleWarningBackButton: {
+    minHeight: 42,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#D5E0E7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  driftingBottleWarningBackText: {
+    color: "#526678",
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: "800",
   },
   futureBottleBody: {
     paddingHorizontal: 14,
