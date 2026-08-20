@@ -61,7 +61,7 @@ type ScheduledBottleNote = {
   message: string;
 };
 
-type BottleModalMode = "compose" | "status";
+type BottleModalMode = "compose" | "intro" | "status";
 
 type BottlePickerMode = "date" | "time" | null;
 
@@ -89,6 +89,7 @@ const HOME_QUOTES = [
 ];
 
 const FUTURE_BOTTLE_STORAGE_PREFIX = "@bawat-tala/future-bottle";
+const FUTURE_BOTTLE_INTRO_STORAGE_PREFIX = "@bawat-tala/future-bottle-intro";
 const DRIFTING_BOTTLE_WARNING_STORAGE_PREFIX = "@bawat-tala/drifting-bottle-warning";
 const BOTTLE_MESSAGE_MAX_LENGTH = 240;
 const BOTTLE_CALENDAR_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -102,6 +103,10 @@ const BOTTLE_IMAGE = require("../assets/images/bottle_sample.png");
 
 function getFutureBottleStorageKey(studentNumber: string) {
   return `${FUTURE_BOTTLE_STORAGE_PREFIX}:${studentNumber}`;
+}
+
+function getFutureBottleIntroStorageKey(studentNumber: string) {
+  return `${FUTURE_BOTTLE_INTRO_STORAGE_PREFIX}:${studentNumber}`;
 }
 
 function getDriftingBottleWarningStorageKey(studentNumber: string) {
@@ -409,6 +414,7 @@ export default function HomeScreen() {
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
   const [showBottleModal, setShowBottleModal] = useState(false);
   const [showBottleShelfModal, setShowBottleShelfModal] = useState(false);
+  const [hasSeenFutureBottleIntro, setHasSeenFutureBottleIntro] = useState(false);
   const [selectedDriftingBottle, setSelectedDriftingBottle] = useState<DriftingBottleNote | null>(null);
   const [hasConfirmedDriftingBottleWarning, setHasConfirmedDriftingBottleWarning] = useState(false);
   const [skipDriftingBottleWarning, setSkipDriftingBottleWarning] = useState(false);
@@ -460,21 +466,26 @@ export default function HomeScreen() {
   useEffect(() => {
     let isMounted = true;
 
-    async function loadDriftingBottleWarningPreference() {
+    async function loadBottlePreferences() {
       if (!user?.studentNumber) {
+        setHasSeenFutureBottleIntro(false);
         setSkipDriftingBottleWarning(false);
         setRememberDriftingBottleWarningChoice(false);
         return;
       }
 
-      const storedValue = await AsyncStorage.getItem(getDriftingBottleWarningStorageKey(user.studentNumber));
+      const [introStoredValue, warningStoredValue] = await Promise.all([
+        AsyncStorage.getItem(getFutureBottleIntroStorageKey(user.studentNumber)),
+        AsyncStorage.getItem(getDriftingBottleWarningStorageKey(user.studentNumber)),
+      ]);
       if (!isMounted) return;
-      const shouldSkipWarning = storedValue === "1";
+      const shouldSkipWarning = warningStoredValue === "1";
+      setHasSeenFutureBottleIntro(introStoredValue === "1");
       setSkipDriftingBottleWarning(shouldSkipWarning);
       setRememberDriftingBottleWarningChoice(shouldSkipWarning);
     }
 
-    void loadDriftingBottleWarningPreference();
+    void loadBottlePreferences();
 
     return () => {
       isMounted = false;
@@ -1189,7 +1200,7 @@ export default function HomeScreen() {
     } else {
       setBottleDraft("");
       updateBottleDeliveryDraft(createDefaultBottleDeliveryDate());
-      setBottleModalMode("compose");
+      setBottleModalMode(hasSeenFutureBottleIntro || scheduledBottleNotes.length ? "compose" : "intro");
       setEditingBottleNoteId(null);
     }
     setBottleFormMessage("");
@@ -1212,6 +1223,19 @@ export default function HomeScreen() {
 
   const closeBottleModal = () => {
     setShowBottleModal(false);
+    setBottleDraft("");
+    updateBottleDeliveryDraft(createDefaultBottleDeliveryDate());
+    setBottleFormMessage("");
+    setBottlePickerMode(null);
+    setEditingBottleNoteId(null);
+    setBottleModalMode("compose");
+  };
+
+  const handleStartFutureBottleMessage = async () => {
+    if (user?.studentNumber) {
+      await AsyncStorage.setItem(getFutureBottleIntroStorageKey(user.studentNumber), "1");
+    }
+    setHasSeenFutureBottleIntro(true);
     setBottleDraft("");
     updateBottleDeliveryDraft(createDefaultBottleDeliveryDate());
     setBottleFormMessage("");
@@ -2307,7 +2331,45 @@ export default function HomeScreen() {
         >
           <View style={styles.modalBackdrop}>
             <View style={styles.bottleModalCard}>
-            {bottleModalMode === "status" && latestArrivedBottleNote && latestArrivedBottleDeliveryDate ? (
+            {bottleModalMode === "intro" ? (
+              <>
+                <View style={styles.bottleModalHeader}>
+                  <View style={styles.bottleModalTextWrap}>
+                    <Text style={styles.bottleModalEyebrow}>First-Time Bottle Prompt</Text>
+                    <Text style={styles.bottleModalTitle}>Send a message to your future self</Text>
+                    <Text style={styles.bottleModalDescription}>
+                      {"Write something you'd like your future self to read."}
+                    </Text>
+                  </View>
+
+                  <Pressable style={styles.bottleModalCloseButton} onPress={closeBottleModal} accessibilityLabel="Close bottle note">
+                    <Ionicons name="close" size={18} color="#52606C" />
+                  </Pressable>
+                </View>
+
+                <View style={styles.futureBottleIntroCard}>
+                  <View style={styles.futureBottleIntroIconWrap}>
+                    <Image source={BOTTLE_IMAGE} style={styles.futureBottleIntroImage} resizeMode="contain" />
+                  </View>
+                  <Text style={styles.futureBottleIntroTitle}>Send a message to your future self</Text>
+                  <Text style={styles.futureBottleIntroText}>
+                    Once you seal and release your bottle, it will drift out to sea until the date you choose. When that day arrives, the bottle will return to you with your message inside.
+                  </Text>
+                </View>
+
+                <View style={styles.modalActions}>
+                  <Pressable style={styles.modalSecondaryButton} onPress={closeBottleModal}>
+                    <Text style={styles.modalSecondaryText}>Go Back</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.modalPrimaryButton}
+                    onPress={() => void handleStartFutureBottleMessage()}
+                  >
+                    <Text style={styles.modalPrimaryText}>Write My Message</Text>
+                  </Pressable>
+                </View>
+              </>
+            ) : bottleModalMode === "status" && latestArrivedBottleNote && latestArrivedBottleDeliveryDate ? (
               <>
                 <View style={styles.bottleModalHeader}>
                   <View style={styles.bottleModalTextWrap}>
@@ -4732,6 +4794,43 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 19,
     fontWeight: "700",
+  },
+  futureBottleIntroCard: {
+    borderRadius: 20,
+    backgroundColor: "#F8FBF6",
+    borderWidth: 1,
+    borderColor: "#DCE9D9",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  futureBottleIntroIconWrap: {
+    width: 62,
+    height: 62,
+    borderRadius: 20,
+    backgroundColor: "#E9F7DD",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  futureBottleIntroImage: {
+    width: 46,
+    height: 46,
+  },
+  futureBottleIntroTitle: {
+    color: "#304558",
+    fontSize: 18,
+    lineHeight: 23,
+    fontWeight: "800",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  futureBottleIntroText: {
+    color: "#5D7080",
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: "center",
   },
   bottleModalCard: {
     width: "100%",
