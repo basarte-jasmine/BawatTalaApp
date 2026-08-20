@@ -161,6 +161,7 @@ export default function ProfileSettingsScreen() {
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [feedbackAttachment, setFeedbackAttachment] = useState<FeedbackAttachment | null>(null);
   const [feedbackSending, setFeedbackSending] = useState(false);
+  const [feedbackSuccessMessage, setFeedbackSuccessMessage] = useState("");
   const [currentPin, setCurrentPin] = useState("");
   const [pin, setPin] = useState("");
   const [pinConfirm, setPinConfirm] = useState("");
@@ -369,6 +370,7 @@ export default function ProfileSettingsScreen() {
 
       setFeedbackMessage("");
       setFeedbackAttachment(null);
+      setFeedbackSuccessMessage(result.message || "Success! Your feedback was sent.");
       Alert.alert("Feedback sent", result.message || "Thank you for helping improve Bawat Tala.");
     } catch {
       Alert.alert("Feedback not sent", "Please check your connection and try again.");
@@ -860,7 +862,10 @@ export default function ProfileSettingsScreen() {
             <Card title="Tell us more">
               <TextInput
                 value={feedbackMessage}
-                onChangeText={setFeedbackMessage}
+                onChangeText={(value) => {
+                  setFeedbackMessage(value);
+                  setFeedbackSuccessMessage("");
+                }}
                 placeholder="What happened, what you expected, or what you'd love to see improved."
                 placeholderTextColor="#97A1AA"
                 multiline
@@ -878,7 +883,13 @@ export default function ProfileSettingsScreen() {
                     </Text>
                     <Text style={styles.feedbackAttachmentMeta}>Image attached</Text>
                   </View>
-                  <Pressable style={styles.feedbackAttachmentRemove} onPress={() => setFeedbackAttachment(null)}>
+                  <Pressable
+                    style={styles.feedbackAttachmentRemove}
+                    onPress={() => {
+                      setFeedbackAttachment(null);
+                      setFeedbackSuccessMessage("");
+                    }}
+                  >
                     <Ionicons name="close" size={18} color="#7C3D3D" />
                   </Pressable>
                 </View>
@@ -892,7 +903,12 @@ export default function ProfileSettingsScreen() {
                 </Pressable>
               )}
             </Card>
-            <PrimaryButton label={feedbackSending ? "Sending..." : "Send Feedback"} onPress={() => void handleFeedback()} />
+            {feedbackSuccessMessage ? <Text style={styles.feedbackSuccessText}>{feedbackSuccessMessage}</Text> : null}
+            <PrimaryButton
+              disabled={feedbackSending}
+              label={feedbackSending ? "Sending..." : "Send Feedback"}
+              onPress={() => void handleFeedback()}
+            />
             <SecondaryButton label="Open Help & Support" onPress={() => router.push("/profile-settings?section=help-support")} />
           </>
         ) : null}
@@ -1208,9 +1224,9 @@ function EmptyText({ text }: { text: string }) {
   return <Text style={styles.helperText}>{text}</Text>;
 }
 
-function PrimaryButton({ label, onPress }: { label: string; onPress: () => void }) {
+function PrimaryButton({ disabled = false, label, onPress }: { disabled?: boolean; label: string; onPress: () => void }) {
   return (
-    <Pressable style={styles.primaryButton} onPress={onPress}>
+    <Pressable style={[styles.primaryButton, disabled && styles.primaryButtonDisabled]} onPress={onPress} disabled={disabled}>
       <Text style={styles.primaryText}>{label}</Text>
     </Pressable>
   );
@@ -1283,6 +1299,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 10,
+  },
+  primaryButtonDisabled: {
+    opacity: 0.58,
   },
   primaryText: { color: "#FFFFFF", fontSize: 16, lineHeight: 20, fontWeight: "700" },
   secondaryButton: {
@@ -1663,6 +1682,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#FCEEEE",
     alignItems: "center",
     justifyContent: "center",
+  },
+  feedbackSuccessText: {
+    color: "#2E6D25",
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: "700",
+    marginBottom: 10,
+    textAlign: "center",
   },
   modalBackdrop: {
     flex: 1,
