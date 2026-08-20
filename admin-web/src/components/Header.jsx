@@ -138,6 +138,39 @@ function NotificationListItem({ item, highlightUnread = true, onOpen }) {
   );
 }
 
+function getAdminNotificationTarget(item) {
+  const metadata = item?.metadata || {};
+  const route = String(metadata.route || "").trim();
+  const supportType = String(metadata.supportType || "").toUpperCase();
+  const appointmentDate = String(metadata.appointmentDate || metadata.targetDate || "").slice(0, 10);
+  const appointmentId = String(metadata.appointmentId || "").trim();
+  const peerCounselorId = String(metadata.peerCounselorId || "").trim();
+  const params = new URLSearchParams();
+
+  if (appointmentDate) {
+    params.set("date", appointmentDate);
+  }
+  if (appointmentId) {
+    params.set("appointment", appointmentId);
+  }
+  if (peerCounselorId) {
+    params.set("peer", peerCounselorId);
+  }
+
+  if (route && route.startsWith("/")) {
+    const separator = route.includes("?") ? "&" : "?";
+    return params.toString() ? `${route}${separator}${params.toString()}` : route;
+  }
+  if (supportType === "PEER" || peerCounselorId || String(item?.kind || "").toUpperCase().includes("PEER")) {
+    return params.toString() ? `/peer-counselors?${params.toString()}` : "/peer-counselors";
+  }
+  if (appointmentId || appointmentDate || String(item?.kind || "").toUpperCase().includes("APPOINTMENT")) {
+    return params.toString() ? `/appointments?${params.toString()}` : "/appointments";
+  }
+
+  return "";
+}
+
 function formatSearchDate(value) {
   if (!value) return "";
   const parsed = new Date(value);
@@ -261,9 +294,12 @@ export default function Header({
   const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
   const [globalSearchError, setGlobalSearchError] = useState("");
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [notificationToast, setNotificationToast] = useState(null);
   const [notificationFilter, setNotificationFilter] = useState("ALL");
   const [notificationError, setNotificationError] = useState("");
   const notificationPanelRef = useRef(null);
+  const notificationsInitializedRef = useRef(false);
+  const seenNotificationIdsRef = useRef(new Set());
   const { preferences } = useAdminPreferences();
   const shouldMaskStudentNumbers = Boolean(preferences.privacy.maskStudentNumbers);
   const adminProfile = getAdminProfile(session);
@@ -294,6 +330,36 @@ export default function Header({
       globalSearchResults.riskTriggers.length,
     [globalSearchResults, pageSearchResults],
   );
+
+  useEffect(() => {
+    if (!adminEmail) {
+      setNotificationToast(null);
+      notificationsInitializedRef.current = false;
+      seenNotificationIdsRef.current = new Set();
+      return undefined;
+    }
+
+    const currentIds = new Set(notifications.map((item) => item.id).filter(Boolean));
+    if (!notificationsInitializedRef.current) {
+      seenNotificationIdsRef.current = currentIds;
+      notificationsInitializedRef.current = true;
+      return undefined;
+    }
+
+    const newestUnread = notifications.find((item) => item?.id && !item.isRead && !seenNotificationIdsRef.current.has(item.id));
+    seenNotificationIdsRef.current = currentIds;
+
+    if (!newestUnread) {
+      return undefined;
+    }
+
+    setNotificationToast(newestUnread);
+    const timeoutId = window.setTimeout(() => {
+      setNotificationToast((current) => (current?.id === newestUnread.id ? null : current));
+    }, 8000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [adminEmail, notifications]);
 
   useEffect(() => {
     function handleOutsideClick(event) {
@@ -372,6 +438,7 @@ export default function Header({
 
   async function handleOpenNotification(item) {
     if (!item?.id) return;
+    setNotificationToast((current) => (current?.id === item.id ? null : current));
 
     if (!item.isRead && adminEmail) {
       try {
@@ -386,12 +453,9 @@ export default function Header({
       }
     }
 
-    const supportType = String(item.metadata?.supportType || "").toUpperCase();
-    const appointmentId = item.metadata?.appointmentId;
-    if (supportType === "PEER") {
-      navigate("/peer-counselors");
-    } else if (appointmentId || supportType === "GUIDANCE") {
-      navigate("/appointments");
+    const targetPath = getAdminNotificationTarget(item);
+    if (targetPath) {
+      navigate(targetPath);
     }
     setIsNotificationsOpen(false);
   }
@@ -541,6 +605,25 @@ export default function Header({
           </div>
         </div>
       </header>
+
+      {notificationToast ? (
+        <button
+          type="button"
+          onClick={() => void handleOpenNotification(notificationToast)}
+          className="fixed right-5 top-5 z-50 w-[min(22rem,calc(100vw-2.5rem))] rounded-2xl border border-[#cfe0c8] bg-white p-4 text-left shadow-[0_20px_50px_rgba(32,49,38,0.22)] transition hover:border-[#9fc68f] hover:bg-[#fbfdf9]"
+        >
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#edf7e8] text-[#386641]">
+              <Bell className="h-4 w-4" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-xs font-semibold uppercase tracking-[0.18em] text-[#6d816d]">New notification</span>
+              <span className="mt-1 block truncate text-sm font-bold text-admin-ink">{notificationToast.title}</span>
+              <span className="mt-1 line-clamp-2 block text-sm leading-5 text-[#516152]">{notificationToast.message}</span>
+            </span>
+          </div>
+        </button>
+      ) : null}
 
       <Modal isOpen={isSearchModalOpen} onClose={() => setIsSearchModalOpen(false)} title="Global Search" maxWidth="max-w-6xl">
         <div className="space-y-5">

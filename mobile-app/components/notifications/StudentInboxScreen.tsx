@@ -23,16 +23,49 @@ type StudentInboxScreenProps = {
 
 const TALA_IMAGE = require("../../assets/images/Tala_Star.png");
 const inboxCache = new Map<string, AppNotification[]>();
-const NOTIFICATION_FILTERS: Array<{ key: StudentNotificationCategory; label: string }> = [
+const NOTIFICATION_FILTERS: { key: StudentNotificationCategory; label: string }[] = [
   { key: "notifications", label: "All" },
   { key: "guidance", label: "Guidance" },
   { key: "peer", label: "Peer" },
 ];
 
-function getNotificationRoute(item: AppNotification) {
+function getStringMetadataValue(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
+}
+
+function getNotificationRoute(item: AppNotification): string | { pathname: string; params?: Record<string, string> } {
   const metadata = item.metadata || {};
-  if (metadata.route === "/consult" || String(item.kind || "").includes("APPOINTMENT")) {
-    return "/consult";
+  const kind = String(item.kind || "").toUpperCase();
+  const route = getStringMetadataValue(metadata, "route");
+  const appointmentId = getStringMetadataValue(metadata, "appointmentId");
+  const entryId = getStringMetadataValue(metadata, "entryId");
+  const supportType = getStringMetadataValue(metadata, "supportType").toUpperCase();
+
+  if (appointmentId || kind.includes("APPOINTMENT")) {
+    return {
+      pathname: "/home",
+      params: {
+        appointmentId,
+        consultConfirmed: "1",
+      },
+    };
+  }
+  if (entryId || route === "/journal-entry-view") {
+    return entryId
+      ? { pathname: "/journal-entry-view", params: { entryId } }
+      : "/journal-entries";
+  }
+  if (route === "/journal" || kind.includes("JOURNAL") || kind.includes("ENTRY")) {
+    return "/journal-entries";
+  }
+  if (route === "/messages" || kind.includes("ADMIN_MESSAGE")) {
+    return "";
+  }
+  if (route === "/consult") {
+    return supportType === "PEER"
+      ? { pathname: "/consult", params: { track: "peer", skipIntro: "1" } }
+      : { pathname: "/consult", params: { track: "professional", skipIntro: "1" } };
   }
   return "";
 }

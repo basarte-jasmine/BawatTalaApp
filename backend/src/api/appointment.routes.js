@@ -2032,6 +2032,7 @@ async function notifyAdminsAboutPeerInvitationAccepted(peerCounselor) {
         peerCounselorId: peerCounselor.id,
         peerCounselorEmail: peerCounselor.email,
         peerCounselorName: peerCounselor.full_name,
+        route: "/peer-counselors",
         supportType: SUPPORT_TYPE_PEER,
       },
     });
@@ -2050,6 +2051,7 @@ async function notifyAdminsAboutPeerInvitationDeclined(invitation) {
         peerCounselorId: invitation.id,
         peerCounselorEmail: invitation.email,
         peerCounselorName: invitation.full_name,
+        route: "/peer-counselors",
         supportType: SUPPORT_TYPE_PEER,
       },
     });
@@ -2965,12 +2967,10 @@ router.post("/admin/:appointmentId/cancel", async (req, res) => {
     kind: "APPOINTMENT_CANCELLED",
     title: "Appointment cancelled",
     message: `Your session on ${formatDateLong(existingAppointment.appointment_date)} at ${toReadableTime(existingAppointment.slot_time)} has been cancelled.`,
-    metadata: {
+    metadata: getAppointmentNotificationMetadata(existingAppointment, {
       appointmentId,
-      counselorId: existingAppointment.counselor_id,
-      counselorName: existingAppointment.counselor_name,
       cancellationReason,
-    },
+    }),
   });
   await notifyPeerCounselorAboutCancelledAppointment({
     appointment: existingAppointment,
@@ -3031,11 +3031,9 @@ router.delete("/admin/:appointmentId", async (req, res) => {
     kind: "APPOINTMENT_DELETED",
     title: "Appointment removed",
     message: `Your session on ${formatDateLong(existingAppointment.appointment_date)} at ${toReadableTime(existingAppointment.slot_time)} has been removed.`,
-    metadata: {
+    metadata: getAppointmentNotificationMetadata(existingAppointment, {
       appointmentId,
-      counselorId: existingAppointment.counselor_id,
-      counselorName: existingAppointment.counselor_name,
-    },
+    }),
   });
   await notifyPeerCounselorAboutCancelledAppointment({
     appointment: existingAppointment,

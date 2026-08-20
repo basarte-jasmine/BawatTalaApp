@@ -24,7 +24,7 @@ const DEFAULT_FORM = {
   confirmPassword: "",
   email: "",
   fullName: "",
-  gender: "Prefer not to say",
+  gender: "",
   isActive: true,
   password: "",
   program: "",
@@ -184,7 +184,7 @@ export default function RoleAssignments({ onLogout, session }) {
     setFormState({
       email: member.email || "",
       fullName: member.fullName || "",
-      gender: member.gender || (member.memberType === "PEER" ? "" : "Prefer not to say"),
+      gender: ["Male", "Female"].includes(member.gender) ? member.gender : "",
       isActive: Boolean(member.isActive),
       password: "",
       confirmPassword: "",
@@ -597,7 +597,7 @@ export default function RoleAssignments({ onLogout, session }) {
                         const nextRole = event.target.value;
                         setFormState((current) => ({
                           ...current,
-                          gender: nextRole === "PEER_COUNSELOR" ? "" : current.gender || "Prefer not to say",
+                          gender: ["Male", "Female"].includes(current.gender) ? current.gender : "",
                           role: nextRole,
                         }));
                         setFormErrors({});
@@ -616,10 +616,9 @@ export default function RoleAssignments({ onLogout, session }) {
                       onChange={(event) => updateFormField("gender", event.target.value)}
                       className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     >
-                      {formState.role === "PEER_COUNSELOR" ? <option value="">Select Gender</option> : null}
+                      <option value="">Select Gender</option>
                       <option value="Female">Female</option>
                       <option value="Male">Male</option>
-                      {formState.role !== "PEER_COUNSELOR" ? <option value="Prefer not to say">Prefer not to say</option> : null}
                     </select>
                     <FieldError message={formErrors.gender} />
                   </div>
