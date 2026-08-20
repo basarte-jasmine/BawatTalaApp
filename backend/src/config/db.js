@@ -524,6 +524,28 @@ async function ensureDatabaseSchema() {
   `);
 
   await pool.query(`
+    create table if not exists public.student_feedbacks (
+      id uuid primary key default gen_random_uuid(),
+      student_number text not null,
+      category text not null,
+      message text not null,
+      status text not null default 'NEW',
+      priority text not null default 'NORMAL',
+      attachment_data_url text,
+      attachment_file_name text,
+      attachment_content_type text,
+      admin_notes text,
+      reviewed_by_email text,
+      reviewed_at timestamptz,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      constraint student_feedbacks_category_check check (category in ('Bug', 'Suggestion', 'Question', 'Support', 'Experience', 'Concern', 'Other')),
+      constraint student_feedbacks_status_check check (status in ('NEW', 'REVIEWED', 'IN_PROGRESS', 'RESOLVED')),
+      constraint student_feedbacks_priority_check check (priority in ('LOW', 'NORMAL', 'HIGH'))
+    );
+  `);
+
+  await pool.query(`
     create table if not exists public.journal_entries (
       id uuid primary key default gen_random_uuid(),
       student_number text not null,
@@ -1284,6 +1306,16 @@ async function ensureDatabaseSchema() {
   await pool.query(`
     create index if not exists student_notifications_student_created_at_idx
       on public.student_notifications (student_number, created_at desc);
+  `);
+
+  await pool.query(`
+    create index if not exists student_feedbacks_status_created_idx
+      on public.student_feedbacks (status, created_at desc);
+  `);
+
+  await pool.query(`
+    create index if not exists student_feedbacks_student_created_idx
+      on public.student_feedbacks (student_number, created_at desc);
   `);
 
   await pool.query(`

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Linking,
   Modal,
   Pressable,
@@ -23,6 +24,7 @@ import {
   fetchStudentAppointments,
   fetchStudentNotifications,
   fetchStudentProfile,
+  submitStudentFeedback,
   StudentProfile,
 } from "../lib/backend-api";
 import { useAuthSession } from "../lib/auth-session";
@@ -78,6 +80,14 @@ const SCREEN_COPY: Record<SettingsSection, { subtitle: string; title: string }> 
 const FEEDBACK_CATEGORIES = ["Bug", "Suggestion", "Question", "Support"] as const;
 const SUPPORT_EMAIL = "team@bawattalapro.online";
 const STUDENT_ID_PATTERN = /^\d{2}-\d{4}$/;
+const FEEDBACK_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
+
+type FeedbackAttachment = {
+  contentType: string;
+  dataUrl: string;
+  fileName: string;
+  uri: string;
+};
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 function isSection(value: string | undefined): value is SettingsSection {
@@ -149,6 +159,8 @@ export default function ProfileSettingsScreen() {
   const [appointment, setAppointment] = useState<CounselorAppointment | null>(null);
   const [feedbackCategory, setFeedbackCategory] = useState<(typeof FEEDBACK_CATEGORIES)[number]>("Suggestion");
   const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [feedbackAttachment, setFeedbackAttachment] = useState<FeedbackAttachment | null>(null);
+  const [feedbackSending, setFeedbackSending] = useState(false);
   const [currentPin, setCurrentPin] = useState("");
   const [pin, setPin] = useState("");
   const [pinConfirm, setPinConfirm] = useState("");
@@ -325,15 +337,90 @@ export default function ProfileSettingsScreen() {
   }, []);
 
   const handleFeedback = async () => {
+    if (feedbackSending) return;
     if (!feedbackMessage.trim()) {
       Alert.alert("Add your feedback", "Write a short note first so we know what you want us to improve.");
       return;
     }
-    await openSupportEmail(
-      `Bawat Tala Feedback - ${feedbackCategory}`,
-      `Category: ${feedbackCategory}\nStudent: ${user?.studentNumber || "Unknown"}\n\n${feedbackMessage.trim()}`,
-    );
-    Alert.alert("Feedback Ready", "Your mail app is open. Send it there and we'll take it from there.");
+    if (!user?.studentNumber) {
+      Alert.alert("Sign in needed", "Please sign in again before sending feedback.");
+      return;
+    }
+
+    try {
+      setFeedbackSending(true);
+      const result = await submitStudentFeedback({
+        attachment: feedbackAttachment
+          ? {
+              contentType: feedbackAttachment.contentType,
+              dataUrl: feedbackAttachment.dataUrl,
+              fileName: feedbackAttachment.fileName,
+            }
+          : null,
+        category: feedbackCategory,
+        message: feedbackMessage.trim(),
+        studentNumber: user.studentNumber,
+      });
+
+      if (!result.ok) {
+        Alert.alert("Feedback not sent", result.message || "Please try again in a bit.");
+        return;
+      }
+
+      setFeedbackMessage("");
+      setFeedbackAttachment(null);
+      Alert.alert("Feedback sent", result.message || "Thank you for helping improve Bawat Tala.");
+    } catch {
+      Alert.alert("Feedback not sent", "Please check your connection and try again.");
+    } finally {
+      setFeedbackSending(false);
+    }
+  };
+
+  const pickFeedbackAttachment = async () => {
+    try {
+      const ImagePicker = await import("expo-image-picker");
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Photo permission needed", "Allow photo access to attach an image to your feedback.");
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: false,
+        quality: 0.55,
+        base64: true,
+      });
+
+      if (result.canceled || !result.assets[0]) return;
+      const asset = result.assets[0];
+      if (!asset.base64) {
+        Alert.alert("Image not attached", "Could not read the selected image.");
+        return;
+      }
+
+      const contentType = asset.mimeType || "image/jpeg";
+      if (!["image/jpeg", "image/jpg", "image/png", "image/webp"].includes(contentType)) {
+        Alert.alert("Unsupported image", "Please attach a JPG, PNG, or WEBP image.");
+        return;
+      }
+
+      const estimatedBytes = Math.ceil((asset.base64.length * 3) / 4);
+      if ((asset.fileSize || estimatedBytes) > FEEDBACK_ATTACHMENT_MAX_BYTES) {
+        Alert.alert("Image too large", "Please choose an image that is 5 MB or smaller.");
+        return;
+      }
+
+      setFeedbackAttachment({
+        contentType,
+        dataUrl: `data:${contentType};base64,${asset.base64}`,
+        fileName: asset.fileName || "feedback-image.jpg",
+        uri: asset.uri,
+      });
+    } catch {
+      Alert.alert("Image not attached", "Please try choosing the image again.");
+    }
   };
 
   const openPinEditor = () => {
@@ -781,7 +868,31 @@ export default function ProfileSettingsScreen() {
                 style={styles.feedbackInput}
               />
             </Card>
-            <PrimaryButton label="Send Feedback" onPress={() => void handleFeedback()} />
+            <Card title="Attach image">
+              {feedbackAttachment ? (
+                <View style={styles.feedbackAttachmentPreview}>
+                  <Image source={{ uri: feedbackAttachment.uri }} style={styles.feedbackAttachmentImage} resizeMode="cover" />
+                  <View style={styles.feedbackAttachmentInfo}>
+                    <Text style={styles.feedbackAttachmentTitle} numberOfLines={1}>
+                      {feedbackAttachment.fileName}
+                    </Text>
+                    <Text style={styles.feedbackAttachmentMeta}>Image attached</Text>
+                  </View>
+                  <Pressable style={styles.feedbackAttachmentRemove} onPress={() => setFeedbackAttachment(null)}>
+                    <Ionicons name="close" size={18} color="#7C3D3D" />
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable style={styles.feedbackAttachmentButton} onPress={() => void pickFeedbackAttachment()}>
+                  <Ionicons name="image-outline" size={20} color="#4D6C58" />
+                  <View style={styles.feedbackAttachmentInfo}>
+                    <Text style={styles.feedbackAttachmentTitle}>Add screenshot or photo</Text>
+                    <Text style={styles.feedbackAttachmentMeta}>JPG, PNG, or WEBP up to 5 MB</Text>
+                  </View>
+                </Pressable>
+              )}
+            </Card>
+            <PrimaryButton label={feedbackSending ? "Sending..." : "Send Feedback"} onPress={() => void handleFeedback()} />
             <SecondaryButton label="Open Help & Support" onPress={() => router.push("/profile-settings?section=help-support")} />
           </>
         ) : null}
@@ -1500,6 +1611,58 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     color: "#2D4053",
+  },
+  feedbackAttachmentButton: {
+    minHeight: 78,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#DDEAD2",
+    backgroundColor: "#F8FBF4",
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  feedbackAttachmentPreview: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#DDEAD2",
+    backgroundColor: "#F8FBF4",
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  feedbackAttachmentImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    backgroundColor: "#E8EFE2",
+  },
+  feedbackAttachmentInfo: {
+    flex: 1,
+  },
+  feedbackAttachmentTitle: {
+    color: "#31475B",
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: "700",
+  },
+  feedbackAttachmentMeta: {
+    color: "#697989",
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  feedbackAttachmentRemove: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    backgroundColor: "#FCEEEE",
+    alignItems: "center",
+    justifyContent: "center",
   },
   modalBackdrop: {
     flex: 1,

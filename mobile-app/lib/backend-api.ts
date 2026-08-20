@@ -38,6 +38,12 @@ export type StudentReferral = {
   shareRewardTala: number;
 };
 
+export type FeedbackAttachmentPayload = {
+  contentType: string;
+  dataUrl: string;
+  fileName: string;
+};
+
 export type JournalMessage = {
   createdAt: string;
   id: string;
@@ -1364,6 +1370,19 @@ export async function scanSchoolId(imageBase64: string): Promise<{
     isValidId: Boolean(data?.isValidId),
     ocrText: data?.ocrText ?? "",
     message: data?.message,
+  };
+}
+
+export async function submitStudentFeedback(payload: {
+  attachment?: FeedbackAttachmentPayload | null;
+  category: string;
+  message: string;
+  studentNumber: string;
+}): Promise<ApiResult> {
+  const { response, data } = await post("/api/feedback", payload);
+  return {
+    ok: response.ok,
+    message: data?.message ?? (response.ok ? "Feedback sent." : "Unable to send feedback."),
   };
 }
 

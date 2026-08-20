@@ -91,6 +91,25 @@ export async function fetchAdminRiskFlags() {
   return request("/api/admin/dashboard/risk-flags");
 }
 
+export async function fetchAdminFeedbacks(params = {}) {
+  const searchParams = new URLSearchParams();
+  if (params.status && params.status !== "ALL") {
+    searchParams.set("status", params.status);
+  }
+  if (params.search) {
+    searchParams.set("search", params.search);
+  }
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+  return request(`/api/admin/feedbacks${suffix}`);
+}
+
+export async function updateAdminFeedback(feedbackId, payload) {
+  return request(`/api/admin/feedbacks/${encodeURIComponent(feedbackId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function updateAdminJournalFlag(entryId, payload) {
   return request(`/api/admin/journal-entries/${encodeURIComponent(entryId)}/flag`, {
     method: "PATCH",

@@ -3,6 +3,7 @@ const { randomBytes, scryptSync, timingSafeEqual } = require("crypto");
 const { google } = require("googleapis");
 const { supabaseAdminClient, supabaseAuthClient } = require("../config/supabase");
 const { query } = require("../config/db");
+const { mapFeedbackRow } = require("./feedback.routes");
 const { sendPasswordResetCodeEmail } = require("../services/auth-email.service");
 const { EMOTION_OPTIONS, createEmotionCounts, normalizeEmotionId } = require("../constants/emotions");
 const {
@@ -1841,6 +1842,150 @@ router.get("/dashboard/risk-flags", async (_req, res) => {
       title: row.title || "",
     })),
   });
+});
+
+router.get("/feedbacks", async (req, res) => {
+  const status = String(req.query.status || "ALL").trim().toUpperCase();
+  const search = String(req.query.search || "").trim();
+  const params = [];
+  const conditions = [];
+
+  if (["NEW", "REVIEWED", "IN_PROGRESS", "RESOLVED"].includes(status)) {
+    params.push(status);
+    conditions.push(`sf.status = $${params.length}`);
+  }
+
+  if (search) {
+    params.push(`%${search}%`);
+    conditions.push(`(
+      sf.student_number ilike $${params.length}
+      or sf.message ilike $${params.length}
+      or sf.category ilike $${params.length}
+      or coalesce(sp.full_name, '') ilike $${params.length}
+      or coalesce(sp.email, '') ilike $${params.length}
+    )`);
+  }
+
+  const whereClause = conditions.length ? `where ${conditions.join(" and ")}` : "";
+
+  try {
+    const result = await query(
+      `
+        select
+          sf.id,
+          sf.student_number,
+          coalesce(sp.full_name, '') as student_name,
+          coalesce(sp.email, '') as student_email,
+          sf.category,
+          sf.message,
+          sf.status,
+          sf.priority,
+          sf.attachment_data_url,
+          sf.attachment_file_name,
+          sf.attachment_content_type,
+          sf.admin_notes,
+          sf.reviewed_by_email,
+          sf.reviewed_at,
+          sf.created_at,
+          sf.updated_at
+        from public.student_feedbacks sf
+        left join public.student_profiles sp on sp.student_number = sf.student_number
+        ${whereClause}
+        order by
+          case sf.status
+            when 'NEW' then 0
+            when 'IN_PROGRESS' then 1
+            when 'REVIEWED' then 2
+            else 3
+          end,
+          sf.created_at desc
+        limit 200
+      `,
+      params,
+    );
+
+    return res.json({
+      feedbacks: result.rows.map(mapFeedbackRow),
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message || "Unable to load feedbacks." });
+  }
+});
+
+router.patch("/feedbacks/:feedbackId", async (req, res) => {
+  const feedbackId = String(req.params.feedbackId || "").trim();
+  const status = String(req.body?.status || "").trim().toUpperCase();
+  const priority = String(req.body?.priority || "").trim().toUpperCase();
+  const adminNotes = String(req.body?.adminNotes || "").trim();
+  const actorEmail = normalizeEmail(req.body?.actorEmail || req.session?.admin?.email || "");
+
+  if (!feedbackId) {
+    return res.status(400).json({ message: "Feedback id is required." });
+  }
+  if (!["NEW", "REVIEWED", "IN_PROGRESS", "RESOLVED"].includes(status)) {
+    return res.status(400).json({ message: "Choose a valid feedback status." });
+  }
+  if (!["LOW", "NORMAL", "HIGH"].includes(priority)) {
+    return res.status(400).json({ message: "Choose a valid feedback priority." });
+  }
+  if (adminNotes.length > 2000) {
+    return res.status(400).json({ message: "Admin notes must be 2000 characters or fewer." });
+  }
+
+  try {
+    const result = await query(
+      `
+        update public.student_feedbacks
+        set
+          status = $2,
+          priority = $3,
+          admin_notes = $4,
+          reviewed_by_email = nullif($5, ''),
+          reviewed_at = case when $2 = 'NEW' then null else now() end,
+          updated_at = now()
+        where id = $1
+        returning id
+      `,
+      [feedbackId, status, priority, adminNotes || null, actorEmail],
+    );
+
+    if (!result.rowCount) {
+      return res.status(404).json({ message: "Feedback was not found." });
+    }
+
+    const refreshed = await query(
+      `
+        select
+          sf.id,
+          sf.student_number,
+          coalesce(sp.full_name, '') as student_name,
+          coalesce(sp.email, '') as student_email,
+          sf.category,
+          sf.message,
+          sf.status,
+          sf.priority,
+          sf.attachment_data_url,
+          sf.attachment_file_name,
+          sf.attachment_content_type,
+          sf.admin_notes,
+          sf.reviewed_by_email,
+          sf.reviewed_at,
+          sf.created_at,
+          sf.updated_at
+        from public.student_feedbacks sf
+        left join public.student_profiles sp on sp.student_number = sf.student_number
+        where sf.id = $1
+      `,
+      [feedbackId],
+    );
+
+    return res.json({
+      feedback: mapFeedbackRow(refreshed.rows[0]),
+      message: "Feedback updated.",
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message || "Unable to update feedback." });
+  }
 });
 
 router.patch("/journal-entries/:entryId/flag", async (req, res) => {

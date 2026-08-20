@@ -4,6 +4,7 @@ import {
   Flag,
   LayoutGrid,
   LogOut,
+  MessageSquare,
   Settings,
   ShieldCheck,
   Users,
@@ -21,6 +22,7 @@ const MAIN_MENU_ITEMS = [
   { path: "/users", label: "Student Directory", icon: Users },
   { path: "/appointments", label: "Guidance Scheduling", icon: CalendarDays },
   { path: "/peer-counselors", label: "Peer Counselors", icon: Users },
+  { path: "/feedbacks", label: "Feedbacks", icon: MessageSquare },
   { path: "/reports", label: "Reports", icon: BarChart3 },
 ];
 

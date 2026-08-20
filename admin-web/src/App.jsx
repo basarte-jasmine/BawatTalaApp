@@ -6,6 +6,7 @@ import AnalyticsReports from "./pages/AnalyticsReports";
 import CalendarScheduling from "./pages/CalendarScheduling";
 import ForgotPassword from "./pages/ForgotPassword";
 import FlaggedEntries from "./pages/FlaggedEntries";
+import Feedbacks from "./pages/Feedbacks";
 import Login from "./pages/Login";
 import Overview from "./pages/Overview";
 import PeerCounselors from "./pages/PeerCounselors";
@@ -156,6 +157,14 @@ export default function App() {
           element={
             <ProtectedRoute session={session}>
               <StudentDirectory session={session} onLogout={authActions.logout} />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/feedbacks"
+          element={
+            <ProtectedRoute session={session}>
+              <Feedbacks session={session} onLogout={authActions.logout} />
             </ProtectedRoute>
           }
         />
