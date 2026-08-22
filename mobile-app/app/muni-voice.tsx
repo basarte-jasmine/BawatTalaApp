@@ -1,8 +1,27 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Image,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  createAudioPlayer,
+  requestRecordingPermissionsAsync,
+  RecordingPresets,
+  setAudioModeAsync,
+  useAudioRecorder,
+  type AudioPlayer,
+} from "expo-audio";
+import { File } from "expo-file-system";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
 import {
   createJournalSession,
@@ -11,37 +30,21 @@ import {
   finishJournalEntry,
   sendJournalMessage,
   suggestJournalTags,
+  synthesizeVoiceSpeech,
+  transcribeAudio,
   type JournalEntry,
   type JournalMessage,
 } from "../lib/backend-api";
 import { useAuthSession } from "../lib/auth-session";
 
-type VoiceState = "unsupported" | "idle" | "listening" | "thinking" | "speaking" | "error";
-
-type BrowserSpeechRecognitionEvent = {
-  resultIndex: number;
-  results: {
-    length: number;
-    [index: number]: {
-      isFinal: boolean;
-      [index: number]: {
-        transcript: string;
-      };
-    };
-  };
-};
-
-type BrowserSpeechRecognition = {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  maxAlternatives: number;
-  onend: (() => void) | null;
-  onerror: ((event: { error?: string; message?: string }) => void) | null;
-  onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null;
-  start: () => void;
-  stop: () => void;
-};
+type VoiceState =
+  | "unsupported"
+  | "idle"
+  | "listening"
+  | "transcribing"
+  | "thinking"
+  | "speaking"
+  | "error";
 
 const MICROPHONE_IMAGE = require("../assets/images/microphone_sample.png");
 const POSITIVE_TAG_OPTIONS = [
@@ -67,14 +70,37 @@ const CONCERN_TAG_OPTIONS = [
 const INTERPERSONAL_TAG = "Interpersonal relationships";
 const INTERPERSONAL_RELATIONSHIP_TAGS = ["Peer", "Family", "Romantic"];
 const VOICE_RECORDING_MAX_MS = 5 * 60 * 1000;
-
-function getSpeechRecognitionConstructor() {
-  if (Platform.OS !== "web" || typeof window === "undefined") return null;
-  return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition || null;
-}
+const FILIPINO_MUNI_VOICE = "fil-PH-BlessicaNeural";
+const ENGLISH_MUNI_VOICE = "en-US-AvaMultilingualNeural";
 
 function cleanSpokenText(value: string) {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function getVoiceForSpokenLanguage(language: string | undefined, transcript: string) {
+  const detected = String(language || "").trim().toLowerCase();
+  if (detected === "en" || detected.includes("english")) {
+    return ENGLISH_MUNI_VOICE;
+  }
+  if (
+    detected === "tl" ||
+    detected === "fil" ||
+    detected.includes("tagalog") ||
+    detected.includes("filipino")
+  ) {
+    return FILIPINO_MUNI_VOICE;
+  }
+
+  const words = transcript.toLowerCase().match(/[a-z]+/g) || [];
+  const filipinoMarkers = new Set([
+    "ako", "ikaw", "mga", "ang", "ng", "ko", "mo", "kasi",
+    "naman", "talaga", "sobrang", "salamat", "hindi", "parang",
+    "gusto", "pwede", "puwede", "gawain", "pakiramdam", "pagod",
+    "yan", "yung", "pero", "kung", "sana", "marami",
+  ]);
+  return words.some((word) => filipinoMarkers.has(word))
+    ? FILIPINO_MUNI_VOICE
+    : ENGLISH_MUNI_VOICE;
 }
 
 function getLatestAssistantReply(messages: JournalMessage[] | undefined) {
@@ -87,35 +113,73 @@ function uniqueTags(tags: string[]) {
 
 function normalizeTagsForReview(tags: string[]) {
   const normalizedTags = uniqueTags(tags);
-  const hasRelationshipSubtype = normalizedTags.some((tag) => INTERPERSONAL_RELATIONSHIP_TAGS.includes(tag));
+  const hasRelationshipSubtype = normalizedTags.some((tag) =>
+    INTERPERSONAL_RELATIONSHIP_TAGS.includes(tag),
+  );
   if (!hasRelationshipSubtype || normalizedTags.includes(INTERPERSONAL_TAG)) {
     return normalizedTags;
   }
   return uniqueTags([...normalizedTags, INTERPERSONAL_TAG]);
 }
 
-function mergeMessageHistory(currentMessages: JournalMessage[], nextMessages: JournalMessage[]) {
+function mergeMessageHistory(
+  currentMessages: JournalMessage[],
+  nextMessages: JournalMessage[],
+) {
   const messagesById = new Map<string, JournalMessage>();
   for (const message of currentMessages) messagesById.set(message.id, message);
   for (const message of nextMessages) messagesById.set(message.id, message);
   return Array.from(messagesById.values()).sort((a, b) => {
-    const createdAtDifference = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    const createdAtDifference =
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
     return createdAtDifference || a.id.localeCompare(b.id);
   });
 }
 
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return typeof btoa === "function"
+    ? btoa(binary)
+    : Buffer.from(binary, "binary").toString("base64");
+}
+
+function base64ToBlobUrl(base64Data: string, contentType = "audio/mp3"): string {
+  const byteCharacters = atob(base64Data);
+  const byteNumbers = new Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  const blob = new Blob([byteArray], { type: contentType });
+  return URL.createObjectURL(blob);
+}
+
 export default function MuniVoiceScreen() {
   const { user } = useAuthSession();
-  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const entryRef = useRef<JournalEntry | null>(null);
   const messagesRef = useRef<JournalMessage[]>([]);
   const sessionStartedRef = useRef(false);
-  const finalTranscriptRef = useRef("");
-  const latestTranscriptRef = useRef("");
-  const recordingStartedAtRef = useRef(0);
   const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shouldCancelRecordingRef = useRef(false);
-  const shouldSendRecordingRef = useRef(false);
+
+  // Web recording refs
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  // Native player / web audio refs
+  const nativePlayerRef = useRef<AudioPlayer | null>(null);
+  const webAudioRef = useRef<HTMLAudioElement | null>(null);
+  const webBlobUrlRef = useRef<string | null>(null);
+  const replyVoiceRef = useRef<string | null>(null);
+
+  // Expo native audio recorder
+  const nativeRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+
   const [entry, setEntry] = useState<JournalEntry | null>(null);
   const [messages, setMessages] = useState<JournalMessage[]>([]);
   const [transcript, setTranscript] = useState("");
@@ -129,25 +193,24 @@ export default function MuniVoiceScreen() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isAnalyzingTags, setIsAnalyzingTags] = useState(false);
   const [isSavingTags, setIsSavingTags] = useState(false);
-  const [voiceState, setVoiceState] = useState<VoiceState>(() =>
-    getSpeechRecognitionConstructor() ? "idle" : "unsupported",
-  );
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
 
-  const speechSupported = useMemo(() => Boolean(getSpeechRecognitionConstructor()), []);
   const hasUserMessages = useMemo(
     () => messages.some((item) => item.role === "user" && item.text.trim()),
     [messages],
   );
+
   const canListen =
-    speechSupported &&
     !isLoadingSession &&
     Boolean(entry?.id) &&
     voiceState !== "listening" &&
+    voiceState !== "transcribing" &&
     voiceState !== "thinking" &&
     !isSavingJournal &&
     !isAnalyzingTags &&
     !isSavingTags &&
     !isDiscardingJournal;
+
   const canSaveJournal =
     Boolean(entry?.id) &&
     !entry?.isFinished &&
@@ -157,6 +220,7 @@ export default function MuniVoiceScreen() {
     !isSavingTags &&
     !isDiscardingJournal &&
     voiceState !== "listening" &&
+    voiceState !== "transcribing" &&
     voiceState !== "thinking";
 
   useEffect(() => {
@@ -190,21 +254,28 @@ export default function MuniVoiceScreen() {
     );
   }, []);
 
-  const handleTagOptionPress = useCallback((tag: string) => {
-    if (tag !== INTERPERSONAL_TAG) {
-      toggleSelectedTag(tag);
-      return;
-    }
+  const handleTagOptionPress = useCallback(
+    (tag: string) => {
+      if (tag !== INTERPERSONAL_TAG) {
+        toggleSelectedTag(tag);
+        return;
+      }
 
-    if (selectedTags.includes(INTERPERSONAL_TAG)) {
-      setSelectedTags((current) =>
-        current.filter((item) => item !== INTERPERSONAL_TAG && !INTERPERSONAL_RELATIONSHIP_TAGS.includes(item)),
-      );
-      return;
-    }
+      if (selectedTags.includes(INTERPERSONAL_TAG)) {
+        setSelectedTags((current) =>
+          current.filter(
+            (item) =>
+              item !== INTERPERSONAL_TAG &&
+              !INTERPERSONAL_RELATIONSHIP_TAGS.includes(item),
+          ),
+        );
+        return;
+      }
 
-    setShowRelationshipTagModal(true);
-  }, [selectedTags, toggleSelectedTag]);
+      setShowRelationshipTagModal(true);
+    },
+    [selectedTags, toggleSelectedTag],
+  );
 
   const handleRelationshipTagSelect = useCallback((tag: string) => {
     setSelectedTags((current) =>
@@ -217,10 +288,27 @@ export default function MuniVoiceScreen() {
     setShowRelationshipTagModal(false);
   }, []);
 
-  const stopSpeaking = useCallback(() => {
-    if (Platform.OS === "web" && typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
+  const stopSpeaking = useCallback(async () => {
+    if (Platform.OS === "web") {
+      if (webAudioRef.current) {
+        webAudioRef.current.pause();
+        webAudioRef.current.currentTime = 0;
+        webAudioRef.current = null;
+      }
+      if (webBlobUrlRef.current) {
+        URL.revokeObjectURL(webBlobUrlRef.current);
+        webBlobUrlRef.current = null;
+      }
+    } else {
+      if (nativePlayerRef.current) {
+        try {
+          nativePlayerRef.current.pause();
+          nativePlayerRef.current.remove();
+        } catch {}
+        nativePlayerRef.current = null;
+      }
     }
+    setVoiceState("idle");
   }, []);
 
   const clearRecordingTimeout = useCallback(() => {
@@ -230,30 +318,185 @@ export default function MuniVoiceScreen() {
     }
   }, []);
 
-  const speakReply = useCallback((reply: string) => {
-    if (Platform.OS !== "web" || typeof window === "undefined" || !("speechSynthesis" in window)) {
-      setVoiceState("idle");
-      return;
-    }
+  const speakReply = useCallback(
+    async (replyText: string, requestedVoice?: string) => {
+      const cleanText = cleanSpokenText(replyText);
+      if (!cleanText) {
+        setVoiceState("idle");
+        return;
+      }
 
-    const text = cleanSpokenText(reply);
-    if (!text) {
-      setVoiceState("idle");
-      return;
-    }
+      try {
+        await stopSpeaking();
+        const selectedVoice = requestedVoice || replyVoiceRef.current || undefined;
+        if (selectedVoice) replyVoiceRef.current = selectedVoice;
+        setVoiceState("speaking");
+        setStatusMessage(
+          selectedVoice === ENGLISH_MUNI_VOICE
+            ? "Muni is speaking in English..."
+            : selectedVoice === FILIPINO_MUNI_VOICE
+              ? "Muni is speaking in Filipino..."
+              : "Muni is speaking...",
+        );
 
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = /[^\u0000-\u007f]/.test(text) || /\b(ako|ko|mo|naman|kasi|sige|salamat)\b/i.test(text)
-      ? "fil-PH"
-      : "en-US";
-    utterance.rate = 0.95;
-    utterance.pitch = 1.05;
-    utterance.onend = () => setVoiceState("idle");
-    utterance.onerror = () => setVoiceState("idle");
-    setVoiceState("speaking");
-    window.speechSynthesis.speak(utterance);
-  }, []);
+        const result = await synthesizeVoiceSpeech({
+          text: cleanText,
+          voice: selectedVoice,
+        });
+
+        if (!result.ok || !result.audioBase64) {
+          setVoiceState("idle");
+          setStatusMessage("");
+          return;
+        }
+        if (result.voice) replyVoiceRef.current = result.voice;
+
+        if (Platform.OS === "web") {
+          const blobUrl = base64ToBlobUrl(result.audioBase64, "audio/mp3");
+          webBlobUrlRef.current = blobUrl;
+          const audio = new Audio(blobUrl);
+          webAudioRef.current = audio;
+
+          audio.onended = () => {
+            webAudioRef.current = null;
+            if (webBlobUrlRef.current) {
+              URL.revokeObjectURL(webBlobUrlRef.current);
+              webBlobUrlRef.current = null;
+            }
+            setVoiceState("idle");
+            setStatusMessage("");
+          };
+
+          audio.onerror = () => {
+            webAudioRef.current = null;
+            if (webBlobUrlRef.current) {
+              URL.revokeObjectURL(webBlobUrlRef.current);
+              webBlobUrlRef.current = null;
+            }
+            setVoiceState("idle");
+            setStatusMessage("");
+          };
+
+          await audio.play();
+        } else {
+          await setAudioModeAsync({
+            playsInSilentMode: true,
+          });
+          const audioUrl = "data:audio/mp3;base64," + result.audioBase64;
+          const player = createAudioPlayer(audioUrl);
+          nativePlayerRef.current = player;
+          player.addListener("playbackStatusUpdate", (status) => {
+            if (status.didJustFinish) {
+              nativePlayerRef.current = null;
+              setVoiceState("idle");
+              setStatusMessage("");
+            }
+          });
+          player.play();
+        }
+      } catch (err) {
+        setVoiceState("idle");
+        setStatusMessage("");
+      }
+    },
+    [stopSpeaking],
+  );
+
+  const sendTranscriptToMuni = useCallback(
+    async (spokenText: string, replyVoice: string) => {
+      if (!user?.studentNumber) {
+        setStatusMessage("Student session is missing.");
+        setVoiceState("error");
+        return;
+      }
+
+      const messageText = cleanSpokenText(spokenText);
+      if (!messageText) {
+        setVoiceState("idle");
+        setStatusMessage("I did not catch that. Try speaking again.");
+        return;
+      }
+
+      const activeEntryId = entryRef.current?.id;
+      if (!activeEntryId) {
+        setVoiceState("error");
+        setStatusMessage("Voice journal session is missing. Go back and start voice again.");
+        return;
+      }
+
+      setVoiceState("thinking");
+      setStatusMessage("Muni is thinking...");
+      const result = await sendJournalMessage({
+        aiEnabled: true,
+        entryId: activeEntryId,
+        message: messageText,
+        messages: messagesRef.current,
+        requireExistingEntry: true,
+        studentNumber: user.studentNumber,
+      });
+
+      if (!result.ok) {
+        setStatusMessage(result.message ?? "Muni could not reply right now.");
+        setVoiceState("error");
+        return;
+      }
+
+      setActiveEntry(result.entry ?? entryRef.current);
+      setConversationMessages(
+        mergeMessageHistory(messagesRef.current, result.messages ?? []),
+      );
+      const reply = cleanSpokenText(
+        result.aiReply ||
+          getLatestAssistantReply(result.messages) ||
+          result.message ||
+          "",
+      );
+      const finalMuniReply =
+        reply || "Narinig kita. Handa akong makinig kapag handa ka na ulit magbahagi.";
+      setMuniReply(finalMuniReply);
+      setStatusMessage("");
+      void speakReply(finalMuniReply, replyVoice);
+    },
+    [setActiveEntry, setConversationMessages, speakReply, user?.studentNumber],
+  );
+
+  const processAudioDataAndSend = useCallback(
+    async (base64Audio: string, mimeType: string, filename: string) => {
+      if (shouldCancelRecordingRef.current) {
+        shouldCancelRecordingRef.current = false;
+        setVoiceState("idle");
+        setStatusMessage("Recording cancelled.");
+        return;
+      }
+
+      setVoiceState("transcribing");
+      setStatusMessage("Transcribing audio with Whisper AI...");
+
+      try {
+        const result = await transcribeAudio({
+          audioBase64: base64Audio,
+          mimeType,
+          filename,
+        });
+
+        if (!result.ok || !result.text) {
+          setVoiceState("idle");
+          setStatusMessage("Could not recognize clear speech. Please try speaking again.");
+          return;
+        }
+
+        const recognizedText = cleanSpokenText(result.text);
+        const replyVoice = getVoiceForSpokenLanguage(result.language, recognizedText);
+        setTranscript(recognizedText);
+        setStatusMessage("");
+        await sendTranscriptToMuni(recognizedText, replyVoice);
+      } catch (err: any) {
+        setVoiceState("error");
+        setStatusMessage(err?.message || "Speech transcription failed.");
+      }
+    },
+    [sendTranscriptToMuni],
+  );
 
   const loadSession = useCallback(async () => {
     if (!user?.studentNumber) {
@@ -296,68 +539,168 @@ export default function MuniVoiceScreen() {
     return () => {
       clearRecordingTimeout();
       shouldCancelRecordingRef.current = true;
-      recognitionRef.current?.stop();
-      stopSpeaking();
+      if (Platform.OS === "web") {
+        mediaRecorderRef.current?.stop();
+        mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+      } else {
+        try {
+          nativeRecorder.stop();
+        } catch {}
+      }
+      void stopSpeaking();
     };
-  }, [clearRecordingTimeout, loadSession, stopSpeaking]);
+  }, [clearRecordingTimeout, loadSession, nativeRecorder, stopSpeaking]);
 
   const handleBack = useCallback(() => {
     shouldCancelRecordingRef.current = true;
     clearRecordingTimeout();
-    recognitionRef.current?.stop();
-    stopSpeaking();
+    if (Platform.OS === "web") {
+      mediaRecorderRef.current?.stop();
+      mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+    } else {
+      try {
+        nativeRecorder.stop();
+      } catch {}
+    }
+    void stopSpeaking();
     if (router.canGoBack()) {
       router.back();
       return;
     }
     router.replace("/home");
-  }, [clearRecordingTimeout, stopSpeaking]);
+  }, [clearRecordingTimeout, nativeRecorder, stopSpeaking]);
 
-  const sendTranscriptToMuni = useCallback(async (spokenText: string) => {
-    if (!user?.studentNumber) {
-      setStatusMessage("Student session is missing.");
+  const handleStartListening = async () => {
+    if (!canListen) return;
+    await stopSpeaking();
+
+    shouldCancelRecordingRef.current = false;
+    clearRecordingTimeout();
+    setTranscript("");
+    setStatusMessage("Listening... Speak naturally in Tagalog or English.");
+    setVoiceState("listening");
+
+    try {
+      if (Platform.OS === "web") {
+        if (!navigator?.mediaDevices?.getUserMedia) {
+          setVoiceState("unsupported");
+          setStatusMessage("Microphone access is not supported in this browser.");
+          return;
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaStreamRef.current = stream;
+        audioChunksRef.current = [];
+
+        const mimeType = MediaRecorder.isTypeSupported("audio/webm")
+          ? "audio/webm"
+          : "audio/mp4";
+        const recorder = new MediaRecorder(stream, { mimeType });
+        mediaRecorderRef.current = recorder;
+
+        recorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+
+        recorder.onstop = async () => {
+          mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+          mediaStreamRef.current = null;
+          mediaRecorderRef.current = null;
+
+          if (shouldCancelRecordingRef.current) {
+            shouldCancelRecordingRef.current = false;
+            setVoiceState("idle");
+            setStatusMessage("Recording cancelled.");
+            return;
+          }
+
+          const blob = new Blob(audioChunksRef.current, { type: mimeType });
+          if (blob.size === 0) {
+            setVoiceState("idle");
+            setStatusMessage("No audio captured.");
+            return;
+          }
+
+          const arrayBuffer = await blob.arrayBuffer();
+          const base64 = arrayBufferToBase64(arrayBuffer);
+          const ext = mimeType.includes("webm") ? "webm" : "m4a";
+          await processAudioDataAndSend(base64, mimeType, "recording." + ext);
+        };
+
+        recorder.start(250);
+      } else {
+        const { granted } = await requestRecordingPermissionsAsync();
+        if (!granted) {
+          setVoiceState("error");
+          setStatusMessage("Microphone permission was not granted.");
+          return;
+        }
+
+        await setAudioModeAsync({
+          allowsRecording: true,
+          playsInSilentMode: true,
+        });
+
+        await nativeRecorder.prepareToRecordAsync();
+        nativeRecorder.record();
+      }
+
+      recordingTimeoutRef.current = setTimeout(() => {
+        handleStopListening();
+      }, VOICE_RECORDING_MAX_MS);
+    } catch (err: any) {
+      clearRecordingTimeout();
       setVoiceState("error");
-      return;
+      setStatusMessage(err?.message || "Failed to start recording.");
     }
+  };
 
-    const messageText = cleanSpokenText(spokenText);
-    if (!messageText) {
-      setVoiceState("idle");
-      setStatusMessage("I did not catch that. Try speaking again.");
-      return;
+  const handleStopListening = async () => {
+    clearRecordingTimeout();
+    if (voiceState !== "listening") return;
+
+    if (Platform.OS === "web") {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+    } else {
+      try {
+        await nativeRecorder.stop();
+        const uri = nativeRecorder.uri;
+        if (!uri) {
+          setVoiceState("idle");
+          setStatusMessage("No audio recording found.");
+          return;
+        }
+
+        const file = new File(uri);
+        const arrayBuffer = await file.arrayBuffer();
+        const base64 = arrayBufferToBase64(arrayBuffer);
+        await processAudioDataAndSend(base64, "audio/m4a", "recording.m4a");
+      } catch (err: any) {
+        setVoiceState("error");
+        setStatusMessage(err?.message || "Failed to process mobile audio.");
+      }
     }
+  };
 
-    const activeEntryId = entryRef.current?.id;
-    if (!activeEntryId) {
-      setVoiceState("error");
-      setStatusMessage("Voice journal session is missing. Go back and start voice again.");
-      return;
+  const handleCancelListening = async () => {
+    shouldCancelRecordingRef.current = true;
+    clearRecordingTimeout();
+    if (Platform.OS === "web") {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+    } else {
+      try {
+        await nativeRecorder.stop();
+      } catch {}
     }
-
-    setVoiceState("thinking");
-    setStatusMessage("Muni is thinking...");
-    const result = await sendJournalMessage({
-      aiEnabled: true,
-      entryId: activeEntryId,
-      message: messageText,
-      messages: messagesRef.current,
-      requireExistingEntry: true,
-      studentNumber: user.studentNumber,
-    });
-
-    if (!result.ok) {
-      setStatusMessage(result.message ?? "Muni could not reply right now.");
-      setVoiceState("error");
-      return;
-    }
-
-    setActiveEntry(result.entry ?? entryRef.current);
-    setConversationMessages(mergeMessageHistory(messagesRef.current, result.messages ?? []));
-    const reply = cleanSpokenText(result.aiReply || getLatestAssistantReply(result.messages) || result.message || "");
-    setMuniReply(reply || "I heard you. You can keep sharing when you are ready.");
-    setStatusMessage("");
-    speakReply(reply || "I heard you. You can keep sharing when you are ready.");
-  }, [setActiveEntry, setConversationMessages, speakReply, user?.studentNumber]);
+    setVoiceState("idle");
+    setStatusMessage("Recording cancelled.");
+  };
 
   const handleRequestTagReview = useCallback(async () => {
     if (!user?.studentNumber || !entry?.id || isAnalyzingTags || isSavingJournal) return;
@@ -368,8 +711,14 @@ export default function MuniVoiceScreen() {
 
     shouldCancelRecordingRef.current = true;
     clearRecordingTimeout();
-    recognitionRef.current?.stop();
-    stopSpeaking();
+    if (Platform.OS === "web") {
+      mediaRecorderRef.current?.stop();
+    } else {
+      try {
+        nativeRecorder.stop();
+      } catch {}
+    }
+    void stopSpeaking();
     setIsAnalyzingTags(true);
     setStatusMessage("Muni is reviewing your journal tags...");
 
@@ -380,25 +729,41 @@ export default function MuniVoiceScreen() {
       });
 
       if (!result.ok) {
-        setStatusMessage(result.message ?? "Unable to suggest tags for this voice journal.");
+        setStatusMessage(
+          result.message ?? "Unable to suggest tags for this voice journal.",
+        );
         setVoiceState("error");
         return;
       }
 
       const suggestedTags = normalizeTagsForReview(
-        (result.suggestedTags?.length ? result.suggestedTags : result.entry?.concernTags) ?? [],
+        (result.suggestedTags?.length
+          ? result.suggestedTags
+          : result.entry?.concernTags) ?? [],
       );
       setActiveEntry(result.entry ?? entry);
       setSelectedTags(suggestedTags.length ? suggestedTags : ["Others"]);
       setShowTagReviewModal(true);
       setStatusMessage("");
     } catch {
-      setStatusMessage("Unable to suggest tags right now. Check your connection and try again.");
+      setStatusMessage(
+        "Unable to suggest tags right now. Check your connection and try again.",
+      );
       setVoiceState("error");
     } finally {
       setIsAnalyzingTags(false);
     }
-  }, [clearRecordingTimeout, entry, hasUserMessages, isAnalyzingTags, isSavingJournal, setActiveEntry, stopSpeaking, user?.studentNumber]);
+  }, [
+    clearRecordingTimeout,
+    entry,
+    hasUserMessages,
+    isAnalyzingTags,
+    isSavingJournal,
+    nativeRecorder,
+    setActiveEntry,
+    stopSpeaking,
+    user?.studentNumber,
+  ]);
 
   const handleConfirmTagsAndFinish = useCallback(async () => {
     if (!user?.studentNumber || !entry?.id || isSavingJournal || isSavingTags) return;
@@ -423,7 +788,9 @@ export default function MuniVoiceScreen() {
       });
 
       if (!finishResult.ok) {
-        setStatusMessage(finishResult.message ?? "Unable to save this voice journal.");
+        setStatusMessage(
+          finishResult.message ?? "Unable to save this voice journal.",
+        );
         setVoiceState("error");
         return;
       }
@@ -435,15 +802,28 @@ export default function MuniVoiceScreen() {
         setConversationMessages(finishResult.messages);
       }
       setStatusMessage("Voice journal saved.");
-      router.replace(`/journal-entry-view?entryId=${encodeURIComponent(finishResult.entry?.id ?? entry.id)}`);
+      router.replace({
+        pathname: "/journal-entry-view",
+        params: { entryId: finishResult.entry?.id ?? entry.id },
+      });
     } catch {
-      setStatusMessage("Unable to save this voice journal. Check your connection and try again.");
+      setStatusMessage(
+        "Unable to save this voice journal. Check your connection and try again.",
+      );
       setVoiceState("error");
     } finally {
       setIsSavingTags(false);
       setIsSavingJournal(false);
     }
-  }, [entry, isSavingJournal, isSavingTags, selectedTags, setActiveEntry, setConversationMessages, user?.studentNumber]);
+  }, [
+    entry,
+    isSavingJournal,
+    isSavingTags,
+    selectedTags,
+    setActiveEntry,
+    setConversationMessages,
+    user?.studentNumber,
+  ]);
 
   const handleDiscardJournal = useCallback(async () => {
     if (!user?.studentNumber || !entry?.id || isDiscardingJournal) {
@@ -453,8 +833,14 @@ export default function MuniVoiceScreen() {
 
     shouldCancelRecordingRef.current = true;
     clearRecordingTimeout();
-    recognitionRef.current?.stop();
-    stopSpeaking();
+    if (Platform.OS === "web") {
+      mediaRecorderRef.current?.stop();
+    } else {
+      try {
+        nativeRecorder.stop();
+      } catch {}
+    }
+    void stopSpeaking();
     setIsDiscardingJournal(true);
     setStatusMessage("Discarding voice journal...");
 
@@ -471,7 +857,9 @@ export default function MuniVoiceScreen() {
     setIsDiscardingJournal(false);
 
     if (!result.ok) {
-      setStatusMessage(result.message ?? "Unable to discard this voice journal.");
+      setStatusMessage(
+        result.message ?? "Unable to discard this voice journal.",
+      );
       setVoiceState("error");
       return;
     }
@@ -479,177 +867,152 @@ export default function MuniVoiceScreen() {
     setConversationMessages([]);
     setActiveEntry(null);
     router.replace("/home");
-  }, [clearRecordingTimeout, entry?.id, handleBack, hasUserMessages, isDiscardingJournal, setActiveEntry, setConversationMessages, stopSpeaking, user?.studentNumber]);
-
-  const handleStartListening = () => {
-    if (!speechSupported) {
-      setVoiceState("unsupported");
-      setStatusMessage("Voice input works in browsers that support the Web Speech API, like Chrome or Edge.");
-      return;
-    }
-    if (!canListen) return;
-
-    stopSpeaking();
-    const Recognition = getSpeechRecognitionConstructor();
-    if (!Recognition) return;
-
-    finalTranscriptRef.current = "";
-    latestTranscriptRef.current = "";
-    shouldCancelRecordingRef.current = false;
-    shouldSendRecordingRef.current = false;
-    recordingStartedAtRef.current = Date.now();
-    clearRecordingTimeout();
-    setTranscript("");
-    setStatusMessage("Listening... tap Stop and Send when you are done.");
-    setVoiceState("listening");
-
-    const recognition: BrowserSpeechRecognition = new Recognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-PH";
-    recognition.maxAlternatives = 1;
-
-    recognition.onresult = (event) => {
-      let interimTranscript = "";
-      let finalTranscript = finalTranscriptRef.current;
-
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const text = event.results[index]?.[0]?.transcript ?? "";
-        if (event.results[index]?.isFinal) {
-          finalTranscript = cleanSpokenText(`${finalTranscript} ${text}`);
-        } else {
-          interimTranscript = cleanSpokenText(`${interimTranscript} ${text}`);
-        }
-      }
-
-      finalTranscriptRef.current = finalTranscript;
-      const latestTranscript = cleanSpokenText(`${finalTranscript} ${interimTranscript}`);
-      latestTranscriptRef.current = latestTranscript;
-      setTranscript(latestTranscript);
-    };
-
-    recognition.onerror = (event) => {
-      clearRecordingTimeout();
-      setVoiceState("error");
-      setStatusMessage(event.error === "not-allowed" ? "Microphone permission was blocked." : "Voice input stopped. Try again.");
-    };
-
-    recognition.onend = () => {
-      recognitionRef.current = null;
-      clearRecordingTimeout();
-      if (shouldCancelRecordingRef.current) {
-        shouldCancelRecordingRef.current = false;
-        shouldSendRecordingRef.current = false;
-        finalTranscriptRef.current = "";
-        latestTranscriptRef.current = "";
-        setTranscript("");
-        setVoiceState("idle");
-        setStatusMessage("Recording cancelled.");
-        return;
-      }
-
-      const shouldSend = shouldSendRecordingRef.current || Date.now() - recordingStartedAtRef.current >= VOICE_RECORDING_MAX_MS;
-      if (!shouldSend) {
-        setVoiceState("idle");
-        setStatusMessage("Voice input stopped. Tap Start Listening to continue.");
-        return;
-      }
-
-      shouldSendRecordingRef.current = false;
-      const spokenText = finalTranscriptRef.current || latestTranscriptRef.current;
-      void sendTranscriptToMuni(spokenText);
-    };
-
-    recognitionRef.current = recognition;
-    recordingTimeoutRef.current = setTimeout(() => {
-      shouldSendRecordingRef.current = true;
-      recognitionRef.current?.stop();
-    }, VOICE_RECORDING_MAX_MS);
-    recognition.start();
-  };
-
-  const handleStopListening = () => {
-    shouldSendRecordingRef.current = true;
-    recognitionRef.current?.stop();
-  };
-
-  const handleCancelListening = () => {
-    shouldCancelRecordingRef.current = true;
-    clearRecordingTimeout();
-    recognitionRef.current?.stop();
-  };
+  }, [
+    clearRecordingTimeout,
+    entry?.id,
+    handleBack,
+    hasUserMessages,
+    isDiscardingJournal,
+    nativeRecorder,
+    setActiveEntry,
+    setConversationMessages,
+    stopSpeaking,
+    user?.studentNumber,
+  ]);
 
   const statusTitle =
     voiceState === "listening"
       ? "Listening"
-      : voiceState === "thinking"
-        ? "Muni is thinking"
-        : voiceState === "speaking"
-          ? "Muni is speaking"
-          : voiceState === "unsupported"
-            ? "Browser not supported"
-            : "Voice session idle";
+      : voiceState === "transcribing"
+        ? "Transcribing voice"
+        : voiceState === "thinking"
+          ? "Muni is thinking"
+          : voiceState === "speaking"
+            ? "Muni is speaking"
+            : voiceState === "unsupported"
+              ? "Microphone not supported"
+              : "Voice session idle";
 
   return (
     <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
       <View style={styles.topBar}>
-        <Pressable style={styles.backButton} accessibilityLabel="Go back" onPress={handleBack}>
+        <Pressable
+          style={styles.backButton}
+          accessibilityLabel="Go back"
+          onPress={handleBack}
+        >
           <Ionicons name="chevron-back" size={26} color="#304456" />
         </Pressable>
         <Text style={styles.topTitle}>Talk to Muni</Text>
         <View style={styles.topBarSpacer} />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.hero}>
           <View style={styles.muniCircle}>
             <MuniAvatar style={styles.muniImage} />
           </View>
           <Text style={styles.heading}>Muni Voice</Text>
           <Text style={styles.subheading}>
-            Browser speech turns your voice into text, sends it to Muni chat, then reads Muni&apos;s reply aloud.
+            Powered by Whisper AI speech recognition and natural Filipino and English neural voices.
           </Text>
         </View>
 
         <View style={styles.voicePanel}>
-          <View style={[styles.connectionDot, voiceState === "listening" && styles.connectionDotLive]} />
+          <View
+            style={[
+              styles.connectionDot,
+              voiceState === "listening" && styles.connectionDotLive,
+              voiceState === "speaking" && styles.connectionDotSpeaking,
+            ]}
+          />
           <Text style={styles.connectionTitle}>{statusTitle}</Text>
           <Text style={styles.connectionMessage}>
-            {statusMessage || transcript || "Tap Start Listening, speak naturally, and Muni will answer using the existing chat flow."}
+            {statusMessage ||
+              transcript ||
+              "Tap Start Listening, speak naturally in Filipino or English, and Muni will respond with voice."}
           </Text>
 
           {muniReply ? (
             <View style={styles.replyBox}>
-              <Text style={styles.replyLabel}>Muni</Text>
+              <View style={styles.replyHeader}>
+                <Text style={styles.replyLabel}>Muni</Text>
+                <Pressable
+                  style={styles.replayButton}
+                  accessibilityLabel="Play Muni's voice reply again"
+                  onPress={() => {
+                    void speakReply(muniReply);
+                  }}
+                >
+                  <Ionicons
+                    name={voiceState === "speaking" ? "volume-high" : "volume-medium-outline"}
+                    size={16}
+                    color="#4A7540"
+                  />
+                  <Text style={styles.replayButtonText}>
+                    {voiceState === "speaking" ? "Playing..." : "Listen"}
+                  </Text>
+                </Pressable>
+              </View>
               <Text style={styles.replyText}>{muniReply}</Text>
             </View>
           ) : null}
 
           <Pressable
-            style={[styles.primaryButton, !canListen && styles.primaryButtonDisabled]}
+            style={[
+              styles.primaryButton,
+              !canListen && styles.primaryButtonDisabled,
+            ]}
             disabled={!canListen}
-            onPress={handleStartListening}
+            onPress={() => {
+              void handleStartListening();
+            }}
           >
-            <Image source={MICROPHONE_IMAGE} style={styles.buttonIcon} resizeMode="contain" />
-            <Text style={styles.primaryButtonText}>Start Listening</Text>
+            <Image
+              source={MICROPHONE_IMAGE}
+              style={styles.buttonIcon}
+              resizeMode="contain"
+            />
+            <Text style={styles.primaryButtonText}>
+              {voiceState === "listening" ? "Listening..." : "Start Listening"}
+            </Text>
           </Pressable>
 
           {voiceState === "listening" ? (
-            <Pressable style={styles.secondaryButton} onPress={handleStopListening}>
+            <Pressable
+              style={styles.secondaryButton}
+              onPress={() => {
+                void handleStopListening();
+              }}
+            >
               <Ionicons name="stop-circle-outline" size={18} color="#365368" />
               <Text style={styles.secondaryButtonText}>Stop and Send</Text>
             </Pressable>
           ) : null}
 
           {voiceState === "listening" ? (
-            <Pressable style={styles.cancelRecordingButton} onPress={handleCancelListening}>
+            <Pressable
+              style={styles.cancelRecordingButton}
+              onPress={() => {
+                void handleCancelListening();
+              }}
+            >
               <Ionicons name="close-circle-outline" size={18} color="#8A4F4A" />
               <Text style={styles.cancelRecordingButtonText}>Cancel Recording</Text>
             </Pressable>
           ) : null}
 
           {voiceState === "speaking" ? (
-            <Pressable style={styles.secondaryButton} onPress={stopSpeaking}>
+            <Pressable
+              style={styles.secondaryButton}
+              onPress={() => {
+                void stopSpeaking();
+              }}
+            >
               <Ionicons name="volume-mute-outline" size={18} color="#365368" />
               <Text style={styles.secondaryButtonText}>Stop Voice</Text>
             </Pressable>
@@ -657,8 +1020,16 @@ export default function MuniVoiceScreen() {
 
           <View style={styles.journalActions}>
             <Pressable
-              style={[styles.discardButton, isDiscardingJournal && styles.actionButtonDisabled]}
-              disabled={isDiscardingJournal || isSavingJournal || isAnalyzingTags || isSavingTags}
+              style={[
+                styles.discardButton,
+                isDiscardingJournal && styles.actionButtonDisabled,
+              ]}
+              disabled={
+                isDiscardingJournal ||
+                isSavingJournal ||
+                isAnalyzingTags ||
+                isSavingTags
+              }
               onPress={() => {
                 void handleDiscardJournal();
               }}
@@ -674,7 +1045,10 @@ export default function MuniVoiceScreen() {
             </Pressable>
 
             <Pressable
-              style={[styles.saveButton, !canSaveJournal && styles.saveButtonDisabled]}
+              style={[
+                styles.saveButton,
+                !canSaveJournal && styles.saveButtonDisabled,
+              ]}
               disabled={!canSaveJournal}
               onPress={() => {
                 void handleRequestTagReview();
@@ -683,11 +1057,17 @@ export default function MuniVoiceScreen() {
               {isSavingJournal || isAnalyzingTags ? (
                 <>
                   <ActivityIndicator color="#FFFFFF" size="small" />
-                  <Text style={styles.saveButtonText}>{isAnalyzingTags ? "Reviewing..." : "Saving..."}</Text>
+                  <Text style={styles.saveButtonText}>
+                    {isAnalyzingTags ? "Reviewing..." : "Saving..."}
+                  </Text>
                 </>
               ) : (
                 <>
-                  <Ionicons name="checkmark-circle-outline" size={19} color="#FFFFFF" />
+                  <Ionicons
+                    name="checkmark-circle-outline"
+                    size={19}
+                    color="#FFFFFF"
+                  />
                   <Text style={styles.saveButtonText}>Save Journal</Text>
                 </>
               )}
@@ -713,7 +1093,10 @@ export default function MuniVoiceScreen() {
               Muni suggested these tags. You can add or remove tags before saving the finished entry.
             </Text>
 
-            <ScrollView style={styles.tagReviewScroll} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={styles.tagReviewScroll}
+              showsVerticalScrollIndicator={false}
+            >
               <Text style={styles.tagSectionLabel}>Positive tags</Text>
               <View style={styles.concernGrid}>
                 {POSITIVE_TAG_OPTIONS.map((tag) => {
@@ -721,11 +1104,19 @@ export default function MuniVoiceScreen() {
                   return (
                     <Pressable
                       key={tag}
-                      style={[styles.concernOption, isSelected && styles.concernOptionSelected]}
+                      style={[
+                        styles.concernOption,
+                        isSelected && styles.concernOptionSelected,
+                      ]}
                       onPress={() => toggleSelectedTag(tag)}
                       disabled={isSavingTags}
                     >
-                      <Text style={[styles.concernOptionText, isSelected && styles.concernOptionTextSelected]}>
+                      <Text
+                        style={[
+                          styles.concernOptionText,
+                          isSelected && styles.concernOptionTextSelected,
+                        ]}
+                      >
                         {tag}
                       </Text>
                     </Pressable>
@@ -740,11 +1131,19 @@ export default function MuniVoiceScreen() {
                   return (
                     <Pressable
                       key={tag}
-                      style={[styles.concernOption, isSelected && styles.concernOptionSelected]}
+                      style={[
+                        styles.concernOption,
+                        isSelected && styles.concernOptionSelected,
+                      ]}
                       onPress={() => handleTagOptionPress(tag)}
                       disabled={isSavingTags}
                     >
-                      <Text style={[styles.concernOptionText, isSelected && styles.concernOptionTextSelected]}>
+                      <Text
+                        style={[
+                          styles.concernOptionText,
+                          isSelected && styles.concernOptionTextSelected,
+                        ]}
+                      >
                         {tag}
                       </Text>
                     </Pressable>
@@ -766,7 +1165,11 @@ export default function MuniVoiceScreen() {
               </Pressable>
 
               <Pressable
-                style={[styles.modalPrimaryButton, selectedTags.length === 0 && styles.modalPrimaryButtonDisabled]}
+                style={[
+                  styles.modalPrimaryButton,
+                  selectedTags.length === 0 &&
+                    styles.modalPrimaryButtonDisabled,
+                ]}
                 onPress={() => {
                   void handleConfirmTagsAndFinish();
                 }}
@@ -790,7 +1193,9 @@ export default function MuniVoiceScreen() {
         onRequestClose={() => setShowRelationshipTagModal(false)}
       >
         <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, styles.relationshipTagModalCard]}>
+          <View
+            style={[styles.modalCard, styles.relationshipTagModalCard]}
+          >
             <Text style={styles.concernTitle}>Choose relationship type</Text>
             <Text style={styles.concernSubtitle}>
               Select the relationship tag that best matches this journal entry.
@@ -801,20 +1206,37 @@ export default function MuniVoiceScreen() {
                 const isSelected = selectedTags.includes(tag);
                 return (
                   <Pressable
-                    key={`relationship-tag-${tag}`}
-                    style={[styles.relationshipTagOption, isSelected && styles.relationshipTagOptionSelected]}
+                    key={"relationship-tag-" + tag}
+                    style={[
+                      styles.relationshipTagOption,
+                      isSelected && styles.relationshipTagOptionSelected,
+                    ]}
                     onPress={() => handleRelationshipTagSelect(tag)}
                   >
-                    <Text style={[styles.relationshipTagOptionText, isSelected && styles.relationshipTagOptionTextSelected]}>
+                    <Text
+                      style={[
+                        styles.relationshipTagOptionText,
+                        isSelected && styles.relationshipTagOptionTextSelected,
+                      ]}
+                    >
                       {tag}
                     </Text>
-                    {isSelected ? <Ionicons name="checkmark-circle" size={20} color="#2E6B23" /> : null}
+                    {isSelected ? (
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={20}
+                        color="#2E6B23"
+                      />
+                    ) : null}
                   </Pressable>
                 );
               })}
             </View>
 
-            <Pressable style={styles.relationshipTagCancelButton} onPress={() => setShowRelationshipTagModal(false)}>
+            <Pressable
+              style={styles.relationshipTagCancelButton}
+              onPress={() => setShowRelationshipTagModal(false)}
+            >
               <Text style={styles.modalSecondaryText}>Cancel</Text>
             </Pressable>
           </View>
@@ -917,6 +1339,9 @@ const styles = StyleSheet.create({
   connectionDotLive: {
     backgroundColor: "#70C943",
   },
+  connectionDotSpeaking: {
+    backgroundColor: "#3B82F6",
+  },
   connectionTitle: {
     color: "#304558",
     fontSize: 20,
@@ -942,13 +1367,35 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     marginTop: 10,
   },
+  replyHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+  },
   replyLabel: {
     color: "#5A7A50",
     fontSize: 11,
     lineHeight: 14,
     fontWeight: "900",
     textTransform: "uppercase",
-    marginBottom: 4,
+  },
+  replayButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: "#E2F0D8",
+    borderWidth: 1,
+    borderColor: "#CCE4BF",
+  },
+  replayButtonText: {
+    color: "#3E6634",
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "700",
   },
   replyText: {
     color: "#304558",

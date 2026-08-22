@@ -2718,3 +2718,41 @@ export async function saveFutureSelfMessage(payload: {
     futureSelfMessage: data?.futureSelfMessage ?? null,
   };
 }
+
+export async function transcribeAudio(payload: {
+  audioBase64: string;
+  filename?: string;
+  mimeType?: string;
+}): Promise<ApiResult & { language?: string; text?: string }> {
+  const { response, data } = await post("/api/voice/transcribe", payload);
+  return {
+    ok: response.ok,
+    message: data?.message,
+    language: data?.language || "",
+    text: data?.text || "",
+  };
+}
+
+export async function synthesizeVoiceSpeech(payload: {
+  pitch?: string;
+  rate?: string;
+  text: string;
+  voice?: string;
+}): Promise<
+  ApiResult & {
+    audioBase64?: string;
+    contentType?: string;
+    language?: string;
+    voice?: string;
+  }
+> {
+  const { response, data } = await post("/api/voice/speak", payload);
+  return {
+    ok: response.ok,
+    message: data?.message,
+    audioBase64: data?.audioBase64 || "",
+    contentType: data?.contentType || "audio/mp3",
+    language: data?.language || "",
+    voice: data?.voice || "",
+  };
+}

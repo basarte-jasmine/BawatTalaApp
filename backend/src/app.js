@@ -11,6 +11,7 @@ const journalRoutes = require("./api/journal.routes");
 const libraryRoutes = require("./api/library.routes");
 const moodRoutes = require("./api/mood.routes");
 const ocrRoutes = require("./api/ocr.routes");
+const voiceRoutes = require("./api/voice.routes");
 
 const app = express();
 const corsOrigin = process.env.CORS_ORIGIN || "*";
@@ -59,6 +60,7 @@ app.use("/api/library", libraryRoutes);
 app.use("/api/moods", moodRoutes);
 app.use("/api/admin", adminRouter);
 app.use("/api/ocr", ocrRoutes);
+app.use("/api/voice", voiceRoutes);
 
 app.use((err, _req, res, next) => {
   if (err?.type === "entity.too.large") {
