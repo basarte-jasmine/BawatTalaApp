@@ -10,6 +10,12 @@ import {
   type StudentPreferences,
 } from "./backend-api";
 import { useAuthSession } from "./auth-session";
+import {
+  disableMuniReminders,
+  getMuniRemindersEnabled,
+  scheduleMuniReminders,
+  syncMuniReminderSchedule,
+} from "./muni-reminders";
 
 type AppPreferencesContextValue = {
   appLockAutoLock: boolean;
@@ -21,9 +27,11 @@ type AppPreferencesContextValue = {
   enableExistingAppLock: (autoLock: boolean) => Promise<{ ok: boolean; message?: string }>;
   isAppLocked: boolean;
   lockAppNow: () => void;
+  muniRemindersEnabled: boolean;
   notificationPreviewsEnabled: boolean;
   privateJournalModeEnabled: boolean;
   setAppLockAutoLock: (value: boolean) => void;
+  setMuniRemindersEnabled: (value: boolean) => Promise<{ ok: boolean; message?: string }>;
   setNotificationPreviewsEnabled: (value: boolean) => void;
   setPrivateJournalModeEnabled: (value: boolean) => void;
   resetAppLockWithStudentId: (studentNumberConfirmation: string) => Promise<{ ok: boolean; message?: string }>;
@@ -52,6 +60,7 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
   const [hasAppLockPin, setHasAppLockPin] = useState(false);
   const [appLockAutoLock, setAppLockAutoLockState] = useState(DEFAULT_PREFERENCES.journalLockAutoLock);
   const [isAppLocked, setIsAppLocked] = useState(false);
+  const [muniRemindersEnabled, setMuniRemindersEnabledState] = useState(false);
   const appStateRef = useRef(AppState.currentState);
   const studentNumber = user?.studentNumber || "";
 
@@ -67,6 +76,7 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
   const resetPreferences = useCallback(() => {
     applyPreferences(DEFAULT_PREFERENCES);
     setIsAppLocked(false);
+    setMuniRemindersEnabledState(false);
   }, [applyPreferences]);
 
   useEffect(() => {
@@ -86,6 +96,31 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
       mounted = false;
     };
   }, [applyPreferences, isHydrated, resetPreferences, studentNumber]);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    if (!studentNumber) {
+      setMuniRemindersEnabledState(false);
+      return;
+    }
+
+    let mounted = true;
+    void getMuniRemindersEnabled(studentNumber)
+      .then((enabled) => {
+        if (!mounted) return;
+        setMuniRemindersEnabledState(enabled);
+        if (enabled) {
+          void syncMuniReminderSchedule(studentNumber, user?.firstName);
+        }
+      })
+      .catch(() => {
+        if (mounted) setMuniRemindersEnabledState(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [isHydrated, resetPreferences, studentNumber, user?.firstName]);
 
   const persistPreferences = useCallback(
     async (
@@ -157,6 +192,7 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
         if (!appLockEnabled) return;
         setIsAppLocked(true);
       },
+      muniRemindersEnabled,
       notificationPreviewsEnabled,
       privateJournalModeEnabled,
       setAppLockAutoLock: (nextValue: boolean) => {
@@ -164,6 +200,21 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
         if (appLockEnabled) {
           void persistPreferences({ journalLockAutoLock: nextValue });
         }
+      },
+      setMuniRemindersEnabled: async (nextValue: boolean) => {
+        if (!studentNumber) {
+          return { ok: false, message: "Student session is missing." };
+        }
+
+        if (!nextValue) {
+          setMuniRemindersEnabledState(false);
+          await disableMuniReminders(studentNumber);
+          return { ok: true, message: "Muni reminders are off." };
+        }
+
+        const result = await scheduleMuniReminders(studentNumber, user?.firstName);
+        setMuniRemindersEnabledState(result.ok);
+        return result;
       },
       setNotificationPreviewsEnabled: (nextValue: boolean) => {
         setNotificationPreviewsEnabledState(nextValue);
@@ -212,11 +263,13 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
       applyPreferences,
       hasAppLockPin,
       isAppLocked,
+      muniRemindersEnabled,
       notificationPreviewsEnabled,
       persistPreferences,
       privateJournalModeEnabled,
       resetPreferences,
       studentNumber,
+      user?.firstName,
     ],
   );
 

@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
-import { router } from "expo-router";
+import { router, type Href } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
@@ -34,7 +34,7 @@ function getStringMetadataValue(metadata: Record<string, unknown>, key: string) 
   return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
 }
 
-function getNotificationRoute(item: AppNotification): string | { pathname: string; params?: Record<string, string> } {
+function getNotificationRoute(item: AppNotification): Href | "" {
   const metadata = item.metadata || {};
   const kind = String(item.kind || "").toUpperCase();
   const route = getStringMetadataValue(metadata, "route");

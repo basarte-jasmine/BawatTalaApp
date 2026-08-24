@@ -1,4 +1,4 @@
-import { Stack } from "expo-router";
+import { router, Stack } from "expo-router";
 import { useEffect } from "react";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
@@ -15,6 +15,7 @@ import {
 import { AuthSessionProvider } from "../lib/auth-session";
 import { AppPreferencesProvider } from "../lib/app-preferences";
 import { warmBackend } from "../lib/backend-api";
+import { configureMuniNotificationBehavior } from "../lib/muni-reminders";
 import { OfflineSyncProvider } from "../lib/offline-sync";
 
 const APP_MAX_WIDTH = 412;
@@ -58,6 +59,26 @@ export default function RootLayout() {
 
   useEffect(() => {
     void warmBackend();
+  }, []);
+
+  useEffect(() => {
+    void configureMuniNotificationBehavior();
+
+    let subscription: { remove: () => void } | null = null;
+    void import("expo-notifications")
+      .then((Notifications) => {
+        subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+          const route = response.notification.request.content.data?.route;
+          if (typeof route === "string" && route.startsWith("/")) {
+            router.push(route as never);
+          }
+        });
+      })
+      .catch(() => undefined);
+
+    return () => {
+      subscription?.remove();
+    };
   }, []);
 
   if (!fontsLoaded) return null;

@@ -141,10 +141,12 @@ export default function ProfileSettingsScreen() {
     enableAppLock,
     enableExistingAppLock,
     hasAppLockPin,
+    muniRemindersEnabled,
     notificationPreviewsEnabled,
     privateJournalModeEnabled,
     resetAppLockWithStudentId,
     setAppLockAutoLock,
+    setMuniRemindersEnabled,
     setNotificationPreviewsEnabled,
     setPrivateJournalModeEnabled,
     updateAppLockPin,
@@ -508,6 +510,18 @@ export default function ProfileSettingsScreen() {
     Alert.alert("Journal Lock On", "Your existing PIN is active again.");
   };
 
+  const handleMuniRemindersToggle = async (nextValue: boolean) => {
+    const result = await setMuniRemindersEnabled(nextValue);
+    if (!result.ok) {
+      Alert.alert("Muni reminders", result.message || "Unable to update reminders right now.");
+      return;
+    }
+
+    if (nextValue) {
+      Alert.alert("Muni reminders are on", "Muni will gently check in with you during the day.");
+    }
+  };
+
   const handleResetJournalLockPin = async () => {
     if (!STUDENT_ID_PATTERN.test(pinResetStudentId.trim())) {
       setPinError("Enter Student ID in 23-2903 format.");
@@ -694,6 +708,13 @@ export default function ProfileSettingsScreen() {
                 description="Show preview text when alerts come in."
                 value={notificationPreviewsEnabled}
                 onValueChange={setNotificationPreviewsEnabled}
+              />
+              <ToggleItem
+                title="Muni Reminders"
+                description="Let Muni remind you to check in, pause, and journal."
+                value={muniRemindersEnabled}
+                onValueChange={(value) => void handleMuniRemindersToggle(value)}
+                bordered
               />
               <ToggleItem
                 title="Private Journal Mode"
