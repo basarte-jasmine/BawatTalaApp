@@ -47,7 +47,14 @@
       ],
       "expo-notifications",
       "expo-audio",
-      "expo-video"
+      "expo-video",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Bawat Tala to choose a profile picture from your photos.",
+          "cameraPermission": "Allow Bawat Tala to take a profile picture."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

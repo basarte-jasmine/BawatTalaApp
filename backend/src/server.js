@@ -13,7 +13,7 @@ process.emitWarning = (warning, ...args) => {
 require("dotenv").config();
 const http = require("http");
 const app = require("./app");
-const { ensureDatabaseSchema } = require("./config/db");
+const { ensureDatabaseSchema, ensureStudentProfilePictureSchema } = require("./config/db");
 const { ensureDefaultAdminAccount } = require("./api/admin.routes");
 const appointmentRoutes = require("./api/appointment.routes");
 
@@ -25,6 +25,12 @@ const skipStartupTasks =
 async function runStartupTasks() {
   if (skipStartupTasks) {
     console.log("Backend startup tasks skipped. Run without --skip-startup-tasks to apply database schema checks.");
+    try {
+      await ensureStudentProfilePictureSchema();
+      console.log("Student profile picture schema check completed.");
+    } catch (error) {
+      console.error("Student profile picture schema check failed:", error?.message || error);
+    }
     if (typeof appointmentRoutes.startPendingAppointmentExpiryWorker === "function") {
       appointmentRoutes.startPendingAppointmentExpiryWorker();
     }

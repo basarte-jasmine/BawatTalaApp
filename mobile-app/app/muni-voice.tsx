@@ -70,37 +70,14 @@ const CONCERN_TAG_OPTIONS = [
 const INTERPERSONAL_TAG = "Interpersonal relationships";
 const INTERPERSONAL_RELATIONSHIP_TAGS = ["Peer", "Family", "Romantic"];
 const VOICE_RECORDING_MAX_MS = 5 * 60 * 1000;
-const FILIPINO_MUNI_VOICE = "fil-PH-BlessicaNeural";
-const ENGLISH_MUNI_VOICE = "en-US-AvaMultilingualNeural";
+const MUNI_VOICE = "fil-PH-BlessicaNeural";
 
 function cleanSpokenText(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
-function getVoiceForSpokenLanguage(language: string | undefined, transcript: string) {
-  const detected = String(language || "").trim().toLowerCase();
-  if (detected === "en" || detected.includes("english")) {
-    return ENGLISH_MUNI_VOICE;
-  }
-  if (
-    detected === "tl" ||
-    detected === "fil" ||
-    detected.includes("tagalog") ||
-    detected.includes("filipino")
-  ) {
-    return FILIPINO_MUNI_VOICE;
-  }
-
-  const words = transcript.toLowerCase().match(/[a-z]+/g) || [];
-  const filipinoMarkers = new Set([
-    "ako", "ikaw", "mga", "ang", "ng", "ko", "mo", "kasi",
-    "naman", "talaga", "sobrang", "salamat", "hindi", "parang",
-    "gusto", "pwede", "puwede", "gawain", "pakiramdam", "pagod",
-    "yan", "yung", "pero", "kung", "sana", "marami",
-  ]);
-  return words.some((word) => filipinoMarkers.has(word))
-    ? FILIPINO_MUNI_VOICE
-    : ENGLISH_MUNI_VOICE;
+function getVoiceForSpokenLanguage(_language: string | undefined, _transcript: string) {
+  return MUNI_VOICE;
 }
 
 function getLatestAssistantReply(messages: JournalMessage[] | undefined) {
@@ -331,13 +308,7 @@ export default function MuniVoiceScreen() {
         const selectedVoice = requestedVoice || replyVoiceRef.current || undefined;
         if (selectedVoice) replyVoiceRef.current = selectedVoice;
         setVoiceState("speaking");
-        setStatusMessage(
-          selectedVoice === ENGLISH_MUNI_VOICE
-            ? "Muni is speaking in English..."
-            : selectedVoice === FILIPINO_MUNI_VOICE
-              ? "Muni is speaking in Filipino..."
-              : "Muni is speaking...",
-        );
+        setStatusMessage("Muni is speaking...");
 
         const result = await synthesizeVoiceSpeech({
           text: cleanText,

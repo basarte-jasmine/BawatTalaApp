@@ -1808,7 +1808,8 @@ router.get("/dashboard/risk-flags", async (_req, res) => {
         je.created_at,
         coalesce(sp.full_name, '') as full_name,
         coalesce(sp.program, '') as program,
-        coalesce(sp.email, '') as email
+        coalesce(sp.email, '') as email,
+        coalesce(sp.profile_picture_url, '') as profile_picture_url
       from public.journal_entries je
       left join public.student_profiles sp on sp.student_number = je.student_number
       where (
@@ -1834,6 +1835,7 @@ router.get("/dashboard/risk-flags", async (_req, res) => {
       insights: Array.isArray(row.insights) ? row.insights : [],
       primaryConcern: row.primary_concern || null,
       program: row.program || "",
+      profilePictureUrl: row.profile_picture_url || "",
       riskLevel: row.risk_level,
       supportResponse: row.support_response || null,
       supportResponseAt: row.support_response_at || null,
@@ -2384,6 +2386,7 @@ router.get("/search", async (req, res) => {
           coalesce(nullif(sp.full_name, ''), sp.student_number) as full_name,
           coalesce(sp.program, '') as program,
           coalesce(sp.email, '') as email,
+          coalesce(sp.profile_picture_url, '') as profile_picture_url,
           coalesce(sp.barangay, '') as barangay,
           coalesce(sp.city, '') as city,
           coalesce(stats.total_entries, 0) as total_entries,
@@ -2548,6 +2551,7 @@ router.get("/search", async (req, res) => {
       fullName: row.full_name,
       program: normalizeDisplayLabel(row.program || "Unspecified"),
       email: row.email || "",
+      profilePictureUrl: row.profile_picture_url || "",
       barangay: row.barangay || "",
       city: row.city || "",
       totalEntries: Number(row.total_entries || 0),
@@ -3212,6 +3216,7 @@ router.get("/students", async (req, res) => {
         coalesce(sp.city, '') as city,
         coalesce(sp.barangay, '') as barangay,
         coalesce(sp.street, '') as street,
+        coalesce(sp.profile_picture_url, '') as profile_picture_url,
         sp.birthdate,
         sp.created_at,
         coalesce(stats.total_entries, 0) as total_entries,
@@ -3253,6 +3258,7 @@ router.get("/students", async (req, res) => {
     city: row.city || "",
     barangay: row.barangay || "",
     street: row.street || "",
+    profilePictureUrl: row.profile_picture_url || "",
     birthdate: row.birthdate || null,
     createdAt: row.created_at,
     totalEntries: Number(row.total_entries || 0),
@@ -3517,6 +3523,7 @@ router.get("/students/:studentNumber", async (req, res) => {
         coalesce(sp.city, '') as city,
         coalesce(sp.barangay, '') as barangay,
         coalesce(sp.street, '') as street,
+        coalesce(sp.profile_picture_url, '') as profile_picture_url,
         sp.birthdate,
         sp.created_at
       from public.student_profiles sp
@@ -3633,6 +3640,7 @@ router.get("/students/:studentNumber", async (req, res) => {
       city: profile.city || "",
       barangay: profile.barangay || "",
       street: profile.street || "",
+      profilePictureUrl: profile.profile_picture_url || "",
       birthdate: profile.birthdate || null,
       createdAt: profile.created_at,
       hasJournalLockPin: Boolean(preference?.journal_lock_pin_hash),

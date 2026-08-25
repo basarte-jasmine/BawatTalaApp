@@ -5,6 +5,7 @@ export type AuthUser = {
   email: string;
   firstName: string;
   fullName: string;
+  profilePictureUrl?: string;
   studentNumber: string;
 };
 
@@ -40,7 +41,11 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
           typeof parsedUser.fullName === "string" &&
           typeof parsedUser.studentNumber === "string"
         ) {
-          setUser(parsedUser);
+          setUser({
+            ...parsedUser,
+            profilePictureUrl:
+              typeof parsedUser.profilePictureUrl === "string" ? parsedUser.profilePictureUrl : "",
+          });
         }
       } catch {
         if (isMounted) {

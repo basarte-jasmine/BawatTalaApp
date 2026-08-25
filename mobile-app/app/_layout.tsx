@@ -17,6 +17,7 @@ import { AppPreferencesProvider } from "../lib/app-preferences";
 import { warmBackend } from "../lib/backend-api";
 import { configureMuniNotificationBehavior } from "../lib/muni-reminders";
 import { OfflineSyncProvider } from "../lib/offline-sync";
+import { AppointmentStatusWatcher } from "../components/appointments/AppointmentStatusWatcher";
 
 const APP_MAX_WIDTH = 412;
 const DESKTOP_FRAME_BREAKPOINT = 768;
@@ -92,6 +93,7 @@ export default function RootLayout() {
         <AuthSessionProvider>
           <AppPreferencesProvider>
             <OfflineSyncProvider>
+              <AppointmentStatusWatcher />
               <Stack
                 screenOptions={{
                   headerShown: false,

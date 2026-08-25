@@ -1168,7 +1168,7 @@ async function analyzeJournalConversation({
     "If the user mentions physical discomfort like being sleepy, hungry, nauseous, or needing the bathroom, do not invent a hidden psychological cause unless the user clearly connects it to stress.",
     "If the user asks about something you cannot know, do not pretend to know. Briefly acknowledge the uncertainty, reflect the concern behind it, and, if helpful, ask what made them bring it up.",
     "Keep the full pet reply brief: 2 or 3 short complete sentences with normal punctuation.",
-    "Use natural Filipino, English, or Taglish to match the student's tone.",
+    "Language matching rule: Strictly match the language of the student's latest message. If the student speaks/writes in Tagalog, reply in natural warm Tagalog. If the student speaks/writes in English, reply in natural warm English. If the student speaks/writes in Taglish, reply in natural warm Taglish.",
     "Do not give prescriptive advice, instructions, commands, medical guidance, legal guidance, or dangerous suggestions.",
     "Insights must be observational, reflective, and non-prescriptive. They should describe emotional patterns, themes, or tensions, not tell the user what to do.",
     "You must also analyze the latest journal message objectively for insights and risk.",

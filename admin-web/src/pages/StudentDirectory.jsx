@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import Layout from "../components/Layout";
 import Modal from "../components/Modal";
+import StudentAvatar from "../components/StudentAvatar";
 import {
   openAdminStudentJournalEntry,
   fetchAdminStudentDirectoryEntries,
@@ -56,16 +57,6 @@ const PROFILE_ENTRY_FILTERS = [
   { label: "Critical Case", value: "critical" },
 ];
 const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
-
-function getInitials(name) {
-  return String(name || "")
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part.charAt(0))
-    .join("")
-    .toUpperCase();
-}
 
 function formatRelativeTime(value) {
   if (!value) return "No entries yet";
@@ -234,9 +225,12 @@ function DirectoryRow({ student, onMessage, onViewProfile, maskStudentNumbers = 
     <div className="rounded-[20px] border border-slate-200 bg-white px-5 py-4 shadow-sm transition hover:border-slate-300 hover:shadow-md">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex min-w-0 flex-1 items-start gap-4">
-          <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-lg font-semibold ${avatarTone}`}>
-            {getInitials(student.fullName)}
-          </div>
+          <StudentAvatar
+            className="h-14 w-14 rounded-full text-lg font-semibold"
+            fallbackClassName={avatarTone}
+            fullName={student.fullName}
+            profilePictureUrl={student.profilePictureUrl}
+          />
 
           <div className="grid min-w-0 flex-1 gap-x-10 gap-y-3 text-sm text-slate-600 sm:grid-cols-2 lg:grid-cols-[minmax(16rem,1.35fr)_minmax(11rem,0.85fr)_minmax(8rem,0.6fr)_minmax(6rem,0.45fr)] lg:items-start">
             <div className="min-w-0">
@@ -293,9 +287,11 @@ function MessageModal({ student, title, body, sending, maskStudentNumbers = fals
       <div className="w-full max-w-xl overflow-hidden rounded-xl bg-white shadow-2xl">
         <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#e7f1ed] text-sm font-bold text-[#0E5A3A]">
-              {getInitials(student.fullName)}
-            </div>
+            <StudentAvatar
+              className="h-10 w-10 rounded-full text-sm"
+              fullName={student.fullName}
+              profilePictureUrl={student.profilePictureUrl}
+            />
             <div>
               <h2 className="font-bold text-slate-900">Message {student.fullName?.split(" ")[0] || "Student"}</h2>
               <div className="text-xs text-slate-500">{maskStudentNumber(student.studentNumber, maskStudentNumbers)} - {student.program || "Unspecified"}</div>
@@ -887,9 +883,12 @@ export default function StudentDirectory({ onLogout, session }) {
 
                   <div className="relative flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
                     <div className="flex min-w-0 items-start gap-4 sm:gap-5">
-                      <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-[28px] bg-white text-2xl font-bold text-indigo-600 shadow-[0_16px_36px_-24px_rgba(79,70,229,0.7)] ring-1 ring-indigo-100">
-                        {getInitials(studentProfile.profile.fullName)}
-                      </div>
+                      <StudentAvatar
+                        className="h-20 w-20 rounded-[28px] text-2xl shadow-[0_16px_36px_-24px_rgba(79,70,229,0.7)] ring-1 ring-indigo-100"
+                        fallbackClassName="bg-white text-indigo-600"
+                        fullName={studentProfile.profile.fullName}
+                        profilePictureUrl={studentProfile.profile.profilePictureUrl}
+                      />
 
                       <div className="min-w-0 space-y-3">
                         <div>

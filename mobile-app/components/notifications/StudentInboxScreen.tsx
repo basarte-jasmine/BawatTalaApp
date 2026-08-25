@@ -48,6 +48,7 @@ function getNotificationRoute(item: AppNotification): Href | "" {
       params: {
         appointmentId,
         consultConfirmed: "1",
+        appointmentNoticeTitle: item.title || "",
       },
     };
   }

@@ -1,10 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as ImageManipulator from "expo-image-manipulator";
+import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
-import { useState, type ComponentProps } from "react";
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState, type ComponentProps } from "react";
+import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { StudentProfileAvatar } from "../components/profile/StudentProfileAvatar";
 import { useAppPreferences } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
+import { fetchStudentProfile, updateStudentProfilePicture } from "../lib/backend-api";
 
 type SettingRow = {
   id: string;
@@ -29,11 +33,61 @@ const EXTRA_ROWS: SettingRow[] = [
   { id: "app-lock", icon: "lock-closed-outline", label: "Journal Lock" },
 ];
 const APP_VERSION = "1.0.0";
+const PROFILE_PICTURE_LIMIT_BYTES = 5 * 1024 * 1024;
+const PROFILE_PICTURE_MAX_DIMENSION = 1024;
+
+function getImageMimeType(asset: ImagePicker.ImagePickerAsset) {
+  const mimeType = String(asset.mimeType || "").toLowerCase();
+  if (mimeType === "image/jpg") return "image/jpeg";
+  if (mimeType) return mimeType;
+
+  const fileName = String(asset.fileName || asset.uri || "").toLowerCase();
+  if (/\.png(?:$|\?)/.test(fileName)) return "image/png";
+  if (/\.jpe?g(?:$|\?)/.test(fileName)) return "image/jpeg";
+  return "";
+}
+
+function showAppAlert(title: string, message: string) {
+  if (Platform.OS === "web") {
+    const browserAlert = (globalThis as { alert?: (value: string) => void }).alert;
+    if (typeof browserAlert === "function") {
+      browserAlert(`${title}\n\n${message}`);
+      return;
+    }
+  }
+
+  Alert.alert(title, message);
+}
 
 export default function ProfileScreen() {
-  const { clearUser, user } = useAuthSession();
+  const { clearUser, setUser, user } = useAuthSession();
   const { clearPreferences } = useAppPreferences();
   const [showSignOutModal, setShowSignOutModal] = useState(false);
+  const [showProfilePictureOptions, setShowProfilePictureOptions] = useState(false);
+  const [profilePictureUrl, setProfilePictureUrl] = useState(user?.profilePictureUrl || "");
+  const [isUploadingProfilePicture, setIsUploadingProfilePicture] = useState(false);
+
+  useEffect(() => {
+    setProfilePictureUrl(user?.profilePictureUrl || "");
+  }, [user?.profilePictureUrl]);
+
+  useEffect(() => {
+    if (!user?.studentNumber) return;
+    let mounted = true;
+
+    void fetchStudentProfile(user.studentNumber).then((result) => {
+      if (!mounted || !result.ok || !result.profile) return;
+      const nextProfilePictureUrl = result.profile.profilePictureUrl || "";
+      setProfilePictureUrl(nextProfilePictureUrl);
+      if (nextProfilePictureUrl !== (user.profilePictureUrl || "")) {
+        setUser({ ...user, profilePictureUrl: nextProfilePictureUrl });
+      }
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [setUser, user]);
   const handleBack = () => {
     if (router.canGoBack()) {
       router.back();
@@ -47,6 +101,120 @@ export default function ProfileScreen() {
     clearPreferences();
     clearUser();
     router.replace("/login");
+  };
+
+  const saveSelectedProfilePicture = async (asset: ImagePicker.ImagePickerAsset) => {
+    if (!user?.studentNumber) {
+      showAppAlert("Sign in needed", "Please sign in again before updating your profile picture.");
+      return;
+    }
+
+    const mimeType = getImageMimeType(asset);
+    if (!["image/jpeg", "image/png"].includes(mimeType)) {
+      showAppAlert("Unsupported image", "Please choose a PNG or JPEG image only.");
+      return;
+    }
+    if (asset.fileSize && asset.fileSize > PROFILE_PICTURE_LIMIT_BYTES) {
+      showAppAlert("Image too large", "Profile pictures must be 5 MB or smaller.");
+      return;
+    }
+
+    try {
+      setIsUploadingProfilePicture(true);
+      const longestSide = Math.max(asset.width || 0, asset.height || 0);
+      const actions: ImageManipulator.Action[] = [];
+      if (longestSide > PROFILE_PICTURE_MAX_DIMENSION) {
+        if (asset.width >= asset.height) {
+          actions.push({ resize: { width: PROFILE_PICTURE_MAX_DIMENSION } });
+        } else {
+          actions.push({ resize: { height: PROFILE_PICTURE_MAX_DIMENSION } });
+        }
+      }
+
+      const compressed = await ImageManipulator.manipulateAsync(asset.uri, actions, {
+        base64: true,
+        compress: 0.72,
+        format: ImageManipulator.SaveFormat.JPEG,
+      });
+      if (!compressed.base64) {
+        throw new Error("The compressed image could not be read.");
+      }
+
+      const compressedBytes = Math.ceil((compressed.base64.length * 3) / 4);
+      if (compressedBytes > PROFILE_PICTURE_LIMIT_BYTES) {
+        showAppAlert("Image too large", "Please choose a smaller image and try again.");
+        return;
+      }
+
+      const result = await updateStudentProfilePicture(user.studentNumber, {
+        contentType: "image/jpeg",
+        dataUrl: `data:image/jpeg;base64,${compressed.base64}`,
+        fileName: `${user.studentNumber}-profile`,
+      });
+      if (!result.ok || !result.profilePictureUrl) {
+        showAppAlert("Upload failed", result.message || "Please try again in a moment.");
+        return;
+      }
+
+      setProfilePictureUrl(result.profilePictureUrl);
+      setUser({ ...user, profilePictureUrl: result.profilePictureUrl });
+      showAppAlert("Profile picture updated", "Your new picture will now appear across Bawat Tala.");
+    } catch (error) {
+      showAppAlert(
+        "Upload failed",
+        error instanceof Error ? error.message : "Please try choosing the image again.",
+      );
+    } finally {
+      setIsUploadingProfilePicture(false);
+    }
+  };
+
+  const chooseProfilePicture = async (source: "camera" | "library") => {
+    try {
+      if (source === "camera" && Platform.OS !== "web") {
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+        if (!permission.granted) {
+          showAppAlert("Camera permission needed", "Allow camera access to take a profile picture.");
+          return;
+        }
+      } else if (Platform.OS !== "web") {
+        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!permission.granted) {
+          showAppAlert("Photo permission needed", "Allow photo access to choose a profile picture.");
+          return;
+        }
+      }
+
+      const result = source === "camera"
+        ? await ImagePicker.launchCameraAsync({
+            allowsEditing: true,
+            aspect: [1, 1],
+            mediaTypes: ["images"],
+            quality: 1,
+          })
+        : await ImagePicker.launchImageLibraryAsync({
+            allowsEditing: true,
+            aspect: [1, 1],
+            mediaTypes: ["images"],
+            quality: 1,
+          });
+
+      if (!result.canceled && result.assets[0]) {
+        await saveSelectedProfilePicture(result.assets[0]);
+      }
+    } catch {
+      showAppAlert("Photo unavailable", "Please try opening the camera or photo library again.");
+    }
+  };
+
+  const openProfilePictureOptions = () => {
+    if (isUploadingProfilePicture) return;
+    setShowProfilePictureOptions(true);
+  };
+
+  const selectProfilePictureSource = (source: "camera" | "library") => {
+    setShowProfilePictureOptions(false);
+    void chooseProfilePicture(source);
   };
 
   const handleRowPress = async (rowId: string) => {
@@ -64,7 +232,7 @@ export default function ProfileScreen() {
         router.push("/referral" as never);
         return;
       default:
-        Alert.alert("Not Ready Yet", "This setting is not available right now.");
+        showAppAlert("Not Ready Yet", "This setting is not available right now.");
     }
   };
 
@@ -88,8 +256,25 @@ export default function ProfileScreen() {
           <View style={styles.heroGlowLeft} />
           <View style={styles.heroGlowRight} />
           <View style={styles.profileWrap}>
-            <View style={styles.avatarCircle}>
-              <Ionicons name="person-outline" size={74} color="#4A4A4A" />
+            <View style={styles.avatarStage}>
+              <StudentProfileAvatar
+                imageUrl={profilePictureUrl}
+                size={120}
+                style={styles.avatarCircle}
+              />
+              {isUploadingProfilePicture ? (
+                <View style={styles.avatarLoadingOverlay}>
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                </View>
+              ) : null}
+              <Pressable
+                accessibilityLabel="Update profile picture"
+                disabled={isUploadingProfilePicture}
+                onPress={openProfilePictureOptions}
+                style={({ pressed }) => [styles.cameraButton, pressed && styles.cameraButtonPressed]}
+              >
+                <Ionicons name="camera" size={19} color="#FFFFFF" />
+              </Pressable>
             </View>
             <Text style={styles.name}>{user?.fullName || "User"}</Text>
             <Text style={styles.email}>{user?.email || "Your Bawat Tala space is ready."}</Text>
@@ -153,6 +338,76 @@ export default function ProfileScreen() {
           <Text style={styles.aboutFooterMeta}>Keepsake Studio</Text>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={showProfilePictureOptions}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowProfilePictureOptions(false)}
+      >
+        <Pressable
+          accessibilityLabel="Close profile picture options"
+          style={styles.modalBackdrop}
+          onPress={() => setShowProfilePictureOptions(false)}
+        >
+          <Pressable
+            accessibilityRole="menu"
+            onPress={(event) => event.stopPropagation()}
+            style={styles.photoOptionsCard}
+          >
+            <View style={styles.photoOptionsHeader}>
+              <View>
+                <Text style={styles.photoOptionsTitle}>Update profile picture</Text>
+                <Text style={styles.photoOptionsSubtitle}>Choose how you want to add your photo.</Text>
+              </View>
+              <Pressable
+                accessibilityLabel="Close"
+                onPress={() => setShowProfilePictureOptions(false)}
+                style={styles.photoOptionsClose}
+              >
+                <Ionicons name="close" size={20} color="#607080" />
+              </Pressable>
+            </View>
+
+            <Pressable
+              accessibilityRole="menuitem"
+              onPress={() => selectProfilePictureSource("camera")}
+              style={({ pressed }) => [styles.photoOptionButton, pressed && styles.photoOptionButtonPressed]}
+            >
+              <View style={styles.photoOptionIcon}>
+                <Ionicons name="camera-outline" size={22} color="#558B3A" />
+              </View>
+              <View style={styles.photoOptionCopy}>
+                <Text style={styles.photoOptionTitle}>Take Photo</Text>
+                <Text style={styles.photoOptionDescription}>Use your camera to take a new picture.</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#87929D" />
+            </Pressable>
+
+            <Pressable
+              accessibilityRole="menuitem"
+              onPress={() => selectProfilePictureSource("library")}
+              style={({ pressed }) => [styles.photoOptionButton, pressed && styles.photoOptionButtonPressed]}
+            >
+              <View style={styles.photoOptionIcon}>
+                <Ionicons name="images-outline" size={22} color="#558B3A" />
+              </View>
+              <View style={styles.photoOptionCopy}>
+                <Text style={styles.photoOptionTitle}>Choose from Library</Text>
+                <Text style={styles.photoOptionDescription}>Select a PNG or JPEG up to 5 MB.</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#87929D" />
+            </Pressable>
+
+            <Pressable
+              onPress={() => setShowProfilePictureOptions(false)}
+              style={({ pressed }) => [styles.photoOptionsCancel, pressed && styles.photoOptionButtonPressed]}
+            >
+              <Text style={styles.photoOptionsCancelText}>Cancel</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal
         visible={showSignOutModal}
@@ -278,16 +533,48 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 20,
   },
+  avatarStage: {
+    height: 128,
+    width: 128,
+    marginBottom: 8,
+  },
   avatarCircle: {
+    backgroundColor: "#89E1D4",
+    borderWidth: 4,
+    borderColor: "#F2FFFA",
+  },
+  avatarLoadingOverlay: {
+    position: "absolute",
+    left: 0,
+    top: 0,
     width: 120,
     height: 120,
     borderRadius: 999,
-    backgroundColor: "#89E1D4",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 8,
-    borderWidth: 4,
-    borderColor: "#F2FFFA",
+    backgroundColor: "rgba(33, 55, 47, 0.52)",
+  },
+  cameraButton: {
+    position: "absolute",
+    right: 2,
+    bottom: 2,
+    width: 38,
+    height: 38,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#5E9D41",
+    borderWidth: 3,
+    borderColor: "#FFFFFF",
+    shadowColor: "#365D29",
+    shadowOpacity: 0.22,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
+  cameraButtonPressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.96 }],
   },
   name: {
     width: "100%",
@@ -490,6 +777,97 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
     elevation: 4,
+  },
+  photoOptionsCard: {
+    width: "100%",
+    maxWidth: 390,
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    padding: 18,
+    rowGap: 10,
+    shadowColor: "#405047",
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 5,
+  },
+  photoOptionsHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    columnGap: 12,
+    marginBottom: 4,
+  },
+  photoOptionsTitle: {
+    color: "#304558",
+    fontSize: 19,
+    lineHeight: 25,
+    fontWeight: "700",
+  },
+  photoOptionsSubtitle: {
+    color: "#6A7885",
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 2,
+  },
+  photoOptionsClose: {
+    width: 34,
+    height: 34,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F3F6F8",
+  },
+  photoOptionButton: {
+    minHeight: 70,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E3EBE0",
+    backgroundColor: "#F8FCF5",
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 11,
+  },
+  photoOptionButtonPressed: {
+    opacity: 0.76,
+  },
+  photoOptionIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: "#EDF7E7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  photoOptionCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  photoOptionTitle: {
+    color: "#344A3B",
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "700",
+  },
+  photoOptionDescription: {
+    color: "#718078",
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 2,
+  },
+  photoOptionsCancel: {
+    minHeight: 42,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+  photoOptionsCancelText: {
+    color: "#687681",
+    fontSize: 14,
+    fontWeight: "700",
   },
   modalBody: {
     color: "#52606C",

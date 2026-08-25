@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import ConfirmActionModal from "../components/ConfirmActionModal";
 import Layout from "../components/Layout";
+import StudentAvatar from "../components/StudentAvatar";
 import {
   fetchAdminRiskFlags,
   fetchAdminStudentProfile,
@@ -103,16 +104,6 @@ function formatDate(value, options = {}) {
   });
 }
 
-function getInitials(name) {
-  return String(name || "")
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part.charAt(0))
-    .join("")
-    .toUpperCase();
-}
-
 function getConcernTags(entry) {
   return [entry?.primaryConcern, ...(Array.isArray(entry?.concernTags) ? entry.concernTags : [])]
     .filter(Boolean)
@@ -148,6 +139,7 @@ function groupEntriesByStudent(entries) {
       fullName: entry.fullName || "Unnamed Student",
       email: entry.email || "",
       program: entry.program || "Unspecified",
+      profilePictureUrl: entry.profilePictureUrl || "",
       entries: [],
     };
     existing.entries.push(entry);
@@ -238,9 +230,11 @@ function FlaggedStudentRow({ student, onReview, maskStudentNumbers = false }) {
     <tr className="border-b border-emerald-100 bg-white text-sm shadow-sm last:border-b-0">
       <td className="rounded-l-xl px-4 py-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#e7f1ed] text-sm font-bold text-[#0E5A3A]">
-            {getInitials(student.fullName)}
-          </div>
+          <StudentAvatar
+            className="h-10 w-10 rounded-full text-sm"
+            fullName={student.fullName}
+            profilePictureUrl={student.profilePictureUrl}
+          />
           <div>
             <div className="font-bold text-slate-900">{student.fullName}</div>
             <div className="text-xs text-slate-500">{maskStudentNumber(student.studentNumber, maskStudentNumbers)}</div>
@@ -690,9 +684,11 @@ function MessageModal({ student, title, body, sending, maskStudentNumbers = fals
       <div className="w-full max-w-xl overflow-hidden rounded-xl bg-white shadow-2xl">
         <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#e7f1ed] text-sm font-bold text-[#0E5A3A]">
-              {getInitials(student.fullName)}
-            </div>
+            <StudentAvatar
+              className="h-10 w-10 rounded-full text-sm"
+              fullName={student.fullName}
+              profilePictureUrl={student.profilePictureUrl}
+            />
             <div>
               <h2 className="font-bold text-slate-900">Message {student.fullName?.split(" ")[0] || "Student"}</h2>
               <div className="text-xs text-slate-500">{maskStudentNumber(student.studentNumber, maskStudentNumbers)} - {student.program || "Unspecified"}</div>

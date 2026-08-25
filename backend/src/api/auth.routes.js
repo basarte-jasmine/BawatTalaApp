@@ -15,6 +15,7 @@ const LOGIN_LOCK_DURATION_MS = 10 * 60 * 1000;
 const OTP_COOLDOWN_MS = 60 * 1000;
 const OTP_VALIDITY_MS = 60 * 1000;
 const RESET_SESSION_MS = 10 * 60 * 1000;
+const STUDENT_PROFILE_PICTURE_LIMIT_BYTES = 5 * 1024 * 1024;
 const STRONG_PASSWORD_PATTERN =
   /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
 const REFERRAL_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -130,6 +131,134 @@ function setResetSession(studentNumber, session) {
 
 function clearResetSession(studentNumber) {
   resetPasswordSessions.delete(studentNumber);
+}
+
+function getStudentProfilePictureBucket() {
+  return normalizeCompactSpaces(
+    process.env.SUPABASE_STUDENT_AVATAR_BUCKET || "student-profile-pictures",
+  );
+}
+
+function sanitizeProfilePictureFileName(value) {
+  const normalized = normalizeCompactSpaces(value || "")
+    .replace(/[^a-zA-Z0-9._-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return normalized || "profile-image";
+}
+
+function detectProfilePictureMimeType(buffer) {
+  if (
+    buffer.length >= 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+
+  if (
+    buffer.length >= 3 &&
+    buffer[0] === 0xff &&
+    buffer[1] === 0xd8 &&
+    buffer[2] === 0xff
+  ) {
+    return "image/jpeg";
+  }
+
+  return "";
+}
+
+function parseStudentProfilePicturePayload(rawValue) {
+  if (!rawValue || typeof rawValue !== "object" || Array.isArray(rawValue)) {
+    throw new Error("Please choose a profile picture.");
+  }
+
+  const dataUrl = String(rawValue.dataUrl || "").trim();
+  const fileName = sanitizeProfilePictureFileName(rawValue.fileName || "profile-image");
+  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([a-zA-Z0-9+/=\r\n]+)$/);
+  if (!match) {
+    throw new Error("Invalid profile picture data.");
+  }
+
+  const declaredMimeType = match[1].toLowerCase() === "image/jpg" ? "image/jpeg" : match[1].toLowerCase();
+  if (!["image/jpeg", "image/png"].includes(declaredMimeType)) {
+    throw new Error("Only PNG or JPEG profile pictures are allowed.");
+  }
+
+  const buffer = Buffer.from(match[2], "base64");
+  if (!buffer.length) {
+    throw new Error("The selected profile picture is empty.");
+  }
+  if (buffer.length > STUDENT_PROFILE_PICTURE_LIMIT_BYTES) {
+    throw new Error("Profile picture must be 5 MB or smaller.");
+  }
+
+  const detectedMimeType = detectProfilePictureMimeType(buffer);
+  if (!detectedMimeType || detectedMimeType !== declaredMimeType) {
+    throw new Error("The selected file is not a valid PNG or JPEG image.");
+  }
+
+  return {
+    buffer,
+    contentType: detectedMimeType,
+    extension: detectedMimeType === "image/png" ? "png" : "jpg",
+    fileName,
+  };
+}
+
+async function ensureStudentProfilePictureBucket() {
+  const bucketName = getStudentProfilePictureBucket();
+  const { data: buckets, error: listError } = await supabaseAdminClient.storage.listBuckets();
+  if (listError) {
+    throw new Error(listError.message || "Unable to verify profile picture storage.");
+  }
+
+  const exists = Array.isArray(buckets) && buckets.some((bucket) => bucket.name === bucketName);
+  if (!exists) {
+    const { error: createError } = await supabaseAdminClient.storage.createBucket(bucketName, {
+      public: true,
+      fileSizeLimit: `${STUDENT_PROFILE_PICTURE_LIMIT_BYTES}`,
+      allowedMimeTypes: ["image/jpeg", "image/png"],
+    });
+
+    if (createError && !String(createError.message || "").toLowerCase().includes("already exists")) {
+      throw new Error(createError.message || "Unable to create profile picture storage.");
+    }
+  }
+
+  return bucketName;
+}
+
+async function uploadStudentProfilePicture({ studentNumber, uploadedImage }) {
+  const bucketName = await ensureStudentProfilePictureBucket();
+  const safeStudentNumber = studentNumber.replace(/[^a-zA-Z0-9_-]/g, "-");
+  const filePath = `students/${safeStudentNumber}/${Date.now()}-${uploadedImage.fileName}.${uploadedImage.extension}`;
+  const { error: uploadError } = await supabaseAdminClient.storage
+    .from(bucketName)
+    .upload(filePath, uploadedImage.buffer, {
+      cacheControl: "3600",
+      contentType: uploadedImage.contentType,
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw new Error(uploadError.message || "Unable to upload profile picture.");
+  }
+
+  const { data } = supabaseAdminClient.storage.from(bucketName).getPublicUrl(filePath);
+  const publicUrl = data?.publicUrl || "";
+  if (!publicUrl) {
+    await supabaseAdminClient.storage.from(bucketName).remove([filePath]);
+    throw new Error("Unable to create the profile picture URL.");
+  }
+
+  return { bucketName, filePath, publicUrl };
 }
 
 function getRegistrationOtpSession(email) {
@@ -445,7 +574,7 @@ router.post("/login", async (req, res) => {
   const { data, error } = await supabaseAdminClient
     .from("student_profiles")
     .select(
-      "student_number, full_name, email, password_hash, birthdate, is_email_verified, is_id_verified",
+      "student_number, full_name, email, password_hash, birthdate, is_email_verified, is_id_verified, profile_picture_url",
     )
     .eq("student_number", studentNumber)
     .maybeSingle();
@@ -485,6 +614,7 @@ router.post("/login", async (req, res) => {
       fullName,
       firstName,
       email: normalizeEmail(data.email || ""),
+      profilePictureUrl: data.profile_picture_url || "",
     },
   });
 });
@@ -499,7 +629,7 @@ router.get("/profile", async (req, res) => {
   const { data, error } = await supabaseAdminClient
     .from("student_profiles")
     .select(
-      "student_number, full_name, email, program, region, province, city, barangay, street, birthdate",
+      "student_number, full_name, email, program, region, province, city, barangay, street, birthdate, profile_picture_url",
     )
     .eq("student_number", studentNumber)
     .maybeSingle();
@@ -520,12 +650,78 @@ router.get("/profile", async (req, res) => {
       email: normalizeEmail(data.email || ""),
       fullName: toTitleCase(data.full_name || ""),
       program: data.program || "",
+      profilePictureUrl: data.profile_picture_url || "",
       province: data.province || "",
       region: data.region || "",
       street: data.street || "",
       studentNumber: data.student_number,
     },
   });
+});
+
+router.patch("/profile-picture", async (req, res) => {
+  const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
+  if (!studentNumber || !STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "A valid Student ID is required." });
+  }
+
+  let uploadedImage;
+  try {
+    uploadedImage = parseStudentProfilePicturePayload(req.body.uploadedProfilePicture);
+  } catch (error) {
+    return res.status(400).json({ message: error.message || "Invalid profile picture." });
+  }
+
+  try {
+    const profileResult = await query(
+      `
+        select coalesce(profile_picture_path, '') as profile_picture_path
+        from public.student_profiles
+        where student_number = $1
+        limit 1
+      `,
+      [studentNumber],
+    );
+    if (profileResult.rowCount === 0) {
+      return res.status(404).json({ message: "Student profile not found." });
+    }
+
+    const previousPath = profileResult.rows[0].profile_picture_path || "";
+    const uploaded = await uploadStudentProfilePicture({ studentNumber, uploadedImage });
+
+    try {
+      await query(
+        `
+          update public.student_profiles
+          set profile_picture_url = $2,
+              profile_picture_path = $3
+          where student_number = $1
+        `,
+        [studentNumber, uploaded.publicUrl, uploaded.filePath],
+      );
+    } catch (error) {
+      await supabaseAdminClient.storage.from(uploaded.bucketName).remove([uploaded.filePath]);
+      throw error;
+    }
+
+    if (previousPath && previousPath !== uploaded.filePath) {
+      const { error: removeError } = await supabaseAdminClient.storage
+        .from(uploaded.bucketName)
+        .remove([previousPath]);
+      if (removeError) {
+        console.warn("Unable to remove previous student profile picture:", removeError.message || removeError);
+      }
+    }
+
+    return res.json({
+      message: "Profile picture updated.",
+      profilePictureUrl: uploaded.publicUrl,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      message: error.message || "Unable to update profile picture.",
+    });
+  }
 });
 
 router.get("/preferences", async (req, res) => {

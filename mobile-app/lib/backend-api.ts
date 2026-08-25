@@ -5,6 +5,7 @@ export type AuthUser = {
   email: string;
   firstName: string;
   fullName: string;
+  profilePictureUrl?: string;
   studentNumber: string;
 };
 
@@ -15,10 +16,17 @@ export type StudentProfile = {
   email: string;
   fullName: string;
   program: string;
+  profilePictureUrl: string;
   province: string;
   region: string;
   street: string;
   studentNumber: string;
+};
+
+export type StudentProfilePicturePayload = {
+  contentType: "image/jpeg" | "image/png";
+  dataUrl: string;
+  fileName: string;
 };
 
 export type StudentPreferences = {
@@ -2717,6 +2725,29 @@ export async function saveFutureSelfMessage(payload: {
     message: data?.message,
     futureSelfMessage: data?.futureSelfMessage ?? null,
   };
+}
+
+export async function updateStudentProfilePicture(
+  studentNumber: string,
+  uploadedProfilePicture: StudentProfilePicturePayload,
+): Promise<ApiResult & { profilePictureUrl?: string }> {
+  try {
+    const { response, data } = await patch("/api/auth/profile-picture", {
+      studentNumber,
+      uploadedProfilePicture,
+    });
+
+    return {
+      ok: response.ok,
+      message: data?.message,
+      profilePictureUrl: data?.profilePictureUrl || "",
+    };
+  } catch {
+    return {
+      ok: false,
+      message: "Unable to reach the server. Please check your connection and try again.",
+    };
+  }
 }
 
 export async function transcribeAudio(payload: {

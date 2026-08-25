@@ -239,6 +239,20 @@ async function refreshStudentMoodIdConstraint() {
   `);
 }
 
+async function ensureStudentProfilePictureSchema() {
+  if (!pool) return;
+
+  await pool.query(`
+    alter table if exists public.student_profiles
+    add column if not exists profile_picture_url text;
+  `);
+
+  await pool.query(`
+    alter table if exists public.student_profiles
+    add column if not exists profile_picture_path text;
+  `);
+}
+
 async function ensureDatabaseSchema() {
   if (!pool) return;
 
@@ -293,6 +307,8 @@ async function ensureDatabaseSchema() {
     alter table public.admin_accounts
     add column if not exists settings jsonb not null default '{}'::jsonb;
   `);
+
+  await ensureStudentProfilePictureSchema();
 
   await pool.query(`
     alter table public.admin_accounts
@@ -1347,6 +1363,7 @@ async function query(text, params = []) {
 module.exports = {
   dbPool: pool,
   ensureDatabaseSchema,
+  ensureStudentProfilePictureSchema,
   query,
   refreshStudentMoodIdConstraint,
   removeLegacyDailyMoodUniqueness,

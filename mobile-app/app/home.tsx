@@ -9,6 +9,8 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import Svg, { Defs, Ellipse, LinearGradient, Path, Rect, Stop } from "react-native-svg";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
+import { CounselorAvatar } from "../components/appointments/CounselorAvatar";
+import { StudentProfileAvatar } from "../components/profile/StudentProfileAvatar";
 import { useAuthSession } from "../lib/auth-session";
 import {
   claimDailyCheckIn,
@@ -369,9 +371,10 @@ export default function HomeScreen() {
   const { isSyncing, refreshKey, syncNow } = useOfflineSync();
   const { height, width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const { consultConfirmed, appointmentId, welcome } = useLocalSearchParams<{
+  const { consultConfirmed, appointmentId, appointmentNoticeTitle, welcome } = useLocalSearchParams<{
     consultConfirmed?: string;
     appointmentId?: string;
+    appointmentNoticeTitle?: string;
     welcome?: string;
   }>();
   const compact = height < 760;
@@ -1049,6 +1052,40 @@ export default function HomeScreen() {
       : Math.min(displayedRecentEntries.length * 104 + 20, compact ? 300 : 372);
   const latestMoodLabel = latestMoodId ? EMOTIONS.find((emotion) => emotion.id === latestMoodId)?.label ?? "" : "";
   const pendingMood = pendingMoodId ? EMOTIONS.find((emotion) => emotion.id === pendingMoodId) ?? null : null;
+  const consultAppointmentStatus = String(upcomingAppointment?.status || "").toUpperCase();
+  const consultOverlayTitle = appointmentNoticeTitle || (
+    consultAppointmentStatus === "PENDING"
+      ? "Appointment Request Sent!"
+      : consultAppointmentStatus === "CANCELLED"
+        ? "Appointment Cancelled"
+        : consultAppointmentStatus === "DECLINED"
+          ? "Appointment Declined"
+          : consultAppointmentStatus === "COMPLETED"
+            ? "Appointment Completed"
+            : "Appointment Confirmed!"
+  );
+  const consultOverlaySubtitle = upcomingAppointment
+    ? consultAppointmentStatus === "PENDING"
+      ? `Your request with ${upcomingAppointment.counselor.fullName} is waiting for counselor confirmation`
+      : consultAppointmentStatus === "CANCELLED"
+        ? `Your session with ${upcomingAppointment.counselor.fullName} was cancelled`
+        : consultAppointmentStatus === "DECLINED"
+          ? `${upcomingAppointment.counselor.fullName} could not confirm this appointment request`
+          : consultAppointmentStatus === "COMPLETED"
+            ? `Your session with ${upcomingAppointment.counselor.fullName} has been completed`
+            : `Your session with ${upcomingAppointment.counselor.fullName} is scheduled`
+    : "Your counseling appointment has been updated";
+  const consultOverlayFootnote = consultAppointmentStatus === "PENDING"
+    ? "Your counselor has 24 hours to confirm, decline, or reschedule this request."
+    : consultAppointmentStatus === "CANCELLED"
+      ? "Check your notifications for details or request another schedule when you are ready."
+      : consultAppointmentStatus === "DECLINED"
+        ? "You can return to Consult Support to request a different schedule."
+        : consultAppointmentStatus === "COMPLETED"
+          ? "Thank you for taking time to care for yourself."
+          : appointmentNoticeTitle?.toLowerCase().includes("rescheduled")
+            ? "Please review the updated date and time above."
+            : "A confirmation has been sent. Please arrive 5 minutes early.";
 
   const loadHomeData = useCallback(async () => {
     await Promise.all([
@@ -1570,9 +1607,13 @@ export default function HomeScreen() {
           onPress={() => router.push("/profile")}
         >
           <View style={[styles.headerProfileCard, hasScrolled ? styles.headerProfileCardScrolled : styles.headerProfileCardTop]}>
-            <View style={[styles.avatarCircle, hasScrolled ? styles.avatarCircleScrolled : styles.avatarCircleTop]}>
-              <Ionicons name="person-outline" size={18} color="#496453" />
-            </View>
+            <StudentProfileAvatar
+              iconColor="#496453"
+              iconSize={18}
+              imageUrl={user?.profilePictureUrl}
+              size={36}
+              style={[styles.avatarCircle, hasScrolled ? styles.avatarCircleScrolled : styles.avatarCircleTop]}
+            />
             <View style={styles.headerGreetingWrap}>
               <Text style={styles.headerGreetingEyebrow}>Welcome back</Text>
               <Text style={styles.headerGreetingName} numberOfLines={1}>
@@ -2929,21 +2970,18 @@ export default function HomeScreen() {
           <View style={styles.consultOverlayBackdrop} />
 
           <View style={styles.consultOverlayCard}>
-            {upcomingAppointment?.counselor?.pictureUrl ? (
-              <Image source={{ uri: upcomingAppointment.counselor.pictureUrl }} style={styles.consultAvatarImage} />
-            ) : (
-              <View style={styles.consultAvatarPlaceholder} />
-            )}
+            <CounselorAvatar
+              fullName={upcomingAppointment?.counselor?.fullName}
+              pictureUrl={upcomingAppointment?.counselor?.pictureUrl}
+              size={88}
+              style={styles.consultAvatar}
+            />
 
             <Text style={styles.consultOverlayTitle}>
-              {String(upcomingAppointment?.status || "").toUpperCase() === "PENDING" ? "Appointment Request Sent!" : "Appointment Confirmed!"}
+              {consultOverlayTitle}
             </Text>
             <Text style={styles.consultOverlaySubtitle}>
-              {upcomingAppointment
-                ? String(upcomingAppointment.status || "").toUpperCase() === "PENDING"
-                  ? `Your request with ${upcomingAppointment.counselor.fullName} is waiting for counselor confirmation`
-                  : `Your session with ${upcomingAppointment.counselor.fullName} is scheduled`
-                : "Your counseling session is scheduled"}
+              {consultOverlaySubtitle}
             </Text>
 
             <View style={styles.consultInfoCard}>
@@ -2969,9 +3007,7 @@ export default function HomeScreen() {
             </View>
 
             <Text style={styles.consultOverlayFootnote}>
-              {String(upcomingAppointment?.status || "").toUpperCase() === "PENDING"
-                ? "Your counselor has 24 hours to confirm, decline, or reschedule this request."
-                : "A confirmation has been sent. Please arrive 5 minutes early."}
+              {consultOverlayFootnote}
             </Text>
 
             <Pressable style={styles.consultOverlayButton} onPress={closeConsultOverlay}>
@@ -5440,19 +5476,10 @@ const styles = StyleSheet.create({
     elevation: 4,
     alignItems: "center",
   },
-  consultAvatarPlaceholder: {
-    width: 88,
-    height: 88,
-    borderRadius: 999,
-    backgroundColor: "#D0D2D3",
+  consultAvatar: {
     marginBottom: 12,
-  },
-  consultAvatarImage: {
-    width: 88,
-    height: 88,
-    borderRadius: 999,
-    marginBottom: 12,
-    backgroundColor: "#D0D2D3",
+    borderWidth: 3,
+    borderColor: "#FFFFFF",
   },
   consultOverlayTitle: {
     color: "#32475B",
