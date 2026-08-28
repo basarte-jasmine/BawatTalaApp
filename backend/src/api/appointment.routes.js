@@ -1,6 +1,8 @@
 const express = require("express");
 const { createHash, randomBytes } = require("crypto");
-const { dbPool, query } = require("../config/db");
+const { dbPool } = require("../config/db");
+const { query } = require("../config/db");
+const { getAuthenticatedStudent, requireAdminAuth, requireStudentOnlyAuth, resolveStudentNumber } = require("../middleware/auth.middleware");
 const { supabaseAdminClient } = require("../config/supabase");
 const {
   APPOINTMENT_CONCERN_OPTIONS,
@@ -9,6 +11,7 @@ const {
 } = require("../constants/appointment-concerns");
 
 const router = express.Router();
+router.use("/admin", requireAdminAuth);
 
 const MANILA_TIME_ZONE = "Asia/Manila";
 const DEFAULT_SLOT_TIMES = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00"];
@@ -35,6 +38,14 @@ const SUPPORT_TYPE_PEER = "PEER";
 const COUNSELING_TYPE_OPTIONS = ["1-on-1", "Group"];
 const COUNSELING_TYPE_VALUES = new Set(COUNSELING_TYPE_OPTIONS);
 const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
+
+function resolveRequestStudentNumber(req) {
+  const fromAuth = resolveStudentNumber(req) || getAuthenticatedStudent(req)?.studentNumber;
+  if (fromAuth) return String(fromAuth).trim();
+  return String(req.query?.studentNumber || req.body?.studentNumber || "").trim();
+}
+
+
 
 function normalizeCompactSpaces(value) {
   return String(value || "").trim().replace(/\s+/g, " ");
@@ -2234,7 +2245,15 @@ router.get("/availability", async (req, res) => {
   const counselorId = String(req.query.counselorId || "").trim();
   const requestedSupportType = normalizeSupportType(req.query.supportType || "");
   const month = normalizeMonth(req.query.month || "");
-  const studentNumber = String(req.query.studentNumber || "").trim();
+  let studentNumber;
+  try {
+    studentNumber = resolveRequestStudentNumber(req);
+  } catch (error) {
+    if (error?.statusCode === 403) {
+      return res.status(403).json({ message: "Access denied." });
+    }
+    throw error;
+  }
   if (!counselorId || !month) {
     return res.status(400).json({ message: "Counselor and month are required." });
   }
@@ -2312,9 +2331,9 @@ router.get("/availability", async (req, res) => {
   });
 });
 
-router.post("/book", async (req, res) => {
+router.post("/book", requireStudentOnlyAuth, async (req, res) => {
   await expirePendingAppointments();
-  const studentNumber = String(req.body.studentNumber || "").trim();
+  const studentNumber = resolveRequestStudentNumber(req);
   const counselorId = String(req.body.counselorId || "").trim();
   const appointmentDate = normalizeDate(req.body.appointmentDate || "");
   const slotTime = normalizeSlotTime(req.body.slotTime || "");
@@ -3045,9 +3064,9 @@ router.delete("/admin/:appointmentId", async (req, res) => {
   });
 });
 
-router.get("/student", async (req, res) => {
+router.get("/student", requireStudentOnlyAuth, async (req, res) => {
   await expirePendingAppointments();
-  const studentNumber = String(req.query.studentNumber || "").trim();
+  const studentNumber = resolveRequestStudentNumber(req);
   if (!studentNumber) {
     return res.status(400).json({ message: "Student number is required." });
   }
@@ -3647,8 +3666,8 @@ router.delete("/admin/peer-counselors/:peerCounselorId", async (req, res) => {
   });
 });
 
-router.get("/notifications", async (req, res) => {
-  const studentNumber = String(req.query.studentNumber || "").trim();
+router.get("/notifications", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
   if (!studentNumber) {
     return res.status(400).json({ message: "Student number is required." });
   }
@@ -3693,9 +3712,9 @@ router.get("/notifications", async (req, res) => {
   });
 });
 
-router.post("/notifications/:notificationId/read", async (req, res) => {
+router.post("/notifications/:notificationId/read", requireStudentOnlyAuth, async (req, res) => {
   const notificationId = String(req.params.notificationId || "").trim();
-  const studentNumber = String(req.body.studentNumber || "").trim();
+  const studentNumber = resolveRequestStudentNumber(req);
 
   if (!notificationId || !studentNumber) {
     return res.status(400).json({ message: "Notification id and student number are required." });
@@ -3714,8 +3733,8 @@ router.post("/notifications/:notificationId/read", async (req, res) => {
   return res.json({ message: "Notification marked as read." });
 });
 
-router.post("/notifications/read-all", async (req, res) => {
-  const studentNumber = String(req.body.studentNumber || "").trim();
+router.post("/notifications/read-all", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
   if (!studentNumber) {
     return res.status(400).json({ message: "Student number is required." });
   }
@@ -3745,9 +3764,9 @@ router.post("/notifications/read-all", async (req, res) => {
   return res.json({ message: "Notifications marked as read." });
 });
 
-router.delete("/notifications/:notificationId", async (req, res) => {
+router.delete("/notifications/:notificationId", requireStudentOnlyAuth, async (req, res) => {
   const notificationId = String(req.params.notificationId || "").trim();
-  const studentNumber = String(req.query.studentNumber || "").trim();
+  const studentNumber = resolveRequestStudentNumber(req);
 
   if (!notificationId || !studentNumber) {
     return res.status(400).json({ message: "Notification id and student number are required." });

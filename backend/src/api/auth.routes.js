@@ -5,6 +5,8 @@ const {
   supabaseAuthClient,
 } = require("../config/supabase");
 const { query } = require("../config/db");
+const { requireStudentOnlyAuth, resolveStudentNumber } = require("../middleware/auth.middleware");
+const { createStudentToken } = require("../services/auth-token.service");
 const { sendPasswordResetCodeEmail } = require("../services/auth-email.service");
 
 const router = express.Router();
@@ -72,6 +74,11 @@ function normalizeStudentNumber(value) {
   if (!match) return compact;
   return `${match[1]}-${match[2]}`;
 }
+
+function resolveRequestStudentNumber(req) {
+  return normalizeStudentNumber(resolveStudentNumber(req) || "");
+}
+
 
 function hashPassword(value) {
   const salt = randomBytes(16).toString("hex");
@@ -547,7 +554,7 @@ router.post("/login", async (req, res) => {
   if (!studentNumber && !password) {
     return res
       .status(400)
-      .json({ message: "Please enter your username and password." });
+      .json({ message: "Please enter your Student ID and password." });
   }
 
   if (!studentNumber) {
@@ -593,7 +600,7 @@ router.post("/login", async (req, res) => {
       });
     }
     return res.status(400).json({
-      message: "Invalid username or password. Please try again.",
+      message: "Invalid Student ID or password. Please try again.",
     });
   }
 
@@ -607,20 +614,29 @@ router.post("/login", async (req, res) => {
   const fullName = toTitleCase(data.full_name || "");
   const firstName = fullName.split(" ").filter(Boolean)[0] || "User";
 
+  req.session.student = {
+    studentNumber: data.student_number,
+    email: normalizeEmail(data.email || ""),
+    fullName,
+  };
+  const token = createStudentToken(data.student_number);
+
   return res.json({
     message: "Login successful.",
+    token,
     user: {
       studentNumber: data.student_number,
       fullName,
       firstName,
       email: normalizeEmail(data.email || ""),
       profilePictureUrl: data.profile_picture_url || "",
+      token,
     },
   });
 });
 
-router.get("/profile", async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
+router.get("/profile", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
 
   if (!studentNumber) {
     return res.status(400).json({ message: "Student ID is required." });
@@ -659,8 +675,8 @@ router.get("/profile", async (req, res) => {
   });
 });
 
-router.patch("/profile-picture", async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
+router.patch("/profile-picture", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
   if (!studentNumber || !STUDENT_NUMBER_PATTERN.test(studentNumber)) {
     return res.status(400).json({ message: "A valid Student ID is required." });
   }
@@ -724,8 +740,8 @@ router.patch("/profile-picture", async (req, res) => {
   }
 });
 
-router.get("/preferences", async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
+router.get("/preferences", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
 
   if (!studentNumber) {
     return res.status(400).json({ message: "Student ID is required." });
@@ -747,8 +763,8 @@ router.get("/preferences", async (req, res) => {
   }
 });
 
-router.patch("/preferences", async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
+router.patch("/preferences", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
 
   if (!studentNumber) {
     return res.status(400).json({ message: "Student ID is required." });
@@ -866,8 +882,8 @@ router.patch("/preferences", async (req, res) => {
   }
 });
 
-router.post("/preferences/journal-lock/verify", async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
+router.post("/preferences/journal-lock/verify", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
   const pin = normalizePin(req.body.pin);
 
   if (!studentNumber) {
@@ -905,8 +921,8 @@ router.post("/preferences/journal-lock/verify", async (req, res) => {
   }
 });
 
-router.post("/preferences/journal-lock/reset", async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
+router.post("/preferences/journal-lock/reset", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
   const studentNumberConfirmation = normalizeCompactSpaces(
     req.body.studentNumberConfirmation || "",
   );
@@ -961,8 +977,8 @@ router.post("/preferences/journal-lock/reset", async (req, res) => {
   }
 });
 
-router.get("/referral", async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
+router.get("/referral", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
 
   if (!studentNumber) {
     return res.status(400).json({ message: "Student ID is required." });
@@ -982,8 +998,8 @@ router.get("/referral", async (req, res) => {
   }
 });
 
-router.post("/referral/redeem", async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
+router.post("/referral/redeem", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
   const referralCode = normalizeReferralCode(req.body.referralCode || "");
 
   if (!studentNumber) {
@@ -1259,8 +1275,8 @@ router.post("/forgot-password/send-code", async (req, res) => {
   });
 });
 
-router.post("/profile-password/send-code", async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
+router.post("/profile-password/send-code", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
   const email = normalizeEmail(req.body.email || "");
 
   if (!studentNumber && !email) {
@@ -1514,7 +1530,24 @@ router.post("/register-profile", async (req, res) => {
     return res.status(400).json({ message: error.message });
   }
 
-  return res.json({ message: "Profile saved." });
+  req.session.student = {
+    studentNumber: payload.student_number,
+    email: normalizeEmail(payload.email || ""),
+    fullName: toTitleCase(payload.full_name || ""),
+  };
+  const token = createStudentToken(payload.student_number);
+
+  return res.json({
+    message: "Profile saved.",
+    token,
+    user: {
+      studentNumber: payload.student_number,
+      fullName: toTitleCase(payload.full_name || ""),
+      firstName: toTitleCase(payload.full_name || "").split(" ")[0] || "User",
+      email: normalizeEmail(payload.email || ""),
+      token,
+    },
+  });
 });
 
 router.post("/forgot-password/reset", async (req, res) => {
@@ -1629,6 +1662,13 @@ router.post("/forgot-password/reset", async (req, res) => {
 
   clearResetSession(studentNumber);
   return res.json({ message: "Password updated successfully" });
+});
+
+router.post("/logout", (req, res) => {
+  if (req.session) {
+    req.session.student = null;
+  }
+  return res.json({ message: "Logged out." });
 });
 
 module.exports = router;

@@ -10,6 +10,7 @@ const futureSelfRoutes = require("./api/future-self.routes");
 const journalRoutes = require("./api/journal.routes");
 const libraryRoutes = require("./api/library.routes");
 const moodRoutes = require("./api/mood.routes");
+const muniRoutes = require("./api/muni.routes");
 const ocrRoutes = require("./api/ocr.routes");
 const voiceRoutes = require("./api/voice.routes");
 
@@ -58,6 +59,7 @@ app.use("/api/future-self", futureSelfRoutes);
 app.use("/api/journal", journalRoutes);
 app.use("/api/library", libraryRoutes);
 app.use("/api/moods", moodRoutes);
+app.use("/api/muni", muniRoutes);
 app.use("/api/admin", adminRouter);
 app.use("/api/ocr", ocrRoutes);
 app.use("/api/voice", voiceRoutes);

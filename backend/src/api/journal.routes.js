@@ -1,5 +1,6 @@
 const express = require("express");
 const { query } = require("../config/db");
+const { requireStudentOnlyAuth, resolveStudentNumber } = require("../middleware/auth.middleware");
 const { supabaseAdminClient } = require("../config/supabase");
 const { analyzeJournalConversation, analyzeJournalEntryFinal } = require("../services/journal-ai.service");
 const {
@@ -11,6 +12,7 @@ const {
 } = require("../constants/journal-tags");
 
 const router = express.Router();
+router.use(requireStudentOnlyAuth);
 const JOURNAL_MAX_WORDS = 1000;
 
 function asyncHandler(handler) {
@@ -23,6 +25,10 @@ function normalizeStudentNumber(value) {
   return String(value || "")
     .trim()
     .replace(/\s+/g, "");
+}
+
+function resolveRequestStudentNumber(req) {
+  return normalizeStudentNumber(resolveStudentNumber(req) || "");
 }
 
 function getManilaDateParts(date = new Date()) {
@@ -352,7 +358,7 @@ function buildVisibleEntriesWhereClause(alias = "je") {
 }
 
 router.get("/entries/recent", asyncHandler(async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.query.studentNumber);
+  const studentNumber = resolveRequestStudentNumber(req);
   const windowDays = Math.max(1, Math.min(30, Number(req.query.windowDays || 20)));
   if (!studentNumber) {
     return res.status(400).json({ message: "Student number is required." });
@@ -438,7 +444,7 @@ router.get("/entries/recent", asyncHandler(async (req, res) => {
 }));
 
 router.get("/entries/by-date", asyncHandler(async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.query.studentNumber);
+  const studentNumber = resolveRequestStudentNumber(req);
   const entryDate = formatEntryDateLabel(req.query.date);
 
   if (!studentNumber) {
@@ -486,7 +492,7 @@ router.get("/entries/by-date", asyncHandler(async (req, res) => {
 }));
 
 router.get("/entries/calendar", asyncHandler(async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.query.studentNumber);
+  const studentNumber = resolveRequestStudentNumber(req);
   const year = Number(req.query.year || 0);
 
   if (!studentNumber) {
@@ -532,7 +538,7 @@ router.get("/entries/calendar", asyncHandler(async (req, res) => {
 }));
 
 router.get("/session/today", asyncHandler(async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.query.studentNumber);
+  const studentNumber = resolveRequestStudentNumber(req);
   if (!studentNumber) {
     return res.status(400).json({ message: "Student number is required." });
   }
@@ -557,7 +563,7 @@ router.get("/session/today", asyncHandler(async (req, res) => {
 }));
 
 router.get("/entries/:entryId", asyncHandler(async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.query.studentNumber);
+  const studentNumber = resolveRequestStudentNumber(req);
   const entryId = String(req.params.entryId || "").trim();
 
   if (!studentNumber) {
@@ -591,7 +597,7 @@ router.get("/entries/:entryId", asyncHandler(async (req, res) => {
 }));
 
 router.post("/entries/:entryId/summary-rating", asyncHandler(async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.body.studentNumber);
+  const studentNumber = resolveRequestStudentNumber(req);
   const entryId = String(req.params.entryId || "").trim();
   const summaryRating = normalizeSummaryRating(req.body.rating);
   const feedbackReason = normalizeSummaryFeedbackReason(req.body.reason);
@@ -656,7 +662,7 @@ router.post("/entries/:entryId/summary-rating", asyncHandler(async (req, res) =>
 }));
 
 router.delete("/entries/:entryId", asyncHandler(async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.query.studentNumber);
+  const studentNumber = resolveRequestStudentNumber(req);
   const entryId = String(req.params.entryId || "").trim();
 
   if (!studentNumber) {
@@ -686,7 +692,7 @@ router.delete("/entries/:entryId", asyncHandler(async (req, res) => {
 }));
 
 router.post("/session/create", asyncHandler(async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.body.studentNumber);
+  const studentNumber = resolveRequestStudentNumber(req);
   const aiEnabled = req.body.aiEnabled !== false;
   const forceNew = req.body.forceNew === true;
 
@@ -775,7 +781,7 @@ async function analyzeFinalEntry({ entryId, studentNumber, existingMessages }) {
 }
 
 router.post("/session/tag-suggestions", asyncHandler(async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.body.studentNumber);
+  const studentNumber = resolveRequestStudentNumber(req);
   const entryId = String(req.body.entryId || "").trim();
 
   if (!studentNumber) {
@@ -831,7 +837,7 @@ router.post("/session/tag-suggestions", asyncHandler(async (req, res) => {
 }));
 
 router.post("/session/finish", asyncHandler(async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.body.studentNumber);
+  const studentNumber = resolveRequestStudentNumber(req);
   const entryId = String(req.body.entryId || "").trim();
   const requestedTags = normalizeConcernTags(req.body.concernTags);
   const requestedPrimary = normalizeConcernValue(req.body.primaryConcern);
@@ -919,7 +925,7 @@ router.post("/session/finish", asyncHandler(async (req, res) => {
 }));
 
 router.post("/session/discard-empty", asyncHandler(async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.body.studentNumber);
+  const studentNumber = resolveRequestStudentNumber(req);
   const entryId = String(req.body.entryId || "").trim();
 
   if (!studentNumber || !entryId) {
@@ -943,7 +949,7 @@ router.post("/session/discard-empty", asyncHandler(async (req, res) => {
 }));
 
 router.post("/session/discard", asyncHandler(async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.body.studentNumber);
+  const studentNumber = resolveRequestStudentNumber(req);
   const entryId = String(req.body.entryId || "").trim();
 
   if (!studentNumber || !entryId) {
@@ -970,7 +976,7 @@ router.post("/session/discard", asyncHandler(async (req, res) => {
 }));
 
 router.post("/session/concerns", asyncHandler(async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.body.studentNumber);
+  const studentNumber = resolveRequestStudentNumber(req);
   const entryId = String(req.body.entryId || "").trim();
   const primaryConcern = normalizeConcernValue(req.body.primaryConcern);
   const concernTags = normalizeConcernTags(req.body.concernTags);
@@ -1013,7 +1019,7 @@ router.post("/session/concerns", asyncHandler(async (req, res) => {
 }));
 
 router.post("/session/support-response", asyncHandler(async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.body.studentNumber);
+  const studentNumber = resolveRequestStudentNumber(req);
   const entryId = String(req.body.entryId || "").trim();
   const response = String(req.body.response || "").trim().toUpperCase();
 
@@ -1054,7 +1060,7 @@ router.post("/session/support-response", asyncHandler(async (req, res) => {
 }));
 
 router.post("/message", asyncHandler(async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.body.studentNumber);
+  const studentNumber = resolveRequestStudentNumber(req);
   const aiEnabled = req.body.aiEnabled !== false;
   const message = String(req.body.message || "").trim();
   const entryId = String(req.body.entryId || "").trim();

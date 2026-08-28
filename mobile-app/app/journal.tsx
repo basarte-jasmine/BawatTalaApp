@@ -32,18 +32,16 @@ function buildIsoDate(year: number, monthIndex: number, day: number) {
 
 function buildWeekDates(isoDate: string, writtenDays: Set<number>) {
   const [year, month, day] = isoDate.split("-").map(Number);
-  const baseDate = new Date(year, month - 1, day);
-  const weekday = baseDate.getDay();
-  const startDate = new Date(baseDate);
-  startDate.setDate(baseDate.getDate() - weekday);
+  const baseDate = new Date(Date.UTC(year, month - 1, day));
+  const weekday = baseDate.getUTCDay();
+  const startDateMs = baseDate.getTime() - weekday * 86400000;
   const todayIso = getManilaTodayParts().isoDate;
 
   return Array.from({ length: 7 }, (_, index) => {
-    const current = new Date(startDate);
-    current.setDate(startDate.getDate() + index);
-    const currentYear = current.getFullYear();
-    const currentMonth = current.getMonth();
-    const currentDay = current.getDate();
+    const current = new Date(startDateMs + index * 86400000);
+    const currentYear = current.getUTCFullYear();
+    const currentMonth = current.getUTCMonth();
+    const currentDay = current.getUTCDate();
     const currentIso = buildIsoDate(currentYear, currentMonth, currentDay);
     return {
       id: `${currentIso}-${index}`,
@@ -62,10 +60,11 @@ function buildWeekDates(isoDate: string, writtenDays: Set<number>) {
 
 function formatLongDate(isoDate: string) {
   const [year, month, day] = isoDate.split("-").map(Number);
-  return new Date(year, month - 1, day).toLocaleString("en-US", {
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("en-US", {
     month: "long",
     day: "numeric",
     year: "numeric",
+    timeZone: "UTC",
   });
 }
 
@@ -138,9 +137,9 @@ export default function JournalScreen() {
 
   const handleMoveWeek = useCallback((direction: -1 | 1) => {
     const [year, month, day] = weekAnchorDate.split("-").map(Number);
-    const nextDate = new Date(year, month - 1, day);
-    nextDate.setDate(nextDate.getDate() + direction * 7);
-    const nextIso = buildIsoDate(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate());
+    const baseDate = new Date(Date.UTC(year, month - 1, day));
+    const nextDate = new Date(baseDate.getTime() + direction * 7 * 86400000);
+    const nextIso = buildIsoDate(nextDate.getUTCFullYear(), nextDate.getUTCMonth(), nextDate.getUTCDate());
     setWeekAnchorDate(nextIso);
     void loadWeekData(nextIso);
   }, [loadWeekData, weekAnchorDate]);

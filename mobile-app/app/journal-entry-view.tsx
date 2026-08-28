@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { Alert, Image, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { fetchJournalEntryById, JournalEntry, JournalMessage, rateJournalEntrySummary } from "../lib/backend-api";
@@ -13,6 +13,9 @@ import { useOfflineSync } from "../lib/offline-sync";
 const NOTEBOOK_RINGS = Array.from({ length: 12 }, (_, index) => index);
 const PAPER_RULES = Array.from({ length: 24 }, (_, index) => index);
 const SUMMARY_FEEDBACK_REASON_WORD_LIMIT = 250;
+const NCMH_HOTLINE_DIAL_URL = "tel:+639178998727";
+const NCMH_HOTLINE_DISPLAY = "0917-899-8727";
+const NCMH_HOTLINE_LANDLINE = "1553";
 
 function formatEntryHeader(entry: JournalEntry | null, createdAt?: string) {
   if (!entry) return "Journal Entry";
@@ -123,6 +126,25 @@ export default function JournalEntryViewScreen() {
   const entryRef = useRef<JournalEntry | null>(null);
   const messagesRef = useRef<JournalMessage[]>([]);
   const handledRefreshKeyRef = useRef(refreshKey);
+
+  const handleCallHotline = async () => {
+    try {
+      const canOpen = await Linking.canOpenURL(NCMH_HOTLINE_DIAL_URL);
+      if (!canOpen) {
+        Alert.alert(
+          "Call NCMH Hotline",
+          `Please call ${NCMH_HOTLINE_LANDLINE} or ${NCMH_HOTLINE_DISPLAY} for immediate support.`,
+        );
+        return;
+      }
+      await Linking.openURL(NCMH_HOTLINE_DIAL_URL);
+    } catch {
+      Alert.alert(
+        "Call NCMH Hotline",
+        `Please call ${NCMH_HOTLINE_LANDLINE} or ${NCMH_HOTLINE_DISPLAY} for immediate support.`,
+      );
+    }
+  };
 
   useEffect(() => {
     entryRef.current = entry;
@@ -455,6 +477,45 @@ export default function JournalEntryViewScreen() {
           </View>
         </View>
 
+        {entry?.riskLevel === "HIGH" ? (
+          <View style={[styles.crisisCard, compact && styles.crisisCardCompact]}>
+            <View style={styles.crisisHeaderRow}>
+              <View style={styles.crisisIconBadge}>
+                <Ionicons name="shield-outline" size={20} color="#FFFFFF" />
+              </View>
+              <View style={styles.crisisHeaderTextWrap}>
+                <Text style={styles.crisisTitle}>Support resources are here for you</Text>
+                <Text style={styles.crisisSubtitle}>
+                  24/7 NCMH Crisis Hotline: {NCMH_HOTLINE_LANDLINE} or {NCMH_HOTLINE_DISPLAY}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.crisisButtonRow}>
+              <Pressable
+                style={[styles.crisisButton, styles.crisisButtonHotline]}
+                onPress={handleCallHotline}
+              >
+                <Ionicons name="call-outline" size={15} color="#2E6B23" />
+                <Text style={styles.crisisButtonHotlineText}>Call Hotline</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.crisisButton, styles.crisisButtonCounseling]}
+                onPress={() => router.push("/consult?track=professional&skipIntro=1")}
+              >
+                <Ionicons name="calendar-outline" size={15} color="#2F587D" />
+                <Text style={styles.crisisButtonCounselingText}>Consult</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.crisisButton, styles.crisisButtonWellness]}
+                onPress={() => router.push("/wellness-tools")}
+              >
+                <Ionicons name="leaf-outline" size={15} color="#486D33" />
+                <Text style={styles.crisisButtonWellnessText}>Wellness</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+
         {usedChatbot ? (
           <View style={[styles.pageWrap, compact && styles.pageWrapCompact]}>
             <View style={[styles.notebookShell, compact && styles.notebookShellCompact]}>
@@ -654,6 +715,90 @@ const styles = StyleSheet.create({
   heroCardCompact: {
     paddingHorizontal: 14,
     paddingVertical: 13,
+  },
+  crisisCard: {
+    backgroundColor: "#F4FBEF",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#CCE5BD",
+    padding: 12,
+    marginBottom: 10,
+  },
+  crisisCardCompact: {
+    padding: 10,
+    marginBottom: 8,
+  },
+  crisisHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 10,
+    marginBottom: 10,
+  },
+  crisisIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 999,
+    backgroundColor: "#68BA39",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  crisisHeaderTextWrap: {
+    flex: 1,
+  },
+  crisisTitle: {
+    color: "#2C4054",
+    fontSize: 13.5,
+    lineHeight: 18,
+    fontWeight: "700",
+  },
+  crisisSubtitle: {
+    marginTop: 2,
+    color: "#3F722E",
+    fontSize: 11.5,
+    lineHeight: 16,
+    fontWeight: "600",
+  },
+  crisisButtonRow: {
+    flexDirection: "row",
+    columnGap: 8,
+  },
+  crisisButton: {
+    flex: 1,
+    minHeight: 34,
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 5,
+    paddingHorizontal: 6,
+  },
+  crisisButtonHotline: {
+    backgroundColor: "#E8F6E0",
+    borderColor: "#B8DF9F",
+  },
+  crisisButtonHotlineText: {
+    color: "#265A1A",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  crisisButtonCounseling: {
+    backgroundColor: "#EAF3FB",
+    borderColor: "#BBD7EE",
+  },
+  crisisButtonCounselingText: {
+    color: "#23496D",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  crisisButtonWellness: {
+    backgroundColor: "#F3F7EE",
+    borderColor: "#D2E2C8",
+  },
+  crisisButtonWellnessText: {
+    color: "#3E6029",
+    fontSize: 11,
+    fontWeight: "700",
   },
   heroCopy: {
     marginBottom: 10,

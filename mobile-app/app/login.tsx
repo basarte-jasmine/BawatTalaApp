@@ -26,7 +26,7 @@ function getLoginErrorMessage(message?: string) {
     return "We could not connect right now. Please try again.";
   }
 
-  return "Invalid student ID or password.";
+  return "Invalid Student ID or password.";
 }
 
 export default function LoginScreen() {
@@ -68,9 +68,12 @@ export default function LoginScreen() {
       return;
     }
 
-    if (result.user) {
-      setUser(result.user);
+    if (!result.user?.token) {
+      setErrorMessage("Unable to start your session. Please try again.");
+      return;
     }
+
+    setUser(result.user);
     router.replace({ pathname: "/studio", params: { welcome: "1" } });
   };
 
@@ -89,6 +92,7 @@ export default function LoginScreen() {
         placeholder="(e.g. 23-2903)"
         placeholderTextColor="#8D8D8D"
         autoCapitalize="none"
+        editable={!isBusy}
         labelStyle={styles.label}
         inputStyle={styles.input}
       />
@@ -99,17 +103,20 @@ export default function LoginScreen() {
         onChangeText={setPassword}
         showPassword={showPassword}
         onToggleVisibility={() => setShowPassword((prev) => !prev)}
+        editable={!isBusy}
         containerStyle={styles.passwordContainer}
         inputWrapStyle={styles.passwordWrap}
         inputStyle={styles.passwordInput}
       />
 
-      <Pressable style={styles.forgotWrap} onPress={() => router.push("/reset-password")}>
+      <Pressable style={[styles.forgotWrap, isBusy && styles.disabledLink]} disabled={isBusy} onPress={() => router.push("/reset-password")}>
         <Text style={styles.forgotText}>Forgot Password?</Text>
       </Pressable>
 
       <AppPrimaryButton
         label={isBusy ? "Logging in..." : "Login"}
+        loading={isBusy}
+        disabled={isBusy}
         onPress={handleLogin}
         containerStyle={styles.loginButton}
         labelStyle={styles.loginButtonText}
@@ -123,7 +130,7 @@ export default function LoginScreen() {
         <View style={styles.orLine} />
       </View>
 
-      <Pressable style={styles.registerWrap} onPress={() => router.push("/register")}>
+      <Pressable style={[styles.registerWrap, isBusy && styles.disabledLink]} disabled={isBusy} onPress={() => router.push("/register")}>
         <Text style={styles.registerText}>
           Don&apos;t have an account? <Text style={styles.registerLink}>Register</Text>
         </Text>
@@ -233,5 +240,8 @@ const styles = StyleSheet.create({
   },
   registerLink: {
     color: "#2C7DB0",
+  },
+  disabledLink: {
+    opacity: 0.5,
   },
 });

@@ -2,6 +2,7 @@ const express = require("express");
 const http = require("http");
 const https = require("https");
 const { query } = require("../config/db");
+const { requireStudentOnlyAuth, resolveStudentNumber } = require("../middleware/auth.middleware");
 
 const router = express.Router();
 const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
@@ -80,6 +81,10 @@ function normalizeStudentNumber(value) {
   const match = compact.match(/^(\d{2})[- ]?(\d{4})$/);
   if (!match) return compact;
   return `${match[1]}-${match[2]}`;
+}
+
+function resolveRequestStudentNumber(req) {
+  return normalizeStudentNumber(resolveStudentNumber(req) || "");
 }
 
 function parseBookIds(value) {
@@ -1323,7 +1328,15 @@ async function grantReadingReward({ achievement, bookId, bookTitle, readingSecon
 }
 
 router.get("/books", async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
+  let studentNumber;
+  try {
+    studentNumber = resolveRequestStudentNumber(req);
+  } catch (error) {
+    if (error?.statusCode === 403) {
+      return res.status(403).json({ message: "Access denied." });
+    }
+    throw error;
+  }
   const maxResults = clampInteger(Number(req.query.maxResults || MAX_BOOK_RESULTS), 1, 40, MAX_BOOK_RESULTS);
   const searchLimit = Math.min(40, Math.max(maxResults, maxResults * 2));
   const searchQuery = normalizeCompactSpaces(req.query.q || DEFAULT_BOOK_QUERY);
@@ -1365,8 +1378,8 @@ router.get("/books", async (req, res) => {
   }
 });
 
-router.get("/my-shelf", async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
+router.get("/my-shelf", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
   const builtInBookIds = parseBookIds(req.query.builtInBookIds || "");
 
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
@@ -1388,8 +1401,8 @@ router.get("/my-shelf", async (req, res) => {
   }
 });
 
-router.post("/download", async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
+router.post("/download", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
   const bookId = normalizeCompactSpaces(req.body.bookId || "");
   const provider = normalizeCompactSpaces(req.body.provider || "openlibrary").toLowerCase();
   const sourceId = normalizeCompactSpaces(req.body.sourceId || "");
@@ -1443,8 +1456,8 @@ router.post("/download", async (req, res) => {
   }
 });
 
-router.delete("/download", async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
+router.delete("/download", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
   const bookId = normalizeCompactSpaces(req.query.bookId || "");
 
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
@@ -1468,8 +1481,8 @@ router.delete("/download", async (req, res) => {
   }
 });
 
-router.get("/download-file", async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
+router.get("/download-file", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
   const bookId = normalizeCompactSpaces(req.query.bookId || "");
 
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
@@ -1508,8 +1521,8 @@ router.get("/download-file", async (req, res) => {
   }
 });
 
-router.post("/progress", async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
+router.post("/progress", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
   const bookId = normalizeCompactSpaces(req.body.bookId || "");
   const currentPage = clampInteger(Number(req.body.currentPage), 0, 1000, 0);
   const totalPages = clampInteger(Number(req.body.totalPages), 1, 1000, 1);
@@ -1544,8 +1557,8 @@ router.post("/progress", async (req, res) => {
   }
 });
 
-router.get("/reading-reward/status", async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
+router.get("/reading-reward/status", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
 
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
     return res.status(400).json({ message: "Valid student number is required." });
@@ -1559,8 +1572,8 @@ router.get("/reading-reward/status", async (req, res) => {
   }
 });
 
-router.post("/reading-reward", async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
+router.post("/reading-reward", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
   const bookId = normalizeCompactSpaces(req.body.bookId || "");
   const bookTitle = normalizeCompactSpaces(req.body.bookTitle || "");
   const readingSeconds = clampInteger(Number(req.body.readingSeconds), 0, 24 * 60 * 60, 0);
@@ -1635,8 +1648,8 @@ router.post("/reading-reward", async (req, res) => {
   }
 });
 
-router.post("/rating", async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
+router.post("/rating", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
   const bookId = normalizeCompactSpaces(req.body.bookId || "");
   const rating = clampInteger(Number(req.body.rating), 1, 5, 0);
   const currentPage = clampInteger(Number(req.body.currentPage), 0, 1000, 0);

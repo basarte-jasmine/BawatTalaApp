@@ -11,7 +11,9 @@ const {
   normalizeEmotionId,
 } = require("../constants/emotions");
 
+const { requireStudentOnlyAuth, resolveStudentNumber } = require("../middleware/auth.middleware");
 const router = express.Router();
+router.use(requireStudentOnlyAuth);
 const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
 
 function normalizeCompactSpaces(value) {
@@ -23,6 +25,10 @@ function normalizeStudentNumber(value) {
   const match = compact.match(/^(\d{2})[- ]?(\d{4})$/);
   if (!match) return compact;
   return `${match[1]}-${match[2]}`;
+}
+
+function resolveRequestStudentNumber(req) {
+  return normalizeStudentNumber(resolveStudentNumber(req) || "");
 }
 
 function normalizeMoodId(value) {
@@ -48,11 +54,16 @@ function formatMoodSourceValue(value) {
 
 function getCurrentManilaMoodDate() {
   const now = new Date();
-  const utcTime = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
-  const manilaDate = new Date(utcTime + 8 * 60 * 60 * 1000);
-  const year = manilaDate.getUTCFullYear();
-  const month = manilaDate.getUTCMonth() + 1;
-  const day = manilaDate.getUTCDate();
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+
+  const year = Number(parts.find((part) => part.type === "year")?.value ?? "0");
+  const month = Number(parts.find((part) => part.type === "month")?.value ?? "1");
+  const day = Number(parts.find((part) => part.type === "day")?.value ?? "1");
 
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
@@ -87,7 +98,7 @@ async function insertMoodCheckIn(studentNumber, moodId, moodDate, moodSource) {
 }
 
 router.get("/month", async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
+  const studentNumber = resolveRequestStudentNumber(req);
   const year = Number(req.query.year);
   const month = Number(req.query.month);
 
@@ -150,7 +161,7 @@ router.get("/month", async (req, res) => {
 });
 
 router.get("/today", async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.query.studentNumber || "");
+  const studentNumber = resolveRequestStudentNumber(req);
   const moodDate = normalizeMoodDate(req.query.moodDate || "") || getCurrentManilaMoodDate();
 
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber) || !moodDate) {
@@ -188,7 +199,7 @@ router.get("/today", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.body.studentNumber || "");
+  const studentNumber = resolveRequestStudentNumber(req);
   const moodId = normalizeMoodId(req.body.moodId || "");
   const moodDate = normalizeMoodDate(req.body.moodDate || "") || getCurrentManilaMoodDate();
   const moodSource = normalizeMoodSource(req.body.moodSource || "");

@@ -1,7 +1,9 @@
 const express = require("express");
 const { query } = require("../config/db");
 
+const { requireStudentOnlyAuth } = require("../middleware/auth.middleware");
 const router = express.Router();
+router.use(requireStudentOnlyAuth);
 const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
 
 function asyncHandler(handler) {
@@ -15,6 +17,13 @@ function normalizeStudentNumber(value) {
     .trim()
     .replace(/\s+/g, "");
 }
+
+function resolveRequestStudentNumber(req) {
+  const fromAuth = normalizeStudentNumber(req.student?.studentNumber || "");
+  if (fromAuth) return fromAuth;
+  return "";
+}
+
 
 function normalizeMessageId(value) {
   return String(value || "")
@@ -47,7 +56,7 @@ function mapMessageRow(row) {
 }
 
 router.get("/messages/current", asyncHandler(async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.query.studentNumber);
+  const studentNumber = resolveRequestStudentNumber(req);
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
     return res.status(400).json({ message: "Valid student number is required." });
   }
@@ -68,7 +77,7 @@ router.get("/messages/current", asyncHandler(async (req, res) => {
 }));
 
 router.get("/messages", asyncHandler(async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.query.studentNumber);
+  const studentNumber = resolveRequestStudentNumber(req);
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
     return res.status(400).json({ message: "Valid student number is required." });
   }
@@ -89,7 +98,7 @@ router.get("/messages", asyncHandler(async (req, res) => {
 
 router.post("/messages", asyncHandler(async (req, res) => {
   const id = normalizeMessageId(req.body.id);
-  const studentNumber = normalizeStudentNumber(req.body.studentNumber);
+  const studentNumber = resolveRequestStudentNumber(req);
   const message = normalizeMessage(req.body.message);
   const deliveryAt = parseDeliveryAt(req.body.deliveryAt);
 

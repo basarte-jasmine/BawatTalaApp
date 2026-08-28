@@ -20,6 +20,7 @@ import {
   fetchAppointmentCounselors,
 } from "../lib/backend-api";
 import { useAuthSession } from "../lib/auth-session";
+import { getManilaTodayParts } from "../lib/manila-date";
 
 type CounselorCard = {
   email: string;
@@ -92,22 +93,32 @@ const COUNSELING_TYPE_OPTIONS: { id: CounselingSessionType; title: string; descr
   },
 ];
 
-function toMonthKey(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+function toMonthKey(year: number, monthIndex: number) {
+  return `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
 }
 
-function buildMonthTitle(date: Date) {
-  return date.toLocaleDateString("en-US", {
-    month: "long",
-    year: "numeric",
-  });
+function buildMonthTitle(year: number, monthIndex: number) {
+  return `${MONTH_NAMES[monthIndex] ?? ""} ${year}`;
 }
 
-function buildCalendarCells(date: Date) {
-  const year = date.getFullYear();
-  const monthIndex = date.getMonth();
-  const firstDay = new Date(year, monthIndex, 1).getDay();
-  const totalDays = new Date(year, monthIndex + 1, 0).getDate();
+function buildCalendarCells(year: number, monthIndex: number) {
+  const firstDay = new Date(Date.UTC(year, monthIndex, 1)).getUTCDay();
+  const totalDays = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
   const cells: (number | null)[] = [];
   for (let index = 0; index < firstDay; index += 1) {
     cells.push(null);
@@ -183,7 +194,10 @@ export default function ConsultScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [selectedCounselor, setSelectedCounselor] = useState("");
-  const [selectedMonth, setSelectedMonth] = useState(() => new Date());
+  const [selectedMonthYear, setSelectedMonthYear] = useState(() => {
+    const parts = getManilaTodayParts();
+    return { year: parts.year, monthIndex: parts.monthIndex };
+  });
   const [availableDays, setAvailableDays] = useState<AvailabilityDay[]>([]);
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [selectedTime, setSelectedTime] = useState("");
@@ -312,7 +326,7 @@ export default function ConsultScreen() {
         setLoadingAvailability(true);
         const result = await fetchAppointmentAvailability(
           selectedCounselor,
-          toMonthKey(selectedMonth),
+          toMonthKey(selectedMonthYear.year, selectedMonthYear.monthIndex),
           user?.studentNumber,
           selectedTrack === "peer" ? "PEER" : "GUIDANCE",
         );
@@ -360,7 +374,7 @@ export default function ConsultScreen() {
     return () => {
       isMounted = false;
     };
-  }, [selectedCounselor, selectedMonth, selectedTrack, user?.studentNumber]);
+  }, [selectedCounselor, selectedMonthYear, selectedTrack, user?.studentNumber]);
 
   const selectedDayAvailability = useMemo(
     () => getDayFromAvailability(availableDays, selectedDay),
@@ -370,7 +384,10 @@ export default function ConsultScreen() {
     () => selectedDayAvailability?.availableSlots ?? [],
     [selectedDayAvailability],
   );
-  const calendarCells = useMemo(() => buildCalendarCells(selectedMonth), [selectedMonth]);
+  const calendarCells = useMemo(
+    () => buildCalendarCells(selectedMonthYear.year, selectedMonthYear.monthIndex),
+    [selectedMonthYear],
+  );
   const currentStepLabel = (selectedTrack === "peer" ? PEER_STEP_LABELS : STEP_LABELS)[step - 1] ?? "Schedule";
 
   useEffect(() => {
@@ -859,11 +876,31 @@ export default function ConsultScreen() {
                   </Text>
 
                   <View style={styles.monthHeaderRow}>
-                    <Pressable onPress={() => setSelectedMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>
+                    <Pressable
+                      onPress={() =>
+                        setSelectedMonthYear((current) => {
+                          if (current.monthIndex === 0) {
+                            return { year: current.year - 1, monthIndex: 11 };
+                          }
+                          return { year: current.year, monthIndex: current.monthIndex - 1 };
+                        })
+                      }
+                      accessibilityLabel="Previous month"
+                    >
                       <Ionicons name="chevron-back" size={24} color="#3F4B58" />
                     </Pressable>
-                    <Text style={styles.monthLabel}>{buildMonthTitle(selectedMonth)}</Text>
-                    <Pressable onPress={() => setSelectedMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))}>
+                    <Text style={styles.monthLabel}>{buildMonthTitle(selectedMonthYear.year, selectedMonthYear.monthIndex)}</Text>
+                    <Pressable
+                      onPress={() =>
+                        setSelectedMonthYear((current) => {
+                          if (current.monthIndex === 11) {
+                            return { year: current.year + 1, monthIndex: 0 };
+                          }
+                          return { year: current.year, monthIndex: current.monthIndex + 1 };
+                        })
+                      }
+                      accessibilityLabel="Next month"
+                    >
                       <Ionicons name="chevron-forward" size={24} color="#3F4B58" />
                     </Pressable>
                   </View>

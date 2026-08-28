@@ -432,6 +432,36 @@ async function ensureDatabaseSchema() {
     );
   `);
 
+
+  await pool.query(`
+    create table if not exists public.student_muni_wardrobes (
+      id uuid primary key default gen_random_uuid(),
+      student_number text not null unique,
+      owned_items jsonb not null default '{}'::jsonb,
+      loadout jsonb not null default '{}'::jsonb,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+  `);
+
+  await pool.query(`
+    create table if not exists public.student_muni_purchases (
+      id uuid primary key default gen_random_uuid(),
+      student_number text not null,
+      section_id text not null,
+      item_id text not null,
+      price_paid integer not null default 0,
+      created_at timestamptz not null default now(),
+      constraint student_muni_purchases_unique unique (student_number, section_id, item_id),
+      constraint student_muni_purchases_price_check check (price_paid >= 0)
+    );
+  `);
+
+  await pool.query(`
+    create index if not exists student_muni_purchases_student_idx
+      on public.student_muni_purchases (student_number, created_at desc);
+  `);
+
   await pool.query(`
     create table if not exists public.student_daily_checkins (
       id uuid primary key default gen_random_uuid(),

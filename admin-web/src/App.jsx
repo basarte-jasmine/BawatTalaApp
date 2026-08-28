@@ -63,9 +63,7 @@ export default function App() {
         }
       } catch (error) {
         if (!isMounted) return;
-        if (error?.status === 401 && storedSession) {
-          setSession(storedSession);
-        } else if (error?.status === 401) {
+        if (error?.status === 401) {
           setSession(null);
           forgetAdminSession();
         } else if (storedSession) {

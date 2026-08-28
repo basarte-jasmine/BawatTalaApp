@@ -584,7 +584,7 @@ export default function MoodOverviewScreen() {
         </View>
       </Modal>
       </InformedConsentGate>
-      <HomeBottomNav activeTab="home" />
+      <HomeBottomNav activeTab="none" />
     </SafeAreaView>
   );
 }

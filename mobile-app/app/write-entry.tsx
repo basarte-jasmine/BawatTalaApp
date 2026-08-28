@@ -19,7 +19,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { JournalLockGate } from "../lib/app-preferences";
+import { JournalLockGate, useAppPreferences } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
 import {
   createJournalSession,
@@ -231,6 +231,7 @@ function TypewrittenUserEntry({ isSending, text }: { isSending: boolean; text: s
 export default function WriteEntryScreen() {
   const { user } = useAuthSession();
   const { mode } = useLocalSearchParams<{ mode?: string }>();
+  const { appLockEnabled, isAppLocked } = useAppPreferences();
   const [entry, setEntry] = useState<JournalEntry | null>(null);
   const [messages, setMessages] = useState<JournalMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
@@ -292,6 +293,11 @@ export default function WriteEntryScreen() {
       return;
     }
 
+    if (appLockEnabled && isAppLocked) {
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     setErrorMessage("");
     setStatusMessage("");
@@ -340,7 +346,7 @@ export default function WriteEntryScreen() {
     setAiEnabled(result.entry?.aiEnabled ?? true);
     void loadJournalEmotion();
     setIsLoading(false);
-  }, [loadJournalEmotion, mode, user?.studentNumber]);
+  }, [appLockEnabled, isAppLocked, loadJournalEmotion, mode, user?.studentNumber]);
 
   useFocusEffect(
     useCallback(() => {

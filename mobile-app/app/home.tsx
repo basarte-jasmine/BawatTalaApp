@@ -30,6 +30,7 @@ import { EMOTIONS, getEmotionImageSource } from "../lib/emotions";
 import { getManilaTodayParts } from "../lib/manila-date";
 import { isAdminMessageNotification } from "../lib/notification-utils";
 import { useOfflineSync } from "../lib/offline-sync";
+import { hydrateMuniWardrobe, subscribeAvailableMuniTala } from "../lib/muni-wardrobe";
 
 type DailyCheckinReward = {
   id: string;
@@ -869,18 +870,22 @@ export default function HomeScreen() {
     }
 
     const result = await fetchCheckInStatus(user.studentNumber);
-    if (!result.ok) {
-      return;
+    if (result.ok) {
+      setHasCheckedInToday(Boolean(result.todayCheckedIn));
+      buildCheckInRewards(
+        result.completedDays ?? 0,
+        result.activeDay ?? 1,
+        Boolean(result.todayCheckedIn),
+      );
     }
 
-    setTotalTala(result.totalTala ?? 0);
-    setHasCheckedInToday(Boolean(result.todayCheckedIn));
-    buildCheckInRewards(
-      result.completedDays ?? 0,
-      result.activeDay ?? 1,
-      Boolean(result.todayCheckedIn),
-    );
+    const wardrobe = await hydrateMuniWardrobe(user.studentNumber);
+    if (typeof wardrobe?.totalTala === "number" && Number.isFinite(wardrobe.totalTala)) {
+      setTotalTala(wardrobe.totalTala);
+    }
   }, [buildCheckInRewards, user?.studentNumber]);
+
+  useEffect(() => subscribeAvailableMuniTala(setTotalTala), []);
 
   const loadRecentEntries = useCallback(async () => {
     if (!user?.studentNumber) {
@@ -1478,13 +1483,17 @@ export default function HomeScreen() {
       return;
     }
 
-    setTotalTala(result.totalTala ?? 0);
     setHasCheckedInToday(Boolean(result.todayCheckedIn));
     buildCheckInRewards(
       result.completedDays ?? 0,
       result.activeDay ?? 1,
       Boolean(result.todayCheckedIn),
     );
+
+    const wardrobe = await hydrateMuniWardrobe(user.studentNumber);
+    if (typeof wardrobe?.totalTala === "number" && Number.isFinite(wardrobe.totalTala)) {
+      setTotalTala(wardrobe.totalTala);
+    }
 
     const bonusMessage =
       (result.bonusReward ?? 0) > 0 ? ` Bonus reward: +${result.bonusReward} Tala.` : "";

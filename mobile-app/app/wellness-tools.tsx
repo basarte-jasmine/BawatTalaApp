@@ -132,7 +132,7 @@ export default function WellnessToolsScreen() {
         </View>
       </ScrollView>
 
-      <HomeBottomNav activeTab="home" />
+      <HomeBottomNav activeTab="none" />
     </SafeAreaView>
   );
 }

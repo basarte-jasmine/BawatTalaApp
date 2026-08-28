@@ -1,5 +1,11 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useState } from "react";
 import { ImageSourcePropType } from "react-native";
+import {
+  fetchMuniWardrobe,
+  purchaseMuniWardrobeItem,
+  saveMuniLoadoutRemote,
+} from "./backend-api";
 
 export type MuniCollectionOption = {
   id: string;
@@ -22,6 +28,13 @@ export type MuniOwnedItems = Record<MuniCollectionSectionId, string[]>;
 
 export const DEFAULT_MUNI_LOADOUT: MuniLoadout = {
   background: "garden",
+  head: "beanie",
+  eye: "cinema-glasses",
+  outfit: "spooky-ghost",
+};
+
+export const EMPTY_MUNI_LOADOUT: MuniLoadout = {
+  background: null,
   head: null,
   eye: null,
   outfit: null,
@@ -57,7 +70,10 @@ export const COLLECTION_SECTIONS: MuniCollectionSection[] = [
   {
     id: "outfit",
     label: "Outfit",
-    options: [{ id: "spooky-ghost", label: "Spooky Ghost", price: 0, starter: true, source: require("../assets/images/Outfit/Spooky ghost sheet .png") }],
+    options: [
+      { id: "classic", label: "Classic Muni", price: 0, starter: true, source: require("../assets/images/Muni/Body.png") },
+      { id: "spooky-ghost", label: "Spooky Ghost", price: 0, starter: true, source: require("../assets/images/Outfit/Spooky ghost sheet .png") },
+    ],
   },
   {
     id: "background",
@@ -74,16 +90,85 @@ export const COLLECTION_SECTIONS: MuniCollectionSection[] = [
 
 export const TALA_IMAGE = require("../assets/images/Tala_Star.png");
 
-let savedMuniLoadout: MuniLoadout = { ...DEFAULT_MUNI_LOADOUT };
-const listeners = new Set<(loadout: MuniLoadout) => void>();
-let spentMuniTala = 0;
-let ownedMuniItems: MuniOwnedItems = createStarterOwnedItems();
+const SECTION_IDS: MuniCollectionSectionId[] = ["head", "eye", "outfit", "background"];
+
+type WardrobeState = {
+  hydrated: boolean;
+  loadout: MuniLoadout;
+  ownedItems: MuniOwnedItems;
+  totalTala: number;
+};
+
+const wardrobeByStudent = new Map<string, WardrobeState>();
+let activeStudentNumber = "";
+let hydratedStudentNumber = "";
+const loadoutListeners = new Set<(loadout: MuniLoadout) => void>();
 const ownedItemsListeners = new Set<(ownedItems: MuniOwnedItems) => void>();
-const spentTalaListeners = new Set<(spentTala: number) => void>();
+const talaListeners = new Set<(totalTala: number) => void>();
+
+function wardrobeCacheKey(studentNumber: string) {
+  return `bawat-tala.muni-wardrobe.${studentNumber}`;
+}
 
 function cloneLoadout(loadout: MuniLoadout): MuniLoadout {
   return { ...loadout };
 }
+
+function isMuniLoadout(value: unknown): value is MuniLoadout {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return SECTION_IDS.every((sectionId) => record[sectionId] === null || typeof record[sectionId] === "string");
+}
+
+function isMuniOwnedItems(value: unknown): value is MuniOwnedItems {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return SECTION_IDS.every((sectionId) => Array.isArray(record[sectionId]));
+}
+
+async function readCachedWardrobe(studentNumber: string): Promise<WardrobeState | null> {
+  try {
+    const raw = await AsyncStorage.getItem(wardrobeCacheKey(studentNumber));
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as { loadout?: unknown; ownedItems?: unknown; totalTala?: unknown };
+    if (!isMuniLoadout(parsed.loadout) || !isMuniOwnedItems(parsed.ownedItems)) {
+      return null;
+    }
+    return {
+      hydrated: true,
+      loadout: cloneLoadout(parsed.loadout),
+      ownedItems: cloneOwnedItems(parsed.ownedItems),
+      totalTala: typeof parsed.totalTala === "number" && Number.isFinite(parsed.totalTala) ? Math.max(0, parsed.totalTala) : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function persistWardrobe(studentNumber: string, state: WardrobeState) {
+  if (!studentNumber) {
+    return;
+  }
+  try {
+    await AsyncStorage.setItem(
+      wardrobeCacheKey(studentNumber),
+      JSON.stringify({
+        loadout: state.loadout,
+        ownedItems: state.ownedItems,
+        totalTala: state.totalTala,
+      }),
+    );
+  } catch {
+    // Keep the in-memory look even if disk cache fails.
+  }
+}
+
 
 function cloneOwnedItems(ownedItems: MuniOwnedItems): MuniOwnedItems {
   return {
@@ -109,44 +194,143 @@ function createStarterOwnedItems(): MuniOwnedItems {
   );
 }
 
-function notifyOwnedItems() {
-  const snapshot = cloneOwnedItems(ownedMuniItems);
-  ownedItemsListeners.forEach((listener) => listener(snapshot));
+function createEmptyOwnedItems(): MuniOwnedItems {
+  return {
+    background: [],
+    eye: [],
+    head: [],
+    outfit: [],
+  };
 }
 
-function notifySpentTala() {
-  spentTalaListeners.forEach((listener) => listener(spentMuniTala));
+function createUnhydratedState(): WardrobeState {
+  return {
+    hydrated: false,
+    loadout: cloneLoadout(DEFAULT_MUNI_LOADOUT),
+    ownedItems: createStarterOwnedItems(),
+    totalTala: 0,
+  };
+}
+
+function createDefaultState(): WardrobeState {
+  return {
+    hydrated: true,
+    loadout: cloneLoadout(DEFAULT_MUNI_LOADOUT),
+    ownedItems: createStarterOwnedItems(),
+    totalTala: 0,
+  };
+}
+
+function getActiveState(): WardrobeState {
+  if (!activeStudentNumber) {
+    return createUnhydratedState();
+  }
+  return wardrobeByStudent.get(activeStudentNumber) ?? createUnhydratedState();
+}
+
+function notifyAll(state: WardrobeState) {
+  const loadout = cloneLoadout(state.loadout);
+  const ownedItems = cloneOwnedItems(state.ownedItems);
+  loadoutListeners.forEach((listener) => listener(loadout));
+  ownedItemsListeners.forEach((listener) => listener(ownedItems));
+  talaListeners.forEach((listener) => listener(state.totalTala));
+}
+
+function applyRemoteWardrobe(payload: {
+  loadout?: MuniLoadout | null;
+  ownedItems?: MuniOwnedItems | null;
+  totalTala?: number;
+}) {
+  let state: WardrobeState;
+  if (!activeStudentNumber) {
+    state = createUnhydratedState();
+  } else {
+    const existing = wardrobeByStudent.get(activeStudentNumber);
+    if (existing) {
+      state = existing;
+    } else {
+      state = createUnhydratedState();
+      wardrobeByStudent.set(activeStudentNumber, state);
+    }
+  }
+  if (payload.ownedItems) {
+    state.ownedItems = cloneOwnedItems({
+      background: payload.ownedItems.background ?? state.ownedItems.background,
+      eye: payload.ownedItems.eye ?? state.ownedItems.eye,
+      head: payload.ownedItems.head ?? state.ownedItems.head,
+      outfit: payload.ownedItems.outfit ?? state.ownedItems.outfit,
+    });
+  }
+  if (payload.loadout) {
+    state.loadout = cloneLoadout({
+      background: payload.loadout.background !== undefined ? payload.loadout.background : state.loadout.background,
+      eye: payload.loadout.eye !== undefined ? payload.loadout.eye : state.loadout.eye,
+      head: payload.loadout.head !== undefined ? payload.loadout.head : state.loadout.head,
+      outfit: payload.loadout.outfit !== undefined ? payload.loadout.outfit : state.loadout.outfit,
+    });
+  }
+  if (typeof payload.totalTala === "number" && Number.isFinite(payload.totalTala)) {
+    state.totalTala = Math.max(0, payload.totalTala);
+  }
+  state.hydrated = true;
+  if (activeStudentNumber) {
+    hydratedStudentNumber = activeStudentNumber;
+    wardrobeByStudent.set(activeStudentNumber, state);
+    void persistWardrobe(activeStudentNumber, state);
+  }
+  notifyAll(state);
+  return state;
+}
+
+export function resetMuniWardrobe() {
+  activeStudentNumber = "";
+  hydratedStudentNumber = "";
+  notifyAll(createUnhydratedState());
 }
 
 export function getSavedMuniLoadout() {
-  return cloneLoadout(savedMuniLoadout);
-}
-
-export function saveMuniLoadout(loadout: MuniLoadout) {
-  ensureLoadoutOwned(loadout);
-  savedMuniLoadout = cloneLoadout(loadout);
-  listeners.forEach((listener) => listener(cloneLoadout(savedMuniLoadout)));
+  if (activeStudentNumber) {
+    const existing = wardrobeByStudent.get(activeStudentNumber);
+    if (existing) {
+      return cloneLoadout(existing.loadout);
+    }
+  }
+  return cloneLoadout(EMPTY_MUNI_LOADOUT);
 }
 
 export function getOwnedMuniItems() {
-  return cloneOwnedItems(ownedMuniItems);
+  return cloneOwnedItems(getActiveState().ownedItems);
 }
 
 export function getSpentMuniTala() {
-  return spentMuniTala;
+  return 0;
+}
+
+export function getAvailableMuniTala() {
+  return getActiveState().totalTala;
 }
 
 export function subscribeOwnedMuniItems(listener: (ownedItems: MuniOwnedItems) => void) {
   ownedItemsListeners.add(listener);
+  listener(getOwnedMuniItems());
   return () => {
     ownedItemsListeners.delete(listener);
   };
 }
 
 export function subscribeSpentMuniTala(listener: (spentTala: number) => void) {
-  spentTalaListeners.add(listener);
+  const wrapped = (_totalTala: number) => listener(0);
+  talaListeners.add(wrapped);
   return () => {
-    spentTalaListeners.delete(listener);
+    talaListeners.delete(wrapped);
+  };
+}
+
+export function subscribeAvailableMuniTala(listener: (totalTala: number) => void) {
+  talaListeners.add(listener);
+  listener(getAvailableMuniTala());
+  return () => {
+    talaListeners.delete(listener);
   };
 }
 
@@ -166,6 +350,14 @@ export function useSpentMuniTala() {
   return spentTala;
 }
 
+export function useAvailableMuniTala() {
+  const [totalTala, setTotalTala] = useState(() => getAvailableMuniTala());
+
+  useEffect(() => subscribeAvailableMuniTala(setTotalTala), []);
+
+  return totalTala;
+}
+
 export function getMuniCollectionOption(sectionId: MuniCollectionSectionId, optionId: string | null) {
   if (!optionId) return null;
   return COLLECTION_SECTIONS.find((section) => section.id === sectionId)?.options.find((option) => option.id === optionId) ?? null;
@@ -173,47 +365,98 @@ export function getMuniCollectionOption(sectionId: MuniCollectionSectionId, opti
 
 export function isMuniItemOwned(sectionId: MuniCollectionSectionId, optionId: string | null) {
   if (!optionId) return true;
-  return ownedMuniItems[sectionId].includes(optionId);
+  return getActiveState().ownedItems[sectionId].includes(optionId);
 }
 
-export function purchaseMuniItem(sectionId: MuniCollectionSectionId, optionId: string) {
+export async function hydrateMuniWardrobe(studentNumber: string) {
+  const nextStudent = String(studentNumber || "").trim();
+  if (!nextStudent) {
+    resetMuniWardrobe();
+    return createUnhydratedState();
+  }
+
+  activeStudentNumber = nextStudent;
+  let existing: WardrobeState | null | undefined = wardrobeByStudent.get(nextStudent);
+  if (!existing) {
+    existing = await readCachedWardrobe(nextStudent);
+    if (existing) {
+      wardrobeByStudent.set(nextStudent, existing);
+    }
+  }
+  if (existing) {
+    hydratedStudentNumber = nextStudent;
+    notifyAll(existing);
+  }
+
+  const result = await fetchMuniWardrobe(nextStudent);
+  if (!result.ok) {
+    if (existing) {
+      existing.hydrated = true;
+      hydratedStudentNumber = nextStudent;
+      notifyAll(existing);
+      return existing;
+    }
+    hydratedStudentNumber = "";
+    return createUnhydratedState();
+  }
+  return applyRemoteWardrobe(result);
+}
+
+export async function purchaseMuniItem(sectionId: MuniCollectionSectionId, optionId: string) {
   const option = getMuniCollectionOption(sectionId, optionId);
-  if (!option || isMuniItemOwned(sectionId, optionId)) {
+  if (!option || isMuniItemOwned(sectionId, optionId) || !activeStudentNumber) {
     return false;
   }
 
-  ownedMuniItems = {
-    ...ownedMuniItems,
-    [sectionId]: [...ownedMuniItems[sectionId], optionId],
-  };
-  spentMuniTala += option.price;
-  notifyOwnedItems();
-  notifySpentTala();
+  const result = await purchaseMuniWardrobeItem({
+    itemId: optionId,
+    sectionId,
+    studentNumber: activeStudentNumber,
+  });
+  if (!result.ok) {
+    return false;
+  }
+  applyRemoteWardrobe(result);
   return true;
 }
 
-export function ensureLoadoutOwned(loadout: MuniLoadout) {
-  let changed = false;
-  const nextOwnedItems = cloneOwnedItems(ownedMuniItems);
+export async function saveMuniLoadout(loadout: MuniLoadout) {
+  const state = getActiveState();
+  if (!activeStudentNumber || !state.hydrated) {
+    return false;
+  }
 
-  (Object.keys(loadout) as MuniCollectionSectionId[]).forEach((sectionId) => {
-    const itemId = loadout[sectionId];
-    if (itemId && !nextOwnedItems[sectionId].includes(itemId)) {
-      nextOwnedItems[sectionId].push(itemId);
-      changed = true;
+  const previousLoadout = cloneLoadout(state.loadout);
+  const nextLoadout = cloneLoadout(loadout);
+  SECTION_IDS.forEach((sectionId) => {
+    const itemId = nextLoadout[sectionId];
+    if (itemId && !state.ownedItems[sectionId].includes(itemId)) {
+      nextLoadout[sectionId] = previousLoadout[sectionId];
     }
   });
 
-  if (!changed) return;
+  state.loadout = nextLoadout;
+  wardrobeByStudent.set(activeStudentNumber, state);
+  notifyAll(state);
 
-  ownedMuniItems = nextOwnedItems;
-  notifyOwnedItems();
+  const result = await saveMuniLoadoutRemote({
+    loadout: nextLoadout,
+    studentNumber: activeStudentNumber,
+  });
+  if (!result.ok) {
+    state.loadout = previousLoadout;
+    notifyAll(state);
+    return false;
+  }
+  applyRemoteWardrobe(result);
+  return true;
 }
 
 export function subscribeMuniLoadout(listener: (loadout: MuniLoadout) => void) {
-  listeners.add(listener);
+  loadoutListeners.add(listener);
+  listener(getSavedMuniLoadout());
   return () => {
-    listeners.delete(listener);
+    loadoutListeners.delete(listener);
   };
 }
 
@@ -226,7 +469,7 @@ export function useSavedMuniLoadout() {
 }
 
 export function getMuniCollectionSource(sectionId: MuniCollectionSectionId, optionId: string | null) {
-  if (!optionId) {
+  if (!optionId || optionId === "classic") {
     return null;
   }
 

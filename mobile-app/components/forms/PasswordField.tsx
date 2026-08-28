@@ -13,6 +13,7 @@ type PasswordFieldProps = {
   containerStyle?: StyleProp<ViewStyle>;
   inputWrapStyle?: StyleProp<ViewStyle>;
   inputStyle?: StyleProp<TextStyle>;
+  editable?: boolean;
 };
 
 export function PasswordField({
@@ -26,6 +27,7 @@ export function PasswordField({
   containerStyle,
   inputWrapStyle,
   inputStyle,
+  editable,
 }: PasswordFieldProps) {
   return (
     <FormTextInput
@@ -33,6 +35,7 @@ export function PasswordField({
       value={value}
       onChangeText={onChangeText}
       secureTextEntry={!showPassword}
+      editable={editable}
       placeholder={placeholder}
       placeholderTextColor={placeholderTextColor}
       containerStyle={containerStyle}

@@ -4,8 +4,10 @@ import {
   CalendarDays,
   CheckCheck,
   Flag,
+  GraduationCap,
   LayoutGrid,
   Menu,
+  MessageSquare,
   Search,
   Settings,
   ShieldCheck,
@@ -37,7 +39,8 @@ const GLOBAL_SEARCH_PAGES = [
   { path: "/flagged", label: "Flagged Entries", group: "Page", icon: Flag, keywords: ["flagged", "risk", "critical", "support", "review"] },
   { path: "/users", label: "Student Directory", group: "Page", icon: Users, keywords: ["students", "users", "directory", "profiles"] },
   { path: "/appointments", label: "Guidance Scheduling", group: "Page", icon: CalendarDays, keywords: ["appointments", "calendar", "schedule", "guidance", "sessions"] },
-  { path: "/peer-counselors", label: "Peer Counselors", group: "Page", icon: Users, keywords: ["peer", "counselors", "advisers"] },
+  { path: "/peer-counselors", label: "Peer Counselors", group: "Page", icon: GraduationCap, keywords: ["peer", "counselors", "advisers"] },
+  { path: "/feedbacks", label: "Feedbacks", group: "Page", icon: MessageSquare, keywords: ["feedbacks", "feedback", "comments"] },
   { path: "/reports", label: "Reports", group: "Page", icon: BarChart3, keywords: ["reports", "export", "analytics"] },
   { path: "/roles", label: "Role Assignments", group: "System", icon: ShieldCheck, keywords: ["roles", "admins", "counselors", "permissions"] },
   { path: "/risk-triggers", label: "Risk Triggers", group: "System", icon: Flag, keywords: ["triggers", "risk words", "keywords", "phrases"] },
@@ -496,7 +499,7 @@ export default function Header({
           </div>
 
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
-            <div className="relative flex h-12 min-w-0 items-center md:w-[34rem]">
+            <div className="group relative flex h-12 min-w-0 items-center md:w-[34rem]">
               <Search className="pointer-events-none absolute left-3 h-4 w-4 text-gray-400 transition-colors group-hover:text-emerald-600" />
               <input
                 type="text"
@@ -514,7 +517,7 @@ export default function Header({
                 <NotificationBellButton unreadCount={unreadCount} onClick={() => setIsNotificationsOpen((current) => !current)} />
 
                 {isNotificationsOpen ? (
-                  <div className="absolute right-0 z-20 mt-3 w-[22rem] overflow-hidden rounded-3xl border border-[#dbe5d4] bg-white shadow-[0_22px_55px_rgba(32,49,38,0.16)]">
+                  <div className="absolute right-0 z-20 mt-3 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-3xl border border-[#dbe5d4] bg-white shadow-[0_22px_55px_rgba(32,49,38,0.16)]">
                     <div className="border-b border-[#e7eee2] bg-[linear-gradient(135deg,#f7fbf3_0%,#eef6ea_100%)] px-4 py-4">
                       <div className="flex items-center justify-between gap-3">
                         <div>

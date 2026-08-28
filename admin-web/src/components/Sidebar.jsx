@@ -2,6 +2,7 @@ import {
   BarChart3,
   CalendarDays,
   Flag,
+  GraduationCap,
   LayoutGrid,
   LogOut,
   MessageSquare,
@@ -21,7 +22,7 @@ const MAIN_MENU_ITEMS = [
   { path: "/flagged", label: "Flagged Entries", icon: Flag, badgeKey: "criticalEntries" },
   { path: "/users", label: "Student Directory", icon: Users },
   { path: "/appointments", label: "Guidance Scheduling", icon: CalendarDays },
-  { path: "/peer-counselors", label: "Peer Counselors", icon: Users },
+  { path: "/peer-counselors", label: "Peer Counselors", icon: GraduationCap },
   { path: "/feedbacks", label: "Feedbacks", icon: MessageSquare },
   { path: "/reports", label: "Reports", icon: BarChart3 },
 ];
@@ -109,7 +110,7 @@ export default function Sidebar({ onLogout, isOpen, onClose }) {
                 >
                   <Icon className="h-5 w-5" />
                   <span className="flex-1">{item.label}</span>
-                {item.badgeKey === "criticalEntries" ? (
+                {item.badgeKey === "criticalEntries" && criticalEntriesCount > 0 ? (
                   <span className="rounded-full bg-red-500 px-2 py-0.5 text-xs font-bold text-white">
                     {criticalEntriesCount}
                   </span>

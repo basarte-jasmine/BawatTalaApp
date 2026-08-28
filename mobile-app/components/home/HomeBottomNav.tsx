@@ -3,7 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-type TabKey = "home" | "journal" | "muni" | "profile";
+type TabKey = "home" | "journal" | "muni" | "profile" | "none";
 
 type NavItem = {
   iconActive: string;
@@ -26,26 +26,30 @@ const MUNI_NAV_INACTIVE_IMAGE = require("../../assets/images/MUNI_Outline.png");
 
 type HomeBottomNavProps = {
   activeTab?: TabKey;
+  onBeforeLeave?: (nextRoute: string) => boolean;
   transparent?: boolean;
 };
 
-export function HomeBottomNav({ activeTab, transparent = false }: HomeBottomNavProps) {
+export function HomeBottomNav({ activeTab, onBeforeLeave, transparent = false }: HomeBottomNavProps) {
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
-  const derivedActiveTab: TabKey =
-    activeTab ??
-    (pathname.startsWith("/journal")
-      ? "journal"
-      : pathname.startsWith("/muni-avatar") || pathname.startsWith("/muni-voice")
-        ? "muni"
-      : pathname.startsWith("/consult")
-        ? "profile"
-      : pathname.startsWith("/home")
-        ? "home"
-        : "home");
+  const derivedActiveTab: TabKey | undefined =
+    activeTab === "none"
+      ? undefined
+      : activeTab ??
+        (pathname.startsWith("/journal")
+          ? "journal"
+          : pathname.startsWith("/muni-avatar") || pathname.startsWith("/muni-voice")
+            ? "muni"
+          : pathname.startsWith("/consult")
+            ? "profile"
+          : pathname === "/home"
+            ? "home"
+            : undefined);
 
   const onTabPress = (item: NavItem) => {
     if (!item.route || pathname === item.route) return;
+    if (onBeforeLeave && !onBeforeLeave(item.route)) return;
     router.replace(item.route);
   };
 
@@ -53,6 +57,7 @@ export function HomeBottomNav({ activeTab, transparent = false }: HomeBottomNavP
     if (pathname === "/muni-voice") {
       return;
     }
+    if (onBeforeLeave && !onBeforeLeave("/muni-voice")) return;
     router.push("/muni-voice" as never);
   };
 

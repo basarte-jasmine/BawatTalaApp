@@ -1,3 +1,5 @@
+import { setApiAuthToken } from "./backend-api";
+import { hydrateMuniWardrobe, resetMuniWardrobe } from "./muni-wardrobe";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from "react";
 
@@ -7,6 +9,7 @@ export type AuthUser = {
   fullName: string;
   profilePictureUrl?: string;
   studentNumber: string;
+  token?: string;
 };
 
 type AuthSessionContextValue = {
@@ -41,6 +44,11 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
           typeof parsedUser.fullName === "string" &&
           typeof parsedUser.studentNumber === "string"
         ) {
+          if (typeof parsedUser.token !== "string" || !parsedUser.token) {
+            await AsyncStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+            return;
+          }
+          setApiAuthToken(parsedUser.token);
           setUser({
             ...parsedUser,
             profilePictureUrl:
@@ -68,17 +76,22 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
   const value = useMemo(
     () => ({
       clearUser: () => {
+        setApiAuthToken(null);
+        resetMuniWardrobe();
         setUser(null);
         void AsyncStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
       },
       isHydrated,
       setUser: (nextUser: AuthUser | null) => {
+        setApiAuthToken(nextUser?.token ?? null);
         setUser(nextUser);
 
         if (nextUser) {
           void AsyncStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(nextUser));
+          void hydrateMuniWardrobe(nextUser.studentNumber);
           return;
         }
+        resetMuniWardrobe();
 
         void AsyncStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
       },

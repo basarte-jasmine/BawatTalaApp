@@ -1,3 +1,4 @@
+import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect } from "@react-navigation/native";
@@ -7,25 +8,27 @@ import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "rea
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { useAuthSession } from "../lib/auth-session";
-import { fetchCheckInStatus } from "../lib/backend-api";
 import {
   areMuniLoadoutsEqual,
   COLLECTION_SECTIONS,
   getMuniCollectionSource,
   getSavedMuniLoadout,
+  hydrateMuniWardrobe,
   MuniCollectionOption,
   MuniLoadout,
   purchaseMuniItem,
   saveMuniLoadout,
   TALA_IMAGE,
+  useAvailableMuniTala,
   useOwnedMuniItems,
   useSavedMuniLoadout,
-  useSpentMuniTala,
 } from "../lib/muni-wardrobe";
 
 type AvatarMode = "wardrobe" | "shop";
 type PurchaseNotice = {
   itemLabel: string;
+  optionId: string;
+  sectionId: keyof MuniLoadout;
 };
 
 const SECTION_META: Record<keyof MuniLoadout, { icon: string }> = {
@@ -37,38 +40,59 @@ const SECTION_META: Record<keyof MuniLoadout, { icon: string }> = {
 
 export default function MuniAvatarScreen() {
   const { user } = useAuthSession();
-  const [totalTala, setTotalTala] = useState(0);
   const savedItems = useSavedMuniLoadout();
   const ownedItems = useOwnedMuniItems();
-  const spentTala = useSpentMuniTala();
+  const availableTala = useAvailableMuniTala();
   const [equippedItems, setEquippedItems] = useState<MuniLoadout>(() => getSavedMuniLoadout());
   const [activeMode, setActiveMode] = useState<AvatarMode>("wardrobe");
   const [purchaseNotice, setPurchaseNotice] = useState<PurchaseNotice | null>(null);
+  const [showUnsavedModal, setShowUnsavedModal] = useState(false);
+  const [pendingLeaveRoute, setPendingLeaveRoute] = useState<string | null>(null);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  const [isSavingLoadout, setIsSavingLoadout] = useState(false);
 
-  const loadTotalTala = useCallback(async () => {
+  const loadWardrobe = useCallback(async () => {
     if (!user?.studentNumber) {
-      setTotalTala(0);
       return;
     }
-
-    const result = await fetchCheckInStatus(user.studentNumber);
-    if (result.ok) {
-      setTotalTala(result.totalTala ?? 0);
-    }
+    await hydrateMuniWardrobe(user.studentNumber);
   }, [user?.studentNumber]);
 
   useFocusEffect(
     useCallback(() => {
-      void loadTotalTala();
-    }, [loadTotalTala]),
+      void loadWardrobe();
+    }, [loadWardrobe]),
   );
 
-  const handleBack = () => {
+  const leaveScreen = () => {
     if (router.canGoBack()) {
       router.back();
       return;
     }
     router.replace("/home");
+  };
+
+  const handleBack = () => {
+    if (!hasUnsavedChanges) {
+      leaveScreen();
+      return;
+    }
+    setPendingLeaveRoute(null);
+    setShowUnsavedModal(true);
+  };
+
+  const handleConfirmLeave = () => {
+    setShowUnsavedModal(false);
+    setEquippedItems(savedItems);
+    if (pendingLeaveRoute === "/muni-voice") {
+      router.push("/muni-voice" as never);
+      return;
+    }
+    if (pendingLeaveRoute) {
+      router.replace(pendingLeaveRoute as never);
+      return;
+    }
+    leaveScreen();
   };
 
   useEffect(() => {
@@ -77,21 +101,25 @@ export default function MuniAvatarScreen() {
 
   const equippedBackgroundSource = getMuniCollectionSource("background", equippedItems.background);
   const hasUnsavedChanges = !areMuniLoadoutsEqual(equippedItems, savedItems);
-  const availableTala = Math.max(0, totalTala - spentTala);
   const ownedItemCount = COLLECTION_SECTIONS.reduce((sum, section) => sum + ownedItems[section.id].length, 0);
   const totalItemCount = COLLECTION_SECTIONS.reduce((sum, section) => sum + section.options.length, 0);
   const equippedItemCount = Object.values(equippedItems).filter(Boolean).length;
 
-  const handleSaveLoadout = useCallback(() => {
-    if (!hasUnsavedChanges) {
+  const handleSaveLoadout = useCallback(async () => {
+    if (!hasUnsavedChanges || isSavingLoadout) {
       return;
     }
-
-    saveMuniLoadout(equippedItems);
+    setIsSavingLoadout(true);
+    const saved = await saveMuniLoadout(equippedItems);
+    setIsSavingLoadout(false);
+    if (!saved) {
+      setPurchaseError("Your last saved outfit is still on Muni. Please try again.");
+      return;
+    }
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
-  }, [equippedItems, hasUnsavedChanges]);
+  }, [equippedItems, hasUnsavedChanges, isSavingLoadout]);
 
-  const handleEquipItem = useCallback((sectionId: keyof MuniLoadout, optionId: string) => {
+  const handleEquipItem = useCallback((sectionId: keyof MuniLoadout, optionId: string | null) => {
     setEquippedItems((current) => ({
       ...current,
       [sectionId]: optionId,
@@ -100,19 +128,23 @@ export default function MuniAvatarScreen() {
   }, []);
 
   const handleBuyItem = useCallback(
-    (sectionId: keyof MuniLoadout, option: MuniCollectionOption) => {
+    async (sectionId: keyof MuniLoadout, option: MuniCollectionOption) => {
       if (availableTala < option.price) {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
+        setPurchaseError(`You need ${option.price} Tala to unlock ${option.label ?? option.id}.`);
         return;
       }
 
-      const purchased = purchaseMuniItem(sectionId, option.id);
+      const purchased = await purchaseMuniItem(sectionId, option.id);
       if (!purchased) {
+        setPurchaseError("The item could not be unlocked. Please try again.");
         return;
       }
 
       setPurchaseNotice({
         itemLabel: option.label ?? option.id,
+        optionId: option.id,
+        sectionId,
       });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
     },
@@ -146,8 +178,8 @@ export default function MuniAvatarScreen() {
               <Pressable
                 style={[styles.saveButton, hasUnsavedChanges ? styles.saveButtonActive : styles.saveButtonSaved]}
                 accessibilityLabel="Save outfit"
-                disabled={!hasUnsavedChanges}
-                onPress={handleSaveLoadout}
+                disabled={!hasUnsavedChanges || isSavingLoadout}
+                onPress={() => void handleSaveLoadout()}
               >
                 <Ionicons
                   name={hasUnsavedChanges ? "checkmark-circle" : "checkmark-circle-outline"}
@@ -155,7 +187,7 @@ export default function MuniAvatarScreen() {
                   color={hasUnsavedChanges ? "#FFFFFF" : "#5E7259"}
                 />
                 <Text style={[styles.saveButtonText, hasUnsavedChanges && styles.saveButtonTextActive]}>
-                  {hasUnsavedChanges ? "Save look" : "Saved"}
+                  {isSavingLoadout ? "Saving..." : hasUnsavedChanges ? "Save look" : "Saved"}
                 </Text>
               </Pressable>
             </View>
@@ -241,6 +273,32 @@ export default function MuniAvatarScreen() {
 
               {activeMode === "wardrobe" ? (
                 <View style={styles.optionRow}>
+                  <Pressable
+                    style={[styles.optionCard, equippedItems[section.id] == null && styles.optionCardSelected]}
+                    onPress={() => handleEquipItem(section.id, null)}
+                  >
+                    <View
+                      style={[
+                        styles.optionImageWell,
+                        section.id === "background" && styles.optionImageWellBackground,
+                      ]}
+                    >
+                      <Ionicons name="remove-circle-outline" size={28} color="#6B7C6A" />
+                    </View>
+                    <Text
+                      style={[
+                        styles.optionLabel,
+                        equippedItems[section.id] == null && styles.optionLabelSelected,
+                      ]}
+                    >
+                      None
+                    </Text>
+                    {equippedItems[section.id] == null ? (
+                      <View style={styles.checkBadge}>
+                        <Ionicons name="checkmark" size={15} color="#FFFFFF" />
+                      </View>
+                    ) : null}
+                  </Pressable>
                   {ownedOptions.map((option) => {
                     const selected = equippedItems[section.id] === option.id;
                     return (
@@ -329,8 +387,7 @@ export default function MuniAvatarScreen() {
                             </View>
                             <Pressable
                               style={[styles.buyButton, !canAfford && styles.buyButtonDisabled]}
-                              disabled={!canAfford}
-                              onPress={() => handleBuyItem(section.id, option)}
+                              onPress={() => void handleBuyItem(section.id, option)}
                             >
                               <Ionicons name="bag-add-outline" size={14} color={canAfford ? "#FFFFFF" : "#8A9583"} />
                               <Text style={[styles.buyButtonText, !canAfford && styles.buyButtonTextDisabled]}>
@@ -365,12 +422,91 @@ export default function MuniAvatarScreen() {
               {purchaseNotice ? `${purchaseNotice.itemLabel} is now unlocked and ready in your wardrobe.` : ""}
             </Text>
 
-            <Pressable style={styles.unlockButton} onPress={() => setPurchaseNotice(null)}>
-              <Text style={styles.unlockButtonText}>Nice</Text>
+            <Pressable
+              style={styles.unlockButton}
+              onPress={() => {
+                if (purchaseNotice) {
+                  setEquippedItems((current) => ({
+                    ...current,
+                    [purchaseNotice.sectionId]: purchaseNotice.optionId,
+                  }));
+                  setActiveMode("wardrobe");
+                }
+                setPurchaseNotice(null);
+              }}
+            >
+              <Text style={styles.unlockButtonText}>Wear now</Text>
+            </Pressable>
+            <Pressable style={[styles.unlockButton, styles.unlockSecondaryButton]} onPress={() => setPurchaseNotice(null)}>
+              <Text style={[styles.unlockButtonText, styles.unlockSecondaryButtonText]}>Keep shopping</Text>
             </Pressable>
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={showUnsavedModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowUnsavedModal(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Unsaved look</Text>
+            <Text style={styles.modalBody}>
+              You have unsaved changes to Muni's outfit. Do you want to leave without saving?
+            </Text>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={styles.modalSecondaryButton}
+                onPress={() => setShowUnsavedModal(false)}
+              >
+                <Text style={styles.modalSecondaryText}>Stay</Text>
+              </Pressable>
+
+              <Pressable
+                style={styles.modalDangerButton}
+                onPress={handleConfirmLeave}
+              >
+                <Text style={styles.modalDangerText}>Leave</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={Boolean(purchaseError)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPurchaseError(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Notice</Text>
+            <Text style={styles.modalBody}>{purchaseError}</Text>
+            <Pressable
+              style={styles.modalPrimaryButton}
+              onPress={() => setPurchaseError(null)}
+            >
+              <Text style={styles.modalPrimaryText}>OK</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <HomeBottomNav
+        activeTab="muni"
+        onBeforeLeave={(nextRoute) => {
+          if (!hasUnsavedChanges) {
+            return true;
+          }
+          setPendingLeaveRoute(nextRoute);
+          setShowUnsavedModal(true);
+          return false;
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -419,7 +555,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 26,
+    paddingBottom: 116,
   },
   previewSection: {
     paddingHorizontal: 14,
@@ -949,10 +1085,92 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 18,
   },
+  unlockSecondaryButton: {
+    backgroundColor: "#EEF4E8",
+    marginTop: 8,
+  },
+  unlockSecondaryButtonText: {
+    color: "#4E6748",
+  },
   unlockButtonText: {
     color: "#FFFFFF",
     fontSize: 14,
     lineHeight: 18,
     fontWeight: "800",
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 320,
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 18,
+    shadowColor: "#525C67",
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  modalTitle: {
+    color: "#34465A",
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "800",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  modalBody: {
+    color: "#52606C",
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "500",
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  modalActions: {
+    flexDirection: "row",
+    columnGap: 10,
+  },
+  modalSecondaryButton: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#CDD5C7",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalSecondaryText: {
+    color: "#566271",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  modalDangerButton: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 999,
+    backgroundColor: "#DC4C4C",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalDangerText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  modalPrimaryButton: {
+    marginTop: 8,
+    minHeight: 40,
+    borderRadius: 999,
+    backgroundColor: "#70C943",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalPrimaryText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
   },
 });

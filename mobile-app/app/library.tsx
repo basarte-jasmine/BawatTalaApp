@@ -1438,7 +1438,7 @@ export default function LibraryScreen() {
         </View>
       </Modal>
 
-      <HomeBottomNav activeTab="home" />
+      <HomeBottomNav activeTab="none" />
     </SafeAreaView>
   );
 }

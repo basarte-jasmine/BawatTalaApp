@@ -3,6 +3,7 @@ const { randomBytes, scryptSync, timingSafeEqual } = require("crypto");
 const { google } = require("googleapis");
 const { supabaseAdminClient, supabaseAuthClient } = require("../config/supabase");
 const { query } = require("../config/db");
+const { requireAdminAuth } = require("../middleware/auth.middleware");
 const { mapFeedbackRow } = require("./feedback.routes");
 const { sendPasswordResetCodeEmail } = require("../services/auth-email.service");
 const { EMOTION_OPTIONS, createEmotionCounts, normalizeEmotionId } = require("../constants/emotions");
@@ -1331,6 +1332,28 @@ router.post("/forgot-password/reset", async (req, res) => {
   clearResetSession(email);
   return res.json({ message: "Password updated successfully" });
 });
+
+router.get("/appointments/google/callback", async (req, res) => {
+  const client = getOAuthClient(req);
+  if (!client) {
+    return res.status(400).send("Google OAuth is not configured.");
+  }
+
+  const code = String(req.query.code || "");
+  if (!code) {
+    return res.status(400).send("Missing authorization code.");
+  }
+
+  const { tokens } = await client.getToken(code);
+  if (!tokens.refresh_token) {
+    return res.status(400).send("Missing refresh token. Reconnect and grant consent.");
+  }
+
+  req.session.googleRefreshToken = tokens.refresh_token;
+  return res.send("Google Calendar connected. You can close this tab.");
+});
+
+router.use(requireAdminAuth);
 
 router.get("/notifications", async (req, res) => {
   const email = normalizeEmail(req.query.email || "");
@@ -4188,25 +4211,6 @@ router.get("/appointments/google/auth-url", (req, res) => {
   return res.json({ authUrl });
 });
 
-router.get("/appointments/google/callback", async (req, res) => {
-  const client = getOAuthClient(req);
-  if (!client) {
-    return res.status(400).send("Google OAuth is not configured.");
-  }
-
-  const code = String(req.query.code || "");
-  if (!code) {
-    return res.status(400).send("Missing authorization code.");
-  }
-
-  const { tokens } = await client.getToken(code);
-  if (!tokens.refresh_token) {
-    return res.status(400).send("Missing refresh token. Reconnect and grant consent.");
-  }
-
-  req.session.googleRefreshToken = tokens.refresh_token;
-  return res.send("Google Calendar connected. You can close this tab.");
-});
 
 router.get("/appointments/events", async (req, res) => {
   const client = getOAuthClient(req);

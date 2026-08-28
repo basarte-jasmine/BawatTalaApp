@@ -22,7 +22,7 @@ export function AuthCardLayout({
   centerContent = true,
 }: AuthCardLayoutProps) {
   return (
-    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}>
       <ScrollView
         contentContainerStyle={[
           styles.content,

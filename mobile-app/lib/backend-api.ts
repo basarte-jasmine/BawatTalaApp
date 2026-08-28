@@ -7,6 +7,7 @@ export type AuthUser = {
   fullName: string;
   profilePictureUrl?: string;
   studentNumber: string;
+  token?: string;
 };
 
 export type StudentProfile = {
@@ -325,6 +326,133 @@ function getLocalPreferencesStorageKey(studentNumber: string) {
   return `${LOCAL_PREFERENCES_STORAGE_PREFIX}${studentNumber}`;
 }
 
+function looksLikePlaintextJournalPin(value: string) {
+  return /^\d{4,8}$/.test(value);
+}
+
+function sha256Hex(message: string) {
+  const K = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+  ];
+  const rotr = (n: number, x: number) => (x >>> n) | (x << (32 - n));
+  const bytes: number[] = [];
+  for (let index = 0; index < message.length; index += 1) {
+    const code = message.charCodeAt(index);
+    if (code < 0x80) {
+      bytes.push(code);
+    } else if (code < 0x800) {
+      bytes.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f));
+    } else {
+      bytes.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
+    }
+  }
+
+  const bitLenHi = Math.floor((bytes.length * 8) / 0x100000000);
+  const bitLenLo = (bytes.length * 8) >>> 0;
+  bytes.push(0x80);
+  while (bytes.length % 64 !== 56) {
+    bytes.push(0);
+  }
+  bytes.push(
+    (bitLenHi >>> 24) & 0xff,
+    (bitLenHi >>> 16) & 0xff,
+    (bitLenHi >>> 8) & 0xff,
+    bitLenHi & 0xff,
+    (bitLenLo >>> 24) & 0xff,
+    (bitLenLo >>> 16) & 0xff,
+    (bitLenLo >>> 8) & 0xff,
+    bitLenLo & 0xff,
+  );
+
+  let h0 = 0x6a09e667;
+  let h1 = 0xbb67ae85;
+  let h2 = 0x3c6ef372;
+  let h3 = 0xa54ff53a;
+  let h4 = 0x510e527f;
+  let h5 = 0x9b05688c;
+  let h6 = 0x1f83d9ab;
+  let h7 = 0x5be0cd19;
+  const words = new Array<number>(64);
+
+  for (let offset = 0; offset < bytes.length; offset += 64) {
+    for (let index = 0; index < 16; index += 1) {
+      const start = offset + index * 4;
+      words[index] = ((bytes[start] << 24) | (bytes[start + 1] << 16) | (bytes[start + 2] << 8) | bytes[start + 3]) >>> 0;
+    }
+    for (let index = 16; index < 64; index += 1) {
+      const s0 = rotr(7, words[index - 15]) ^ rotr(18, words[index - 15]) ^ (words[index - 15] >>> 3);
+      const s1 = rotr(17, words[index - 2]) ^ rotr(19, words[index - 2]) ^ (words[index - 2] >>> 10);
+      words[index] = (words[index - 16] + s0 + words[index - 7] + s1) >>> 0;
+    }
+
+    let a = h0;
+    let b = h1;
+    let c = h2;
+    let d = h3;
+    let e = h4;
+    let f = h5;
+    let g = h6;
+    let h = h7;
+
+    for (let index = 0; index < 64; index += 1) {
+      const S1 = rotr(6, e) ^ rotr(11, e) ^ rotr(25, e);
+      const ch = (e & f) ^ (~e & g);
+      const temp1 = (h + S1 + ch + K[index] + words[index]) >>> 0;
+      const S0 = rotr(2, a) ^ rotr(13, a) ^ rotr(22, a);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const temp2 = (S0 + maj) >>> 0;
+      h = g;
+      g = f;
+      f = e;
+      e = (d + temp1) >>> 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (temp1 + temp2) >>> 0;
+    }
+
+    h0 = (h0 + a) >>> 0;
+    h1 = (h1 + b) >>> 0;
+    h2 = (h2 + c) >>> 0;
+    h3 = (h3 + d) >>> 0;
+    h4 = (h4 + e) >>> 0;
+    h5 = (h5 + f) >>> 0;
+    h6 = (h6 + g) >>> 0;
+    h7 = (h7 + h) >>> 0;
+  }
+
+  return [h0, h1, h2, h3, h4, h5, h6, h7].map((value) => value.toString(16).padStart(8, "0")).join("");
+}
+
+function hashJournalLockPin(studentNumber: string, pin: string) {
+  return sha256Hex(`${studentNumber}\0${pin}`);
+}
+
+function looksLikeJournalPinHash(value: string) {
+  return /^[a-f0-9]{64}$/i.test(value);
+}
+
+function toCachedJournalLockPin(studentNumber: string, pin: string) {
+  return looksLikeJournalPinHash(pin) ? pin : hashJournalLockPin(studentNumber, pin);
+}
+
+function storedJournalLockPinMatches(studentNumber: string, stored: string | null | undefined, pin: string) {
+  if (!stored || !pin) {
+    return false;
+  }
+  if (stored === hashJournalLockPin(studentNumber, pin)) {
+    return true;
+  }
+  return looksLikePlaintextJournalPin(stored) && stored === pin;
+}
+
 function getNowIsoString() {
   return new Date().toISOString();
 }
@@ -383,7 +511,7 @@ function createLocalJournalEntry(studentNumber: string, aiEnabled: boolean): Sto
     aiEnabled,
     concernTags: [],
     createdAt: now,
-    entryDate: getTodayIsoDate(),
+    entryDate: getManilaTodayIsoDate(),
     finishedAt: null,
     id: `local-${studentNumber}-${Date.now()}`,
     insights: [],
@@ -911,6 +1039,8 @@ async function cacheStudentPreferences(
     journalLockPin:
       journalLockPin !== undefined
         ? journalLockPin
+          ? toCachedJournalLockPin(studentNumber, journalLockPin)
+          : journalLockPin
         : normalized.hasJournalLockPin
           ? current.journalLockPin ?? null
           : null,
@@ -923,6 +1053,16 @@ async function cacheStudentPreferences(
   });
 }
 
+function omitRawJournalPins<T extends Record<string, unknown>>(value: T): Omit<T, "journalLockPin" | "previousJournalLockPin"> {
+  const next = { ...value } as T & {
+    journalLockPin?: unknown;
+    previousJournalLockPin?: unknown;
+  };
+  delete next.journalLockPin;
+  delete next.previousJournalLockPin;
+  return next;
+}
+
 async function syncPendingStudentPreferences(studentNumber: string) {
   const local = await readLocalStudentPreferences(studentNumber);
   if (local.syncStatus !== "pending" || !local.pendingPreferences) {
@@ -932,7 +1072,7 @@ async function syncPendingStudentPreferences(studentNumber: string) {
   try {
     const { response, data } = await patch("/api/auth/preferences", {
       studentNumber,
-      ...local.pendingPreferences,
+      ...omitRawJournalPins(local.pendingPreferences as Record<string, unknown>),
     });
     if (!response.ok) {
       return false;
@@ -941,7 +1081,7 @@ async function syncPendingStudentPreferences(studentNumber: string) {
     await cacheStudentPreferences(
       studentNumber,
       data?.preferences ?? local.preferences ?? DEFAULT_STUDENT_PREFERENCES,
-      local.pendingPreferences.journalLockPin ?? local.journalLockPin ?? undefined,
+      local.journalLockPin ?? undefined,
       "synced",
       null,
     );
@@ -993,8 +1133,29 @@ export async function syncOfflineStudentData(studentNumber: string): Promise<Api
   }
 }
 
+let activeAuthToken: string | null = null;
+
+export function setApiAuthToken(token: string | null) {
+  activeAuthToken = token;
+}
+
+export function getApiAuthToken() {
+  return activeAuthToken;
+}
+
+function buildHeaders(customHeaders: Record<string, string> = {}) {
+  const headers: Record<string, string> = { ...customHeaders };
+  if (activeAuthToken) {
+    headers["Authorization"] = `Bearer ${activeAuthToken}`;
+  }
+  return headers;
+}
+
 async function get(path: string) {
-  const response = await fetch(`${API_BASE_URL}${path}`);
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    credentials: "include",
+    headers: buildHeaders(),
+  });
   const data = await response.json().catch(() => ({}));
   return { response, data };
 }
@@ -1002,6 +1163,8 @@ async function get(path: string) {
 async function del(path: string) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "DELETE",
+    credentials: "include",
+    headers: buildHeaders(),
   });
   const data = await response.json().catch(() => ({}));
   return { response, data };
@@ -1010,7 +1173,8 @@ async function del(path: string) {
 async function post(path: string, payload: Record<string, unknown>) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    headers: buildHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
   });
 
@@ -1021,7 +1185,8 @@ async function post(path: string, payload: Record<string, unknown>) {
 async function patch(path: string, payload: Record<string, unknown>) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    headers: buildHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
   });
 
@@ -1052,6 +1217,12 @@ export async function loginWithStudentId(
       studentNumber,
       password,
     });
+    if (response.ok && data?.token) {
+      setApiAuthToken(data.token);
+      if (data?.user) {
+        data.user.token = data.token;
+      }
+    }
     return { ok: response.ok, message: data?.message, user: data?.user };
   } catch {
     return {
@@ -1118,10 +1289,18 @@ export async function saveStudentPreferences(
 ): Promise<ApiResult & { preferences?: StudentPreferences | null }> {
   try {
     await syncPendingStudentPreferences(studentNumber);
-    const { response, data } = await patch("/api/auth/preferences", {
+    const isExplicitPinSet = typeof preferences.journalLockPin === "string" && preferences.journalLockPin.length > 0;
+    const preferencePayload: Record<string, unknown> = {
       studentNumber,
-      ...preferences,
-    });
+      ...omitRawJournalPins(preferences as Record<string, unknown>),
+    };
+    if (isExplicitPinSet) {
+      preferencePayload.journalLockPin = preferences.journalLockPin;
+      if (preferences.previousJournalLockPin) {
+        preferencePayload.previousJournalLockPin = preferences.previousJournalLockPin;
+      }
+    }
+    const { response, data } = await patch("/api/auth/preferences", preferencePayload);
 
     if (response.ok && data?.preferences) {
       await cacheStudentPreferences(studentNumber, data.preferences, preferences.journalLockPin);
@@ -1134,7 +1313,10 @@ export async function saveStudentPreferences(
     };
   } catch {
     const local = await readLocalStudentPreferences(studentNumber);
-    if (preferences.previousJournalLockPin && local.journalLockPin !== preferences.previousJournalLockPin) {
+    if (
+      preferences.previousJournalLockPin &&
+      !storedJournalLockPinMatches(studentNumber, local.journalLockPin, preferences.previousJournalLockPin)
+    ) {
       return { ok: false, message: "Previous PIN does not match this device." };
     }
 
@@ -1155,11 +1337,7 @@ export async function saveStudentPreferences(
       nextPreferences.journalLockEnabled = false;
     }
 
-    const pendingPreferences = {
-      ...preferences,
-      journalLockPin: preferences.journalLockPin,
-    };
-    delete pendingPreferences.previousJournalLockPin;
+    const pendingPreferences = omitRawJournalPins({ ...preferences } as Record<string, unknown>) as StoredStudentPreferences["pendingPreferences"];
 
     await cacheStudentPreferences(
       studentNumber,
@@ -1205,7 +1383,16 @@ export async function verifyJournalLockPin(
     };
   } catch {
     const local = await readLocalStudentPreferences(studentNumber);
-    const unlocked = Boolean(local.journalLockPin && local.journalLockPin === pin);
+    const unlocked = storedJournalLockPinMatches(studentNumber, local.journalLockPin, pin);
+    if (unlocked && local.journalLockPin && looksLikePlaintextJournalPin(local.journalLockPin)) {
+      await cacheStudentPreferences(
+        studentNumber,
+        local.preferences ?? { hasJournalLockPin: true, journalLockEnabled: true },
+        pin,
+        local.syncStatus ?? "synced",
+        local.pendingPreferences,
+      );
+    }
     return {
       ok: unlocked,
       message: unlocked
@@ -1358,12 +1545,15 @@ export async function registerProfile(payload: {
   email: string;
   birthdate: string;
   password: string;
-}): Promise<ApiResult> {
+}): Promise<ApiResult & { token?: string; user?: AuthUser }> {
   const { response, data } = await post(
     "/api/auth/register-profile",
     payload as unknown as Record<string, string>,
   );
-  return { ok: response.ok, message: data?.message };
+  if (response.ok && data?.token) {
+    setApiAuthToken(data.token);
+  }
+  return { ok: response.ok, message: data?.message, token: data?.token, user: data?.user };
 }
 
 export async function scanSchoolId(imageBase64: string): Promise<{
@@ -1400,7 +1590,7 @@ export async function saveDailyMood(
   moodDate?: string,
   moodSource: MoodSource = "INPUT",
 ): Promise<ApiResult & { entry?: MoodEntryRecord }> {
-  const effectiveMoodDate = moodDate || getTodayIsoDate();
+  const effectiveMoodDate = moodDate || getManilaTodayIsoDate();
   try {
     await syncPendingMoodEntries(studentNumber);
     const { response, data } = await post("/api/moods", {
@@ -1475,7 +1665,7 @@ export async function fetchDailyMood(
     };
   } catch {
     const localData = await readLocalMoodData(studentNumber);
-    const effectiveMoodDate = moodDate || getTodayIsoDate();
+    const effectiveMoodDate = moodDate || getManilaTodayIsoDate();
     const entry = localData.entries[effectiveMoodDate] ?? null;
     return {
       ok: true,
@@ -1728,6 +1918,82 @@ export async function rateLibraryBook(payload: {
   };
 }
 
+
+export type MuniLoadoutRecord = {
+  background: string | null;
+  eye: string | null;
+  head: string | null;
+  outfit: string | null;
+};
+
+export type MuniOwnedItemsRecord = {
+  background: string[];
+  eye: string[];
+  head: string[];
+  outfit: string[];
+};
+
+export async function fetchMuniWardrobe(
+  studentNumber: string,
+): Promise<
+  ApiResult & {
+    loadout?: MuniLoadoutRecord;
+    ownedItems?: MuniOwnedItemsRecord;
+    totalTala?: number;
+  }
+> {
+  const params = new URLSearchParams({ studentNumber });
+  const { response, data } = await get(`/api/muni/wardrobe?${params.toString()}`);
+  return {
+    ok: response.ok,
+    message: data?.message,
+    loadout: data?.loadout,
+    ownedItems: data?.ownedItems,
+    totalTala: typeof data?.totalTala === "number" ? data.totalTala : undefined,
+  };
+}
+
+export async function purchaseMuniWardrobeItem(payload: {
+  itemId: string;
+  sectionId: string;
+  studentNumber: string;
+}): Promise<
+  ApiResult & {
+    loadout?: MuniLoadoutRecord;
+    ownedItems?: MuniOwnedItemsRecord;
+    totalTala?: number;
+  }
+> {
+  const { response, data } = await post("/api/muni/purchase", payload);
+  return {
+    ok: response.ok,
+    message: data?.message,
+    loadout: data?.loadout,
+    ownedItems: data?.ownedItems,
+    totalTala: typeof data?.totalTala === "number" ? data.totalTala : undefined,
+  };
+}
+
+export async function saveMuniLoadoutRemote(payload: {
+  loadout: MuniLoadoutRecord;
+  studentNumber: string;
+}): Promise<
+  ApiResult & {
+    loadout?: MuniLoadoutRecord;
+    ownedItems?: MuniOwnedItemsRecord;
+    totalTala?: number;
+  }
+> {
+  const { response, data } = await patch("/api/muni/loadout", payload);
+  return {
+    ok: response.ok,
+    message: data?.message,
+    loadout: data?.loadout,
+    ownedItems: data?.ownedItems,
+    totalTala: typeof data?.totalTala === "number" ? data.totalTala : undefined,
+  };
+}
+
 export async function fetchCheckInStatus(
   studentNumber: string,
 ): Promise<
@@ -1862,7 +2128,7 @@ export async function fetchTodayJournalSession(
     };
   } catch {
     const localToday = (await getLocalJournalRecords(studentNumber))
-      .filter((record) => record.entry.entryDate === getTodayIsoDate() && !record.entry.isFinished)
+      .filter((record) => record.entry.entryDate === getManilaTodayIsoDate() && !record.entry.isFinished)
       .sort((a, b) => b.entry.createdAt.localeCompare(a.entry.createdAt))[0];
 
     return {
@@ -2202,7 +2468,7 @@ export async function fetchRecentJournalEntries(
     const remoteEntries = data?.entries ?? [];
     const localEntries = await getLocalFinishedJournalEntries(studentNumber);
     const entries = mergeJournalEntryLists(remoteEntries, localEntries).slice(0, windowDays);
-    const todayIso = getTodayIsoDate();
+    const todayIso = getManilaTodayIsoDate();
     const currentMonth = todayIso.slice(0, 7);
 
     for (const entry of remoteEntries) {
@@ -2239,7 +2505,7 @@ export async function fetchRecentJournalEntries(
     };
   } catch {
     const entries = (await getLocalFinishedJournalEntries(studentNumber)).slice(0, windowDays);
-    const todayIso = getTodayIsoDate();
+    const todayIso = getManilaTodayIsoDate();
     const currentMonth = todayIso.slice(0, 7);
     return {
       ok: true,

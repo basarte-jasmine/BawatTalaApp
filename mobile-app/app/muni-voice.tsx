@@ -3,7 +3,9 @@ import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Image,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -28,6 +30,7 @@ import {
   discardEmptyJournalEntry,
   discardJournalEntry,
   finishJournalEntry,
+  saveJournalSupportResponse,
   sendJournalMessage,
   suggestJournalTags,
   synthesizeVoiceSpeech,
@@ -36,6 +39,7 @@ import {
   type JournalMessage,
 } from "../lib/backend-api";
 import { useAuthSession } from "../lib/auth-session";
+import { JournalLockGate, useAppPreferences } from "../lib/app-preferences";
 
 type VoiceState =
   | "unsupported"
@@ -71,6 +75,9 @@ const INTERPERSONAL_TAG = "Interpersonal relationships";
 const INTERPERSONAL_RELATIONSHIP_TAGS = ["Peer", "Family", "Romantic"];
 const VOICE_RECORDING_MAX_MS = 5 * 60 * 1000;
 const MUNI_VOICE = "fil-PH-BlessicaNeural";
+const NCMH_HOTLINE_DIAL_URL = "tel:+639178998727";
+const NCMH_HOTLINE_DISPLAY = "0917-899-8727";
+const NCMH_HOTLINE_LANDLINE = "1553";
 
 function cleanSpokenText(value: string) {
   return value.replace(/\s+/g, " ").trim();
@@ -137,11 +144,14 @@ function base64ToBlobUrl(base64Data: string, contentType = "audio/mp3"): string 
 
 export default function MuniVoiceScreen() {
   const { user } = useAuthSession();
+  const { appLockEnabled, isAppLocked } = useAppPreferences();
   const entryRef = useRef<JournalEntry | null>(null);
   const messagesRef = useRef<JournalMessage[]>([]);
   const sessionStartedRef = useRef(false);
   const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shouldCancelRecordingRef = useRef(false);
+  const isDisposedRef = useRef(false);
+  const activeRequestIdRef = useRef(0);
 
   // Web recording refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -156,6 +166,8 @@ export default function MuniVoiceScreen() {
 
   // Expo native audio recorder
   const nativeRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const nativeRecorderRef = useRef(nativeRecorder);
+  nativeRecorderRef.current = nativeRecorder;
 
   const [entry, setEntry] = useState<JournalEntry | null>(null);
   const [messages, setMessages] = useState<JournalMessage[]>([]);
@@ -168,6 +180,10 @@ export default function MuniVoiceScreen() {
   const [showTagReviewModal, setShowTagReviewModal] = useState(false);
   const [showRelationshipTagModal, setShowRelationshipTagModal] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [showExitModal, setShowExitModal] = useState(false);
+  const [showRiskModal, setShowRiskModal] = useState(false);
+  const [isSavingSupportResponse, setIsSavingSupportResponse] = useState(false);
+  const [riskModalRedirectEntryId, setRiskModalRedirectEntryId] = useState<string | null>(null);
   const [isAnalyzingTags, setIsAnalyzingTags] = useState(false);
   const [isSavingTags, setIsSavingTags] = useState(false);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
@@ -268,12 +284,17 @@ export default function MuniVoiceScreen() {
   const stopSpeaking = useCallback(async () => {
     if (Platform.OS === "web") {
       if (webAudioRef.current) {
-        webAudioRef.current.pause();
-        webAudioRef.current.currentTime = 0;
+        try {
+          webAudioRef.current.pause();
+          webAudioRef.current.currentTime = 0;
+          webAudioRef.current.src = "";
+        } catch {}
         webAudioRef.current = null;
       }
       if (webBlobUrlRef.current) {
-        URL.revokeObjectURL(webBlobUrlRef.current);
+        try {
+          URL.revokeObjectURL(webBlobUrlRef.current);
+        } catch {}
         webBlobUrlRef.current = null;
       }
     } else {
@@ -287,6 +308,8 @@ export default function MuniVoiceScreen() {
     }
     setVoiceState("idle");
   }, []);
+  const stopSpeakingRef = useRef(stopSpeaking);
+  stopSpeakingRef.current = stopSpeaking;
 
   const clearRecordingTimeout = useCallback(() => {
     if (recordingTimeoutRef.current) {
@@ -298,13 +321,14 @@ export default function MuniVoiceScreen() {
   const speakReply = useCallback(
     async (replyText: string, requestedVoice?: string) => {
       const cleanText = cleanSpokenText(replyText);
-      if (!cleanText) {
+      if (!cleanText || isDisposedRef.current) {
         setVoiceState("idle");
         return;
       }
 
       try {
         await stopSpeaking();
+        if (isDisposedRef.current) return;
         const selectedVoice = requestedVoice || replyVoiceRef.current || undefined;
         if (selectedVoice) replyVoiceRef.current = selectedVoice;
         setVoiceState("speaking");
@@ -315,6 +339,12 @@ export default function MuniVoiceScreen() {
           voice: selectedVoice,
         });
 
+        if (isDisposedRef.current) {
+          setVoiceState("idle");
+          setStatusMessage("");
+          return;
+        }
+
         if (!result.ok || !result.audioBase64) {
           setVoiceState("idle");
           setStatusMessage("");
@@ -323,33 +353,35 @@ export default function MuniVoiceScreen() {
         if (result.voice) replyVoiceRef.current = result.voice;
 
         if (Platform.OS === "web") {
-          const blobUrl = base64ToBlobUrl(result.audioBase64, "audio/mp3");
-          webBlobUrlRef.current = blobUrl;
-          const audio = new Audio(blobUrl);
+          const audioSrc = "data:audio/mp3;base64," + result.audioBase64;
+          const audio = new Audio(audioSrc);
           webAudioRef.current = audio;
 
           audio.onended = () => {
             webAudioRef.current = null;
-            if (webBlobUrlRef.current) {
-              URL.revokeObjectURL(webBlobUrlRef.current);
-              webBlobUrlRef.current = null;
-            }
             setVoiceState("idle");
             setStatusMessage("");
           };
 
           audio.onerror = () => {
             webAudioRef.current = null;
-            if (webBlobUrlRef.current) {
-              URL.revokeObjectURL(webBlobUrlRef.current);
-              webBlobUrlRef.current = null;
-            }
             setVoiceState("idle");
             setStatusMessage("");
           };
 
-          await audio.play();
+          try {
+            await audio.play();
+          } catch (playErr) {
+            webAudioRef.current = null;
+            setVoiceState("idle");
+            setStatusMessage("");
+          }
         } else {
+          if (isDisposedRef.current) {
+            setVoiceState("idle");
+            setStatusMessage("");
+            return;
+          }
           await setAudioModeAsync({
             playsInSilentMode: true,
           });
@@ -381,6 +413,10 @@ export default function MuniVoiceScreen() {
         return;
       }
 
+      if (isDisposedRef.current) {
+        return;
+      }
+
       const messageText = cleanSpokenText(spokenText);
       if (!messageText) {
         setVoiceState("idle");
@@ -406,6 +442,10 @@ export default function MuniVoiceScreen() {
         studentNumber: user.studentNumber,
       });
 
+      if (isDisposedRef.current) {
+        return;
+      }
+
       if (!result.ok) {
         setStatusMessage(result.message ?? "Muni could not reply right now.");
         setVoiceState("error");
@@ -426,14 +466,18 @@ export default function MuniVoiceScreen() {
         reply || "Narinig kita. Handa akong makinig kapag handa ka na ulit magbahagi.";
       setMuniReply(finalMuniReply);
       setStatusMessage("");
+      if ((result.entry?.riskLevel || "NONE").toUpperCase() === "HIGH") {
+        setRiskModalRedirectEntryId(null);
+        setShowRiskModal(true);
+      }
       void speakReply(finalMuniReply, replyVoice);
     },
-    [setActiveEntry, setConversationMessages, speakReply, user?.studentNumber],
+    [appLockEnabled, isAppLocked, setActiveEntry, setConversationMessages, speakReply, user?.studentNumber],
   );
 
   const processAudioDataAndSend = useCallback(
     async (base64Audio: string, mimeType: string, filename: string) => {
-      if (shouldCancelRecordingRef.current) {
+      if (shouldCancelRecordingRef.current || isDisposedRef.current) {
         shouldCancelRecordingRef.current = false;
         setVoiceState("idle");
         setStatusMessage("Recording cancelled.");
@@ -450,6 +494,10 @@ export default function MuniVoiceScreen() {
           filename,
         });
 
+        if (isDisposedRef.current) {
+          return;
+        }
+
         if (!result.ok || !result.text) {
           setVoiceState("idle");
           setStatusMessage("Could not recognize clear speech. Please try speaking again.");
@@ -462,8 +510,10 @@ export default function MuniVoiceScreen() {
         setStatusMessage("");
         await sendTranscriptToMuni(recognizedText, replyVoice);
       } catch (err: any) {
-        setVoiceState("error");
-        setStatusMessage(err?.message || "Speech transcription failed.");
+        if (!isDisposedRef.current) {
+          setVoiceState("error");
+          setStatusMessage(err?.message || "Speech transcription failed.");
+        }
       }
     },
     [sendTranscriptToMuni],
@@ -477,6 +527,11 @@ export default function MuniVoiceScreen() {
       return;
     }
 
+    if (appLockEnabled && isAppLocked) {
+      setIsLoadingSession(false);
+      return;
+    }
+
     if (sessionStartedRef.current) {
       setIsLoadingSession(false);
       return;
@@ -484,7 +539,7 @@ export default function MuniVoiceScreen() {
     sessionStartedRef.current = true;
 
     setIsLoadingSession(true);
-    setStatusMessage("Starting a fresh voice journal...");
+    setStatusMessage("Starting your voice journal...");
     const created = await createJournalSession({
       aiEnabled: true,
       forceNew: true,
@@ -503,43 +558,142 @@ export default function MuniVoiceScreen() {
     setVoiceState("error");
     setIsLoadingSession(false);
     sessionStartedRef.current = false;
-  }, [setActiveEntry, setConversationMessages, user?.studentNumber]);
+  }, [appLockEnabled, isAppLocked, setActiveEntry, setConversationMessages, user?.studentNumber]);
 
   useEffect(() => {
-    void loadSession();
+    isDisposedRef.current = false;
     return () => {
-      clearRecordingTimeout();
+      isDisposedRef.current = true;
+      activeRequestIdRef.current++;
+      if (recordingTimeoutRef.current) {
+        clearTimeout(recordingTimeoutRef.current);
+        recordingTimeoutRef.current = null;
+      }
       shouldCancelRecordingRef.current = true;
       if (Platform.OS === "web") {
-        mediaRecorderRef.current?.stop();
-        mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+        try {
+          mediaRecorderRef.current?.stop();
+          mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+        } catch {}
       } else {
         try {
-          nativeRecorder.stop();
+          nativeRecorderRef.current?.stop();
         } catch {}
       }
-      void stopSpeaking();
+      void stopSpeakingRef.current?.();
     };
-  }, [clearRecordingTimeout, loadSession, nativeRecorder, stopSpeaking]);
+  }, []);
+
+  useEffect(() => {
+    if (appLockEnabled && isAppLocked) {
+      if (recordingTimeoutRef.current) {
+        clearTimeout(recordingTimeoutRef.current);
+        recordingTimeoutRef.current = null;
+      }
+      void stopSpeaking();
+      return;
+    }
+    void loadSession();
+  }, [appLockEnabled, isAppLocked, loadSession, stopSpeaking]);
 
   const handleBack = useCallback(() => {
+    activeRequestIdRef.current++;
     shouldCancelRecordingRef.current = true;
     clearRecordingTimeout();
     if (Platform.OS === "web") {
-      mediaRecorderRef.current?.stop();
-      mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+      try {
+        mediaRecorderRef.current?.stop();
+        mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+      } catch {}
     } else {
       try {
         nativeRecorder.stop();
       } catch {}
     }
     void stopSpeaking();
+
+    if (hasUserMessages && !entry?.isFinished) {
+      setShowExitModal(true);
+      return;
+    }
+
+    if (entry?.id && user?.studentNumber && !hasUserMessages) {
+      void discardEmptyJournalEntry({
+        entryId: entry.id,
+        studentNumber: user.studentNumber,
+      });
+    }
+
     if (router.canGoBack()) {
       router.back();
       return;
     }
     router.replace("/home");
-  }, [clearRecordingTimeout, nativeRecorder, stopSpeaking]);
+  }, [clearRecordingTimeout, entry?.id, entry?.isFinished, hasUserMessages, nativeRecorder, stopSpeaking, user?.studentNumber]);
+
+  const handleConfirmExit = useCallback(async () => {
+    if (isDiscardingJournal) return;
+    isDisposedRef.current = true;
+    activeRequestIdRef.current++;
+    shouldCancelRecordingRef.current = true;
+    clearRecordingTimeout();
+    void stopSpeaking();
+    setIsDiscardingJournal(true);
+    if (Platform.OS === "web") {
+      try {
+        mediaRecorderRef.current?.stop();
+        mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+      } catch {}
+    } else {
+      try {
+        nativeRecorder.stop();
+      } catch {}
+    }
+
+    if (entry?.id && user?.studentNumber) {
+      if (hasUserMessages) {
+        await discardJournalEntry({
+          entryId: entry.id,
+          studentNumber: user.studentNumber,
+        });
+      } else {
+        await discardEmptyJournalEntry({
+          entryId: entry.id,
+          studentNumber: user.studentNumber,
+        });
+      }
+    }
+
+    setIsDiscardingJournal(false);
+    setShowExitModal(false);
+    setConversationMessages([]);
+    setActiveEntry(null);
+
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace("/home");
+  }, [clearRecordingTimeout, entry?.id, hasUserMessages, isDiscardingJournal, nativeRecorder, setActiveEntry, setConversationMessages, stopSpeaking, user?.studentNumber]);
+
+  const handleDiscardJournal = useCallback(() => {
+    if (isDiscardingJournal || isSavingJournal || isAnalyzingTags || isSavingTags) return;
+    activeRequestIdRef.current++;
+    shouldCancelRecordingRef.current = true;
+    clearRecordingTimeout();
+    if (Platform.OS === "web") {
+      try {
+        mediaRecorderRef.current?.stop();
+        mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+      } catch {}
+    } else {
+      try {
+        nativeRecorder.stop();
+      } catch {}
+    }
+    void stopSpeaking();
+    setShowExitModal(true);
+  }, [clearRecordingTimeout, isAnalyzingTags, isDiscardingJournal, isSavingJournal, isSavingTags, nativeRecorder, stopSpeaking]);
 
   const handleStartListening = async () => {
     if (!canListen) return;
@@ -736,6 +890,108 @@ export default function MuniVoiceScreen() {
     user?.studentNumber,
   ]);
 
+  const navigateToFinishedRiskEntry = useCallback(() => {
+    if (!riskModalRedirectEntryId) {
+      return;
+    }
+    const entryId = riskModalRedirectEntryId;
+    setRiskModalRedirectEntryId(null);
+    router.replace(`/journal-entry-view?entryId=${encodeURIComponent(entryId)}`);
+  }, [riskModalRedirectEntryId]);
+
+  const saveSupportDecision = useCallback(
+    async (response: "CONTACTED" | "DECLINED") => {
+      if (!user?.studentNumber || !entry?.id) {
+        return true;
+      }
+      setIsSavingSupportResponse(true);
+      const supportResult = await saveJournalSupportResponse({
+        entryId: entry.id,
+        response,
+        studentNumber: user.studentNumber,
+      });
+      setIsSavingSupportResponse(false);
+      if (!supportResult.ok) {
+        setStatusMessage(supportResult.message ?? "Unable to save your support response.");
+        return false;
+      }
+      if (supportResult.entry) {
+        setActiveEntry(supportResult.entry);
+      }
+      return true;
+    },
+    [entry?.id, setActiveEntry, user?.studentNumber],
+  );
+
+  const handleDismissRiskModal = useCallback(async () => {
+    if (isSavingSupportResponse) {
+      return;
+    }
+    const saved = await saveSupportDecision("DECLINED");
+    if (!saved) {
+      return;
+    }
+    setShowRiskModal(false);
+    navigateToFinishedRiskEntry();
+  }, [isSavingSupportResponse, navigateToFinishedRiskEntry, saveSupportDecision]);
+
+  const handleCallHotline = useCallback(async () => {
+    if (isSavingSupportResponse) {
+      return;
+    }
+    const saved = await saveSupportDecision("CONTACTED");
+    if (!saved) {
+      return;
+    }
+    try {
+      const canOpen = await Linking.canOpenURL(NCMH_HOTLINE_DIAL_URL);
+      if (!canOpen) {
+        Alert.alert(
+          "Call NCMH Hotline",
+          `Please call ${NCMH_HOTLINE_LANDLINE} or ${NCMH_HOTLINE_DISPLAY} for immediate support.`,
+        );
+        setShowRiskModal(false);
+        navigateToFinishedRiskEntry();
+        return;
+      }
+      setShowRiskModal(false);
+      await Linking.openURL(NCMH_HOTLINE_DIAL_URL);
+    } catch {
+      Alert.alert(
+        "Call NCMH Hotline",
+        `Please call ${NCMH_HOTLINE_LANDLINE} or ${NCMH_HOTLINE_DISPLAY} for immediate support.`,
+      );
+      setShowRiskModal(false);
+      navigateToFinishedRiskEntry();
+    }
+  }, [isSavingSupportResponse, navigateToFinishedRiskEntry, saveSupportDecision]);
+
+  const handleOpenCounseling = useCallback(async () => {
+    if (isSavingSupportResponse) {
+      return;
+    }
+    const saved = await saveSupportDecision("CONTACTED");
+    if (!saved) {
+      return;
+    }
+    setShowRiskModal(false);
+    setRiskModalRedirectEntryId(null);
+    router.push("/consult?track=professional&skipIntro=1");
+  }, [isSavingSupportResponse, saveSupportDecision]);
+
+  const handleOpenWellnessTools = useCallback(async () => {
+    if (isSavingSupportResponse) {
+      return;
+    }
+    const saved = await saveSupportDecision("CONTACTED");
+    if (!saved) {
+      return;
+    }
+    setShowRiskModal(false);
+    setRiskModalRedirectEntryId(null);
+    router.push("/wellness-tools");
+  }, [isSavingSupportResponse, saveSupportDecision]);
+
   const handleConfirmTagsAndFinish = useCallback(async () => {
     if (!user?.studentNumber || !entry?.id || isSavingJournal || isSavingTags) return;
     const finalTags = uniqueTags(selectedTags);
@@ -773,6 +1029,11 @@ export default function MuniVoiceScreen() {
         setConversationMessages(finishResult.messages);
       }
       setStatusMessage("Voice journal saved.");
+      if (finishResult.entry?.riskLevel === "HIGH") {
+        setRiskModalRedirectEntryId(finishResult.entry.id);
+        setShowRiskModal(true);
+        return;
+      }
       router.replace({
         pathname: "/journal-entry-view",
         params: { entryId: finishResult.entry?.id ?? entry.id },
@@ -796,61 +1057,6 @@ export default function MuniVoiceScreen() {
     user?.studentNumber,
   ]);
 
-  const handleDiscardJournal = useCallback(async () => {
-    if (!user?.studentNumber || !entry?.id || isDiscardingJournal) {
-      handleBack();
-      return;
-    }
-
-    shouldCancelRecordingRef.current = true;
-    clearRecordingTimeout();
-    if (Platform.OS === "web") {
-      mediaRecorderRef.current?.stop();
-    } else {
-      try {
-        nativeRecorder.stop();
-      } catch {}
-    }
-    void stopSpeaking();
-    setIsDiscardingJournal(true);
-    setStatusMessage("Discarding voice journal...");
-
-    const result = hasUserMessages
-      ? await discardJournalEntry({
-          entryId: entry.id,
-          studentNumber: user.studentNumber,
-        })
-      : await discardEmptyJournalEntry({
-          entryId: entry.id,
-          studentNumber: user.studentNumber,
-        });
-
-    setIsDiscardingJournal(false);
-
-    if (!result.ok) {
-      setStatusMessage(
-        result.message ?? "Unable to discard this voice journal.",
-      );
-      setVoiceState("error");
-      return;
-    }
-
-    setConversationMessages([]);
-    setActiveEntry(null);
-    router.replace("/home");
-  }, [
-    clearRecordingTimeout,
-    entry?.id,
-    handleBack,
-    hasUserMessages,
-    isDiscardingJournal,
-    nativeRecorder,
-    setActiveEntry,
-    setConversationMessages,
-    stopSpeaking,
-    user?.studentNumber,
-  ]);
-
   const statusTitle =
     voiceState === "listening"
       ? "Listening"
@@ -866,6 +1072,7 @@ export default function MuniVoiceScreen() {
 
   return (
     <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
+      <JournalLockGate>
       <View style={styles.topBar}>
         <Pressable
           style={styles.backButton}
@@ -905,7 +1112,7 @@ export default function MuniVoiceScreen() {
           <Text style={styles.connectionMessage}>
             {statusMessage ||
               transcript ||
-              "Tap Start Listening, speak naturally in Filipino or English, and Muni will respond with voice."}
+              "Tap Start Recording, speak naturally in Filipino or English, and Muni will respond with voice."}
           </Text>
 
           {muniReply ? (
@@ -949,7 +1156,7 @@ export default function MuniVoiceScreen() {
               resizeMode="contain"
             />
             <Text style={styles.primaryButtonText}>
-              {voiceState === "listening" ? "Listening..." : "Start Listening"}
+              {voiceState === "listening" ? "Recording..." : "Start Recording"}
             </Text>
           </Pressable>
 
@@ -1213,6 +1420,162 @@ export default function MuniVoiceScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={showRiskModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          void handleDismissRiskModal();
+        }}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, styles.riskModalCard]}>
+            <Pressable
+              style={styles.riskCloseButton}
+              onPress={() => {
+                void handleDismissRiskModal();
+              }}
+              disabled={isSavingSupportResponse}
+              accessibilityLabel="Dismiss support options"
+            >
+              <Ionicons name="close" size={18} color="#72808C" />
+            </Pressable>
+
+            <View style={styles.riskHeader}>
+              <View style={styles.riskIconBadge}>
+                <Ionicons name="shield-outline" size={22} color="#FFFFFF" />
+              </View>
+              <Text style={styles.riskTitle}>Get support right now</Text>
+              <Text style={styles.riskBody}>
+                Muni noticed language that may point to self-harm or suicide. Choose the fastest support option below.
+              </Text>
+              <Text style={styles.riskHotlineText}>
+                24/7 NCMH Crisis Hotline: {NCMH_HOTLINE_LANDLINE} or {NCMH_HOTLINE_DISPLAY}
+              </Text>
+            </View>
+
+            <View style={styles.riskActionStack}>
+              <Pressable
+                style={[
+                  styles.riskActionButton,
+                  styles.riskActionButtonHotline,
+                  isSavingSupportResponse && styles.riskActionButtonDisabled,
+                ]}
+                onPress={() => {
+                  void handleCallHotline();
+                }}
+                disabled={isSavingSupportResponse}
+              >
+                <View style={styles.riskActionIconWrap}>
+                  <Ionicons name="call-outline" size={20} color="#2E6B23" />
+                </View>
+                <View style={styles.riskActionCopy}>
+                  <Text style={styles.riskActionTitle}>Call hotline now</Text>
+                  <Text style={styles.riskActionHint}>
+                    Open your phone dialer for immediate crisis support.
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#68815F" />
+              </Pressable>
+
+              <Pressable
+                style={[
+                  styles.riskActionButton,
+                  styles.riskActionButtonCounseling,
+                  isSavingSupportResponse && styles.riskActionButtonDisabled,
+                ]}
+                onPress={() => {
+                  void handleOpenCounseling();
+                }}
+                disabled={isSavingSupportResponse}
+              >
+                <View style={styles.riskActionIconWrap}>
+                  <Ionicons name="calendar-outline" size={20} color="#3B5B7A" />
+                </View>
+                <View style={styles.riskActionCopy}>
+                  <Text style={styles.riskActionTitle}>Schedule counseling</Text>
+                  <Text style={styles.riskActionHint}>
+                    Go straight to the counseling booking screen.
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#68815F" />
+              </Pressable>
+
+              <Pressable
+                style={[
+                  styles.riskActionButton,
+                  styles.riskActionButtonWellness,
+                  isSavingSupportResponse && styles.riskActionButtonDisabled,
+                ]}
+                onPress={() => {
+                  void handleOpenWellnessTools();
+                }}
+                disabled={isSavingSupportResponse}
+              >
+                <View style={styles.riskActionIconWrap}>
+                  <Ionicons name="leaf-outline" size={20} color="#4F7D38" />
+                </View>
+                <View style={styles.riskActionCopy}>
+                  <Text style={styles.riskActionTitle}>Use wellness tools</Text>
+                  <Text style={styles.riskActionHint}>
+                    Open guided calming exercises right away.
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#68815F" />
+              </Pressable>
+            </View>
+
+            <Text style={styles.riskFooterText}>
+              If you are in immediate danger, contact local emergency services now.
+            </Text>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showExitModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (isDiscardingJournal) return;
+          setShowExitModal(false);
+        }}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.exitModalTitle}>Exit Voice Journal?</Text>
+            <Text style={styles.modalBody}>
+              Leaving now will discard your unsaved voice journal progress. Are you sure you want to exit?
+            </Text>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={styles.modalSecondaryButton}
+                onPress={() => setShowExitModal(false)}
+                disabled={isDiscardingJournal}
+              >
+                <Text style={styles.modalSecondaryText}>Stay</Text>
+              </Pressable>
+
+              <Pressable
+                style={[styles.modalDangerButton, isDiscardingJournal && styles.actionButtonDisabled]}
+                onPress={() => {
+                  void handleConfirmExit();
+                }}
+                disabled={isDiscardingJournal}
+              >
+                {isDiscardingJournal ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.modalDangerText}>Leave & Discard</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      </JournalLockGate>
     </SafeAreaView>
   );
 }
@@ -1638,5 +2001,154 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 13,
     fontWeight: "700",
+  },
+  modalDangerButton: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 999,
+    backgroundColor: "#DC4C4C",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalDangerText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  exitModalTitle: {
+    color: "#34465A",
+    fontSize: 17,
+    lineHeight: 23,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  modalBody: {
+    color: "#52606C",
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "500",
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  riskModalCard: {
+    width: "100%",
+    maxWidth: 360,
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 16,
+    shadowColor: "#525C67",
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  riskCloseButton: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 2,
+  },
+  riskHeader: {
+    alignItems: "center",
+    paddingTop: 8,
+    marginBottom: 14,
+  },
+  riskIconBadge: {
+    width: 46,
+    height: 46,
+    borderRadius: 999,
+    backgroundColor: "#79C943",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  riskTitle: {
+    color: "#33475C",
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  riskBody: {
+    marginTop: 8,
+    color: "#566675",
+    fontSize: 14,
+    lineHeight: 21,
+    fontWeight: "500",
+    textAlign: "center",
+  },
+  riskHotlineText: {
+    marginTop: 10,
+    color: "#2E6B23",
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  riskActionStack: {
+    rowGap: 10,
+  },
+  riskActionButton: {
+    minHeight: 70,
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 10,
+  },
+  riskActionButtonHotline: {
+    backgroundColor: "#F3FBEF",
+    borderColor: "#CFE7BE",
+  },
+  riskActionButtonCounseling: {
+    backgroundColor: "#F4F8FC",
+    borderColor: "#D7E2EE",
+  },
+  riskActionButtonWellness: {
+    backgroundColor: "#F8FAF3",
+    borderColor: "#E1E8D8",
+  },
+  riskActionButtonDisabled: {
+    opacity: 0.7,
+  },
+  riskActionIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  riskActionCopy: {
+    flex: 1,
+  },
+  riskActionTitle: {
+    color: "#31465A",
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "700",
+  },
+  riskActionHint: {
+    marginTop: 2,
+    color: "#667683",
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  riskFooterText: {
+    marginTop: 12,
+    color: "#7A8691",
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: "center",
   },
 });

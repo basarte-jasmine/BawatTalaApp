@@ -1,7 +1,7 @@
 export const STUDENT_ID_PATTERN = /^\d{2}-\d{4}$/;
 
 export const AUTH_MESSAGES = {
-  enterUsernameAndPassword: "Please enter your username and password.",
+  enterUsernameAndPassword: "Please enter your Student ID and password.",
   studentIdRequired: "Student ID is required.",
   passwordRequired: "Password is required.",
   invalidEmailOrPassword: "Invalid student ID or password.",

@@ -82,7 +82,7 @@ export default function Login({ onLogin }) {
         <div>
           <label className="mb-1 block text-sm font-semibold text-admin-ink">Email</label>
           <input
-            type="text"
+            type="email"
             name="bt-admin-email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
