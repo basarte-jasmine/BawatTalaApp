@@ -10,6 +10,7 @@ import {
   Settings,
   ShieldCheck,
   Users,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -607,12 +608,25 @@ export default function Header({
       </header>
 
       {notificationToast ? (
-        <button
-          type="button"
-          onClick={() => void handleOpenNotification(notificationToast)}
-          className="fixed right-5 top-5 z-50 w-[min(22rem,calc(100vw-2.5rem))] rounded-2xl border border-[#cfe0c8] bg-white p-4 text-left shadow-[0_20px_50px_rgba(32,49,38,0.22)] transition hover:border-[#9fc68f] hover:bg-[#fbfdf9]"
+        <div
+          className="fixed right-5 top-5 z-50 w-[min(22rem,calc(100vw-2.5rem))] rounded-2xl border border-[#cfe0c8] bg-white shadow-[0_20px_50px_rgba(32,49,38,0.22)] transition hover:border-[#9fc68f] hover:bg-[#fbfdf9]"
         >
-          <div className="flex items-start gap-3">
+          <button
+            type="button"
+            aria-label="Close notification"
+            onClick={(event) => {
+              event.stopPropagation();
+              setNotificationToast(null);
+            }}
+            className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full text-[#6d816d] transition hover:bg-[#edf7e8] hover:text-[#1f5d2f] focus:outline-none focus:ring-2 focus:ring-emerald-300"
+          >
+            <X className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleOpenNotification(notificationToast)}
+            className="flex w-full items-start gap-3 rounded-2xl p-4 pr-12 text-left focus:outline-none focus:ring-4 focus:ring-emerald-100"
+          >
             <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#edf7e8] text-[#386641]">
               <Bell className="h-4 w-4" />
             </span>
@@ -621,8 +635,8 @@ export default function Header({
               <span className="mt-1 block truncate text-sm font-bold text-admin-ink">{notificationToast.title}</span>
               <span className="mt-1 line-clamp-2 block text-sm leading-5 text-[#516152]">{notificationToast.message}</span>
             </span>
-          </div>
-        </button>
+          </button>
+        </div>
       ) : null}
 
       <Modal isOpen={isSearchModalOpen} onClose={() => setIsSearchModalOpen(false)} title="Global Search" maxWidth="max-w-6xl">

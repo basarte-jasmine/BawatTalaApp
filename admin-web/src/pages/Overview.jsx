@@ -69,31 +69,17 @@ const ANALYTICS_CARD_DEFS = [
   },
 ];
 
+const RANGE_OPTIONS = [
+  { key: "7d", label: "7 Days" },
+  { key: "30d", label: "30 Days" },
+  { key: "90d", label: "90 Days" },
+  { key: "custom", label: "Custom" },
+];
+
 const RISK_COLORS = {
   crisis: "#FF5D5D",
   distressed: "#F59E0B",
 };
-const PRIMARY_STUDENT_CONCERN_DEFS = [
-  { label: "Gratitude / Appreciation", sources: ["Gratitude / Appreciation"] },
-  { label: "Hobbies & Interests", sources: ["Hobbies & Interests"] },
-  { label: "Travel & Adventure", sources: ["Travel & Adventure"] },
-  { label: "Personal Growth / Epiphanies", sources: ["Personal Growth / Epiphanies"] },
-  { label: "Spirituality / Faith", sources: ["Spirituality / Faith"] },
-  { label: "Personal problems", sources: ["Personal problems"] },
-  { label: "Mental health", sources: ["Mental health"] },
-  { label: "Career guidance", sources: ["Career guidance"] },
-  { label: "Financial", sources: ["Financial guidance", "Financial"] },
-  { label: "Burnout / Exhaustion", sources: ["Burnout / Exhaustion", "Burnout/Exhaustion"] },
-  { label: "Academic problems", sources: ["Academic problems"] },
-  { label: "Peer relationship", sources: ["Peer", "Peer relationship"] },
-  { label: "Family relationship", sources: ["Family", "Family relationship"] },
-  { label: "Romantic relationship", sources: ["Romantic", "Romantic relationship"] },
-  { label: "Anxiety", sources: ["Anxiety"] },
-  { label: "Stress", sources: ["Stress"] },
-  { label: "Bullying", sources: ["Bullying"] },
-  { label: "Adjustment", sources: ["Adjustment"] },
-  { label: "Others", sources: ["Others"] },
-];
 const CONSULTATION_VOLUME_CATEGORY_DEFS = [
   { label: "Personal problems", sources: ["Personal problems"] },
   { label: "Mental health", sources: ["Mental health"] },
@@ -305,15 +291,46 @@ function buildChartAxis(maxValue) {
   };
 }
 
+function buildJournalEntriesAxis(maxValue) {
+  const max = Math.max(0, Math.ceil(Number(maxValue || 0)));
+
+  if (max < 8) {
+    const axisMax = max + 1;
+    return {
+      axisMax,
+      guides: Array.from({ length: axisMax + 1 }, (_, index) => axisMax - index),
+    };
+  }
+
+  return buildChartAxis(max);
+}
+
+function getChartTickIndexes(pointCount, maxTickCount = 8) {
+  if (pointCount <= 0) return [];
+  if (pointCount <= maxTickCount) return Array.from({ length: pointCount }, (_, index) => index);
+
+  const lastIndex = pointCount - 1;
+  const interval = Math.ceil(lastIndex / (maxTickCount - 1));
+  const indexes = [];
+
+  for (let index = 0; index < lastIndex; index += interval) {
+    indexes.push(index);
+  }
+
+  indexes.push(lastIndex);
+  return indexes;
+}
+
 function JournalEntriesGraph({ data, onSelect }) {
   const width = 760;
-  const height = 340;
+  const height = 360;
   const padLeft = 68;
   const padRight = 24;
   const padTop = 44;
-  const padBottom = 56;
-  const max = Math.max(...data.map((item) => item.value), 1);
-  const { axisMax, guides } = buildChartAxis(max);
+  const padBottom = 64;
+  const max = Math.max(...data.map((item) => Number(item.value || 0)), 0);
+  const { axisMax, guides } = buildJournalEntriesAxis(max);
+  const tickIndexes = new Set(getChartTickIndexes(data.length));
   const points = data.map((item, index) => {
     const x = padLeft + (index * (width - padLeft - padRight)) / Math.max(1, data.length - 1);
     const y = padTop + ((axisMax - item.value) * (height - padTop - padBottom)) / axisMax;
@@ -375,15 +392,28 @@ function JournalEntriesGraph({ data, onSelect }) {
             </text>
           </g>
         ))}
+        {points.map((point, index) =>
+          tickIndexes.has(index) ? (
+            <g key={`tick-${point.isoDate || point.label}`}>
+              <line
+                x1={point.x}
+                y1={height - padBottom}
+                x2={point.x}
+                y2={height - padBottom + 5}
+                stroke="#94A3B8"
+              />
+              <text
+                x={point.x}
+                y={height - padBottom + 24}
+                textAnchor={index === 0 ? "start" : index === points.length - 1 ? "end" : "middle"}
+                className="fill-[#334155] text-[12px] font-semibold"
+              >
+                {point.label}
+              </text>
+            </g>
+          ) : null,
+        )}
       </svg>
-      <div
-        className="-mt-1 grid gap-2 pl-[68px] pr-6 text-center text-sm font-black text-slate-800"
-        style={{ gridTemplateColumns: `repeat(${Math.max(1, data.length)}, minmax(0, 1fr))` }}
-      >
-        {data.map((item) => (
-          <span key={item.label}>{item.label}</span>
-        ))}
-      </div>
     </div>
   );
 }
@@ -1903,10 +1933,6 @@ function buildConcernCategoryData(data, definitions) {
   }).sort((a, b) => b.value - a.value || a.order - b.order);
 }
 
-function buildPrimaryStudentConcernData(data) {
-  return buildConcernCategoryData(data, PRIMARY_STUDENT_CONCERN_DEFS);
-}
-
 function buildConsultationVolumeCategoryData(data) {
   return buildConcernCategoryData(data, CONSULTATION_VOLUME_CATEGORY_DEFS);
 }
@@ -1915,6 +1941,9 @@ export default function Overview({ onLogout, session }) {
   const navigate = useNavigate();
   const overviewExportRef = useRef(null);
   const [now, setNow] = useState(() => new Date());
+  const todayIso = getCurrentMonthAnalyticsParams().endDate;
+  const [rangeKey, setRangeKey] = useState("30d");
+  const [customRange, setCustomRange] = useState({ startDate: todayIso, endDate: todayIso });
   const [dashboardSummary, setDashboardSummary] = useState(null);
   const [summaryError, setSummaryError] = useState("");
   const [summaryLoading, setSummaryLoading] = useState(true);
@@ -1966,7 +1995,7 @@ export default function Overview({ onLogout, session }) {
     async function loadAnalyticsOverview() {
       try {
         setAnalyticsLoading(true);
-        const data = await fetchAdminAnalytics(getCurrentMonthAnalyticsParams());
+        const data = await fetchAdminAnalytics({ range: "30d" });
         if (!isMounted) return;
         setAnalyticsOverview(data);
         setAnalyticsError("");
@@ -1985,6 +2014,40 @@ export default function Overview({ onLogout, session }) {
       isMounted = false;
     };
   }, []);
+
+  async function loadAnalyticsRange(nextRangeKey, nextCustomRange = customRange) {
+    try {
+      setAnalyticsLoading(true);
+      const data = await fetchAdminAnalytics({
+        range: nextRangeKey,
+        startDate: nextRangeKey === "custom" ? nextCustomRange.startDate : undefined,
+        endDate: nextRangeKey === "custom" ? nextCustomRange.endDate : undefined,
+      });
+      setAnalyticsOverview(data);
+      setAnalyticsError("");
+    } catch (error) {
+      setAnalyticsError(error instanceof Error ? error.message : "Failed to load overview analytics.");
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  }
+
+  function handleRangeChange(nextRangeKey) {
+    setRangeKey(nextRangeKey);
+    void loadAnalyticsRange(nextRangeKey, customRange);
+  }
+
+  function handleCustomDateChange(field, value) {
+    setCustomRange((current) => ({ ...current, [field]: value }));
+  }
+
+  function handleCustomRangeApply() {
+    if (!customRange.startDate || !customRange.endDate || customRange.startDate > customRange.endDate) {
+      setAnalyticsError("Choose a valid custom date range before applying the filter.");
+      return;
+    }
+    void loadAnalyticsRange("custom", customRange);
+  }
 
   useEffect(() => {
     let isMounted = true;
@@ -2014,14 +2077,40 @@ export default function Overview({ onLogout, session }) {
     year: "numeric",
     timeZone: "Asia/Manila",
   }).format(now);
+  const selectedRangeRows = Array.isArray(analyticsOverview?.reports?.students)
+    ? analyticsOverview.reports.students
+    : [];
+  const selectedRangeTotals = selectedRangeRows.reduce(
+    (totals, row) => ({
+      entries: totals.entries + Number(row.entriesInRange || 0),
+      flags: totals.flags + Number(row.flagsInRange || 0),
+      crisis: totals.crisis + Number(row.highRiskFlags || 0),
+      distressed: totals.distressed + Number(row.mediumRiskFlags || 0),
+      contacted: totals.contacted + Number(row.contactedSupport || 0),
+    }),
+    { entries: 0, flags: 0, crisis: 0, distressed: 0, contacted: 0 },
+  );
+  const selectedRangeLabel = analyticsOverview?.filters
+    ? `${analyticsOverview.filters.startDate} to ${analyticsOverview.filters.endDate}`
+    : "Loading selected range...";
   const summaryCards = SUMMARY_CARD_DEFS.map((item) => {
+    const isRangeMetric = item.key === "flagged" || item.key === "entries";
+    const cardLoading = isRangeMetric ? analyticsLoading : summaryLoading;
     const source =
       item.key === "flagged"
-        ? dashboardSummary?.cards?.flaggedEntries
+        ? {
+            value: selectedRangeTotals.flags,
+            direction: "neutral",
+            percentageText: "Selected range",
+          }
         : item.key === "students"
           ? dashboardSummary?.cards?.totalStudents
           : item.key === "entries"
-            ? dashboardSummary?.cards?.totalEntries
+            ? {
+                value: selectedRangeTotals.entries,
+                direction: "neutral",
+                percentageText: "Selected range",
+              }
             : item.key === "futureMessages"
               ? dashboardSummary?.cards?.futureSelfMessages
               : item.key === "scheduled"
@@ -2032,16 +2121,16 @@ export default function Overview({ onLogout, session }) {
 
     return {
       ...item,
-      value: summaryLoading
+      value: cardLoading
         ? "--"
         : hasValue
           ? item.valueType === "percent"
             ? `${formatMetricValue(source.value)}%`
             : formatMetricValue(source.value)
           : "--",
-      delta: summaryLoading ? "--" : source?.percentageText || "--",
-      direction: summaryLoading || !hasValue ? "neutral" : direction,
-      tone: summaryLoading || !hasValue ? "gray" : mapMetricTone(item.key, direction),
+      delta: cardLoading ? "--" : source?.percentageText || "--",
+      direction: cardLoading || !hasValue ? "neutral" : direction,
+      tone: cardLoading || !hasValue ? "gray" : mapMetricTone(item.key, direction),
     };
   });
   const analyticsCards = ANALYTICS_CARD_DEFS.map((item) => {
@@ -2077,7 +2166,7 @@ export default function Overview({ onLogout, session }) {
     };
   });
   const journalEntriesData =
-    dashboardSummary?.charts?.journalEntries?.length > 0 ? dashboardSummary.charts.journalEntries : [];
+    analyticsOverview?.charts?.journalEntryVolume?.length > 0 ? analyticsOverview.charts.journalEntryVolume : [];
   const genderData =
     dashboardSummary?.charts?.genderDistribution?.length > 0
       ? withColors(dashboardSummary.charts.genderDistribution, ["#3E8914", "#3DA35D", "#A7F3D0"])
@@ -2102,10 +2191,12 @@ export default function Overview({ onLogout, session }) {
     dashboardSummary?.charts?.activeUsageByCourseYear?.series?.length > 0
       ? withColors(dashboardSummary.charts.activeUsageByCourseYear.series, ["#3E8914", "#3DA35D", "#96E072", "#134611"])
       : [];
-  const primaryConcernsData =
-    dashboardSummary?.charts?.primaryConcerns?.length > 0
-      ? buildPrimaryStudentConcernData(dashboardSummary.charts.primaryConcerns)
-      : [];
+  const primaryConcernsData = (analyticsOverview?.charts?.concernTrends?.series || [])
+    .map((item) => ({
+      ...item,
+      value: Array.isArray(item.values) ? item.values.reduce((sum, value) => sum + Number(value || 0), 0) : 0,
+    }))
+    .sort((a, b) => b.value - a.value);
   const hasPrimaryConcernData = primaryConcernsData.some((item) => item.value > 0);
   const barangayConcernData =
     dashboardSummary?.charts?.topConcernsByBarangay?.length > 0
@@ -2114,15 +2205,15 @@ export default function Overview({ onLogout, session }) {
           percent: items[0]?.value ? Math.round((item.value / items[0].value) * 100) : 0,
         }))
       : [];
-  const crisisSignalCount = riskFlags.filter((entry) =>
-    ["HIGH", "CRITICAL"].includes(String(entry.riskLevel || "").toUpperCase()),
-  ).length;
-  const distressedSignalCount = riskFlags.filter((entry) =>
-    ["LOW", "MEDIUM", "MODERATE"].includes(String(entry.riskLevel || "").toUpperCase()),
-  ).length;
-  const contactedSignalCount = riskFlags.filter(
-    (entry) => String(entry.supportResponse || "").toUpperCase() === "CONTACTED",
-  ).length;
+  const crisisSignalCount = analyticsOverview
+    ? selectedRangeTotals.crisis
+    : riskFlags.filter((entry) => ["HIGH", "CRITICAL"].includes(String(entry.riskLevel || "").toUpperCase())).length;
+  const distressedSignalCount = analyticsOverview
+    ? selectedRangeTotals.distressed
+    : riskFlags.filter((entry) => ["LOW", "MEDIUM", "MODERATE"].includes(String(entry.riskLevel || "").toUpperCase())).length;
+  const contactedSignalCount = analyticsOverview
+    ? selectedRangeTotals.contacted
+    : riskFlags.filter((entry) => String(entry.supportResponse || "").toUpperCase() === "CONTACTED").length;
   const handleSummaryCardSelect = (cardTitle) => {
     if (cardTitle === "Flagged Entries") {
       navigate("/flagged");
@@ -2140,7 +2231,8 @@ export default function Overview({ onLogout, session }) {
       return;
     }
 
-    const todayIso = getCurrentMonthAnalyticsParams(now).endDate;
+    const reportStartDate = analyticsOverview?.filters?.startDate || todayIso;
+    const reportEndDate = analyticsOverview?.filters?.endDate || todayIso;
     const reportPdfOptions = {
       activeUsageSeries,
       analyticsCards,
@@ -2158,7 +2250,7 @@ export default function Overview({ onLogout, session }) {
       sentimentDistributionData,
       studentDemographicLocations,
       summaryCards,
-      todayLabel,
+      todayLabel: `${todayLabel} | Analytics range: ${reportStartDate} to ${reportEndDate}`,
     };
 
     try {
@@ -2178,7 +2270,7 @@ export default function Overview({ onLogout, session }) {
           pdfBlob = createOverviewReportPdf(reportPdfOptions);
         }
       }
-      downloadBlob(pdfBlob, `overview-dashboard-${todayIso}.pdf`);
+      downloadBlob(pdfBlob, `overview-dashboard-${reportStartDate}-to-${reportEndDate}.pdf`);
     } catch (error) {
       console.error("Overview dashboard PDF export failed:", error);
       window.alert(error instanceof Error ? error.message : "Failed to export overview dashboard PDF.");
@@ -2211,11 +2303,59 @@ export default function Overview({ onLogout, session }) {
           </div>
         ) : null}
 
-        <div className="flex flex-wrap justify-end gap-3">
+        <div className="flex flex-nowrap items-center justify-end gap-3 overflow-x-auto pb-1" data-export-ignore="true">
+          <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+            {RANGE_OPTIONS.map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => handleRangeChange(option.key)}
+                aria-pressed={rangeKey === option.key}
+                className={`whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium transition ${
+                  rangeKey === option.key
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+
+          {rangeKey === "custom" ? (
+            <div className="flex shrink-0 items-center gap-2">
+              <input
+                type="date"
+                aria-label="Analytics start date"
+                value={customRange.startDate}
+                max={todayIso}
+                onChange={(event) => handleCustomDateChange("startDate", event.target.value)}
+                className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm"
+              />
+              <input
+                type="date"
+                aria-label="Analytics end date"
+                value={customRange.endDate}
+                min={customRange.startDate || undefined}
+                max={todayIso}
+                onChange={(event) => handleCustomDateChange("endDate", event.target.value)}
+                className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm"
+              />
+              <button
+                type="button"
+                onClick={handleCustomRangeApply}
+                disabled={analyticsLoading}
+                className="h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"
+              >
+                Apply
+              </button>
+            </div>
+          ) : null}
+
           <button
             type="button"
             onClick={() => navigate("/appointments")}
-            className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-600 shadow-sm transition-colors hover:border-emerald-200 hover:text-emerald-700"
+            className="flex shrink-0 items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-600 shadow-sm transition-colors hover:border-emerald-200 hover:text-emerald-700"
           >
             <CalendarIcon className="h-4 w-4 text-emerald-600" />
             {todayLabel}
@@ -2224,8 +2364,7 @@ export default function Overview({ onLogout, session }) {
             type="button"
             onClick={handleExportPdf}
             disabled={isExportingPdf || summaryLoading || analyticsLoading}
-            data-export-ignore="true"
-            className="flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
+            className="flex shrink-0 items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
           >
             <Download className="h-4 w-4" />
             {isExportingPdf ? "Exporting..." : summaryLoading || analyticsLoading ? "Preparing Charts..." : "Export to PDF"}
@@ -2249,7 +2388,7 @@ export default function Overview({ onLogout, session }) {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[2fr,1fr]">
           <Card
             title="Journal Entries Volume"
-            subtitle="Total journal entries per week (current month)"
+            subtitle={`Journal entries from ${selectedRangeLabel}`}
             className="relative min-h-[485px] rounded-2xl border-admin-border"
           >
             <Activity className="absolute right-6 top-7 h-5 w-5 text-emerald-600" />

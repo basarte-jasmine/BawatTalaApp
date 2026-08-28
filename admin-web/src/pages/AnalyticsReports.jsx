@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Printer } from "lucide-react";
+import { Download } from "lucide-react";
 import Layout from "../components/Layout";
 import { fetchAdminAnalytics } from "../lib/admin-api";
 import { getRiskLevelLabel } from "../lib/risk-labels";
@@ -45,23 +45,16 @@ function escapeCsv(value) {
   return text;
 }
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
 function downloadFile(filename, content, type) {
-  const blob = new Blob([content], { type });
+  const blob = content instanceof Blob ? content : new Blob([content], { type });
   const url = window.URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = filename;
+  document.body.appendChild(anchor);
   anchor.click();
-  window.URL.revokeObjectURL(url);
+  anchor.remove();
+  window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
 }
 
 function formatCellValue(row, column) {
@@ -79,49 +72,141 @@ function buildStudentReportCsv(rows) {
   return lines.join("\n");
 }
 
-function buildPrintHtml({ rows, filters }) {
-  const tableRows = rows.length
-    ? rows
-        .map(
-          (row) => `
-            <tr>
-              ${REPORT_COLUMNS.map((column) => `<td>${escapeHtml(formatCellValue(row, column))}</td>`).join("")}
-            </tr>
-          `,
-        )
-        .join("")
-    : `<tr><td colspan="${REPORT_COLUMNS.length}">No student rows available for this filter.</td></tr>`;
+function escapePdfText(value) {
+  return String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]/g, "-")
+    .replace(/[\\()]/g, "\\$&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-  return `
-    <!doctype html>
-    <html>
-      <head>
-        <title>Bawat Tala Student Report</title>
-        <style>
-          body { font-family: Arial, sans-serif; color: #14213d; margin: 24px; }
-          h1 { margin: 0; font-size: 24px; }
-          .meta { margin: 8px 0 14px; font-size: 12px; color: #52616b; }
-          .privacy { margin: 14px 0; padding: 10px 12px; border: 1px solid #cbd5e1; background: #f8fafc; border-radius: 8px; font-size: 12px; }
-          table { width: 100%; border-collapse: collapse; page-break-inside: auto; }
-          th, td { border: 1px solid #d7dee8; padding: 6px; font-size: 9px; text-align: left; vertical-align: top; }
-          th { background: #edf6e9; color: #134611; font-weight: 700; }
-          tr { page-break-inside: avoid; }
-          @page { margin: 12mm; size: landscape; }
-        </style>
-      </head>
-      <body>
-        <h1>Bawat Tala Student Report</h1>
-        <div class="meta">Range: ${escapeHtml(filters?.startDate || "--")} to ${escapeHtml(filters?.endDate || "--")}</div>
-        <div class="privacy">Student users only. Journal messages, entry text, private notes, generated insights, admin accounts, and counselor names are excluded.</div>
-        <table>
-          <thead>
-            <tr>${REPORT_COLUMNS.map((column) => `<th>${escapeHtml(column.label)}</th>`).join("")}</tr>
-          </thead>
-          <tbody>${tableRows}</tbody>
-        </table>
-      </body>
-    </html>
-  `;
+function truncatePdfText(value, maxLength) {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  return text.length > maxLength ? `${text.slice(0, Math.max(0, maxLength - 3))}...` : text;
+}
+
+function createStudentReportPdf({ rows, filters }) {
+  const pageWidth = 841.89;
+  const pageHeight = 595.28;
+  const margin = 36;
+  const bottomMargin = 30;
+  const pages = [];
+  let commands = [];
+  let y = pageHeight - margin;
+
+  const addText = (text, x = margin, size = 9, bold = false) => {
+    commands.push(`BT /${bold ? "F2" : "F1"} ${size} Tf 1 0 0 1 ${x} ${y.toFixed(2)} Tm (${escapePdfText(text)}) Tj ET`);
+  };
+  const addRule = (offset = 7) => {
+    commands.push(`0.82 0.87 0.84 RG 0.7 w ${margin} ${(y - offset).toFixed(2)} m ${pageWidth - margin} ${(y - offset).toFixed(2)} l S`);
+  };
+  const beginPage = () => {
+    commands = [];
+    pages.push(commands);
+    y = pageHeight - margin;
+    addText("Bawat Tala Student User Report", margin, 18, true);
+    y -= 22;
+    addText(`Report range: ${filters?.startDate || "--"} to ${filters?.endDate || "--"}`, margin, 10, true);
+    y -= 16;
+    addText(
+      "Student users only. Journal text, messages, private notes, generated insights, admin accounts, and counselor names are excluded.",
+      margin,
+      8,
+    );
+    y -= 17;
+    addRule(0);
+    y -= 18;
+  };
+  const ensureSpace = (requiredHeight) => {
+    if (y - requiredHeight < bottomMargin) beginPage();
+  };
+
+  beginPage();
+
+  if (!rows.length) {
+    addText("No student rows are available for this filter.", margin, 11);
+  }
+
+  rows.forEach((row, index) => {
+    ensureSpace(82);
+    addText(
+      `${index + 1}. ${truncatePdfText(row.fullName || "Unnamed student", 64)} (${truncatePdfText(row.studentNumber || "No student number", 24)})`,
+      margin,
+      11,
+      true,
+    );
+    y -= 16;
+    addText(
+      `Email: ${truncatePdfText(row.email || "--", 44)}   |   Program: ${truncatePdfText(row.program || "--", 34)}   |   Year: ${row.yearLevel || "--"}   |   Gender: ${row.gender || "--"}`,
+      margin + 10,
+      8.5,
+    );
+    y -= 14;
+    addText(
+      `Location: ${truncatePdfText([row.barangay, row.city, row.province].filter(Boolean).join(", ") || "--", 116)}`,
+      margin + 10,
+      8.5,
+    );
+    y -= 14;
+    addText(
+      `Entries: ${formatNumber(row.entriesInRange)}   |   Flags: ${formatNumber(row.flagsInRange)}   |   Crisis: ${formatNumber(row.highRiskFlags)}   |   Distressed: ${formatNumber(row.mediumRiskFlags)}   |   Declined: ${formatNumber(row.declinedSupport)}   |   Contacted: ${formatNumber(row.contactedSupport)}   |   Sessions: ${formatNumber(row.counselingSessions)}`,
+      margin + 10,
+      8.5,
+    );
+    y -= 14;
+    addText(
+      `Top concern: ${truncatePdfText(row.topConcern || "--", 44)}   |   Latest risk: ${getRiskLevelLabel(row.latestRiskLevel)}   |   Status: ${row.reportStatus || "--"}`,
+      margin + 10,
+      8.5,
+    );
+    y -= 14;
+    addRule(0);
+    y -= 14;
+  });
+
+  const encoder = new TextEncoder();
+  const parts = [];
+  const offsets = [];
+  let byteOffset = 0;
+  const appendString = (value) => {
+    const bytes = encoder.encode(value);
+    parts.push(bytes);
+    byteOffset += bytes.length;
+  };
+  const appendObject = (id, content) => {
+    offsets[id] = byteOffset;
+    appendString(`${id} 0 obj\n${content}\nendobj\n`);
+  };
+
+  appendString("%PDF-1.4\n");
+  const pageIds = pages.map((_, index) => 5 + index * 2);
+  appendObject(1, "<< /Type /Catalog /Pages 2 0 R >>");
+  appendObject(2, `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageIds.length} >>`);
+  appendObject(3, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  appendObject(4, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
+
+  pages.forEach((pageCommands, index) => {
+    const pageId = 5 + index * 2;
+    const contentId = pageId + 1;
+    const content = pageCommands.join("\n");
+    appendObject(
+      pageId,
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentId} 0 R >>`,
+    );
+    appendObject(contentId, `<< /Length ${encoder.encode(content).length} >>\nstream\n${content}\nendstream`);
+  });
+
+  const xrefOffset = byteOffset;
+  const maxObjectId = 4 + pages.length * 2;
+  appendString(`xref\n0 ${maxObjectId + 1}\n0000000000 65535 f \n`);
+  for (let id = 1; id <= maxObjectId; id += 1) {
+    appendString(`${String(offsets[id] || 0).padStart(10, "0")} 00000 n \n`);
+  }
+  appendString(`trailer\n<< /Size ${maxObjectId + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
+
+  return new Blob(parts, { type: "application/pdf" });
 }
 
 function StudentReportTable({ rows, loading }) {
@@ -193,6 +278,7 @@ export default function AnalyticsReports({ onLogout, session }) {
   const [customRange, setCustomRange] = useState({ startDate: today, endDate: today });
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
   const studentRows = useMemo(
@@ -279,23 +365,23 @@ export default function AnalyticsReports({ onLogout, session }) {
     }
   }
 
-  async function handlePrintReport() {
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
+  async function handleExportPdf() {
     try {
-      setLoading(true);
+      setIsExportingPdf(true);
       const currentAnalytics = await getAnalyticsForCurrentFilters();
       const rows = Array.isArray(currentAnalytics?.reports?.students) ? currentAnalytics.reports.students : [];
+      const filters = currentAnalytics?.filters || {};
       setErrorMessage("");
-      printWindow.document.write(buildPrintHtml({ rows, filters: currentAnalytics?.filters }));
-      printWindow.document.close();
-      printWindow.focus();
-      printWindow.print();
+      const pdf = createStudentReportPdf({ rows, filters });
+      downloadFile(
+        `student-report-${filters.startDate || today}-to-${filters.endDate || today}.pdf`,
+        pdf,
+        "application/pdf",
+      );
     } catch (error) {
-      printWindow.close();
-      setErrorMessage(error instanceof Error ? error.message : "Failed to prepare PDF report.");
+      setErrorMessage(error instanceof Error ? error.message : "Failed to export PDF report.");
     } finally {
-      setLoading(false);
+      setIsExportingPdf(false);
     }
   }
 
@@ -371,12 +457,12 @@ export default function AnalyticsReports({ onLogout, session }) {
             </button>
             <button
               type="button"
-              onClick={handlePrintReport}
-              disabled={loading || !analytics}
+              onClick={handleExportPdf}
+              disabled={loading || isExportingPdf || !analytics}
               className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-60"
             >
-              <Printer className="h-4 w-4" />
-              Print / Save PDF
+              <Download className="h-4 w-4" />
+              {isExportingPdf ? "Exporting..." : "Export PDF"}
             </button>
           </div>
         </div>
