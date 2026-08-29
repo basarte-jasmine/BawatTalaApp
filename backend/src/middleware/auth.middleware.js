@@ -68,13 +68,10 @@ function requireStudentOnlyAuth(req, res, next) {
     return res.status(401).json({ message: "Authentication required. Please sign in." });
   }
 
-  const targetStudentNumber =
-    req.params?.studentNumber ||
-    req.query?.studentNumber ||
-    req.body?.studentNumber;
-
-  if (targetStudentNumber) {
-    const targetNorm = normalizeStudentNumber(targetStudentNumber);
+  // Owner is the Bearer/session student only. Extra studentNumber on body/query is ignored.
+  const pathStudentNumber = req.params?.studentNumber;
+  if (pathStudentNumber) {
+    const targetNorm = normalizeStudentNumber(pathStudentNumber);
     const authNorm = normalizeStudentNumber(student.studentNumber);
     if (targetNorm && authNorm && targetNorm !== authNorm) {
       return res.status(403).json({ message: "Access denied." });
@@ -87,19 +84,7 @@ function requireStudentOnlyAuth(req, res, next) {
 
 function resolveStudentNumber(req) {
   const fromAuth = req.student?.studentNumber || getAuthenticatedStudent(req)?.studentNumber;
-  const fromQuery = req.query?.studentNumber;
-  const fromBody = req.body?.studentNumber;
-  const claimed = fromQuery || fromBody;
-  if (
-    claimed &&
-    fromAuth &&
-    String(normalizeStudentNumber(claimed)) !== String(normalizeStudentNumber(fromAuth))
-  ) {
-    const error = new Error("Access denied.");
-    error.statusCode = 403;
-    throw error;
-  }
-  return fromAuth;
+  return fromAuth || "";
 }
 
 module.exports = {

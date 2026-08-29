@@ -21,7 +21,16 @@ function formatOtp(value) {
   return digits.length > 4 ? digits.replace(/(\d{4})(?=\d)/g, "$1 ").trim() : digits;
 }
 
-async function sendPasswordResetCodeEmail({ to, code, expiresInSeconds = 60, context = "password reset" }) {
+async function sendAuthCodeEmail({
+  to,
+  code,
+  expiresInSeconds = 60,
+  context = "verification",
+  subject = "Your verification code",
+  heading = "Verify Your Request",
+  intro = "Use the verification code below to continue:",
+  ignoreText = "If you did not request this, you can safely ignore this email.",
+}) {
   const apiKey = String(process.env.RESEND_API_KEY || "").trim();
   const from = String(
     process.env.AUTH_EMAIL_FROM ||
@@ -53,13 +62,13 @@ async function sendPasswordResetCodeEmail({ to, code, expiresInSeconds = 60, con
   const text = [
     "Hi there,",
     "",
-    "We received a request to reset your password. Use the verification code below to continue:",
+    intro,
     "",
     otp,
     "",
     `This code will expire in ${expiryText}.`,
     "",
-    "If you did not request a password reset, you can safely ignore this email.",
+    ignoreText,
     "",
     "This is an automated security message.",
     "© 2026 Bawat Tala. All rights reserved.",
@@ -70,18 +79,18 @@ async function sendPasswordResetCodeEmail({ to, code, expiresInSeconds = 60, con
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;">
         <tr>
           <td style="padding:28px 24px;background:#4a90e2;color:#ffffff;text-align:center;">
-            <div style="font-size:28px;line-height:1.25;font-weight:700;">Reset Your Password</div>
+            <div style="font-size:28px;line-height:1.25;font-weight:700;">${escapeHtml(heading)}</div>
           </td>
         </tr>
         <tr>
           <td style="padding:36px 38px 34px;">
             <p style="margin:0 0 18px;font-size:16px;line-height:1.6;">Hi there,</p>
-            <p style="margin:0 0 26px;font-size:16px;line-height:1.6;">We received a request to reset your password. Use the verification code below to continue:</p>
+            <p style="margin:0 0 26px;font-size:16px;line-height:1.6;">${escapeHtml(intro)}</p>
             <div style="margin:0 auto 28px;max-width:320px;border:2px dashed #4a90e2;border-radius:10px;padding:22px 24px;text-align:center;">
               <span style="font-size:42px;line-height:1;font-weight:700;letter-spacing:10px;color:#4a90e2;">${escapeHtml(otp)}</span>
             </div>
             <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#374151;">This code will expire in <strong>${escapeHtml(expiryText)}</strong>.</p>
-            <p style="margin:0;font-size:16px;line-height:1.6;color:#374151;">If you did not request a password reset, you can safely ignore this email.</p>
+            <p style="margin:0;font-size:16px;line-height:1.6;color:#374151;">${escapeHtml(ignoreText)}</p>
           </td>
         </tr>
         <tr>
@@ -104,7 +113,7 @@ async function sendPasswordResetCodeEmail({ to, code, expiresInSeconds = 60, con
       body: JSON.stringify({
         from,
         to: [recipient],
-        subject: "Reset Your Password",
+        subject,
         text,
         html,
       }),
@@ -125,6 +134,20 @@ async function sendPasswordResetCodeEmail({ to, code, expiresInSeconds = 60, con
   }
 }
 
+async function sendPasswordResetCodeEmail({ to, code, expiresInSeconds = 60, context = "password reset" }) {
+  return sendAuthCodeEmail({
+    to,
+    code,
+    expiresInSeconds,
+    context,
+    subject: "Reset Your Password",
+    heading: "Reset Your Password",
+    intro: "We received a request to reset your password. Use the verification code below to continue:",
+    ignoreText: "If you did not request a password reset, you can safely ignore this email.",
+  });
+}
+
 module.exports = {
+  sendAuthCodeEmail,
   sendPasswordResetCodeEmail,
 };

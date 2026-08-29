@@ -20,27 +20,6 @@ const NON_WELLBEING_BOOK_PATTERN = /\b(fiction|novel|novels|stories|literature|f
 const READING_ACHIEVEMENT_NOTIFICATION_KIND = "READING_ACHIEVEMENT_REWARD";
 const READING_ACHIEVEMENTS = [
   {
-    key: "read_10_seconds",
-    seconds: 10,
-    rewardTala: 5,
-    title: "First Spark",
-    description: "Read for 10 seconds",
-  },
-  {
-    key: "read_30_seconds",
-    seconds: 30,
-    rewardTala: 10,
-    title: "Page Warmer",
-    description: "Read for 30 seconds",
-  },
-  {
-    key: "read_1_minute",
-    seconds: 60,
-    rewardTala: 15,
-    title: "One-Minute Focus",
-    description: "Read for 1 minute",
-  },
-  {
     key: "read_5_minutes",
     seconds: 5 * 60,
     rewardTala: 20,
@@ -1327,7 +1306,7 @@ async function grantReadingReward({ achievement, bookId, bookTitle, readingSecon
   return Number(result.rows[0]?.total_tala || 0);
 }
 
-router.get("/books", async (req, res) => {
+router.get("/books", requireStudentOnlyAuth, async (req, res) => {
   let studentNumber;
   try {
     studentNumber = resolveRequestStudentNumber(req);

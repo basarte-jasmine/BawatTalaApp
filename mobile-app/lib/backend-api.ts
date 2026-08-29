@@ -16,6 +16,7 @@ export type StudentProfile = {
   city: string;
   email: string;
   fullName: string;
+  gender?: string;
   program: string;
   profilePictureUrl: string;
   province: string;
@@ -204,11 +205,12 @@ export type AppNotification = {
   kind: string;
   message: string;
   metadata?: Record<string, unknown>;
+  route?: string;
   timeLabel: string;
   title: string;
 };
 
-export type StudentNotificationCategory = "guidance" | "messages" | "notifications" | "peer";
+export type StudentNotificationCategory = "guidance" | "messages" | "notifications" | "peer" | "future-self" | "other";
 
 export type FutureSelfMessage = {
   createdAt: string;
@@ -1071,7 +1073,6 @@ async function syncPendingStudentPreferences(studentNumber: string) {
 
   try {
     const { response, data } = await patch("/api/auth/preferences", {
-      studentNumber,
       ...omitRawJournalPins(local.pendingPreferences as Record<string, unknown>),
     });
     if (!response.ok) {
@@ -1233,10 +1234,9 @@ export async function loginWithStudentId(
 }
 
 export async function fetchStudentProfile(
-  studentNumber: string,
+  _studentNumber?: string,
 ): Promise<ApiResult & { profile?: StudentProfile | null }> {
-  const params = new URLSearchParams({ studentNumber });
-  const { response, data } = await get(`/api/auth/profile?${params.toString()}`);
+  const { response, data } = await get("/api/auth/profile");
 
   return {
     ok: response.ok,
@@ -1248,10 +1248,9 @@ export async function fetchStudentProfile(
 export async function fetchStudentPreferences(
   studentNumber: string,
 ): Promise<ApiResult & { preferences?: StudentPreferences | null }> {
-  const params = new URLSearchParams({ studentNumber });
   try {
     await syncPendingStudentPreferences(studentNumber);
-    const { response, data } = await get(`/api/auth/preferences?${params.toString()}`);
+    const { response, data } = await get("/api/auth/preferences");
 
     if (response.ok && data?.preferences) {
       await cacheStudentPreferences(studentNumber, data.preferences);
@@ -1283,6 +1282,7 @@ export async function saveStudentPreferences(
       | "privateJournalModeEnabled"
     >
   > & {
+    currentJournalLockPin?: string;
     journalLockPin?: string;
     previousJournalLockPin?: string;
   },
@@ -1291,14 +1291,16 @@ export async function saveStudentPreferences(
     await syncPendingStudentPreferences(studentNumber);
     const isExplicitPinSet = typeof preferences.journalLockPin === "string" && preferences.journalLockPin.length > 0;
     const preferencePayload: Record<string, unknown> = {
-      studentNumber,
       ...omitRawJournalPins(preferences as Record<string, unknown>),
     };
     if (isExplicitPinSet) {
       preferencePayload.journalLockPin = preferences.journalLockPin;
-      if (preferences.previousJournalLockPin) {
-        preferencePayload.previousJournalLockPin = preferences.previousJournalLockPin;
-      }
+    }
+    if (preferences.previousJournalLockPin) {
+      preferencePayload.previousJournalLockPin = preferences.previousJournalLockPin;
+    }
+    if (preferences.currentJournalLockPin) {
+      preferencePayload.currentJournalLockPin = preferences.currentJournalLockPin;
     }
     const { response, data } = await patch("/api/auth/preferences", preferencePayload);
 
@@ -1361,7 +1363,6 @@ export async function verifyJournalLockPin(
 ): Promise<ApiResult & { unlocked?: boolean }> {
   try {
     const { response, data } = await post("/api/auth/preferences/journal-lock/verify", {
-      studentNumber,
       pin,
     });
 
@@ -1403,17 +1404,46 @@ export async function verifyJournalLockPin(
   }
 }
 
-export async function resetJournalLockWithStudentId(
+export async function sendJournalLockResetCode(): Promise<ApiResult & { resendAfterSeconds?: number }> {
+  const { response, data } = await post("/api/auth/preferences/journal-lock/reset/send-code", {});
+  return {
+    ok: response.ok,
+    message: data?.message ?? (response.ok ? "Verification code sent to your email." : "Unable to send the verification code."),
+    resendAfterSeconds: Number(data?.resendAfterSeconds ?? 0) || undefined,
+  };
+}
+
+export async function resendJournalLockResetCode(): Promise<ApiResult & { resendAfterSeconds?: number }> {
+  const { response, data } = await post("/api/auth/preferences/journal-lock/reset/resend-code", {});
+  return {
+    ok: response.ok,
+    message: data?.message ?? (response.ok ? "A new verification code was sent." : "Unable to resend the verification code."),
+    resendAfterSeconds: Number(data?.resendAfterSeconds ?? 0) || undefined,
+  };
+}
+
+export async function verifyJournalLockResetCode(
+  token: string,
+): Promise<ApiResult> {
+  const { response, data } = await post("/api/auth/preferences/journal-lock/reset/verify-code", {
+    token,
+  });
+  return {
+    ok: response.ok,
+    message: data?.message,
+  };
+}
+
+export async function resetJournalLockWithEmailCode(
   studentNumber: string,
-  studentNumberConfirmation: string,
+  journalLockPin: string,
 ): Promise<ApiResult & { preferences?: StudentPreferences | null }> {
   const { response, data } = await post("/api/auth/preferences/journal-lock/reset", {
-    studentNumber,
-    studentNumberConfirmation,
+    journalLockPin,
   });
 
   if (response.ok && data?.preferences) {
-    await cacheStudentPreferences(studentNumber, data.preferences, undefined, "synced", null);
+    await cacheStudentPreferences(studentNumber, data.preferences, journalLockPin, "synced", null);
   }
 
   return {
@@ -1424,10 +1454,9 @@ export async function resetJournalLockWithStudentId(
 }
 
 export async function fetchStudentReferral(
-  studentNumber: string,
+  _studentNumber?: string,
 ): Promise<ApiResult & { referral?: StudentReferral | null }> {
-  const params = new URLSearchParams({ studentNumber });
-  const { response, data } = await get(`/api/auth/referral?${params.toString()}`);
+  const { response, data } = await get("/api/auth/referral");
 
   return {
     ok: response.ok,
@@ -1441,7 +1470,6 @@ export async function redeemStudentReferralCode(
   referralCode: string,
 ): Promise<ApiResult & { referral?: StudentReferral | null; rewardTala?: number; totalTala?: number }> {
   const { response, data } = await post("/api/auth/referral/redeem", {
-    studentNumber,
     referralCode,
   });
 
@@ -1575,9 +1603,10 @@ export async function submitStudentFeedback(payload: {
   attachment?: FeedbackAttachmentPayload | null;
   category: string;
   message: string;
-  studentNumber: string;
+  studentNumber?: string;
 }): Promise<ApiResult> {
-  const { response, data } = await post("/api/feedback", payload);
+  const { studentNumber: _studentNumber, ...feedbackBody } = payload;
+  const { response, data } = await post("/api/feedback", feedbackBody);
   return {
     ok: response.ok,
     message: data?.message ?? (response.ok ? "Feedback sent." : "Unable to send feedback."),
@@ -1736,13 +1765,9 @@ export async function fetchMonthlyMoods(
 }
 
 export async function fetchLibraryBooks(
-  studentNumber?: string,
   searchQuery?: string,
 ): Promise<ApiResult & { books?: LibraryBookRecord[]; totalItems?: number }> {
   const params = new URLSearchParams({ maxResults: "24" });
-  if (studentNumber) {
-    params.set("studentNumber", studentNumber);
-  }
   if (searchQuery?.trim()) {
     params.set("q", searchQuery.trim());
   }
@@ -1766,13 +1791,16 @@ export async function downloadLibraryBook(payload: {
   readerLink?: string;
   sourceId?: string;
   sourceReaderLink?: string;
-  studentNumber: string;
+  studentNumber?: string;
 }): Promise<ApiResult & { alreadyDownloaded?: boolean; download?: { bookId: string; downloadedAt?: string | null; downloadUrl?: string } | null }> {
-  const { response, data } = await post("/api/library/download", payload as unknown as Record<string, unknown>);
+  const { studentNumber, ...downloadBody } = payload;
+  const { response, data } = await post("/api/library/download", downloadBody as unknown as Record<string, unknown>);
   const download = data?.download
     ? {
         ...data.download,
-        downloadUrl: buildLibraryBookFileUrl(payload.studentNumber, data.download.bookId ?? payload.bookId),
+        downloadUrl: studentNumber
+          ? buildLibraryBookFileUrl(studentNumber, data.download.bookId ?? payload.bookId)
+          : (data.download.downloadUrl ?? payload.downloadUrl),
       }
     : null;
 
@@ -1788,7 +1816,7 @@ export async function removeLibraryBookFromShelf(
   studentNumber: string,
   bookId: string,
 ): Promise<ApiResult & { removed?: boolean }> {
-  const params = new URLSearchParams({ bookId, studentNumber });
+  const params = new URLSearchParams({ bookId });
   const { response, data } = await del(`/api/library/download?${params.toString()}`);
 
   return {
@@ -1807,7 +1835,7 @@ export async function fetchLibraryMyShelf(
     progressByBookId?: Record<string, LibraryBookProgress | null>;
   }
 > {
-  const params = new URLSearchParams({ studentNumber });
+  const params = new URLSearchParams();
   if (builtInBookIds.length) {
     params.set("builtInBookIds", builtInBookIds.join(","));
   }
@@ -1832,10 +1860,11 @@ export async function saveLibraryBookProgress(payload: {
   bookTitle?: string;
   currentPage: number;
   status?: "STARTED" | "FINISHED";
-  studentNumber: string;
+  studentNumber?: string;
   totalPages: number;
 }): Promise<ApiResult & { progress?: LibraryBookProgress | null }> {
-  const { response, data } = await post("/api/library/progress", payload);
+  const { studentNumber: _studentNumber, ...progressBody } = payload;
+  const { response, data } = await post("/api/library/progress", progressBody);
 
   return {
     ok: response.ok,
@@ -1861,7 +1890,8 @@ export async function claimLibraryReadingReward(payload: {
     totalTala?: number;
   }
 > {
-  const { response, data } = await post("/api/library/reading-reward", payload);
+  const { studentNumber: _rewardStudent, ...rewardBody } = payload;
+  const { response, data } = await post("/api/library/reading-reward", rewardBody);
 
   return {
     ok: response.ok,
@@ -1886,8 +1916,7 @@ export async function fetchLibraryReadingRewardStatus(
     totalCount?: number;
   }
 > {
-  const params = new URLSearchParams({ studentNumber });
-  const { response, data } = await get(`/api/library/reading-reward/status?${params.toString()}`);
+  const { response, data } = await get("/api/library/reading-reward/status");
 
   return {
     ok: response.ok,
@@ -1906,10 +1935,11 @@ export async function rateLibraryBook(payload: {
   currentPage: number;
   rating: number;
   status?: "STARTED" | "FINISHED";
-  studentNumber: string;
+  studentNumber?: string;
   totalPages: number;
 }): Promise<ApiResult & { progress?: LibraryBookProgress | null }> {
-  const { response, data } = await post("/api/library/rating", payload);
+  const { studentNumber: _studentNumber, ...ratingBody } = payload;
+  const { response, data } = await post("/api/library/rating", ratingBody);
 
   return {
     ok: response.ok,
@@ -2459,7 +2489,6 @@ export async function fetchRecentJournalEntries(
   }
 > {
   const params = new URLSearchParams({
-    studentNumber,
     windowDays: String(windowDays),
   });
   try {
@@ -2831,9 +2860,6 @@ export async function fetchAppointmentAvailability(
   if (supportType) {
     params.set("supportType", supportType);
   }
-  if (studentNumber) {
-    params.set("studentNumber", studentNumber);
-  }
   const { response, data } = await get(`/api/appointments/availability?${params.toString()}`);
 
   return {
@@ -2853,10 +2879,11 @@ export async function bookCounselorAppointment(payload: {
   counselorId: string;
   slotTime: string;
   studentNote?: string;
-  studentNumber: string;
+  studentNumber?: string;
   supportType?: "GUIDANCE" | "PEER";
 }): Promise<ApiResult & { appointment?: CounselorAppointment }> {
-  const { response, data } = await post("/api/appointments/book", payload as unknown as Record<string, unknown>);
+  const { studentNumber: _studentNumber, ...bookBody } = payload;
+  const { response, data } = await post("/api/appointments/book", bookBody as unknown as Record<string, unknown>);
 
   return {
     ok: response.ok,
@@ -2866,11 +2893,10 @@ export async function bookCounselorAppointment(payload: {
 }
 
 export async function fetchStudentAppointments(
-  studentNumber: string,
+  _studentNumber?: string,
 ): Promise<ApiResult & { appointments?: CounselorAppointment[]; upcomingAppointment?: CounselorAppointment | null }> {
-  const params = new URLSearchParams({ studentNumber });
   try {
-    const { response, data } = await get(`/api/appointments/student?${params.toString()}`);
+    const { response, data } = await get("/api/appointments/student");
 
     return {
       ok: response.ok,
@@ -2891,10 +2917,29 @@ export async function fetchStudentAppointments(
 export async function fetchStudentNotifications(
   studentNumber: string,
   category?: StudentNotificationCategory,
-): Promise<ApiResult & { notifications?: AppNotification[]; unreadCount?: number }> {
-  const params = new URLSearchParams({ studentNumber });
+): Promise<ApiResult & { notifications?: AppNotification[]; unreadCount?: number; totalCount?: number }> {
+  const params = new URLSearchParams();
   if (category) {
     params.set("category", category);
+  }
+  try {
+    const inbox = await get(`/api/inbox?${params.toString()}`);
+    const inboxItems = Array.isArray(inbox.data?.notifications)
+      ? inbox.data.notifications
+      : Array.isArray(inbox.data?.items)
+        ? inbox.data.items
+        : null;
+    if (inbox.response.ok && inboxItems) {
+      return {
+        ok: true,
+        message: inbox.data?.message,
+        notifications: inboxItems,
+        unreadCount: Number(inbox.data?.unreadCount ?? 0),
+        totalCount: Number(inbox.data?.totalCount ?? inboxItems.length),
+      };
+    }
+  } catch {
+    // Fall through to the appointments inbox until GET /api/inbox is live.
   }
   try {
     const { response, data } = await get(`/api/appointments/notifications?${params.toString()}`);
@@ -2904,6 +2949,7 @@ export async function fetchStudentNotifications(
       message: data?.message,
       notifications: data?.notifications ?? [],
       unreadCount: Number(data?.unreadCount ?? 0),
+      totalCount: Number(data?.totalCount ?? (data?.notifications ?? []).length),
     };
   } catch {
     return {
@@ -2911,6 +2957,7 @@ export async function fetchStudentNotifications(
       message: "Unable to load notifications while offline.",
       notifications: [],
       unreadCount: 0,
+      totalCount: 0,
     };
   }
 }
@@ -2980,11 +3027,14 @@ export async function fetchFutureSelfMessages(
 
 export async function saveFutureSelfMessage(payload: {
   deliveryAt: string;
-  id: string;
+  id?: string;
   message: string;
   studentNumber: string;
 }): Promise<ApiResult & { futureSelfMessage?: FutureSelfMessage | null }> {
-  const { response, data } = await post("/api/future-self/messages", payload);
+  const { response, data } = await post("/api/future-self/messages", {
+    deliveryAt: payload.deliveryAt,
+    message: payload.message,
+  });
 
   return {
     ok: response.ok,
@@ -2993,13 +3043,51 @@ export async function saveFutureSelfMessage(payload: {
   };
 }
 
+export async function updateFutureSelfMessage(
+  id: string,
+  payload: { deliveryAt?: string; message?: string },
+): Promise<ApiResult & { futureSelfMessage?: FutureSelfMessage | null }> {
+  const encodedId = encodeURIComponent(id);
+  let response: Response;
+  let data: any;
+  try {
+    ({ response, data } = await patch(`/api/future-self/messages/${encodedId}`, payload));
+    if (response.status === 404) {
+      ({ response, data } = await patch(`/api/future-self/${encodedId}`, payload));
+    }
+  } catch {
+    return { ok: false, message: "Unable to update this letter right now." };
+  }
+
+  return {
+    ok: response.ok,
+    message: data?.message,
+    futureSelfMessage: data?.futureSelfMessage ?? null,
+  };
+}
+
+export async function deleteFutureSelfMessage(id: string): Promise<ApiResult> {
+  const encodedId = encodeURIComponent(id);
+  try {
+    let { response, data } = await del(`/api/future-self/messages/${encodedId}`);
+    if (response.status === 404) {
+      ({ response, data } = await del(`/api/future-self/${encodedId}`));
+    }
+    return {
+      ok: response.ok,
+      message: data?.message,
+    };
+  } catch {
+    return { ok: false, message: "Unable to delete this letter right now." };
+  }
+}
+
 export async function updateStudentProfilePicture(
   studentNumber: string,
   uploadedProfilePicture: StudentProfilePicturePayload,
 ): Promise<ApiResult & { profilePictureUrl?: string }> {
   try {
     const { response, data } = await patch("/api/auth/profile-picture", {
-      studentNumber,
       uploadedProfilePicture,
     });
 
@@ -3015,6 +3103,98 @@ export async function updateStudentProfilePicture(
     };
   }
 }
+
+export async function clearStudentProfilePicture(): Promise<ApiResult & { profilePictureUrl?: string }> {
+  try {
+    const deleted = await del("/api/auth/profile-picture");
+    if (deleted.response.ok) {
+      return {
+        ok: true,
+        message: deleted.data?.message,
+        profilePictureUrl: deleted.data?.profilePictureUrl || "",
+      };
+    }
+    const { response, data } = await patch("/api/auth/profile-picture", {
+      uploadedProfilePicture: null,
+    });
+    return {
+      ok: response.ok,
+      message: data?.message,
+      profilePictureUrl: data?.profilePictureUrl || "",
+    };
+  } catch {
+    return {
+      ok: false,
+      message: "Unable to reach the server. Please check your connection and try again.",
+    };
+  }
+}
+
+export async function updateStudentProfile(payload: {
+  barangay?: string;
+  birthdate?: string;
+  city?: string;
+  fullName?: string;
+  gender?: string;
+  program?: string;
+  province?: string;
+  region?: string;
+  street?: string;
+}): Promise<ApiResult & { profile?: StudentProfile | null }> {
+  const { response, data } = await patch("/api/auth/profile", payload);
+  return {
+    ok: response.ok,
+    message: data?.message,
+    profile: data?.profile ?? null,
+  };
+}
+
+export async function sendProfileEmailChangeCode(
+  newEmail: string,
+): Promise<ApiResult & { resendAfterSeconds?: number; stage?: string }> {
+  const { response, data } = await post("/api/auth/profile/email-change/send-code", { newEmail });
+  return {
+    ok: response.ok,
+    message: data?.message,
+    resendAfterSeconds: Number(data?.resendAfterSeconds ?? 0) || undefined,
+    stage: data?.stage,
+  };
+}
+
+export async function resendProfileEmailChangeCode(): Promise<ApiResult & { resendAfterSeconds?: number; stage?: string }> {
+  const { response, data } = await post("/api/auth/profile/email-change/resend-code", {});
+  return {
+    ok: response.ok,
+    message: data?.message,
+    resendAfterSeconds: Number(data?.resendAfterSeconds ?? 0) || undefined,
+    stage: data?.stage,
+  };
+}
+
+export async function verifyProfileEmailChangeCode(
+  token: string,
+): Promise<ApiResult & { resendAfterSeconds?: number; stage?: string }> {
+  const { response, data } = await post("/api/auth/profile/email-change/verify-code", { token });
+  return {
+    ok: response.ok,
+    message: data?.message,
+    resendAfterSeconds: Number(data?.resendAfterSeconds ?? 0) || undefined,
+    stage: data?.stage,
+  };
+}
+
+export async function confirmProfileEmailChange(
+  token: string,
+): Promise<ApiResult & { profile?: StudentProfile | null; stage?: string }> {
+  const { response, data } = await post("/api/auth/profile/email-change/confirm", { token });
+  return {
+    ok: response.ok,
+    message: data?.message,
+    profile: data?.profile ?? null,
+    stage: data?.stage,
+  };
+}
+
 
 export async function transcribeAudio(payload: {
   audioBase64: string;
@@ -3053,3 +3233,4 @@ export async function synthesizeVoiceSpeech(payload: {
     voice: data?.voice || "",
   };
 }
+

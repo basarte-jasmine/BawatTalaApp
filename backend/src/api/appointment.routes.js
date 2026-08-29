@@ -41,8 +41,7 @@ const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
 
 function resolveRequestStudentNumber(req) {
   const fromAuth = resolveStudentNumber(req) || getAuthenticatedStudent(req)?.studentNumber;
-  if (fromAuth) return String(fromAuth).trim();
-  return String(req.query?.studentNumber || req.body?.studentNumber || "").trim();
+  return String(fromAuth || "").trim();
 }
 
 
@@ -491,18 +490,58 @@ function getPeerInvitationActionUrl(req, token, action) {
   return `${baseUrl}/api/appointments/peer-counselors/invitations/${encodeURIComponent(token)}/${action}`;
 }
 
+function resolveStudentInboxRoute({ kind, metadata, title, message }) {
+  const meta = metadata && typeof metadata === "object" && !Array.isArray(metadata) ? metadata : {};
+  const kindUpper = String(kind || "").toUpperCase();
+  const storedRoute = String(meta.route || "").trim();
+  const haystack = [
+    kindUpper,
+    String(title || ""),
+    String(message || ""),
+    String(meta.status || ""),
+    String(meta.appointmentStatus || ""),
+    String(meta.newStatus || ""),
+  ].join(" ").toUpperCase();
+
+  if (kindUpper.startsWith("FUTURE_SELF")) {
+    return storedRoute || "/home";
+  }
+
+  if (
+    /DISAPPROV|DECLINE|DENIED/.test(kindUpper) ||
+    /DISAPPROV|DECLINE|DENIED/.test(haystack)
+  ) {
+    return storedRoute && storedRoute !== "/consult" ? storedRoute : "/notifications";
+  }
+
+  if (kindUpper.includes("ADMIN_MESSAGE")) {
+    return "/messages";
+  }
+
+  if (kindUpper.includes("APPOINTMENT") || kindUpper.includes("CONSULT")) {
+    return "/profile-settings?section=schedule";
+  }
+
+  return storedRoute && storedRoute !== "/consult" ? storedRoute : "/notifications";
+}
+
 function getAppointmentNotificationMetadata(appointment, extra = {}) {
   const supportType = normalizeSupportType(appointment?.support_type);
-  return {
+  const kind = extra.kind;
+  const { kind: _kind, ...rest } = extra;
+  const metadata = {
     appointmentId: appointment?.id || null,
     appointmentDate: normalizeDateValue(appointment?.appointment_date || appointment?.appointmentDate),
     counselorId: appointment?.counselor_id || appointment?.peer_counselor_id || null,
     counselorName: getAppointmentCounselorName(appointment),
     counselingType: appointment?.counseling_type || appointment?.counselingType || null,
-    route: "/consult",
     supportType,
-    ...extra,
+    ...rest,
   };
+  if (!Object.prototype.hasOwnProperty.call(rest, "route")) {
+    metadata.route = "/profile-settings?section=schedule";
+  }
+  return metadata;
 }
 
 function buildAppointmentSummaryRows(appointment) {
@@ -799,6 +838,44 @@ async function writeAdminActivityLog({
       description,
       JSON.stringify(metadata || {}),
     ],
+  );
+}
+
+
+async function syncDueFutureSelfNotifications(studentNumber) {
+  await query(
+    `
+      insert into public.student_notifications (
+        student_number,
+        kind,
+        title,
+        message,
+        metadata
+      )
+      select
+        m.student_number,
+        'FUTURE_SELF_DELIVERED',
+        'A letter from your past self arrived',
+        left(m.message, 180),
+        jsonb_build_object(
+          'futureSelfMessageId', m.id,
+          'deliveryAt', m.delivery_at,
+          'route', '/home'
+        )
+      from public.future_self_messages m
+      where m.student_number = $1
+        and m.deleted_at is null
+        and m.delivery_at <= now()
+        and not exists (
+          select 1
+          from public.student_notifications n
+          where n.student_number = m.student_number
+            and n.kind = 'FUTURE_SELF_DELIVERED'
+            and n.deleted_at is null
+            and n.metadata->>'futureSelfMessageId' = m.id
+        )
+    `,
+    [studentNumber],
   );
 }
 
@@ -1300,7 +1377,7 @@ async function notifyStudentAboutAppointment({
   emailIntro,
   emailCta = "",
 }) {
-  const studentNotificationMetadata = getAppointmentNotificationMetadata(appointment);
+  const studentNotificationMetadata = getAppointmentNotificationMetadata(appointment, { kind });
 
   await createStudentNotification({
     studentNumber: appointment.student_number,
@@ -3095,7 +3172,15 @@ router.get("/student", requireStudentOnlyAuth, async (req, res) => {
       left join public.peer_counselors pc on pc.id = ca.peer_counselor_id
       where ca.student_number = $1
       order by ca.appointment_date desc, ca.slot_time desc
-      limit 12
+      limit 60
+    `,
+    [studentNumber],
+  );
+  const countResult = await query(
+    `
+      select count(*)::int as total_count
+      from public.counselor_appointments
+      where student_number = $1
     `,
     [studentNumber],
   );
@@ -3135,6 +3220,9 @@ router.get("/student", requireStudentOnlyAuth, async (req, res) => {
   return res.json({
     appointments,
     upcomingAppointment,
+    today: getManilaDateParts().isoDate,
+    todayIsoDate: getManilaDateParts().isoDate,
+    totalCount: Number(countResult.rows[0]?.total_count || appointments.length),
   });
 });
 
@@ -3671,44 +3759,77 @@ router.get("/notifications", requireStudentOnlyAuth, async (req, res) => {
   if (!studentNumber) {
     return res.status(400).json({ message: "Student number is required." });
   }
+  await syncDueFutureSelfNotifications(studentNumber);
   const category = String(req.query.category || "").trim().toLowerCase();
   const categoryFilter =
     category === "messages"
       ? "and kind = 'ADMIN_MESSAGE'"
       : category === "guidance"
-        ? "and kind <> 'ADMIN_MESSAGE' and coalesce(metadata->>'supportType', 'GUIDANCE') = 'GUIDANCE'"
+        ? "and kind <> 'ADMIN_MESSAGE' and (kind like 'APPOINTMENT%' or kind like 'CONSULT%') and coalesce(metadata->>'supportType', 'GUIDANCE') = 'GUIDANCE'"
         : category === "peer"
-          ? "and kind <> 'ADMIN_MESSAGE' and metadata->>'supportType' = 'PEER'"
+          ? "and kind <> 'ADMIN_MESSAGE' and (kind like 'APPOINTMENT%' or kind like 'CONSULT%') and metadata->>'supportType' = 'PEER'"
+        : category === "future-self" || category === "future_self" || category === "futureme"
+          ? "and kind like 'FUTURE_SELF%'"
+        : category === "other"
+          ? "and kind <> 'ADMIN_MESSAGE' and kind not like 'APPOINTMENT%' and kind not like 'CONSULT%' and kind not like 'FUTURE_SELF%'"
       : category === "notifications"
         ? "and kind <> 'ADMIN_MESSAGE'"
         : "";
 
-  const result = await query(
-    `
-      select id, kind, title, message, metadata, is_read, read_at, created_at
-      from public.student_notifications
-      where student_number = $1
-        and deleted_at is null
-        ${categoryFilter}
-      order by created_at desc
-      limit 50
-    `,
-    [studentNumber],
-  );
+  const [result, countResult] = await Promise.all([
+    query(
+      `
+        select id, kind, title, message, metadata, is_read, read_at, created_at
+        from public.student_notifications
+        where student_number = $1
+          and deleted_at is null
+          ${categoryFilter}
+        order by created_at desc
+        limit 50
+      `,
+      [studentNumber],
+    ),
+    query(
+      `
+        select count(*)::int as total_count
+        from public.student_notifications
+        where student_number = $1
+          and deleted_at is null
+          ${categoryFilter}
+      `,
+      [studentNumber],
+    ),
+  ]);
 
-  return res.json({
-    notifications: result.rows.map((row) => ({
+  const notifications = result.rows.map((row) => {
+    const kind = String(row.kind || "");
+    const metadata = row.metadata || {};
+    const source = kind.startsWith("FUTURE_SELF") ? "FUTURE_SELF" : "CONSULT";
+    return {
       id: row.id,
-      kind: row.kind,
+      kind,
       title: row.title,
       message: row.message,
-      metadata: row.metadata || {},
+      metadata,
       isRead: Boolean(row.is_read),
       readAt: row.read_at,
       createdAt: row.created_at,
       timeLabel: formatRelativeDateTime(row.created_at),
-    })),
+      source,
+      route: resolveStudentInboxRoute({
+        kind,
+        metadata,
+        title: row.title,
+        message: row.message,
+      }),
+    };
+  });
+  return res.json({
+    notifications,
+    items: notifications,
+    fetchedAt: new Date().toISOString(),
     unreadCount: result.rows.filter((row) => !row.is_read).length,
+    totalCount: Number(countResult.rows[0]?.total_count || 0),
   });
 });
 
@@ -3743,9 +3864,13 @@ router.post("/notifications/read-all", requireStudentOnlyAuth, async (req, res) 
     category === "messages"
       ? "and kind = 'ADMIN_MESSAGE'"
       : category === "guidance"
-        ? "and kind <> 'ADMIN_MESSAGE' and coalesce(metadata->>'supportType', 'GUIDANCE') = 'GUIDANCE'"
+        ? "and kind <> 'ADMIN_MESSAGE' and (kind like 'APPOINTMENT%' or kind like 'CONSULT%') and coalesce(metadata->>'supportType', 'GUIDANCE') = 'GUIDANCE'"
         : category === "peer"
-          ? "and kind <> 'ADMIN_MESSAGE' and metadata->>'supportType' = 'PEER'"
+          ? "and kind <> 'ADMIN_MESSAGE' and (kind like 'APPOINTMENT%' or kind like 'CONSULT%') and metadata->>'supportType' = 'PEER'"
+        : category === "future-self" || category === "future_self" || category === "futureme"
+          ? "and kind like 'FUTURE_SELF%'"
+        : category === "other"
+          ? "and kind <> 'ADMIN_MESSAGE' and kind not like 'APPOINTMENT%' and kind not like 'CONSULT%' and kind not like 'FUTURE_SELF%'"
       : category === "notifications"
         ? "and kind <> 'ADMIN_MESSAGE'"
         : "";

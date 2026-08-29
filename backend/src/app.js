@@ -53,6 +53,11 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/appointments", appointmentRoutes);
+app.use("/api/inbox", (req, res, next) => {
+  const query = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+  req.url = "/notifications" + query;
+  return appointmentRoutes(req, res, next);
+});
 app.use("/api/checkins", checkinRoutes);
 app.use("/api/feedback", feedbackRouter);
 app.use("/api/future-self", futureSelfRoutes);

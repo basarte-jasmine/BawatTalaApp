@@ -4,11 +4,12 @@ import DateTimePicker, { DateTimePickerAndroid, type DateTimePickerEvent } from 
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Easing, Image, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { Alert, Animated, Easing, Image, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, Ellipse, LinearGradient, Path, Rect, Stop } from "react-native-svg";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
+import { ConfirmationModal } from "../components/ui/ConfirmationModal";
 import { CounselorAvatar } from "../components/appointments/CounselorAvatar";
 import { StudentProfileAvatar } from "../components/profile/StudentProfileAvatar";
 import { useAuthSession } from "../lib/auth-session";
@@ -19,15 +20,17 @@ import {
   fetchCheckInStatus,
   fetchDailyMood,
   fetchJournalEntriesByDate,
+  deleteFutureSelfMessage,
   fetchLibraryBooks,
   fetchStudentAppointments,
   fetchStudentNotifications,
   saveDailyMood,
   saveFutureSelfMessage,
+  updateFutureSelfMessage,
   type LibraryBookRecord,
 } from "../lib/backend-api";
 import { EMOTIONS, getEmotionImageSource } from "../lib/emotions";
-import { getManilaTodayParts } from "../lib/manila-date";
+import { getManilaNow, getManilaStartOfToday, getManilaTodayParts } from "../lib/manila-date";
 import { isAdminMessageNotification } from "../lib/notification-utils";
 import { useOfflineSync } from "../lib/offline-sync";
 import { hydrateMuniWardrobe, subscribeAvailableMuniTala } from "../lib/muni-wardrobe";
@@ -121,8 +124,9 @@ function isValidDate(value: Date) {
 }
 
 function createDefaultBottleDeliveryDate() {
-  const date = new Date();
-  date.setDate(date.getDate() + 1);
+  const manilaToday = getManilaStartOfToday();
+  const date = new Date(manilaToday);
+  date.setDate(manilaToday.getDate() + 1);
   date.setHours(9, 0, 0, 0);
   return date;
 }
@@ -425,6 +429,7 @@ export default function HomeScreen() {
   const [rememberDriftingBottleWarningChoice, setRememberDriftingBottleWarningChoice] = useState(false);
   const [bottleDraft, setBottleDraft] = useState("");
   const [bottleDeliveryAt, setBottleDeliveryAt] = useState(createDefaultBottleDeliveryDate);
+  const [pendingDeleteBottleNote, setPendingDeleteBottleNote] = useState<ScheduledBottleNote | null>(null);
   const [bottlePickerMonth, setBottlePickerMonth] = useState(() => startOfBottleMonth(createDefaultBottleDeliveryDate()));
   const [bottleFormMessage, setBottleFormMessage] = useState("");
   const [bottleModalMode, setBottleModalMode] = useState<BottleModalMode>("compose");
@@ -935,7 +940,7 @@ export default function HomeScreen() {
 
   const loadLibraryPreview = useCallback(async () => {
     try {
-      const result = await fetchLibraryBooks(user?.studentNumber);
+      const result = await fetchLibraryBooks();
       if (result.ok) {
         setLibraryPreviewBooks((result.books ?? []).slice(0, 2));
       }
@@ -990,20 +995,6 @@ export default function HomeScreen() {
           await AsyncStorage.setItem(getFutureBottleStorageKey(user.studentNumber), JSON.stringify(mergedNotes));
           setScheduledBottleNotes(mergedNotes);
           setBottleClockNow(Date.now());
-          for (const localNote of localNotes) {
-            const deliveryAt = parseStoredBottleDate(localNote.deliveryAt);
-            if (!deliveryAt || deliveryAt.getTime() <= Date.now()) continue;
-            try {
-              await saveFutureSelfMessage({
-                deliveryAt: localNote.deliveryAt,
-                id: localNote.id,
-                message: localNote.message,
-                studentNumber: user.studentNumber,
-              });
-            } catch {
-              // The note is still available locally; sync can happen on a later visit.
-            }
-          }
           return;
         }
       } catch {
@@ -1030,20 +1021,6 @@ export default function HomeScreen() {
       await AsyncStorage.setItem(getFutureBottleStorageKey(user.studentNumber), JSON.stringify(localNotes));
       setScheduledBottleNotes(localNotes);
       setBottleClockNow(Date.now());
-      for (const localNote of localNotes) {
-        const deliveryAt = parseStoredBottleDate(localNote.deliveryAt);
-        if (!deliveryAt || deliveryAt.getTime() <= Date.now()) continue;
-        try {
-          await saveFutureSelfMessage({
-            deliveryAt: localNote.deliveryAt,
-            id: localNote.id,
-            message: localNote.message,
-            studentNumber: user.studentNumber,
-          });
-        } catch {
-          // The note is still available locally; sync can happen on a later visit.
-        }
-      }
     } catch {
       setScheduledBottleNotes([]);
     }
@@ -1315,6 +1292,48 @@ export default function HomeScreen() {
     setBottleModalMode("compose");
   };
 
+  const handleEditPendingBottleNote = (note: ScheduledBottleNote) => {
+    const deliveryAt = parseStoredBottleDate(note.deliveryAt);
+    if (!deliveryAt) return;
+    setEditingBottleNoteId(note.id);
+    setBottleDraft(note.message);
+    updateBottleDeliveryDraft(deliveryAt);
+    setBottleFormMessage("");
+    setBottlePickerMode(null);
+    setBottleModalMode("compose");
+    setShowBottleShelfModal(false);
+    setShowBottleModal(true);
+  };
+
+  const persistBottleNotes = async (nextNotes: ScheduledBottleNote[]) => {
+    if (!user?.studentNumber) return;
+    const sorted = sortBottleNotes(nextNotes);
+    await AsyncStorage.setItem(getFutureBottleStorageKey(user.studentNumber), JSON.stringify(sorted));
+    setScheduledBottleNotes(sorted);
+    setBottleClockNow(Date.now());
+  };
+
+  const handleDeleteBottleNote = (note: ScheduledBottleNote) => {
+    setPendingDeleteBottleNote(note);
+  };
+
+  const handleConfirmDeleteBottleNote = async () => {
+    const note = pendingDeleteBottleNote;
+    setPendingDeleteBottleNote(null);
+    if (!note || !user?.studentNumber) return;
+
+    try {
+      if (note.id && !note.id.startsWith("future-bottle-")) {
+        await deleteFutureSelfMessage(note.id);
+      }
+    } catch {
+      // Continue with local removal
+    }
+
+    const nextNotes = scheduledBottleNotes.filter((item) => item.id !== note.id);
+    await persistBottleNotes(nextNotes);
+  };
+
   const getBottleDeliveryDraftDate = () => {
     return bottleDeliveryAt;
   };
@@ -1328,7 +1347,7 @@ export default function HomeScreen() {
       return;
     }
 
-    if (!deliveryAt || deliveryAt.getTime() <= Date.now()) {
+    if (!deliveryAt || deliveryAt.getTime() <= getManilaNow().getTime()) {
       setBottleFormMessage("Choose a future date and time.");
       return;
     }
@@ -1339,7 +1358,7 @@ export default function HomeScreen() {
     }
 
     const nextNote: ScheduledBottleNote = {
-      id: editingBottleNoteId ?? `future-bottle-${Date.now()}`,
+      id: editingBottleNoteId ?? "",
       createdAt:
         editingBottleNoteId
           ? scheduledBottleNotes.find((note) => note.id === editingBottleNoteId)?.createdAt ?? new Date().toISOString()
@@ -1349,24 +1368,42 @@ export default function HomeScreen() {
     };
 
     try {
+      let savedId = editingBottleNoteId;
+      if (editingBottleNoteId) {
+        let result = await updateFutureSelfMessage(editingBottleNoteId, {
+          deliveryAt: nextNote.deliveryAt,
+          message: nextNote.message,
+        });
+        if (!result.ok) {
+          setBottleFormMessage(result.message ?? "Could not update this letter.");
+          return;
+        }
+        savedId = result.futureSelfMessage?.id ?? editingBottleNoteId;
+      } else {
+        let result = await saveFutureSelfMessage({
+          deliveryAt: nextNote.deliveryAt,
+          message: nextNote.message,
+          studentNumber: user.studentNumber,
+        });
+        if (!result.ok) {
+          setBottleFormMessage(result.message ?? "Could not save this letter.");
+          return;
+        }
+        savedId = result.futureSelfMessage?.id ?? "";
+      }
+
+      const persistedNote: ScheduledBottleNote = {
+        ...nextNote,
+        id: savedId || nextNote.id,
+      };
       const nextNotes = sortBottleNotes(
         editingBottleNoteId
-          ? scheduledBottleNotes.map((note) => (note.id === editingBottleNoteId ? nextNote : note))
-          : [...scheduledBottleNotes, nextNote],
+          ? scheduledBottleNotes.map((note) => (note.id === editingBottleNoteId ? persistedNote : note))
+          : [...scheduledBottleNotes, persistedNote],
       );
       await AsyncStorage.setItem(getFutureBottleStorageKey(user.studentNumber), JSON.stringify(nextNotes));
       setScheduledBottleNotes(nextNotes);
       setBottleClockNow(Date.now());
-      try {
-        await saveFutureSelfMessage({
-          deliveryAt: nextNote.deliveryAt,
-          id: nextNote.id,
-          message: nextNote.message,
-          studentNumber: user.studentNumber,
-        });
-      } catch (error) {
-        console.warn("Future Me message was saved locally but not synced:", error);
-      }
       setBottleDraft("");
       updateBottleDeliveryDraft(createDefaultBottleDeliveryDate());
       setBottleFormMessage("");
@@ -1398,7 +1435,7 @@ export default function HomeScreen() {
         mode: "date",
         value: bottleDeliveryAt,
         display: "calendar",
-        minimumDate: new Date(),
+        minimumDate: getManilaNow(),
         onChange: handleBottleDatePickerChange,
       });
       return;
@@ -1423,7 +1460,7 @@ export default function HomeScreen() {
   };
 
   const handleBottleCalendarDayPress = (selectedDate: Date) => {
-    if (startOfBottleDay(selectedDate).getTime() < startOfBottleDay(new Date()).getTime()) {
+    if (startOfBottleDay(selectedDate).getTime() < getManilaStartOfToday().getTime()) {
       return;
     }
 
@@ -2575,7 +2612,7 @@ export default function HomeScreen() {
                       {bottleCalendarDays.map((day) => {
                         const isCurrentMonth = day.getMonth() === bottlePickerMonth.getMonth();
                         const isSelected = isSameBottleDay(day, bottleDeliveryAt);
-                        const isDisabled = startOfBottleDay(day).getTime() < startOfBottleDay(new Date()).getTime();
+                        const isDisabled = startOfBottleDay(day).getTime() < getManilaStartOfToday().getTime();
 
                         return (
                           <Pressable
@@ -2692,7 +2729,7 @@ export default function HomeScreen() {
                       value={bottleDeliveryAt}
                       mode={bottlePickerMode}
                       display={bottlePickerMode === "date" ? "inline" : "spinner"}
-                      minimumDate={bottlePickerMode === "date" ? new Date() : undefined}
+                      minimumDate={bottlePickerMode === "date" ? getManilaNow() : undefined}
                       onChange={bottlePickerMode === "date" ? handleBottleDatePickerChange : handleBottleTimePickerChange}
                     />
                     <Pressable style={styles.bottleInlinePickerDoneButton} onPress={() => setBottlePickerMode(null)}>
@@ -2792,6 +2829,16 @@ export default function HomeScreen() {
                         </View>
                       </View>
                       <Text style={styles.bottleShelfLockedText}>Sealed until delivery.</Text>
+                      <View style={styles.bottleShelfActionRow}>
+                        <Pressable style={styles.bottleShelfEditButton} onPress={() => handleEditPendingBottleNote(note)}>
+                          <Ionicons name="create-outline" size={14} color="#2F6F25" />
+                          <Text style={styles.bottleShelfEditText}>Edit</Text>
+                        </Pressable>
+                        <Pressable style={styles.bottleShelfDeleteButton} onPress={() => handleDeleteBottleNote(note)}>
+                          <Ionicons name="trash-outline" size={14} color="#8B4C43" />
+                          <Text style={styles.bottleShelfDeleteText}>Delete</Text>
+                        </Pressable>
+                      </View>
                     </View>
                   );
                 })
@@ -2820,6 +2867,12 @@ export default function HomeScreen() {
                       </View>
                       <View style={styles.bottleDeliveredMessageCard}>
                         <Text style={styles.bottleDeliveredMessageText}>{note.message}</Text>
+                      </View>
+                      <View style={styles.bottleShelfActionRow}>
+                        <Pressable style={styles.bottleShelfDeleteButton} onPress={() => handleDeleteBottleNote(note)}>
+                          <Ionicons name="trash-outline" size={14} color="#8B4C43" />
+                          <Text style={styles.bottleShelfDeleteText}>Delete</Text>
+                        </Pressable>
                       </View>
                     </View>
                   );
@@ -2973,6 +3026,16 @@ export default function HomeScreen() {
           </View>
         </View>
       </Modal>
+
+      <ConfirmationModal
+        visible={Boolean(pendingDeleteBottleNote)}
+        message="Delete this letter? Pending and arrived letters can both be deleted."
+        cancelLabel="Cancel"
+        confirmLabel="Delete"
+        confirmTone="danger"
+        onCancel={() => setPendingDeleteBottleNote(null)}
+        onConfirm={() => void handleConfirmDeleteBottleNote()}
+      />
 
       {showConsultOverlay ? (
         <View style={styles.consultOverlay} pointerEvents="box-none">
@@ -5312,6 +5375,46 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 12,
     marginBottom: 12,
+  },
+  bottleShelfActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 8,
+    marginTop: 10,
+  },
+  bottleShelfEditButton: {
+    minHeight: 34,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#C8E0C0",
+    backgroundColor: "#EEF7E8",
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 5,
+  },
+  bottleShelfEditText: {
+    color: "#2F6F25",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "800",
+  },
+  bottleShelfDeleteButton: {
+    minHeight: 34,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#E7C8C3",
+    backgroundColor: "#F8EEEE",
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 5,
+  },
+  bottleShelfDeleteText: {
+    color: "#8B4C43",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "800",
   },
   bottleShelfArrivedCard: {
     backgroundColor: "#FBFDF8",

@@ -7,11 +7,19 @@ const {
 const { query } = require("../config/db");
 const { requireStudentOnlyAuth, resolveStudentNumber } = require("../middleware/auth.middleware");
 const { createStudentToken } = require("../services/auth-token.service");
-const { sendPasswordResetCodeEmail } = require("../services/auth-email.service");
+const { sendAuthCodeEmail, sendPasswordResetCodeEmail } = require("../services/auth-email.service");
+const {
+  BARANGAY_OPTIONS,
+  GENDER_OPTIONS,
+  PROGRAM_OPTIONS,
+} = require("../constants/student-profile");
 
 const router = express.Router();
 const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const NAME_PATTERN = /^(?=.{2,}$)[\p{L}][\p{L}\p{M} .'-]*$/u;
+const ADDRESS_PATTERN = /^(?=.{2,80}$)[\p{L}][\p{L}\p{M} .'-]*$/u;
+const STREET_PATTERN = /^(?=.{2,120}$)[\p{L}\p{M}0-9][\p{L}\p{M}0-9 .,'#-]*$/u;
 const LOGIN_ATTEMPTS_LIMIT = 3;
 const LOGIN_LOCK_DURATION_MS = 10 * 60 * 1000;
 const OTP_COOLDOWN_MS = 60 * 1000;
@@ -27,6 +35,8 @@ const REFERRAL_INVITE_REWARD_TALA = 150;
 const loginAttempts = new Map();
 const registrationOtpSessions = new Map();
 const resetPasswordSessions = new Map();
+const journalLockResetSessions = new Map();
+const emailChangeSessions = new Map();
 const DEFAULT_STUDENT_PREFERENCES = {
   journalLockAutoLock: true,
   journalLockEnabled: false,
@@ -76,7 +86,11 @@ function normalizeStudentNumber(value) {
 }
 
 function resolveRequestStudentNumber(req) {
-  return normalizeStudentNumber(resolveStudentNumber(req) || "");
+  try {
+    return normalizeStudentNumber(req.student?.studentNumber || resolveStudentNumber(req) || "");
+  } catch {
+    return normalizeStudentNumber(req.student?.studentNumber || "");
+  }
 }
 
 
@@ -138,6 +152,280 @@ function setResetSession(studentNumber, session) {
 
 function clearResetSession(studentNumber) {
   resetPasswordSessions.delete(studentNumber);
+}
+
+function getJournalLockResetSession(studentNumber) {
+  return journalLockResetSessions.get(studentNumber) || null;
+}
+
+function setJournalLockResetSession(studentNumber, session) {
+  journalLockResetSessions.set(studentNumber, session);
+}
+
+function clearJournalLockResetSession(studentNumber) {
+  journalLockResetSessions.delete(studentNumber);
+}
+
+function getEmailChangeSession(studentNumber) {
+  return emailChangeSessions.get(studentNumber) || null;
+}
+
+function setEmailChangeSession(studentNumber, session) {
+  emailChangeSessions.set(studentNumber, session);
+}
+
+function clearEmailChangeSession(studentNumber) {
+  emailChangeSessions.delete(studentNumber);
+}
+
+async function loadCurrentStudentEmail(studentNumber) {
+  const { data, error } = await supabaseAdminClient
+    .from("student_profiles")
+    .select("email")
+    .eq("student_number", studentNumber)
+    .maybeSingle();
+  if (error) {
+    const wrapped = new Error(error.message || "Unable to load student email.");
+    wrapped.statusCode = 400;
+    throw wrapped;
+  }
+  const email = normalizeEmail(data?.email || "");
+  if (!email) {
+    const wrapped = new Error("Student email not found.");
+    wrapped.statusCode = 404;
+    throw wrapped;
+  }
+  return email;
+}
+
+function maskEmail(email) {
+  const normalized = normalizeEmail(email);
+  const at = normalized.indexOf("@");
+  if (at <= 0) return normalized;
+  return `${normalized.charAt(0)}***${normalized.slice(at)}`;
+}
+
+function getManilaDateParts(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = formatter.formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value || "1970";
+  const month = parts.find((part) => part.type === "month")?.value || "01";
+  const day = parts.find((part) => part.type === "day")?.value || "01";
+  return {
+    year: Number(year),
+    month: Number(month),
+    day: Number(day),
+    isoDate: `${year}-${month}-${day}`,
+  };
+}
+
+function formatActivityTimeLabel(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const diffMs = Date.now() - date.getTime();
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return date.toISOString();
+}
+
+function formatEntryDateLabel(value) {
+  if (!value) return "";
+  if (value instanceof Date) {
+    return getManilaDateParts(value).isoDate;
+  }
+  const rawValue = String(value).trim();
+  const match = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : rawValue;
+}
+
+function resolveActivityNotificationRoute(kind, metadata = {}) {
+  const storedRoute = String(metadata?.route || "").trim();
+  const kindUpper = String(kind || "").toUpperCase();
+
+  if (kindUpper.startsWith("FUTURE_SELF")) {
+    return storedRoute || "/home";
+  }
+  if (/DISAPPROV|DECLINE|DENIED/.test(kindUpper)) {
+    return storedRoute && storedRoute !== "/consult" ? storedRoute : "/notifications";
+  }
+  if (kindUpper.includes("ADMIN_MESSAGE")) {
+    return "/messages";
+  }
+  if (kindUpper.includes("APPOINTMENT") || kindUpper.includes("CONSULT")) {
+    return "/profile-settings?section=schedule";
+  }
+  return storedRoute && storedRoute !== "/consult" ? storedRoute : "/notifications";
+}
+
+function isEmailChangeSessionVerified(session, newEmail) {
+  if (!session) return false;
+  if (normalizeEmail(session.newEmail || "") !== normalizeEmail(newEmail || "")) {
+    return false;
+  }
+  const verifiedAt = Number(session.verifiedAt || session.currentVerifiedAt || 0);
+  if (!verifiedAt) return false;
+  return Date.now() <= verifiedAt + RESET_SESSION_MS;
+}
+
+const STUDENT_PROFILE_SELECT =
+  "student_number, full_name, email, program, gender, region, province, city, barangay, street, birthdate, profile_picture_url, profile_picture_path";
+
+function normalizeBirthdate(value) {
+  const raw = normalizeCompactSpaces(value);
+  const matchIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (matchIso) {
+    return matchIso[1] + "-" + matchIso[2] + "-" + matchIso[3];
+  }
+  const matchUs = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (matchUs) {
+    const month = matchUs[1].padStart(2, "0");
+    const day = matchUs[2].padStart(2, "0");
+    const year = matchUs[3];
+    return year + "-" + month + "-" + day;
+  }
+  return "";
+}
+
+function isValidProfileName(value) {
+  return NAME_PATTERN.test(String(value || "").trim());
+}
+
+function findListedOption(options, value) {
+  const needle = normalizeCompactSpaces(value).toUpperCase();
+  if (!needle) return "";
+  return options.find((option) => option.toUpperCase() === needle) || "";
+}
+
+function validateAddressField(label, value) {
+  if (!value) {
+    return `${label} is required.`;
+  }
+  if (value.length < 2 || value.length > 80) {
+    return `${label} must be 2 to 80 characters.`;
+  }
+  if (/\d/.test(value) || !ADDRESS_PATTERN.test(value)) {
+    return `${label} can only include letters, spaces, hyphens, and periods.`;
+  }
+  return "";
+}
+
+function parseIsoCalendarDate(value) {
+  const iso = normalizeBirthdate(value);
+  if (!iso) return "";
+  const year = Number(iso.slice(0, 4));
+  const month = Number(iso.slice(5, 7));
+  const day = Number(iso.slice(8, 10));
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  if (
+    utc.getUTCFullYear() !== year ||
+    utc.getUTCMonth() !== month - 1 ||
+    utc.getUTCDate() !== day
+  ) {
+    return "";
+  }
+  return iso;
+}
+
+function mapStudentProfile(data) {
+  if (!data) return null;
+  return {
+    barangay: data.barangay || "",
+    birthdate: data.birthdate || "",
+    city: data.city || "",
+    email: normalizeEmail(data.email || ""),
+    fullName: toTitleCase(data.full_name || ""),
+    gender: data.gender || "",
+    program: data.program || "",
+    profilePictureUrl: data.profile_picture_url || "",
+    province: data.province || "",
+    region: data.region || "",
+    street: data.street || "",
+    studentNumber: data.student_number,
+  };
+}
+
+async function loadStudentProfileByNumber(studentNumber) {
+  return supabaseAdminClient
+    .from("student_profiles")
+    .select(STUDENT_PROFILE_SELECT)
+    .eq("student_number", studentNumber)
+    .maybeSingle();
+}
+
+async function sendVerificationCodeEmail(email, context, copy) {
+  const { data, error } = await supabaseAdminClient.auth.admin.generateLink({
+    type: "recovery",
+    email,
+  });
+  if (error) {
+    return { ok: false, message: error.message || "Failed to generate verification code." };
+  }
+  const token = data?.properties?.email_otp;
+  if (!token) {
+    return { ok: false, message: "Failed to generate verification code." };
+  }
+  const emailResult = await sendAuthCodeEmail({
+    to: email,
+    code: token,
+    expiresInSeconds: Math.ceil(OTP_VALIDITY_MS / 1000),
+    context,
+    subject: copy.subject,
+    heading: copy.heading,
+    intro: copy.intro,
+    ignoreText: copy.ignoreText,
+  });
+  if (!emailResult.ok) {
+    return { ok: false, message: "Failed to send verification code." };
+  }
+  return { ok: true };
+}
+
+async function clearStudentProfilePicture(studentNumber) {
+  const profileResult = await query(
+    `
+      select coalesce(profile_picture_path, '') as profile_picture_path
+      from public.student_profiles
+      where student_number = $1
+      limit 1
+    `,
+    [studentNumber],
+  );
+  if (profileResult.rowCount === 0) {
+    const error = new Error("Student profile not found.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  await query(
+    `
+      update public.student_profiles
+      set profile_picture_url = null,
+          profile_picture_path = null
+      where student_number = $1
+    `,
+    [studentNumber],
+  );
+
+  const previousPath = profileResult.rows[0].profile_picture_path || "";
+  if (previousPath) {
+    const { error: removeError } = await supabaseAdminClient.storage
+      .from(getStudentProfilePictureBucket())
+      .remove([previousPath]);
+    if (removeError) {
+      console.warn("Unable to remove student profile picture:", removeError.message || removeError);
+    }
+  }
 }
 
 function getStudentProfilePictureBucket() {
@@ -642,13 +930,7 @@ router.get("/profile", requireStudentOnlyAuth, async (req, res) => {
     return res.status(400).json({ message: "Student ID is required." });
   }
 
-  const { data, error } = await supabaseAdminClient
-    .from("student_profiles")
-    .select(
-      "student_number, full_name, email, program, region, province, city, barangay, street, birthdate, profile_picture_url",
-    )
-    .eq("student_number", studentNumber)
-    .maybeSingle();
+  const { data, error } = await loadStudentProfileByNumber(studentNumber);
 
   if (error) {
     return res.status(400).json({ message: error.message });
@@ -659,21 +941,452 @@ router.get("/profile", requireStudentOnlyAuth, async (req, res) => {
   }
 
   return res.json({
-    profile: {
-      barangay: data.barangay || "",
-      birthdate: data.birthdate || "",
-      city: data.city || "",
-      email: normalizeEmail(data.email || ""),
-      fullName: toTitleCase(data.full_name || ""),
-      program: data.program || "",
-      profilePictureUrl: data.profile_picture_url || "",
-      province: data.province || "",
-      region: data.region || "",
-      street: data.street || "",
-      studentNumber: data.student_number,
-    },
+    profile: mapStudentProfile(data),
   });
 });
+
+router.patch("/profile", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  if (!studentNumber || !STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "A valid Student ID is required." });
+  }
+
+  const { data: current, error: loadError } = await loadStudentProfileByNumber(studentNumber);
+  if (loadError) {
+    return res.status(400).json({ message: loadError.message });
+  }
+  if (!current) {
+    return res.status(404).json({ message: "Student profile not found." });
+  }
+
+  const requestedEmail = normalizeEmail(req.body.email || "");
+  const currentEmail = normalizeEmail(current.email || "");
+  const nextEmail = "";
+  if (requestedEmail && requestedEmail !== currentEmail) {
+    return res.status(400).json({
+      message: "Use the email-change confirm flow to set a new email.",
+    });
+  }
+
+  if (req.body.studentNumber != null || req.body.student_number != null) {
+    const requestedStudentNumber = normalizeStudentNumber(
+      req.body.studentNumber || req.body.student_number || "",
+    );
+    if (requestedStudentNumber && requestedStudentNumber !== studentNumber) {
+      return res.status(400).json({ message: "Student number cannot be changed." });
+    }
+  }
+
+  const updates = {};
+  if (nextEmail) {
+    updates.email = nextEmail;
+  }
+  if (req.body.fullName != null) {
+    const fullName = normalizeUpperText(req.body.fullName || "");
+    if (!fullName) {
+      return res.status(400).json({ message: "Full name is required." });
+    }
+    if (fullName.length < 2 || fullName.length > 80) {
+      return res.status(400).json({ message: "Full name must be 2 to 80 characters." });
+    }
+    if (/\d/.test(fullName) || !isValidProfileName(fullName)) {
+      return res.status(400).json({
+        message: "Full name can only include letters, spaces, hyphens, and apostrophes.",
+      });
+    }
+    updates.full_name = fullName;
+  }
+  if (req.body.program != null) {
+    const program = normalizeUpperText(req.body.program || "");
+    if (!program) {
+      return res.status(400).json({ message: "Program is required." });
+    }
+    const matchedProgram = findListedOption(PROGRAM_OPTIONS, program);
+    if (!matchedProgram) {
+      return res.status(400).json({ message: "Choose a program from the list." });
+    }
+    updates.program = normalizeUpperText(matchedProgram);
+  }
+  if (req.body.gender != null) {
+    const rawGender = normalizeCompactSpaces(req.body.gender || "");
+    if (!rawGender) {
+      return res.status(400).json({ message: "Gender is required." });
+    }
+    const gender = normalizeStudentGender(rawGender);
+    if (!gender || !findListedOption(GENDER_OPTIONS, gender)) {
+      return res.status(400).json({ message: "Choose a gender from the list." });
+    }
+    updates.gender = gender;
+  }
+  if (req.body.region != null) {
+    const region = normalizeUpperText(req.body.region || "");
+    const regionError = validateAddressField("Region", region);
+    if (regionError) {
+      return res.status(400).json({ message: regionError });
+    }
+    updates.region = region;
+  }
+  if (req.body.province != null) {
+    const province = normalizeUpperText(req.body.province || "");
+    const provinceError = validateAddressField("Province", province);
+    if (provinceError) {
+      return res.status(400).json({ message: provinceError });
+    }
+    updates.province = province;
+  }
+  if (req.body.city != null) {
+    const city = normalizeUpperText(req.body.city || "");
+    const cityError = validateAddressField("City", city);
+    if (cityError) {
+      return res.status(400).json({ message: cityError });
+    }
+    updates.city = city;
+  }
+  if (req.body.barangay != null) {
+    const barangay = normalizeUpperText(req.body.barangay || "");
+    if (!barangay) {
+      return res.status(400).json({ message: "Barangay is required." });
+    }
+    const matchedBarangay = findListedOption(BARANGAY_OPTIONS, barangay);
+    if (!matchedBarangay) {
+      return res.status(400).json({ message: "Choose a barangay from the list." });
+    }
+    updates.barangay = normalizeUpperText(matchedBarangay);
+  }
+  if (req.body.street != null) {
+    const street = normalizeUpperText(req.body.street || "");
+    if (!street) {
+      return res.status(400).json({ message: "Street is required." });
+    }
+    if (street.length < 2 || street.length > 120) {
+      return res.status(400).json({ message: "Street must be 2 to 120 characters." });
+    }
+    if (!STREET_PATTERN.test(street)) {
+      return res.status(400).json({
+        message: "Street can include letters, numbers, spaces, hyphens, and periods.",
+      });
+    }
+    updates.street = street;
+  }
+  if (req.body.birthdate != null) {
+    const rawBirthdate = normalizeCompactSpaces(req.body.birthdate || "");
+    if (!rawBirthdate) {
+      return res.status(400).json({ message: "Birthdate is required." });
+    }
+    const birthdate = parseIsoCalendarDate(rawBirthdate);
+    if (!birthdate) {
+      return res.status(400).json({ message: "Enter birthdate as YYYY-MM-DD." });
+    }
+    if (birthdate > getManilaDateParts().isoDate) {
+      return res.status(400).json({ message: "Birthdate cannot be in the future." });
+    }
+    updates.birthdate = birthdate;
+  }
+
+  if (!Object.keys(updates).length) {
+    return res.json({
+      message: "No personal details changed.",
+      profile: mapStudentProfile(current),
+    });
+  }
+
+  const { data, error } = await supabaseAdminClient
+    .from("student_profiles")
+    .update(updates)
+    .eq("student_number", studentNumber)
+    .select(STUDENT_PROFILE_SELECT)
+    .maybeSingle();
+
+  if (error) {
+    return res.status(400).json({ message: error.message });
+  }
+
+  const profile = mapStudentProfile(data || { ...current, ...updates, student_number: studentNumber });
+  if (req.session?.student) {
+    req.session.student.fullName = profile.fullName;
+    req.session.student.email = profile.email;
+  }
+
+  if (nextEmail) {
+    clearEmailChangeSession(studentNumber);
+  }
+
+  return res.json({
+    message: "Profile updated.",
+    profile,
+  });
+});
+
+router.post("/profile/email-change/send-code", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  const newEmail = normalizeEmail(req.body.newEmail || req.body.email || "");
+  if (!studentNumber || !STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "A valid Student ID is required." });
+  }
+  if (!newEmail || !EMAIL_PATTERN.test(newEmail)) {
+    return res.status(400).json({ message: "Enter a valid new email address." });
+  }
+
+  const currentSession = getEmailChangeSession(studentNumber);
+  if (currentSession && Date.now() < currentSession.resendAvailableAt) {
+    const remaining = Math.ceil((currentSession.resendAvailableAt - Date.now()) / 1000);
+    return res.status(429).json({ message: `Please wait ${remaining}s before resending.` });
+  }
+
+  const { data: profile, error: profileError } = await loadStudentProfileByNumber(studentNumber);
+  if (profileError) {
+    return res.status(400).json({ message: profileError.message });
+  }
+  if (!profile) {
+    return res.status(404).json({ message: "Student profile not found." });
+  }
+
+  const currentEmail = normalizeEmail(profile.email || "");
+  if (!currentEmail || !EMAIL_PATTERN.test(currentEmail)) {
+    return res.status(400).json({ message: "This account does not have a valid email on file." });
+  }
+  if (newEmail === currentEmail) {
+    return res.status(400).json({ message: "The new email is the same as your current email." });
+  }
+
+  const { data: existingProfile, error: existingProfileError } = await supabaseAdminClient
+    .from("student_profiles")
+    .select("id")
+    .eq("email", newEmail)
+    .maybeSingle();
+  if (existingProfileError) {
+    return res.status(500).json({
+      message: existingProfileError.message || "Unable to validate email status.",
+    });
+  }
+  if (existingProfile) {
+    return res.status(409).json({ message: "This email is already registered." });
+  }
+
+  const sendResult = await sendVerificationCodeEmail(
+    currentEmail,
+    `student email change current [${studentNumber}]`,
+    {
+      subject: "Confirm your email change",
+      heading: "Confirm Email Change",
+      intro: "We received a request to change the email on your Bawat Tala account. Use the verification code below to confirm this request:",
+      ignoreText: "If you did not request an email change, you can safely ignore this email.",
+    },
+  );
+  if (!sendResult.ok) {
+    return res.status(400).json({ message: sendResult.message || "Failed to send verification code." });
+  }
+
+  const now = Date.now();
+  setEmailChangeSession(studentNumber, {
+    studentNumber,
+    currentEmail,
+    newEmail,
+    currentVerifiedAt: 0,
+    otpExpiresAt: now + OTP_VALIDITY_MS,
+    resendAvailableAt: now + OTP_COOLDOWN_MS,
+  });
+
+  return res.json({
+    message: "Verification code sent to your current email.",
+    stage: "current-email",
+    resendAfterSeconds: Math.ceil(OTP_COOLDOWN_MS / 1000),
+  });
+});
+
+router.post("/profile/email-change/resend-code", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  if (!studentNumber) {
+    return res.status(400).json({ message: "Student ID is required." });
+  }
+
+  const session = getEmailChangeSession(studentNumber);
+  if (!session) {
+    return res.status(400).json({ message: "Please request an email change first." });
+  }
+  if (Date.now() < session.resendAvailableAt) {
+    const remaining = Math.ceil((session.resendAvailableAt - Date.now()) / 1000);
+    return res.status(429).json({ message: `Please wait ${remaining}s before resending.` });
+  }
+
+  if (session.currentVerifiedAt) {
+    const { error } = await supabaseAuthClient.auth.signInWithOtp({
+      email: session.newEmail,
+      options: { shouldCreateUser: true },
+    });
+    if (error) {
+      return res.status(400).json({ message: error.message || "Failed to send verification code." });
+    }
+  } else {
+    const sendResult = await sendVerificationCodeEmail(
+      session.currentEmail,
+      `student email change current resend [${studentNumber}]`,
+      {
+        subject: "Confirm your email change",
+        heading: "Confirm Email Change",
+        intro: "We received a request to change the email on your Bawat Tala account. Use the verification code below to confirm this request:",
+        ignoreText: "If you did not request an email change, you can safely ignore this email.",
+      },
+    );
+    if (!sendResult.ok) {
+      return res.status(400).json({ message: sendResult.message || "Failed to send verification code." });
+    }
+  }
+
+  const now = Date.now();
+  setEmailChangeSession(studentNumber, {
+    ...session,
+    otpExpiresAt: now + OTP_VALIDITY_MS,
+    resendAvailableAt: now + OTP_COOLDOWN_MS,
+  });
+
+  return res.json({
+    message: session.currentVerifiedAt
+      ? "Verification code sent to your new email."
+      : "Verification code sent to your current email.",
+    stage: session.currentVerifiedAt ? "new-email" : "current-email",
+    resendAfterSeconds: Math.ceil(OTP_COOLDOWN_MS / 1000),
+  });
+});
+
+router.post("/profile/email-change/verify-code", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  const token = String(req.body.token || req.body.code || "").trim();
+  if (!studentNumber || !token) {
+    return res.status(400).json({ message: "Verification code is required." });
+  }
+
+  const session = getEmailChangeSession(studentNumber);
+  if (!session) {
+    return res.status(400).json({ message: "Please request an email change first." });
+  }
+  if (session.currentVerifiedAt) {
+    return res.status(400).json({
+      message: "Current email is already verified. Enter the code sent to your new email.",
+      stage: "new-email",
+    });
+  }
+  if (Date.now() > session.otpExpiresAt) {
+    clearEmailChangeSession(studentNumber);
+    return res.status(400).json({
+      message: "The code has expired or is invalid. Please try again.",
+    });
+  }
+
+  const { error } = await supabaseAuthClient.auth.verifyOtp({
+    email: session.currentEmail,
+    token,
+    type: "recovery",
+  });
+  if (error) {
+    return res.status(400).json({
+      message: "The code is invalid. Please check the latest email code and try again.",
+    });
+  }
+
+  const { error: newEmailError } = await supabaseAuthClient.auth.signInWithOtp({
+    email: session.newEmail,
+    options: { shouldCreateUser: true },
+  });
+  if (newEmailError) {
+    return res.status(400).json({
+      message: newEmailError.message || "Unable to send a verification code to the new email.",
+    });
+  }
+
+  const now = Date.now();
+  setEmailChangeSession(studentNumber, {
+    ...session,
+    currentVerifiedAt: now,
+    otpExpiresAt: now + OTP_VALIDITY_MS,
+    resendAvailableAt: now + OTP_COOLDOWN_MS,
+  });
+
+  return res.json({
+    message: "Current email verified. Enter the code sent to your new email.",
+    stage: "new-email",
+    resendAfterSeconds: Math.ceil(OTP_COOLDOWN_MS / 1000),
+  });
+});
+
+router.post("/profile/email-change/confirm", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  const token = String(req.body.token || req.body.code || "").trim();
+  if (!studentNumber || !token) {
+    return res.status(400).json({ message: "Verification code is required." });
+  }
+
+  const session = getEmailChangeSession(studentNumber);
+  if (!session || !session.currentVerifiedAt) {
+    return res.status(400).json({
+      message: "Please verify your current email first.",
+      stage: "current-email",
+    });
+  }
+  if (Date.now() > session.otpExpiresAt) {
+    return res.status(400).json({
+      message: "The code has expired or is invalid. Please try again.",
+      stage: "new-email",
+    });
+  }
+
+  const { error } = await supabaseAuthClient.auth.verifyOtp({
+    email: session.newEmail,
+    token,
+    type: "email",
+  });
+  if (error) {
+    return res.status(400).json({
+      message: "The code is invalid. Please check the latest email code and try again.",
+      stage: "new-email",
+    });
+  }
+
+  const { data: existingProfile, error: existingProfileError } = await supabaseAdminClient
+    .from("student_profiles")
+    .select("id, student_number")
+    .eq("email", session.newEmail)
+    .maybeSingle();
+  if (existingProfileError) {
+    return res.status(500).json({
+      message: existingProfileError.message || "Unable to validate email status.",
+    });
+  }
+  if (existingProfile && existingProfile.student_number !== studentNumber) {
+    return res.status(409).json({ message: "This email is already registered." });
+  }
+
+  const { data, error: updateError } = await supabaseAdminClient
+    .from("student_profiles")
+    .update({ email: session.newEmail, is_email_verified: true })
+    .eq("student_number", studentNumber)
+    .select(STUDENT_PROFILE_SELECT)
+    .maybeSingle();
+  if (updateError) {
+    return res.status(400).json({ message: updateError.message });
+  }
+
+  try {
+    await deleteStaleAuthUsersByEmail(session.currentEmail);
+  } catch (cleanupError) {
+    console.warn(
+      "Unable to remove previous auth email after student email change:",
+      cleanupError?.message || cleanupError,
+    );
+  }
+
+  if (req.session?.student) {
+    req.session.student.email = session.newEmail;
+  }
+  clearEmailChangeSession(studentNumber);
+
+  return res.json({
+    message: "Email updated.",
+    profile: mapStudentProfile(data),
+  });
+});
+
+
 
 router.patch("/profile-picture", requireStudentOnlyAuth, async (req, res) => {
   const studentNumber = resolveRequestStudentNumber(req);
@@ -681,9 +1394,28 @@ router.patch("/profile-picture", requireStudentOnlyAuth, async (req, res) => {
     return res.status(400).json({ message: "A valid Student ID is required." });
   }
 
+  const rawPicture = req.body.uploadedProfilePicture;
+  if (
+    rawPicture == null ||
+    rawPicture === "" ||
+    (typeof rawPicture === "object" && !String(rawPicture.dataUrl || "").trim())
+  ) {
+    try {
+      await clearStudentProfilePicture(studentNumber);
+      return res.json({
+        message: "Profile picture removed.",
+        profilePictureUrl: "",
+      });
+    } catch (error) {
+      return res.status(error.statusCode || 400).json({
+        message: error.message || "Unable to remove profile picture.",
+      });
+    }
+  }
+
   let uploadedImage;
   try {
-    uploadedImage = parseStudentProfilePicturePayload(req.body.uploadedProfilePicture);
+    uploadedImage = parseStudentProfilePicturePayload(rawPicture);
   } catch (error) {
     return res.status(400).json({ message: error.message || "Invalid profile picture." });
   }
@@ -736,6 +1468,25 @@ router.patch("/profile-picture", requireStudentOnlyAuth, async (req, res) => {
   } catch (error) {
     return res.status(400).json({
       message: error.message || "Unable to update profile picture.",
+    });
+  }
+});
+
+router.delete("/profile-picture", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  if (!studentNumber || !STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "A valid Student ID is required." });
+  }
+
+  try {
+    await clearStudentProfilePicture(studentNumber);
+    return res.json({
+      message: "Profile picture removed.",
+      profilePictureUrl: "",
+    });
+  } catch (error) {
+    return res.status(error.statusCode || 400).json({
+      message: error.message || "Unable to remove profile picture.",
     });
   }
 });
@@ -800,15 +1551,85 @@ router.patch("/preferences", requireStudentOnlyAuth, async (req, res) => {
       nextJournalLockAutoLock = req.body.journalLockAutoLock;
     }
 
-    if (isBoolean(req.body.journalLockEnabled)) {
-      nextJournalLockEnabled = req.body.journalLockEnabled;
-    }
+   const requestedDisable =
+     isBoolean(req.body.journalLockEnabled) &&
+     req.body.journalLockEnabled === false &&
+     currentPreferences.journalLockEnabled;
 
-    const nextPin = normalizePin(req.body.journalLockPin);
-    if (req.body.journalLockPin != null) {
-      if (nextPin.length !== 4) {
-        return res
-          .status(400)
+   const requestedEnable =
+     isBoolean(req.body.journalLockEnabled) &&
+     req.body.journalLockEnabled === true &&
+     !currentPreferences.journalLockEnabled;
+
+   if (requestedDisable) {
+     const currentPin = normalizePin(
+       req.body.journalLockPin ||
+         req.body.currentJournalLockPin ||
+         req.body.pin,
+     );
+     const pinHash = currentRecord?.journal_lock_pin_hash || "";
+     if (currentPin.length !== 4) {
+       return res.status(400).json({
+         message: "Enter your current PIN to turn off Journal Lock.",
+       });
+     }
+     if (!pinHash || !verifyPassword(currentPin, pinHash)) {
+       return res.status(403).json({
+         message: "That PIN doesn't match. Try again.",
+       });
+     }
+     nextJournalLockEnabled = false;
+   } else if (requestedEnable) {
+     const currentPin = normalizePin(
+       req.body.currentJournalLockPin ||
+         req.body.journalLockPin ||
+         req.body.pin,
+     );
+     if (nextJournalLockPinHash) {
+       if (req.body.previousJournalLockPin) {
+         const previousPin = normalizePin(req.body.previousJournalLockPin);
+         const nextPin = normalizePin(req.body.journalLockPin);
+         if (previousPin.length !== 4 || !verifyPassword(previousPin, nextJournalLockPinHash)) {
+           return res.status(403).json({ message: "Previous PIN does not match." });
+         }
+         if (nextPin.length !== 4) {
+           return res.status(400).json({ message: "Use exactly 4 digits for the PIN." });
+         }
+         if (verifyPassword(nextPin, nextJournalLockPinHash)) {
+           return res.status(400).json({ message: "Choose a new PIN that is different from your current PIN." });
+         }
+         nextJournalLockPinHash = hashPassword(nextPin);
+         nextJournalLockEnabled = true;
+       } else {
+         if (currentPin.length !== 4) {
+           return res.status(400).json({
+             message: "Enter your current PIN to turn on Journal Lock.",
+           });
+         }
+         if (!verifyPassword(currentPin, nextJournalLockPinHash)) {
+           return res.status(403).json({
+             message: "That PIN doesn't match. Try again.",
+           });
+         }
+         nextJournalLockEnabled = true;
+       }
+     } else {
+       const nextPin = normalizePin(req.body.journalLockPin || req.body.pin);
+       if (nextPin.length !== 4) {
+         return res.status(400).json({ message: "Create a 4-digit PIN first." });
+       }
+       nextJournalLockPinHash = hashPassword(nextPin);
+       nextJournalLockEnabled = true;
+     }
+   } else if (isBoolean(req.body.journalLockEnabled)) {
+     nextJournalLockEnabled = req.body.journalLockEnabled;
+   }
+
+   const nextPin = normalizePin(req.body.journalLockPin);
+   if (!requestedDisable && !requestedEnable && req.body.journalLockPin != null) {
+     if (nextPin.length !== 4) {
+       return res
+         .status(400)
           .json({ message: "Use exactly 4 digits for the PIN." });
       }
 
@@ -921,53 +1742,187 @@ router.post("/preferences/journal-lock/verify", requireStudentOnlyAuth, async (r
   }
 });
 
-router.post("/preferences/journal-lock/reset", requireStudentOnlyAuth, async (req, res) => {
+router.post(["/preferences/journal-lock/send-code", "/preferences/journal-lock/reset/send-code"], requireStudentOnlyAuth, async (req, res) => {
   const studentNumber = resolveRequestStudentNumber(req);
-  const studentNumberConfirmation = normalizeCompactSpaces(
-    req.body.studentNumberConfirmation || "",
-  );
+  if (!studentNumber || !STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "A valid Student ID is required." });
+  }
 
+  const currentSession = getJournalLockResetSession(studentNumber);
+  if (currentSession && Date.now() < currentSession.resendAvailableAt) {
+    const remaining = Math.ceil((currentSession.resendAvailableAt - Date.now()) / 1000);
+    return res.status(429).json({ message: `Please wait ${remaining}s before resending.` });
+  }
+
+  const { data: profile, error: profileError } = await loadStudentProfileByNumber(studentNumber);
+  if (profileError) {
+    return res.status(400).json({ message: profileError.message });
+  }
+  const email = normalizeEmail(profile?.email || "");
+  if (!email || !EMAIL_PATTERN.test(email)) {
+    return res.status(400).json({ message: "This account does not have a valid email on file." });
+  }
+
+  const sendResult = await sendRecoveryCode(email, `journal lock reset [${studentNumber}]`);
+  if (!sendResult.ok) {
+    return res.status(400).json({ message: sendResult.message || "Failed to send verification code." });
+  }
+
+  const now = Date.now();
+  setJournalLockResetSession(studentNumber, {
+    studentNumber,
+    email,
+    otpExpiresAt: now + OTP_VALIDITY_MS,
+    resendAvailableAt: now + OTP_COOLDOWN_MS,
+    verifiedAt: 0,
+  });
+
+  return res.json({
+    message: "Verification code sent to your current email.",
+    resendAfterSeconds: Math.ceil(OTP_COOLDOWN_MS / 1000),
+    emailHint: maskEmail(email),
+  });
+});
+
+router.post(["/preferences/journal-lock/resend-code", "/preferences/journal-lock/reset/resend-code"], requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
   if (!studentNumber) {
     return res.status(400).json({ message: "Student ID is required." });
   }
 
-  if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
-    return res.status(400).json({ message: "Invalid student ID." });
+  const session = getJournalLockResetSession(studentNumber);
+  if (!session) {
+    return res.status(400).json({ message: "Please request a verification code first." });
+  }
+  if (Date.now() < session.resendAvailableAt) {
+    const remaining = Math.ceil((session.resendAvailableAt - Date.now()) / 1000);
+    return res.status(429).json({ message: `Please wait ${remaining}s before resending.` });
   }
 
-  if (!STUDENT_NUMBER_PATTERN.test(studentNumberConfirmation)) {
-    return res
-      .status(400)
-      .json({ message: "Enter Student ID in 23-2903 format." });
+  const sendResult = await sendRecoveryCode(session.email, `journal lock reset resend [${studentNumber}]`);
+  if (!sendResult.ok) {
+    return res.status(400).json({ message: sendResult.message || "Failed to send verification code." });
   }
 
-  if (studentNumberConfirmation !== studentNumber) {
-    return res
-      .status(403)
-      .json({ message: "Student ID does not match this account." });
+  const now = Date.now();
+  setJournalLockResetSession(studentNumber, {
+    ...session,
+    otpExpiresAt: now + OTP_VALIDITY_MS,
+    resendAvailableAt: now + OTP_COOLDOWN_MS,
+    verifiedAt: 0,
+  });
+
+  return res.json({
+    message: "Verification code sent to your current email.",
+    resendAfterSeconds: Math.ceil(OTP_COOLDOWN_MS / 1000),
+    emailHint: maskEmail(session.email),
+  });
+});
+
+router.post(["/preferences/journal-lock/verify-code", "/preferences/journal-lock/reset/verify-code"], requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  const token = String(req.body.token || req.body.code || "").trim();
+  if (!studentNumber || !token) {
+    return res.status(400).json({ message: "Verification code is required." });
+  }
+
+  const session = getJournalLockResetSession(studentNumber);
+  if (!session) {
+    return res.status(400).json({ message: "Please request a verification code first." });
+  }
+  if (Date.now() > session.otpExpiresAt) {
+    clearJournalLockResetSession(studentNumber);
+    return res.status(400).json({
+      message: "The code has expired or is invalid. Please try again.",
+    });
+  }
+
+  const { error } = await supabaseAuthClient.auth.verifyOtp({
+    email: session.email,
+    token,
+    type: "recovery",
+  });
+  if (error) {
+    return res.status(400).json({
+      message: "The code is invalid. Please check the latest email code and try again.",
+    });
+  }
+
+  setJournalLockResetSession(studentNumber, {
+    ...session,
+    verifiedAt: Date.now(),
+  });
+
+  return res.json({ message: "OTP verified." });
+});
+
+router.post("/preferences/journal-lock/reset", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  if (!studentNumber || !STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "A valid Student ID is required." });
+  }
+
+  const session = getJournalLockResetSession(studentNumber);
+  if (!session || !session.verifiedAt) {
+    return res.status(400).json({
+      message: "Please verify the email code sent to your current email first.",
+    });
+  }
+  if (Date.now() > session.verifiedAt + RESET_SESSION_MS) {
+    clearJournalLockResetSession(studentNumber);
+    return res.status(400).json({
+      message: "Reset session expired. Please request a new code.",
+    });
+  }
+
+  const nextPin = normalizePin(req.body.journalLockPin || req.body.pin || req.body.newPin);
+  if (nextPin.length !== 4) {
+    return res.status(400).json({ message: "Use exactly 4 digits for the PIN." });
+  }
+  if (req.body.journalLockPinConfirm != null && req.body.journalLockPinConfirm !== "") {
+    const confirmPin = normalizePin(req.body.journalLockPinConfirm);
+    if (confirmPin !== nextPin) {
+      return res.status(400).json({ message: "PIN confirmation does not match." });
+    }
   }
 
   try {
     const currentRecord = await loadStudentPreferenceRecord(studentNumber);
+    const currentPreferences = normalizeStudentPreferences(currentRecord);
     const currentSettings =
       currentRecord?.settings && typeof currentRecord.settings === "object"
         ? currentRecord.settings
         : {};
     const nextSettings = { ...currentSettings };
-    if (currentRecord?.journal_lock_pin_hash) {
-      nextSettings.previousJournalLockPinHash =
-        currentRecord.journal_lock_pin_hash;
+    const currentPinHash = currentRecord?.journal_lock_pin_hash || "";
+    if (currentPinHash && verifyPassword(nextPin, currentPinHash)) {
+      return res.status(400).json({
+        message: "Choose a new PIN that is different from your current PIN.",
+      });
     }
+    const previousJournalLockPinHash = getPreviousJournalLockPinHash(currentSettings);
+    if (previousJournalLockPinHash && verifyPassword(nextPin, previousJournalLockPinHash)) {
+      return res.status(400).json({
+        message: "Choose a new PIN that is different from your previous PIN.",
+      });
+    }
+    if (currentPinHash) {
+      nextSettings.previousJournalLockPinHash = currentPinHash;
+    }
+
     const savedRecord = await saveStudentPreferenceRecord({
-      journalLockAutoLock: true,
-      journalLockEnabled: false,
-      journalLockPinHash: null,
+      journalLockAutoLock: isBoolean(req.body.journalLockAutoLock)
+        ? req.body.journalLockAutoLock
+        : currentPreferences.journalLockAutoLock,
+      journalLockEnabled: true,
+      journalLockPinHash: hashPassword(nextPin),
       settings: nextSettings,
       studentNumber,
     });
 
+    clearJournalLockResetSession(studentNumber);
     return res.json({
-      message: "Journal Lock was reset.",
+      message: "Journal Lock PIN was reset.",
       preferences: normalizeStudentPreferences(savedRecord),
     });
   } catch (error) {
@@ -1277,18 +2232,8 @@ router.post("/forgot-password/send-code", async (req, res) => {
 
 router.post("/profile-password/send-code", requireStudentOnlyAuth, async (req, res) => {
   const studentNumber = resolveRequestStudentNumber(req);
-  const email = normalizeEmail(req.body.email || "");
-
-  if (!studentNumber && !email) {
-    return res
-      .status(400)
-      .json({ message: "Student ID and email are required." });
-  }
   if (!studentNumber) {
     return res.status(400).json({ message: "Student ID is required." });
-  }
-  if (!email) {
-    return res.status(400).json({ message: "Email is required." });
   }
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
     return res
@@ -1304,6 +2249,11 @@ router.post("/profile-password/send-code", requireStudentOnlyAuth, async (req, r
 
   if (profileError) {
     return res.status(400).json({ message: profileError.message });
+  }
+
+  const email = normalizeEmail(req.body.email || profile?.email || "");
+  if (!email) {
+    return res.status(400).json({ message: "Email is required." });
   }
 
   const matchedAccount =
@@ -1662,6 +2612,320 @@ router.post("/forgot-password/reset", async (req, res) => {
 
   clearResetSession(studentNumber);
   return res.json({ message: "Password updated successfully" });
+});
+
+router.post("/profile/email/send-code", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  if (!studentNumber) {
+    return res.status(400).json({ message: "Student ID is required." });
+  }
+
+  const newEmail = normalizeEmail(req.body.newEmail || req.body.email || "");
+  if (!newEmail || !EMAIL_PATTERN.test(newEmail)) {
+    return res.status(400).json({ message: "Enter a valid email address." });
+  }
+
+  let currentEmail = "";
+  try {
+    currentEmail = await loadCurrentStudentEmail(studentNumber);
+  } catch (error) {
+    return res.status(error.statusCode || 400).json({
+      message: error.message || "Unable to load student email.",
+    });
+  }
+
+  if (newEmail === currentEmail) {
+    return res.status(400).json({
+      message: "New email must be different from your current email.",
+    });
+  }
+
+  const { data: existingProfile, error: existingProfileError } = await supabaseAdminClient
+    .from("student_profiles")
+    .select("student_number")
+    .eq("email", newEmail)
+    .maybeSingle();
+  if (existingProfileError) {
+    return res.status(400).json({
+      message: existingProfileError.message || "Unable to check email.",
+    });
+  }
+  if (existingProfile && existingProfile.student_number !== studentNumber) {
+    return res.status(409).json({ message: "This email is already registered." });
+  }
+
+  const existing = getEmailChangeSession(studentNumber);
+  if (existing && Date.now() < existing.resendAvailableAt) {
+    const remaining = Math.ceil((existing.resendAvailableAt - Date.now()) / 1000);
+    return res.status(429).json({ message: `Please wait ${remaining}s before resending.` });
+  }
+
+  const sendResult = await sendRecoveryCode(
+    currentEmail,
+    `student email change [${studentNumber}]`,
+  );
+  if (!sendResult.ok) {
+    return res
+      .status(400)
+      .json({ message: sendResult.message || "Failed to send verification code." });
+  }
+
+  const now = Date.now();
+  setEmailChangeSession(studentNumber, {
+    studentNumber,
+    currentEmail,
+    newEmail,
+    otpExpiresAt: now + OTP_VALIDITY_MS,
+    resendAvailableAt: now + OTP_COOLDOWN_MS,
+    verifiedAt: 0,
+    currentVerifiedAt: 0,
+  });
+
+  return res.json({
+    message: "Verification code sent to your current email.",
+    resendAfterSeconds: Math.ceil(OTP_COOLDOWN_MS / 1000),
+    emailHint: maskEmail(currentEmail),
+  });
+});
+
+router.post("/profile/email/resend-code", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  if (!studentNumber) {
+    return res.status(400).json({ message: "Student ID is required." });
+  }
+
+  const session = getEmailChangeSession(studentNumber);
+  if (!session) {
+    return res
+      .status(400)
+      .json({ message: "Please request a verification code first." });
+  }
+  if (Date.now() < session.resendAvailableAt) {
+    const remaining = Math.ceil((session.resendAvailableAt - Date.now()) / 1000);
+    return res.status(429).json({ message: `Please wait ${remaining}s before resending.` });
+  }
+
+  let currentEmail = session.currentEmail;
+  try {
+    currentEmail = await loadCurrentStudentEmail(studentNumber);
+  } catch (error) {
+    return res.status(error.statusCode || 400).json({
+      message: error.message || "Unable to load student email.",
+    });
+  }
+
+  const sendResult = await sendRecoveryCode(
+    currentEmail,
+    `student email change resend [${studentNumber}]`,
+  );
+  if (!sendResult.ok) {
+    return res
+      .status(400)
+      .json({ message: sendResult.message || "Failed to send verification code." });
+  }
+
+  const now = Date.now();
+  setEmailChangeSession(studentNumber, {
+    ...session,
+    currentEmail,
+    otpExpiresAt: now + OTP_VALIDITY_MS,
+    resendAvailableAt: now + OTP_COOLDOWN_MS,
+    verifiedAt: 0,
+  });
+
+  return res.json({
+    message: "Verification code sent to your current email.",
+    resendAfterSeconds: Math.ceil(OTP_COOLDOWN_MS / 1000),
+    emailHint: maskEmail(currentEmail),
+  });
+});
+
+router.post("/profile/email/verify-code", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  const token = String(req.body.token || req.body.code || "").trim();
+  const requestedNewEmail = normalizeEmail(req.body.newEmail || req.body.email || "");
+  if (!studentNumber || !token) {
+    return res
+      .status(400)
+      .json({ message: "Student ID and OTP token are required." });
+  }
+
+  const session = getEmailChangeSession(studentNumber);
+  if (!session) {
+    return res
+      .status(400)
+      .json({ message: "Please request a verification code first." });
+  }
+  if (
+    requestedNewEmail &&
+    requestedNewEmail !== normalizeEmail(session.newEmail || "") &&
+    requestedNewEmail !== normalizeEmail(session.currentEmail || "")
+  ) {
+    return res.status(400).json({
+      message: "That email does not match this verification session.",
+    });
+  }
+  if (Date.now() > session.otpExpiresAt) {
+    clearEmailChangeSession(studentNumber);
+    return res.status(400).json({
+      message: "The code has expired or is invalid. Please try again.",
+    });
+  }
+
+  const { error } = await supabaseAuthClient.auth.verifyOtp({
+    email: session.currentEmail,
+    token,
+    type: "recovery",
+  });
+
+  if (error) {
+    return res.status(400).json({
+      message: "The code is invalid. Please check the latest email code and try again.",
+    });
+  }
+
+  setEmailChangeSession(studentNumber, {
+    ...session,
+    verifiedAt: Date.now(),
+    currentVerifiedAt: Date.now(),
+  });
+
+  return res.json({ message: "OTP verified." });
+});
+
+router.get("/activity", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  if (!studentNumber) {
+    return res.status(400).json({ message: "Student ID is required." });
+  }
+
+  const today = getManilaDateParts().isoDate;
+
+  try {
+    const [entriesResult, entryCountResult, notificationsResult, notificationCountResult, upcomingResult] =
+      await Promise.all([
+        query(
+          `
+            select je.id, je.entry_date, je.created_at, je.summary, je.title,
+                   coalesce(last_user.message_text, '') as preview
+            from public.journal_entries je
+            left join lateral (
+              select jem.message_text
+              from public.journal_entry_messages jem
+              where jem.entry_id = je.id and jem.role = 'user'
+              order by jem.created_at desc, jem.id desc
+              limit 1
+            ) last_user on true
+            where je.student_number = $1
+              and je.deleted_by_student_at is null
+              and je.is_finished = true
+            order by je.entry_date desc, je.created_at desc
+            limit 20
+          `,
+          [studentNumber],
+        ),
+        query(
+          `
+            select count(*)::int as total_count
+            from public.journal_entries
+            where student_number = $1
+              and deleted_by_student_at is null
+              and is_finished = true
+          `,
+          [studentNumber],
+        ),
+        query(
+          `
+            select id, kind, title, message, metadata, is_read, created_at
+            from public.student_notifications
+            where student_number = $1
+              and deleted_at is null
+            order by created_at desc
+            limit 20
+          `,
+          [studentNumber],
+        ),
+        query(
+          `
+            select count(*)::int as total_count
+            from public.student_notifications
+            where student_number = $1
+              and deleted_at is null
+          `,
+          [studentNumber],
+        ),
+        query(
+          `
+            select
+              ca.id,
+              ca.concern,
+              ca.counseling_type,
+              ca.appointment_date,
+              ca.slot_time,
+              ca.status,
+              ca.student_note,
+              ca.booking_source,
+              ca.created_at,
+              coalesce(ca.support_type, case when ca.peer_counselor_id is not null then 'PEER' else 'GUIDANCE' end) as support_type
+            from public.counselor_appointments ca
+            where ca.student_number = $1
+              and ca.status in ('PENDING', 'CONFIRMED')
+              and ca.appointment_date >= $2::date
+            order by ca.appointment_date asc, ca.slot_time asc
+            limit 1
+          `,
+          [studentNumber, today],
+        ),
+      ]);
+
+    const upcomingRow = upcomingResult.rows[0] || null;
+    const upcomingAppointment = upcomingRow
+      ? {
+          id: upcomingRow.id,
+          concern: upcomingRow.concern,
+          counselingType: upcomingRow.counseling_type || "",
+          appointmentDate: formatEntryDateLabel(upcomingRow.appointment_date),
+          slotTime: upcomingRow.slot_time,
+          status: upcomingRow.status,
+          studentNote: upcomingRow.student_note || "",
+          supportType: upcomingRow.support_type || "GUIDANCE",
+          bookingSource: upcomingRow.booking_source || "MOBILE_APP",
+          createdAt: upcomingRow.created_at,
+        }
+      : null;
+
+    return res.json({
+      entries: entriesResult.rows.map((row) => ({
+        id: row.id,
+        title: row.title || "",
+        preview: row.preview || "",
+        summary: row.summary || "",
+        createdAt: row.created_at,
+        entryDate: formatEntryDateLabel(row.entry_date),
+      })),
+      totalCount: Number(entryCountResult.rows[0]?.total_count || 0),
+      notifications: notificationsResult.rows.map((row) => {
+        const metadata = row.metadata || {};
+        return {
+          id: row.id,
+          kind: row.kind,
+          title: row.title,
+          message: row.message,
+          route: resolveActivityNotificationRoute(row.kind, metadata),
+          isRead: Boolean(row.is_read),
+          createdAt: row.created_at,
+          timeLabel: formatActivityTimeLabel(row.created_at),
+        };
+      }),
+      notificationsTotalCount: Number(notificationCountResult.rows[0]?.total_count || 0),
+      upcomingAppointment,
+      today,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message || "Unable to load activity.",
+    });
+  }
 });
 
 router.post("/logout", (req, res) => {

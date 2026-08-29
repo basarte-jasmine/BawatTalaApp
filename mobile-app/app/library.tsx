@@ -41,30 +41,6 @@ const READING_REWARD_RING_STROKE = 5;
 const READING_REWARD_RING_CIRCUMFERENCE = 2 * Math.PI * READING_REWARD_RING_RADIUS;
 const READING_ACHIEVEMENT_FALLBACKS: ReadingAchievementReward[] = [
   {
-    key: "read_10_seconds",
-    seconds: 10,
-    rewardTala: 5,
-    title: "First Spark",
-    description: "Read for 10 seconds",
-    durationLabel: "10 seconds",
-  },
-  {
-    key: "read_30_seconds",
-    seconds: 30,
-    rewardTala: 10,
-    title: "Page Warmer",
-    description: "Read for 30 seconds",
-    durationLabel: "30 seconds",
-  },
-  {
-    key: "read_1_minute",
-    seconds: 60,
-    rewardTala: 15,
-    title: "One-Minute Focus",
-    description: "Read for 1 minute",
-    durationLabel: "1 minute",
-  },
-  {
     key: "read_5_minutes",
     seconds: 5 * 60,
     rewardTala: 20,
@@ -433,7 +409,7 @@ export default function LibraryScreen() {
     setErrorMessage("");
     setLibraryActionMessage("");
     try {
-      const result = await fetchLibraryBooks(user?.studentNumber, queryOverride);
+      const result = await fetchLibraryBooks(queryOverride);
       if (result.ok) {
         const mergedBooks = await mergeLocalEpubFiles(result.books ?? []);
         setBooks(dedupeLibraryBooks(mergedBooks));
@@ -520,7 +496,6 @@ export default function LibraryScreen() {
           bookTitle: book.title,
           currentPage,
           status,
-          studentNumber: user.studentNumber,
           totalPages,
         });
         if (result.ok) {
@@ -802,7 +777,6 @@ export default function LibraryScreen() {
         currentPage: readerPageIndex,
         rating,
         status: selectedBook.progress?.status === "FINISHED" ? "FINISHED" : "STARTED",
-        studentNumber: user.studentNumber,
         totalPages: readerPages.length || 1,
       });
       if (result.ok) {

@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, type Href } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -15,7 +16,7 @@ import {
   markStudentNotificationRead,
   StudentNotificationCategory,
 } from "../../lib/backend-api";
-import { getNotificationVisual, isAdminMessageNotification } from "../../lib/notification-utils";
+import { getNotificationRoute, getNotificationVisual, isAdminMessageNotification } from "../../lib/notification-utils";
 
 type StudentInboxScreenProps = {
   variant: "messages" | "notifications";
@@ -23,10 +24,13 @@ type StudentInboxScreenProps = {
 
 const TALA_IMAGE = require("../../assets/images/Tala_Star.png");
 const inboxCache = new Map<string, AppNotification[]>();
+const INBOX_STORAGE_PREFIX = "bawat_tala_inbox:";
 const NOTIFICATION_FILTERS: { key: StudentNotificationCategory; label: string }[] = [
   { key: "notifications", label: "All" },
   { key: "guidance", label: "Guidance" },
   { key: "peer", label: "Peer" },
+  { key: "future-self", label: "Future Me" },
+  { key: "other", label: "Other" },
 ];
 
 function getStringMetadataValue(metadata: Record<string, unknown>, key: string) {
@@ -34,41 +38,60 @@ function getStringMetadataValue(metadata: Record<string, unknown>, key: string) 
   return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
 }
 
-function getNotificationRoute(item: AppNotification): Href | "" {
-  const metadata = item.metadata || {};
+function getInboxStorageKey(cacheKey: string) {
+  return `${INBOX_STORAGE_PREFIX}${cacheKey}`;
+}
+
+async function readPersistedInbox(cacheKey: string): Promise<AppNotification[]> {
+  try {
+    const raw = await AsyncStorage.getItem(getInboxStorageKey(cacheKey));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writePersistedInbox(cacheKey: string, items: AppNotification[]) {
+  try {
+    await AsyncStorage.setItem(getInboxStorageKey(cacheKey), JSON.stringify(items));
+  } catch {
+    // Offline cache is best-effort.
+  }
+}
+
+function matchesCategoryFilter(item: AppNotification, filter: StudentNotificationCategory) {
+  if (filter === "messages") {
+    return isAdminMessageNotification(item);
+  }
+  if (isAdminMessageNotification(item)) {
+    return false;
+  }
+  if (filter === "notifications") {
+    return true;
+  }
   const kind = String(item.kind || "").toUpperCase();
-  const route = getStringMetadataValue(metadata, "route");
-  const appointmentId = getStringMetadataValue(metadata, "appointmentId");
-  const entryId = getStringMetadataValue(metadata, "entryId");
+  const metadata = item.metadata || {};
   const supportType = getStringMetadataValue(metadata, "supportType").toUpperCase();
 
-  if (appointmentId || kind.includes("APPOINTMENT")) {
-    return {
-      pathname: "/home",
-      params: {
-        appointmentId,
-        consultConfirmed: "1",
-        appointmentNoticeTitle: item.title || "",
-      },
-    };
+  if (filter === "future-self") {
+    return kind.startsWith("FUTURE_SELF") || kind.includes("FUTURE");
   }
-  if (entryId || route === "/journal-entry-view") {
-    return entryId
-      ? { pathname: "/journal-entry-view", params: { entryId } }
-      : "/journal-entries";
+  if (filter === "guidance") {
+    const isConsult = kind.startsWith("APPOINTMENT") || kind.startsWith("CONSULT");
+    return isConsult && supportType !== "PEER";
   }
-  if (route === "/journal" || kind.includes("JOURNAL") || kind.includes("ENTRY")) {
-    return "/journal-entries";
+  if (filter === "peer") {
+    const isConsult = kind.startsWith("APPOINTMENT") || kind.startsWith("CONSULT");
+    return isConsult && supportType === "PEER";
   }
-  if (route === "/messages" || kind.includes("ADMIN_MESSAGE")) {
-    return "";
+  if (filter === "other") {
+    const isConsult = kind.startsWith("APPOINTMENT") || kind.startsWith("CONSULT");
+    const isFutureSelf = kind.startsWith("FUTURE_SELF") || kind.includes("FUTURE");
+    return !isConsult && !isFutureSelf;
   }
-  if (route === "/consult") {
-    return supportType === "PEER"
-      ? { pathname: "/consult", params: { track: "peer", skipIntro: "1" } }
-      : { pathname: "/consult", params: { track: "professional", skipIntro: "1" } };
-  }
-  return "";
+  return true;
 }
 
 export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
@@ -98,17 +121,35 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
 
   const visibleItems = useMemo(
     () =>
-      items.filter((item) =>
-        isMessageInbox ? isAdminMessageNotification(item) : !isAdminMessageNotification(item),
-      ),
-    [isMessageInbox, items],
+      items.filter((item) => matchesCategoryFilter(item, requestCategory)),
+    [items, requestCategory],
   );
   const unreadCount = useMemo(() => visibleItems.filter((item) => !item.isRead).length, [visibleItems]);
 
   useEffect(() => {
-    const nextCachedItems = cacheKey ? inboxCache.get(cacheKey) : undefined;
-    setItems(nextCachedItems ?? []);
-    setLoading(!nextCachedItems);
+    let cancelled = false;
+    const hydrateInbox = async () => {
+      const memoryItems = cacheKey ? inboxCache.get(cacheKey) : undefined;
+      if (memoryItems) {
+        setItems(memoryItems);
+        setLoading(false);
+        return;
+      }
+      const persistedItems = cacheKey ? await readPersistedInbox(cacheKey) : [];
+      if (cancelled) return;
+      if (persistedItems.length) {
+        inboxCache.set(cacheKey, persistedItems);
+        setItems(persistedItems);
+        setLoading(false);
+        return;
+      }
+      setItems([]);
+      setLoading(true);
+    };
+    void hydrateInbox();
+    return () => {
+      cancelled = true;
+    };
   }, [cacheKey]);
 
   const handleBack = () => {
@@ -126,16 +167,30 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
       return;
     }
 
-    const hasCachedItems = cacheKey ? inboxCache.has(cacheKey) : false;
-    setLoading(!hasCachedItems);
+    const memoryCached = cacheKey ? inboxCache.get(cacheKey) : undefined;
+    const persistedItems = !memoryCached && cacheKey ? await readPersistedInbox(cacheKey) : [];
+    const cachedItems = memoryCached ?? persistedItems;
+    if (cachedItems.length) {
+      if (cacheKey) {
+        inboxCache.set(cacheKey, cachedItems);
+      }
+      setItems(cachedItems);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     try {
       const result = await fetchStudentNotifications(user.studentNumber, requestCategory);
       if (!result.ok) {
+        if (!cachedItems.length) {
+          setItems([]);
+        }
         return;
       }
       const nextItems = Array.isArray(result.notifications) ? result.notifications : [];
       if (cacheKey) {
         inboxCache.set(cacheKey, nextItems);
+        await writePersistedInbox(cacheKey, nextItems);
       }
       setItems(nextItems);
     } finally {
@@ -166,6 +221,7 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
       const nextItems = current.map((item) => (visibleItems.some((entry) => entry.id === item.id) ? { ...item, isRead: true } : item));
       if (cacheKey) {
         inboxCache.set(cacheKey, nextItems);
+        void writePersistedInbox(cacheKey, nextItems);
       }
       return nextItems;
     });
@@ -180,19 +236,20 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
           const nextItems = current.map((entry) => (entry.id === item.id ? { ...entry, isRead: true } : entry));
           if (cacheKey) {
             inboxCache.set(cacheKey, nextItems);
+            void writePersistedInbox(cacheKey, nextItems);
           }
-          return nextItems;
-        });
-      }
-    }
+         return nextItems;
+       });
+     }
+   }
 
-    const targetRoute = getNotificationRoute(item);
-    if (targetRoute) {
-      router.push(targetRoute);
+   const targetRoute = getNotificationRoute(item);
+   if (targetRoute) {
+      router.push(targetRoute as never);
       return;
     }
 
-    router.push({
+   router.push({
       pathname: "/notification-view",
       params: {
         createdAt: item.createdAt,
@@ -212,6 +269,7 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
         const nextItems = current.filter((item) => item.id !== pendingDeleteNotificationId);
         if (cacheKey) {
           inboxCache.set(cacheKey, nextItems);
+          void writePersistedInbox(cacheKey, nextItems);
         }
         return nextItems;
       });
@@ -253,7 +311,12 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
         </View>
 
         {!isMessageInbox ? (
-          <View style={styles.filterRow}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterRow}
+            style={styles.filterScroll}
+          >
             {NOTIFICATION_FILTERS.map((filter) => {
               const isActive = notificationFilter === filter.key;
               return (
@@ -266,7 +329,7 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
                 </Pressable>
               );
             })}
-          </View>
+          </ScrollView>
         ) : null}
 
         <View style={styles.dayRow}>
@@ -458,10 +521,13 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     columnGap: 10,
   },
-  filterRow: {
+  filterScroll: {
     marginTop: 12,
+  },
+  filterRow: {
     flexDirection: "row",
     columnGap: 8,
+    paddingRight: 12,
   },
   filterButton: {
     minHeight: 34,

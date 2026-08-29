@@ -25,6 +25,16 @@ export function getNotificationVisual(kind: string) {
     };
   }
 
+  if (normalized.includes("future_self") || normalized.includes("future-self") || normalized.includes("letter")) {
+    return {
+      accent: "#3B7A8C",
+      chip: "#E1F3F8",
+      icon: "mail-outline" as const,
+      label: "Future Me",
+      surface: "#F4FAFC",
+    };
+  }
+
   if (normalized.includes("referral") || normalized.includes("reward")) {
     return {
       accent: "#5A8A36",
@@ -81,4 +91,96 @@ export function getNotificationDetailTitle(kind?: string) {
 
 export function getNotificationFallbackRoute(kind?: string) {
   return normalizeNotificationKind(kind) === ADMIN_MESSAGE_KIND ? "/messages" : "/notifications";
+}
+
+function getStringMetadataValue(metadata: Record<string, unknown> | undefined, key: string) {
+  const value = metadata?.[key];
+  return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
+}
+
+export function getAppointmentNoticeStatus(item: AppNotification) {
+  const metadata = item.metadata || {};
+  const haystack = [
+    getStringMetadataValue(metadata, "status"),
+    getStringMetadataValue(metadata, "appointmentStatus"),
+    getStringMetadataValue(metadata, "newStatus"),
+    item.kind,
+    item.title,
+    item.message,
+  ]
+    .join(" ")
+    .toUpperCase();
+
+  if (haystack.includes("RESCHED")) return "RESCHEDULED";
+  if (haystack.includes("DISAPPROV") || haystack.includes("DECLIN") || haystack.includes("REJECT")) return "DISAPPROVED";
+  if (haystack.includes("CONFIRM") || haystack.includes("APPROV")) return "CONFIRMED";
+  return "";
+}
+
+function hrefFromRoute(route: string): string | { pathname: string; params: Record<string, string> } {
+  const trimmed = route.trim();
+  if (!trimmed) return "";
+  const [path, query = ""] = trimmed.split("?");
+  if (!query) return trimmed;
+  const params: Record<string, string> = {};
+  for (const part of query.split("&")) {
+    if (!part) continue;
+    const [key, value = ""] = part.split("=");
+    if (key) {
+      params[decodeURIComponent(key)] = decodeURIComponent(value);
+    }
+  }
+  return { pathname: path, params };
+}
+
+export function getNotificationRoute(item: AppNotification): string | { pathname: string; params: Record<string, string> } | "" {
+  const metadata = item.metadata || {};
+  const kind = String(item.kind || "").toUpperCase();
+  const route = (typeof item.route === "string" ? item.route.trim() : "") || getStringMetadataValue(metadata, "route");
+  const appointmentId = getStringMetadataValue(metadata, "appointmentId");
+  const entryId = getStringMetadataValue(metadata, "entryId");
+  const supportType = getStringMetadataValue(metadata, "supportType").toUpperCase();
+  const isFutureMe =
+    kind.startsWith("FUTURE_SELF") ||
+    kind.includes("FUTURE") ||
+    route === "/home" ||
+    route.includes("future");
+
+  const routeKey = route.toLowerCase();
+  if (routeKey === "schedule" || routeKey.includes("section=schedule") || routeKey.includes("/profile-settings")) {
+    return { pathname: "/profile-settings", params: { section: "schedule" } };
+  }
+  if (routeKey === "home" || routeKey === "/home") {
+    return "/home";
+  }
+  if (appointmentId || kind.includes("APPOINTMENT")) {
+    const status = getAppointmentNoticeStatus(item);
+    if (status === "CONFIRMED" || status === "RESCHEDULED") {
+      return { pathname: "/profile-settings", params: { section: "schedule" } };
+    }
+    if (status === "DISAPPROVED") {
+      return "";
+    }
+  }
+  if (isFutureMe) {
+    return "/home";
+  }
+  if (entryId || route === "/journal-entry-view") {
+    return entryId ? { pathname: "/journal-entry-view", params: { entryId } } : "/journal-entries";
+  }
+  if (route === "/journal" || kind.includes("JOURNAL") || kind.includes("ENTRY")) {
+    return "/journal-entries";
+  }
+  if (route === "/messages" || kind.includes("ADMIN_MESSAGE")) {
+    return "";
+  }
+  if (route === "/consult") {
+    return supportType === "PEER"
+      ? { pathname: "/consult", params: { track: "peer", skipIntro: "1" } }
+      : { pathname: "/consult", params: { track: "professional", skipIntro: "1" } };
+  }
+  if (route && route !== "/notifications") {
+    return hrefFromRoute(route);
+  }
+  return "";
 }

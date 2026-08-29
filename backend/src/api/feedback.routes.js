@@ -1,7 +1,9 @@
 const express = require("express");
 const { query } = require("../config/db");
+const { requireStudentOnlyAuth, resolveStudentNumber } = require("../middleware/auth.middleware");
 
 const router = express.Router();
+router.use(requireStudentOnlyAuth);
 
 const FEEDBACK_CATEGORIES = new Set(["Bug", "Suggestion", "Question", "Support", "Experience", "Concern", "Other"]);
 const IMAGE_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"]);
@@ -82,7 +84,7 @@ function mapFeedbackRow(row) {
 }
 
 router.post("/", async (req, res) => {
-  const studentNumber = normalizeStudentNumber(req.body?.studentNumber);
+  const studentNumber = normalizeStudentNumber(resolveStudentNumber(req) || "");
   const category = normalizeFeedbackCategory(req.body?.category);
   const message = normalizeCompactSpaces(req.body?.message);
 

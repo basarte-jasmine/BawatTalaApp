@@ -8,7 +8,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { StudentProfileAvatar } from "../components/profile/StudentProfileAvatar";
 import { useAppPreferences } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
-import { fetchStudentProfile, updateStudentProfilePicture } from "../lib/backend-api";
+import { clearStudentProfilePicture, fetchStudentProfile, updateStudentProfilePicture } from "../lib/backend-api";
 
 type SettingRow = {
   id: string;
@@ -30,7 +30,7 @@ const APP_ROWS: SettingRow[] = [
 
 const EXTRA_ROWS: SettingRow[] = [
   { id: "refer-friend", icon: "share-social-outline", label: "Refer a friend", showChevron: true },
-  { id: "app-lock", icon: "lock-closed-outline", label: "Journal Lock" },
+  { id: "app-lock", icon: "lock-closed-outline", label: "Journal Lock", showChevron: true },
 ];
 const APP_VERSION = "1.0.0";
 const PROFILE_PICTURE_LIMIT_BYTES = 5 * 1024 * 1024;
@@ -217,6 +217,25 @@ export default function ProfileScreen() {
     void chooseProfilePicture(source);
   };
 
+  const removeProfilePicture = async () => {
+    if (!user?.studentNumber || isUploadingProfilePicture) return;
+    setShowProfilePictureOptions(false);
+    setIsUploadingProfilePicture(true);
+    try {
+      const result = await clearStudentProfilePicture();
+      if (!result.ok) {
+        showAppAlert("Photo not removed", result.message || "Please try again.");
+        return;
+      }
+      setProfilePictureUrl("");
+      setUser({ ...user, profilePictureUrl: "" });
+    } catch {
+      showAppAlert("Photo not removed", "Please try again.");
+    } finally {
+      setIsUploadingProfilePicture(false);
+    }
+  };
+
   const handleRowPress = async (rowId: string) => {
     switch (rowId) {
       case "schedule":
@@ -398,6 +417,23 @@ export default function ProfileScreen() {
               </View>
               <Ionicons name="chevron-forward" size={18} color="#87929D" />
             </Pressable>
+
+            {profilePictureUrl ? (
+              <Pressable
+                accessibilityRole="menuitem"
+                onPress={() => void removeProfilePicture()}
+                style={({ pressed }) => [styles.photoOptionButton, pressed && styles.photoOptionButtonPressed]}
+              >
+                <View style={styles.photoOptionIcon}>
+                  <Ionicons name="trash-outline" size={22} color="#C45C5C" />
+                </View>
+                <View style={styles.photoOptionCopy}>
+                  <Text style={styles.photoOptionTitle}>Remove Photo</Text>
+                  <Text style={styles.photoOptionDescription}>Reset back to the default avatar.</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#87929D" />
+              </Pressable>
+            ) : null}
 
             <Pressable
               onPress={() => setShowProfilePictureOptions(false)}

@@ -360,6 +360,10 @@ function buildVisibleEntriesWhereClause(alias = "je") {
 router.get("/entries/recent", asyncHandler(async (req, res) => {
   const studentNumber = resolveRequestStudentNumber(req);
   const windowDays = Math.max(1, Math.min(30, Number(req.query.windowDays || 20)));
+  const requestedLimit = Number(req.query.limit);
+  const entryLimit = Number.isFinite(requestedLimit)
+    ? Math.max(1, Math.min(50, Math.trunc(requestedLimit)))
+    : 20;
   if (!studentNumber) {
     return res.status(400).json({ message: "Student number is required." });
   }
@@ -398,9 +402,9 @@ router.get("/entries/recent", asyncHandler(async (req, res) => {
           and je.entry_date >= $2::date
           and ${buildVisibleEntriesWhereClause("je")}
         order by je.entry_date desc, je.created_at desc
-        limit 100
+        limit $3
       `,
-      [studentNumber, windowStart],
+      [studentNumber, windowStart, entryLimit],
     ),
     query(
       `
@@ -424,6 +428,7 @@ router.get("/entries/recent", asyncHandler(async (req, res) => {
   ]);
 
   const progressRow = progressResult.rows[0] || {};
+  const totalCount = Number(progressRow.total_count || 0);
 
   return res.json({
     entries: entriesResult.rows.map((row) => ({
@@ -438,8 +443,9 @@ router.get("/entries/recent", asyncHandler(async (req, res) => {
     progress: {
       monthlyCount: Number(progressRow.monthly_count || 0),
       todayCount: Number(progressRow.today_count || 0),
-      totalCount: Number(progressRow.total_count || 0),
+      totalCount,
     },
+    totalCount,
   });
 }));
 

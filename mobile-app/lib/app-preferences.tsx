@@ -4,9 +4,12 @@ import { createContext, PropsWithChildren, useCallback, useContext, useEffect, u
 import { AppState, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import {
   fetchStudentPreferences,
-  resetJournalLockWithStudentId,
+  resendJournalLockResetCode,
+  resetJournalLockWithEmailCode,
   saveStudentPreferences,
+  sendJournalLockResetCode,
   verifyJournalLockPin,
+  verifyJournalLockResetCode,
   type StudentPreferences,
 } from "./backend-api";
 import { useAuthSession } from "./auth-session";
@@ -22,10 +25,10 @@ type AppPreferencesContextValue = {
   appLockEnabled: boolean;
   hasAppLockPin: boolean;
   clearPreferences: () => void;
-  disableAppLock: () => Promise<{ ok: boolean; message?: string }>;
-  enableAppLock: (pin: string, autoLock: boolean) => Promise<{ ok: boolean; message?: string }>;
-  enableExistingAppLock: (autoLock: boolean) => Promise<{ ok: boolean; message?: string }>;
-  isAppLocked: boolean;
+ disableAppLock: (pin: string) => Promise<{ ok: boolean; message?: string }>;
+ enableAppLock: (pin: string, autoLock: boolean) => Promise<{ ok: boolean; message?: string }>;
+ enableExistingAppLock: (autoLock: boolean, pin?: string) => Promise<{ ok: boolean; message?: string }>;
+ isAppLocked: boolean;
   lockAppNow: () => void;
   muniRemindersEnabled: boolean;
   notificationPreviewsEnabled: boolean;
@@ -34,7 +37,10 @@ type AppPreferencesContextValue = {
   setMuniRemindersEnabled: (value: boolean) => Promise<{ ok: boolean; message?: string }>;
   setNotificationPreviewsEnabled: (value: boolean) => void;
   setPrivateJournalModeEnabled: (value: boolean) => void;
-  resetAppLockWithStudentId: (studentNumberConfirmation: string) => Promise<{ ok: boolean; message?: string }>;
+  resendAppLockResetCode: () => Promise<{ ok: boolean; message?: string; resendAfterSeconds?: number }>;
+  resetAppLockWithEmailCode: (journalLockPin: string) => Promise<{ ok: boolean; message?: string }>;
+  sendAppLockResetCode: () => Promise<{ ok: boolean; message?: string; resendAfterSeconds?: number }>;
+  verifyAppLockResetCode: (token: string) => Promise<{ ok: boolean; message?: string }>;
   unlockApp: (pin: string) => Promise<boolean>;
   updateAppLockPin: (previousPin: string, pin: string) => Promise<{ ok: boolean; message?: string }>;
 };
@@ -162,31 +168,41 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
       appLockEnabled,
       hasAppLockPin,
       clearPreferences: resetPreferences,
-      disableAppLock: async () => {
-        const result = await persistPreferences({ journalLockEnabled: false });
+      disableAppLock: async (pin: string) => {
+        const verified = await verifyJournalLockPin(studentNumber, pin);
+        if (!verified.ok || !verified.unlocked) {
+          return { ok: false, message: verified.message || "Enter your current PIN to turn Journal Lock off." };
+        }
+        const result = await persistPreferences({
+          currentJournalLockPin: pin,
+          journalLockEnabled: false,
+          previousJournalLockPin: pin,
+        });
         if (!result.ok) return result;
         setIsAppLocked(false);
         return result;
       },
-      enableAppLock: async (pin: string, autoLock: boolean) => {
-        const result = await persistPreferences({
-          journalLockAutoLock: autoLock,
-          journalLockEnabled: true,
-          journalLockPin: pin,
-        });
-        if (!result.ok) return result;
-        setIsAppLocked(true);
-        return result;
-      },
-      enableExistingAppLock: async (autoLock: boolean) => {
-        const result = await persistPreferences({
-          journalLockAutoLock: autoLock,
-          journalLockEnabled: true,
-        });
-        if (!result.ok) return result;
-        setIsAppLocked(true);
-        return result;
-      },
+     enableAppLock: async (pin: string, autoLock: boolean) => {
+       const result = await persistPreferences({
+         journalLockAutoLock: autoLock,
+         journalLockEnabled: true,
+         journalLockPin: pin,
+       });
+       if (!result.ok) return result;
+       setIsAppLocked(true);
+       return result;
+     },
+     enableExistingAppLock: async (autoLock: boolean, pin?: string) => {
+       const result = await persistPreferences({
+         currentJournalLockPin: pin,
+         journalLockAutoLock: autoLock,
+         journalLockEnabled: true,
+         journalLockPin: pin,
+       });
+       if (!result.ok) return result;
+       setIsAppLocked(true);
+       return result;
+     },
       isAppLocked,
       lockAppNow: () => {
         if (!appLockEnabled) return;
@@ -224,17 +240,32 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
         setPrivateJournalModeEnabledState(nextValue);
         void persistPreferences({ privateJournalModeEnabled: nextValue });
       },
-      resetAppLockWithStudentId: async (studentNumberConfirmation: string) => {
+      sendAppLockResetCode: async () => {
         if (!studentNumber) {
           return { ok: false, message: "Student session is missing." };
         }
-        const result = await resetJournalLockWithStudentId(
-          studentNumber,
-          studentNumberConfirmation,
-        );
+        return sendJournalLockResetCode();
+      },
+      resendAppLockResetCode: async () => {
+        if (!studentNumber) {
+          return { ok: false, message: "Student session is missing." };
+        }
+        return resendJournalLockResetCode();
+      },
+      verifyAppLockResetCode: async (token: string) => {
+        if (!studentNumber) {
+          return { ok: false, message: "Student session is missing." };
+        }
+        return verifyJournalLockResetCode(token);
+      },
+      resetAppLockWithEmailCode: async (journalLockPin: string) => {
+        if (!studentNumber) {
+          return { ok: false, message: "Student session is missing." };
+        }
+        const result = await resetJournalLockWithEmailCode(studentNumber, journalLockPin);
         if (result.ok && result.preferences) {
           applyPreferences(result.preferences);
-          setIsAppLocked(false);
+          setIsAppLocked(true);
         }
         return result;
       },

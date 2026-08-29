@@ -21,6 +21,7 @@ type SelectFieldProps = {
   containerStyle?: StyleProp<ViewStyle>;
   labelStyle?: StyleProp<TextStyle>;
   valueStyle?: StyleProp<TextStyle>;
+  triggerStyle?: StyleProp<ViewStyle>;
 };
 
 export function SelectField({
@@ -33,14 +34,15 @@ export function SelectField({
   containerStyle,
   labelStyle,
   valueStyle,
+  triggerStyle,
 }: SelectFieldProps) {
   const [open, setOpen] = useState(false);
 
   return (
     <View style={containerStyle}>
-      <Text style={[styles.label, labelStyle]}>{label}</Text>
+      {Boolean(label) && <Text style={[styles.label, labelStyle]}>{label}</Text>}
       <Pressable
-        style={[styles.trigger, disabled && styles.triggerDisabled]}
+        style={[styles.trigger, disabled && styles.triggerDisabled, triggerStyle]}
         onPress={() => {
           if (!disabled) setOpen(true);
         }}
