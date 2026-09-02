@@ -1,3 +1,4 @@
+import Toast from "../components/Toast";
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -48,7 +49,6 @@ function formatDateTime(value) {
 
 function getActorPayload(session) {
   return {
-    actorEmail: session?.email || "",
     actorName: session?.name || "",
     actorRole: session?.roleLabel || session?.role || "Admin",
   };
@@ -216,11 +216,7 @@ export default function RiskTriggers({ onLogout, session }) {
             {errorMessage}
           </div>
         ) : null}
-        {successMessage ? (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-            {successMessage}
-          </div>
-        ) : null}
+        <Toast message={successMessage} onClose={() => setSuccessMessage("")} />
 
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div>

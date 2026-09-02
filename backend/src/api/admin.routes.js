@@ -2,14 +2,15 @@ const express = require("express");
 const { randomBytes, scryptSync, timingSafeEqual } = require("crypto");
 const { google } = require("googleapis");
 const { supabaseAdminClient, supabaseAuthClient } = require("../config/supabase");
-const { query } = require("../config/db");
-const { requireAdminAuth } = require("../middleware/auth.middleware");
+const { JOURNAL_PRIMARY_CONCERN_VALUES, query } = require("../config/db");
+const { requireAdminAuth, requireRoles } = require("../middleware/auth.middleware");
 const { mapFeedbackRow } = require("./feedback.routes");
 const { sendPasswordResetCodeEmail } = require("../services/auth-email.service");
 const { EMOTION_OPTIONS, createEmotionCounts, normalizeEmotionId } = require("../constants/emotions");
 const {
   JOURNAL_TAG_OPTIONS,
   inferJournalTagsFromText,
+  normalizeJournalTag,
   resolveJournalEntryTags,
 } = require("../constants/journal-tags");
 const {
@@ -18,6 +19,30 @@ const {
   normalizeRiskTriggerLevel,
   normalizeRiskTriggerPhrase,
 } = require("../constants/risk-levels");
+
+
+const PRIMARY_CONCERN_BY_NORMALIZED = new Map(
+  JOURNAL_PRIMARY_CONCERN_VALUES.map((value) => [String(value).toLowerCase(), value]),
+);
+
+function resolveAdminPrimaryConcern(value) {
+  const trimmed = String(value || "").trim().replace(/\s+/g, " ");
+  if (!trimmed) {
+    return { apply: true, value: "" };
+  }
+
+  const tagged = normalizeJournalTag(trimmed);
+  if (tagged && PRIMARY_CONCERN_BY_NORMALIZED.has(tagged.toLowerCase())) {
+    return { apply: true, value: PRIMARY_CONCERN_BY_NORMALIZED.get(tagged.toLowerCase()) };
+  }
+
+  const exact = PRIMARY_CONCERN_BY_NORMALIZED.get(trimmed.toLowerCase());
+  if (exact) {
+    return { apply: true, value: exact };
+  }
+
+  return { apply: false, value: null };
+}
 
 const router = express.Router();
 const EMOTION_IDS = EMOTION_OPTIONS.map((item) => item.id);
@@ -717,6 +742,105 @@ function getActorPayload(body = {}) {
   };
 }
 
+
+function parseNotificationMetadata(metadata) {
+  if (!metadata) return {};
+  if (typeof metadata === "string") {
+    try {
+      const parsed = JSON.parse(metadata);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch (_error) {
+      return {};
+    }
+  }
+  return typeof metadata === "object" && !Array.isArray(metadata) ? metadata : {};
+}
+
+function followUpThreadKey(metadata) {
+  const meta = parseNotificationMetadata(metadata);
+  const counselorId = String(meta.counselorId || "").trim();
+  if (counselorId) return counselorId;
+  return String(meta.actorEmail || "").trim().toLowerCase();
+}
+
+function groupFollowUpThreads(rows) {
+  const emailToCounselorId = new Map();
+  for (const row of rows) {
+    const meta = parseNotificationMetadata(row.metadata);
+    const counselorId = String(meta.counselorId || "").trim();
+    const actorEmail = String(meta.actorEmail || "").trim().toLowerCase();
+    if (counselorId && actorEmail) {
+      emailToCounselorId.set(actorEmail, counselorId);
+    }
+  }
+
+  const groups = new Map();
+  for (const row of rows) {
+    const meta = parseNotificationMetadata(row.metadata);
+    const counselorId = String(meta.counselorId || "").trim();
+    const actorEmail = String(meta.actorEmail || "").trim().toLowerCase();
+    const key = counselorId || emailToCounselorId.get(actorEmail) || actorEmail;
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  return groups;
+}
+
+function serializeFollowUpMessage(row) {
+  const meta = parseNotificationMetadata(row.metadata);
+  const counselorId = String(meta.counselorId || "").trim() || followUpThreadKey(meta);
+  const name = String(meta.actorName || meta.counselorName || row.title || "").trim();
+  const role = String(meta.actorRole || "").trim();
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    body: row.message,
+    from: {
+      counselorId,
+      name,
+      role,
+    },
+  };
+}
+
+function summarizeFollowUpThread(counselorId, rows) {
+  const sorted = [...rows].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const last = sorted[sorted.length - 1];
+  const lastMeta = parseNotificationMetadata(last?.metadata);
+  const counselorName = String(lastMeta.actorName || lastMeta.counselorName || last?.title || "").trim();
+  const pictureUrl = String(lastMeta.pictureUrl || lastMeta.profilePictureUrl || "").trim();
+  return {
+    counselorId,
+    counselorName,
+    pictureUrl,
+    lastBody: last?.message || "",
+    lastCreatedAt: last?.created_at || null,
+    messageCount: sorted.length,
+    messages: sorted.map(serializeFollowUpMessage),
+  };
+}
+
+async function listStudentAdminMessages(studentNumber) {
+  const result = await query(
+    `
+      select id, kind, title, message, metadata, is_read, read_at, created_at
+      from public.student_notifications
+      where student_number = $1
+        and kind = 'ADMIN_MESSAGE'
+        and deleted_at is null
+      order by created_at asc
+    `,
+    [studentNumber],
+  );
+  return result.rows;
+}
+
+function isHeadCounselor(admin) {
+  return String(admin?.role || "").toUpperCase() === "HEAD_COUNSELOR";
+}
+
+
 function toStudentStatus(row) {
   const flaggedCount = Number(row?.flagged_entries || 0);
   const totalEntries = Number(row?.total_entries || 0);
@@ -1333,6 +1457,8 @@ router.post("/forgot-password/reset", async (req, res) => {
   return res.json({ message: "Password updated successfully" });
 });
 
+router.use(requireAdminAuth);
+
 router.get("/appointments/google/callback", async (req, res) => {
   const client = getOAuthClient(req);
   if (!client) {
@@ -1353,12 +1479,11 @@ router.get("/appointments/google/callback", async (req, res) => {
   return res.send("Google Calendar connected. You can close this tab.");
 });
 
-router.use(requireAdminAuth);
 
 router.get("/notifications", async (req, res) => {
-  const email = normalizeEmail(req.query.email || "");
+  const email = normalizeEmail(req.admin?.email || "");
   if (!email) {
-    return res.status(400).json({ message: "Admin email is required." });
+    return res.status(401).json({ message: "Please sign in again." });
   }
 
   const result = await listAdminNotifications(email);
@@ -1379,9 +1504,12 @@ router.get("/notifications", async (req, res) => {
 
 router.post("/notifications/:notificationId/read", async (req, res) => {
   const notificationId = String(req.params.notificationId || "").trim();
-  const email = normalizeEmail(req.body.email || "");
-  if (!notificationId || !email) {
-    return res.status(400).json({ message: "Notification id and admin email are required." });
+  const email = normalizeEmail(req.admin?.email || "");
+  if (!email) {
+    return res.status(401).json({ message: "Please sign in again." });
+  }
+  if (!notificationId) {
+    return res.status(400).json({ message: "Notification id is required." });
   }
 
   await query(
@@ -1399,9 +1527,9 @@ router.post("/notifications/:notificationId/read", async (req, res) => {
 });
 
 router.post("/notifications/read-all", async (req, res) => {
-  const email = normalizeEmail(req.body.email || "");
+  const email = normalizeEmail(req.admin?.email || "");
   if (!email) {
-    return res.status(400).json({ message: "Admin email is required." });
+    return res.status(401).json({ message: "Please sign in again." });
   }
 
   await query(
@@ -1442,11 +1570,16 @@ router.get("/dashboard/summary", async (req, res) => {
       `
         select id, student_number, entry_date, created_at, risk_level, support_response
         from public.journal_entries
-        where deleted_by_student_at is null
-          and is_finished = true
+        where is_finished = true
           and (
-            upper(coalesce(risk_level, 'NONE')) in ('LOW', 'MEDIUM', 'MODERATE', 'HIGH', 'CRITICAL')
-            or upper(coalesce(support_response, '')) = 'DECLINED'
+            (
+              deleted_by_student_at is null
+              and (
+                upper(coalesce(risk_level, 'NONE')) in ('LOW', 'MEDIUM', 'MODERATE', 'HIGH', 'CRITICAL')
+                or upper(coalesce(support_response, '')) = 'DECLINED'
+              )
+            )
+            or upper(coalesce(risk_level, 'NONE')) in ('HIGH', 'CRITICAL')
           )
       `,
     ),
@@ -1835,12 +1968,17 @@ router.get("/dashboard/risk-flags", async (_req, res) => {
         coalesce(sp.profile_picture_url, '') as profile_picture_url
       from public.journal_entries je
       left join public.student_profiles sp on sp.student_number = je.student_number
-      where (
-        upper(coalesce(je.risk_level, 'NONE')) in ('LOW', 'MEDIUM', 'MODERATE', 'HIGH', 'CRITICAL')
-        or upper(coalesce(je.support_response, '')) = 'DECLINED'
-      )
-        and je.is_finished = true
-        and je.deleted_by_student_at is null
+      where je.is_finished = true
+        and (
+          (
+            (
+              upper(coalesce(je.risk_level, 'NONE')) in ('LOW', 'MEDIUM', 'MODERATE', 'HIGH', 'CRITICAL')
+              or upper(coalesce(je.support_response, '')) = 'DECLINED'
+            )
+            and je.deleted_by_student_at is null
+          )
+          or upper(coalesce(je.risk_level, 'NONE')) in ('HIGH', 'CRITICAL')
+        )
       order by je.entry_date desc, je.created_at desc
       limit 100
     `,
@@ -1871,13 +2009,23 @@ router.get("/dashboard/risk-flags", async (_req, res) => {
 
 router.get("/feedbacks", async (req, res) => {
   const status = String(req.query.status || "ALL").trim().toUpperCase();
+  const submissionType = String(req.query.submissionType || req.query.type || "ALL").trim().toUpperCase();
   const search = String(req.query.search || "").trim();
   const params = [];
   const conditions = [];
 
+  if (submissionType && !["ALL", "FEEDBACK", "SUPPORT"].includes(submissionType)) {
+    return res.status(400).json({ message: "Choose a valid submission type." });
+  }
+
   if (["NEW", "REVIEWED", "IN_PROGRESS", "RESOLVED"].includes(status)) {
     params.push(status);
     conditions.push(`sf.status = $${params.length}`);
+  }
+
+  if (submissionType === "FEEDBACK" || submissionType === "SUPPORT") {
+    params.push(submissionType);
+    conditions.push(`coalesce(sf.submission_type, 'FEEDBACK') = $${params.length}`);
   }
 
   if (search) {
@@ -1886,6 +2034,7 @@ router.get("/feedbacks", async (req, res) => {
       sf.student_number ilike $${params.length}
       or sf.message ilike $${params.length}
       or sf.category ilike $${params.length}
+      or coalesce(sf.subject, '') ilike $${params.length}
       or coalesce(sp.full_name, '') ilike $${params.length}
       or coalesce(sp.email, '') ilike $${params.length}
     )`);
@@ -1901,6 +2050,8 @@ router.get("/feedbacks", async (req, res) => {
           sf.student_number,
           coalesce(sp.full_name, '') as student_name,
           coalesce(sp.email, '') as student_email,
+          coalesce(sf.submission_type, 'FEEDBACK') as submission_type,
+          coalesce(sf.subject, '') as subject,
           sf.category,
           sf.message,
           sf.status,
@@ -1929,8 +2080,10 @@ router.get("/feedbacks", async (req, res) => {
       params,
     );
 
+    const feedbacks = result.rows.map(mapFeedbackRow);
     return res.json({
-      feedbacks: result.rows.map(mapFeedbackRow),
+      feedbacks,
+      items: feedbacks,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message || "Unable to load feedbacks." });
@@ -1985,6 +2138,8 @@ router.patch("/feedbacks/:feedbackId", async (req, res) => {
           sf.student_number,
           coalesce(sp.full_name, '') as student_name,
           coalesce(sp.email, '') as student_email,
+          coalesce(sf.submission_type, 'FEEDBACK') as submission_type,
+          coalesce(sf.subject, '') as subject,
           sf.category,
           sf.message,
           sf.status,
@@ -2014,114 +2169,141 @@ router.patch("/feedbacks/:feedbackId", async (req, res) => {
 });
 
 router.patch("/journal-entries/:entryId/flag", async (req, res) => {
-  const entryId = normalizeCompactSpaces(req.params.entryId || "");
-  const riskLevel = String(req.body?.riskLevel || "").trim().toUpperCase();
-  const adminFlagReasonProvided = Object.prototype.hasOwnProperty.call(req.body || {}, "adminFlagReason");
-  const adminFlagReason = adminFlagReasonProvided
-    ? normalizeCompactSpaces(req.body.adminFlagReason || "")
-    : null;
-  const primaryConcernProvided = Object.prototype.hasOwnProperty.call(req.body || {}, "primaryConcern");
-  const primaryConcern = primaryConcernProvided
-    ? normalizeDisplayLabel(req.body.primaryConcern || "")
-    : null;
-  const supportResponseProvided = Object.prototype.hasOwnProperty.call(req.body || {}, "supportResponse");
-  const supportResponse = supportResponseProvided
-    ? String(req.body.supportResponse || "").trim().toUpperCase()
-    : undefined;
+  try {
+    const entryId = normalizeCompactSpaces(req.params.entryId || "");
+    const riskLevel = String(req.body?.riskLevel || "").trim().toUpperCase();
+    const adminFlagReasonProvided = Object.prototype.hasOwnProperty.call(req.body || {}, "adminFlagReason");
+    const adminFlagReason = adminFlagReasonProvided
+      ? normalizeCompactSpaces(req.body.adminFlagReason || "")
+      : null;
+    const primaryConcernProvided = Object.prototype.hasOwnProperty.call(req.body || {}, "primaryConcern");
+    const resolvedPrimaryConcern = primaryConcernProvided
+      ? resolveAdminPrimaryConcern(req.body.primaryConcern)
+      : { apply: false, value: null };
+    const supportResponseProvided = Object.prototype.hasOwnProperty.call(req.body || {}, "supportResponse");
+    const supportResponse = supportResponseProvided
+      ? String(req.body.supportResponse || "").trim().toUpperCase()
+      : undefined;
 
-  if (!entryId) {
-    return res.status(400).json({ message: "Journal entry id is required." });
-  }
-  if (!["NONE", "LOW", "HIGH", "CRITICAL"].includes(riskLevel)) {
-    return res.status(400).json({ message: "A valid risk flag is required." });
-  }
-  if (supportResponseProvided && supportResponse && !["CONTACTED", "DECLINED"].includes(supportResponse)) {
-    return res.status(400).json({ message: "A valid intervention status is required." });
-  }
+    if (!entryId) {
+      return res.status(400).json({ message: "Journal entry id is required." });
+    }
+    if (!["NONE", "LOW", "HIGH", "CRITICAL"].includes(riskLevel)) {
+      return res.status(400).json({ message: "A valid risk flag is required." });
+    }
+    const existingFlag = await query(
+      `
+        select risk_level
+        from public.journal_entries
+        where id = $1
+          and is_finished = true
+          and (deleted_by_student_at is null OR upper(coalesce(risk_level,'NONE')) in ('HIGH','CRITICAL'))
+        limit 1
+      `,
+      [entryId],
+    );
+    if (existingFlag.rowCount === 0) {
+      return res.status(404).json({ message: "Journal entry not found." });
+    }
+    const currentRisk = String(existingFlag.rows[0].risk_level || "NONE").toUpperCase();
+    if (riskLevel === "LOW" && (currentRisk === "HIGH" || currentRisk === "CRITICAL")) {
+      return res.status(400).json({ message: "LOW cannot overwrite HIGH or CRITICAL." });
+    }
+    if (supportResponseProvided && supportResponse && !["CONTACTED", "DECLINED"].includes(supportResponse)) {
+      return res.status(400).json({ message: "A valid intervention status is required." });
+    }
 
-  const result = await query(
-    `
-      update public.journal_entries
-      set
-        risk_level = $2,
-        admin_flag_reason = case
-          when $2 = 'NONE' then null
-          when $7::boolean is true then nullif($3, '')
-          else admin_flag_reason
-        end,
-        primary_concern = case
-          when $8::boolean is true then nullif($4, '')
-          else primary_concern
-        end,
-        support_response = case
-          when $2 = 'NONE' then null
-          when $5::boolean is false then support_response
-          when nullif($6, '') is null then null
-          else $6
-        end,
-        support_response_at = case
-          when $2 = 'NONE' then null
-          when $5::boolean is false then support_response_at
-          when nullif($6, '') is null then null
-          else coalesce(support_response_at, now())
-        end,
-        updated_at = now()
-      where id = $1
-        and is_finished = true
-        and deleted_by_student_at is null
-      returning
-        id,
-        student_number,
-        entry_date,
-        title,
-        summary,
-        insights,
-        risk_level,
-        admin_flag_reason,
-        primary_concern,
-        concern_tags,
-        support_response,
-        support_response_at,
-        created_at
-    `,
-    [
-      entryId,
-      riskLevel,
-      adminFlagReason,
-      primaryConcern,
-      supportResponseProvided,
-      supportResponse || null,
-      adminFlagReasonProvided,
-      primaryConcernProvided,
-    ],
-  );
+    const result = await query(
+      `
+        update public.journal_entries
+        set
+          risk_level = $2,
+          admin_flag_reason = case
+            when $2 = 'NONE' then null
+            when $7::boolean is true then nullif($3, '')
+            else admin_flag_reason
+          end,
+          primary_concern = case
+            when $8::boolean is true then nullif($4, '')
+            else primary_concern
+          end,
+          support_response = case
+            when $2 = 'NONE' then null
+            when $5::boolean is false then support_response
+            when nullif($6, '') is null then null
+            else $6
+          end,
+          support_response_at = case
+            when $2 = 'NONE' then null
+            when $5::boolean is false then support_response_at
+            when nullif($6, '') is null then null
+            else coalesce(support_response_at, now())
+          end,
+          updated_at = now()
+        where id = $1
+          and is_finished = true
+          and (deleted_by_student_at is null OR upper(coalesce(risk_level,'NONE')) in ('HIGH','CRITICAL'))
+        returning
+          id,
+          student_number,
+          entry_date,
+          title,
+          summary,
+          insights,
+          risk_level,
+          admin_flag_reason,
+          primary_concern,
+          concern_tags,
+          support_response,
+          support_response_at,
+          created_at
+      `,
+      [
+        entryId,
+        riskLevel,
+        adminFlagReason,
+        resolvedPrimaryConcern.value,
+        supportResponseProvided,
+        supportResponse || null,
+        adminFlagReasonProvided,
+        resolvedPrimaryConcern.apply,
+      ],
+    );
 
-  if (result.rowCount === 0) {
-    return res.status(404).json({ message: "Journal entry not found." });
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: "Journal entry not found." });
+    }
+
+    const row = result.rows[0];
+    return res.json({
+      entry: {
+        adminFlagReason: row.admin_flag_reason || null,
+        concernTags: getJournalTagsForAdmin(row),
+        createdAt: row.created_at,
+        entryDate: row.entry_date,
+        id: row.id,
+        insights: Array.isArray(row.insights) ? row.insights : [],
+        primaryConcern: row.primary_concern || null,
+        riskLevel: row.risk_level,
+        studentNumber: row.student_number,
+        summary: row.summary || "",
+        supportResponse: row.support_response || null,
+        supportResponseAt: row.support_response_at || null,
+        title: row.title || "",
+      },
+      message: "Journal flag updated.",
+    });
+  } catch (error) {
+    if (error?.code === "23514" || error?.constraint === "journal_entries_primary_concern_check") {
+      return res.status(400).json({
+        message: "Primary concern is not a valid journal tag. Other flag details were not saved.",
+      });
+    }
+    return res.status(500).json({ message: error.message || "Unable to update journal flag." });
   }
-
-  const row = result.rows[0];
-  return res.json({
-    entry: {
-      adminFlagReason: row.admin_flag_reason || null,
-      concernTags: getJournalTagsForAdmin(row),
-      createdAt: row.created_at,
-      entryDate: row.entry_date,
-      id: row.id,
-      insights: Array.isArray(row.insights) ? row.insights : [],
-      primaryConcern: row.primary_concern || null,
-      riskLevel: row.risk_level,
-      studentNumber: row.student_number,
-      summary: row.summary || "",
-      supportResponse: row.support_response || null,
-      supportResponseAt: row.support_response_at || null,
-      title: row.title || "",
-    },
-    message: "Journal flag updated.",
-  });
 });
 
-router.get("/risk-triggers", async (_req, res) => {
+router.get("/risk-triggers", requireRoles("HEAD_COUNSELOR"), async (_req, res) => {
   const result = await query(
     `
       select
@@ -2147,7 +2329,7 @@ router.get("/risk-triggers", async (_req, res) => {
   });
 });
 
-router.post("/risk-triggers", async (req, res) => {
+router.post("/risk-triggers", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
   const { actorEmail, actorName, actorRole } = getActorPayload(req.body);
   const trigger = parseRiskTriggerPayload(req.body);
 
@@ -2212,7 +2394,7 @@ router.post("/risk-triggers", async (req, res) => {
   }
 });
 
-router.patch("/risk-triggers/:triggerId", async (req, res) => {
+router.patch("/risk-triggers/:triggerId", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
   const triggerId = String(req.params.triggerId || "").trim();
   if (!isUuid(triggerId)) {
     return res.status(400).json({ message: "Valid trigger id is required." });
@@ -2296,7 +2478,7 @@ router.patch("/risk-triggers/:triggerId", async (req, res) => {
   }
 });
 
-router.delete("/risk-triggers/:triggerId", async (req, res) => {
+router.delete("/risk-triggers/:triggerId", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
   const triggerId = String(req.params.triggerId || "").trim();
   if (!isUuid(triggerId)) {
     return res.status(400).json({ message: "Valid trigger id is required." });
@@ -2338,20 +2520,41 @@ router.delete("/risk-triggers/:triggerId", async (req, res) => {
 
 router.post("/students/:studentNumber/notify", async (req, res) => {
   const studentNumber = normalizeCompactSpaces(req.params.studentNumber || "");
-  const title = normalizeCompactSpaces(req.body.title || "");
-  const message = normalizeCompactSpaces(req.body.message || "");
-  const actorEmail = normalizeEmail(req.body.actorEmail || "");
-  const actorName = normalizeCompactSpaces(req.body.actorName || "");
-  const actorRole = normalizeCompactSpaces(req.body.actorRole || "");
+  const message = normalizeCompactSpaces(req.body.message || req.body.body || "");
+  const counselorId = String(req.admin?.id || "").trim();
 
   if (!studentNumber) {
     return res.status(400).json({ message: "Student number is required." });
   }
-  if (!title) {
-    return res.status(400).json({ message: "Notification title is required." });
-  }
   if (!message) {
-    return res.status(400).json({ message: "Notification message is required." });
+    return res.status(400).json({ message: "Message is required." });
+  }
+  if (!counselorId) {
+    return res.status(401).json({ message: "Please sign in again." });
+  }
+
+  const accountResult = await query(
+    `
+      select id, email, full_name, role, coalesce(profile_picture_url, '') as profile_picture_url
+      from public.admin_accounts
+      where id = $1
+      limit 1
+    `,
+    [counselorId],
+  );
+  const account = accountResult.rows[0];
+  if (!account) {
+    return res.status(401).json({ message: "Please sign in again." });
+  }
+
+  const actorEmail = normalizeEmail(account.email || req.admin?.email || "");
+  const actorName = normalizeCompactSpaces(account.full_name || req.admin?.fullName || req.admin?.name || "") || "Counselor";
+  const actorRole = String(account.role || req.admin?.role || "COUNSELOR").trim();
+  const pictureUrl = String(account.profile_picture_url || "").trim();
+  const title = actorName;
+
+  if (!actorEmail) {
+    return res.status(401).json({ message: "Please sign in again." });
   }
 
   await query(
@@ -2370,9 +2573,16 @@ router.post("/students/:studentNumber/notify", async (req, res) => {
       title,
       message,
       JSON.stringify({
-        actorEmail: actorEmail || null,
-        actorName: actorName || null,
-        actorRole: actorRole || null,
+        counselorId,
+        actorEmail,
+        email: actorEmail,
+        actorName,
+        full_name: actorName,
+        actorRole,
+        role: actorRole,
+        pictureUrl,
+        profilePictureUrl: pictureUrl,
+        route: "/messages",
       }),
     ],
   );
@@ -2387,11 +2597,87 @@ router.post("/students/:studentNumber/notify", async (req, res) => {
     description: `Admin sent a flagged-entry follow-up notification to ${studentNumber}.`,
     metadata: {
       studentNumber,
+      counselorId,
       notificationTitle: title,
     },
   });
 
-  return res.json({ message: "Notification sent to student." });
+  const rows = await listStudentAdminMessages(studentNumber);
+  const groups = groupFollowUpThreads(rows);
+  const threadRows = groups.get(counselorId) || groups.get(actorEmail) || [];
+  const thread = summarizeFollowUpThread(counselorId, threadRows);
+
+  return res.status(200).json({
+    message: "Message sent.",
+    thread: {
+      counselorId: thread.counselorId,
+      counselorName: thread.counselorName,
+      messages: thread.messages,
+    },
+  });
+});
+
+router.get("/students/:studentNumber/follow-ups", async (req, res) => {
+  const studentNumber = normalizeCompactSpaces(req.params.studentNumber || "");
+  if (!studentNumber) {
+    return res.status(400).json({ message: "Student number is required." });
+  }
+
+  const rows = await listStudentAdminMessages(studentNumber);
+  const groups = groupFollowUpThreads(rows);
+  let threads = Array.from(groups.entries()).map(([counselorId, threadRows]) => {
+    const summary = summarizeFollowUpThread(counselorId, threadRows);
+    return {
+      counselorId: summary.counselorId,
+      counselorName: summary.counselorName,
+      pictureUrl: summary.pictureUrl,
+      lastBody: summary.lastBody,
+      lastCreatedAt: summary.lastCreatedAt,
+      messageCount: summary.messageCount,
+    };
+  });
+
+  if (!isHeadCounselor(req.admin)) {
+    const ownId = String(req.admin?.id || "").trim();
+    const ownEmail = normalizeEmail(req.admin?.email || "");
+    threads = threads.filter((item) => item.counselorId === ownId || item.counselorId === ownEmail);
+  }
+
+  threads.sort((a, b) => new Date(b.lastCreatedAt || 0) - new Date(a.lastCreatedAt || 0));
+  return res.json({ threads });
+});
+
+router.get("/students/:studentNumber/follow-ups/:counselorId", async (req, res) => {
+  const studentNumber = normalizeCompactSpaces(req.params.studentNumber || "");
+  const counselorId = String(req.params.counselorId || "").trim();
+  if (!studentNumber) {
+    return res.status(400).json({ message: "Student number is required." });
+  }
+  if (!counselorId) {
+    return res.status(400).json({ message: "Counselor id is required." });
+  }
+
+  const ownId = String(req.admin?.id || "").trim();
+  const ownEmail = normalizeEmail(req.admin?.email || "");
+  if (!isHeadCounselor(req.admin) && counselorId !== ownId && counselorId !== ownEmail) {
+    return res.status(403).json({ message: "You don't have access to this action." });
+  }
+
+  const rows = await listStudentAdminMessages(studentNumber);
+  const groups = groupFollowUpThreads(rows);
+  const threadRows = groups.get(counselorId) || (counselorId === ownId ? groups.get(ownEmail) : null);
+  if (!threadRows || threadRows.length === 0) {
+    return res.status(404).json({ message: "No messages with that counselor." });
+  }
+
+  const thread = summarizeFollowUpThread(counselorId, threadRows);
+  return res.json({
+    thread: {
+      counselorId: thread.counselorId,
+      counselorName: thread.counselorName,
+      messages: thread.messages,
+    },
+  });
 });
 
 router.get("/search", async (req, res) => {
@@ -3074,7 +3360,7 @@ router.get("/analytics", async (req, res) => {
   });
 });
 
-router.get("/roles", async (_req, res) => {
+router.get("/roles", requireRoles("HEAD_COUNSELOR"), async (_req, res) => {
   const [membersResult, peerMembersResult] = await Promise.all([
     query(
       `
@@ -3257,7 +3543,7 @@ router.get("/students", async (req, res) => {
         from public.journal_entries je
         where je.student_number = sp.student_number
           and je.is_finished = true
-          and je.deleted_by_student_at is null
+          and (je.deleted_by_student_at is null OR upper(coalesce(je.risk_level,'NONE')) in ('HIGH','CRITICAL'))
       ) stats on true
       ${whereClause}
       order by
@@ -3311,7 +3597,7 @@ router.get("/students/recent-entries", async (req, res) => {
   const concern = normalizeCompactSpaces(req.query.concern || "");
 
   const values = [];
-  const conditions = ["je.deleted_by_student_at is null", "je.is_finished = true"];
+  const conditions = ["(je.deleted_by_student_at is null OR upper(coalesce(je.risk_level,'NONE')) in ('HIGH','CRITICAL'))", "je.is_finished = true"];
 
   if (search) {
     values.push(`%${search}%`);
@@ -3475,7 +3761,7 @@ router.post("/students/:studentNumber/journal-entries/:entryId/open", async (req
       left join public.journal_entry_messages jem on jem.entry_id = je.id
       where je.id = $1
         and je.student_number = $2
-        and je.deleted_by_student_at is null
+        and (je.deleted_by_student_at is null OR upper(coalesce(je.risk_level,'NONE')) in ('HIGH','CRITICAL'))
         and je.is_finished = true
       group by je.id
       limit 1
@@ -3603,7 +3889,7 @@ router.get("/students/:studentNumber", async (req, res) => {
       from public.journal_entries je
       left join public.journal_entry_messages jem on jem.entry_id = je.id
       where je.student_number = $1
-        and je.deleted_by_student_at is null
+        and (je.deleted_by_student_at is null OR upper(coalesce(je.risk_level,'NONE')) in ('HIGH','CRITICAL'))
         and je.is_finished = true
       group by je.id
       order by je.entry_date desc, je.created_at desc
@@ -3680,9 +3966,9 @@ router.get("/students/:studentNumber", async (req, res) => {
 });
 
 router.get("/settings", async (req, res) => {
-  const email = normalizeEmail(req.query.email || "");
+  const email = normalizeEmail(req.admin?.email || "");
   if (!email) {
-    return res.status(400).json({ message: "Admin email is required." });
+    return res.status(401).json({ message: "Please sign in again." });
   }
 
   const result = await query(
@@ -3720,7 +4006,7 @@ router.get("/settings", async (req, res) => {
 });
 
 router.patch("/settings", async (req, res) => {
-  const email = normalizeEmail(req.body.email || "");
+  const email = normalizeEmail(req.admin?.email || "");
   const fullName = normalizeCompactSpaces(req.body.fullName || "");
   const gender = normalizeCompactSpaces(req.body.gender || "Prefer not to say");
   const profilePictureUrl = normalizeCompactSpaces(req.body.profilePictureUrl || "");
@@ -3730,7 +4016,7 @@ router.patch("/settings", async (req, res) => {
   const preferences = normalizeAdminSettings(req.body.preferences);
 
   if (!email) {
-    return res.status(400).json({ message: "Admin email is required." });
+    return res.status(401).json({ message: "Please sign in again." });
   }
   if (!fullName) {
     return res.status(400).json({ message: "Full name is required." });
@@ -3889,7 +4175,7 @@ router.patch("/settings", async (req, res) => {
   });
 });
 
-router.post("/roles", async (req, res) => {
+router.post("/roles", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
   const email = normalizeEmail(req.body.email || "");
   const fullName = normalizeCompactSpaces(req.body.fullName || "");
   const gender = normalizeCompactSpaces(req.body.gender || "Prefer not to say");
@@ -3993,7 +4279,7 @@ router.post("/roles", async (req, res) => {
   });
 });
 
-router.post("/roles/verify-code", async (req, res) => {
+router.post("/roles/verify-code", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
   const email = normalizeEmail(req.body.email || "");
   const token = String(req.body.token || "").trim();
   if (!email || !token) {
@@ -4031,7 +4317,7 @@ router.post("/roles/verify-code", async (req, res) => {
   return res.json({ message: "Email verified. Guidance account is now active." });
 });
 
-router.post("/roles/resend-code", async (req, res) => {
+router.post("/roles/resend-code", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
   const email = normalizeEmail(req.body.email || "");
   if (!email) {
     return res.status(400).json({ message: "Email is required." });
@@ -4064,7 +4350,7 @@ router.post("/roles/resend-code", async (req, res) => {
   });
 });
 
-router.patch("/roles/:memberId", async (req, res) => {
+router.patch("/roles/:memberId", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
   const memberId = String(req.params.memberId || "").trim();
   const fullName = normalizeCompactSpaces(req.body.fullName || "");
   const gender = normalizeCompactSpaces(req.body.gender || "Prefer not to say");
@@ -4148,7 +4434,7 @@ router.patch("/roles/:memberId", async (req, res) => {
   });
 });
 
-router.delete("/roles/:memberId", async (req, res) => {
+router.delete("/roles/:memberId", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
   const memberId = String(req.params.memberId || "").trim();
   if (!memberId) {
     return res.status(400).json({ message: "Member id is required." });

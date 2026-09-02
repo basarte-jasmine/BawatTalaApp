@@ -79,7 +79,7 @@ export function AdminPreferencesProvider({ children, session }) {
     async function loadPreferences() {
       try {
         setLoading(true);
-        const data = await fetchAdminSettings(session.email);
+        const data = await fetchAdminSettings();
         if (isMounted) {
           setPreferencesState(normalizePreferences(data?.preferences));
         }

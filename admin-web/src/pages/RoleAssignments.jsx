@@ -1,3 +1,4 @@
+import Toast from "../components/Toast";
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Edit2, Trash2, UserPlus, Users } from "lucide-react";
 import OtpBoxes from "../components/auth/OtpBoxes";
@@ -16,6 +17,7 @@ import {
 } from "../lib/admin-api";
 import { EMAIL_PATTERN, validateResetPassword } from "../lib/admin-validation";
 import { PROGRAM_OPTIONS } from "../lib/register-data";
+import { isHeadCounselor } from "../lib/admin-roles";
 
 const OTP_LENGTH = 8;
 const RESEND_SECONDS = 60;
@@ -68,6 +70,7 @@ function getServerFieldError(message) {
 }
 
 export default function RoleAssignments({ onLogout, session }) {
+  const isHead = isHeadCounselor(session);
   const [members, setMembers] = useState([]);
   const [summary, setSummary] = useState({
     counselorCount: 0,
@@ -260,7 +263,6 @@ export default function RoleAssignments({ onLogout, session }) {
       const data = isPeerRole
         ? editingMember
           ? await updateAdminPeerCounselor(editingMember.id, {
-              actorEmail: session?.email || "",
               email: payload.email,
               fullName: payload.fullName,
               gender: payload.gender,
@@ -270,7 +272,6 @@ export default function RoleAssignments({ onLogout, session }) {
               studentNumber: formState.studentNumber.trim(),
             })
           : await createAdminPeerCounselor({
-              actorEmail: session?.email || "",
               email: payload.email,
               fullName: payload.fullName,
               gender: payload.gender,
@@ -372,11 +373,7 @@ export default function RoleAssignments({ onLogout, session }) {
             <span>{errorMessage}</span>
           </div>
         ) : null}
-        {successMessage ? (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-            {successMessage}
-          </div>
-        ) : null}
+        <Toast message={successMessage} onClose={() => setSuccessMessage("")} />
 
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div>
@@ -385,6 +382,7 @@ export default function RoleAssignments({ onLogout, session }) {
               Live team data from the admin role database.
             </p>
           </div>
+          {isHead ? (
           <button
             type="button"
             onClick={openCreateModal}
@@ -393,6 +391,7 @@ export default function RoleAssignments({ onLogout, session }) {
             <UserPlus className="h-4 w-4" />
             Add Member
           </button>
+          ) : null}
         </div>
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
@@ -496,8 +495,8 @@ export default function RoleAssignments({ onLogout, session }) {
                           </button>
                           <button
                             type="button"
-                            onClick={() => member.canDelete && setDeleteTarget(member)}
-                            disabled={!member.canDelete}
+                            onClick={() => isHead && member.canDelete && setDeleteTarget(member)}
+                            disabled={!isHead || !member.canDelete}
                             className="rounded-lg p-1.5 hover:bg-rose-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
                             aria-label={`Deactivate ${member.fullName}`}
                           >

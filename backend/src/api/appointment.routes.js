@@ -2,7 +2,7 @@ const express = require("express");
 const { createHash, randomBytes } = require("crypto");
 const { dbPool } = require("../config/db");
 const { query } = require("../config/db");
-const { getAuthenticatedStudent, requireAdminAuth, requireStudentOnlyAuth, resolveStudentNumber } = require("../middleware/auth.middleware");
+const { getAuthenticatedStudent, requireAdminAuth, requireRoles, requireStudentOnlyAuth, requireStudentOrAdminAuth, resolveStudentNumber } = require("../middleware/auth.middleware");
 const { supabaseAdminClient } = require("../config/supabase");
 const {
   APPOINTMENT_CONCERN_OPTIONS,
@@ -42,6 +42,132 @@ const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
 function resolveRequestStudentNumber(req) {
   const fromAuth = resolveStudentNumber(req) || getAuthenticatedStudent(req)?.studentNumber;
   return String(fromAuth || "").trim();
+}
+
+
+function parseNotificationMetadata(metadata) {
+  if (!metadata) return {};
+  if (typeof metadata === "string") {
+    try {
+      const parsed = JSON.parse(metadata);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch (_error) {
+      return {};
+    }
+  }
+  return typeof metadata === "object" && !Array.isArray(metadata) ? metadata : {};
+}
+
+function followUpThreadKey(metadata) {
+  const meta = parseNotificationMetadata(metadata);
+  const counselorId = String(meta.counselorId || "").trim();
+  if (counselorId) return counselorId;
+  return String(meta.actorEmail || "").trim().toLowerCase();
+}
+
+function groupFollowUpThreads(rows) {
+  const emailToCounselorId = new Map();
+  for (const row of rows) {
+    const meta = parseNotificationMetadata(row.metadata);
+    const counselorId = String(meta.counselorId || "").trim();
+    const actorEmail = String(meta.actorEmail || "").trim().toLowerCase();
+    if (counselorId && actorEmail) {
+      emailToCounselorId.set(actorEmail, counselorId);
+    }
+  }
+
+  const groups = new Map();
+  for (const row of rows) {
+    const meta = parseNotificationMetadata(row.metadata);
+    const counselorId = String(meta.counselorId || "").trim();
+    const actorEmail = String(meta.actorEmail || "").trim().toLowerCase();
+    const key = counselorId || emailToCounselorId.get(actorEmail) || actorEmail;
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  return groups;
+}
+
+function serializeFollowUpMessage(row) {
+  const meta = parseNotificationMetadata(row.metadata);
+  const counselorId = String(meta.counselorId || "").trim() || followUpThreadKey(meta);
+  const name = String(meta.actorName || meta.counselorName || row.title || "").trim();
+  const role = String(meta.actorRole || "").trim();
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    body: row.message,
+    from: {
+      counselorId,
+      name,
+      role,
+    },
+  };
+}
+
+function serializeStudentMessageThread(counselorId, rows, profile) {
+  const sorted = [...rows].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const last = sorted[sorted.length - 1];
+  const lastMeta = parseNotificationMetadata(last?.metadata);
+  const counselorName = String(
+    profile?.full_name || lastMeta.actorName || lastMeta.counselorName || last?.title || "",
+  ).trim();
+  const pictureUrl = String(
+    profile?.profile_picture_url || lastMeta.pictureUrl || lastMeta.profilePictureUrl || "",
+  ).trim();
+  const actorEmail = String(profile?.email || lastMeta.actorEmail || lastMeta.email || "").trim();
+  const allRead = sorted.every((row) => Boolean(row.is_read));
+  const lastRead = [...sorted].reverse().find((row) => row.read_at)?.read_at || null;
+  return {
+    id: counselorId,
+    kind: "ADMIN_MESSAGE",
+    title: counselorName || last?.title || "Message",
+    message: last?.message || "",
+    pictureUrl,
+    profilePictureUrl: pictureUrl,
+    counselorName,
+    metadata: {
+      counselorId,
+      counselorName,
+      actorName: counselorName,
+      actorEmail,
+      pictureUrl,
+      profilePictureUrl: pictureUrl,
+      thread: true,
+      messageCount: sorted.length,
+      route: "/messages",
+    },
+    isRead: allRead,
+    readAt: allRead ? lastRead : null,
+    createdAt: last?.created_at,
+    timeLabel: formatRelativeDateTime(last?.created_at),
+    source: "CONSULT",
+    route: "/messages",
+  };
+}
+
+function isCounselorUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || ""));
+}
+
+async function loadCounselorProfiles(ids) {
+  const unique = [...new Set((ids || []).map((id) => String(id || "").trim()).filter(isCounselorUuid))];
+  if (!unique.length) return new Map();
+  const result = await query(
+    `
+      select
+        id::text as id,
+        email,
+        coalesce(nullif(full_name, ''), split_part(email, '@', 1)) as full_name,
+        role,
+        coalesce(profile_picture_url, '') as profile_picture_url
+      from public.admin_accounts
+      where id = any($1::uuid[])
+    `,
+    [unique],
+  );
+  return new Map(result.rows.map((row) => [row.id, row]));
 }
 
 
@@ -1193,11 +1319,41 @@ async function processPendingAppointmentExpiryWarnings() {
 
 function canManageCounselorDecision(actorAdmin, appointment) {
   if (!actorAdmin || !appointment) return false;
-  if (actorAdmin.role === "HEAD_COUNSELOR") return true;
-  if (isPeerSupportType(appointment.support_type)) {
-    return actorAdmin.role === "COUNSELOR";
-  }
-  return actorAdmin.id === (appointment.guidance_counselor_id || appointment.counselor_id);
+  const role = String(actorAdmin.role || "").toUpperCase();
+  if (role === "HEAD_COUNSELOR") return true;
+  if (role !== "COUNSELOR") return false;
+  const adminId = actorAdmin.id;
+  const adminEmail = String(actorAdmin.email || "").trim().toLowerCase();
+  const assignedId = appointment.guidance_counselor_id
+    || (isPeerSupportType(appointment.support_type) ? null : appointment.counselor_id);
+  if (adminId && assignedId && String(adminId) === String(assignedId)) return true;
+  const createdBy = String(appointment.created_by_admin_email || "").trim().toLowerCase();
+  if (adminEmail && createdBy && adminEmail === createdBy) return true;
+  return false;
+}
+
+function rejectUnownedAppointment(req, res, appointment) {
+  if (canManageCounselorDecision(req.admin, appointment)) return false;
+  res.status(403).json({ message: "You can only manage your own appointments." });
+  return true;
+}
+
+function sessionActorAdmin(req) {
+  return {
+    id: req.admin?.id || null,
+    email: String(req.admin?.email || "").trim().toLowerCase(),
+    full_name: String(req.admin?.fullName || req.admin?.email || "Admin").trim(),
+    role: req.admin?.role || "COUNSELOR",
+  };
+}
+
+function rejectForeignAvailability(req, res, counselorId, supportType) {
+  const role = String(req.admin?.role || "").toUpperCase();
+  if (role === "HEAD_COUNSELOR") return false;
+  const ownId = String(req.admin?.id || "");
+  if (!isPeerSupportType(supportType) && ownId && String(counselorId) === ownId) return false;
+  res.status(403).json({ message: "You don't have access to this action." });
+  return true;
 }
 
 async function expirePendingAppointments() {
@@ -2279,14 +2435,15 @@ router.get("/peer-counselors/invitations/:token/decline", async (req, res) => {
   return renderPeerInvitationResult(res, result);
 });
 
-router.get("/counselors", async (_req, res) => {
+router.get("/counselors", requireStudentOrAdminAuth, async (req, res) => {
   const counselors = await ensureAvailabilityTemplates(SUPPORT_TYPE_GUIDANCE);
   const peerCounselors = await ensureAvailabilityTemplates(SUPPORT_TYPE_PEER);
+  const includeCounselorEmail = Boolean(req.admin?.email);
   return res.json({
     counselors: [
       ...counselors.map((row) => ({
         id: row.id,
-        email: row.email,
+        ...(includeCounselorEmail ? { email: row.email } : {}),
         fullName: row.full_name,
         role: toRoleLabel(row.role, SUPPORT_TYPE_GUIDANCE),
         gender: row.gender,
@@ -2296,7 +2453,7 @@ router.get("/counselors", async (_req, res) => {
       })),
       ...peerCounselors.map((row) => ({
         id: row.id,
-        email: row.email,
+        ...(includeCounselorEmail ? { email: row.email } : {}),
         fullName: row.full_name,
         role: toRoleLabel(row.role, SUPPORT_TYPE_PEER),
         gender: row.gender,
@@ -2405,6 +2562,211 @@ router.get("/availability", async (req, res) => {
     },
     month,
     days,
+  });
+});
+
+router.post("/admin/book", async (req, res) => {
+  await expirePendingAppointments();
+  const studentNumber = String(req.body.studentNumber || "").trim();
+  const counselorId = String(req.body.counselorId || "").trim();
+  const appointmentDate = normalizeDate(req.body.appointmentDate || "");
+  const slotTime = normalizeSlotTime(req.body.slotTime || "");
+  const concern = normalizeConcern(req.body.concern || "");
+  const studentNote = String(req.body.studentNote || "").trim();
+  const rawCounselingType = String(req.body.counselingType || req.body.appointmentType || "").trim();
+  const counselingType = normalizeCounselingType(rawCounselingType);
+  const counselorGenderPreference = String(req.body.counselorGenderPreference || "No Preference").trim();
+  const bookingSource = "ADMIN_PANEL";
+  const actorEmail = String(req.admin?.email || "").trim().toLowerCase();
+  const actorName = String(req.admin?.fullName || actorEmail || "Admin").trim();
+  const actorRole = toRoleLabel(req.admin?.role || "COUNSELOR");
+  const requestedSupportType = normalizeSupportType(req.body.supportType || "");
+
+  if (!studentNumber || !counselorId || !appointmentDate || !slotTime || !concern) {
+    return res.status(400).json({ message: "Student, counselor, concern, date, and time are required." });
+  }
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "Valid student number is required." });
+  }
+  if (!DEFAULT_SLOT_TIMES.includes(slotTime)) {
+    return res.status(400).json({ message: "Invalid appointment time." });
+  }
+  if (
+    String(req.admin?.role || "").toUpperCase() === "COUNSELOR"
+    && String(counselorId) !== String(req.admin?.id || "")
+  ) {
+    return res.status(403).json({ message: "You can only manage your own appointments." });
+  }
+
+  const todayIsoDate = getManilaDateParts().isoDate;
+  if (appointmentDate < todayIsoDate) {
+    return res.status(400).json({ message: "You cannot book a past appointment date." });
+  }
+
+  const counselor = await findSupportCounselorById(counselorId, requestedSupportType);
+  if (!counselor) {
+    return res.status(404).json({ message: "Counselor not found." });
+  }
+  const supportType = normalizeSupportType(counselor.support_type);
+  const student = await findStudentProfileByStudentNumber(studentNumber);
+  if (!student) {
+    return res.status(404).json({ message: "Student number is not registered." });
+  }
+  if (isPeerSupportType(supportType) && !PEER_CONCERN_VALUES.has(concern)) {
+    return res.status(400).json({ message: "That concern is not available for peer counseling." });
+  }
+  if (!isPeerSupportType(supportType) && rawCounselingType && !COUNSELING_TYPE_VALUES.has(counselingType)) {
+    return res.status(400).json({ message: "Choose a valid counseling type." });
+  }
+  const resolvedCounselingType = isPeerSupportType(supportType) ? null : counselingType || "1-on-1";
+  const resolvedStudentNote = isPeerSupportType(supportType) ? "" : studentNote;
+
+  await ensureDefaultAvailability(counselorId, supportType);
+  const isEnabled = await isCounselorSlotEnabledForDate(counselorId, appointmentDate, slotTime, supportType);
+  if (!isEnabled) {
+    return res.status(409).json({ message: "That time slot is not available for this counselor." });
+  }
+
+  const assigneeColumn = getAppointmentAssigneeColumn(supportType);
+  const conflictResult = await query(
+    `
+      select id
+      from public.counselor_appointments
+      where ${assigneeColumn} = $1
+        and support_type = $5
+        and appointment_date = $2::date
+        and slot_time = $3
+        and status = any($4::text[])
+      limit 1
+    `,
+    [counselorId, appointmentDate, slotTime, ACTIVE_APPOINTMENT_STATUSES, supportType],
+  );
+
+  if (conflictResult.rowCount > 0) {
+    return res.status(409).json({ message: "That time slot has already been booked." });
+  }
+
+  try {
+    await ensureStudentHasNoActiveAppointmentOnDate({
+      studentNumber,
+      appointmentDate,
+    });
+  } catch (error) {
+    return res.status(409).json({ message: error.message || "This student already has an appointment on that date." });
+  }
+
+  const insertResult = await query(
+    `
+      insert into public.counselor_appointments (
+        student_number,
+        counselor_id,
+        peer_counselor_id,
+        support_type,
+        counseling_type,
+        concern,
+        appointment_date,
+        slot_time,
+        status,
+        student_note,
+        counselor_gender_preference,
+        booking_source,
+        created_by_admin_email
+      )
+      values ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $12, $13)
+      returning id, student_number, counseling_type, concern, appointment_date, slot_time, status, student_note, counselor_gender_preference, booking_source, created_by_admin_email, created_at
+    `,
+    [
+      studentNumber,
+      isPeerSupportType(supportType) ? null : counselorId,
+      isPeerSupportType(supportType) ? counselorId : null,
+      supportType,
+      resolvedCounselingType,
+      concern,
+      appointmentDate,
+      slotTime,
+      "CONFIRMED",
+      resolvedStudentNote || null,
+      counselorGenderPreference || null,
+      bookingSource,
+      actorEmail || null,
+    ],
+  );
+
+  const appointment = insertResult.rows[0];
+  const fullAppointment = await findAppointmentById(appointment.id);
+  await writeAdminActivityLog({
+    actionType: "APPOINTMENT_CREATED",
+    actorEmail: actorEmail,
+    actorName: actorName,
+    actorRole: actorRole,
+    entityType: "APPOINTMENT",
+    title: `${actorName} created ${toReadableTime(appointment.slot_time)}`,
+    description: `${studentNumber} scheduled with ${counselor.full_name} on ${formatDateLong(appointment.appointment_date)}`,
+    metadata: {
+      appointmentId: appointment.id,
+      appointmentDate,
+      actorAdminId: req.admin?.id || null,
+      counselorId,
+      counselorName: counselor.full_name,
+      ownerCounselorId: counselorId,
+      supportType,
+      slotTime,
+      studentNumber,
+    },
+  });
+
+  if (fullAppointment) {
+    await notifyStudentAboutAppointment({
+      appointment: fullAppointment,
+      student,
+      kind: "APPOINTMENT_CONFIRMED",
+      title: "Appointment confirmed",
+      message: resolvedStudentNote
+        ? `Your session with ${counselor.full_name} is set for ${formatDateLong(appointment.appointment_date)} at ${toReadableTime(appointment.slot_time)}. Note from guidance: ${resolvedStudentNote}`
+        : `Your session with ${counselor.full_name} is set for ${formatDateLong(appointment.appointment_date)} at ${toReadableTime(appointment.slot_time)}.`,
+      emailSubject: "Your counseling appointment is confirmed",
+      emailIntro: `Your counseling appointment with ${counselor.full_name} has been confirmed.`,
+      emailCta: resolvedStudentNote
+        ? `Please arrive a few minutes early for your session. Note from guidance: ${resolvedStudentNote}`
+        : "Please arrive a few minutes early for your session.",
+    });
+    if (isPeerSupportType(supportType)) {
+      await notifyPeerCounselorAboutScheduledAppointment({
+        appointment: fullAppointment,
+        student,
+        context: "peer counselor admin-created appointment notification",
+      });
+    }
+  }
+
+  return res.status(201).json({
+    message: "Appointment confirmed.",
+    appointment: {
+      id: appointment.id,
+      studentNumber: appointment.student_number,
+      counselingType: appointment.counseling_type || "",
+      concern: appointment.concern,
+      appointmentDate: appointment.appointment_date,
+      appointmentDateLabel: formatDateLong(appointment.appointment_date),
+      slotTime: appointment.slot_time,
+      slotLabel: toReadableTime(appointment.slot_time),
+      status: appointment.status,
+      studentNote: appointment.student_note || "",
+      supportType,
+      counselorGenderPreference: appointment.counselor_gender_preference || "No Preference",
+      bookingSource: appointment.booking_source || bookingSource,
+      counselor: {
+        id: counselor.id,
+        fullName: counselor.full_name,
+        role: toRoleLabel(counselor.role, supportType),
+        gender: counselor.gender,
+        pictureUrl: counselor.profile_picture_url || "",
+        studentNumber: counselor.student_number || "",
+        program: counselor.program || "",
+        supportType,
+      },
+      decisionDueAt: getDecisionDeadlineIso(appointment.created_at),
+    },
   });
 });
 
@@ -2643,8 +3005,9 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
   const rawCounselingType = String(req.body.counselingType || req.body.appointmentType || "").trim();
   const counselingType = normalizeCounselingType(rawCounselingType);
   const counselorGenderPreference = String(req.body.counselorGenderPreference || "No Preference").trim();
-  const actorEmail = String(req.body.actorEmail || "").trim().toLowerCase();
   const requestedSupportType = normalizeSupportType(req.body.supportType || "");
+  const actorAdmin = sessionActorAdmin(req);
+  const actorEmail = actorAdmin.email;
 
   if (!appointmentId || !studentNumber || !counselorId || !appointmentDate || !slotTime || !concern) {
     return res.status(400).json({ message: "Student, counselor, concern, date, and time are required." });
@@ -2668,12 +3031,20 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
   if (!existingAppointment) {
     return res.status(404).json({ message: "Appointment not found." });
   }
+  if (rejectUnownedAppointment(req, res, existingAppointment)) return;
 
   const counselor = await findSupportCounselorById(counselorId, requestedSupportType);
   if (!counselor) {
     return res.status(404).json({ message: "Counselor not found." });
   }
   const supportType = normalizeSupportType(counselor.support_type);
+  if (
+    String(req.admin?.role || "").toUpperCase() === "COUNSELOR"
+    && !isPeerSupportType(supportType)
+    && String(counselorId) !== String(req.admin?.id || "")
+  ) {
+    return res.status(403).json({ message: "You can only manage your own appointments." });
+  }
   const student = await findStudentProfileByStudentNumber(studentNumber);
   if (!student) {
     return res.status(404).json({ message: "Student number is not registered." });
@@ -2725,7 +3096,6 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
     return res.status(409).json({ message: error.message || "This student already has an appointment on that date." });
   }
 
-  const actorAdmin = await findAdminByEmail(actorEmail);
   const actorCanManageDecision = canManageCounselorDecision(actorAdmin, existingAppointment);
   const isRescheduledRequestState =
     isPendingAppointment(existingAppointment.status) ||
@@ -2846,25 +3216,18 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
 router.post("/admin/:appointmentId/confirm", async (req, res) => {
   await expirePendingAppointments();
   const appointmentId = String(req.params.appointmentId || "").trim();
-  const actorEmail = String(req.body.actorEmail || "").trim().toLowerCase();
+  const actorAdmin = sessionActorAdmin(req);
+  const actorEmail = actorAdmin.email;
 
-  if (!appointmentId || !actorEmail) {
-    return res.status(400).json({ message: "Appointment id and actor email are required." });
+  if (!appointmentId) {
+    return res.status(400).json({ message: "Appointment id is required." });
   }
 
   const context = await loadAppointmentContext(appointmentId);
   if (!context?.appointment) {
     return res.status(404).json({ message: "Appointment not found." });
   }
-
-  const actorAdmin = await findAdminByEmail(actorEmail);
-  if (!canManageCounselorDecision(actorAdmin, context.appointment)) {
-    return res.status(403).json({
-      message: isPeerSupportType(context.appointment.support_type)
-        ? "Only an admin can confirm peer counseling requests."
-        : "Only the assigned counselor or head counselor can confirm this request.",
-    });
-  }
+  if (rejectUnownedAppointment(req, res, context.appointment)) return;
   if (!(await ensurePendingAppointmentStillOpen(context.appointment))) {
     return res.status(409).json({ message: "This appointment request already expired and was auto-declined." });
   }
@@ -2932,25 +3295,18 @@ router.post("/admin/:appointmentId/confirm", async (req, res) => {
 router.post("/admin/:appointmentId/decline", async (req, res) => {
   await expirePendingAppointments();
   const appointmentId = String(req.params.appointmentId || "").trim();
-  const actorEmail = String(req.body.actorEmail || "").trim().toLowerCase();
+  const actorAdmin = sessionActorAdmin(req);
+  const actorEmail = actorAdmin.email;
 
-  if (!appointmentId || !actorEmail) {
-    return res.status(400).json({ message: "Appointment id and actor email are required." });
+  if (!appointmentId) {
+    return res.status(400).json({ message: "Appointment id is required." });
   }
 
   const context = await loadAppointmentContext(appointmentId);
   if (!context?.appointment) {
     return res.status(404).json({ message: "Appointment not found." });
   }
-
-  const actorAdmin = await findAdminByEmail(actorEmail);
-  if (!canManageCounselorDecision(actorAdmin, context.appointment)) {
-    return res.status(403).json({
-      message: isPeerSupportType(context.appointment.support_type)
-        ? "Only an admin can decline peer counseling requests."
-        : "Only the assigned counselor or head counselor can decline this request.",
-    });
-  }
+  if (rejectUnownedAppointment(req, res, context.appointment)) return;
   if (!(await ensurePendingAppointmentStillOpen(context.appointment))) {
     return res.status(409).json({ message: "This appointment request already expired and was auto-declined." });
   }
@@ -3007,7 +3363,8 @@ router.post("/admin/:appointmentId/decline", async (req, res) => {
 router.post("/admin/:appointmentId/cancel", async (req, res) => {
   await expirePendingAppointments();
   const appointmentId = String(req.params.appointmentId || "").trim();
-  const actorEmail = String(req.body.actorEmail || "").trim().toLowerCase();
+  const actorAdmin = sessionActorAdmin(req);
+  const actorEmail = actorAdmin.email;
   const cancellationReason = String(req.body.cancellationReason || "").trim();
 
   if (!appointmentId) {
@@ -3018,9 +3375,10 @@ router.post("/admin/:appointmentId/cancel", async (req, res) => {
   if (!existingAppointment) {
     return res.status(404).json({ message: "Appointment not found." });
   }
+  if (rejectUnownedAppointment(req, res, existingAppointment)) return;
 
-  const actorAdmin = await findAdminByEmail(actorEmail);
-  const requiresCancelReason = actorAdmin?.settings?.privacy?.requireCancelReason !== false;
+  const actorAccount = await findAdminByEmail(actorEmail);
+  const requiresCancelReason = actorAccount?.settings?.privacy?.requireCancelReason !== false;
   if (requiresCancelReason && !cancellationReason) {
     return res.status(400).json({ message: "Cancellation reason is required." });
   }
@@ -3081,7 +3439,8 @@ router.post("/admin/:appointmentId/cancel", async (req, res) => {
 router.delete("/admin/:appointmentId", async (req, res) => {
   await expirePendingAppointments();
   const appointmentId = String(req.params.appointmentId || "").trim();
-  const actorEmail = String(req.query.actorEmail || "").trim().toLowerCase();
+  const actorAdmin = sessionActorAdmin(req);
+  const actorEmail = actorAdmin.email;
 
   if (!appointmentId) {
     return res.status(400).json({ message: "Appointment id is required." });
@@ -3091,8 +3450,7 @@ router.delete("/admin/:appointmentId", async (req, res) => {
   if (!existingAppointment) {
     return res.status(404).json({ message: "Appointment not found." });
   }
-
-  const actorAdmin = await findAdminByEmail(actorEmail);
+  if (rejectUnownedAppointment(req, res, existingAppointment)) return;
   await query(
     `
       delete from public.counselor_appointments
@@ -3488,13 +3846,14 @@ router.get("/admin/peer-counselors", async (_req, res) => {
   });
 });
 
-router.post("/admin/peer-counselors", async (req, res) => {
+router.post("/admin/peer-counselors", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
   const fullName = String(req.body.fullName || "").trim().replace(/\s+/g, " ");
   const email = String(req.body.email || "").trim().toLowerCase();
   const gender = normalizePeerGender(req.body.gender);
   const studentNumber = String(req.body.studentNumber || "").trim();
   const program = String(req.body.program || "").trim().replace(/\s+/g, " ");
-  const actorEmail = String(req.body.actorEmail || "").trim().toLowerCase();
+  const actorAdmin = sessionActorAdmin(req);
+  const actorEmail = actorAdmin.email;
   const specialties = [];
 
   if (!fullName || !email || !studentNumber || !program) {
@@ -3513,7 +3872,6 @@ router.post("/admin/peer-counselors", async (req, res) => {
     return res.status(404).json({ message: "Peer counselor student number is not registered." });
   }
 
-  const actorAdmin = await findAdminByEmail(actorEmail);
   const invitationToken = createPeerInviteToken();
   const invitationTokenHash = hashPeerInviteToken(invitationToken);
   const insertResult = await query(
@@ -3617,7 +3975,7 @@ router.post("/admin/peer-counselors", async (req, res) => {
   });
 });
 
-router.patch("/admin/peer-counselors/:peerCounselorId", async (req, res) => {
+router.patch("/admin/peer-counselors/:peerCounselorId", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
   const peerCounselorId = String(req.params.peerCounselorId || "").trim();
   const fullName = String(req.body.fullName || "").trim().replace(/\s+/g, " ");
   const email = String(req.body.email || "").trim().toLowerCase();
@@ -3625,7 +3983,8 @@ router.patch("/admin/peer-counselors/:peerCounselorId", async (req, res) => {
   const studentNumber = String(req.body.studentNumber || "").trim();
   const program = String(req.body.program || "").trim().replace(/\s+/g, " ");
   const isActive = typeof req.body.isActive === "boolean" ? req.body.isActive : null;
-  const actorEmail = String(req.body.actorEmail || "").trim().toLowerCase();
+  const actorAdmin = sessionActorAdmin(req);
+  const actorEmail = actorAdmin.email;
   const specialties = [];
 
   if (!peerCounselorId || !fullName || !email || !studentNumber || !program) {
@@ -3644,7 +4003,6 @@ router.patch("/admin/peer-counselors/:peerCounselorId", async (req, res) => {
     return res.status(404).json({ message: "Peer counselor student number is not registered." });
   }
 
-  const actorAdmin = await findAdminByEmail(actorEmail);
   const updateResult = await query(
     `
       update public.peer_counselors
@@ -3713,14 +4071,14 @@ router.patch("/admin/peer-counselors/:peerCounselorId", async (req, res) => {
   });
 });
 
-router.delete("/admin/peer-counselors/:peerCounselorId", async (req, res) => {
+router.delete("/admin/peer-counselors/:peerCounselorId", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
   const peerCounselorId = String(req.params.peerCounselorId || "").trim();
-  const actorEmail = String(req.query.actorEmail || "").trim().toLowerCase();
+  const actorAdmin = sessionActorAdmin(req);
+  const actorEmail = actorAdmin.email;
   if (!peerCounselorId) {
     return res.status(400).json({ message: "Peer counselor id is required." });
   }
 
-  const actorAdmin = await findAdminByEmail(actorEmail);
   const deletion = await withDbTransaction((run) =>
     deletePeerCounselorFromDatabase(peerCounselorId, run),
   );
@@ -3754,6 +4112,86 @@ router.delete("/admin/peer-counselors/:peerCounselorId", async (req, res) => {
   });
 });
 
+router.get("/notifications/threads/:counselorId", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  const counselorId = String(req.params.counselorId || "").trim();
+  if (!studentNumber) {
+    return res.status(401).json({ message: "Authentication required. Please sign in." });
+  }
+  if (!counselorId) {
+    return res.status(400).json({ message: "Counselor id is required." });
+  }
+
+  const result = await query(
+    `
+      select id, kind, title, message, metadata, is_read, read_at, created_at
+      from public.student_notifications
+      where student_number = $1
+        and kind = 'ADMIN_MESSAGE'
+        and deleted_at is null
+      order by created_at asc
+    `,
+    [studentNumber],
+  );
+  const groups = groupFollowUpThreads(result.rows);
+  const threadRows = groups.get(counselorId);
+  if (!threadRows || threadRows.length === 0) {
+    return res.status(404).json({ message: "No messages with that counselor." });
+  }
+
+  const sorted = [...threadRows].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const lastMeta = parseNotificationMetadata(sorted[sorted.length - 1]?.metadata);
+  const profiles = await loadCounselorProfiles([counselorId]);
+  const profile = profiles.get(counselorId);
+  const counselorName = String(profile?.full_name || lastMeta.actorName || lastMeta.counselorName || sorted[sorted.length - 1]?.title || "").trim();
+  const pictureUrl = String(profile?.profile_picture_url || lastMeta.pictureUrl || lastMeta.profilePictureUrl || "").trim();
+  return res.json({
+    counselorId,
+    counselorName,
+    pictureUrl,
+    profilePictureUrl: pictureUrl,
+    messages: sorted.map(serializeFollowUpMessage),
+  });
+});
+
+router.post("/notifications/threads/:counselorId/read", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  const counselorId = String(req.params.counselorId || "").trim();
+  if (!studentNumber) {
+    return res.status(401).json({ message: "Authentication required. Please sign in." });
+  }
+  if (!counselorId) {
+    return res.status(400).json({ message: "Counselor id is required." });
+  }
+
+  const result = await query(
+    `
+      select id, metadata, is_read
+      from public.student_notifications
+      where student_number = $1
+        and kind = 'ADMIN_MESSAGE'
+        and deleted_at is null
+    `,
+    [studentNumber],
+  );
+  const groups = groupFollowUpThreads(result.rows);
+  const threadRows = groups.get(counselorId) || [];
+  const ids = threadRows.filter((row) => !row.is_read).map((row) => row.id);
+  if (ids.length > 0) {
+    await query(
+      `
+        update public.student_notifications
+        set is_read = true, read_at = now()
+        where student_number = $1
+          and id = any($2::uuid[])
+      `,
+      [studentNumber, ids],
+    );
+  }
+
+  return res.json({ message: "Notifications marked as read." });
+});
+
 router.get("/notifications", requireStudentOnlyAuth, async (req, res) => {
   const studentNumber = resolveRequestStudentNumber(req);
   if (!studentNumber) {
@@ -3775,6 +4213,32 @@ router.get("/notifications", requireStudentOnlyAuth, async (req, res) => {
       : category === "notifications"
         ? "and kind <> 'ADMIN_MESSAGE'"
         : "";
+
+  if (category === "messages") {
+    const threadResult = await query(
+      `
+        select id, kind, title, message, metadata, is_read, read_at, created_at
+        from public.student_notifications
+        where student_number = $1
+          and deleted_at is null
+          and kind = 'ADMIN_MESSAGE'
+        order by created_at desc
+      `,
+      [studentNumber],
+    );
+    const groups = groupFollowUpThreads(threadResult.rows);
+    const profiles = await loadCounselorProfiles([...groups.keys()]);
+    const notifications = Array.from(groups.entries())
+      .map(([counselorId, rows]) => serializeStudentMessageThread(counselorId, rows, profiles.get(counselorId)))
+      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    return res.json({
+      notifications,
+      items: notifications,
+      fetchedAt: new Date().toISOString(),
+      unreadCount: notifications.filter((item) => !item.isRead).length,
+      totalCount: notifications.length,
+    });
+  }
 
   const [result, countResult] = await Promise.all([
     query(
@@ -3918,7 +4382,8 @@ router.post("/admin/availability/day", async (req, res) => {
   const targetDate = normalizeDate(req.body.targetDate || "");
   const dayOfWeek = Number(req.body.dayOfWeek);
   const isEnabled = Boolean(req.body.isEnabled);
-  const actorEmail = String(req.body.actorEmail || "").trim().toLowerCase();
+  const actorAdmin = sessionActorAdmin(req);
+  const actorEmail = actorAdmin.email;
 
   if (!counselorId || !targetDate) {
     return res.status(400).json({ message: "Counselor and target date are required." });
@@ -3932,6 +4397,7 @@ router.post("/admin/availability/day", async (req, res) => {
     return res.status(404).json({ message: "Counselor not found." });
   }
   const resolvedSupportType = normalizeSupportType(counselor.support_type);
+  if (rejectForeignAvailability(req, res, counselorId, resolvedSupportType)) return;
   const { tableName: availabilityTableName, idColumn: availabilityIdColumn } = getAvailabilityStorage(resolvedSupportType);
 
   const resolvedDayOfWeek = toDayOfWeek(targetDate);
@@ -3966,7 +4432,6 @@ router.post("/admin/availability/day", async (req, res) => {
     params,
   );
 
-  const actorAdmin = await findAdminByEmail(actorEmail);
   let cancelledAppointmentsCount = 0;
 
   if (!isEnabled) {
@@ -4068,7 +4533,8 @@ router.post("/admin/availability", async (req, res) => {
   const slotTime = normalizeSlotTime(req.body.slotTime || "");
   const dayOfWeek = Number(req.body.dayOfWeek);
   const isEnabled = Boolean(req.body.isEnabled);
-  const actorEmail = String(req.body.actorEmail || "").trim().toLowerCase();
+  const actorAdmin = sessionActorAdmin(req);
+  const actorEmail = actorAdmin.email;
 
   if (!counselorId || !DEFAULT_SLOT_TIMES.includes(slotTime) || Number.isNaN(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) {
     return res.status(400).json({ message: "Counselor, day, and slot time are required." });
@@ -4079,6 +4545,7 @@ router.post("/admin/availability", async (req, res) => {
     return res.status(404).json({ message: "Counselor not found." });
   }
   const resolvedSupportType = normalizeSupportType(counselor.support_type);
+  if (rejectForeignAvailability(req, res, counselorId, resolvedSupportType)) return;
   const { tableName: availabilityTableName, idColumn: availabilityIdColumn } = getAvailabilityStorage(resolvedSupportType);
 
   await query(
@@ -4092,7 +4559,6 @@ router.post("/admin/availability", async (req, res) => {
     [counselorId, dayOfWeek, slotTime, isEnabled],
   );
 
-  const actorAdmin = await findAdminByEmail(actorEmail);
   await writeAdminActivityLog({
     actionType: "AVAILABILITY_UPDATED",
     actorEmail: actorAdmin?.email || actorEmail,

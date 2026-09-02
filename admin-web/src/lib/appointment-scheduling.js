@@ -42,28 +42,55 @@ export function getMinimumBookingIsoDate() {
   return addDaysToIsoDate(getTodayIsoDate(), 2);
 }
 
+export function getManilaYearMonthParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(date);
+  return {
+    year: Number(parts.find((part) => part.type === "year")?.value),
+    month: Number(parts.find((part) => part.type === "month")?.value),
+  };
+}
+
+export function getManilaMonthDate(date = new Date()) {
+  const { year, month } = getManilaYearMonthParts(date);
+  return new Date(`${year}-${String(month).padStart(2, "0")}-01T12:00:00+08:00`);
+}
+
+export function addMonthsManila(date, delta) {
+  const { year, month } = getManilaYearMonthParts(date);
+  const shifted = month - 1 + delta;
+  const nextYear = year + Math.floor(shifted / 12);
+  const nextMonth = ((shifted % 12) + 12) % 12 + 1;
+  return new Date(`${nextYear}-${String(nextMonth).padStart(2, "0")}-01T12:00:00+08:00`);
+}
+
 export function getMonthTitle(date) {
-  return date.toLocaleDateString("en-US", {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Manila",
     month: "long",
     year: "numeric",
-  });
+  }).format(date);
 }
 
 export function getMonthKey(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  const { year, month } = getManilaYearMonthParts(date);
+  return `${year}-${String(month).padStart(2, "0")}`;
 }
 
 export function buildCalendarCells(date) {
-  const year = date.getFullYear();
-  const month = date.getMonth();
-  const totalDays = new Date(year, month + 1, 0).getDate();
-  const firstDay = new Date(year, month, 1).getDay();
+  const { year, month } = getManilaYearMonthParts(date);
+  const firstOfMonth = new Date(`${year}-${String(month).padStart(2, "0")}-01T12:00:00+08:00`);
+  const firstDay = firstOfMonth.getUTCDay();
+  const totalDays = new Date(Date.UTC(year, month, 0, 12, 0, 0)).getUTCDate();
   const cells = [];
   for (let index = 0; index < firstDay; index += 1) {
     cells.push(null);
   }
   for (let day = 1; day <= totalDays; day += 1) {
-    const isoDate = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const isoDate = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     cells.push({ day, isoDate });
   }
   while (cells.length % 7 !== 0) {
@@ -73,7 +100,8 @@ export function buildCalendarCells(date) {
 }
 
 export function toFirstDayIso(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-01`;
+  const { year, month } = getManilaYearMonthParts(date);
+  return `${year}-${String(month).padStart(2, "0")}-01`;
 }
 
 export function formatDisplayDate(isoDate) {

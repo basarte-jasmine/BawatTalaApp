@@ -1,3 +1,4 @@
+import Toast from "../components/Toast";
 ﻿import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -17,6 +18,7 @@ import {
   UserCircle2,
   X,
 } from "lucide-react";
+import ConfirmActionModal from "../components/ConfirmActionModal";
 import Layout from "../components/Layout";
 import Modal from "../components/Modal";
 import StudentAvatar from "../components/StudentAvatar";
@@ -344,58 +346,6 @@ function MessageModal({ student, title, body, sending, maskStudentNumbers = fals
   );
 }
 
-function JournalUnlockModal({ entry, error, pin, saving, onClose, onPinChange, onSubmit }) {
-  if (!entry) return null;
-
-  return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-      <form onSubmit={onSubmit} className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="border-b border-slate-100 px-5 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
-              <Lock className="h-5 w-5" />
-            </div>
-            <div>
-              <h2 className="font-bold text-slate-900">Open Journal</h2>
-              <div className="mt-1 text-xs text-slate-500">{entry.title || "Locked flagged entry"}</div>
-            </div>
-          </div>
-        </div>
-        <div className="space-y-4 px-5 py-4">
-          <p className="text-sm leading-6 text-slate-600">
-            Enter the student's 4-digit Journal Lock PIN to view this flagged journal conversation.
-          </p>
-          <label className="block text-xs font-semibold text-slate-500">
-            Journal PIN
-            <input
-              autoFocus
-              value={pin}
-              onChange={(event) => onPinChange(event.target.value.replace(/[^0-9]/g, "").slice(0, 4))}
-              inputMode="numeric"
-              maxLength={4}
-              type="password"
-              className="mt-1 h-11 w-full rounded-xl border border-slate-200 px-3 text-center text-lg font-bold tracking-[0.35em] text-slate-900 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-            />
-          </label>
-          {error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div> : null}
-        </div>
-        <div className="flex justify-end gap-3 border-t border-slate-100 bg-slate-50 px-5 py-4">
-          <button type="button" onClick={onClose} className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-white">
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={saving || pin.length < 4}
-            className="rounded-lg bg-[#229365] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1b7b54] disabled:opacity-60"
-          >
-            {saving ? "Opening..." : "Open Journal"}
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
 function RecentEntriesModal({
   isOpen,
   entries,
@@ -707,9 +657,12 @@ export default function StudentDirectory({ onLogout, session }) {
     }
   }
 
-  async function handleOpenJournal(event) {
-    event.preventDefault();
+  async function handleOpenJournal() {
     if (!journalUnlockTarget?.id || !studentProfile?.profile?.studentNumber) return;
+    if (String(journalUnlockPin || "").length < 4) {
+      setJournalUnlockError("Enter the 4-digit Journal Lock PIN.");
+      return;
+    }
 
     try {
       setJournalUnlockSaving(true);
@@ -728,7 +681,6 @@ export default function StudentDirectory({ onLogout, session }) {
         });
       }
       setJournalUnlockTarget(null);
-      setJournalUnlockPin("");
       setJournalUnlockError("");
       setSuccessMessage("Journal opened for this flagged entry.");
     } catch (error) {
@@ -745,9 +697,6 @@ export default function StudentDirectory({ onLogout, session }) {
       await sendAdminStudentNotification(messageTarget.studentNumber, {
         title: messageTitle,
         message: messageBody,
-        actorEmail: session?.email || "",
-        actorName: session?.name || "",
-        actorRole: session?.roleLabel || session?.role || "Counselor",
       });
       setSuccessMessage(`Message sent to ${messageTarget.fullName || messageTarget.studentNumber}.`);
       setMessageTarget(null);
@@ -788,9 +737,7 @@ export default function StudentDirectory({ onLogout, session }) {
         {errorMessage ? (
           <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{errorMessage}</div>
         ) : null}
-        {successMessage ? (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{successMessage}</div>
-        ) : null}
+        <Toast message={successMessage} onClose={() => setSuccessMessage("")} />
 
         <div className="flex flex-col items-center gap-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm lg:flex-row">
           <div className="relative w-full lg:flex-1">
@@ -865,7 +812,6 @@ export default function StudentDirectory({ onLogout, session }) {
             setProfileError("");
             setProfileEntryFilter("all");
             setJournalUnlockTarget(null);
-            setJournalUnlockPin("");
             setJournalUnlockError("");
           }}
           title={studentProfile?.profile?.fullName || "Student Profile"}
@@ -1077,8 +1023,7 @@ export default function StudentDirectory({ onLogout, session }) {
                                 studentName={studentProfile.profile.fullName}
                                 onOpenJournal={(targetEntry) => {
                                   setJournalUnlockTarget(targetEntry);
-                                  setJournalUnlockPin("");
-                                  setJournalUnlockError("");
+                                                        setJournalUnlockError("");
                                 }}
                               />
                             </section>
@@ -1159,18 +1104,23 @@ export default function StudentDirectory({ onLogout, session }) {
           onClose={() => setIsEntriesModalOpen(false)}
         />
 
-        <JournalUnlockModal
-          entry={journalUnlockTarget}
-          error={journalUnlockError}
-          pin={journalUnlockPin}
-          saving={journalUnlockSaving}
+        <ConfirmActionModal
+          isOpen={Boolean(journalUnlockTarget)}
           onClose={() => {
+            if (journalUnlockSaving) return;
             setJournalUnlockTarget(null);
             setJournalUnlockPin("");
             setJournalUnlockError("");
           }}
-          onPinChange={setJournalUnlockPin}
-          onSubmit={(event) => void handleOpenJournal(event)}
+          onConfirm={() => void handleOpenJournal()}
+          title="Open Journal"
+          description={journalUnlockError || "Enter the student's 4-digit Journal Lock PIN to view this flagged journal conversation."}
+          confirmLabel={journalUnlockSaving ? "Opening..." : "Open Journal"}
+          inputLabel="Journal PIN"
+          inputPlaceholder="4-digit PIN"
+          inputRequired
+          inputValue={journalUnlockPin}
+          onInputChange={(value) => setJournalUnlockPin(String(value || "").replace(/[^0-9]/g, "").slice(0, 4))}
         />
 
         <MessageModal

@@ -1604,12 +1604,30 @@ export async function submitStudentFeedback(payload: {
   category: string;
   message: string;
   studentNumber?: string;
+  subject?: string;
+  title?: string;
+  submissionType?: "FEEDBACK" | "SUPPORT";
 }): Promise<ApiResult> {
-  const { studentNumber: _studentNumber, ...feedbackBody } = payload;
+  const { studentNumber: _studentNumber, subject, title, submissionType, ...rest } = payload;
+  const resolvedSubject = (subject ?? title)?.trim();
+  const feedbackBody = {
+    ...rest,
+    submissionType: submissionType ?? "FEEDBACK",
+    ...(resolvedSubject ? { subject: resolvedSubject } : {}),
+  };
   const { response, data } = await post("/api/feedback", feedbackBody);
+  const isSupport = (submissionType ?? "FEEDBACK") === "SUPPORT";
   return {
     ok: response.ok,
-    message: data?.message ?? (response.ok ? "Feedback sent." : "Unable to send feedback."),
+    message:
+      data?.message ??
+      (response.ok
+        ? isSupport
+          ? "Support request sent."
+          : "Feedback sent."
+        : isSupport
+          ? "Unable to send support request."
+          : "Unable to send feedback."),
   };
 }
 
@@ -2960,6 +2978,88 @@ export async function fetchStudentNotifications(
       totalCount: 0,
     };
   }
+}
+
+export type StudentMessageThreadItem = {
+  body: string;
+  createdAt: string;
+  from?: unknown;
+  id: string;
+  isRead?: boolean;
+};
+
+export type StudentMessageThread = {
+  counselorId: string;
+  counselorName?: string;
+  messages: StudentMessageThreadItem[];
+  photoUrl?: string;
+  pictureUrl?: string;
+};
+
+function parseStudentMessageThread(data: any, fallbackId: string): StudentMessageThread | null {
+  const payload = data?.thread ?? data;
+  if (!payload || typeof payload !== "object") return null;
+  const messagesRaw = payload.messages ?? payload.items ?? payload.notifications;
+  const messages = Array.isArray(messagesRaw)
+    ? messagesRaw
+        .map((entry: any, index: number) => {
+          const body = String(entry?.body ?? entry?.message ?? entry?.text ?? "").trim();
+          if (!body) return null;
+          return {
+            body,
+            createdAt: String(entry?.createdAt ?? ""),
+            from: entry?.from,
+            id: String(entry?.id ?? `${fallbackId}:${index}`),
+            isRead: typeof entry?.isRead === "boolean" ? entry.isRead : undefined,
+          } as StudentMessageThreadItem;
+        })
+        .filter(Boolean) as StudentMessageThreadItem[]
+    : [];
+  return {
+    counselorId: String(payload.counselorId ?? fallbackId),
+    counselorName: typeof payload.counselorName === "string" ? payload.counselorName : undefined,
+    messages,
+    photoUrl: typeof payload.photoUrl === "string" ? payload.photoUrl : undefined,
+    pictureUrl: typeof payload.pictureUrl === "string" ? payload.pictureUrl : undefined,
+  };
+}
+
+export async function fetchStudentMessageThread(
+  counselorId: string,
+): Promise<ApiResult & { thread?: StudentMessageThread | null }> {
+  const encoded = encodeURIComponent(counselorId);
+  const paths = [`/api/inbox/threads/${encoded}`, `/api/appointments/notifications/threads/${encoded}`];
+  for (const path of paths) {
+    try {
+      const { response, data } = await get(path);
+      if (!response.ok) continue;
+      const thread = parseStudentMessageThread(data, counselorId);
+      if (thread) {
+        return { ok: true, message: data?.message, thread };
+      }
+    } catch {
+      // Try the appointments alias next.
+    }
+  }
+  return { ok: false, thread: null };
+}
+
+export async function markStudentMessageThreadRead(
+  counselorId: string,
+): Promise<ApiResult> {
+  const encoded = encodeURIComponent(counselorId);
+  const paths = [`/api/inbox/threads/${encoded}/read`, `/api/appointments/notifications/threads/${encoded}/read`];
+  for (const path of paths) {
+    try {
+      const { response, data } = await post(path, {});
+      if (response.ok) {
+        return { ok: true, message: data?.message };
+      }
+    } catch {
+      // Try the appointments alias next.
+    }
+  }
+  return { ok: false };
 }
 
 export async function markStudentNotificationRead(

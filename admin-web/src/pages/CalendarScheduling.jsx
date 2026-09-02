@@ -14,6 +14,8 @@ import {
   getConcernClassName,
   isBlockedByBookingLeadTime,
   getWeekDatesForIso,
+  addMonthsManila,
+  getManilaMonthDate,
   getMonthKey,
   getMonthTitle,
   getStatusClassName,
@@ -70,7 +72,7 @@ export default function CalendarScheduling({
   const counselorLabel = isPeerSupport ? "Peer Counselor" : "Counselor";
   const counselorLabelPlural = isPeerSupport ? "Peer Counselors" : "Counselors";
   const [selectedDate, setSelectedDate] = useState(() => searchParams.get("date") || getTodayIsoDate());
-  const [selectedMonth, setSelectedMonth] = useState(() => new Date());
+  const [selectedMonth, setSelectedMonth] = useState(() => getManilaMonthDate());
   const [selectedCounselorId, setSelectedCounselorId] = useState("");
   const [overview, setOverview] = useState(null);
   const [overviewCache, setOverviewCache] = useState({});
@@ -111,7 +113,7 @@ export default function CalendarScheduling({
   useEffect(() => {
     const monthFromDate = new Date(`${selectedDate}T12:00:00+08:00`);
     if (getMonthKey(monthFromDate) !== getMonthKey(selectedMonth)) {
-      setSelectedMonth(new Date(monthFromDate.getFullYear(), monthFromDate.getMonth(), 1));
+      setSelectedMonth(getManilaMonthDate(monthFromDate));
     }
   }, [selectedDate, selectedMonth]);
 
@@ -385,7 +387,6 @@ export default function CalendarScheduling({
     if (!selectedCounselor?.id || !dayAvailabilityAction) return;
     try {
       await updateAdminDayAvailability({
-        actorEmail: session?.email || "",
         counselorId: selectedCounselor.id,
         dayOfWeek: dayAvailabilityAction.dayOfWeek,
         isEnabled: dayAvailabilityAction.nextEnabled,
@@ -434,7 +435,6 @@ export default function CalendarScheduling({
         return;
       }
       const payload = {
-        actorEmail: session?.email || "",
         studentNumber,
         counselorId: modalCounselorId,
         appointmentDate: modalDate,
@@ -452,7 +452,7 @@ export default function CalendarScheduling({
         await createAdminAppointment(payload);
       }
       const appointmentMonth = new Date(`${modalDate}T12:00:00+08:00`);
-      setSelectedMonth(new Date(appointmentMonth.getFullYear(), appointmentMonth.getMonth(), 1));
+      setSelectedMonth(getManilaMonthDate(appointmentMonth));
       setSelectedDate(modalDate);
       setIsModalOpen(false);
       setEditingAppointmentId("");
@@ -471,7 +471,6 @@ export default function CalendarScheduling({
         return;
       }
       await cancelAdminAppointment(appointmentId, {
-        actorEmail: session?.email || "",
         cancellationReason: cancelReason.trim(),
       });
       setCancelAppointmentId("");
@@ -484,7 +483,7 @@ export default function CalendarScheduling({
 
   async function handleConfirmAppointment(appointmentId) {
     try {
-      await confirmAdminAppointment(appointmentId, { actorEmail: session?.email || "" });
+      await confirmAdminAppointment(appointmentId);
       await refreshOverview();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to confirm appointment.");
@@ -493,7 +492,7 @@ export default function CalendarScheduling({
 
   async function handleDeclineAppointment(appointmentId) {
     try {
-      await declineAdminAppointment(appointmentId, { actorEmail: session?.email || "" });
+      await declineAdminAppointment(appointmentId);
       await refreshOverview();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to decline appointment.");
@@ -502,7 +501,7 @@ export default function CalendarScheduling({
 
   async function handleDeleteAppointment(appointmentId) {
     try {
-      await deleteAdminAppointment(appointmentId, session?.email || "");
+      await deleteAdminAppointment(appointmentId);
       setDeleteAppointmentId("");
       await refreshOverview();
     } catch (error) {
@@ -557,7 +556,6 @@ export default function CalendarScheduling({
       const payload = {
         ...peerForm,
         studentNumber,
-        actorEmail: session?.email || "",
         specialties: [],
       };
       if (editingPeerCounselorId) {
@@ -579,7 +577,7 @@ export default function CalendarScheduling({
   async function handleConfirmDeletePeerCounselor() {
     if (!pendingDeletePeerCounselor?.id) return;
     try {
-      await deleteAdminPeerCounselor(pendingDeletePeerCounselor.id, session?.email || "");
+      await deleteAdminPeerCounselor(pendingDeletePeerCounselor.id);
       setPendingDeletePeerCounselor(null);
       if (editingPeerCounselorId === pendingDeletePeerCounselor.id) {
         resetPeerForm();
@@ -675,7 +673,7 @@ export default function CalendarScheduling({
                     <button
                       type="button"
                       onClick={() => {
-                        const nextMonth = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() - 1, 1);
+                        const nextMonth = addMonthsManila(selectedMonth, -1);
                         setSelectedMonth(nextMonth);
                         setSelectedDate(toFirstDayIso(nextMonth));
                       }}
@@ -686,7 +684,7 @@ export default function CalendarScheduling({
                     <button
                       type="button"
                       onClick={() => {
-                        const nextMonth = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 1);
+                        const nextMonth = addMonthsManila(selectedMonth, 1);
                         setSelectedMonth(nextMonth);
                         setSelectedDate(toFirstDayIso(nextMonth));
                       }}

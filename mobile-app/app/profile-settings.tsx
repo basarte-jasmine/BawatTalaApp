@@ -48,8 +48,9 @@ type SettingsSection =
   | "privacy-security"
   | "recent-activity"
   | "help-support"
-  | "feedback"
   | "app-lock";
+
+type HelpSubmissionType = "FEEDBACK" | "SUPPORT";
 
 type RecentEntryItem = {
   createdAt: string;
@@ -66,10 +67,6 @@ const SCREEN_COPY: Record<SettingsSection, { subtitle: string; title: string }> 
   "app-lock": {
     title: "Journal Lock",
     subtitle: "Protect your journal with a simple 4-digit PIN. Once enabled, the journal locks right away.",
-  },
-  feedback: {
-    title: "Feedback",
-    subtitle: "Tell us what to improve and what already feels good.",
   },
   "help-support": {
     title: "Help & Support",
@@ -89,8 +86,8 @@ const SCREEN_COPY: Record<SettingsSection, { subtitle: string; title: string }> 
   },
 };
 
-const FEEDBACK_CATEGORIES = ["Bug", "Suggestion", "Question", "Support"] as const;
-const SUPPORT_EMAIL = "team@bawattalapro.online";
+const FEEDBACK_CATEGORIES = ["Suggestion", "App Experience", "Bug Report", "Other"] as const;
+const SUPPORT_CATEGORIES = ["Account Issue", "Consultation/Booking Help", "Technical Issue", "Other"] as const;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const OTP_LENGTH = 8;
 const FEEDBACK_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
@@ -105,6 +102,11 @@ const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 function isSection(value: string | undefined): value is SettingsSection {
   return Boolean(value && value in SCREEN_COPY);
+}
+
+function resolveSettingsSection(value: string | undefined): SettingsSection {
+  if (value === "feedback") return "help-support";
+  return isSection(value) ? value : "personal-details";
 }
 
 function formatDateTime(value?: string | null) {
@@ -474,7 +476,7 @@ function birthdateToPickerDate(value: string) {
 
 export default function ProfileSettingsScreen() {
   const { resetPin, section } = useLocalSearchParams<{ resetPin?: string; section?: string }>();
-  const activeSection: SettingsSection = isSection(section) ? section : "personal-details";
+  const activeSection: SettingsSection = resolveSettingsSection(section);
   const { title, subtitle } = SCREEN_COPY[activeSection];
   const { setUser, user } = useAuthSession();
   const {
@@ -506,7 +508,9 @@ export default function ProfileSettingsScreen() {
   const [notificationsTotalCount, setNotificationsTotalCount] = useState(0);
   const [appointments, setAppointments] = useState<CounselorAppointment[]>([]);
   const [appointment, setAppointment] = useState<CounselorAppointment | null>(null);
-  const [feedbackCategory, setFeedbackCategory] = useState<(typeof FEEDBACK_CATEGORIES)[number]>("Suggestion");
+  const [submissionType, setSubmissionType] = useState<HelpSubmissionType>("FEEDBACK");
+  const [feedbackCategory, setFeedbackCategory] = useState<string>("Suggestion");
+  const [feedbackSubject, setFeedbackSubject] = useState("");
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [feedbackAttachment, setFeedbackAttachment] = useState<FeedbackAttachment | null>(null);
   const [feedbackSending, setFeedbackSending] = useState(false);
@@ -773,24 +777,22 @@ export default function ProfileSettingsScreen() {
     router.push(`/profile-reset-password?returnSection=${returnSection}` as never);
   };
 
-  const openSupportEmail = useCallback(async (subject: string, body: string) => {
-    const url = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    const supported = await Linking.canOpenURL(url);
-    if (!supported) {
-      Alert.alert("Mail App Needed", `Please email us at ${SUPPORT_EMAIL}.`);
-      return;
-    }
-    await Linking.openURL(url);
-  }, []);
+  const helpCategories = submissionType === "SUPPORT" ? SUPPORT_CATEGORIES : FEEDBACK_CATEGORIES;
 
   const handleFeedback = async () => {
     if (feedbackSending) return;
+    const isSupport = submissionType === "SUPPORT";
     if (!feedbackMessage.trim()) {
-      Alert.alert("Add your feedback", "Write a short note first so we know what you want us to improve.");
+      Alert.alert(
+        isSupport ? "Add a message" : "Add your feedback",
+        isSupport
+          ? "Write a short note first so we know how to help."
+          : "Write a short note first so we know what you want us to improve.",
+      );
       return;
     }
     if (!user?.studentNumber) {
-      Alert.alert("Sign in needed", "Please sign in again before sending feedback.");
+      Alert.alert("Sign in needed", isSupport ? "Please sign in again before submitting a request." : "Please sign in again before sending feedback.");
       return;
     }
 
@@ -806,19 +808,27 @@ export default function ProfileSettingsScreen() {
           : null,
         category: feedbackCategory,
         message: feedbackMessage.trim(),
+        submissionType,
+        subject: feedbackSubject.trim() || undefined,
       });
 
       if (!result.ok) {
-        Alert.alert("Feedback not sent", result.message || "Please try again in a bit.");
+        Alert.alert(isSupport ? "Request not sent" : "Feedback not sent", result.message || "Please try again in a bit.");
         return;
       }
 
+      setFeedbackSubject("");
       setFeedbackMessage("");
       setFeedbackAttachment(null);
-      setFeedbackSuccessMessage(result.message || "Success! Your feedback was sent.");
-      Alert.alert("Feedback sent", result.message || "Thank you for helping improve Bawat Tala.");
+      setFeedbackSuccessMessage(
+        result.message || (isSupport ? "Success! Your support request was sent." : "Success! Your feedback was sent."),
+      );
+      Alert.alert(
+        isSupport ? "Request submitted" : "Feedback sent",
+        result.message || (isSupport ? "Thank you. We'll look into your request." : "Thank you for helping improve Bawat Tala."),
+      );
     } catch {
-      Alert.alert("Feedback not sent", "Please check your connection and try again.");
+      Alert.alert(isSupport ? "Request not sent" : "Feedback not sent", "Please check your connection and try again.");
     } finally {
       setFeedbackSending(false);
     }
@@ -2080,55 +2090,29 @@ return (
                 onPress={() => void Linking.openURL("tel:1553")}
               />
             </Card>
-            <Card title="Quick Actions">
-              <ActionRow
-                title="Schedule Consultation"
-                body="Set up a private session with a counselor or peer listener."
-                onPress={() => router.push("/consult")}
-              />
-              <ActionRow
-                title="Open Wellness Tools"
-                body="Use guided exercises when you need a calmer reset."
-                onPress={() => router.push("/wellness-tools")}
-                bordered
-              />
-              <ActionRow
-                title="View Notifications"
-                body="Catch reminders, follow-ups, and updates in one place."
-                onPress={() => router.push("/notifications")}
-                bordered
-              />
-            </Card>
-            <Card title="Common Questions">
-              <Faq question="How do I continue a journal entry?" answer="Open Journal, tap View Entries, and choose the entry you want to read." />
-              <Faq
-                question="What if I need support right away?"
-                answer="Call NCMH Crisis Hotline 1553 if you need immediate help. Use Consult for counseling support, or Talk to Peer when you want a lighter first step."
-                bordered
-              />
-              <Faq
-                question="Will Muni read my entries automatically?"
-                answer="Muni is artificial intelligence. It responds inside journaling flows and summaries, but it is not a psychometrician or professional care. You stay in control of what you write and finish."
-                bordered
-              />
-            </Card>
-            <PrimaryButton
-              label="Email Support"
-              onPress={() =>
-                void openSupportEmail(
-                  "Bawat Tala Help Request",
-                  `Student ID: ${user?.studentNumber || ""}\n\nHi team,\n\nI need help with: `,
-                )
-              }
-            />
-          </>
-        ) : null}
-
-        {activeSection === "feedback" ? (
-          <>
-            <Card title="Feedback Type">
+            <Card title="Type">
               <View style={styles.chips}>
-                {FEEDBACK_CATEGORIES.map((category) => (
+                {([
+                  { id: "FEEDBACK" as const, label: "Feedback" },
+                  { id: "SUPPORT" as const, label: "Support Request" },
+                ]).map((item) => (
+                  <Pressable
+                    key={item.id}
+                    style={[styles.chip, submissionType === item.id && styles.chipActive]}
+                    onPress={() => {
+                      setSubmissionType(item.id);
+                      setFeedbackCategory(item.id === "SUPPORT" ? SUPPORT_CATEGORIES[0] : FEEDBACK_CATEGORIES[0]);
+                      setFeedbackSuccessMessage("");
+                    }}
+                  >
+                    <Text style={[styles.chipText, submissionType === item.id && styles.chipTextActive]}>{item.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </Card>
+            <Card title="Category">
+              <View style={styles.chips}>
+                {helpCategories.map((category) => (
                   <Pressable
                     key={category}
                     style={[styles.chip, feedbackCategory === category && styles.chipActive]}
@@ -2139,14 +2123,30 @@ return (
                 ))}
               </View>
             </Card>
-            <Card title="Tell us more">
+            <Card title="Subject / Title">
+              <TextInput
+                value={feedbackSubject}
+                onChangeText={(value) => {
+                  setFeedbackSubject(value);
+                  setFeedbackSuccessMessage("");
+                }}
+                placeholder="Optional title for your message"
+                placeholderTextColor="#97A1AA"
+                style={styles.textInput}
+              />
+            </Card>
+            <Card title="Message">
               <TextInput
                 value={feedbackMessage}
                 onChangeText={(value) => {
                   setFeedbackMessage(value);
                   setFeedbackSuccessMessage("");
                 }}
-                placeholder="What happened, what you expected, or what you'd love to see improved."
+                placeholder={
+                  submissionType === "SUPPORT"
+                    ? "What do you need help with?"
+                    : "What happened, what you expected, or what you'd love to see improved."
+                }
                 placeholderTextColor="#97A1AA"
                 multiline
                 textAlignVertical="top"
@@ -2186,10 +2186,41 @@ return (
             {feedbackSuccessMessage ? <Text style={styles.feedbackSuccessText}>{feedbackSuccessMessage}</Text> : null}
             <PrimaryButton
               disabled={feedbackSending}
-              label={feedbackSending ? "Sending..." : "Send Feedback"}
+              label={feedbackSending ? "Sending..." : submissionType === "SUPPORT" ? "Submit Request" : "Send Feedback"}
               onPress={() => void handleFeedback()}
             />
-            <SecondaryButton label="Open Help & Support" onPress={() => router.push("/profile-settings?section=help-support")} />
+            <Card title="Quick Actions">
+              <ActionRow
+                title="Schedule Consultation"
+                body="Set up a private session with a counselor or peer listener."
+                onPress={() => router.push("/consult")}
+              />
+              <ActionRow
+                title="Open Wellness Tools"
+                body="Use guided exercises when you need a calmer reset."
+                onPress={() => router.push("/wellness-tools")}
+                bordered
+              />
+              <ActionRow
+                title="View Notifications"
+                body="Catch reminders, follow-ups, and updates in one place."
+                onPress={() => router.push("/notifications")}
+                bordered
+              />
+            </Card>
+            <Card title="Common Questions">
+              <Faq question="How do I continue a journal entry?" answer="Open Journal, tap View Entries, and choose the entry you want to read." />
+              <Faq
+                question="What if I need support right away?"
+                answer="Call NCMH Crisis Hotline 1553 if you need immediate help. Use Consult for counseling support, or Talk to Peer when you want a lighter first step."
+                bordered
+              />
+              <Faq
+                question="Will Muni read my entries automatically?"
+                answer="Muni is artificial intelligence. It responds inside journaling flows and summaries, but it is not a psychometrician or professional care. You stay in control of what you write and finish."
+                bordered
+              />
+            </Card>
           </>
         ) : null}
 

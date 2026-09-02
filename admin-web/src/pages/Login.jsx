@@ -22,7 +22,10 @@ export default function Login({ onLogin }) {
     if (oauthStatus === "success") {
       fetchAdminSession()
         .then((data) => {
-          onLogin(data?.admin || null);
+          if (!data?.admin) {
+            throw new Error("Admin session was not established.");
+          }
+          onLogin(data.admin);
           navigate("/dashboard", { replace: true });
         })
         .catch(() => {
@@ -48,17 +51,17 @@ export default function Login({ onLogin }) {
 
     try {
       setSubmitting(true);
-      const data = await adminLogin({
+      await adminLogin({
         email: email.trim(),
         password,
       });
 
-      onLogin(data?.admin || {
-        email: email.trim(),
-        name: "",
-        pictureUrl: "",
-      });
-      navigate("/dashboard");
+      const sessionData = await fetchAdminSession();
+      if (!sessionData?.admin) {
+        throw new Error("Login succeeded but the admin session could not be verified.");
+      }
+      onLogin(sessionData.admin);
+      navigate("/dashboard", { replace: true });
     } catch (requestError) {
       setError(requestError.message || "Invalid email or password. Please try again.");
     } finally {

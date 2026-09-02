@@ -1,7 +1,49 @@
-const API_BASE_URL = import.meta.env.VITE_ADMIN_API_BASE_URL || "http://localhost:4002";
+const ADMIN_SESSION_STORAGE_KEY = "bt_admin_session_snapshot";
+function resolveAdminApiBaseUrl() {
+  const configured = String(import.meta.env.VITE_ADMIN_API_BASE_URL || "").trim().replace(/\/$/, "");
+  if (!configured) return "";
+  try {
+    const parsed = new URL(configured);
+    if (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") {
+      return "";
+    }
+    return configured;
+  } catch {
+    return configured.startsWith("/") ? "" : configured;
+  }
+}
 
+const API_BASE_URL = resolveAdminApiBaseUrl();
 export function getAdminApiUrl(path = "") {
   return `${API_BASE_URL}${path}`;
+}
+
+function omitActorEmail(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return payload || {};
+  }
+  const { actorEmail, ...rest } = payload;
+  return rest;
+}
+let adminUnauthorizedHandler = null;
+export function setAdminUnauthorizedHandler(handler) {
+  adminUnauthorizedHandler = typeof handler === "function" ? handler : null;
+}
+
+function forgetAdminSessionSnapshot() {
+  try {
+    window.localStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
+  } catch {
+    // Ignore storage failures; the in-memory session is still cleared by callers.
+  }
+}
+
+function redirectToAdminLogin() {
+  if (typeof window === "undefined") return;
+  forgetAdminSessionSnapshot();
+  if (!window.location.pathname.startsWith("/login")) {
+    window.location.assign("/login");
+  }
 }
 
 async function request(path, options = {}) {
@@ -13,8 +55,21 @@ async function request(path, options = {}) {
     credentials: "include",
     ...options,
   });
-
   const data = await response.json().catch(() => ({}));
+  const skipAuthRedirect = String(path || "").startsWith("/api/admin/login") || String(path || "").startsWith("/api/admin/forgot-password");
+  if (response.status === 401) {
+    forgetAdminSessionSnapshot();
+    if (!skipAuthRedirect) {
+      if (adminUnauthorizedHandler) {
+        adminUnauthorizedHandler();
+      } else {
+        redirectToAdminLogin();
+      }
+    }
+    const error = new Error(data?.message || (skipAuthRedirect ? "Request failed." : "Session expired. Please sign in again."));
+    error.status = 401;
+    throw error;
+  }
   if (!response.ok) {
     const error = new Error(data?.message || "Request failed.");
     error.status = response.status;
@@ -26,7 +81,7 @@ async function request(path, options = {}) {
 export async function adminLogin(payload) {
   return request("/api/admin/login", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
@@ -43,28 +98,28 @@ export async function adminLogout() {
 export async function sendAdminResetCode(payload) {
   return request("/api/admin/forgot-password/send-code", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
 export async function resendAdminResetCode(payload) {
   return request("/api/admin/forgot-password/resend-code", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
 export async function verifyAdminResetCode(payload) {
   return request("/api/admin/forgot-password/verify-code", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
 export async function resetAdminPassword(payload) {
   return request("/api/admin/forgot-password/reset", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
@@ -91,6 +146,18 @@ export async function fetchAdminRiskFlags() {
   return request("/api/admin/dashboard/risk-flags");
 }
 
+function normalizeAdminFeedbackItem(item) {
+  if (!item || typeof item !== "object") return item;
+  const rawType = String(item.submissionType || item.type || item.kind || "").trim().toUpperCase();
+  const submissionType = rawType === "SUPPORT" ? "SUPPORT" : "FEEDBACK";
+  return {
+    ...item,
+    submissionType,
+    category: item.category || item.topic || "",
+    message: item.message || item.body || item.content || "",
+  };
+}
+
 export async function fetchAdminFeedbacks(params = {}) {
   const searchParams = new URLSearchParams();
   if (params.status && params.status !== "ALL") {
@@ -100,20 +167,28 @@ export async function fetchAdminFeedbacks(params = {}) {
     searchParams.set("search", params.search);
   }
   const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
-  return request(`/api/admin/feedbacks${suffix}`);
+  const data = await request(`/api/admin/feedbacks${suffix}`);
+  if (Array.isArray(data?.feedbacks)) {
+    return { ...data, feedbacks: data.feedbacks.map(normalizeAdminFeedbackItem) };
+  }
+  return data;
 }
 
 export async function updateAdminFeedback(feedbackId, payload) {
-  return request(`/api/admin/feedbacks/${encodeURIComponent(feedbackId)}`, {
+  const data = await request(`/api/admin/feedbacks/${encodeURIComponent(feedbackId)}`, {
     method: "PATCH",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
+  if (data?.feedback) {
+    return { ...data, feedback: normalizeAdminFeedbackItem(data.feedback) };
+  }
+  return data;
 }
 
 export async function updateAdminJournalFlag(entryId, payload) {
   return request(`/api/admin/journal-entries/${encodeURIComponent(entryId)}/flag`, {
     method: "PATCH",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
@@ -124,21 +199,21 @@ export async function fetchRiskTriggers() {
 export async function createRiskTrigger(payload) {
   return request("/api/admin/risk-triggers", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
 export async function updateRiskTrigger(triggerId, payload) {
   return request(`/api/admin/risk-triggers/${triggerId}`, {
     method: "PATCH",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
 export async function deleteRiskTrigger(triggerId, payload = {}) {
   return request(`/api/admin/risk-triggers/${triggerId}`, {
     method: "DELETE",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
@@ -182,14 +257,14 @@ export async function fetchAdminStudentProfile(studentNumber) {
 export async function openAdminStudentJournalEntry(studentNumber, entryId, pin) {
   return request(`/api/admin/students/${encodeURIComponent(studentNumber)}/journal-entries/${encodeURIComponent(entryId)}/open`, {
     method: "POST",
-    body: JSON.stringify({ pin }),
+    body: JSON.stringify({ pin: String(pin || "") }),
   });
 }
 
 export async function sendAdminStudentNotification(studentNumber, payload) {
   return request(`/api/admin/students/${encodeURIComponent(studentNumber)}/notify`, {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
@@ -206,47 +281,42 @@ export async function fetchAdminRoleAssignments() {
   return request("/api/admin/roles");
 }
 
-export async function fetchAdminSettings(email) {
-  const params = new URLSearchParams();
-  if (email) {
-    params.set("email", email);
-  }
-  const suffix = params.toString() ? `?${params.toString()}` : "";
-  return request(`/api/admin/settings${suffix}`);
+export async function fetchAdminSettings() {
+  return request("/api/admin/settings");
 }
 
 export async function updateAdminSettings(payload) {
   return request("/api/admin/settings", {
     method: "PATCH",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
 export async function createAdminRoleMember(payload) {
   return request("/api/admin/roles", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
 export async function verifyAdminRoleMemberCode(payload) {
   return request("/api/admin/roles/verify-code", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
 export async function resendAdminRoleMemberCode(payload) {
   return request("/api/admin/roles/resend-code", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
 export async function updateAdminRoleMember(memberId, payload) {
   return request(`/api/admin/roles/${memberId}`, {
     method: "PATCH",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
@@ -259,8 +329,6 @@ export async function deleteAdminRoleMember(memberId) {
 export async function fetchGoogleCalendarAuthUrl() {
   return request("/api/admin/appointments/google/auth-url");
 }
-
-
 
 export async function fetchAdminGoogleOAuthUrl() {
   return request("/api/admin/oauth/google/start");
@@ -295,92 +363,88 @@ export async function fetchAppointmentAvailability({ counselorId, month, student
   return request(`/api/appointments/availability?${params.toString()}`);
 }
 
-export async function fetchAdminNotifications(email) {
-  const params = new URLSearchParams();
-  if (email) {
-    params.set("email", email);
-  }
-  const suffix = params.toString() ? `?${params.toString()}` : "";
-  return request(`/api/admin/notifications${suffix}`);
+export async function fetchAdminNotifications() {
+  return request("/api/admin/notifications");
 }
 
-export async function markAdminNotificationRead(notificationId, email) {
+export async function markAdminNotificationRead(notificationId) {
   return request(`/api/admin/notifications/${notificationId}/read`, {
     method: "POST",
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({}),
   });
 }
 
-export async function markAllAdminNotificationsRead(email) {
+export async function markAllAdminNotificationsRead() {
   return request("/api/admin/notifications/read-all", {
     method: "POST",
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({}),
   });
 }
 
 export async function updateAdminAvailability(payload) {
   return request("/api/appointments/admin/availability", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
 export async function updateAdminDayAvailability(payload) {
   return request("/api/appointments/admin/availability/day", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
 export async function createAdminAppointment(payload) {
-  return request("/api/appointments/book", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  try {
+    return await request("/api/appointments/admin/book", {
+      method: "POST",
+      body: JSON.stringify(omitActorEmail(payload)),
+    });
+  } catch (error) {
+    if (error?.status === 404) {
+      const missing = new Error("Admin booking is not available (POST /api/appointments/admin/book returned 404). Student booking cannot be used from this panel.");
+      missing.status = 404;
+      throw missing;
+    }
+    throw error;
+  }
 }
 
 export async function bookAdminAppointment(payload) {
-  return request("/api/appointments/book", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  return createAdminAppointment(payload);
 }
 
 export async function updateAdminAppointment(appointmentId, payload) {
   return request(`/api/appointments/admin/${appointmentId}/update`, {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
-export async function confirmAdminAppointment(appointmentId, payload) {
+export async function confirmAdminAppointment(appointmentId, payload = {}) {
   return request(`/api/appointments/admin/${appointmentId}/confirm`, {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
-export async function declineAdminAppointment(appointmentId, payload) {
+export async function declineAdminAppointment(appointmentId, payload = {}) {
   return request(`/api/appointments/admin/${appointmentId}/decline`, {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
-export async function cancelAdminAppointment(appointmentId, payload) {
+export async function cancelAdminAppointment(appointmentId, payload = {}) {
   return request(`/api/appointments/admin/${appointmentId}/cancel`, {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
-export async function deleteAdminAppointment(appointmentId, actorEmail) {
-  const params = new URLSearchParams();
-  if (actorEmail) {
-    params.set("actorEmail", actorEmail);
-  }
-  const suffix = params.toString() ? `?${params.toString()}` : "";
-  return request(`/api/appointments/admin/${appointmentId}${suffix}`, {
+export async function deleteAdminAppointment(appointmentId) {
+  return request(`/api/appointments/admin/${appointmentId}`, {
     method: "DELETE",
   });
 }
@@ -392,24 +456,19 @@ export async function fetchAdminPeerCounselors() {
 export async function createAdminPeerCounselor(payload) {
   return request("/api/appointments/admin/peer-counselors", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
 export async function updateAdminPeerCounselor(peerCounselorId, payload) {
   return request(`/api/appointments/admin/peer-counselors/${peerCounselorId}`, {
     method: "PATCH",
-    body: JSON.stringify(payload),
+    body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
-export async function deleteAdminPeerCounselor(peerCounselorId, actorEmail) {
-  const params = new URLSearchParams();
-  if (actorEmail) {
-    params.set("actorEmail", actorEmail);
-  }
-  const suffix = params.toString() ? `?${params.toString()}` : "";
-  return request(`/api/appointments/admin/peer-counselors/${peerCounselorId}${suffix}`, {
+export async function deleteAdminPeerCounselor(peerCounselorId) {
+  return request(`/api/appointments/admin/peer-counselors/${peerCounselorId}`, {
     method: "DELETE",
   });
 }

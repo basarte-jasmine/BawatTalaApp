@@ -19,16 +19,29 @@ const corsOrigin = process.env.CORS_ORIGIN || "*";
 const allowCredentials = true;
 const isProduction = String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
 const adminSessionDays = Number(process.env.ADMIN_SESSION_DAYS || 30);
+const localAdminOrigins = ["http://localhost:5173", "http://127.0.0.1:5173"];
 
 const parsedCorsOrigin =
   corsOrigin === "*"
     ? true
-    : corsOrigin
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
+    : Array.from(
+        new Set(
+          corsOrigin
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean)
+            .concat(localAdminOrigins),
+        ),
+      );
 
-app.set("trust proxy", 1);
+// Local HTTP must not force trust proxy = 1. With NODE_ENV=production, cookie-session
+// used secure:true; cookies then throws on HTTP and Set-Cookie is swallowed.
+const trustProxyRaw = String(process.env.TRUST_PROXY ?? "").trim();
+if (trustProxyRaw && trustProxyRaw !== "0" && trustProxyRaw.toLowerCase() !== "false") {
+  const trustProxyNumber = Number(trustProxyRaw);
+  app.set("trust proxy", Number.isFinite(trustProxyNumber) ? trustProxyNumber : trustProxyRaw);
+}
+
 app.use(
   cors({
     origin: parsedCorsOrigin,
@@ -41,10 +54,22 @@ app.use(
     keys: [process.env.COOKIE_SESSION_SECRET || "dev-cookie-secret"],
     maxAge: adminSessionDays * 24 * 60 * 60 * 1000,
     httpOnly: true,
-    sameSite: isProduction ? "none" : "lax",
-    secure: isProduction,
+    sameSite: "lax",
+    secure: false,
+    rolling: true,
   }),
 );
+app.use((req, _res, next) => {
+  const encrypted = Boolean(req.secure || req.protocol === "https");
+  if (isProduction && encrypted) {
+    req.sessionOptions.secure = true;
+    req.sessionOptions.sameSite = "none";
+  } else {
+    req.sessionOptions.secure = false;
+    req.sessionOptions.sameSite = "lax";
+  }
+  next();
+});
 app.use(express.json({ limit: "15mb" }));
 
 app.get("/health", (_req, res) => {
@@ -54,8 +79,13 @@ app.get("/health", (_req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/appointments", appointmentRoutes);
 app.use("/api/inbox", (req, res, next) => {
-  const query = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
-  req.url = "/notifications" + query;
+  const raw = String(req.url || "/");
+  const qIndex = raw.indexOf("?");
+  const pathPart = ((qIndex >= 0 ? raw.slice(0, qIndex) : raw) || "/");
+  const query = qIndex >= 0 ? raw.slice(qIndex) : "";
+  const normalizedPath = pathPart.startsWith("/") ? pathPart : `/${pathPart}`;
+  const rest = normalizedPath === "/" ? "" : normalizedPath;
+  req.url = `/notifications${rest}${query}`;
   return appointmentRoutes(req, res, next);
 });
 app.use("/api/checkins", checkinRoutes);

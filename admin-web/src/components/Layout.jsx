@@ -14,7 +14,7 @@ export default function Layout({ children, title, subtitle, onLogout, session, m
   return (
     <div className={`h-screen overflow-hidden bg-white ${preferenceClassName}`}>
       <div className="flex h-full overflow-hidden bg-white">
-        <Sidebar onLogout={onLogout} isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
+        <Sidebar onLogout={onLogout} session={session} isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
 
         {menuOpen ? (
           <button

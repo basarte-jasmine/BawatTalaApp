@@ -24,6 +24,7 @@ import {
 } from "../lib/admin-api";
 import { maskStudentNumber, useAdminPreferences } from "../lib/admin-preferences";
 import Modal from "./Modal";
+import { getAdminRoleLabel, isHeadCounselor } from "../lib/admin-roles";
 
 const NOTIFICATION_REFRESH_MS = 60000;
 const EMPTY_GLOBAL_SEARCH_RESULTS = {
@@ -40,7 +41,7 @@ const GLOBAL_SEARCH_PAGES = [
   { path: "/users", label: "Student Directory", group: "Page", icon: Users, keywords: ["students", "users", "directory", "profiles"] },
   { path: "/appointments", label: "Guidance Scheduling", group: "Page", icon: CalendarDays, keywords: ["appointments", "calendar", "schedule", "guidance", "sessions"] },
   { path: "/peer-counselors", label: "Peer Counselors", group: "Page", icon: GraduationCap, keywords: ["peer", "counselors", "advisers"] },
-  { path: "/feedbacks", label: "Feedbacks", group: "Page", icon: MessageSquare, keywords: ["feedbacks", "feedback", "comments"] },
+  { path: "/feedbacks", label: "Help & Support", group: "Page", icon: MessageSquare, keywords: ["feedbacks", "feedback", "comments", "support", "tickets", "requests", "help"] },
   { path: "/reports", label: "Reports", group: "Page", icon: BarChart3, keywords: ["reports", "export", "analytics"] },
   { path: "/roles", label: "Role Assignments", group: "System", icon: ShieldCheck, keywords: ["roles", "admins", "counselors", "permissions"] },
   { path: "/risk-triggers", label: "Risk Triggers", group: "System", icon: Flag, keywords: ["triggers", "risk words", "keywords", "phrases"] },
@@ -61,7 +62,7 @@ function getAdminProfile(session) {
   return {
     initials,
     name,
-    role: session?.roleLabel || (String(session?.role || "").toUpperCase() === "HEAD_COUNSELOR" ? "Head Counselor" : "Counselor"),
+    role: getAdminRoleLabel(session),
     pictureUrl: session?.pictureUrl || "",
   };
 }
@@ -182,11 +183,13 @@ function formatSearchDate(value) {
   return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function getPageSearchResults(query) {
+function getPageSearchResults(query, session) {
   const normalized = String(query || "").trim().toLowerCase();
   if (normalized.length < 2) return [];
+  const head = isHeadCounselor(session);
 
   return GLOBAL_SEARCH_PAGES.filter((item) => {
+    if (!head && ["/roles", "/risk-triggers"].includes(item.path)) return false;
     const haystack = [item.label, item.group, ...item.keywords].join(" ").toLowerCase();
     return haystack.includes(normalized);
   });
@@ -238,12 +241,12 @@ function GlobalSearchResultButton({ icon: Icon, title, meta, detail, badge, onCl
   );
 }
 
-function useAdminNotifications(adminEmail) {
+function useAdminNotifications(hasSession) {
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notifications, setNotifications] = useState([]);
 
   useEffect(() => {
-    if (!adminEmail) {
+    if (!hasSession) {
       setNotifications([]);
       return undefined;
     }
@@ -252,7 +255,7 @@ function useAdminNotifications(adminEmail) {
     async function loadNotifications() {
       try {
         setNotificationsLoading(true);
-        const data = await fetchAdminNotifications(adminEmail);
+        const data = await fetchAdminNotifications();
         if (isMounted) {
           setNotifications(Array.isArray(data?.notifications) ? data.notifications : []);
         }
@@ -276,7 +279,7 @@ function useAdminNotifications(adminEmail) {
       isMounted = false;
       clearInterval(intervalId);
     };
-  }, [adminEmail]);
+  }, [hasSession]);
 
   return {
     notifications,
@@ -292,6 +295,7 @@ export default function Header({
   session,
 }) {
   const navigate = useNavigate();
+  const isHead = isHeadCounselor(session);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [globalSearchTerm, setGlobalSearchTerm] = useState("");
   const [globalSearchResults, setGlobalSearchResults] = useState(EMPTY_GLOBAL_SEARCH_RESULTS);
@@ -308,7 +312,7 @@ export default function Header({
   const shouldMaskStudentNumbers = Boolean(preferences.privacy.maskStudentNumbers);
   const adminProfile = getAdminProfile(session);
   const adminEmail = String(session?.email || "").trim().toLowerCase();
-  const { notifications, notificationsLoading, setNotifications } = useAdminNotifications(adminEmail);
+  const { notifications, notificationsLoading, setNotifications } = useAdminNotifications(Boolean(adminEmail));
   const filteredNotifications = useMemo(() => {
     const visibleNotifications = preferences.notifications.cancellationAlerts
       ? notifications
@@ -323,16 +327,20 @@ export default function Header({
     () => filteredNotifications.filter((item) => !item.isRead).length,
     [filteredNotifications],
   );
-  const pageSearchResults = useMemo(() => getPageSearchResults(globalSearchTerm), [globalSearchTerm]);
+  const pageSearchResults = useMemo(() => getPageSearchResults(globalSearchTerm, session), [globalSearchTerm, session]);
+  const visibleTeamSearch = useMemo(
+    () => (isHead ? globalSearchResults.team : globalSearchResults.team.filter((member) => member.kind === "Peer Counselor")),
+    [globalSearchResults.team, isHead],
+  );
   const globalSearchResultCount = useMemo(
     () =>
       pageSearchResults.length +
       globalSearchResults.students.length +
       globalSearchResults.entries.length +
       globalSearchResults.appointments.length +
-      globalSearchResults.team.length +
-      globalSearchResults.riskTriggers.length,
-    [globalSearchResults, pageSearchResults],
+      visibleTeamSearch.length +
+      (isHead ? globalSearchResults.riskTriggers.length : 0),
+    [globalSearchResults, isHead, pageSearchResults, visibleTeamSearch],
   );
 
   useEffect(() => {
@@ -446,7 +454,7 @@ export default function Header({
 
     if (!item.isRead && adminEmail) {
       try {
-        await markAdminNotificationRead(item.id, adminEmail);
+        await markAdminNotificationRead(item.id);
         setNotifications((current) =>
           current.map((entry) => (entry.id === item.id ? { ...entry, isRead: true } : entry)),
         );
@@ -470,7 +478,7 @@ export default function Header({
     }
 
     try {
-      await markAllAdminNotificationsRead(adminEmail);
+      await markAllAdminNotificationsRead();
       setNotifications((current) => current.map((item) => ({ ...item, isRead: true })));
       setNotificationError("");
     } catch (error) {
@@ -718,9 +726,9 @@ export default function Header({
                   )}
                 </GlobalSearchSection>
 
-                <GlobalSearchSection title="Team" count={globalSearchResults.team.length}>
-                  {globalSearchResults.team.length ? (
-                    globalSearchResults.team.map((member) => (
+                <GlobalSearchSection title="Team" count={visibleTeamSearch.length}>
+                  {visibleTeamSearch.length ? (
+                    visibleTeamSearch.map((member) => (
                       <GlobalSearchResultButton
                         key={`${member.kind}-${member.id}`}
                         icon={ShieldCheck}
@@ -774,6 +782,7 @@ export default function Header({
                   )}
                 </GlobalSearchSection>
 
+                {isHead ? (
                 <GlobalSearchSection title="Risk Triggers" count={globalSearchResults.riskTriggers.length}>
                   {globalSearchResults.riskTriggers.length ? (
                     globalSearchResults.riskTriggers.map((trigger) => (
@@ -790,6 +799,7 @@ export default function Header({
                     <GlobalSearchEmpty>No risk triggers matched.</GlobalSearchEmpty>
                   )}
                 </GlobalSearchSection>
+                ) : null}
               </div>
             </div>
           )}

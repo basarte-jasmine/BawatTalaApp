@@ -1,3 +1,4 @@
+import Toast from "../components/Toast";
 import { useEffect, useMemo, useState } from "react";
 import { Image, MessageSquare, RefreshCw, Search } from "lucide-react";
 import Layout from "../components/Layout";
@@ -9,6 +10,12 @@ const STATUS_FILTERS = [
   { id: "IN_PROGRESS", label: "In Progress" },
   { id: "REVIEWED", label: "Reviewed" },
   { id: "RESOLVED", label: "Resolved" },
+];
+
+const TYPE_FILTERS = [
+  { id: "ALL", label: "All" },
+  { id: "SUPPORT", label: "Support Requests" },
+  { id: "FEEDBACK", label: "User Feedback" },
 ];
 
 const STATUS_LABELS = {
@@ -23,6 +30,31 @@ const PRIORITY_LABELS = {
   NORMAL: "Normal",
   HIGH: "High",
 };
+
+function getSubmissionType(item) {
+  const raw = String(item?.submissionType || item?.type || item?.kind || "").trim().toUpperCase();
+  if (raw === "SUPPORT") return "SUPPORT";
+  return "FEEDBACK";
+}
+
+function getTypeBadge(item) {
+  if (getSubmissionType(item) === "SUPPORT") {
+    return {
+      label: "Support Request",
+      className: "border-sky-200 bg-sky-50 text-sky-800",
+    };
+  }
+  return {
+    label: "Feedback",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  };
+}
+
+function getPriorityClasses(priority) {
+  if (priority === "HIGH") return "border-rose-200 bg-rose-50 text-rose-700";
+  if (priority === "LOW") return "border-slate-200 bg-slate-50 text-slate-600";
+  return "border-[#dce8d2] bg-[#f8fbf4] text-[#4d6c58]";
+}
 
 function formatDateTime(value) {
   if (!value) return "Not available";
@@ -44,15 +76,10 @@ function getStatusClasses(status) {
   return "border-sky-200 bg-sky-50 text-sky-700";
 }
 
-function getActorPayload(session) {
-  return {
-    actorEmail: session?.email || "",
-  };
-}
-
 export default function Feedbacks({ onLogout, session }) {
   const [feedbacks, setFeedbacks] = useState([]);
   const [activeStatus, setActiveStatus] = useState("ALL");
+  const [activeType, setActiveType] = useState("ALL");
   const [query, setQuery] = useState("");
   const [drafts, setDrafts] = useState({});
   const [isLoading, setIsLoading] = useState(true);
@@ -94,14 +121,19 @@ export default function Feedbacks({ onLogout, session }) {
     return () => window.clearTimeout(handle);
   }, [activeStatus, query]);
 
+  const visibleFeedbacks = useMemo(() => {
+    if (activeType === "ALL") return feedbacks;
+    return feedbacks.filter((item) => getSubmissionType(item) === activeType);
+  }, [activeType, feedbacks]);
+
   const stats = useMemo(() => {
     return {
-      total: feedbacks.length,
-      newItems: feedbacks.filter((item) => item.status === "NEW").length,
-      withImages: feedbacks.filter((item) => item.attachment).length,
-      resolved: feedbacks.filter((item) => item.status === "RESOLVED").length,
+      total: visibleFeedbacks.length,
+      newItems: visibleFeedbacks.filter((item) => item.status === "NEW").length,
+      withImages: visibleFeedbacks.filter((item) => item.attachment).length,
+      resolved: visibleFeedbacks.filter((item) => item.status === "RESOLVED").length,
     };
-  }, [feedbacks]);
+  }, [visibleFeedbacks]);
 
   function updateDraft(feedbackId, updates) {
     setDrafts((current) => ({
@@ -118,7 +150,6 @@ export default function Feedbacks({ onLogout, session }) {
     try {
       setSavingId(feedback.id);
       const data = await updateAdminFeedback(feedback.id, {
-        ...getActorPayload(session),
         adminNotes: draft.adminNotes || "",
         priority: draft.priority || feedback.priority || "NORMAL",
         status: draft.status || feedback.status || "NEW",
@@ -143,8 +174,8 @@ export default function Feedbacks({ onLogout, session }) {
 
   return (
     <Layout
-      title="Feedbacks"
-      subtitle="Review app feedback, screenshots, bugs, and suggestions sent by students."
+      title="Help & Support Requests / Feedback"
+      subtitle="Review help tickets and user feedback, including screenshots, bugs, and suggestions sent by students."
       onLogout={onLogout}
       session={session}
     >
@@ -154,11 +185,7 @@ export default function Feedbacks({ onLogout, session }) {
             {errorMessage}
           </div>
         ) : null}
-        {successMessage ? (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-            {successMessage}
-          </div>
-        ) : null}
+        <Toast message={successMessage} onClose={() => setSuccessMessage("")} />
 
         <div className="grid gap-4 md:grid-cols-4">
           <div className="rounded-2xl border border-[#dce8d2] bg-white p-4">
@@ -181,21 +208,39 @@ export default function Feedbacks({ onLogout, session }) {
 
         <div className="rounded-2xl border border-[#dce8d2] bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap gap-2">
-              {STATUS_FILTERS.map((filter) => (
-                <button
-                  key={filter.id}
-                  type="button"
-                  onClick={() => setActiveStatus(filter.id)}
-                  className={`rounded-full border px-4 py-2 text-sm font-semibold ${
-                    activeStatus === filter.id
-                      ? "border-[#229365] bg-[#229365] text-white"
-                      : "border-[#dce8d2] bg-white text-[#229365] hover:bg-[#eef8e9]"
-                  }`}
-                >
-                  {filter.label}
-                </button>
-              ))}
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                {TYPE_FILTERS.map((filter) => (
+                  <button
+                    key={filter.id}
+                    type="button"
+                    onClick={() => setActiveType(filter.id)}
+                    className={`rounded-full border px-4 py-2 text-sm font-semibold ${
+                      activeType === filter.id
+                        ? "border-[#229365] bg-[#229365] text-white"
+                        : "border-[#dce8d2] bg-white text-[#229365] hover:bg-[#eef8e9]"
+                    }`}
+                  >
+                    {filter.label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {STATUS_FILTERS.map((filter) => (
+                  <button
+                    key={filter.id}
+                    type="button"
+                    onClick={() => setActiveStatus(filter.id)}
+                    className={`rounded-full border px-4 py-2 text-sm font-semibold ${
+                      activeStatus === filter.id
+                        ? "border-[#229365] bg-[#229365] text-white"
+                        : "border-[#dce8d2] bg-white text-[#229365] hover:bg-[#eef8e9]"
+                    }`}
+                  >
+                    {filter.label}
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
               <label className="flex min-w-[260px] items-center gap-2 rounded-2xl border border-[#dce8d2] bg-[#f8fbf4] px-3 py-2">
@@ -221,22 +266,26 @@ export default function Feedbacks({ onLogout, session }) {
 
         {isLoading ? (
           <div className="rounded-2xl border border-[#dce8d2] bg-white p-8 text-center text-sm font-semibold text-admin-muted">
-            Loading feedbacks...
+            Loading requests...
           </div>
-        ) : feedbacks.length ? (
+        ) : visibleFeedbacks.length ? (
           <div className="space-y-4">
-            {feedbacks.map((feedback) => {
+            {visibleFeedbacks.map((feedback) => {
               const draft = drafts[feedback.id] || {};
+              const typeBadge = getTypeBadge(feedback);
               return (
                 <article key={feedback.id} className="rounded-2xl border border-[#dce8d2] bg-white p-5 shadow-sm">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0 flex-1">
                       <div className="mb-3 flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full border px-3 py-1 text-xs font-bold ${typeBadge.className}`}>
+                          {typeBadge.label}
+                        </span>
                         <span className={`rounded-full border px-3 py-1 text-xs font-bold ${getStatusClasses(feedback.status)}`}>
                           {STATUS_LABELS[feedback.status] || feedback.status}
                         </span>
-                        <span className="rounded-full border border-[#dce8d2] bg-[#f8fbf4] px-3 py-1 text-xs font-bold text-[#4d6c58]">
-                          {feedback.category}
+                        <span className={`rounded-full border px-3 py-1 text-xs font-bold ${getPriorityClasses(feedback.priority)}`}>
+                          {PRIORITY_LABELS[feedback.priority] || feedback.priority || "Normal"}
                         </span>
                         <span className="text-xs font-semibold text-admin-muted">{formatDateTime(feedback.createdAt)}</span>
                       </div>
@@ -248,6 +297,9 @@ export default function Feedbacks({ onLogout, session }) {
                         {feedback.studentNumber}
                         {feedback.studentEmail ? ` · ${feedback.studentEmail}` : ""}
                       </p>
+                      {feedback.category ? (
+                        <p className="mt-2 text-sm text-admin-muted">{feedback.category}</p>
+                      ) : null}
                       <p className="mt-4 whitespace-pre-wrap rounded-2xl bg-[#f8fbf4] p-4 text-sm leading-6 text-[#334155]">
                         {feedback.message}
                       </p>
@@ -325,8 +377,8 @@ export default function Feedbacks({ onLogout, session }) {
         ) : (
           <div className="rounded-2xl border border-dashed border-[#cdddc2] bg-white p-10 text-center">
             <MessageSquare className="mx-auto h-10 w-10 text-[#8aa083]" />
-            <h2 className="mt-3 text-lg font-bold text-admin-ink">No feedback found</h2>
-            <p className="mt-1 text-sm text-admin-muted">New app feedback will appear here once students send it.</p>
+            <h2 className="mt-3 text-lg font-bold text-admin-ink">No requests found</h2>
+            <p className="mt-1 text-sm text-admin-muted">Help & Support requests and user feedback will appear here once students send them.</p>
           </div>
         )}
       </div>

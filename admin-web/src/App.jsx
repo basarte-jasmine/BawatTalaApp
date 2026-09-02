@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { BrowserRouter as Router, Navigate, Route, Routes } from "react-router-dom";
-import { adminLogout, fetchAdminSession } from "./lib/admin-api";
+import { adminLogout, fetchAdminSession, setAdminUnauthorizedHandler } from "./lib/admin-api";
 import { AdminPreferencesProvider } from "./lib/admin-preferences";
+import { isHeadCounselor } from "./lib/admin-roles";
 import AnalyticsReports from "./pages/AnalyticsReports";
 import CalendarScheduling from "./pages/CalendarScheduling";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -14,18 +15,7 @@ import RiskTriggers from "./pages/RiskTriggers";
 import RoleAssignments from "./pages/RoleAssignments";
 import Settings from "./pages/Settings";
 import StudentDirectory from "./pages/StudentDirectory";
-
 const ADMIN_SESSION_STORAGE_KEY = "bt_admin_session_snapshot";
-
-function readStoredAdminSession() {
-  try {
-    const stored = window.localStorage.getItem(ADMIN_SESSION_STORAGE_KEY);
-    return stored ? JSON.parse(stored) : null;
-  } catch {
-    return null;
-  }
-}
-
 function rememberAdminSession(nextSession) {
   if (!nextSession?.email) return;
   window.localStorage.setItem(ADMIN_SESSION_STORAGE_KEY, JSON.stringify(nextSession));
@@ -42,14 +32,31 @@ function ProtectedRoute({ session, children }) {
   return children;
 }
 
-export default function App() {
-  const [session, setSession] = useState(() => readStoredAdminSession());
-  const [sessionChecked, setSessionChecked] = useState(() => Boolean(readStoredAdminSession()));
+function HeadRoute({ session, children }) {
+  if (!session) {
+    return <Navigate to="/login" replace />;
+  }
+  if (!isHeadCounselor(session)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return children;
+}
 
+export default function App() {
+  const [session, setSession] = useState(null);
+  const [sessionChecked, setSessionChecked] = useState(false);
+  useEffect(() => {
+    setAdminUnauthorizedHandler(() => {
+      setSession(null);
+      forgetAdminSession();
+      if (!window.location.pathname.startsWith("/login")) {
+        window.location.assign("/login");
+      }
+    });
+    return () => setAdminUnauthorizedHandler(null);
+  }, []);
   useEffect(() => {
     let isMounted = true;
-    const storedSession = readStoredAdminSession();
-
     async function loadSession() {
       try {
         const data = await fetchAdminSession();
@@ -63,25 +70,19 @@ export default function App() {
         }
       } catch (error) {
         if (!isMounted) return;
-        if (error?.status === 401) {
-          setSession(null);
-          forgetAdminSession();
-        } else if (storedSession) {
-          setSession(storedSession);
-        }
+        setSession(null);
+        forgetAdminSession();
       } finally {
         if (isMounted) {
           setSessionChecked(true);
         }
       }
     }
-
     void loadSession();
     return () => {
       isMounted = false;
     };
   }, []);
-
   const authActions = useMemo(
     () => ({
       login(nextSession) {
@@ -100,7 +101,6 @@ export default function App() {
     }),
     [],
   );
-
   if (!sessionChecked) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#f4f6ef] text-sm font-semibold text-admin-muted">
@@ -108,7 +108,6 @@ export default function App() {
       </div>
     );
   }
-
   return (
     <AdminPreferencesProvider session={session}>
       <Router>
@@ -177,17 +176,17 @@ export default function App() {
         <Route
           path="/roles"
           element={
-            <ProtectedRoute session={session}>
+            <HeadRoute session={session}>
               <RoleAssignments session={session} onLogout={authActions.logout} />
-            </ProtectedRoute>
+            </HeadRoute>
           }
         />
         <Route
           path="/risk-triggers"
           element={
-            <ProtectedRoute session={session}>
+            <HeadRoute session={session}>
               <RiskTriggers session={session} onLogout={authActions.logout} />
-            </ProtectedRoute>
+            </HeadRoute>
           }
         />
         <Route

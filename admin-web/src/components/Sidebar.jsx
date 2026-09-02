@@ -16,6 +16,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import adminLogo from "../assets/BT_Logo.png";
 import { fetchAdminRiskFlags } from "../lib/admin-api";
 import ConfirmActionModal from "./ConfirmActionModal";
+import { isHeadCounselor } from "../lib/admin-roles";
 
 const MAIN_MENU_ITEMS = [
   { path: "/dashboard", label: "Overview & Analytics", icon: LayoutGrid, active: true },
@@ -23,7 +24,7 @@ const MAIN_MENU_ITEMS = [
   { path: "/users", label: "Student Directory", icon: Users },
   { path: "/appointments", label: "Guidance Scheduling", icon: CalendarDays },
   { path: "/peer-counselors", label: "Peer Counselors", icon: GraduationCap },
-  { path: "/feedbacks", label: "Feedbacks", icon: MessageSquare },
+  { path: "/feedbacks", label: "Help & Support", icon: MessageSquare },
   { path: "/reports", label: "Reports", icon: BarChart3 },
 ];
 
@@ -33,11 +34,13 @@ const SYSTEM_MENU_ITEMS = [
   { path: "/settings", label: "Settings", icon: Settings },
 ];
 
-export default function Sidebar({ onLogout, isOpen, onClose }) {
+export default function Sidebar({ onLogout, session, isOpen, onClose }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [criticalEntriesCount, setCriticalEntriesCount] = useState(0);
+  const head = isHeadCounselor(session);
+  const visibleSystemItems = SYSTEM_MENU_ITEMS.filter((item) => head || !["/roles", "/risk-triggers"].includes(item.path));
 
   useEffect(() => {
     let isMounted = true;
@@ -124,7 +127,7 @@ export default function Sidebar({ onLogout, isOpen, onClose }) {
             System Settings
           </div>
           <nav className="space-y-1.5">
-            {SYSTEM_MENU_ITEMS.map((item) => {
+            {visibleSystemItems.map((item) => {
               const isCurrent = item.path && location.pathname === item.path;
               const Icon = item.icon;
               return (

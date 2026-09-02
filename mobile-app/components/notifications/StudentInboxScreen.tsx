@@ -1,8 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
-import { router, type Href } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { router } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -11,16 +11,33 @@ import { useAuthSession } from "../../lib/auth-session";
 import {
   AppNotification,
   deleteStudentNotification,
+  fetchStudentMessageThread,
   fetchStudentNotifications,
   markAllStudentNotificationsRead,
+  markStudentMessageThreadRead,
   markStudentNotificationRead,
   StudentNotificationCategory,
 } from "../../lib/backend-api";
-import { getNotificationRoute, getNotificationVisual, isAdminMessageNotification } from "../../lib/notification-utils";
+import {
+  AdminMessageThread,
+  getAdminMessageInitials,
+  getNotificationDateSeparator,
+  getNotificationDateTimeLabel,
+  getNotificationRoute,
+  getNotificationTimeOnlyLabel,
+  getNotificationVisual,
+  groupAdminMessageThreads,
+  isAdminMessageNotification,
+  isOutgoingAdminMessage,
+} from "../../lib/notification-utils";
 
 type StudentInboxScreenProps = {
   variant: "messages" | "notifications";
 };
+
+type PendingDelete =
+  | { type: "item"; id: string }
+  | { type: "thread"; key: string };
 
 const TALA_IMAGE = require("../../assets/images/Tala_Star.png");
 const inboxCache = new Map<string, AppNotification[]>();
@@ -102,7 +119,11 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
   const cachedItems = cacheKey ? inboxCache.get(cacheKey) : undefined;
   const [items, setItems] = useState<AppNotification[]>(() => cachedItems ?? []);
   const [loading, setLoading] = useState(() => !cachedItems);
-  const [pendingDeleteNotificationId, setPendingDeleteNotificationId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [activeThreadKey, setActiveThreadKey] = useState<string | null>(null);
+  const [remoteThreadMessages, setRemoteThreadMessages] = useState<AppNotification[] | null>(null);
+  const [remoteThreadPhoto, setRemoteThreadPhoto] = useState("");
+  const threadScrollRef = useRef<ScrollView>(null);
 
   const isMessageInbox = variant === "messages";
   const summaryAccent = isMessageInbox ? "#4F7D63" : "#4B7F34";
@@ -116,15 +137,64 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
     ? "Messages from admins or counselors will appear here."
     : "Appointments, journal updates, and support alerts will appear here.";
   const summaryBody = isMessageInbox
-    ? "Notes from admins and support staff land here. Tap any card to open the full message."
+    ? "Conversations with counselors live here. Open a thread to read every follow-up."
     : "Appointments, journal updates, and support alerts land here. Tap any card to open it.";
 
   const visibleItems = useMemo(
-    () =>
-      items.filter((item) => matchesCategoryFilter(item, requestCategory)),
+    () => items.filter((item) => matchesCategoryFilter(item, requestCategory)),
     [items, requestCategory],
   );
-  const unreadCount = useMemo(() => visibleItems.filter((item) => !item.isRead).length, [visibleItems]);
+  const messageThreads = useMemo(
+    () => (isMessageInbox ? groupAdminMessageThreads(visibleItems) : []),
+    [isMessageInbox, visibleItems],
+  );
+  const activeThread = useMemo(
+    () => (activeThreadKey ? messageThreads.find((thread) => thread.key === activeThreadKey) ?? null : null),
+    [activeThreadKey, messageThreads],
+  );
+  const unreadCount = useMemo(
+    () =>
+      isMessageInbox
+        ? messageThreads.reduce((total, thread) => total + thread.unreadCount, 0)
+        : visibleItems.filter((item) => !item.isRead).length,
+    [isMessageInbox, messageThreads, visibleItems],
+  );
+  const showingThread = Boolean(isMessageInbox && activeThread);
+  const threadMessages = remoteThreadMessages?.length ? remoteThreadMessages : activeThread?.messages ?? [];
+
+  const persistInboxItems = useCallback(
+    (nextItems: AppNotification[]) => {
+      if (cacheKey) {
+        inboxCache.set(cacheKey, nextItems);
+        void writePersistedInbox(cacheKey, nextItems);
+      }
+    },
+    [cacheKey],
+  );
+
+  useEffect(() => {
+    if (!isMessageInbox) {
+      setActiveThreadKey(null);
+      setRemoteThreadMessages(null);
+      setRemoteThreadPhoto("");
+    }
+  }, [isMessageInbox]);
+
+  useEffect(() => {
+    if (isMessageInbox && activeThreadKey && !activeThread) {
+      setActiveThreadKey(null);
+      setRemoteThreadMessages(null);
+      setRemoteThreadPhoto("");
+    }
+  }, [activeThread, activeThreadKey, isMessageInbox]);
+
+  useEffect(() => {
+    if (!showingThread) return;
+    const frame = requestAnimationFrame(() => {
+      threadScrollRef.current?.scrollToEnd({ animated: false });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [showingThread, activeThread?.key, threadMessages.length]);
 
   useEffect(() => {
     let cancelled = false;
@@ -153,6 +223,12 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
   }, [cacheKey]);
 
   const handleBack = () => {
+    if (isMessageInbox && activeThreadKey) {
+      setActiveThreadKey(null);
+      setRemoteThreadMessages(null);
+      setRemoteThreadPhoto("");
+      return;
+    }
     if (router.canGoBack()) {
       router.back();
       return;
@@ -169,12 +245,12 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
 
     const memoryCached = cacheKey ? inboxCache.get(cacheKey) : undefined;
     const persistedItems = !memoryCached && cacheKey ? await readPersistedInbox(cacheKey) : [];
-    const cachedItems = memoryCached ?? persistedItems;
-    if (cachedItems.length) {
+    const cachedInboxItems = memoryCached ?? persistedItems;
+    if (cachedInboxItems.length) {
       if (cacheKey) {
-        inboxCache.set(cacheKey, cachedItems);
+        inboxCache.set(cacheKey, cachedInboxItems);
       }
-      setItems(cachedItems);
+      setItems(cachedInboxItems);
       setLoading(false);
     } else {
       setLoading(true);
@@ -182,21 +258,18 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
     try {
       const result = await fetchStudentNotifications(user.studentNumber, requestCategory);
       if (!result.ok) {
-        if (!cachedItems.length) {
+        if (!cachedInboxItems.length) {
           setItems([]);
         }
         return;
       }
       const nextItems = Array.isArray(result.notifications) ? result.notifications : [];
-      if (cacheKey) {
-        inboxCache.set(cacheKey, nextItems);
-        await writePersistedInbox(cacheKey, nextItems);
-      }
+      persistInboxItems(nextItems);
       setItems(nextItems);
     } finally {
       setLoading(false);
     }
-  }, [cacheKey, requestCategory, user?.studentNumber]);
+  }, [cacheKey, persistInboxItems, requestCategory, user?.studentNumber]);
 
   useFocusEffect(
     useCallback(() => {
@@ -208,48 +281,104 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
     if (!user?.studentNumber) return;
 
     const unreadItems = visibleItems.filter((item) => !item.isRead);
-    if (!unreadItems.length) {
+    const unreadThreads = isMessageInbox ? messageThreads.filter((thread) => thread.unreadCount > 0) : [];
+    if (!unreadItems.length && !unreadThreads.length) {
       return;
     }
 
+    if (isMessageInbox) {
+      await Promise.all(
+        unreadThreads
+          .map((thread) => thread.counselorId || (thread.key.startsWith("id:") ? thread.key.slice(3) : ""))
+          .filter(Boolean)
+          .map((counselorId) => markStudentMessageThreadRead(counselorId)),
+      );
+    }
+
     const result = await markAllStudentNotificationsRead(user.studentNumber, requestCategory);
-    if (!result.ok) {
+    if (!result.ok && !isMessageInbox) {
       return;
     }
 
     setItems((current) => {
       const nextItems = current.map((item) => (visibleItems.some((entry) => entry.id === item.id) ? { ...item, isRead: true } : item));
-      if (cacheKey) {
-        inboxCache.set(cacheKey, nextItems);
-        void writePersistedInbox(cacheKey, nextItems);
-      }
+      persistInboxItems(nextItems);
       return nextItems;
     });
+  };
+
+  const markItemsRead = async (targetIds: string[]) => {
+    if (!user?.studentNumber || !targetIds.length) return;
+    const uniqueIds = [...new Set(targetIds)];
+    const results = await Promise.all(uniqueIds.map((id) => markStudentNotificationRead(user.studentNumber, id)));
+    const readIds = new Set(uniqueIds.filter((_, index) => results[index]?.ok));
+    if (!readIds.size) return;
+    setItems((current) => {
+      const nextItems = current.map((entry) => (readIds.has(entry.id) ? { ...entry, isRead: true } : entry));
+      persistInboxItems(nextItems);
+      return nextItems;
+    });
+  };
+
+  const handleOpenThread = async (thread: AdminMessageThread) => {
+    setActiveThreadKey(thread.key);
+    setRemoteThreadMessages(null);
+    setRemoteThreadPhoto(thread.photoUrl || "");
+    const threadId =
+      thread.counselorId ||
+      (thread.key.startsWith("id:") ? thread.key.slice(3) : "") ||
+      (thread.latest.metadata?.thread ? String(thread.latest.id) : "");
+    if (threadId) {
+      const result = await fetchStudentMessageThread(threadId);
+      if (result.ok && result.thread?.messages?.length) {
+        const mapped: AppNotification[] = result.thread.messages.map((entry) => ({
+          createdAt: entry.createdAt,
+          id: entry.id,
+          isRead: entry.isRead ?? true,
+          kind: "ADMIN_MESSAGE",
+          message: entry.body,
+          metadata: {
+            counselorId: result.thread?.counselorId || threadId,
+            counselorName: result.thread?.counselorName || thread.displayName,
+            from: entry.from,
+            pictureUrl: result.thread?.pictureUrl || result.thread?.photoUrl,
+          },
+          timeLabel: "",
+          title: result.thread?.counselorName || thread.displayName,
+        }));
+        mapped.sort((a, b) => (Date.parse(a.createdAt) || 0) - (Date.parse(b.createdAt) || 0));
+        setRemoteThreadMessages(mapped);
+        if (result.thread.pictureUrl || result.thread.photoUrl) {
+          setRemoteThreadPhoto(result.thread.pictureUrl || result.thread.photoUrl || "");
+        }
+      }
+      await markStudentMessageThreadRead(threadId);
+    }
+    const unreadIds = thread.messages.filter((item) => !item.isRead).map((item) => item.id);
+    const threadItemIds = new Set(thread.messages.map((item) => item.id));
+    setItems((current) => {
+      const nextItems = current.map((entry) =>
+        threadItemIds.has(entry.id) || (threadId && entry.id === threadId) ? { ...entry, isRead: true } : entry,
+      );
+      persistInboxItems(nextItems);
+      return nextItems;
+    });
+    await markItemsRead(unreadIds);
   };
 
   const handleOpenNotification = async (item: AppNotification) => {
     if (!user?.studentNumber) return;
     if (!item.isRead) {
-      const result = await markStudentNotificationRead(user.studentNumber, item.id);
-      if (result.ok) {
-        setItems((current) => {
-          const nextItems = current.map((entry) => (entry.id === item.id ? { ...entry, isRead: true } : entry));
-          if (cacheKey) {
-            inboxCache.set(cacheKey, nextItems);
-            void writePersistedInbox(cacheKey, nextItems);
-          }
-         return nextItems;
-       });
-     }
-   }
+      await markItemsRead([item.id]);
+    }
 
-   const targetRoute = getNotificationRoute(item);
-   if (targetRoute) {
+    const targetRoute = getNotificationRoute(item);
+    if (targetRoute) {
       router.push(targetRoute as never);
       return;
     }
 
-   router.push({
+    router.push({
       pathname: "/notification-view",
       params: {
         createdAt: item.createdAt,
@@ -262,20 +391,181 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
   };
 
   const handleConfirmDelete = async () => {
-    if (!user?.studentNumber || !pendingDeleteNotificationId) return;
-    const result = await deleteStudentNotification(user.studentNumber, pendingDeleteNotificationId);
-    if (result.ok) {
-      setItems((current) => {
-        const nextItems = current.filter((item) => item.id !== pendingDeleteNotificationId);
-        if (cacheKey) {
-          inboxCache.set(cacheKey, nextItems);
-          void writePersistedInbox(cacheKey, nextItems);
-        }
-        return nextItems;
-      });
+    if (!user?.studentNumber || !pendingDelete) return;
+
+    if (pendingDelete.type === "item") {
+      const result = await deleteStudentNotification(user.studentNumber, pendingDelete.id);
+      if (result.ok) {
+        setItems((current) => {
+          const nextItems = current.filter((item) => item.id !== pendingDelete.id);
+          persistInboxItems(nextItems);
+          return nextItems;
+        });
+      }
+      setPendingDelete(null);
+      return;
     }
-    setPendingDeleteNotificationId(null);
+
+    const thread = messageThreads.find((entry) => entry.key === pendingDelete.key);
+    const ids = thread?.messages.map((item) => item.id) ?? [];
+    if (ids.length) {
+      const results = await Promise.all(ids.map((id) => deleteStudentNotification(user.studentNumber, id)));
+      const deletedIds = new Set(ids.filter((_, index) => results[index]?.ok));
+      if (deletedIds.size) {
+        setItems((current) => {
+          const nextItems = current.filter((item) => !deletedIds.has(item.id));
+          persistInboxItems(nextItems);
+          return nextItems;
+        });
+      }
+    }
+    if (activeThreadKey === pendingDelete.key) {
+      setActiveThreadKey(null);
+    }
+    setPendingDelete(null);
   };
+
+  const renderNotificationCard = (item: AppNotification) => {
+    const visual = getNotificationVisual(item.kind);
+    return (
+      <Swipeable
+        key={item.id}
+        overshootRight={false}
+        renderRightActions={() => (
+          <Pressable style={styles.deleteSwipeAction} onPress={() => setPendingDelete({ type: "item", id: item.id })}>
+            <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
+            <Text style={styles.deleteSwipeText}>Delete</Text>
+          </Pressable>
+        )}
+      >
+        <Pressable
+          style={[
+            styles.itemCard,
+            {
+              borderColor: item.isRead ? "#E6EAF0" : visual.chip,
+              backgroundColor: item.isRead ? "#FFFFFF" : visual.surface,
+            },
+            item.isRead && styles.itemCardRead,
+          ]}
+          onPress={() => void handleOpenNotification(item)}
+        >
+          <View style={styles.itemRow}>
+            <View style={[styles.itemIconWrap, { backgroundColor: visual.chip }]}>
+              {visual.usesTalaLogo ? (
+                <Image source={TALA_IMAGE} style={styles.itemTalaIcon} resizeMode="contain" />
+              ) : (
+                <Ionicons name={visual.icon} size={18} color={visual.accent} />
+              )}
+            </View>
+
+            <View style={styles.itemTextWrap}>
+              <View style={styles.itemTopRow}>
+                <Text style={[styles.itemTitle, item.isRead && styles.itemTextRead]} numberOfLines={2}>
+                  {item.title}
+                </Text>
+                <View style={styles.itemTimePill}>
+                  <Text style={styles.itemTime}>{item.timeLabel}</Text>
+                </View>
+              </View>
+
+              <View style={styles.itemMetaRow}>
+                <View style={[styles.itemKindChip, { backgroundColor: visual.chip }]}>
+                  <Text style={[styles.itemKindText, { color: visual.accent }]}>{visual.label}</Text>
+                </View>
+                {!item.isRead ? <View style={[styles.itemUnreadDot, { backgroundColor: visual.accent }]} /> : null}
+              </View>
+
+              <Text style={[styles.itemMessage, item.isRead && styles.itemTextRead]} numberOfLines={3}>
+                {item.message}
+              </Text>
+            </View>
+          </View>
+        </Pressable>
+      </Swipeable>
+    );
+  };
+
+  const renderCounselorAvatar = (name: string, photoUrl?: string, unread = false) => {
+    if (photoUrl) {
+      return <Image source={{ uri: photoUrl }} style={[styles.avatarImage, unread && styles.avatarUnreadRing]} />;
+    }
+    return (
+      <View style={[styles.avatarFallback, unread && styles.avatarUnreadRing]}>
+        <Text style={styles.avatarInitials}>{getAdminMessageInitials(name)}</Text>
+      </View>
+    );
+  };
+
+  const renderThreadCard = (thread: AdminMessageThread) => {
+    const visual = getNotificationVisual(thread.latest.kind);
+    const isUnread = thread.unreadCount > 0;
+    return (
+      <Swipeable
+        key={thread.key}
+        overshootRight={false}
+        renderRightActions={() => (
+          <Pressable style={styles.deleteSwipeAction} onPress={() => setPendingDelete({ type: "thread", key: thread.key })}>
+            <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
+            <Text style={styles.deleteSwipeText}>Delete</Text>
+          </Pressable>
+        )}
+      >
+        <Pressable
+          style={[
+            styles.itemCard,
+            {
+              borderColor: isUnread ? "#B7D8C4" : "#E6EAF0",
+              backgroundColor: isUnread ? "#F4FBF6" : "#FFFFFF",
+            },
+            isUnread ? styles.itemCardUnread : styles.itemCardRead,
+          ]}
+          onPress={() => void handleOpenThread(thread)}
+        >
+          <View style={styles.itemRow}>
+            {renderCounselorAvatar(thread.displayName, thread.photoUrl, isUnread)}
+            <View style={styles.itemTextWrap}>
+              <View style={styles.itemTopRow}>
+                <Text
+                  style={[styles.itemTitle, isUnread ? styles.itemTitleUnread : styles.itemTextRead]}
+                  numberOfLines={1}
+                >
+                  {thread.displayName}
+                </Text>
+                <View style={styles.itemTimePill}>
+                  <Text style={styles.itemTime}>{thread.latest.timeLabel || getNotificationDateTimeLabel(thread.latest)}</Text>
+                </View>
+              </View>
+              <View style={styles.itemMetaRow}>
+                {thread.actorRole ? (
+                  <View style={[styles.itemKindChip, { backgroundColor: visual.chip }]}>
+                    <Text style={[styles.itemKindText, { color: visual.accent }]}>{thread.actorRole}</Text>
+                  </View>
+                ) : null}
+                {isUnread ? (
+                  <View style={styles.unreadBadge}>
+                    <Text style={styles.unreadBadgeText}>{thread.unreadCount > 9 ? "9+" : String(thread.unreadCount)}</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.readHint}>Read</Text>
+                )}
+                {isUnread ? <View style={[styles.itemUnreadDot, { backgroundColor: visual.accent }]} /> : null}
+              </View>
+              <Text style={[styles.itemMessage, !isUnread && styles.itemTextRead]} numberOfLines={2}>
+                {thread.latest.message}
+              </Text>
+            </View>
+          </View>
+        </Pressable>
+      </Swipeable>
+    );
+  };
+
+  const deleteMessage =
+    pendingDelete?.type === "thread"
+      ? "Delete this conversation?"
+      : isMessageInbox
+        ? "Delete this message?"
+        : "Delete this notification?";
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
@@ -283,137 +573,146 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
         <Pressable style={styles.backButton} accessibilityLabel="Go back" onPress={handleBack}>
           <Ionicons name="chevron-back" size={28} color="#34424F" />
         </Pressable>
-        <Text style={styles.topTitle}>{topTitle}</Text>
+        <Text style={styles.topTitle} numberOfLines={1}>
+          {showingThread ? activeThread?.displayName ?? topTitle : topTitle}
+        </Text>
         <View style={styles.topBarSpacer} />
       </View>
 
-      <View style={styles.summaryWrap}>
-        <View
-          style={[
-            styles.summaryCard,
-            { backgroundColor: summarySurface, borderColor: summaryChip },
-          ]}
-        >
-          <View style={[styles.summaryIconBubble, { backgroundColor: "#FFFFFF" }]}>
-            <Ionicons name={summaryIcon} size={20} color={summaryAccent} />
+      {showingThread ? null : (
+        <View style={styles.summaryWrap}>
+          <View
+            style={[
+              styles.summaryCard,
+              { backgroundColor: summarySurface, borderColor: summaryChip },
+            ]}
+          >
+            <View style={[styles.summaryIconBubble, { backgroundColor: "#FFFFFF" }]}>
+              <Ionicons name={summaryIcon} size={20} color={summaryAccent} />
+            </View>
+
+            <View style={styles.summaryTextWrap}>
+              <Text style={styles.summaryTitle}>
+                {unreadCount
+                  ? `${unreadCount} unread ${unreadCount === 1 ? (isMessageInbox ? "message" : "update") : isMessageInbox ? "messages" : "updates"}`
+                  : isMessageInbox
+                    ? "Your inbox is quiet"
+                    : "You're all caught up"}
+              </Text>
+              <Text style={styles.summaryBody}>{summaryBody}</Text>
+            </View>
           </View>
 
-          <View style={styles.summaryTextWrap}>
-            <Text style={styles.summaryTitle}>
-              {unreadCount
-                ? `${unreadCount} unread ${unreadCount === 1 ? (isMessageInbox ? "message" : "update") : isMessageInbox ? "messages" : "updates"}`
-                : isMessageInbox
-                  ? "Your inbox is quiet"
-                  : "You're all caught up"}
-            </Text>
-            <Text style={styles.summaryBody}>{summaryBody}</Text>
+          {!isMessageInbox ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filterRow}
+              style={styles.filterScroll}
+            >
+              {NOTIFICATION_FILTERS.map((filter) => {
+                const isActive = notificationFilter === filter.key;
+                return (
+                  <Pressable
+                    key={filter.key}
+                    style={[styles.filterButton, isActive && styles.filterButtonActive]}
+                    onPress={() => setNotificationFilter(filter.key)}
+                  >
+                    <Text style={[styles.filterButtonText, isActive && styles.filterButtonTextActive]}>{filter.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          ) : null}
+
+          <View style={styles.dayRow}>
+            <Text style={styles.dayLabel}>{isMessageInbox ? "Conversations" : "Recent"}</Text>
+            <Pressable
+              style={[styles.markAsReadButton, unreadCount === 0 && styles.markAsReadButtonDisabled]}
+              onPress={() => void handleMarkAllAsRead()}
+              disabled={unreadCount === 0}
+            >
+              <Ionicons name="checkbox-outline" size={15} color={unreadCount === 0 ? "#9CA6AE" : summaryAccent} />
+              <Text style={[styles.markAsReadText, unreadCount === 0 && styles.markAsReadTextDisabled, unreadCount > 0 && { color: summaryAccent }]}>
+                Mark All as Read
+              </Text>
+            </Pressable>
           </View>
         </View>
-
-        {!isMessageInbox ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterRow}
-            style={styles.filterScroll}
-          >
-            {NOTIFICATION_FILTERS.map((filter) => {
-              const isActive = notificationFilter === filter.key;
-              return (
-                <Pressable
-                  key={filter.key}
-                  style={[styles.filterButton, isActive && styles.filterButtonActive]}
-                  onPress={() => setNotificationFilter(filter.key)}
-                >
-                  <Text style={[styles.filterButtonText, isActive && styles.filterButtonTextActive]}>{filter.label}</Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        ) : null}
-
-        <View style={styles.dayRow}>
-          <Text style={styles.dayLabel}>{isMessageInbox ? "Admin inbox" : "Recent"}</Text>
-          <Pressable
-            style={[styles.markAsReadButton, unreadCount === 0 && styles.markAsReadButtonDisabled]}
-            onPress={() => void handleMarkAllAsRead()}
-            disabled={unreadCount === 0}
-          >
-            <Ionicons name="checkbox-outline" size={15} color={unreadCount === 0 ? "#9CA6AE" : summaryAccent} />
-            <Text style={[styles.markAsReadText, unreadCount === 0 && styles.markAsReadTextDisabled, unreadCount > 0 && { color: summaryAccent }]}>
-              Mark All as Read
-            </Text>
-          </Pressable>
-        </View>
-      </View>
+      )}
 
       {loading ? (
         <View style={styles.loadingWrap}>
           <ActivityIndicator color="#6FAE46" />
         </View>
-      ) : (
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {visibleItems.length ? (
-            visibleItems.map((item) => {
-              const visual = getNotificationVisual(item.kind);
-
-              return (
+      ) : showingThread && activeThread ? (
+        <ScrollView
+          ref={threadScrollRef}
+          style={styles.scroll}
+          contentContainerStyle={styles.threadScrollContent}
+          showsVerticalScrollIndicator={false}
+          onContentSizeChange={() => threadScrollRef.current?.scrollToEnd({ animated: false })}
+        >
+          {threadMessages.map((item, index) => {
+            const outgoing = isOutgoingAdminMessage(item);
+            const dateLabel = getNotificationDateSeparator(item);
+            const previousDate = index > 0 ? getNotificationDateSeparator(threadMessages[index - 1]) : "";
+            const showDate = Boolean(dateLabel && dateLabel !== previousDate);
+            return (
+              <View key={item.id}>
+                {showDate ? (
+                  <View style={styles.dateSeparator}>
+                    <Text style={styles.dateSeparatorText}>{dateLabel}</Text>
+                  </View>
+                ) : null}
                 <Swipeable
-                  key={item.id}
                   overshootRight={false}
                   renderRightActions={() => (
-                    <Pressable style={styles.deleteSwipeAction} onPress={() => setPendingDeleteNotificationId(item.id)}>
+                    <Pressable style={styles.deleteSwipeAction} onPress={() => setPendingDelete({ type: "item", id: item.id })}>
                       <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
                       <Text style={styles.deleteSwipeText}>Delete</Text>
                     </Pressable>
                   )}
                 >
-                  <Pressable
-                    style={[
-                      styles.itemCard,
-                      {
-                        borderColor: item.isRead ? "#E6EAF0" : visual.chip,
-                        backgroundColor: item.isRead ? "#FFFFFF" : visual.surface,
-                      },
-                      item.isRead && styles.itemCardRead,
-                    ]}
-                    onPress={() => void handleOpenNotification(item)}
-                  >
-                    <View style={styles.itemRow}>
-                      <View style={[styles.itemIconWrap, { backgroundColor: visual.chip }]}>
-                        {visual.usesTalaLogo ? (
-                          <Image source={TALA_IMAGE} style={styles.itemTalaIcon} resizeMode="contain" />
-                        ) : (
-                          <Ionicons name={visual.icon} size={18} color={visual.accent} />
-                        )}
-                      </View>
-
-                      <View style={styles.itemTextWrap}>
-                        <View style={styles.itemTopRow}>
-                          <Text style={[styles.itemTitle, item.isRead && styles.itemTextRead]} numberOfLines={2}>
-                            {item.title}
-                          </Text>
-                          <View style={styles.itemTimePill}>
-                            <Text style={styles.itemTime}>{item.timeLabel}</Text>
-                          </View>
-                        </View>
-
-                        <View style={styles.itemMetaRow}>
-                          <View style={[styles.itemKindChip, { backgroundColor: visual.chip }]}>
-                            <Text style={[styles.itemKindText, { color: visual.accent }]}>{visual.label}</Text>
-                          </View>
-                          {!item.isRead ? <View style={[styles.itemUnreadDot, { backgroundColor: visual.accent }]} /> : null}
-                        </View>
-
-                        <Text style={[styles.itemMessage, item.isRead && styles.itemTextRead]} numberOfLines={3}>
-                          {item.message}
+                  <View style={[styles.bubbleRow, outgoing && styles.bubbleRowOutgoing]}>
+                    {outgoing ? null : renderCounselorAvatar(activeThread.displayName, remoteThreadPhoto || activeThread.photoUrl)}
+                    <View
+                      style={[
+                        styles.bubbleCard,
+                        outgoing ? styles.bubbleOutgoing : styles.bubbleIncoming,
+                        !item.isRead && !outgoing && styles.bubbleUnread,
+                      ]}
+                    >
+                      <Text style={[styles.bubbleBody, outgoing && styles.bubbleBodyOutgoing]}>{item.message}</Text>
+                      <View style={styles.bubbleMetaRow}>
+                        <Text style={[styles.bubbleTime, outgoing && styles.bubbleTimeOutgoing]}>
+                          {getNotificationTimeOnlyLabel(item) || getNotificationDateTimeLabel(item) || item.timeLabel}
                         </Text>
+                        {!item.isRead && !outgoing ? <Text style={styles.bubbleUnreadLabel}>New</Text> : null}
                       </View>
                     </View>
-                  </Pressable>
+                  </View>
                 </Swipeable>
-              );
-            })
+              </View>
+            );
+          })}
+        </ScrollView>
+      ) : (
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          {isMessageInbox ? (
+            messageThreads.length ? (
+              messageThreads.map((thread) => renderThreadCard(thread))
+            ) : (
+              <View style={styles.emptyCard}>
+                <View style={styles.emptyIconBubble}>
+                  <Ionicons name={emptyIcon} size={24} color="#7AA85C" />
+                </View>
+                <Text style={styles.emptyTitle}>{emptyTitle}</Text>
+                <Text style={styles.emptyText}>{emptyText}</Text>
+              </View>
+            )
+          ) : visibleItems.length ? (
+            visibleItems.map((item) => renderNotificationCard(item))
           ) : (
             <View style={styles.emptyCard}>
               <View style={styles.emptyIconBubble}>
@@ -427,12 +726,12 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
       )}
 
       <ConfirmationModal
-        visible={Boolean(pendingDeleteNotificationId)}
-        message={isMessageInbox ? "Delete this message?" : "Delete this notification?"}
+        visible={Boolean(pendingDelete)}
+        message={deleteMessage}
         cancelLabel="Cancel"
         confirmLabel="Delete"
         confirmTone="danger"
-        onCancel={() => setPendingDeleteNotificationId(null)}
+        onCancel={() => setPendingDelete(null)}
         onConfirm={() => void handleConfirmDelete()}
       />
     </SafeAreaView>
@@ -467,6 +766,8 @@ const styles = StyleSheet.create({
     fontSize: 18,
     lineHeight: 24,
     fontWeight: "700",
+    flex: 1,
+    textAlign: "center",
   },
   topBarSpacer: {
     width: 40,
@@ -595,6 +896,12 @@ const styles = StyleSheet.create({
     paddingBottom: 28,
     rowGap: 10,
   },
+  threadScrollContent: {
+    paddingHorizontal: 12,
+    paddingTop: 14,
+    paddingBottom: 28,
+    rowGap: 10,
+  },
   itemCard: {
     borderRadius: 20,
     borderWidth: 1,
@@ -608,6 +915,100 @@ const styles = StyleSheet.create({
   },
   itemCardRead: {
     shadowOpacity: 0.04,
+  },
+  itemCardUnread: {
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+  },
+  itemTitleUnread: {
+    color: "#24384A",
+    fontWeight: "800",
+  },
+  avatarImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 999,
+    backgroundColor: "#DCE8DF",
+    marginTop: 1,
+  },
+  avatarFallback: {
+    width: 44,
+    height: 44,
+    borderRadius: 999,
+    backgroundColor: "#4F7D63",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 1,
+  },
+  avatarInitials: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: "800",
+  },
+  avatarUnreadRing: {
+    borderWidth: 2,
+    borderColor: "#6FAE46",
+  },
+  readHint: {
+    color: "#8A969E",
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "700",
+  },
+  dateSeparator: {
+    alignSelf: "center",
+    marginVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: "#E6F4EA",
+  },
+  dateSeparatorText: {
+    color: "#4F7D63",
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "700",
+  },
+  bubbleRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    columnGap: 8,
+    marginBottom: 2,
+  },
+  bubbleRowOutgoing: {
+    justifyContent: "flex-end",
+  },
+  bubbleIncoming: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#E6F4EA",
+  },
+  bubbleOutgoing: {
+    alignSelf: "flex-end",
+    backgroundColor: "#4F7D63",
+    borderColor: "#4F7D63",
+  },
+  bubbleUnread: {
+    borderColor: "#6FAE46",
+    backgroundColor: "#F4FBF6",
+  },
+  bubbleBodyOutgoing: {
+    color: "#FFFFFF",
+  },
+  bubbleMetaRow: {
+    marginTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 8,
+  },
+  bubbleTimeOutgoing: {
+    color: "#E6F4EA",
+  },
+  bubbleUnreadLabel: {
+    color: "#4F7D63",
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "800",
   },
   deleteSwipeAction: {
     width: 92,
@@ -700,6 +1101,21 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 999,
   },
+  unreadBadge: {
+    minHeight: 20,
+    minWidth: 20,
+    paddingHorizontal: 6,
+    borderRadius: 999,
+    backgroundColor: "#4F7D63",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  unreadBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "700",
+  },
   itemMessage: {
     color: "#384A5E",
     fontSize: 14,
@@ -707,6 +1123,25 @@ const styles = StyleSheet.create({
   },
   itemTextRead: {
     color: "#647280",
+  },
+  bubbleCard: {
+    maxWidth: "78%",
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  bubbleBody: {
+    color: "#33475B",
+    fontSize: 15,
+    lineHeight: 21,
+  },
+  bubbleTime: {
+    color: "#6A7A72",
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: "600",
+    marginTop: 8,
   },
   emptyCard: {
     borderRadius: 20,

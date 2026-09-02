@@ -1,3 +1,7 @@
+const dns = require("dns");
+if (typeof dns.setDefaultResultOrder === "function") {
+  dns.setDefaultResultOrder("ipv4first");
+}
 const { Pool } = require("pg");
 const {
   EMOTION_LABELS,
@@ -589,6 +593,63 @@ async function ensureDatabaseSchema() {
       constraint student_feedbacks_status_check check (status in ('NEW', 'REVIEWED', 'IN_PROGRESS', 'RESOLVED')),
       constraint student_feedbacks_priority_check check (priority in ('LOW', 'NORMAL', 'HIGH'))
     );
+  `);
+
+  await pool.query(`
+    alter table public.student_feedbacks
+    add column if not exists submission_type text not null default 'FEEDBACK';
+  `);
+
+  await pool.query(`
+    alter table public.student_feedbacks
+    add column if not exists subject text;
+  `);
+
+  await pool.query(`
+    update public.student_feedbacks
+    set submission_type = 'SUPPORT'
+    where category = 'Support'
+      and coalesce(submission_type, 'FEEDBACK') = 'FEEDBACK';
+  `);
+
+  await pool.query(`
+    alter table public.student_feedbacks
+    drop constraint if exists student_feedbacks_category_check;
+  `);
+
+  await pool.query(`
+    alter table public.student_feedbacks
+    add constraint student_feedbacks_category_check
+    check (category in (
+      'Bug',
+      'Suggestion',
+      'Question',
+      'Support',
+      'Experience',
+      'Concern',
+      'Other',
+      'App Experience',
+      'Bug Report',
+      'Account Issue',
+      'Consultation/Booking Help',
+      'Technical Issue'
+    ));
+  `);
+
+  await pool.query(`
+    alter table public.student_feedbacks
+    drop constraint if exists student_feedbacks_submission_type_check;
+  `);
+
+  await pool.query(`
+    alter table public.student_feedbacks
+    add constraint student_feedbacks_submission_type_check
+    check (submission_type in ('FEEDBACK', 'SUPPORT'));
+  `);
+
+  await pool.query(`
+    create index if not exists student_feedbacks_submission_type_created_idx
+      on public.student_feedbacks (submission_type, created_at desc);
   `);
 
   await pool.query(`
@@ -1377,16 +1438,23 @@ async function ensureDatabaseSchema() {
   `);
 }
 
-async function query(text, params = []) {
+async function query(text, params = [], retryCount = 1) {
   if (!pool) {
     throw new Error(
       "Database is not configured. Set DATABASE_URL, SUPABASE_DB_URL, POSTGRES_URL, or DB_HOST/DB_NAME/DB_USER/DB_PASSWORD.",
     );
   }
-  try {
-    return await pool.query(text, params);
-  } catch (error) {
-    throw toFriendlyDatabaseError(error, databaseUrl);
+  for (let attempt = 0; attempt <= retryCount; attempt += 1) {
+    try {
+      return await pool.query(text, params);
+    } catch (error) {
+      const isTransient = error?.code === "ENOTFOUND" || error?.code === "ECONNRESET" || error?.code === "ETIMEDOUT";
+      if (attempt < retryCount && isTransient) {
+        await new Promise((r) => setTimeout(r, 800));
+        continue;
+      }
+      throw toFriendlyDatabaseError(error, databaseUrl);
+    }
   }
 }
 
@@ -1394,6 +1462,7 @@ module.exports = {
   dbPool: pool,
   ensureDatabaseSchema,
   ensureStudentProfilePictureSchema,
+  JOURNAL_PRIMARY_CONCERN_VALUES,
   query,
   refreshStudentMoodIdConstraint,
   removeLegacyDailyMoodUniqueness,

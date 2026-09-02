@@ -1,3 +1,4 @@
+import Toast from "../components/Toast";
 import { useEffect, useMemo, useState } from "react";
 import { Bell, Palette, Shield, User } from "lucide-react";
 import Layout from "../components/Layout";
@@ -108,7 +109,7 @@ export default function Settings({ onLogout, session }) {
 
       try {
         setIsLoading(true);
-        const data = await fetchAdminSettings(session.email);
+        const data = await fetchAdminSettings();
         setFormState({
           fullName: data?.profile?.fullName || session?.name || "",
           email: data?.profile?.email || session?.email || "",
@@ -284,7 +285,6 @@ export default function Settings({ onLogout, session }) {
     try {
       setIsSaving(true);
       const payload = {
-        email: formState.email,
         fullName: formState.fullName,
         gender: formState.gender,
         profilePictureUrl: formState.profilePictureUrl,
@@ -359,11 +359,7 @@ export default function Settings({ onLogout, session }) {
           </div>
         ) : null}
 
-        {successMessage ? (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-            {successMessage}
-          </div>
-        ) : null}
+        <Toast message={successMessage} onClose={() => setSuccessMessage("")} />
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
           <div className="space-y-6">

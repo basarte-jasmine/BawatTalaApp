@@ -33,6 +33,17 @@ function requireAdminAuth(req, res, next) {
   next();
 }
 
+function requireRoles(...roles) {
+  const allowed = roles.map((r) => String(r || '').toUpperCase());
+  return function (req, res, next) {
+    const role = String(req.admin?.role || '').toUpperCase();
+    if (!role || !allowed.includes(role)) {
+      return res.status(403).json({ message: "You don't have access to this action." });
+    }
+    next();
+  };
+}
+
 function getAuthenticatedStudent(req) {
   if (req.session?.student?.studentNumber) {
     return req.session.student;
@@ -62,6 +73,22 @@ function requireStudentAuth(req, res, next) {
   return requireStudentOnlyAuth(req, res, next);
 }
 
+function requireStudentOrAdminAuth(req, res, next) {
+  const sessionAdmin = buildAdminSessionPayload(req.session?.admin);
+  if (sessionAdmin?.email && sessionAdmin.isActive) {
+    req.admin = sessionAdmin;
+    return next();
+  }
+
+  const student = getAuthenticatedStudent(req);
+  if (student?.studentNumber) {
+    req.student = student;
+    return next();
+  }
+
+  return res.status(401).json({ message: "Authentication required. Please sign in." });
+}
+
 function requireStudentOnlyAuth(req, res, next) {
   const student = getAuthenticatedStudent(req);
   if (!student?.studentNumber) {
@@ -82,6 +109,22 @@ function requireStudentOnlyAuth(req, res, next) {
   next();
 }
 
+function requireStudentOrAdminAuth(req, res, next) {
+  const sessionAdmin = buildAdminSessionPayload(req.session?.admin);
+  if (sessionAdmin?.email && sessionAdmin.isActive) {
+    req.admin = sessionAdmin;
+    return next();
+  }
+
+  const student = getAuthenticatedStudent(req);
+  if (student?.studentNumber) {
+    req.student = student;
+    return next();
+  }
+
+  return res.status(401).json({ message: "Authentication required. Please sign in." });
+}
+
 function resolveStudentNumber(req) {
   const fromAuth = req.student?.studentNumber || getAuthenticatedStudent(req)?.studentNumber;
   return fromAuth || "";
@@ -90,8 +133,10 @@ function resolveStudentNumber(req) {
 module.exports = {
   buildAdminSessionPayload,
   requireAdminAuth,
+  requireRoles,
   requireStudentAuth,
   requireStudentOnlyAuth,
+  requireStudentOrAdminAuth,
   getAuthenticatedStudent,
   resolveStudentNumber,
 };

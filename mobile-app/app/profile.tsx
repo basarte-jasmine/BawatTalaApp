@@ -24,8 +24,7 @@ const ACCOUNT_ROWS: SettingRow[] = [
 
 const APP_ROWS: SettingRow[] = [
   { id: "recent-activity", icon: "time-outline", label: "Recent Activity", showChevron: true },
-  { id: "help-support", icon: "help-buoy-outline", label: "Help and Support", showChevron: true },
-  { id: "feedback", icon: "chatbubble-ellipses-outline", label: "Feedback", showChevron: true },
+  { id: "help-support", icon: "help-buoy-outline", label: "Help & Support", showChevron: true },
 ];
 
 const EXTRA_ROWS: SettingRow[] = [
@@ -243,7 +242,6 @@ export default function ProfileScreen() {
       case "privacy-security":
       case "recent-activity":
       case "help-support":
-      case "feedback":
       case "app-lock":
         router.push(`/profile-settings?section=${rowId}`);
         return;
