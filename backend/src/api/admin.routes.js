@@ -447,6 +447,11 @@ function countRowsBetweenDates(rows, dateKey, startIsoDate, endIsoDateExclusive)
   }).length;
 }
 
+function isIsoDateInInclusiveRange(value, startIsoDate, endIsoDate) {
+  const date = normalizeDateValue(value);
+  return Boolean(date && date >= startIsoDate && date <= endIsoDate);
+}
+
 function buildDelta(currentValue, previousValue) {
   if (!previousValue) {
     if (!currentValue) {
@@ -1547,8 +1552,14 @@ router.post("/notifications/read-all", async (req, res) => {
 });
 
 router.get("/dashboard/summary", async (req, res) => {
-  const manilaNow = getManilaDateParts();
-  const currentMonthStartIso = `${manilaNow.year}-${String(manilaNow.month).padStart(2, "0")}-01`;
+  const { rangeKey, startDate, endDate } = resolveAnalyticsRange(
+    req.query.range,
+    req.query.startDate,
+    req.query.endDate,
+  );
+  const rangeDays = getDaysBetweenInclusive(startDate, endDate);
+  const previousStartDate = addDaysToIsoDate(startDate, -rangeDays);
+  const previousEndDate = addDaysToIsoDate(startDate, -1);
   const [{ data: profiles, error: profilesError }, { data: journals, error: journalsError }] =
     await Promise.all([
       supabaseAdminClient
@@ -1565,6 +1576,8 @@ router.get("/dashboard/summary", async (req, res) => {
     scheduledEvents,
     { rows: caseAssignmentRows },
     { rows: futureSelfMessageRows },
+    { rows: scheduledInRangeRows },
+    { rows: previousScheduledRows },
   ] = await Promise.all([
     query(
       `
@@ -1587,10 +1600,10 @@ router.get("/dashboard/summary", async (req, res) => {
       `
         select mood_id, mood_date
         from public.student_moods
-        where mood_date >= $1::date
+        where mood_date between $1::date and $2::date
         order by mood_date asc
       `,
-      [currentMonthStartIso],
+      [startDate, endDate],
     ),
     getScheduledEventCounts(),
     query(
@@ -1638,22 +1651,64 @@ router.get("/dashboard/summary", async (req, res) => {
         where deleted_at is null
       `,
     ),
+    query(
+      `
+        select count(*)::int as total
+        from public.counselor_appointments
+        where appointment_date between $1::date and $2::date
+          and status in ('CONFIRMED', 'COMPLETED')
+      `,
+      [startDate, endDate],
+    ),
+    query(
+      `
+        select count(*)::int as total
+        from public.counselor_appointments
+        where appointment_date between $1::date and $2::date
+          and status in ('CONFIRMED', 'COMPLETED')
+      `,
+      [previousStartDate, previousEndDate],
+    ),
   ]);
 
-  const safeProfiles = profilesError ? [] : profiles || [];
+  const allProfiles = profilesError ? [] : profiles || [];
+  const registeredInRange = allProfiles.filter((row) => isIsoDateInInclusiveRange(row.created_at, startDate, endDate));
+  const previousProfiles = allProfiles.filter((row) =>
+    isIsoDateInInclusiveRange(row.created_at, previousStartDate, previousEndDate),
+  );
   const safeJournals = (journalsError ? [] : journals || []).filter((row) => !row.deleted_by_student_at);
-  const completedJournals = safeJournals.filter((row) => Boolean(row.is_finished));
-  const safeFlaggedRows = flaggedRows || [];
+  const completedJournalsAll = safeJournals.filter((row) => Boolean(row.is_finished));
+  const journalRangeDate = (row) => row.entry_date || row.created_at;
+  const completedJournals = completedJournalsAll.filter((row) =>
+    isIsoDateInInclusiveRange(journalRangeDate(row), startDate, endDate),
+  );
+  const previousCompletedJournals = completedJournalsAll.filter((row) =>
+    isIsoDateInInclusiveRange(journalRangeDate(row), previousStartDate, previousEndDate),
+  );
+  const activeStudentNumbers = new Set(
+    completedJournals.map((row) => String(row.student_number || "").trim()).filter(Boolean),
+  );
+  const safeProfiles = allProfiles.filter((row) =>
+    activeStudentNumbers.has(String(row.student_number || "").trim()),
+  );
+  const scheduledInRangeCount = Number(scheduledInRangeRows?.[0]?.total || 0);
+  const previousScheduledCount = Number(previousScheduledRows?.[0]?.total || 0);
+  const safeFlaggedRowsAll = flaggedRows || [];
+  const flaggedRangeDate = (row) => row.entry_date || row.created_at;
+  const safeFlaggedRows = safeFlaggedRowsAll.filter((row) =>
+    isIsoDateInInclusiveRange(flaggedRangeDate(row), startDate, endDate),
+  );
+  const previousFlaggedRows = safeFlaggedRowsAll.filter((row) =>
+    isIsoDateInInclusiveRange(flaggedRangeDate(row), previousStartDate, previousEndDate),
+  );
   const safeMoodRows = moodRows || [];
-
-  const todayIso = getRelativeManilaIsoDate(0);
-  const yesterdayIso = getRelativeManilaIsoDate(-1);
-  const last7StartIso = getRelativeManilaIsoDate(-6);
-  const previous7StartIso = getRelativeManilaIsoDate(-13);
-  const previous7EndIso = getRelativeManilaIsoDate(-6);
-  const current30StartIso = getRelativeManilaIsoDate(-29);
-  const previous30StartIso = getRelativeManilaIsoDate(-59);
-  const previous30EndIso = getRelativeManilaIsoDate(-29);
+  const futureSelfAll = futureSelfMessageRows || [];
+  const futureSelfInRange = futureSelfAll.filter((row) =>
+    isIsoDateInInclusiveRange(row.created_at, startDate, endDate),
+  );
+  const futureSelfPrevious = futureSelfAll.filter((row) =>
+    isIsoDateInInclusiveRange(row.created_at, previousStartDate, previousEndDate),
+  );
 
   const genderCounts = safeProfiles.reduce((acc, row) => {
     const key = String(row.gender || "UNSPECIFIED").toUpperCase();
@@ -1673,23 +1728,9 @@ router.get("/dashboard/summary", async (req, res) => {
     return acc;
   }, {});
 
-  const totalStudents = safeProfiles.length;
+  const totalStudents = allProfiles.length;
   const totalFlaggedEntries = safeFlaggedRows.length;
-  const entriesToday = countRowsOnDate(completedJournals, "created_at", todayIso);
-  const studentsThis30Days = countRowsBetweenDates(safeProfiles, "created_at", current30StartIso, getRelativeManilaIsoDate(1));
-  const studentsPrevious30Days = countRowsBetweenDates(safeProfiles, "created_at", previous30StartIso, previous30EndIso);
-  const flaggedThis7Days = safeFlaggedRows.filter((row) => {
-    const date = normalizeDateValue(row.entry_date);
-    return date && date >= last7StartIso && date < getRelativeManilaIsoDate(1);
-  }).length;
-  const flaggedPrevious7Days = safeFlaggedRows.filter((row) => {
-    const date = normalizeDateValue(row.entry_date);
-    return date && date >= previous7StartIso && date < previous7EndIso;
-  }).length;
-  const entriesYesterday = countRowsOnDate(completedJournals, "created_at", yesterdayIso);
-  const totalFutureSelfMessages = (futureSelfMessageRows || []).length;
-  const futureSelfMessagesToday = countRowsOnDate(futureSelfMessageRows, "created_at", todayIso);
-  const futureSelfMessagesYesterday = countRowsOnDate(futureSelfMessageRows, "created_at", yesterdayIso);
+  const totalFutureSelfMessages = futureSelfInRange.length;
   const ratedSummaryRows = completedJournals.filter((row) =>
     ["HELPFUL", "NEEDS_WORK"].includes(String(row.summary_rating || "").toUpperCase()),
   );
@@ -1720,7 +1761,7 @@ router.get("/dashboard/summary", async (req, res) => {
     : null;
 
   const activeUsageSeries = toMonthlyBuckets(safeProfiles, "created_at");
-  const journalEntriesSeries = buildCurrentMonthJournalSeries(completedJournals, "created_at");
+  const journalEntriesSeries = buildDailyTrend(completedJournals, startDate, endDate, "entry_date");
   const moodCountsByDate = new Map();
 
   for (const row of safeMoodRows) {
@@ -1740,7 +1781,7 @@ router.get("/dashboard/summary", async (req, res) => {
 
   const topBarangayConcerns = new Map();
   for (const journal of completedJournals) {
-    const profile = safeProfiles.find(
+    const profile = allProfiles.find(
       (item) => String(item.student_number || "").trim() === String(journal.student_number || "").trim(),
     );
     const barangay = normalizeDisplayLabel(profile?.barangay || "Unspecified");
@@ -1808,42 +1849,24 @@ router.get("/dashboard/summary", async (req, res) => {
     value: Number(concernCounts[label] || 0),
   })).filter((item) => item.value > 0);
 
-  const currentMonthLabels = [];
-  const moodSeries = Object.fromEntries(EMOTION_IDS.map((emotionId) => [emotionId, []]));
+  const moodWindowBuckets = buildWindowBuckets(
+    startDate,
+    endDate,
+    rangeDays <= 14 ? Math.max(1, rangeDays) : rangeDays <= 30 ? 6 : 8,
+  );
+  const currentMonthLabels = moodWindowBuckets.map((bucket) => bucket.label);
+  const moodSeries = Object.fromEntries(
+    EMOTION_IDS.map((emotionId) => [emotionId, moodWindowBuckets.map(() => 0)]),
+  );
 
-  const appendMoodBucket = (bucketStartDay, bucketEndDay) => {
-    const labelIsoDate = `${manilaNow.year}-${String(manilaNow.month).padStart(2, "0")}-${String(bucketEndDay).padStart(2, "0")}`;
-    const label = new Date(`${labelIsoDate}T00:00:00Z`).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      timeZone: MANILA_TIME_ZONE,
-    });
-    currentMonthLabels.push(label);
-    const bucketCounts = createEmotionCounts();
-
-    for (let day = bucketStartDay; day <= bucketEndDay; day += 1) {
-      const isoDate = `${manilaNow.year}-${String(manilaNow.month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-      const counts = moodCountsByDate.get(isoDate);
-      if (!counts) continue;
-      for (const emotionId of EMOTION_IDS) {
-        bucketCounts[emotionId] += Number(counts[emotionId] || 0);
-      }
-    }
-
+  for (const [isoDate, counts] of moodCountsByDate.entries()) {
+    const bucketIndex = moodWindowBuckets.findIndex(
+      (bucket) => isoDate >= bucket.startDate && isoDate <= bucket.endDate,
+    );
+    if (bucketIndex < 0) continue;
     for (const emotionId of EMOTION_IDS) {
-      moodSeries[emotionId].push(bucketCounts[emotionId]);
+      moodSeries[emotionId][bucketIndex] += Number(counts[emotionId] || 0);
     }
-  };
-
-  for (let bucketEndDay = 5; bucketEndDay <= manilaNow.day; bucketEndDay += 5) {
-    const bucketStartDay = Math.max(1, bucketEndDay - 4);
-    appendMoodBucket(bucketStartDay, bucketEndDay);
-  }
-
-  if (manilaNow.day % 5 !== 0) {
-    const bucketStartDay = Math.floor(manilaNow.day / 5) * 5 + 1;
-    const bucketEndDay = manilaNow.day;
-    appendMoodBucket(bucketStartDay, bucketEndDay);
   }
 
   const caseAssignments = (caseAssignmentRows || []).map((row) => {
@@ -1866,23 +1889,27 @@ router.get("/dashboard/summary", async (req, res) => {
     cards: {
       flaggedEntries: {
         value: totalFlaggedEntries,
-        ...buildDelta(flaggedThis7Days, flaggedPrevious7Days),
+        ...buildDelta(totalFlaggedEntries, previousFlaggedRows.length),
       },
       totalStudents: {
         value: totalStudents,
-        ...buildDelta(studentsThis30Days, studentsPrevious30Days),
+        ...buildDelta(registeredInRange.length, previousProfiles.length),
       },
       totalEntries: {
         value: completedJournals.length,
-        ...buildDelta(completedJournals.length, Math.max(0, completedJournals.length - entriesToday)),
+        ...buildDelta(completedJournals.length, previousCompletedJournals.length),
       },
       scheduledToday: {
         value: scheduledEvents.todayCount,
         ...buildDelta(scheduledEvents.todayCount, scheduledEvents.yesterdayCount),
       },
+      scheduledInRange: {
+        value: scheduledInRangeCount,
+        ...buildDelta(scheduledInRangeCount, previousScheduledCount),
+      },
       futureSelfMessages: {
         value: totalFutureSelfMessages,
-        ...buildDelta(futureSelfMessagesToday, futureSelfMessagesYesterday),
+        ...buildDelta(totalFutureSelfMessages, futureSelfPrevious.length),
       },
       muniAccuracy: {
         value: muniAccuracyPercent,
@@ -1942,6 +1969,13 @@ router.get("/dashboard/summary", async (req, res) => {
       scheduledTodayUnavailable: scheduledEvents.unavailable,
     },
     caseAssignments,
+    range: {
+      key: rangeKey,
+      startDate,
+      endDate,
+    },
+    rangeStart: startDate,
+    rangeEnd: endDate,
   });
 });
 
@@ -1954,6 +1988,8 @@ router.get("/dashboard/risk-flags", async (_req, res) => {
         je.entry_date,
         je.title,
         je.summary,
+        je.summary_rating,
+        je.summary_feedback_reason,
         je.insights,
         je.risk_level,
         je.admin_flag_reason,
@@ -2002,6 +2038,8 @@ router.get("/dashboard/risk-flags", async (_req, res) => {
       supportResponseAt: row.support_response_at || null,
       studentNumber: row.student_number,
       summary: row.summary || "",
+      summaryFeedbackReason: row.summary_feedback_reason || null,
+      summaryRating: row.summary_rating || null,
       title: row.title || "",
     })),
   });
@@ -2165,6 +2203,35 @@ router.patch("/feedbacks/:feedbackId", async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ message: error.message || "Unable to update feedback." });
+  }
+});
+
+router.delete("/feedbacks/:feedbackId", async (req, res) => {
+  const feedbackId = String(req.params.feedbackId || "").trim();
+  if (!feedbackId) {
+    return res.status(400).json({ message: "Feedback id is required." });
+  }
+
+  try {
+    const result = await query(
+      `
+        delete from public.student_feedbacks
+        where id = $1
+        returning id
+      `,
+      [feedbackId],
+    );
+
+    if (!result.rowCount) {
+      return res.status(404).json({ message: "Feedback was not found." });
+    }
+
+    return res.json({
+      id: feedbackId,
+      message: "Feedback deleted successfully.",
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message || "Unable to delete feedback." });
   }
 });
 
@@ -2973,7 +3040,10 @@ router.get("/analytics", async (req, res) => {
         from public.journal_entries
         where entry_date between $1::date and $2::date
           and is_finished = true
-          and deleted_by_student_at is null
+          and (
+            deleted_by_student_at is null
+            or upper(coalesce(risk_level, 'NONE')) in ('HIGH', 'CRITICAL')
+          )
         order by entry_date asc, created_at asc
       `,
       [startDate, endDate],
@@ -3043,7 +3113,10 @@ router.get("/analytics", async (req, res) => {
         from public.journal_entries
         where entry_date between $1::date and $2::date
           and is_finished = true
-          and deleted_by_student_at is null
+          and (
+            deleted_by_student_at is null
+            or upper(coalesce(risk_level, 'NONE')) in ('HIGH', 'CRITICAL')
+          )
       `,
       [previousStartDate, previousEndDate],
     ),
@@ -3071,7 +3144,10 @@ router.get("/analytics", async (req, res) => {
           from public.journal_entries
           where entry_date between $1::date and $2::date
             and is_finished = true
-            and deleted_by_student_at is null
+            and (
+              deleted_by_student_at is null
+              or upper(coalesce(risk_level, 'NONE')) in ('HIGH', 'CRITICAL')
+            )
         `,
         [previousStartDate, previousEndDate],
       )
@@ -3201,7 +3277,7 @@ router.get("/analytics", async (req, res) => {
 
     if (["HIGH", "CRITICAL"].includes(riskLevel)) {
       crisisRiskSeries[bucketIndex] += 1;
-    } else if (["LOW", "MEDIUM", "MODERATE"].includes(riskLevel)) {
+    } else if (riskLevel === "LOW") {
       distressedRiskSeries[bucketIndex] += 1;
     }
   }
@@ -3217,7 +3293,7 @@ router.get("/analytics", async (req, res) => {
     buildResolutionRate(
       journalRows,
       "Distressed / Needs Support",
-      (row) => ["LOW", "MEDIUM", "MODERATE"].includes(String(row.risk_level || "").toUpperCase()),
+      (row) => String(row.risk_level || "").toUpperCase() === "LOW",
       120,
       "amber",
     ),
@@ -3264,7 +3340,7 @@ router.get("/analytics", async (req, res) => {
     }
     if (["HIGH", "CRITICAL"].includes(riskLevel)) stats.highRiskFlags += 1;
     if (riskLevel === "CRITICAL") stats.criticalRiskFlags += 1;
-    if (["LOW", "MEDIUM", "MODERATE"].includes(riskLevel)) stats.mediumRiskFlags += 1;
+    if (riskLevel === "LOW") stats.mediumRiskFlags += 1;
     if (supportResponse === "DECLINED") stats.declinedSupport += 1;
     if (supportResponse === "CONTACTED") stats.contactedSupport += 1;
 
@@ -3335,6 +3411,13 @@ router.get("/analytics", async (req, res) => {
       startDate,
       endDate,
     },
+    range: {
+      key: rangeKey,
+      startDate,
+      endDate,
+    },
+    rangeStart: startDate,
+    rangeEnd: endDate,
     cards: metricCards,
     charts: {
       journalEntryVolume,
@@ -3652,6 +3735,8 @@ router.get("/students/recent-entries", async (req, res) => {
         je.entry_date,
         je.title,
         je.summary,
+        je.summary_rating,
+        je.summary_feedback_reason,
         je.insights,
         je.risk_level,
         je.admin_flag_reason,
@@ -3679,6 +3764,8 @@ router.get("/students/recent-entries", async (req, res) => {
     entryDate: normalizeDateValue(row.entry_date),
     title: row.title || "",
     summary: row.summary || "",
+    summaryFeedbackReason: row.summary_feedback_reason || null,
+    summaryRating: row.summary_rating || null,
     insights: normalizeStringArray(row.insights),
     riskLevel: row.risk_level || "NONE",
     adminFlagReason: row.admin_flag_reason || null,
@@ -3865,6 +3952,8 @@ router.get("/students/:studentNumber", async (req, res) => {
         je.entry_date,
         je.title,
         je.summary,
+        je.summary_rating,
+        je.summary_feedback_reason,
         je.insights,
         je.risk_level,
         je.admin_flag_reason,
@@ -3912,6 +4001,8 @@ router.get("/students/:studentNumber", async (req, res) => {
       entryDate: normalizeDateValue(row.entry_date),
       title: row.title || "",
       summary: row.summary || "",
+      summaryFeedbackReason: row.summary_feedback_reason || null,
+      summaryRating: row.summary_rating || null,
       insights: normalizeStringArray(row.insights),
       riskLevel,
       adminFlagReason: row.admin_flag_reason || null,

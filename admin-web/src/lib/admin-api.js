@@ -123,8 +123,19 @@ export async function resetAdminPassword(payload) {
   });
 }
 
-export async function fetchAdminDashboardSummary() {
-  return request("/api/admin/dashboard/summary");
+export async function fetchAdminDashboardSummary(params = {}) {
+  const searchParams = new URLSearchParams();
+  if (params.range) {
+    searchParams.set("range", params.range);
+  }
+  if (params.startDate) {
+    searchParams.set("startDate", params.startDate);
+  }
+  if (params.endDate) {
+    searchParams.set("endDate", params.endDate);
+  }
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+  return request(`/api/admin/dashboard/summary${suffix}`);
 }
 
 export async function fetchAdminAnalytics(params = {}) {
@@ -183,6 +194,12 @@ export async function updateAdminFeedback(feedbackId, payload) {
     return { ...data, feedback: normalizeAdminFeedbackItem(data.feedback) };
   }
   return data;
+}
+
+export async function deleteAdminFeedback(feedbackId) {
+  return request(`/api/admin/feedbacks/${encodeURIComponent(feedbackId)}`, {
+    method: "DELETE",
+  });
 }
 
 export async function updateAdminJournalFlag(entryId, payload) {

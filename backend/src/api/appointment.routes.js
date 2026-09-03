@@ -3868,10 +3868,6 @@ router.post("/admin/peer-counselors", requireRoles("HEAD_COUNSELOR"), async (req
   if (!gender) {
     return res.status(400).json({ message: "Please choose Male or Female for the peer counselor." });
   }
-  if (!(await findStudentProfileByStudentNumber(studentNumber))) {
-    return res.status(404).json({ message: "Peer counselor student number is not registered." });
-  }
-
   const invitationToken = createPeerInviteToken();
   const invitationTokenHash = hashPeerInviteToken(invitationToken);
   const insertResult = await query(
@@ -3999,10 +3995,6 @@ router.patch("/admin/peer-counselors/:peerCounselorId", requireRoles("HEAD_COUNS
   if (!gender) {
     return res.status(400).json({ message: "Please choose Male or Female for the peer counselor." });
   }
-  if (!(await findStudentProfileByStudentNumber(studentNumber))) {
-    return res.status(404).json({ message: "Peer counselor student number is not registered." });
-  }
-
   const updateResult = await query(
     `
       update public.peer_counselors

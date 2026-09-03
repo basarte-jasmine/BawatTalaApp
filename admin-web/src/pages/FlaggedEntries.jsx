@@ -372,6 +372,43 @@ function JournalEntryViewer({ entry, onOpenJournal }) {
   );
 }
 
+
+function getStudentSummaryFeedback(entry) {
+  const rating = String(entry?.summaryRating || "").trim().toUpperCase();
+  const reason = String(entry?.summaryFeedbackReason || "").trim();
+  if (rating !== "HELPFUL" && rating !== "NEEDS_WORK") {
+    return null;
+  }
+  return {
+    rating,
+    label: rating === "HELPFUL" ? "Helpful" : "Needs work",
+    reason,
+  };
+}
+
+function StudentSummaryFeedback({ entry, compact = false }) {
+  const feedback = getStudentSummaryFeedback(entry);
+  if (!feedback) {
+    return (
+      <div className={compact ? "mt-3 text-xs text-slate-400" : "rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500"}>
+        No student feedback
+      </div>
+    );
+  }
+
+  const tone = feedback.rating === "HELPFUL"
+    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+    : "border-amber-200 bg-amber-50 text-amber-800";
+
+  return (
+    <div className={`rounded-lg border px-4 py-3 ${tone}`}>
+      <div className="text-xs font-semibold uppercase tracking-[0.16em]">Student feedback</div>
+      <div className="mt-1 text-sm font-bold">{feedback.label}</div>
+      {feedback.reason ? <div className="mt-1 text-sm leading-6">{feedback.reason}</div> : null}
+    </div>
+  );
+}
+
 function SummaryNotes({ entry }) {
   const notes = Array.isArray(entry?.insights) ? entry.insights.filter(Boolean) : [];
 
@@ -574,6 +611,13 @@ function ReviewModal({
                 </div>
 
                 <SummaryNotes entry={selectedEntry} />
+
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800">Student Feedback</h3>
+                  <div className="mt-3">
+                    <StudentSummaryFeedback entry={selectedEntry} />
+                  </div>
+                </div>
 
                 <FlagDetails
                   entry={selectedEntry}

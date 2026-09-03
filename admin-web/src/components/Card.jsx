@@ -7,6 +7,7 @@ export default function Card({
 }) {
   return (
     <div
+      data-export-block="true"
       className={`rounded-xl border border-gray-100 bg-white p-6 shadow-sm transition hover:border-emerald-200 ${className}`}
     >
       {(title || icon) && (

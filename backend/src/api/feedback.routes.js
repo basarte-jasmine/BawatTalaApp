@@ -30,7 +30,7 @@ function normalizeSubmissionType(value) {
 function normalizeFeedbackCategory(value, submissionType) {
   const raw = normalizeCompactSpaces(value);
   const allowed = submissionType === "SUPPORT" ? SUPPORT_CATEGORIES : FEEDBACK_CATEGORIES;
-  if (!raw) return "Other";
+  if (!raw) return null;
   const key = raw.toLowerCase();
   const aliasMap = {
     suggestion: "Suggestion",

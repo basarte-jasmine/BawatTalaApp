@@ -346,6 +346,40 @@ function MessageModal({ student, title, body, sending, maskStudentNumbers = fals
   );
 }
 
+
+function getStudentSummaryFeedback(entry) {
+  const rating = String(entry?.summaryRating || "").trim().toUpperCase();
+  const reason = String(entry?.summaryFeedbackReason || "").trim();
+  if (rating !== "HELPFUL" && rating !== "NEEDS_WORK") {
+    return null;
+  }
+  return {
+    rating,
+    label: rating === "HELPFUL" ? "Helpful" : "Needs work",
+    reason,
+  };
+}
+
+function StudentSummaryFeedback({ entry, emptyMode = "hide" }) {
+  const feedback = getStudentSummaryFeedback(entry);
+  if (!feedback) {
+    if (emptyMode === "hide") return null;
+    return <div className="mt-3 text-xs text-slate-400">No student feedback</div>;
+  }
+
+  const tone = feedback.rating === "HELPFUL"
+    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+    : "border-amber-200 bg-amber-50 text-amber-800";
+
+  return (
+    <div className={`mt-3 rounded-lg border px-4 py-3 ${tone}`}>
+      <div className="text-xs font-semibold uppercase tracking-[0.16em]">Student feedback</div>
+      <div className="mt-1 text-sm font-bold">{feedback.label}</div>
+      {feedback.reason ? <div className="mt-1 text-sm leading-6">{feedback.reason}</div> : null}
+    </div>
+  );
+}
+
 function RecentEntriesModal({
   isOpen,
   entries,
@@ -445,6 +479,7 @@ function RecentEntriesModal({
                             <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-medium text-slate-500">No concern tags</span>
                           )}
                         </div>
+                        <StudentSummaryFeedback entry={entry} emptyMode="hide" />
                       </div>
                     </div>
                   );
@@ -998,6 +1033,7 @@ export default function StudentDirectory({ onLogout, session }) {
                               <div className="rounded-[18px] bg-white px-4 py-3 text-sm leading-6 text-slate-700 shadow-sm">
                                 {entry.summary || "No generated summary for this entry."}
                               </div>
+                              <StudentSummaryFeedback entry={entry} emptyMode="label" />
                             </section>
 
                             <section className="rounded-[22px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4">

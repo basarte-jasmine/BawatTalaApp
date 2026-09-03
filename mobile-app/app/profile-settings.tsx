@@ -104,6 +104,18 @@ function isSection(value: string | undefined): value is SettingsSection {
   return Boolean(value && value in SCREEN_COPY);
 }
 
+function showAppAlert(title: string, message: string, onOk?: () => void) {
+  if (Platform.OS === "web") {
+    const browserAlert = (globalThis as { alert?: (value: string) => void }).alert;
+    if (typeof browserAlert === "function") {
+      browserAlert(`${title}\n\n${message}`);
+      if (onOk) onOk();
+      return;
+    }
+  }
+  Alert.alert(title, message, onOk ? [{ text: "OK", onPress: onOk }] : undefined);
+}
+
 function resolveSettingsSection(value: string | undefined): SettingsSection {
   if (value === "feedback") return "help-support";
   return isSection(value) ? value : "personal-details";
@@ -475,8 +487,9 @@ function birthdateToPickerDate(value: string) {
 }
 
 export default function ProfileSettingsScreen() {
-  const { resetPin, section } = useLocalSearchParams<{ resetPin?: string; section?: string }>();
+  const { resetPin, section, view } = useLocalSearchParams<{ resetPin?: string; section?: string; view?: string }>();
   const activeSection: SettingsSection = resolveSettingsSection(section);
+  const [showContactForm, setShowContactForm] = useState(view === "contact" || view === "form");
   const { title, subtitle } = SCREEN_COPY[activeSection];
   const { setUser, user } = useAuthSession();
   const {
@@ -515,6 +528,26 @@ export default function ProfileSettingsScreen() {
   const [feedbackAttachment, setFeedbackAttachment] = useState<FeedbackAttachment | null>(null);
   const [feedbackSending, setFeedbackSending] = useState(false);
   const [feedbackSuccessMessage, setFeedbackSuccessMessage] = useState("");
+  const [feedbackErrors, setFeedbackErrors] = useState<{
+    category?: string;
+    message?: string;
+    subject?: string;
+    type?: string;
+  }>({});
+  const [feedbackErrorBanner, setFeedbackErrorBanner] = useState("");
+
+  useEffect(() => {
+    if (view === "contact" || view === "form") {
+      setShowContactForm(true);
+    }
+  }, [view]);
+
+  useEffect(() => {
+    if (activeSection !== "help-support") {
+      setShowContactForm(false);
+    }
+  }, [activeSection]);
+
   const [currentPin, setCurrentPin] = useState("");
   const [pin, setPin] = useState("");
   const [pinConfirm, setPinConfirm] = useState("");
@@ -766,6 +799,10 @@ export default function ProfileSettingsScreen() {
   };
 
   const handleBack = () => {
+    if (activeSection === "help-support" && showContactForm) {
+      setShowContactForm(false);
+      return;
+    }
     if (router.canGoBack()) {
       router.back();
       return;
@@ -782,17 +819,36 @@ export default function ProfileSettingsScreen() {
   const handleFeedback = async () => {
     if (feedbackSending) return;
     const isSupport = submissionType === "SUPPORT";
+    const errors: { category?: string; message?: string; subject?: string; type?: string } = {};
+
+    if (!submissionType) {
+      errors.type = "Please choose a submission type.";
+    }
+    if (!feedbackCategory) {
+      errors.category = "Please choose a category.";
+    }
+    if (!feedbackSubject.trim()) {
+      errors.subject = "Please enter a subject.";
+    }
     if (!feedbackMessage.trim()) {
-      Alert.alert(
-        isSupport ? "Add a message" : "Add your feedback",
-        isSupport
-          ? "Write a short note first so we know how to help."
-          : "Write a short note first so we know what you want us to improve.",
-      );
+      errors.message = isSupport
+        ? "Please describe what you need help with."
+        : "Please enter your feedback.";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFeedbackErrors(errors);
+      const firstErrorMessage = errors.subject || errors.message || errors.category || errors.type || "Please fill in all required fields.";
+      setFeedbackErrorBanner(firstErrorMessage);
+      showAppAlert("Incomplete Information", firstErrorMessage);
       return;
     }
+
+    setFeedbackErrors({});
+    setFeedbackErrorBanner("");
+
     if (!user?.studentNumber) {
-      Alert.alert("Sign in needed", isSupport ? "Please sign in again before submitting a request." : "Please sign in again before sending feedback.");
+      showAppAlert("Sign in needed", isSupport ? "Please sign in again before submitting a request." : "Please sign in again before sending feedback.");
       return;
     }
 
@@ -813,22 +869,29 @@ export default function ProfileSettingsScreen() {
       });
 
       if (!result.ok) {
-        Alert.alert(isSupport ? "Request not sent" : "Feedback not sent", result.message || "Please try again in a bit.");
+        setFeedbackErrorBanner(result.message || "Unable to send request.");
+        showAppAlert(isSupport ? "Request not sent" : "Feedback not sent", result.message || "Please try again in a bit.");
         return;
       }
 
       setFeedbackSubject("");
       setFeedbackMessage("");
       setFeedbackAttachment(null);
+      setFeedbackErrors({});
+      setFeedbackErrorBanner("");
       setFeedbackSuccessMessage(
         result.message || (isSupport ? "Success! Your support request was sent." : "Success! Your feedback was sent."),
       );
-      Alert.alert(
+      showAppAlert(
         isSupport ? "Request submitted" : "Feedback sent",
         result.message || (isSupport ? "Thank you. We'll look into your request." : "Thank you for helping improve Bawat Tala."),
+        () => {
+          setShowContactForm(false);
+        },
       );
     } catch {
-      Alert.alert(isSupport ? "Request not sent" : "Feedback not sent", "Please check your connection and try again.");
+      setFeedbackErrorBanner("Please check your connection and try again.");
+      showAppAlert(isSupport ? "Request not sent" : "Feedback not sent", "Please check your connection and try again.");
     } finally {
       setFeedbackSending(false);
     }
@@ -1188,6 +1251,24 @@ export default function ProfileSettingsScreen() {
     startEditingField("email");
   };
 
+  const sendProfileEmailOtp = async (nextEmail: string) => {
+    setProfileSaving(true);
+    setProfileError("");
+    setProfileSuccess("");
+    const result = await sendProfileEmailChangeCode(nextEmail);
+    setProfileSaving(false);
+    if (!result.ok) {
+      setProfileError(result.message || "Failed to send verification code. Please try again.");
+      return false;
+    }
+    setEmailChangeStage((result.stage as "current-email" | "new-email") || "current-email");
+    setProfileAwaitingEmailOtp(true);
+    setProfileOtpCode("");
+    setProfileOtpSeconds(result.resendAfterSeconds ?? 60);
+    setProfileSuccess(result.message || "Verification code sent to your current email address.");
+    return true;
+  };
+
   const validateSingleField = (field: string): string | null => {
     switch (field) {
       case "fullName": {
@@ -1409,13 +1490,19 @@ return (
         <Pressable style={styles.backButton} accessibilityLabel="Go back" onPress={handleBack}>
           <Ionicons name="chevron-back" size={30} color="#3D3F43" />
         </Pressable>
-        <Text style={styles.topTitle}>{title}</Text>
+        <Text style={styles.topTitle}>
+          {activeSection === "help-support" && showContactForm ? "Contact Support" : title}
+        </Text>
         <View style={styles.topBarSpacer} />
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {activeSection !== "schedule" ? (
-          <Text style={styles.subtitle}>{subtitle}</Text>
+          <Text style={styles.subtitle}>
+            {activeSection === "help-support" && showContactForm
+              ? "Submit a support request or feedback and we'll get back to you."
+              : subtitle}
+          </Text>
         ) : null}
 
         {activeSection === "personal-details" ? (
@@ -2082,146 +2169,212 @@ return (
         ) : null}
 
         {activeSection === "help-support" ? (
-          <>
-            <Card title="Need support right away?">
-              <ActionRow
-                title="Call NCMH Crisis Hotline 1553"
-                body="If you or someone nearby needs immediate mental health support, call 1553 now."
-                onPress={() => void Linking.openURL("tel:1553")}
-              />
-            </Card>
-            <Card title="Type">
-              <View style={styles.chips}>
-                {([
-                  { id: "FEEDBACK" as const, label: "Feedback" },
-                  { id: "SUPPORT" as const, label: "Support Request" },
-                ]).map((item) => (
-                  <Pressable
-                    key={item.id}
-                    style={[styles.chip, submissionType === item.id && styles.chipActive]}
-                    onPress={() => {
-                      setSubmissionType(item.id);
-                      setFeedbackCategory(item.id === "SUPPORT" ? SUPPORT_CATEGORIES[0] : FEEDBACK_CATEGORIES[0]);
-                      setFeedbackSuccessMessage("");
-                    }}
-                  >
-                    <Text style={[styles.chipText, submissionType === item.id && styles.chipTextActive]}>{item.label}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </Card>
-            <Card title="Category">
-              <View style={styles.chips}>
-                {helpCategories.map((category) => (
-                  <Pressable
-                    key={category}
-                    style={[styles.chip, feedbackCategory === category && styles.chipActive]}
-                    onPress={() => setFeedbackCategory(category)}
-                  >
-                    <Text style={[styles.chipText, feedbackCategory === category && styles.chipTextActive]}>{category}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </Card>
-            <Card title="Subject / Title">
-              <TextInput
-                value={feedbackSubject}
-                onChangeText={(value) => {
-                  setFeedbackSubject(value);
+          !showContactForm ? (
+            <>
+              <Card title="Need support right away?">
+                <ActionRow
+                  title="Call NCMH Crisis Hotline 1553"
+                  body="If you or someone nearby needs immediate mental health support, call 1553 now."
+                  onPress={() => void Linking.openURL("tel:1553")}
+                />
+              </Card>
+
+              <Card title="Quick Actions">
+                <ActionRow
+                  title="Schedule Consultation"
+                  body="Set up a private session with a counselor or peer listener."
+                  onPress={() => router.push("/consult")}
+                />
+                <ActionRow
+                  title="Open Wellness Tools"
+                  body="Use guided exercises when you need a calmer reset."
+                  onPress={() => router.push("/wellness-tools")}
+                  bordered
+                />
+                <ActionRow
+                  title="View Notifications"
+                  body="Catch reminders, follow-ups, and updates in one place."
+                  onPress={() => router.push("/notifications")}
+                  bordered
+                />
+              </Card>
+
+              <Card title="Common Questions">
+                <Faq
+                  question="How do I continue a journal entry?"
+                  answer="Open Journal, tap View Entries, and choose the entry you want to read."
+                />
+                <Faq
+                  question="What if I need support right away?"
+                  answer="Call NCMH Crisis Hotline 1553 if you need immediate help. Use Consult for counseling support, or Talk to Peer when you want a lighter first step."
+                  bordered
+                />
+                <Faq
+                  question="Will Muni read my entries automatically?"
+                  answer="Muni is artificial intelligence. It responds inside journaling flows and summaries, but it is not a psychometrician or professional care. You stay in control of what you write and finish."
+                  bordered
+                />
+              </Card>
+
+              <PrimaryButton
+                label="Contact Support"
+                onPress={() => {
+                  setShowContactForm(true);
+                  setSubmissionType("SUPPORT");
+                  setFeedbackCategory(SUPPORT_CATEGORIES[0]);
                   setFeedbackSuccessMessage("");
+                  setFeedbackErrors({});
+                  setFeedbackErrorBanner("");
                 }}
-                placeholder="Optional title for your message"
-                placeholderTextColor="#97A1AA"
-                style={styles.textInput}
               />
-            </Card>
-            <Card title="Message">
-              <TextInput
-                value={feedbackMessage}
-                onChangeText={(value) => {
-                  setFeedbackMessage(value);
-                  setFeedbackSuccessMessage("");
-                }}
-                placeholder={
-                  submissionType === "SUPPORT"
-                    ? "What do you need help with?"
-                    : "What happened, what you expected, or what you'd love to see improved."
-                }
-                placeholderTextColor="#97A1AA"
-                multiline
-                textAlignVertical="top"
-                style={styles.feedbackInput}
-              />
-            </Card>
-            <Card title="Attach image">
-              {feedbackAttachment ? (
-                <View style={styles.feedbackAttachmentPreview}>
-                  <Image source={{ uri: feedbackAttachment.uri }} style={styles.feedbackAttachmentImage} resizeMode="cover" />
-                  <View style={styles.feedbackAttachmentInfo}>
-                    <Text style={styles.feedbackAttachmentTitle} numberOfLines={1}>
-                      {feedbackAttachment.fileName}
-                    </Text>
-                    <Text style={styles.feedbackAttachmentMeta}>Image attached</Text>
-                  </View>
-                  <Pressable
-                    style={styles.feedbackAttachmentRemove}
-                    onPress={() => {
-                      setFeedbackAttachment(null);
-                      setFeedbackSuccessMessage("");
-                    }}
-                  >
-                    <Ionicons name="close" size={18} color="#7C3D3D" />
-                  </Pressable>
+            </>
+          ) : (
+            <>
+              <Card title="Type">
+                <View style={styles.chips}>
+                  {([
+                    { id: "SUPPORT" as const, label: "Support Request" },
+                    { id: "FEEDBACK" as const, label: "Feedback" },
+                  ]).map((item) => (
+                    <Pressable
+                      key={item.id}
+                      style={[styles.chip, submissionType === item.id && styles.chipActive]}
+                      onPress={() => {
+                        setSubmissionType(item.id);
+                        setFeedbackCategory(item.id === "SUPPORT" ? SUPPORT_CATEGORIES[0] : FEEDBACK_CATEGORIES[0]);
+                        setFeedbackSuccessMessage("");
+                        setFeedbackErrorBanner("");
+                        if (feedbackErrors.type) {
+                          setFeedbackErrors((prev) => ({ ...prev, type: undefined }));
+                        }
+                      }}
+                    >
+                      <Text style={[styles.chipText, submissionType === item.id && styles.chipTextActive]}>{item.label}</Text>
+                    </Pressable>
+                  ))}
                 </View>
-              ) : (
-                <Pressable style={styles.feedbackAttachmentButton} onPress={() => void pickFeedbackAttachment()}>
-                  <Ionicons name="image-outline" size={20} color="#4D6C58" />
-                  <View style={styles.feedbackAttachmentInfo}>
-                    <Text style={styles.feedbackAttachmentTitle}>Add screenshot or photo</Text>
-                    <Text style={styles.feedbackAttachmentMeta}>JPG, PNG, or WEBP up to 5 MB</Text>
+                {feedbackErrors.type ? (
+                  <Text style={styles.fieldError}>{feedbackErrors.type}</Text>
+                ) : null}
+              </Card>
+
+              <Card title="Category">
+                <View style={styles.chips}>
+                  {helpCategories.map((category) => (
+                    <Pressable
+                      key={category}
+                      style={[styles.chip, feedbackCategory === category && styles.chipActive]}
+                      onPress={() => {
+                        setFeedbackCategory(category);
+                        setFeedbackSuccessMessage("");
+                        setFeedbackErrorBanner("");
+                        if (feedbackErrors.category) {
+                          setFeedbackErrors((prev) => ({ ...prev, category: undefined }));
+                        }
+                      }}
+                    >
+                      <Text style={[styles.chipText, feedbackCategory === category && styles.chipTextActive]}>{category}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                {feedbackErrors.category ? (
+                  <Text style={styles.fieldError}>{feedbackErrors.category}</Text>
+                ) : null}
+              </Card>
+
+              <Card title="Subject">
+                <TextInput
+                  value={feedbackSubject}
+                  onChangeText={(value) => {
+                    setFeedbackSubject(value);
+                    setFeedbackSuccessMessage("");
+                    setFeedbackErrorBanner("");
+                    if (feedbackErrors.subject) {
+                      setFeedbackErrors((prev) => ({ ...prev, subject: undefined }));
+                    }
+                  }}
+                  placeholder="What is this regarding?"
+                  placeholderTextColor="#97A1AA"
+                  style={[styles.textInput, feedbackErrors.subject && styles.inputError]}
+                />
+                {feedbackErrors.subject ? (
+                  <Text style={styles.fieldError}>{feedbackErrors.subject}</Text>
+                ) : null}
+              </Card>
+
+              <Card title="Message">
+                <TextInput
+                  value={feedbackMessage}
+                  onChangeText={(value) => {
+                    setFeedbackMessage(value);
+                    setFeedbackSuccessMessage("");
+                    setFeedbackErrorBanner("");
+                    if (feedbackErrors.message) {
+                      setFeedbackErrors((prev) => ({ ...prev, message: undefined }));
+                    }
+                  }}
+                  placeholder={
+                    submissionType === "SUPPORT"
+                      ? "What do you need help with?"
+                      : "What happened, what you expected, or what you'd love to see improved."
+                  }
+                  placeholderTextColor="#97A1AA"
+                  multiline
+                  textAlignVertical="top"
+                  style={[styles.feedbackInput, feedbackErrors.message && styles.inputError]}
+                />
+                {feedbackErrors.message ? (
+                  <Text style={styles.fieldError}>{feedbackErrors.message}</Text>
+                ) : null}
+              </Card>
+
+              <Card title="Attach image (Optional)">
+                {feedbackAttachment ? (
+                  <View style={styles.feedbackAttachmentPreview}>
+                    <Image source={{ uri: feedbackAttachment.uri }} style={styles.feedbackAttachmentImage} resizeMode="cover" />
+                    <View style={styles.feedbackAttachmentInfo}>
+                      <Text style={styles.feedbackAttachmentTitle} numberOfLines={1}>
+                        {feedbackAttachment.fileName}
+                      </Text>
+                      <Text style={styles.feedbackAttachmentMeta}>Image attached</Text>
+                    </View>
+                    <Pressable
+                      style={styles.feedbackAttachmentRemove}
+                      onPress={() => {
+                        setFeedbackAttachment(null);
+                        setFeedbackSuccessMessage("");
+                      }}
+                    >
+                      <Ionicons name="close" size={18} color="#7C3D3D" />
+                    </Pressable>
                   </View>
-                </Pressable>
-              )}
-            </Card>
-            {feedbackSuccessMessage ? <Text style={styles.feedbackSuccessText}>{feedbackSuccessMessage}</Text> : null}
-            <PrimaryButton
-              disabled={feedbackSending}
-              label={feedbackSending ? "Sending..." : submissionType === "SUPPORT" ? "Submit Request" : "Send Feedback"}
-              onPress={() => void handleFeedback()}
-            />
-            <Card title="Quick Actions">
-              <ActionRow
-                title="Schedule Consultation"
-                body="Set up a private session with a counselor or peer listener."
-                onPress={() => router.push("/consult")}
+                ) : (
+                  <Pressable style={styles.feedbackAttachmentButton} onPress={() => void pickFeedbackAttachment()}>
+                    <Ionicons name="image-outline" size={20} color="#4D6C58" />
+                    <View style={styles.feedbackAttachmentInfo}>
+                      <Text style={styles.feedbackAttachmentTitle}>Add screenshot or photo</Text>
+                      <Text style={styles.feedbackAttachmentMeta}>JPG, PNG, or WEBP up to 5 MB</Text>
+                    </View>
+                  </Pressable>
+                )}
+              </Card>
+
+              {feedbackErrorBanner ? (
+                <View style={styles.feedbackErrorBanner}>
+                  <Ionicons name="alert-circle-outline" size={18} color="#C93B3B" />
+                  <Text style={styles.feedbackErrorBannerText}>{feedbackErrorBanner}</Text>
+                </View>
+              ) : null}
+
+              {feedbackSuccessMessage ? <Text style={styles.feedbackSuccessText}>{feedbackSuccessMessage}</Text> : null}
+
+              <PrimaryButton
+                disabled={feedbackSending}
+                label={feedbackSending ? "Submitting..." : "Submit Request"}
+                onPress={() => void handleFeedback()}
               />
-              <ActionRow
-                title="Open Wellness Tools"
-                body="Use guided exercises when you need a calmer reset."
-                onPress={() => router.push("/wellness-tools")}
-                bordered
-              />
-              <ActionRow
-                title="View Notifications"
-                body="Catch reminders, follow-ups, and updates in one place."
-                onPress={() => router.push("/notifications")}
-                bordered
-              />
-            </Card>
-            <Card title="Common Questions">
-              <Faq question="How do I continue a journal entry?" answer="Open Journal, tap View Entries, and choose the entry you want to read." />
-              <Faq
-                question="What if I need support right away?"
-                answer="Call NCMH Crisis Hotline 1553 if you need immediate help. Use Consult for counseling support, or Talk to Peer when you want a lighter first step."
-                bordered
-              />
-              <Faq
-                question="Will Muni read my entries automatically?"
-                answer="Muni is artificial intelligence. It responds inside journaling flows and summaries, but it is not a psychometrician or professional care. You stay in control of what you write and finish."
-                bordered
-              />
-            </Card>
-          </>
+            </>
+          )
         ) : null}
 
         {activeSection === "app-lock" ? (
@@ -2282,6 +2435,7 @@ return (
           </>
         ) : null}
 
+        {(!showContactForm || activeSection !== "help-support") && (
         <Pressable
           style={styles.shareFooter}
           onPress={() => router.push("/referral" as never)}
@@ -2289,6 +2443,7 @@ return (
           <Ionicons name="share-social-outline" size={18} color="#4A5F72" />
           <Text style={styles.shareFooterText}>Refer a friend from here too</Text>
         </Pressable>
+        )}
       </ScrollView>
 
       <Modal
@@ -3102,6 +3257,29 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: 10,
     textAlign: "center",
+  },
+  inputError: {
+    borderColor: "#D24C59",
+    backgroundColor: "#FFF8F8",
+  },
+  feedbackErrorBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 8,
+    backgroundColor: "#FDEAEA",
+    borderWidth: 1,
+    borderColor: "#F7C6C6",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  feedbackErrorBannerText: {
+    color: "#C93B3B",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "600",
+    flex: 1,
   },
   modalBackdrop: {
     flex: 1,

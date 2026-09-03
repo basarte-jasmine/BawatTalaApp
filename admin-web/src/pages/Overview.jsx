@@ -121,46 +121,59 @@ const PRIMARY_STUDENT_CONCERN_COLORS = [
 function MetricCard({ item, onSelect }) {
   const Icon = item.icon;
   const DeltaIcon = item.direction === "down" ? ArrowDownRight : item.direction === "up" ? ArrowUpRight : null;
+  const isAmber = item.tone === "amber";
+  const isGreen = item.tone === "green";
   const chipClassName =
-    item.tone === "amber"
-      ? "bg-amber-50 text-amber-600"
-      : item.tone === "gray"
-        ? "bg-gray-100 text-gray-600"
-        : "bg-emerald-50 text-emerald-600";
-  const className = `bt-card rounded-xl border border-gray-100 bg-white p-5 text-left shadow-sm transition-colors ${
-    onSelect ? "hover:border-emerald-200" : ""
-  }`;
+    isAmber
+      ? "bg-amber-50 text-amber-700 border border-amber-200/70"
+      : isGreen
+        ? "bg-emerald-50 text-emerald-700 border border-emerald-200/70"
+        : "bg-slate-100/80 text-slate-600 border border-slate-200/60";
+  const iconBoxClassName =
+    isAmber
+      ? "bg-amber-50 text-amber-600 ring-1 ring-amber-200/60"
+      : isGreen
+        ? "bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200/60"
+        : "bg-slate-100 text-slate-600 ring-1 ring-slate-200/60";
+  const cardBaseClass =
+    "bt-card flex flex-col justify-between gap-3.5 rounded-2xl border border-slate-200/80 bg-white p-4.5 sm:p-5 text-left shadow-sm transition-all duration-200";
+  const cardInteractiveClass = onSelect
+    ? "hover:border-emerald-300 hover:shadow-md cursor-pointer"
+    : "";
   const content = (
     <>
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-          <Icon
-            className={`h-4 w-4 ${
-              item.tone === "amber" ? "text-amber-500" : item.tone === "gray" ? "text-emerald-700" : "text-emerald-600"
-            }`}
-          />
-          {item.title}
-        </h3>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2.5 min-w-0">
+          {Icon ? (
+            <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${iconBoxClassName}`}>
+              <Icon className="h-4 w-4" />
+            </div>
+          ) : null}
+          <h3 className="truncate text-sm font-semibold text-slate-700" title={item.title}>
+            {item.title}
+          </h3>
+        </div>
       </div>
-      <div className="flex items-end justify-between">
-        <div className="text-3xl font-bold text-gray-900">{item.value}</div>
-        <div className={`flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${chipClassName}`}>
-          {DeltaIcon ? <DeltaIcon className="mr-1 h-3 w-3" /> : null}
-          {item.delta}
+      <div className="flex items-end justify-between gap-2 pt-1">
+        <div className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{item.value}</div>
+        <div className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${chipClassName}`}>
+          {DeltaIcon ? <DeltaIcon className="h-3.5 w-3.5" /> : null}
+          <span>{item.delta}</span>
         </div>
       </div>
     </>
   );
 
   if (!onSelect) {
-    return <div className={className}>{content}</div>;
+    return <div className={`${cardBaseClass} ${cardInteractiveClass}`} data-export-block="true">{content}</div>;
   }
 
   return (
     <button
       type="button"
       onClick={() => onSelect(item.title)}
-      className={className}
+      className={`${cardBaseClass} ${cardInteractiveClass}`}
+      data-export-block="true"
     >
       {content}
     </button>
@@ -517,7 +530,12 @@ function StudentDemographicsChart({ data, onSelect }) {
 }
 
 function ConcernThemesChart({ data }) {
-  const sortedData = [...data].sort((a, b) => b.value - a.value || Number(a.order || 0) - Number(b.order || 0));
+  const sortedData = [...data]
+    .map((item, index) => ({
+      ...item,
+      color: item.color || PRIMARY_STUDENT_CONCERN_COLORS[index % PRIMARY_STUDENT_CONCERN_COLORS.length] || "#10B981",
+    }))
+    .sort((a, b) => b.value - a.value || Number(a.order || 0) - Number(b.order || 0));
   const max = Math.max(...sortedData.map((item) => item.value), 1);
   const width = 980;
   const height = 380;
@@ -560,6 +578,7 @@ function ConcernThemesChart({ data }) {
           const barHeight = (Number(item.value || 0) / axisMax) * plotHeight;
           const y = padTop + plotHeight - barHeight;
           const labelX = x + barWidth / 2;
+          const barColor = item.color || PRIMARY_STUDENT_CONCERN_COLORS[index % PRIMARY_STUDENT_CONCERN_COLORS.length] || "#10B981";
           const shortLabel = item.label
             .replace("Personal Growth / Epiphanies", "Personal Growth")
             .replace("Gratitude / Appreciation", "Gratitude")
@@ -577,14 +596,14 @@ function ConcernThemesChart({ data }) {
             .replace("Financial", "Financial");
 
           return (
-            <g key={item.key}>
+            <g key={item.key || item.label || index}>
               <rect
                 x={x}
                 y={y}
                 width={barWidth}
                 height={Math.max(2, barHeight)}
                 rx="8"
-                fill={item.color}
+                fill={barColor}
               />
               <text x={labelX} y={Math.max(16, y - 8)} textAnchor="middle" className="fill-[#334155] text-[15px] font-black">
                 {item.value.toLocaleString()}
@@ -606,7 +625,7 @@ function ConcernThemesChart({ data }) {
   );
 }
 
-function ConsultationVolumeByCategoryPanel({ analytics, loading }) {
+function ConsultationVolumeByCategoryPanel({ analytics, loading, periodLabel = "this period" }) {
   const data = buildConsultationVolumeCategoryData(analytics?.charts?.consultationVolumeByCategory || []);
   const hasData = data.some((item) => item.value > 0);
   if (loading) {
@@ -614,7 +633,7 @@ function ConsultationVolumeByCategoryPanel({ analytics, loading }) {
   }
 
   if (!hasData) {
-    return <div className="py-16 text-center text-sm text-slate-500">No consultation category data available for this month.</div>;
+    return <div className="py-16 text-center text-sm text-slate-500">No consultation category data available for {periodLabel}.</div>;
   }
 
   return <ConcernThemesChart data={data} />;
@@ -925,6 +944,14 @@ function getCurrentMonthAnalyticsParams(date = new Date()) {
   };
 }
 
+function getRangeQueryParams(nextRangeKey, nextCustomRange = {}) {
+  return {
+    range: nextRangeKey,
+    startDate: nextRangeKey === "custom" ? nextCustomRange.startDate : undefined,
+    endDate: nextRangeKey === "custom" ? nextCustomRange.endDate : undefined,
+  };
+}
+
 function getPageStylesText() {
   const isRuleInstance = (rule, constructorName) => {
     const RuleConstructor = window[constructorName];
@@ -1000,28 +1027,163 @@ function serializeDashboardSnapshotContent(clone) {
   return new XMLSerializer().serializeToString(container);
 }
 
-function sanitizeDashboardSnapshotClone(clone) {
-  clone.querySelectorAll("img, canvas, iframe, video").forEach((node) => node.remove());
-  clone.querySelectorAll("*").forEach((node) => {
-    if (node.style?.backgroundImage && /url\(/i.test(node.style.backgroundImage)) {
-      node.style.backgroundImage = "none";
+function hideExportIgnoredNodes(element) {
+  const ignored = Array.from(element.querySelectorAll("[data-export-ignore='true']"));
+  const previous = ignored.map((node) => node.getAttribute("style"));
+  ignored.forEach((node) => {
+    node.style.display = "none";
+  });
+  return () => {
+    ignored.forEach((node, index) => {
+      const previousStyle = previous[index];
+      if (previousStyle === null) node.removeAttribute("style");
+      else node.setAttribute("style", previousStyle);
+    });
+  };
+}
+
+function replaceLiveCanvasesWithImages(liveRoot, cloneRoot) {
+  const liveCanvases = liveRoot.querySelectorAll("canvas");
+  const cloneCanvases = cloneRoot.querySelectorAll("canvas");
+  liveCanvases.forEach((liveCanvas, index) => {
+    const cloneCanvas = cloneCanvases[index];
+    if (!cloneCanvas) return;
+    try {
+      const image = document.createElement("img");
+      image.setAttribute("alt", liveCanvas.getAttribute("aria-label") || "Chart");
+      image.setAttribute("src", liveCanvas.toDataURL("image/png"));
+      const computed = window.getComputedStyle(liveCanvas);
+      image.style.width = computed.width;
+      image.style.height = computed.height;
+      image.style.display = computed.display === "inline" ? "inline-block" : computed.display;
+      image.style.maxWidth = "100%";
+      cloneCanvas.replaceWith(image);
+    } catch {
+      // Keep the cloned canvas rather than dropping chart layout.
     }
   });
 }
 
-async function captureElementCanvas(element) {
-  const width = Math.ceil(element.scrollWidth);
-  const height = Math.ceil(element.scrollHeight);
-  const clone = element.cloneNode(true);
+function inlineLiveImages(liveRoot, cloneRoot) {
+  const liveImages = liveRoot.querySelectorAll("img");
+  const cloneImages = cloneRoot.querySelectorAll("img");
+  liveImages.forEach((liveImage, index) => {
+    const cloneImage = cloneImages[index];
+    if (!cloneImage) return;
+    if (String(liveImage.src || "").startsWith("data:")) {
+      cloneImage.setAttribute("src", liveImage.src);
+      return;
+    }
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = liveImage.naturalWidth || liveImage.width || 1;
+      canvas.height = liveImage.naturalHeight || liveImage.height || 1;
+      const context = canvas.getContext("2d");
+      context.drawImage(liveImage, 0, 0);
+      cloneImage.setAttribute("src", canvas.toDataURL("image/png"));
+    } catch {
+      // Keep the original src if the image cannot be rasterized.
+    }
+  });
+}
+
+function prepareDashboardSnapshotClone(liveRoot, clone) {
   clone.querySelectorAll("[data-export-ignore='true']").forEach((node) => node.remove());
-  sanitizeDashboardSnapshotClone(clone);
+  inlineLiveImages(liveRoot, clone);
+  replaceLiveCanvasesWithImages(liveRoot, clone);
+  clone.querySelectorAll("iframe, video").forEach((node) => {
+    const placeholder = document.createElement("div");
+    placeholder.style.width = `${node.offsetWidth || 0}px`;
+    placeholder.style.height = `${node.offsetHeight || 0}px`;
+    node.replaceWith(placeholder);
+  });
+}
+
+function collectExportBlocks(root) {
+  const candidates = Array.from(root.querySelectorAll("[data-export-block], .bt-card"));
+  const blocks = candidates.filter((node) => !candidates.some((other) => other !== node && other.contains(node)));
+  const rootRect = root.getBoundingClientRect();
+  return blocks
+    .map((node) => {
+      const rect = node.getBoundingClientRect();
+      return {
+        top: rect.top - rootRect.top + root.scrollTop,
+        left: rect.left - rootRect.left + root.scrollLeft,
+        width: rect.width,
+        height: rect.height,
+      };
+    })
+    .filter((block) => block.width > 2 && block.height > 2)
+    .sort((a, b) => a.top - b.top || a.left - b.left);
+}
+
+function mergeOverlappingExportBlocks(blocks) {
+  const merged = [];
+  blocks.forEach((block) => {
+    const bottom = block.top + block.height;
+    const previous = merged[merged.length - 1];
+    if (previous && block.top < previous.bottom - 8) {
+      previous.top = Math.min(previous.top, block.top);
+      previous.bottom = Math.max(previous.bottom, bottom);
+      return;
+    }
+    merged.push({ top: block.top, bottom });
+  });
+  return merged;
+}
+
+function paginateExportSnapshot(totalHeight, blocks, maxContentHeight) {
+  const zones = mergeOverlappingExportBlocks(blocks);
+  const pages = [];
+  let y = 0;
+
+  while (y < totalHeight - 0.5) {
+    const remaining = totalHeight - y;
+    if (remaining <= 1) break;
+
+    const tallZone = zones.find((zone) => Math.abs(zone.top - y) <= 16 && zone.bottom - Math.min(zone.top, y) > maxContentHeight);
+    if (tallZone) {
+      pages.push({ top: y, bottom: tallZone.bottom, fit: true });
+      y = tallZone.bottom;
+      continue;
+    }
+
+    const limit = Math.min(y + maxContentHeight, totalHeight);
+    let breakAt = limit;
+    const crossing = zones.find((zone) => breakAt > zone.top + 1 && breakAt < zone.bottom - 1);
+    if (crossing) {
+      if (crossing.top <= y + 1) {
+        pages.push({ top: y, bottom: crossing.bottom, fit: true });
+        y = crossing.bottom;
+        continue;
+      }
+      breakAt = crossing.top;
+    }
+
+    const snapBottoms = zones.map((zone) => zone.bottom).filter((bottom) => bottom > y + 32 && bottom <= breakAt + 0.5);
+    if (snapBottoms.length) {
+      breakAt = Math.max(...snapBottoms);
+    }
+
+    if (breakAt <= y + 8) {
+      breakAt = Math.min(y + maxContentHeight, totalHeight);
+    }
+
+    pages.push({ top: y, bottom: breakAt, fit: false });
+    y = breakAt;
+  }
+
+  return pages.length ? pages : [{ top: 0, bottom: totalHeight, fit: false }];
+}
+
+async function rasterizeCloneToCanvas(clone, width, height, scale) {
   clone.style.width = `${width}px`;
   clone.style.maxWidth = "none";
   clone.style.background = "#ffffff";
 
   const snapshotContent = serializeDashboardSnapshotContent(clone);
   const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+    <svg xmlns="http://www.w3.org/1999/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
       <foreignObject width="100%" height="100%">
         ${snapshotContent}
       </foreignObject>
@@ -1031,7 +1193,6 @@ async function captureElementCanvas(element) {
 
   try {
     const image = await loadImage(svgUrl);
-    const scale = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
     const canvas = document.createElement("canvas");
     canvas.width = Math.ceil(width * scale);
     canvas.height = Math.ceil(height * scale);
@@ -1039,12 +1200,57 @@ async function captureElementCanvas(element) {
     context.fillStyle = "#ffffff";
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    canvas.__overviewPageBreaks = Array.from(element.children || [])
-      .map((child) => Math.ceil((child.offsetTop + child.offsetHeight + 16) * scale))
-      .filter((breakPoint) => breakPoint > 0 && breakPoint < canvas.height - 80);
     return canvas;
   } finally {
     URL.revokeObjectURL(svgUrl);
+  }
+}
+
+async function captureElementCanvas(element) {
+  const restoreIgnored = hideExportIgnoredNodes(element);
+  try {
+    await new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+    const width = Math.ceil(element.scrollWidth);
+    const height = Math.ceil(element.scrollHeight);
+    const blocks = collectExportBlocks(element);
+    const scale = 2;
+    const clone = element.cloneNode(true);
+    prepareDashboardSnapshotClone(element, clone);
+    const canvas = await rasterizeCloneToCanvas(clone, width, height, scale);
+    canvas.__overviewExportMeta = { scale, cssWidth: width, cssHeight: height, blocks };
+    canvas.__overviewPageBreaks = blocks.map((block) => Math.ceil((block.top + block.height) * scale));
+    return canvas;
+  } finally {
+    restoreIgnored();
+  }
+}
+
+async function captureElementCanvasAttached(element) {
+  const restoreIgnored = hideExportIgnoredNodes(element);
+  const host = document.createElement("div");
+  host.style.cssText = "position:fixed;left:-14000px;top:0;background:#ffffff;pointer-events:none;z-index:-1;";
+  try {
+    await new Promise((resolve) => window.requestAnimationFrame(resolve));
+    const width = Math.ceil(element.scrollWidth);
+    const height = Math.ceil(element.scrollHeight);
+    const blocks = collectExportBlocks(element);
+    const clone = element.cloneNode(true);
+    prepareDashboardSnapshotClone(element, clone);
+    clone.style.width = `${width}px`;
+    host.appendChild(clone);
+    document.body.appendChild(host);
+    await new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+    const canvas = await rasterizeCloneToCanvas(clone, width, Math.ceil(clone.scrollHeight || height), 2);
+    canvas.__overviewExportMeta = {
+      scale: 2,
+      cssWidth: width,
+      cssHeight: Math.ceil(clone.scrollHeight || height),
+      blocks,
+    };
+    return canvas;
+  } finally {
+    restoreIgnored();
+    host.remove();
   }
 }
 
@@ -1058,36 +1264,58 @@ function dataUrlToBytes(dataUrl) {
   return bytes;
 }
 
-function createPdfFromCanvas(canvas, pageBreaks = []) {
+function createPdfFromCanvas(canvas, pageBreaksOrOptions = []) {
+  const options = Array.isArray(pageBreaksOrOptions) ? { pageBreaks: pageBreaksOrOptions } : pageBreaksOrOptions || {};
+  const meta = canvas.__overviewExportMeta || {};
+  const scale = Number(meta.scale || canvas.height / Math.max(meta.cssHeight || canvas.height, 1)) || 1;
+  const cssHeight = Number(meta.cssHeight || canvas.height / scale);
+  const rangeLabel = escapePdfText(options.rangeLabel || options.todayLabel || "Selected range");
+  const blocks = Array.isArray(meta.blocks) && meta.blocks.length
+    ? meta.blocks
+    : (options.pageBreaks || canvas.__overviewPageBreaks || []).map((breakPoint, index, items) => {
+        const previous = index === 0 ? 0 : items[index - 1];
+        return { top: previous / scale, height: (breakPoint - previous) / scale, width: 1, left: 0 };
+      });
+
   const pageWidth = 595.28;
   const pageHeight = 841.89;
-  const margin = 24;
+  const margin = 28;
+  const headerBand = 36;
+  const footerBand = 22;
   const imageWidth = pageWidth - margin * 2;
-  const maxSliceHeight = Math.floor((canvas.width / imageWidth) * (pageHeight - margin * 2));
-  const normalizedBreaks = pageBreaks
-    .map((breakPoint) => Math.round(Number(breakPoint || 0)))
-    .filter((breakPoint) => breakPoint > 0 && breakPoint < canvas.height)
-    .sort((a, b) => a - b);
-  const slices = [];
+  const contentHeightPdf = pageHeight - margin * 2 - headerBand - footerBand;
+  const maxCssHeight = Math.max(120, (contentHeightPdf * canvas.width) / imageWidth / scale);
+  const pages = paginateExportSnapshot(cssHeight, blocks, maxCssHeight);
 
-  for (let y = 0; y < canvas.height;) {
-    const availableBreaks = normalizedBreaks.filter((breakPoint) => breakPoint > y + 240 && breakPoint <= y + maxSliceHeight);
-    const nextBreak = availableBreaks[availableBreaks.length - 1];
-    const currentHeight = Math.min(nextBreak ? nextBreak - y : maxSliceHeight, canvas.height - y);
+  const slices = pages.map((page) => {
+    const sourceY = Math.max(0, Math.round(page.top * scale));
+    const sourceBottom = Math.min(canvas.height, Math.round(page.bottom * scale));
+    const sourceHeight = Math.max(1, sourceBottom - sourceY);
     const sliceCanvas = document.createElement("canvas");
     sliceCanvas.width = canvas.width;
-    sliceCanvas.height = currentHeight;
+    sliceCanvas.height = sourceHeight;
     const context = sliceCanvas.getContext("2d");
     context.fillStyle = "#ffffff";
     context.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-    context.drawImage(canvas, 0, y, canvas.width, currentHeight, 0, 0, canvas.width, currentHeight);
-    slices.push({
+    context.drawImage(canvas, 0, sourceY, canvas.width, sourceHeight, 0, 0, canvas.width, sourceHeight);
+
+    let drawWidth = imageWidth;
+    let drawHeight = imageWidth * (sourceHeight / canvas.width);
+    if (page.fit || drawHeight > contentHeightPdf) {
+      const fitScale = contentHeightPdf / drawHeight;
+      drawWidth *= fitScale;
+      drawHeight *= fitScale;
+    }
+
+    return {
       width: sliceCanvas.width,
       height: sliceCanvas.height,
-      bytes: dataUrlToBytes(sliceCanvas.toDataURL("image/jpeg", 0.92)),
-    });
-    y += currentHeight;
-  }
+      bytes: dataUrlToBytes(sliceCanvas.toDataURL("image/jpeg", 0.95)),
+      drawWidth,
+      drawHeight,
+      drawX: margin + (imageWidth - drawWidth) / 2,
+    };
+  });
 
   const encoder = new TextEncoder();
   const parts = [];
@@ -1113,21 +1341,35 @@ function createPdfFromCanvas(canvas, pageBreaks = []) {
   };
 
   appendString("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
-  const pageIds = slices.map((_, index) => 3 + index * 3);
+  const pageIds = slices.map((_, index) => 5 + index * 3);
   appendObject(1, ["<< /Type /Catalog /Pages 2 0 R >>"]);
   appendObject(2, [`<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageIds.length} >>`]);
+  appendObject(3, ["<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]);
+  appendObject(4, ["<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>"]);
 
   slices.forEach((slice, index) => {
-    const pageId = 3 + index * 3;
+    const pageId = 5 + index * 3;
     const contentId = pageId + 1;
     const imageId = pageId + 2;
-    const drawHeight = imageWidth * (slice.height / slice.width);
-    const drawY = pageHeight - margin - drawHeight;
     const imageName = `Im${index + 1}`;
-    const content = `q\n${imageWidth.toFixed(2)} 0 0 ${drawHeight.toFixed(2)} ${margin} ${drawY.toFixed(2)} cm\n/${imageName} Do\nQ`;
+    const drawY = pageHeight - margin - headerBand - slice.drawHeight;
+    const headerY = pageHeight - margin - 8;
+    const footerY = margin + 6;
+    const pageLabel = `Page ${index + 1} of ${slices.length}`;
+    const headerTitle = "Bawat Tala Overview";
+    const content = [
+      `BT /F2 10 Tf 1 0 0 1 ${margin.toFixed(2)} ${headerY.toFixed(2)} Tm (${headerTitle}) Tj ET`,
+      `BT /F1 8 Tf 1 0 0 1 ${margin.toFixed(2)} ${(headerY - 12).toFixed(2)} Tm (${rangeLabel}) Tj ET`,
+      `BT /F1 8 Tf 1 0 0 1 ${(pageWidth - margin - 70).toFixed(2)} ${headerY.toFixed(2)} Tm (${escapePdfText(pageLabel)}) Tj ET`,
+      `q`,
+      `${slice.drawWidth.toFixed(2)} 0 0 ${slice.drawHeight.toFixed(2)} ${slice.drawX.toFixed(2)} ${drawY.toFixed(2)} cm`,
+      `/${imageName} Do`,
+      `Q`,
+      `BT /F1 8 Tf 1 0 0 1 ${margin.toFixed(2)} ${footerY.toFixed(2)} Tm (${rangeLabel}  |  ${escapePdfText(pageLabel)}) Tj ET`,
+    ].join("\n");
 
     appendObject(pageId, [
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /XObject << /${imageName} ${imageId} 0 R >> >> /Contents ${contentId} 0 R >>`,
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> /XObject << /${imageName} ${imageId} 0 R >> >> /Contents ${contentId} 0 R >>`,
     ]);
     appendObject(contentId, [`<< /Length ${encoder.encode(content).length} >>\nstream\n${content}\nendstream`]);
     appendObject(imageId, [
@@ -1138,7 +1380,7 @@ function createPdfFromCanvas(canvas, pageBreaks = []) {
   });
 
   const xrefOffset = byteOffset;
-  const maxObjectId = 2 + slices.length * 3;
+  const maxObjectId = 4 + slices.length * 3;
   appendString(`xref\n0 ${maxObjectId + 1}\n0000000000 65535 f \n`);
   for (let id = 1; id <= maxObjectId; id += 1) {
     appendString(`${String(offsets[id] || 0).padStart(10, "0")} 00000 n \n`);
@@ -1158,6 +1400,7 @@ function escapePdfText(value) {
 function createOverviewReportPdf({
   activeUsageSeries,
   analyticsCards,
+  analyticsOverview,
   barangayConcernData,
   genderData,
   journalEntriesData,
@@ -1266,6 +1509,18 @@ function createOverviewReportPdf({
   addChartRows("Top Concerns By Barangay", barangayConcernData, (item) =>
     item.percent !== undefined ? `${item.value} (${item.percent}%)` : item.value,
   );
+
+  const consultationVolumeData = buildConsultationVolumeCategoryData(analyticsOverview?.charts?.consultationVolumeByCategory || []);
+  const counselorWorkloadData = analyticsOverview?.charts?.counselorWorkload || [];
+  const atRiskLabels = analyticsOverview?.charts?.atRiskStudentTrends?.labels || [];
+  const atRiskSeries = analyticsOverview?.charts?.atRiskStudentTrends?.series || [];
+  const atRiskRows = atRiskLabels.map((label, index) => ({
+    label,
+    value: atRiskSeries.map((item) => `${item.label || item.key}: ${Number(item.values?.[index] || 0)}`).join(", "),
+  }));
+  addChartRows("Consultation Volume by Category", consultationVolumeData);
+  addChartRows("Counselor Workload", counselorWorkloadData);
+  addChartRows("At-Risk Student Trends", atRiskRows);
 
   const encoder = new TextEncoder();
   const parts = [];
@@ -1698,6 +1953,7 @@ function createOverviewDashboardCanvas({
   studentDemographicLocations,
   summaryCards,
   todayLabel,
+  rangeLabel,
 }) {
   const scale = 2;
   const width = 1400;
@@ -1846,7 +2102,7 @@ function createOverviewDashboardCanvas({
     width: contentWidth,
     height: 450,
     title: "Consultation Volume by Category",
-    subtitle: "Current month concerns addressed in scheduled appointments",
+    subtitle: `Concerns addressed in scheduled appointments for ${rangeLabel || todayLabel || "this period"}`,
   });
   drawVerticalBarChart(context, consultationVolumeData, margin + 28, y + 92, contentWidth - 56, 312, { limit: 12 });
   y += 450 + gap;
@@ -1858,7 +2114,7 @@ function createOverviewDashboardCanvas({
     width: panelHalfWidth,
     height: 390,
     title: "Counselor Workload",
-    subtitle: "Active cases assigned per role",
+    subtitle: `Confirmed/completed sessions for ${rangeLabel || todayLabel || "this period"} (one count per booking)`,
   });
   drawHorizontalBars(context, counselorWorkloadData, margin + 28, y + 96, panelHalfWidth - 56, 246, { color: "#20c08d" });
 
@@ -1901,6 +2157,21 @@ function createOverviewDashboardCanvas({
   outputCanvas.height = renderedHeight * scale;
   outputContext.drawImage(canvas, 0, 0, outputCanvas.width, outputCanvas.height, 0, 0, outputCanvas.width, outputCanvas.height);
   outputCanvas.__overviewPageBreaks = pageBreaks.filter((breakPoint) => breakPoint < outputCanvas.height - 80);
+  const cssBreaks = [...pageBreaks.map((breakPoint) => breakPoint / scale), renderedHeight];
+  const visualBlocks = [];
+  let previousBreak = 0;
+  cssBreaks.forEach((point) => {
+    if (point > previousBreak + 8) {
+      visualBlocks.push({ top: previousBreak, height: point - previousBreak, width, left: 0 });
+      previousBreak = point;
+    }
+  });
+  outputCanvas.__overviewExportMeta = {
+    scale,
+    cssWidth: width,
+    cssHeight: renderedHeight,
+    blocks: visualBlocks,
+  };
 
   return outputCanvas;
 }
@@ -1965,76 +2236,64 @@ export default function Overview({ onLogout, session }) {
   useEffect(() => {
     let isMounted = true;
 
-    async function loadDashboardSummary() {
+    async function loadRangeBoundOverview() {
+      const params = getRangeQueryParams(rangeKey, customRange);
       try {
         setSummaryLoading(true);
-        const data = await fetchAdminDashboardSummary();
+        setAnalyticsLoading(true);
+        const [summaryData, analyticsData] = await Promise.all([
+          fetchAdminDashboardSummary(params),
+          fetchAdminAnalytics(params),
+        ]);
         if (!isMounted) return;
-        setDashboardSummary(data);
+        setDashboardSummary(summaryData);
         setSummaryError("");
+        setAnalyticsOverview(analyticsData);
+        setAnalyticsError("");
       } catch (error) {
         if (!isMounted) return;
         setDashboardSummary(null);
         setSummaryError(error instanceof Error ? error.message : "Failed to load dashboard summary.");
-      } finally {
-        if (isMounted) {
-          setSummaryLoading(false);
-        }
-      }
-    }
-
-    loadDashboardSummary();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadAnalyticsOverview() {
-      try {
-        setAnalyticsLoading(true);
-        const data = await fetchAdminAnalytics({ range: "30d" });
-        if (!isMounted) return;
-        setAnalyticsOverview(data);
-        setAnalyticsError("");
-      } catch (error) {
-        if (!isMounted) return;
         setAnalyticsError(error instanceof Error ? error.message : "Failed to load overview analytics.");
       } finally {
         if (isMounted) {
+          setSummaryLoading(false);
           setAnalyticsLoading(false);
         }
       }
     }
 
-    loadAnalyticsOverview();
+    loadRangeBoundOverview();
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [rangeKey]);
 
   async function loadAnalyticsRange(nextRangeKey, nextCustomRange = customRange) {
+    const params = getRangeQueryParams(nextRangeKey, nextCustomRange);
     try {
+      setSummaryLoading(true);
       setAnalyticsLoading(true);
-      const data = await fetchAdminAnalytics({
-        range: nextRangeKey,
-        startDate: nextRangeKey === "custom" ? nextCustomRange.startDate : undefined,
-        endDate: nextRangeKey === "custom" ? nextCustomRange.endDate : undefined,
-      });
-      setAnalyticsOverview(data);
+      const [summaryData, analyticsData] = await Promise.all([
+        fetchAdminDashboardSummary(params),
+        fetchAdminAnalytics(params),
+      ]);
+      setDashboardSummary(summaryData);
+      setSummaryError("");
+      setAnalyticsOverview(analyticsData);
       setAnalyticsError("");
     } catch (error) {
+      setDashboardSummary(null);
+      setSummaryError(error instanceof Error ? error.message : "Failed to load dashboard summary.");
       setAnalyticsError(error instanceof Error ? error.message : "Failed to load overview analytics.");
     } finally {
+      setSummaryLoading(false);
       setAnalyticsLoading(false);
     }
   }
 
   function handleRangeChange(nextRangeKey) {
     setRangeKey(nextRangeKey);
-    void loadAnalyticsRange(nextRangeKey, customRange);
   }
 
   function handleCustomDateChange(field, value) {
@@ -2093,6 +2352,15 @@ export default function Overview({ onLogout, session }) {
   const selectedRangeLabel = analyticsOverview?.filters
     ? `${analyticsOverview.filters.startDate} to ${analyticsOverview.filters.endDate}`
     : "Loading selected range...";
+  const hasScheduledInRange =
+    dashboardSummary?.cards?.scheduledInRange !== undefined && dashboardSummary?.cards?.scheduledInRange !== null;
+  const isTodayOnlyRange =
+    rangeKey === "today" ||
+    (rangeKey === "custom" && customRange.startDate === customRange.endDate && customRange.startDate === todayIso);
+  const scheduledCardSource =
+    !isTodayOnlyRange && hasScheduledInRange
+      ? dashboardSummary.cards.scheduledInRange
+      : dashboardSummary?.cards?.scheduledToday;
   const summaryCards = SUMMARY_CARD_DEFS.map((item) => {
     const isRangeMetric = item.key === "flagged" || item.key === "entries";
     const cardLoading = isRangeMetric ? analyticsLoading : summaryLoading;
@@ -2114,13 +2382,15 @@ export default function Overview({ onLogout, session }) {
             : item.key === "futureMessages"
               ? dashboardSummary?.cards?.futureSelfMessages
               : item.key === "scheduled"
-                ? dashboardSummary?.cards?.scheduledToday
+                ? scheduledCardSource
                 : dashboardSummary?.cards?.muniAccuracy;
     const direction = source?.direction || "neutral";
     const hasValue = source?.value !== undefined && source?.value !== null;
 
     return {
       ...item,
+      title:
+        item.key === "scheduled" && !isTodayOnlyRange && hasScheduledInRange ? "Scheduled in Range" : item.title,
       value: cardLoading
         ? "--"
         : hasValue
@@ -2191,12 +2461,15 @@ export default function Overview({ onLogout, session }) {
     dashboardSummary?.charts?.activeUsageByCourseYear?.series?.length > 0
       ? withColors(dashboardSummary.charts.activeUsageByCourseYear.series, ["#3E8914", "#3DA35D", "#96E072", "#134611"])
       : [];
-  const primaryConcernsData = (analyticsOverview?.charts?.concernTrends?.series || [])
-    .map((item) => ({
-      ...item,
-      value: Array.isArray(item.values) ? item.values.reduce((sum, value) => sum + Number(value || 0), 0) : 0,
-    }))
-    .sort((a, b) => b.value - a.value);
+  const primaryConcernsData = withColors(
+    (analyticsOverview?.charts?.concernTrends?.series || [])
+      .map((item) => ({
+        ...item,
+        value: Array.isArray(item.values) ? item.values.reduce((sum, value) => sum + Number(value || 0), 0) : 0,
+      }))
+      .sort((a, b) => b.value - a.value),
+    PRIMARY_STUDENT_CONCERN_COLORS,
+  );
   const hasPrimaryConcernData = primaryConcernsData.some((item) => item.value > 0);
   const barangayConcernData =
     dashboardSummary?.charts?.topConcernsByBarangay?.length > 0
@@ -2251,23 +2524,36 @@ export default function Overview({ onLogout, session }) {
       studentDemographicLocations,
       summaryCards,
       todayLabel: `${todayLabel} | Analytics range: ${reportStartDate} to ${reportEndDate}`,
+      rangeLabel: selectedRangeLabel && selectedRangeLabel !== "Loading selected range..."
+        ? selectedRangeLabel
+        : `${reportStartDate} to ${reportEndDate}`,
     };
 
     try {
       setIsExportingPdf(true);
       await new Promise((resolve) => window.requestAnimationFrame(resolve));
       let pdfBlob;
+      const pdfPageOptions = {
+        rangeLabel: `Analytics range: ${reportStartDate} to ${reportEndDate}`,
+        todayLabel: reportPdfOptions.todayLabel,
+      };
       try {
         const canvas = await captureElementCanvas(overviewExportRef.current);
-        pdfBlob = createPdfFromCanvas(canvas, canvas.__overviewPageBreaks);
+        pdfBlob = createPdfFromCanvas(canvas, pdfPageOptions);
       } catch (snapshotError) {
-        console.warn("Dashboard snapshot export failed; using visual PDF renderer.", snapshotError);
+        console.warn("Dashboard snapshot export failed; retrying full-page visual capture.", snapshotError);
         try {
-          const visualCanvas = createOverviewDashboardCanvas(reportPdfOptions);
-          pdfBlob = createPdfFromCanvas(visualCanvas, visualCanvas.__overviewPageBreaks);
-        } catch (visualError) {
-          console.warn("Visual dashboard PDF renderer failed; using data PDF fallback.", visualError);
-          pdfBlob = createOverviewReportPdf(reportPdfOptions);
+          const retryCanvas = await captureElementCanvasAttached(overviewExportRef.current);
+          pdfBlob = createPdfFromCanvas(retryCanvas, pdfPageOptions);
+        } catch (retryError) {
+          console.warn("Attached visual capture failed; using painted dashboard snapshot.", retryError);
+          try {
+            const visualCanvas = createOverviewDashboardCanvas(reportPdfOptions);
+            pdfBlob = createPdfFromCanvas(visualCanvas, pdfPageOptions);
+          } catch (visualError) {
+            console.warn("Visual dashboard PDF renderer failed; using data PDF last resort.", visualError);
+            pdfBlob = createOverviewReportPdf(reportPdfOptions);
+          }
         }
       }
       downloadBlob(pdfBlob, `overview-dashboard-${reportStartDate}-to-${reportEndDate}.pdf`);
@@ -2303,7 +2589,7 @@ export default function Overview({ onLogout, session }) {
           </div>
         ) : null}
 
-        <div className="flex flex-nowrap items-center justify-end gap-3 overflow-x-auto pb-1" data-export-ignore="true">
+        <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3" data-export-block="true">
           <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
             {RANGE_OPTIONS.map((option) => (
               <button
@@ -2364,6 +2650,7 @@ export default function Overview({ onLogout, session }) {
             type="button"
             onClick={handleExportPdf}
             disabled={isExportingPdf || summaryLoading || analyticsLoading}
+            data-export-ignore="true"
             className="flex shrink-0 items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
           >
             <Download className="h-4 w-4" />
@@ -2371,7 +2658,7 @@ export default function Overview({ onLogout, session }) {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" data-export-block="true">
           {summaryCards.map((item) => (
             <MetricCard key={item.key} item={item} onSelect={handleSummaryCardSelect} />
           ))}
@@ -2380,7 +2667,7 @@ export default function Overview({ onLogout, session }) {
           ))}
         </div>
 
-        <div className="flex items-center gap-3 pt-2">
+        <div className="flex items-center gap-3 pt-2" data-export-block="true">
           <h2 className="font-display text-2xl font-black text-slate-900">Activity and Engagement Overview</h2>
           <span className="h-1 w-12 rounded-full bg-emerald-200" />
         </div>
@@ -2420,7 +2707,7 @@ export default function Overview({ onLogout, session }) {
 
         <div className="grid grid-cols-1 items-start gap-6">
           <Card
-            title="Student Emotion Trends (Current Month)"
+            title={`Student Emotion Trends (${selectedRangeLabel})`}
             subtitle="Total emotion check-ins recorded, ranked highest to lowest"
             className="min-h-[520px] rounded-2xl border-admin-border"
           >
@@ -2517,7 +2804,8 @@ export default function Overview({ onLogout, session }) {
             <div className="space-y-4">
               <button
                 type="button"
-                className="flex w-full items-center justify-between rounded-2xl border border-red-100 bg-red-50 px-4 py-4 text-left"
+                onClick={() => navigate("/flagged")}
+                className="flex w-full items-center justify-between rounded-2xl border border-red-100 bg-red-50 px-4 py-4 text-left transition hover:border-red-200"
               >
                 <div>
                   <div className="text-sm font-semibold text-red-700">Crisis / Critical Need</div>
@@ -2529,7 +2817,8 @@ export default function Overview({ onLogout, session }) {
               </button>
               <button
                 type="button"
-                className="flex w-full items-center justify-between rounded-2xl border border-amber-100 bg-amber-50 px-4 py-4 text-left"
+                onClick={() => navigate("/flagged")}
+                className="flex w-full items-center justify-between rounded-2xl border border-amber-100 bg-amber-50 px-4 py-4 text-left transition hover:border-amber-200"
               >
                 <div>
                   <div className="text-sm font-semibold text-amber-700">Distressed / Needs Support</div>
@@ -2541,7 +2830,8 @@ export default function Overview({ onLogout, session }) {
               </button>
               <button
                 type="button"
-                className="flex w-full items-center justify-between rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-4 text-left"
+                onClick={() => navigate("/flagged")}
+                className="flex w-full items-center justify-between rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-4 text-left transition hover:border-emerald-200"
               >
                 <div className="flex items-center gap-3">
                   <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-emerald-600 shadow-sm">
@@ -2563,12 +2853,12 @@ export default function Overview({ onLogout, session }) {
         <div className="grid grid-cols-1 gap-6">
           <Card
             title="Consultation Volume by Category"
-            subtitle="Current month only - total count of concerns addressed in scheduled appointments"
+            subtitle={`Concerns addressed in scheduled appointments for ${selectedRangeLabel}`}
           >
-            <ConsultationVolumeByCategoryPanel analytics={analyticsOverview} loading={analyticsLoading} />
+            <ConsultationVolumeByCategoryPanel analytics={analyticsOverview} loading={analyticsLoading} periodLabel="this period" />
           </Card>
 
-          <Card title="Counselor Workload" subtitle="Active cases assigned per role">
+          <Card title="Counselor Workload" subtitle={`Confirmed/completed sessions for ${selectedRangeLabel} (one count per booking)`}>
             <CounselorWorkloadPanel analytics={analyticsOverview} loading={analyticsLoading} />
           </Card>
         </div>
