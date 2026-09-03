@@ -54,7 +54,7 @@ function downloadFile(filename, content, type) {
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+  window.setTimeout(() => window.URL.revokeObjectURL(url), 5000);
 }
 
 function formatCellValue(row, column) {
@@ -180,7 +180,7 @@ function createStudentReportPdf({ rows, filters }) {
     appendString(`${id} 0 obj\n${content}\nendobj\n`);
   };
 
-  appendString("%PDF-1.4\n");
+  appendString("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
   const pageIds = pages.map((_, index) => 5 + index * 2);
   appendObject(1, "<< /Type /Catalog /Pages 2 0 R >>");
   appendObject(2, `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageIds.length} >>`);
@@ -204,7 +204,7 @@ function createStudentReportPdf({ rows, filters }) {
   for (let id = 1; id <= maxObjectId; id += 1) {
     appendString(`${String(offsets[id] || 0).padStart(10, "0")} 00000 n \n`);
   }
-  appendString(`trailer\n<< /Size ${maxObjectId + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
+  appendString(`trailer\n<< /Size ${maxObjectId + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`);
 
   return new Blob(parts, { type: "application/pdf" });
 }
