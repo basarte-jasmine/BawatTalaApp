@@ -1,18 +1,12 @@
 import { useState } from "react";
 import Header from "./Header";
 import Sidebar from "./Sidebar";
-import { useAdminPreferences } from "../lib/admin-preferences";
 
-export default function Layout({ children, title, subtitle, onLogout, session, mainClassName = "bg-[#f4f6ef]" }) {
+export default function Layout({ children, title, subtitle, onLogout, session, mainClassName = "bg-[rgba(14,90,58,0.1)]" }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const { preferences } = useAdminPreferences();
-  const preferenceClassName = [
-    preferences.appearance.compactCards ? "bt-admin-compact" : "",
-    preferences.appearance.reduceMotion ? "bt-admin-reduce-motion" : "",
-  ].filter(Boolean).join(" ");
 
   return (
-    <div className={`h-screen overflow-hidden bg-white ${preferenceClassName}`}>
+    <div className="h-screen overflow-hidden bg-white">
       <div className="flex h-full overflow-hidden bg-white">
         <Sidebar onLogout={onLogout} session={session} isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
 

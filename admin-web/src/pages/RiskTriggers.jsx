@@ -205,7 +205,7 @@ export default function RiskTriggers({ onLogout, session }) {
 
   return (
     <Layout
-      title="Risk Trigger Settings"
+      title="Risk Trigger"
       subtitle="Manage the fallback phrases used for journal safety flagging."
       onLogout={onLogout}
       session={session}
@@ -218,58 +218,49 @@ export default function RiskTriggers({ onLogout, session }) {
         ) : null}
         <Toast message={successMessage} onClose={() => setSuccessMessage("")} />
 
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">Risk Trigger Settings</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              These phrases are a fallback safety check. AI analysis still reviews journal meaning and context.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={openCreateModal}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800"
-          >
-            <Plus className="h-4 w-4" />
-            Add Trigger
-          </button>
-        </div>
+
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
             {
               icon: ShieldAlert,
+              iconBg: "bg-slate-100 text-slate-700",
               label: "Total Triggers",
-              tone: "border-slate-200 bg-white text-slate-900",
               value: stats.total,
+              valueColor: "text-slate-900",
             },
             {
               icon: AlertTriangle,
+              iconBg: "bg-emerald-50 text-emerald-800",
               label: "Crisis / Critical Need",
-              tone: "border-red-200 bg-red-50 text-red-900",
               value: stats.crisis,
+              valueColor: "text-emerald-900",
             },
             {
               icon: CheckCircle2,
+              iconBg: "bg-teal-50 text-teal-700",
               label: "Distressed / Needs Support",
-              tone: "border-amber-200 bg-amber-50 text-amber-900",
               value: stats.distressed,
+              valueColor: "text-teal-800",
             },
             {
               icon: XCircle,
+              iconBg: "bg-slate-100 text-slate-500",
               label: "Disabled",
-              tone: "border-slate-200 bg-slate-50 text-slate-700",
               value: stats.disabled,
+              valueColor: "text-slate-600",
             },
           ].map((stat) => {
             const Icon = stat.icon;
             return (
-              <div key={stat.label} className={`rounded-2xl border p-5 shadow-sm ${stat.tone}`}>
+              <div key={stat.label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="mb-3 flex items-center gap-3">
-                  <Icon className="h-5 w-5" />
-                  <div className="text-sm font-semibold">{stat.label}</div>
+                  <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${stat.iconBg}`}>
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <div className="text-sm font-semibold text-slate-700">{stat.label}</div>
                 </div>
-                <div className="text-3xl font-bold">{stat.value}</div>
+                <div className={`text-3xl font-bold ${stat.valueColor}`}>{stat.value}</div>
               </div>
             );
           })}
@@ -294,15 +285,25 @@ export default function RiskTriggers({ onLogout, session }) {
               ))}
             </div>
 
-            <div className="relative w-full lg:w-80">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search trigger phrases..."
-                className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-4 text-sm focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/20"
-              />
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative w-full sm:w-72">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search trigger phrases..."
+                  className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-4 text-sm focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/20"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={openCreateModal}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 transition"
+              >
+                <Plus className="h-4 w-4" />
+                Add Trigger
+              </button>
             </div>
           </div>
 
@@ -379,10 +380,6 @@ export default function RiskTriggers({ onLogout, session }) {
               </table>
             </div>
           )}
-        </div>
-
-        <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-5 py-4 text-sm text-emerald-900">
-          <span className="font-semibold">Balanced / Stable</span> is still used when no AI or fallback risk signal is found. It does not need trigger phrases.
         </div>
 
         <Modal

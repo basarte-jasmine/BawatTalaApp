@@ -83,7 +83,7 @@ export default function Sidebar({ onLogout, session, isOpen, onClose }) {
           />
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-[#5f7a5f]">Bawat Tala</p>
-            <p className="font-semibold text-admin-ink">Admin Panel</p>
+            <p className="font-semibold text-admin-ink">Guidance</p>
           </div>
         </div>
 

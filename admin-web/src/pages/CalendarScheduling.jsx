@@ -38,11 +38,26 @@ import {
   updateAdminAppointment,
 } from "../lib/admin-api";
 import { maskStudentNumber, useAdminPreferences } from "../lib/admin-preferences";
+import { isHeadCounselor } from "../lib/admin-roles";
 import { PROGRAM_OPTIONS } from "../lib/register-data";
 
 const ACTIVITY_LOGS_PER_PAGE = 5;
+function countWords(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return 0;
+  return trimmed.split(/\s+/).filter(Boolean).length;
+}
 const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
 const COUNSELING_TYPE_OPTIONS = ["1-on-1", "Group"];
+const CANCELLATION_REASON_OPTIONS = [
+  "Counselor Unavailable",
+  "Peer Counselor Academic Commitment",
+  "Campus/Office Closure",
+  "Duplicate Booking",
+  "Concern Reassignment",
+  "Session Already Completed",
+  "Other (Please Specify)",
+];
 
 const PEER_FORM_INITIAL_STATE = {
   email: "",
@@ -71,6 +86,8 @@ export default function CalendarScheduling({
     : "Manage guidance appointments, counseling sessions, and counselor availability.");
   const counselorLabel = isPeerSupport ? "Peer Counselor" : "Counselor";
   const counselorLabelPlural = isPeerSupport ? "Peer Counselors" : "Counselors";
+  const isHead = isHeadCounselor(session);
+  const [calendarCounselorFilter, setCalendarCounselorFilter] = useState("ALL");
   const [selectedDate, setSelectedDate] = useState(() => searchParams.get("date") || getTodayIsoDate());
   const [selectedMonth, setSelectedMonth] = useState(() => getManilaMonthDate());
   const [selectedCounselorId, setSelectedCounselorId] = useState("");
@@ -100,7 +117,10 @@ export default function CalendarScheduling({
   const [modalAvailabilityData, setModalAvailabilityData] = useState(null);
   const [modalAvailabilityError, setModalAvailabilityError] = useState("");
   const [cancelAppointmentId, setCancelAppointmentId] = useState("");
-  const [cancelReason, setCancelReason] = useState("");
+  const [cancelReasonCategory, setCancelReasonCategory] = useState("Counselor Unavailable");
+  const [cancelCustomReason, setCancelCustomReason] = useState("");
+  const [cancelStudentNote, setCancelStudentNote] = useState("");
+  const [cancelError, setCancelError] = useState("");
   const [deleteAppointmentId, setDeleteAppointmentId] = useState("");
   const [dayAvailabilityAction, setDayAvailabilityAction] = useState(null);
   const [peerForm, setPeerForm] = useState(PEER_FORM_INITIAL_STATE);
@@ -166,7 +186,7 @@ export default function CalendarScheduling({
     if (!selectedCounselorId || !overviewCounselors.some((item) => item.id === selectedCounselorId)) {
       const sessionEmail = String(session?.email || "").trim().toLowerCase();
       const matchingCounselor = overviewCounselors.find(
-        (item) => String(item.email || "").trim().toLowerCase() === sessionEmail,
+        (item) => String(item.email || "").trim().toLowerCase() === sessionEmail || String(item.id || "") === String(session?.id || ""),
       );
       setSelectedCounselorId(matchingCounselor?.id || overviewCounselors[0]?.id || "");
     }
@@ -183,14 +203,29 @@ export default function CalendarScheduling({
   const monthAppointments = Array.isArray(overview?.monthAppointments) ? overview.monthAppointments : [];
   const recentActivity = Array.isArray(overview?.recentActivity) ? overview.recentActivity : [];
   const calendarCells = useMemo(() => buildCalendarCells(selectedMonth), [selectedMonth]);
+  const filteredMonthAppointments = useMemo(() => {
+    if (calendarCounselorFilter === "ALL") {
+      return monthAppointments;
+    }
+    if (calendarCounselorFilter === "ME") {
+      const myId = String(session?.id || "");
+      return monthAppointments.filter(
+        (item) => String(item.counselorId || item.guidanceCounselorId || "") === myId,
+      );
+    }
+    return monthAppointments.filter(
+      (item) => String(item.counselorId || item.guidanceCounselorId || "") === String(calendarCounselorFilter),
+    );
+  }, [calendarCounselorFilter, monthAppointments, session?.id]);
+
   const appointmentsModalAppointments = useMemo(
     () =>
       appointmentsModalDate
-        ? monthAppointments
+        ? filteredMonthAppointments
             .filter((item) => item.appointmentDate === appointmentsModalDate)
             .sort((a, b) => String(a.slotTime || "").localeCompare(String(b.slotTime || "")))
         : [],
-    [appointmentsModalDate, monthAppointments],
+    [appointmentsModalDate, filteredMonthAppointments],
   );
   const modalMonthKey = useMemo(
     () => getMonthKey(new Date(`${(modalDate || selectedDate) || getTodayIsoDate()}T12:00:00+08:00`)),
@@ -236,18 +271,18 @@ export default function CalendarScheduling({
 
   const appointmentCountByDate = useMemo(() => {
     const counts = new Map();
-    for (const item of monthAppointments.filter((entry) => ["PENDING", "CONFIRMED"].includes(String(entry.status || "").toUpperCase()))) {
+    for (const item of filteredMonthAppointments.filter((entry) => ["PENDING", "CONFIRMED"].includes(String(entry.status || "").toUpperCase()))) {
       counts.set(item.appointmentDate, (counts.get(item.appointmentDate) || 0) + 1);
     }
     return counts;
-  }, [monthAppointments]);
+  }, [filteredMonthAppointments]);
 
   const counselorColorMap = useMemo(
     () => new Map(counselors.map((counselor, index) => [counselor.id, COUNSELOR_COLORS[index % COUNSELOR_COLORS.length]])),
     [counselors],
   );
   const counselorDayLoad = useMemo(() => {
-    const selectedWeekDates = getWeekDatesForIso(selectedDate);
+    const selectedWeekDates = getWeekDatesForIso(getTodayIsoDate());
     return counselors.map((counselor, index) => {
       const counselorAvailability = buildAvailabilityMap(availability, counselor.id);
       const counselorOverrideMap = buildAvailabilityOverrideMap(availabilityOverrides, counselor.id);
@@ -274,7 +309,7 @@ export default function CalendarScheduling({
         dayTotals,
       };
     });
-  }, [availability, availabilityOverrides, counselors, selectedDate, slotTimes]);
+  }, [availability, availabilityOverrides, counselors, slotTimes]);
   const filteredRecentActivity = useMemo(() => {
     if (activityFilterCounselorId === "ALL") {
       return recentActivity;
@@ -384,10 +419,11 @@ export default function CalendarScheduling({
   }
 
   async function handleConfirmDayAvailabilityToggle() {
-    if (!selectedCounselor?.id || !dayAvailabilityAction) return;
+    const targetCounselorId = dayAvailabilityAction?.counselorId || selectedCounselor?.id;
+    if (!targetCounselorId || !dayAvailabilityAction) return;
     try {
       await updateAdminDayAvailability({
-        counselorId: selectedCounselor.id,
+        counselorId: targetCounselorId,
         dayOfWeek: dayAvailabilityAction.dayOfWeek,
         isEnabled: dayAvailabilityAction.nextEnabled,
         supportType: normalizedSupportType,
@@ -401,6 +437,20 @@ export default function CalendarScheduling({
     }
   }
 
+  function canManageAppointment(appointment) {
+    if (isHead) return true;
+    if (isPeerSupport || String(appointment?.supportType || "").toUpperCase() === "PEER") return true;
+    const currentAdminId = String(session?.id || "");
+    const appointmentCounselorId = String(appointment?.counselorId || appointment?.guidanceCounselorId || "");
+    return Boolean(currentAdminId && appointmentCounselorId && currentAdminId === appointmentCounselorId);
+  }
+
+  function canEditCounselorAvailability(counselor) {
+    if (isHead) return true;
+    if (isPeerSupport) return true;
+    return Boolean(session?.id && counselor?.id && String(session.id) === String(counselor.id));
+  }
+
   function handleOpenModal(appointment = null) {
     const fallbackDate = selectedDate && selectedDate >= getMinimumBookingIsoDate()
       ? selectedDate
@@ -408,12 +458,15 @@ export default function CalendarScheduling({
     setIsModalOpen(true);
     setEditingAppointmentId(appointment?.id || "");
     setModalStudentNumber(appointment?.studentNumber || "");
-    setModalCounselorId(appointment?.counselorId || selectedCounselor?.id || selectedCounselorId || "");
+    const defaultCounselorId = !isHead && !isPeerSupport
+      ? (session?.id || selectedCounselor?.id || "")
+      : (selectedCounselor?.id || selectedCounselorId || "");
+    setModalCounselorId(appointment?.counselorId || defaultCounselorId);
     setModalDate(appointment?.appointmentDate || fallbackDate);
     setModalTime(appointment?.slotTime || "");
     setModalConcern(appointment?.concern || "");
     setModalCounselingType(appointment?.counselingType || "1-on-1");
-    setModalNote(isPeerSupport ? "" : appointment?.studentNote || "");
+    setModalNote(appointment?.studentNote || "");
     setModalGenderPreference(appointment?.counselorGenderPreference || "No Preference");
     setModalAvailabilityData(null);
     setModalAvailabilityError("");
@@ -434,6 +487,10 @@ export default function CalendarScheduling({
         setModalError("Appointments must be set at least 2 days ahead.");
         return;
       }
+      if (countWords(modalNote) > 500) {
+        setModalError("Note / reason cannot exceed 500 words.");
+        return;
+      }
       const payload = {
         studentNumber,
         counselorId: modalCounselorId,
@@ -441,7 +498,7 @@ export default function CalendarScheduling({
         slotTime: modalTime,
         concern: modalConcern,
         counselingType: isPeerSupport ? "" : modalCounselingType,
-        studentNote: isPeerSupport ? "" : modalNote,
+        studentNote: modalNote.trim(),
         counselorGenderPreference: modalGenderPreference,
         bookingSource: "ADMIN_PANEL",
         supportType: normalizedSupportType,
@@ -466,18 +523,38 @@ export default function CalendarScheduling({
 
   async function handleCancelAppointment(appointmentId) {
     try {
-      if (requiresCancelReason && !cancelReason.trim()) {
-        setErrorMessage("Cancellation reason is required.");
+      setCancelError("");
+      const resolvedReason =
+        cancelReasonCategory === "Other (Please Specify)"
+          ? cancelCustomReason.trim()
+          : cancelReasonCategory;
+
+      if (!resolvedReason) {
+        setCancelError("Please specify a cancellation reason.");
         return;
       }
+      if (countWords(resolvedReason) > 500) {
+        setCancelError("Cancellation reason cannot exceed 500 words.");
+        return;
+      }
+      if (countWords(cancelStudentNote) > 500) {
+        setCancelError("Note to student cannot exceed 500 words.");
+        return;
+      }
+
       await cancelAdminAppointment(appointmentId, {
-        cancellationReason: cancelReason.trim(),
+        cancellationReason: resolvedReason,
+        studentNote: cancelStudentNote.trim(),
+        note: cancelStudentNote.trim(),
       });
       setCancelAppointmentId("");
-      setCancelReason("");
+      setCancelReasonCategory(isPeerSupport ? "Peer Counselor Academic Commitment" : "Counselor Unavailable");
+      setCancelCustomReason("");
+      setCancelStudentNote("");
+      setCancelError("");
       await refreshOverview();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to cancel appointment.");
+      setCancelError(error instanceof Error ? error.message : "Failed to cancel appointment.");
     }
   }
 
@@ -658,18 +735,43 @@ export default function CalendarScheduling({
             <div className="grid grid-cols-1 gap-6">
               <section id="calendar-schedule-section" className="rounded-[2rem] border border-admin-border bg-white p-6 shadow-sm">
                 <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <h3 className="text-[1.15rem] font-black text-slate-800">{getMonthTitle(selectedMonth)}</h3>
                     <button
                       type="button"
                       onClick={() => setSelectedDate(getTodayIsoDate())}
-                      className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600"
+                      className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-200"
                     >
                       Today
                     </button>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <label htmlFor="calendar-counselor-filter" className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                        Filter:
+                      </label>
+                      <select
+                        id="calendar-counselor-filter"
+                        value={calendarCounselorFilter}
+                        onChange={(e) => setCalendarCounselorFilter(e.target.value)}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm outline-none transition focus:border-[#3DA35D] focus:ring-1 focus:ring-[#3DA35D]"
+                      >
+                        <option value="ALL">All {counselorLabelPlural} (Overall)</option>
+                        {!isPeerSupport && session?.id ? (
+                          <option value="ME">My Schedule Only</option>
+                        ) : null}
+                        <optgroup label={counselorLabelPlural}>
+                          {counselors.map((c) => (
+                            <option key={`cal-filter-${c.id}`} value={c.id}>
+                              {c.fullName}
+                            </option>
+                          ))}
+                        </optgroup>
+                      </select>
+                    </div>
+
+                    <div className="flex items-center gap-2">
                     <button
                       type="button"
                       onClick={() => {
@@ -694,6 +796,7 @@ export default function CalendarScheduling({
                     </button>
                   </div>
                 </div>
+              </div>
 
                 <div className="mb-3 grid grid-cols-7 gap-px rounded-t-2xl bg-slate-200">
                   {WEEKDAY_HEADERS.map((label) => (
@@ -749,7 +852,7 @@ export default function CalendarScheduling({
 
                             <div className="flex flex-wrap gap-2">
                               {appointmentCount
-                                ? monthAppointments
+                                ? filteredMonthAppointments
                                     .filter(
                                       (item) =>
                                         item.appointmentDate === cell.isoDate &&
@@ -789,14 +892,16 @@ export default function CalendarScheduling({
                       <p className="mt-1 text-sm text-slate-500">Peer counselors, invite status, and scheduling controls in one list.</p>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleOpenAddPeerCounselor}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#3DA35D] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#2f8c4d]"
-                  >
-                    <UserPlus className="h-4 w-4" />
-                    Add Peer Counselor
-                  </button>
+                  {isHead ? (
+                    <button
+                      type="button"
+                      onClick={handleOpenAddPeerCounselor}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#3DA35D] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#2f8c4d]"
+                    >
+                      <UserPlus className="h-4 w-4" />
+                      Add Peer Counselor
+                    </button>
+                  ) : null}
                 </div>
 
                 <div className="overflow-x-auto">
@@ -853,22 +958,26 @@ export default function CalendarScheduling({
                                 >
                                   Schedule
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleEditPeerCounselor(peer)}
-                                  className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-emerald-700"
-                                  aria-label={`Edit ${peer.fullName}`}
-                                >
-                                  <Edit2 className="h-4 w-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setPendingDeletePeerCounselor(peer)}
-                                  className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-red-600"
-                                  aria-label={`Remove ${peer.fullName}`}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
+                                {isHead ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleEditPeerCounselor(peer)}
+                                      className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-emerald-700"
+                                      aria-label={`Edit ${peer.fullName}`}
+                                    >
+                                      <Edit2 className="h-4 w-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPendingDeletePeerCounselor(peer)}
+                                      className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-red-600"
+                                      aria-label={`Remove ${peer.fullName}`}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  </>
+                                ) : null}
                               </div>
                             </td>
                           </tr>
@@ -890,7 +999,7 @@ export default function CalendarScheduling({
               <div className="mb-6 flex items-center justify-between gap-4">
                 <div>
                   <h3 className="text-[1.25rem] font-black text-slate-800">{counselorLabel} Availability</h3>
-                  <p className="mt-1 text-sm text-slate-500">Weekly schedule overview for the currently selected week. Turning a day off only affects that specific date and clears its hours.</p>
+                  <p className="mt-1 text-sm text-slate-500">Weekly schedule overview for the current week. Turning a day off only affects that specific date and clears its hours.</p>
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -912,6 +1021,7 @@ export default function CalendarScheduling({
                 </div>
               </div>
 
+
               <div className="overflow-x-auto">
                 <div className="min-w-[880px] space-y-5">
                   <div className="grid grid-cols-[180px_repeat(5,minmax(0,1fr))] gap-5 text-sm font-semibold text-slate-500">
@@ -923,71 +1033,88 @@ export default function CalendarScheduling({
                     <div>Fri</div>
                   </div>
 
-                  {counselorDayLoad.map((row) => (
-                    <div key={row.counselor.id} className="grid grid-cols-[180px_repeat(5,minmax(0,1fr))] items-center gap-5">
-                      <div className="flex items-center gap-3">
-                        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: row.color }} />
-                        <div>
-                          <div className="font-semibold text-slate-700">{row.counselor.fullName}</div>
-                          <div className="text-xs text-slate-400">{row.counselor.role}</div>
+                  {counselorDayLoad.map((row) => {
+                    const isAllowedToEdit = canEditCounselorAvailability(row.counselor);
+                    const isSelectedCounselor = row.counselor.id === selectedCounselor?.id;
+                    return (
+                      <div key={row.counselor.id} className="grid grid-cols-[180px_repeat(5,minmax(0,1fr))] items-center gap-5">
+                        <div className="flex items-center gap-3">
+                          <span className="h-3 w-3 rounded-full" style={{ backgroundColor: row.color }} />
+                          <div>
+                            <div className="font-semibold text-slate-700">{row.counselor.fullName}</div>
+                            <div className="text-xs text-slate-400">{row.counselor.role || (isPeerSupport ? "Peer Counselor" : "Counselor")}</div>
+                          </div>
                         </div>
-                      </div>
 
-                      {row.dayTotals.map((day) => {
-                        const isSelectedCounselor = row.counselor.id === selectedCounselor?.id;
-                        const isPastDay = day.isoDate < getTodayIsoDate();
-                        const isInteractive = isEditingCounselorAvailability && isSelectedCounselor && !isPastDay;
-                        return (
-                          <button
-                            key={`${row.counselor.id}-${day.dayOfWeek}`}
-                            type="button"
-                            disabled={isEditingCounselorAvailability && isPastDay}
-                            onClick={() => {
-                              if (isPastDay && isEditingCounselorAvailability) return;
-                              if (!isSelectedCounselor) {
-                                setSelectedCounselorId(row.counselor.id);
-                                return;
-                              }
-                              if (isInteractive) {
+                        {row.dayTotals.map((day) => {
+                          const isPastDay = day.isoDate < getTodayIsoDate();
+                          const isInteractive = isEditingCounselorAvailability && isAllowedToEdit && !isPastDay;
+                          return (
+                            <button
+                              key={`${row.counselor.id}-${day.dayOfWeek}`}
+                              type="button"
+                              disabled={isEditingCounselorAvailability ? (!isAllowedToEdit || isPastDay) : false}
+                              onClick={() => {
+                                if (!isEditingCounselorAvailability) {
+                                  setSelectedCounselorId(row.counselor.id);
+                                  return;
+                                }
+                                if (isPastDay || !isAllowedToEdit) return;
                                 setDayAvailabilityAction({
+                                  counselorId: row.counselor.id,
+                                  counselorName: row.counselor.fullName,
                                   dayLabel: day.dayLabel,
                                   dayOfWeek: day.dayOfWeek,
                                   targetDate: day.isoDate,
                                   nextEnabled: !day.isWorkingDay,
                                 });
-                              }
-                            }}
-                            className={`rounded-2xl bg-slate-50 px-3 py-3 text-left transition ${
-                              isInteractive ? "hover:bg-slate-100" : "hover:bg-slate-100"
-                            } ${isSelectedCounselor ? "ring-2 ring-emerald-100" : ""} ${
-                              isEditingCounselorAvailability && isPastDay ? "cursor-not-allowed opacity-55" : ""
-                            }`}
-                          >
-                            {day.isWorkingDay ? (
-                              <div className="space-y-2">
-                                <div className="h-11 overflow-hidden rounded-xl bg-slate-100">
-                                  <div
-                                    className="h-full rounded-xl opacity-80"
-                                    style={{
-                                      width: `${Math.max(24, day.percent)}%`,
-                                      backgroundColor: row.color,
-                                    }}
-                                  />
+                              }}
+                              className={`rounded-2xl bg-slate-50 px-3 py-3 text-left transition ${
+                                isInteractive ? "hover:bg-slate-100 cursor-pointer ring-1 ring-emerald-300" : "hover:bg-slate-100"
+                              } ${isSelectedCounselor ? "ring-2 ring-emerald-200" : ""} ${
+                                isEditingCounselorAvailability && isPastDay ? "cursor-not-allowed opacity-55" : ""
+                              } ${
+                                isEditingCounselorAvailability && !isAllowedToEdit ? "cursor-not-allowed opacity-40" : ""
+                              }`}
+                            >
+                              {day.isWorkingDay ? (
+                                <div className="space-y-2">
+                                  <div className="h-11 overflow-hidden rounded-xl bg-slate-100">
+                                    <div
+                                      className="h-full rounded-xl opacity-80"
+                                      style={{
+                                        width: `${Math.max(24, day.percent)}%`,
+                                        backgroundColor: row.color,
+                                      }}
+                                    />
+                                  </div>
+                                  <div className="text-xs font-semibold text-slate-500">
+                                    {isEditingCounselorAvailability
+                                      ? !isAllowedToEdit
+                                        ? `${formatDisplayDate(day.isoDate)} (view only)`
+                                        : isPastDay
+                                        ? `${formatDisplayDate(day.isoDate)} (locked)`
+                                        : `${formatDisplayDate(day.isoDate)} - Open`
+                                      : formatAvailabilityHours(day.openSlots)}
+                                  </div>
                                 </div>
-                                <div className="text-xs font-semibold text-slate-500">
-                                  {isEditingCounselorAvailability ? `${formatDisplayDate(day.isoDate)}${isPastDay ? " (locked)" : ""}` : formatAvailabilityHours(day.openSlots)}
+                              ) : (
+                                <div className="flex h-11 items-center justify-center rounded-xl bg-slate-100 text-sm font-medium text-slate-400">
+                                  {isEditingCounselorAvailability
+                                    ? !isAllowedToEdit
+                                      ? `${formatDisplayDate(day.isoDate)} (view only)`
+                                      : isPastDay
+                                      ? `${formatDisplayDate(day.isoDate)} (locked)`
+                                      : `${formatDisplayDate(day.isoDate)} - Off`
+                                    : "Off"}
                                 </div>
-                              </div>
-                            ) : (
-                              <div className="flex h-11 items-center justify-center rounded-xl bg-slate-100 text-sm font-medium text-slate-400">
-                                {isEditingCounselorAvailability ? `${formatDisplayDate(day.isoDate)}${isPastDay ? " (locked)" : ""}` : "Off"}
-                              </div>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ))}
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </section>
@@ -1207,52 +1334,60 @@ export default function CalendarScheduling({
                       </div>
 
                       <div className="mt-4 flex flex-wrap justify-end gap-2">
-                        {["PENDING", "CONFIRMED", "DECLINED"].includes(String(appointment.status || "").toUpperCase()) ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setAppointmentsModalDate("");
-                              handleOpenModal(appointment);
-                            }}
-                            className="rounded-full bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-300"
-                          >
-                            {String(appointment.status || "").toUpperCase() === "PENDING" ? "Reschedule" : "Edit"}
-                          </button>
-                        ) : null}
-                        {String(appointment.status || "").toUpperCase() === "PENDING" ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleConfirmAppointment(appointment.id)}
-                            className="rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-200"
-                          >
-                            Confirm
-                          </button>
-                        ) : null}
-                        {String(appointment.status || "").toUpperCase() === "PENDING" ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleDeclineAppointment(appointment.id)}
-                            className="rounded-full bg-rose-100 px-3 py-1.5 text-xs font-semibold text-rose-800 transition hover:bg-rose-200"
-                          >
-                            Decline
-                          </button>
-                        ) : null}
-                        {String(appointment.status || "").toUpperCase() === "CONFIRMED" ? (
-                          <button
-                            type="button"
-                            onClick={() => setCancelAppointmentId(appointment.id)}
-                            className="rounded-full bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-200"
-                          >
-                            Cancel
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => setDeleteAppointmentId(appointment.id)}
-                          className="rounded-full bg-rose-100 px-3 py-1.5 text-xs font-semibold text-rose-800 transition hover:bg-rose-200"
-                        >
-                          Delete
-                        </button>
+                        {canManageAppointment(appointment) ? (
+                          <>
+                            {["PENDING", "CONFIRMED", "DECLINED"].includes(String(appointment.status || "").toUpperCase()) ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAppointmentsModalDate("");
+                                  handleOpenModal(appointment);
+                                }}
+                                className="rounded-full bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-300"
+                              >
+                                {String(appointment.status || "").toUpperCase() === "PENDING" ? "Reschedule" : "Edit"}
+                              </button>
+                            ) : null}
+                            {String(appointment.status || "").toUpperCase() === "PENDING" ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleConfirmAppointment(appointment.id)}
+                                className="rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-200"
+                              >
+                                Confirm
+                              </button>
+                            ) : null}
+                            {String(appointment.status || "").toUpperCase() === "PENDING" ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleDeclineAppointment(appointment.id)}
+                                className="rounded-full bg-rose-100 px-3 py-1.5 text-xs font-semibold text-rose-800 transition hover:bg-rose-200"
+                              >
+                                Decline
+                              </button>
+                            ) : null}
+                            {String(appointment.status || "").toUpperCase() === "CONFIRMED" ? (
+                              <button
+                                type="button"
+                                onClick={() => setCancelAppointmentId(appointment.id)}
+                                className="rounded-full bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-800 transition hover:bg-amber-200"
+                              >
+                                Cancel
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              onClick={() => setDeleteAppointmentId(appointment.id)}
+                              className="rounded-full bg-rose-100 px-3 py-1.5 text-xs font-semibold text-rose-800 transition hover:bg-rose-200"
+                            >
+                              Delete
+                            </button>
+                          </>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-500">
+                            View Only
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))
@@ -1430,17 +1565,26 @@ export default function CalendarScheduling({
 
               <div>
                 <label className="mb-1 block text-sm font-semibold text-slate-700">{counselorLabel}</label>
-                <select
-                  required
-                  value={modalCounselorId}
-                  onChange={(e) => setModalCounselorId(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 p-2.5 text-sm outline-none focus:border-[#3DA35D]"
-                >
-                  <option value="">Select {counselorLabel}</option>
-                  {counselors.map((c) => (
-                    <option key={`modal-${c.id}`} value={c.id}>{c.fullName}</option>
-                  ))}
-                </select>
+                {!isHead && !isPeerSupport ? (
+                  <input
+                    type="text"
+                    disabled
+                    value={session?.fullName || session?.email || "My Account"}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-100 p-2.5 text-sm font-medium text-slate-700"
+                  />
+                ) : (
+                  <select
+                    required
+                    value={modalCounselorId}
+                    onChange={(e) => setModalCounselorId(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 p-2.5 text-sm outline-none focus:border-[#3DA35D]"
+                  >
+                    <option value="">Select {counselorLabel}</option>
+                    {counselors.map((c) => (
+                      <option key={`modal-${c.id}`} value={c.id}>{c.fullName}</option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -1523,18 +1667,23 @@ export default function CalendarScheduling({
                 </div>
               ) : null}
 
-              {!isPeerSupport ? (
-                <div>
-                  <label className="mb-1 block text-sm font-semibold text-slate-700">Note (Optional)</label>
-                  <textarea
-                    value={modalNote}
-                    onChange={(e) => setModalNote(e.target.value)}
-                    placeholder="Any additional details..."
-                    className="w-full resize-none rounded-xl border border-slate-200 p-2.5 text-sm outline-none focus:border-[#3DA35D]"
-                    rows={2}
-                  />
+              <div>
+                <div className="mb-1 flex items-center justify-between">
+                  <label className="block text-sm font-semibold text-slate-700">
+                    {editingAppointmentId ? "Reason / Note to Student (Optional)" : "Note to Student (Optional)"}
+                  </label>
+                  <span className={`text-xs ${countWords(modalNote) > 500 ? "font-bold text-rose-600" : "text-slate-400"}`}>
+                    {countWords(modalNote)}/500 words
+                  </span>
                 </div>
-              ) : null}
+                <textarea
+                  value={modalNote}
+                  onChange={(e) => setModalNote(e.target.value)}
+                  placeholder={editingAppointmentId ? "e.g. Moved schedule to 2:00 PM due to counselor availability..." : "Any additional notes for the student..."}
+                  className="w-full resize-none rounded-xl border border-slate-200 p-2.5 text-sm outline-none focus:border-[#3DA35D]"
+                  rows={2}
+                />
+              </div>
 
               <div className="flex justify-end gap-3 pt-4">
                 <button
@@ -1561,24 +1710,127 @@ export default function CalendarScheduling({
         </div>
       )}
 
-      <ConfirmActionModal
-        isOpen={Boolean(cancelAppointmentId)}
-        onClose={() => {
-          setCancelAppointmentId("");
-          setCancelReason("");
-        }}
-        onConfirm={() => void handleCancelAppointment(cancelAppointmentId)}
-        title="Cancel Appointment"
-        description="Cancel this appointment and keep it listed as cancelled?"
-        inputLabel={requiresCancelReason ? "Cancellation reason" : ""}
-        inputPlaceholder="Add the internal reason for cancelling this appointment."
-        inputRequired={requiresCancelReason}
-        inputValue={cancelReason}
-        onInputChange={setCancelReason}
-        cancelLabel="Keep"
-        confirmLabel="Confirm Cancel"
-        confirmTone="amber"
-      />
+      {cancelAppointmentId ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-bold text-slate-800">Cancel Appointment</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Cancel this appointment and keep it listed as cancelled?
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setCancelAppointmentId("");
+                  setCancelReasonCategory(isPeerSupport ? "Peer Counselor Academic Commitment" : "Counselor Unavailable");
+                  setCancelCustomReason("");
+                  setCancelStudentNote("");
+                  setCancelError("");
+                }}
+                className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Close cancel dialog"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {cancelError ? (
+              <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-semibold text-rose-700">
+                {cancelError}
+              </div>
+            ) : null}
+
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-600">
+                  Cancellation reason <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={cancelReasonCategory}
+                  onChange={(e) => {
+                    setCancelReasonCategory(e.target.value);
+                    setCancelError("");
+                  }}
+                  className="w-full rounded-2xl border border-slate-200 bg-white p-3 text-sm font-medium text-slate-800 shadow-sm outline-none transition focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
+                >
+                  {CANCELLATION_REASON_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {cancelReasonCategory === "Other (Please Specify)" ? (
+                <div>
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Specify Reason <span className="text-rose-500">*</span>
+                    </label>
+                    <span className={`text-xs ${countWords(cancelCustomReason) > 500 ? "font-bold text-rose-600" : "text-slate-400"}`}>
+                      {countWords(cancelCustomReason)}/500 words
+                    </span>
+                  </div>
+                  <textarea
+                    required
+                    rows={3}
+                    value={cancelCustomReason}
+                    onChange={(e) => {
+                      setCancelCustomReason(e.target.value);
+                      setCancelError("");
+                    }}
+                    placeholder="Add the specific reason for cancelling this appointment."
+                    className="w-full resize-none rounded-2xl border border-slate-200 p-3 text-sm outline-none transition focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
+                  />
+                </div>
+              ) : null}
+
+              <div>
+                <div className="mb-1.5 flex items-center justify-between">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-600">
+                    Add a short note to the student <span className="text-xs font-normal text-slate-400">(Optional)</span>
+                  </label>
+                  <span className={`text-xs ${countWords(cancelStudentNote) > 500 ? "font-bold text-rose-600" : "text-slate-400"}`}>
+                    {countWords(cancelStudentNote)}/500 words
+                  </span>
+                </div>
+                <textarea
+                  rows={2}
+                  value={cancelStudentNote}
+                  onChange={(e) => setCancelStudentNote(e.target.value)}
+                  placeholder="e.g. Please feel free to request another schedule when available."
+                  className="w-full resize-none rounded-2xl border border-slate-200 p-3 text-sm outline-none transition focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCancelAppointmentId("");
+                    setCancelReasonCategory(isPeerSupport ? "Peer Counselor Academic Commitment" : "Counselor Unavailable");
+                    setCancelCustomReason("");
+                    setCancelStudentNote("");
+                    setCancelError("");
+                  }}
+                  className="rounded-full px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-100"
+                >
+                  Keep
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleCancelAppointment(cancelAppointmentId)}
+                  className="rounded-full bg-amber-500 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-amber-600"
+                >
+                  Confirm Cancellation and Notify Student
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <ConfirmActionModal
         isOpen={Boolean(deleteAppointmentId)}
@@ -1609,8 +1861,8 @@ export default function CalendarScheduling({
         title={dayAvailabilityAction?.nextEnabled ? "Set Day Available" : "Mark Day Off"}
         description={
           dayAvailabilityAction?.nextEnabled
-            ? `Make ${dayAvailabilityAction?.dayLabel} available again for ${formatDisplayDate(dayAvailabilityAction?.targetDate || selectedDate)}?`
-            : `Mark ${dayAvailabilityAction?.dayLabel} off for ${formatDisplayDate(dayAvailabilityAction?.targetDate || selectedDate)}? All appointments on that specific date will be cancelled, and every hour for that date will become unavailable.`
+            ? `Make ${dayAvailabilityAction?.dayLabel} available again for ${dayAvailabilityAction?.counselorName || "counselor"} on ${formatDisplayDate(dayAvailabilityAction?.targetDate || selectedDate)}?`
+            : `Mark ${dayAvailabilityAction?.dayLabel} off for ${dayAvailabilityAction?.counselorName || "counselor"} on ${formatDisplayDate(dayAvailabilityAction?.targetDate || selectedDate)}? All appointments on that specific date will be cancelled, and every hour for that date will become unavailable.`
         }
         confirmTone={dayAvailabilityAction?.nextEnabled ? "emerald" : "rose"}
       />

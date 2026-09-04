@@ -312,6 +312,16 @@ async function ensureDatabaseSchema() {
     add column if not exists settings jsonb not null default '{}'::jsonb;
   `);
 
+  await pool.query(`
+    alter table public.admin_accounts
+    add column if not exists deleted_at timestamptz;
+  `);
+
+  await pool.query(`
+    alter table public.admin_accounts
+    add column if not exists scheduled_deletion_at timestamptz;
+  `);
+
   await ensureStudentProfilePictureSchema();
 
   await pool.query(`

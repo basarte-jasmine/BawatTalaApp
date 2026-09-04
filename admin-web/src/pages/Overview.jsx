@@ -2805,26 +2805,26 @@ export default function Overview({ onLogout, session }) {
               <button
                 type="button"
                 onClick={() => navigate("/flagged")}
-                className="flex w-full items-center justify-between rounded-2xl border border-red-100 bg-red-50 px-4 py-4 text-left transition hover:border-red-200"
+                className="flex w-full items-center justify-between rounded-2xl border border-emerald-100 bg-emerald-50/80 px-4 py-4 text-left transition hover:border-emerald-200"
               >
                 <div>
-                  <div className="text-sm font-semibold text-red-700">Crisis / Critical Need</div>
-                  <div className="mt-1 text-sm text-red-500">Live entries marked high or critical risk</div>
+                  <div className="text-sm font-semibold text-emerald-900">Crisis / Critical Need</div>
+                  <div className="mt-1 text-sm text-emerald-700/80">Live entries marked high or critical risk</div>
                 </div>
-                <div className="text-2xl font-bold text-red-700">
+                <div className="text-2xl font-bold text-emerald-900">
                   {riskFlagsError ? "--" : formatMetricValue(crisisSignalCount)}
                 </div>
               </button>
               <button
                 type="button"
                 onClick={() => navigate("/flagged")}
-                className="flex w-full items-center justify-between rounded-2xl border border-amber-100 bg-amber-50 px-4 py-4 text-left transition hover:border-amber-200"
+                className="flex w-full items-center justify-between rounded-2xl border border-teal-100 bg-teal-50/70 px-4 py-4 text-left transition hover:border-teal-200"
               >
                 <div>
-                  <div className="text-sm font-semibold text-amber-700">Distressed / Needs Support</div>
-                  <div className="mt-1 text-sm text-amber-600">Live entries marked as needing support</div>
+                  <div className="text-sm font-semibold text-teal-800">Distressed / Needs Support</div>
+                  <div className="mt-1 text-sm text-teal-700/80">Live entries marked as needing support</div>
                 </div>
-                <div className="text-2xl font-bold text-amber-700">
+                <div className="text-2xl font-bold text-teal-800">
                   {riskFlagsError ? "--" : formatMetricValue(distressedSignalCount)}
                 </div>
               </button>

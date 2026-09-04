@@ -361,8 +361,8 @@ export default function RoleAssignments({ onLogout, session }) {
 
   return (
     <Layout
-      title="Role & Permission Management"
-      subtitle="Manage live counselor roles and access levels."
+      title="Role Assignments Management"
+      subtitle="Manage counselor roles, peer invitations, and access levels."
       onLogout={onLogout}
       session={session}
     >
@@ -375,24 +375,7 @@ export default function RoleAssignments({ onLogout, session }) {
         ) : null}
         <Toast message={successMessage} onClose={() => setSuccessMessage("")} />
 
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Role & Permission Management</h1>
-            <p className="mt-1 text-sm text-gray-500">
-              Live team data from the admin role database.
-            </p>
-          </div>
-          {isHead ? (
-          <button
-            type="button"
-            onClick={openCreateModal}
-            className="flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800"
-          >
-            <UserPlus className="h-4 w-4" />
-            Add Member
-          </button>
-          ) : null}
-        </div>
+
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           {roleCards.map((role) => {
@@ -420,13 +403,25 @@ export default function RoleAssignments({ onLogout, session }) {
         <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
           <div className="flex flex-col justify-between gap-3 border-b border-gray-200 bg-gray-50/50 p-5 sm:flex-row sm:items-center">
             <h2 className="text-lg font-semibold text-gray-900">Team Members</h2>
-            <input
-              type="text"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search members..."
-              className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 sm:w-80"
-            />
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                type="text"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search members..."
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 sm:w-80"
+              />
+              {isHead ? (
+                <button
+                  type="button"
+                  onClick={openCreateModal}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 transition"
+                >
+                  <UserPlus className="h-4 w-4" />
+                  Add Member
+                </button>
+              ) : null}
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[980px] border-collapse text-left">

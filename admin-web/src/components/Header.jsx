@@ -313,8 +313,12 @@ export default function Header({
   const adminProfile = getAdminProfile(session);
   const adminEmail = String(session?.email || "").trim().toLowerCase();
   const { notifications, notificationsLoading, setNotifications } = useAdminNotifications(Boolean(adminEmail));
+  const cancellationInAppEnabled =
+    preferences.notifications?.receiveInApp !== false &&
+    preferences.notifications?.matrix?.cancellationsReschedules?.inApp !== false;
+
   const filteredNotifications = useMemo(() => {
-    const visibleNotifications = preferences.notifications.cancellationAlerts
+    const visibleNotifications = cancellationInAppEnabled
       ? notifications
       : notifications.filter((item) => {
           const haystack = [item.kind, item.title, item.message].join(" ").toLowerCase();
@@ -322,7 +326,7 @@ export default function Header({
         });
     if (notificationFilter === "ALL") return visibleNotifications;
     return visibleNotifications.filter((item) => String(item.metadata?.supportType || "GUIDANCE").toUpperCase() === notificationFilter);
-  }, [notificationFilter, notifications, preferences.notifications.cancellationAlerts]);
+  }, [cancellationInAppEnabled, notificationFilter, notifications]);
   const unreadCount = useMemo(
     () => filteredNotifications.filter((item) => !item.isRead).length,
     [filteredNotifications],
@@ -500,7 +504,6 @@ export default function Header({
               <Menu className="h-4 w-4" />
             </button>
             <div>
-              <p className="text-sm text-admin-muted">Admin Panel</p>
               <h2 className="font-display text-3xl text-admin-ink">{title}</h2>
               {subtitle ? <p className="mt-1 text-sm text-admin-muted">{subtitle}</p> : null}
             </div>
@@ -576,7 +579,7 @@ export default function Header({
                               <NotificationListItem
                                 key={item.id}
                                 item={item}
-                                highlightUnread={preferences.appearance.highlightUnread}
+                                highlightUnread={true}
                                 onOpen={handleOpenNotification}
                               />
                             ))

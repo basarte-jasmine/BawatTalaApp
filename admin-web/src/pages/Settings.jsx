@@ -1,9 +1,10 @@
 import Toast from "../components/Toast";
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Palette, Shield, User } from "lucide-react";
+import { AlertTriangle, Bell, KeyRound, Shield, Trash2, User, X } from "lucide-react";
 import Layout from "../components/Layout";
 import Modal from "../components/Modal";
-import { fetchAdminSettings, updateAdminSettings } from "../lib/admin-api";
+import { changeAdminPassword, fetchAdminSettings, scheduleAdminAccountDeletion, sendAdminChangePasswordCode, updateAdminSettings } from "../lib/admin-api";
+import { validateResetPassword } from "../lib/admin-validation";
 import { useAdminPreferences } from "../lib/admin-preferences";
 
 const PROFILE_PICTURE_LIMIT_BYTES = 5 * 1024 * 1024;
@@ -18,17 +19,17 @@ const DEFAULT_FORM_STATE = {
   googleProfilePictureUrl: "",
   specialtiesInput: "",
   notifications: {
-    appointmentUpdates: true,
-    cancellationAlerts: true,
-    dailyDigest: false,
-    emailAlerts: true,
-    mobilePush: true,
-  },
-  appearance: {
-    compactCards: false,
-    highlightUnread: true,
-    reduceMotion: false,
-    theme: "light",
+    receiveEmail: true,
+    receiveInApp: true,
+    matrix: {
+      highRiskFlagged: { inApp: true, email: true },
+      newAppointmentBookings: { inApp: true, email: true },
+      cancellationsReschedules: { inApp: true, email: true },
+      upcomingSessionReminder: { inApp: true, email: true },
+      studentNoShow: { inApp: true, email: true },
+      activityDigest: { inApp: false, email: false },
+      systemMaintenance: { inApp: true, email: true },
+    },
   },
   privacy: {
     maskStudentNumbers: false,
@@ -61,21 +62,183 @@ function fileToDataUrl(file) {
   });
 }
 
+
+const DEFAULT_NOTIFICATION_MATRIX = {
+  highRiskFlagged: { inApp: true, email: true },
+  newAppointmentBookings: { inApp: true, email: true },
+  cancellationsReschedules: { inApp: true, email: true },
+  upcomingSessionReminder: { inApp: true, email: true },
+  studentNoShow: { inApp: true, email: true },
+  activityDigest: { inApp: false, email: false },
+  systemMaintenance: { inApp: true, email: true },
+};
+
+const NOTIFICATION_MATRIX_SECTIONS = [
+  {
+    id: "safety",
+    title: "Safety & Crisis",
+    rows: [
+      {
+        key: "highRiskFlagged",
+        label: "High-Risk / Flagged Entries",
+        description: "Student journal triggers high-risk keyword (Self-harm, crisis).",
+        lockInApp: true,
+      },
+    ],
+  },
+  {
+    id: "appointments",
+    title: "Appointments & Scheduling",
+    rows: [
+      {
+        key: "newAppointmentBookings",
+        label: "New Appointment Bookings",
+        description: "Alerts when a student successfully books a counseling session.",
+      },
+      {
+        key: "cancellationsReschedules",
+        label: "Cancellations & Reschedules",
+        description: "Instant notices if a session is cancelled or moved.",
+      },
+      {
+        key: "upcomingSessionReminder",
+        label: "Upcoming Session Reminder",
+        description: "Reminder before a scheduled counseling session.",
+      },
+      {
+        key: "studentNoShow",
+        label: "Student No-Show / Missed Session",
+        description: "Alerts when a student misses a scheduled counseling session.",
+      },
+    ],
+  },
+  {
+    id: "summaries",
+    title: "Summaries & System",
+    rows: [
+      {
+        key: "activityDigest",
+        label: "Weekly / Daily Activity Digest",
+        description: "Periodic digest of counseling activity across your caseload.",
+      },
+      {
+        key: "systemMaintenance",
+        label: "System & Maintenance Updates",
+        description: "Platform maintenance windows and system notices as needed.",
+      },
+    ],
+  },
+];
+
+function channelPair(inApp, email) {
+  return {
+    inApp: Boolean(inApp),
+    email: Boolean(email),
+  };
+}
+
+function normalizeNotifications(raw) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const hasMatrix = source.matrix && typeof source.matrix === "object";
+  const legacyAppointments = source.appointmentUpdates !== false;
+  const legacyCancellations = source.cancellationAlerts !== false;
+  const legacyDigest = Boolean(source.dailyDigest);
+  const legacyEmail = source.emailAlerts !== false;
+  const legacyInApp = source.mobilePush !== false;
+
+  const matrixSource = hasMatrix ? source.matrix : {};
+
+  const matrix = {
+    highRiskFlagged: channelPair(
+      true,
+      hasMatrix
+        ? matrixSource.highRiskFlagged?.email !== false
+        : true,
+    ),
+    newAppointmentBookings: channelPair(
+      hasMatrix ? matrixSource.newAppointmentBookings?.inApp !== false : legacyAppointments,
+      hasMatrix ? matrixSource.newAppointmentBookings?.email !== false : legacyAppointments && legacyEmail,
+    ),
+    cancellationsReschedules: channelPair(
+      hasMatrix ? matrixSource.cancellationsReschedules?.inApp !== false : legacyCancellations,
+      hasMatrix ? matrixSource.cancellationsReschedules?.email !== false : legacyCancellations && legacyEmail,
+    ),
+    upcomingSessionReminder: channelPair(
+      hasMatrix ? matrixSource.upcomingSessionReminder?.inApp !== false : legacyAppointments,
+      hasMatrix ? matrixSource.upcomingSessionReminder?.email !== false : legacyAppointments && legacyEmail,
+    ),
+    studentNoShow: channelPair(
+      hasMatrix ? matrixSource.studentNoShow?.inApp !== false : legacyAppointments,
+      hasMatrix ? matrixSource.studentNoShow?.email !== false : legacyAppointments && legacyEmail,
+    ),
+    activityDigest: channelPair(
+      hasMatrix ? Boolean(matrixSource.activityDigest?.inApp) : legacyDigest,
+      hasMatrix ? Boolean(matrixSource.activityDigest?.email) : legacyDigest && legacyEmail,
+    ),
+    systemMaintenance: channelPair(
+      hasMatrix ? matrixSource.systemMaintenance?.inApp !== false : true,
+      hasMatrix ? matrixSource.systemMaintenance?.email !== false : true,
+    ),
+  };
+
+  matrix.highRiskFlagged.inApp = true;
+
+  return {
+    receiveEmail: source.receiveEmail !== undefined ? Boolean(source.receiveEmail) : legacyEmail,
+    receiveInApp: source.receiveInApp !== undefined ? Boolean(source.receiveInApp) : legacyInApp,
+    matrix,
+  };
+}
+
+function sanitizeNotificationsForSave(notifications) {
+  const normalized = normalizeNotifications(notifications);
+  normalized.matrix.highRiskFlagged.inApp = true;
+  return normalized;
+}
+
+function SwitchToggle({ checked, onChange, disabled = false, ariaLabel }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={ariaLabel}
+      disabled={disabled}
+      onClick={() => {
+        if (!disabled) onChange(!checked);
+      }}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${
+        disabled
+          ? "cursor-not-allowed bg-emerald-600/70 opacity-80"
+          : checked
+            ? "bg-emerald-600 hover:bg-emerald-700"
+            : "bg-slate-300 hover:bg-slate-400"
+      }`}
+    >
+      <span
+        className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${
+          checked ? "translate-x-5" : "translate-x-0.5"
+        }`}
+      />
+    </button>
+  );
+}
+
+
 function ToggleRow({ label, description, checked, onChange, disabled = false }) {
   return (
-    <label className={`flex items-start justify-between gap-4 rounded-2xl border px-4 py-4 ${disabled ? "border-slate-200 bg-slate-50" : "border-slate-200 bg-white"}`}>
+    <div className={`flex items-start justify-between gap-4 rounded-2xl border px-4 py-4 ${disabled ? "border-slate-200 bg-slate-50" : "border-slate-200 bg-white"}`}>
       <div>
         <div className="text-sm font-semibold text-slate-900">{label}</div>
         <div className="mt-1 text-sm text-slate-500">{description}</div>
       </div>
-      <input
-        type="checkbox"
+      <SwitchToggle
         checked={checked}
-        onChange={onChange}
         disabled={disabled}
-        className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-700 focus:ring-emerald-600"
+        ariaLabel={label}
+        onChange={(next) => onChange({ target: { checked: next } })}
       />
-    </label>
+    </div>
   );
 }
 
@@ -91,12 +254,35 @@ export default function Settings({ onLogout, session }) {
   const [formState, setFormState] = useState(DEFAULT_FORM_STATE);
   const [savedSnapshot, setSavedSnapshot] = useState("");
   const [pendingProfilePictureUpload, setPendingProfilePictureUpload] = useState(null);
+  // Change password state
+  const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [passwordOtp, setPasswordOtp] = useState("");
+  const [passwordOtpSent, setPasswordOtpSent] = useState(false);
+  const [passwordOtpCountdown, setPasswordOtpCountdown] = useState(0);
+  const [passwordErrors, setPasswordErrors] = useState({});
+  const [isPasswordSubmitting, setIsPasswordSubmitting] = useState(false);
+
+  // Delete account state
+  const [isDeleteAccountModalOpen, setIsDeleteAccountModalOpen] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteAccountError, setDeleteAccountError] = useState("");
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+
+  useEffect(() => {
+    if (passwordOtpCountdown <= 0) return undefined;
+    const timer = setInterval(() => {
+      setPasswordOtpCountdown((curr) => Math.max(0, curr - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [passwordOtpCountdown]);
 
   const tabs = [
     { id: "profile", label: "Account Profile", icon: User },
-    { id: "security", label: "Security & Privacy", icon: Shield },
+    { id: "security", label: "Privacy & Security", icon: Shield },
     { id: "notifications", label: "Notifications", icon: Bell },
-    { id: "appearance", label: "Appearance", icon: Palette },
   ];
 
   useEffect(() => {
@@ -119,19 +305,8 @@ export default function Settings({ onLogout, session }) {
           profilePictureSource: data?.profile?.profilePictureSource || (data?.profile?.profilePictureUrl ? "UPLOAD" : "NONE"),
           googleProfilePictureUrl: data?.profile?.googleProfilePictureUrl || session?.pictureUrl || "",
           specialtiesInput: Array.isArray(data?.profile?.specialties) ? data.profile.specialties.join(", ") : "",
-          notifications: {
-            appointmentUpdates: data?.preferences?.notifications?.appointmentUpdates !== false,
-            cancellationAlerts: data?.preferences?.notifications?.cancellationAlerts !== false,
-            dailyDigest: Boolean(data?.preferences?.notifications?.dailyDigest),
-            emailAlerts: data?.preferences?.notifications?.emailAlerts !== false,
-            mobilePush: data?.preferences?.notifications?.mobilePush !== false,
-          },
-          appearance: {
-            compactCards: Boolean(data?.preferences?.appearance?.compactCards),
-            highlightUnread: data?.preferences?.appearance?.highlightUnread !== false,
-            reduceMotion: Boolean(data?.preferences?.appearance?.reduceMotion),
-            theme: data?.preferences?.appearance?.theme || "light",
-          },
+          notifications: normalizeNotifications(data?.preferences?.notifications),
+
           privacy: {
             maskStudentNumbers: Boolean(data?.preferences?.privacy?.maskStudentNumbers),
             requireCancelReason: data?.preferences?.privacy?.requireCancelReason !== false,
@@ -147,18 +322,8 @@ export default function Settings({ onLogout, session }) {
             profilePictureUrl: data?.profile?.profilePictureUrl || session?.pictureUrl || "",
             profilePictureSource: data?.profile?.profilePictureSource || (data?.profile?.profilePictureUrl ? "UPLOAD" : "NONE"),
             specialtiesInput: Array.isArray(data?.profile?.specialties) ? data.profile.specialties.join(", ") : "",
-            notifications: {
-              appointmentUpdates: data?.preferences?.notifications?.appointmentUpdates !== false,
-              cancellationAlerts: data?.preferences?.notifications?.cancellationAlerts !== false,
-              dailyDigest: Boolean(data?.preferences?.notifications?.dailyDigest),
-              emailAlerts: data?.preferences?.notifications?.emailAlerts !== false,
-              mobilePush: data?.preferences?.notifications?.mobilePush !== false,
-            },
-            appearance: {
-              compactCards: Boolean(data?.preferences?.appearance?.compactCards),
-              highlightUnread: data?.preferences?.appearance?.highlightUnread !== false,
-              reduceMotion: Boolean(data?.preferences?.appearance?.reduceMotion),
-            },
+            notifications: normalizeNotifications(data?.preferences?.notifications),
+
             privacy: {
               maskStudentNumbers: Boolean(data?.preferences?.privacy?.maskStudentNumbers),
               requireCancelReason: data?.preferences?.privacy?.requireCancelReason !== false,
@@ -205,11 +370,6 @@ export default function Settings({ onLogout, session }) {
         profilePictureSource: formState.profilePictureSource,
         specialtiesInput: formState.specialtiesInput,
         notifications: formState.notifications,
-        appearance: {
-          compactCards: formState.appearance.compactCards,
-          highlightUnread: formState.appearance.highlightUnread,
-          reduceMotion: formState.appearance.reduceMotion,
-        },
         privacy: formState.privacy,
       }) !== savedSnapshot
     );
@@ -281,6 +441,92 @@ export default function Settings({ onLogout, session }) {
     }));
   }
 
+  async function handleSendPasswordCode() {
+    setPasswordErrors({});
+    const nextErrors = {};
+    if (!currentPassword) {
+      nextErrors.currentPassword = "Current password is required.";
+    }
+    if (!newPassword) {
+      nextErrors.newPassword = "New password is required.";
+    } else {
+      const msg = validateResetPassword({ newPassword, confirmPassword: confirmNewPassword });
+      if (msg) {
+        nextErrors[msg.toLowerCase().includes("confirm") || msg.toLowerCase().includes("match") ? "confirmNewPassword" : "newPassword"] = msg;
+      }
+    }
+    if (newPassword && currentPassword && newPassword === currentPassword) {
+      nextErrors.newPassword = "New password must be different from current password.";
+    }
+    if (Object.keys(nextErrors).length) {
+      setPasswordErrors(nextErrors);
+      return;
+    }
+
+    try {
+      setIsPasswordSubmitting(true);
+      const data = await sendAdminChangePasswordCode();
+      setPasswordOtpSent(true);
+      setPasswordOtpCountdown(data?.resendAfterSeconds || 60);
+      setSuccessMessage(data?.message || "Verification code sent to your email.");
+    } catch (error) {
+      setPasswordErrors({ form: error instanceof Error ? error.message : "Failed to send verification code." });
+    } finally {
+      setIsPasswordSubmitting(false);
+    }
+  }
+
+  async function handleSubmitChangePassword() {
+    setPasswordErrors({});
+    if (!passwordOtp.trim()) {
+      setPasswordErrors({ otp: "Please enter the verification code from your email." });
+      return;
+    }
+
+    try {
+      setIsPasswordSubmitting(true);
+      const data = await changeAdminPassword({
+        currentPassword,
+        newPassword,
+        confirmPassword: confirmNewPassword,
+        otp: passwordOtp.trim(),
+      });
+      setSuccessMessage(data?.message || "Password changed successfully.");
+      setIsChangePasswordModalOpen(false);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmNewPassword("");
+      setPasswordOtp("");
+      setPasswordOtpSent(false);
+      setPasswordOtpCountdown(0);
+    } catch (error) {
+      setPasswordErrors({ form: error instanceof Error ? error.message : "Failed to update password." });
+    } finally {
+      setIsPasswordSubmitting(false);
+    }
+  }
+
+  async function handleConfirmDeleteAccount() {
+    setDeleteAccountError("");
+    if (!deletePassword) {
+      setDeleteAccountError("Please enter your password to confirm.");
+      return;
+    }
+
+    try {
+      setIsDeletingAccount(true);
+      await scheduleAdminAccountDeletion({ password: deletePassword });
+      if (onLogout) {
+        onLogout();
+      }
+      window.location.href = "/login?notice=account-scheduled-for-deletion";
+    } catch (error) {
+      setDeleteAccountError(error instanceof Error ? error.message : "Failed to delete account.");
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  }
+
   async function handleSave() {
     try {
       setIsSaving(true);
@@ -295,8 +541,7 @@ export default function Settings({ onLogout, session }) {
           .map((value) => value.trim())
           .filter(Boolean),
         preferences: {
-          notifications: formState.notifications,
-          appearance: formState.appearance,
+          notifications: sanitizeNotificationsForSave(formState.notifications),
           privacy: formState.privacy,
         },
       };
@@ -311,6 +556,9 @@ export default function Settings({ onLogout, session }) {
         roleLabel: data?.profile?.roleLabel || pageSession?.roleLabel || "",
       };
       setPageSession(nextSession);
+      const savedNotifications = sanitizeNotificationsForSave(
+        data?.preferences?.notifications || formState.notifications,
+      );
       setFormState((current) => ({
         ...current,
         roleLabel: data?.profile?.roleLabel || current.roleLabel,
@@ -321,6 +569,7 @@ export default function Settings({ onLogout, session }) {
         createdAt: data?.profile?.createdAt || current.createdAt,
         isActive: Boolean(data?.profile?.isActive),
         specialtiesInput: Array.isArray(data?.profile?.specialties) ? data.profile.specialties.join(", ") : current.specialtiesInput,
+        notifications: savedNotifications,
       }));
       setPendingProfilePictureUpload(null);
       setSavedSnapshot(
@@ -330,12 +579,7 @@ export default function Settings({ onLogout, session }) {
           profilePictureUrl: data?.profile?.profilePictureUrl || formState.profilePictureUrl,
           profilePictureSource: data?.profile?.profilePictureSource || formState.profilePictureSource,
           specialtiesInput: Array.isArray(data?.profile?.specialties) ? data.profile.specialties.join(", ") : formState.specialtiesInput,
-          notifications: formState.notifications,
-          appearance: {
-            compactCards: formState.appearance.compactCards,
-            highlightUnread: formState.appearance.highlightUnread,
-            reduceMotion: formState.appearance.reduceMotion,
-          },
+          notifications: savedNotifications,
           privacy: formState.privacy,
         }),
       );
@@ -431,9 +675,8 @@ export default function Settings({ onLogout, session }) {
               </div>
               <div className="mt-1 text-sm text-slate-500">
                 {activeTab === "profile" ? "Keep your admin profile details and counselor specialties up to date." : null}
-                {activeTab === "security" ? "Review account access details and privacy handling for admin workflows." : null}
-                {activeTab === "notifications" ? "Choose which admin alerts should stay visible across web and mobile-related workflows." : null}
-                {activeTab === "appearance" ? "Adjust panel display preferences without changing the existing system theme." : null}
+                {activeTab === "security" ? "Manage account password, privacy preferences, and account deletion settings." : null}
+                {activeTab === "notifications" ? "Configure in-app dashboard and email alerts by event. High-risk in-app alerts stay required." : null}
               </div>
             </div>
 
@@ -538,19 +781,39 @@ export default function Settings({ onLogout, session }) {
                     />
                     <div className="text-xs text-slate-500">Use commas to separate counselor specialties shown across admin scheduling and assignment views.</div>
                   </div>
+
+
                 </div>
               ) : null}
 
               {!isLoading && activeTab === "security" ? (
                 <div className="space-y-6">
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Account Access</div>
-                      <div className="mt-2 text-sm text-slate-800">{formState.isActive ? "Active admin account" : "Inactive admin account"}</div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sign-in Options</div>
-                      <div className="mt-2 text-sm text-slate-800">Password login and Google sign-in remain available based on your current setup.</div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                          <KeyRound className="h-5 w-5" />
+                        </span>
+                        <div>
+                          <div className="font-bold text-slate-800">Change Password</div>
+                          <div className="text-xs text-slate-500">Update your account password with email verification.</div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPasswordErrors({});
+                          setCurrentPassword("");
+                          setNewPassword("");
+                          setConfirmNewPassword("");
+                          setPasswordOtp("");
+                          setPasswordOtpSent(false);
+                          setIsChangePasswordModalOpen(true);
+                        }}
+                        className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-sm transition hover:border-emerald-500 hover:text-emerald-700"
+                      >
+                        Change Password
+                      </button>
                     </div>
                   </div>
 
@@ -567,71 +830,148 @@ export default function Settings({ onLogout, session }) {
                     checked={Boolean(formState.privacy.requireCancelReason)}
                     onChange={(event) => updateNestedState("privacy", "requireCancelReason", event.target.checked)}
                   />
+
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-5 shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
+                          <Trash2 className="h-5 w-5" />
+                        </span>
+                        <div>
+                          <div className="font-bold text-rose-900">Delete Account</div>
+                          <div className="text-xs text-rose-700/80">
+                            Deactivate and schedule your account for permanent deletion after 30 days. You can restore your account anytime within 30 days by signing in.
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeletePassword("");
+                          setDeleteAccountError("");
+                          setIsDeleteAccountModalOpen(true);
+                        }}
+                        className="rounded-xl bg-rose-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-rose-700"
+                      >
+                        Delete Account
+                      </button>
+                    </div>
+                  </div>
                 </div>
               ) : null}
 
               {!isLoading && activeTab === "notifications" ? (
-                <div className="space-y-4">
-                  <ToggleRow
-                    label="Appointment updates"
-                    description="Show alerts when appointments are created, edited, or reassigned."
-                    checked={Boolean(formState.notifications.appointmentUpdates)}
-                    onChange={(event) => updateNestedState("notifications", "appointmentUpdates", event.target.checked)}
-                  />
-                  <ToggleRow
-                    label="Cancellation alerts"
-                    description="Keep cancellation notices enabled for admin and counselor scheduling changes."
-                    checked={Boolean(formState.notifications.cancellationAlerts)}
-                    onChange={(event) => updateNestedState("notifications", "cancellationAlerts", event.target.checked)}
-                  />
-                  <ToggleRow
-                    label="Daily digest"
-                    description="Enable a daily admin summary preference for future reporting views."
-                    checked={Boolean(formState.notifications.dailyDigest)}
-                    onChange={(event) => updateNestedState("notifications", "dailyDigest", event.target.checked)}
-                  />
-                  <ToggleRow
-                    label="Email alerts"
-                    description="Keep email-based notices enabled for important scheduling and admin events."
-                    checked={Boolean(formState.notifications.emailAlerts)}
-                    onChange={(event) => updateNestedState("notifications", "emailAlerts", event.target.checked)}
-                  />
-                  <ToggleRow
-                    label="Mobile push alignment"
-                    description="Keep this preference synced with mobile-related notification handling for appointment updates."
-                    checked={Boolean(formState.notifications.mobilePush)}
-                    onChange={(event) => updateNestedState("notifications", "mobilePush", event.target.checked)}
-                  />
-                </div>
-              ) : null}
-
-              {!isLoading && activeTab === "appearance" ? (
-                <div className="space-y-4">
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Theme</div>
-                    <div className="mt-2 text-sm text-slate-800">Current admin theme stays on Light Mode to match the rest of the panel.</div>
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div className="flex items-center justify-between gap-4 rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-4">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-900">Receive Email Notifications</div>
+                        <div className="mt-1 text-sm text-slate-500">Master switch for email delivery of counseling and system alerts.</div>
+                      </div>
+                      <SwitchToggle
+                        checked={Boolean(formState.notifications.receiveEmail)}
+                        onChange={(next) => updateNestedState("notifications", "receiveEmail", next)}
+                        ariaLabel="Receive Email Notifications"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-4 rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-4">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-900">Receive In-App Dashboard Alerts</div>
+                        <div className="mt-1 text-sm text-slate-500">Master switch for in-app Notifications on the admin dashboard.</div>
+                      </div>
+                      <SwitchToggle
+                        checked={Boolean(formState.notifications.receiveInApp)}
+                        onChange={(next) => updateNestedState("notifications", "receiveInApp", next)}
+                        ariaLabel="Receive In-App Dashboard Alerts"
+                      />
+                    </div>
                   </div>
 
-                  <ToggleRow
-                    label="Compact cards"
-                    description="Tighten spacing on settings and dashboard cards for denser information display."
-                    checked={Boolean(formState.appearance.compactCards)}
-                    onChange={(event) => updateNestedState("appearance", "compactCards", event.target.checked)}
-                  />
-                  <ToggleRow
-                    label="Highlight unread items"
-                    description="Keep stronger visual emphasis on unread updates and notifications in admin views."
-                    checked={Boolean(formState.appearance.highlightUnread)}
-                    onChange={(event) => updateNestedState("appearance", "highlightUnread", event.target.checked)}
-                  />
-                  <ToggleRow
-                    label="Reduce motion"
-                    description="Prefer simpler transitions in the admin panel where supported."
-                    checked={Boolean(formState.appearance.reduceMotion)}
-                    onChange={(event) => updateNestedState("appearance", "reduceMotion", event.target.checked)}
-                  />
+                  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+                      <div className="grid grid-cols-[minmax(0,1.6fr)_88px_88px] items-center gap-3 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                        <div>Event</div>
+                        <div className="text-center">In-App</div>
+                        <div className="text-center">Email</div>
+                      </div>
+                    </div>
+
+                    <div className="divide-y divide-slate-100">
+                      {NOTIFICATION_MATRIX_SECTIONS.map((section) => (
+                        <div key={section.id}>
+                          <div className="bg-emerald-50/70 px-4 py-2 text-xs font-bold uppercase tracking-wide text-emerald-800">
+                            {section.title}
+                          </div>
+                          {section.rows.map((row) => {
+                            const channels = formState.notifications.matrix?.[row.key] || DEFAULT_NOTIFICATION_MATRIX[row.key];
+                            const lockInApp = Boolean(row.lockInApp);
+                            return (
+                              <div
+                                key={row.key}
+                                className="grid grid-cols-[minmax(0,1.6fr)_88px_88px] items-center gap-3 px-4 py-4"
+                              >
+                                <div className="min-w-0">
+                                  <div className="text-sm font-semibold text-slate-900">{row.label}</div>
+                                  <div className="mt-1 text-sm text-slate-500">{row.description}</div>
+                                  {lockInApp ? (
+                                    <div className="mt-2 text-xs font-medium text-emerald-700">In-App stays on for safety-critical alerts.</div>
+                                  ) : null}
+                                </div>
+                                <div className="flex justify-center">
+                                  <SwitchToggle
+                                    checked={lockInApp ? true : Boolean(channels?.inApp)}
+                                    disabled={lockInApp}
+                                    ariaLabel={`${row.label} in-app`}
+                                    onChange={(next) => {
+                                      setFormState((current) => ({
+                                        ...current,
+                                        notifications: {
+                                          ...current.notifications,
+                                          matrix: {
+                                            ...current.notifications.matrix,
+                                            [row.key]: {
+                                              ...current.notifications.matrix[row.key],
+                                              inApp: lockInApp ? true : next,
+                                            },
+                                          },
+                                        },
+                                      }));
+                                    }}
+                                  />
+                                </div>
+                                <div className="flex justify-center">
+                                  <SwitchToggle
+                                    checked={Boolean(channels?.email)}
+                                    ariaLabel={`${row.label} email`}
+                                    onChange={(next) => {
+                                      setFormState((current) => ({
+                                        ...current,
+                                        notifications: {
+                                          ...current.notifications,
+                                          matrix: {
+                                            ...current.notifications.matrix,
+                                            [row.key]: {
+                                              ...current.notifications.matrix[row.key],
+                                              ...(row.key === "highRiskFlagged" ? { inApp: true } : {}),
+                                              email: next,
+                                            },
+                                          },
+                                        },
+                                      }));
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               ) : null}
+
+
             </div>
 
             <div className="border-t border-slate-200 px-6 py-5">
@@ -677,6 +1017,232 @@ export default function Settings({ onLogout, session }) {
           </div>
         </Modal>
       </div>
+      {/* Change Password Modal */}
+      {isChangePasswordModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+                  <KeyRound className="h-5 w-5" />
+                </span>
+                <div>
+                  <h3 className="text-xl font-bold text-slate-800">Change Password</h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {passwordOtpSent
+                      ? `Enter the 8-digit verification code sent to ${session?.email || formState.email}`
+                      : "Enter your current and new password to request a verification code."}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsChangePasswordModalOpen(false)}
+                className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {passwordErrors.form ? (
+              <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-semibold text-rose-700">
+                {passwordErrors.form}
+              </div>
+            ) : null}
+
+            {!passwordOtpSent ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-slate-600">
+                    Current Password <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Enter current password"
+                    className="w-full rounded-xl border border-slate-200 p-3 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  />
+                  {passwordErrors.currentPassword ? (
+                    <p className="mt-1 text-xs font-semibold text-rose-600">{passwordErrors.currentPassword}</p>
+                  ) : null}
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-slate-600">
+                    New Password <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Enter new password (min. 8 chars, uppercase, number, symbol)"
+                    className="w-full rounded-xl border border-slate-200 p-3 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  />
+                  {passwordErrors.newPassword ? (
+                    <p className="mt-1 text-xs font-semibold text-rose-600">{passwordErrors.newPassword}</p>
+                  ) : null}
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-slate-600">
+                    Confirm New Password <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={confirmNewPassword}
+                    onChange={(e) => setConfirmNewPassword(e.target.value)}
+                    placeholder="Confirm new password"
+                    className="w-full rounded-xl border border-slate-200 p-3 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  />
+                  {passwordErrors.confirmNewPassword ? (
+                    <p className="mt-1 text-xs font-semibold text-rose-600">{passwordErrors.confirmNewPassword}</p>
+                  ) : null}
+                </div>
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsChangePasswordModalOpen(false)}
+                    className="rounded-full px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isPasswordSubmitting}
+                    onClick={handleSendPasswordCode}
+                    className="rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {isPasswordSubmitting ? "Sending Code..." : "Send Verification Code"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-slate-600">
+                    Email Verification Code (OTP) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={8}
+                    value={passwordOtp}
+                    onChange={(e) => setPasswordOtp(e.target.value.trim())}
+                    placeholder="Enter 8-digit code"
+                    className="w-full rounded-xl border border-slate-200 p-3 text-center text-lg font-mono tracking-widest outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  />
+                  {passwordErrors.otp ? (
+                    <p className="mt-1 text-xs font-semibold text-rose-600">{passwordErrors.otp}</p>
+                  ) : null}
+                </div>
+
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <span>Didn't receive the code?</span>
+                  <button
+                    type="button"
+                    disabled={passwordOtpCountdown > 0 || isPasswordSubmitting}
+                    onClick={handleSendPasswordCode}
+                    className="font-bold text-emerald-700 hover:underline disabled:cursor-not-allowed disabled:text-slate-400"
+                  >
+                    {passwordOtpCountdown > 0 ? `Resend code in ${passwordOtpCountdown}s` : "Resend Code"}
+                  </button>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setPasswordOtpSent(false)}
+                    className="rounded-full px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isPasswordSubmitting || passwordOtp.length < 6}
+                    onClick={handleSubmitChangePassword}
+                    className="rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {isPasswordSubmitting ? "Updating..." : "Update Password"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Delete Account Modal */}
+      {isDeleteAccountModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-100 text-rose-700">
+                  <AlertTriangle className="h-5 w-5" />
+                </span>
+                <div>
+                  <h3 className="text-xl font-bold text-slate-800">Delete Account</h3>
+                  <p className="mt-1 text-xs text-rose-700">
+                    30-Day Grace Period Before Permanent Deletion
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDeleteAccountModalOpen(false)}
+                className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {deleteAccountError ? (
+              <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-semibold text-rose-700">
+                {deleteAccountError}
+              </div>
+            ) : null}
+
+            <p className="text-sm leading-relaxed text-slate-600">
+              Are you sure you want to delete your account? Your account will be deactivated immediately, and all records will be permanently purged after <span className="font-bold text-slate-800">30 days</span>.
+            </p>
+            <p className="mt-2 text-xs text-emerald-700 bg-emerald-50 rounded-xl p-3 border border-emerald-200">
+              💡 <span className="font-semibold">Need to change your mind?</span> You can restore and reactivate your account at any time within 30 days simply by signing in again.
+            </p>
+
+            <div className="mt-4 space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600">
+                Confirm your password <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                placeholder="Enter your current password"
+                className="w-full rounded-xl border border-slate-200 p-3 text-sm outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500"
+              />
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setIsDeleteAccountModalOpen(false)}
+                className="rounded-full px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+              >
+                Keep Account
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingAccount || !deletePassword}
+                onClick={handleConfirmDeleteAccount}
+                className="rounded-full bg-rose-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-rose-700 disabled:opacity-50"
+              >
+                {isDeletingAccount ? "Scheduling Deletion..." : "Schedule Deletion (30 Days)"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </Layout>
   );
 }

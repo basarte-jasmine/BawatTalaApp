@@ -14,6 +14,7 @@ export default function Login({ onLogin }) {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [reactivationPrompt, setReactivationPrompt] = useState(null);
 
   useEffect(() => {
     const oauthStatus = searchParams.get("oauth");
@@ -51,10 +52,17 @@ export default function Login({ onLogin }) {
 
     try {
       setSubmitting(true);
-      await adminLogin({
+      const loginResult = await adminLogin({
         email: email.trim(),
         password,
       });
+      if (loginResult?.requiresReactivation) {
+        setReactivationPrompt({
+          message: loginResult.message,
+          scheduledDeletionAt: loginResult.scheduledDeletionAt,
+        });
+        return;
+      }
 
       const sessionData = await fetchAdminSession();
       if (!sessionData?.admin) {
@@ -66,6 +74,29 @@ export default function Login({ onLogin }) {
       setError(requestError.message || "Invalid email or password. Please try again.");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleConfirmReactivation() {
+    try {
+      setSubmitting(true);
+      setError("");
+      await adminLogin({
+        email: email.trim(),
+        password,
+        reactivate: true,
+      });
+      const sessionData = await fetchAdminSession();
+      if (!sessionData?.admin) {
+        throw new Error("Reactivation succeeded but the admin session could not be verified.");
+      }
+      onLogin(sessionData.admin);
+      navigate("/dashboard", { replace: true });
+    } catch (requestError) {
+      setError(requestError.message || "Failed to reactivate account. Please try again.");
+    } finally {
+      setSubmitting(false);
+      setReactivationPrompt(null);
     }
   }
 
@@ -152,6 +183,33 @@ export default function Login({ onLogin }) {
           {googleLoading ? "Redirecting..." : "Continue with Google"}
         </button>
       </form>
+
+      {reactivationPrompt ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-xl">
+            <h3 className="text-xl font-bold text-slate-800">Reactivate Account?</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              {reactivationPrompt.message || "Your account was scheduled for deletion within the 30-day grace period. Would you like to restore and reactivate your account now?"}
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setReactivationPrompt(null)}
+                className="rounded-full px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReactivation}
+                className="rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-emerald-700"
+              >
+                Reactivate & Sign In
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </AuthShell>
   );
 }

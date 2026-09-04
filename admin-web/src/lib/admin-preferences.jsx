@@ -1,19 +1,29 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { fetchAdminSettings } from "./admin-api";
 
+const DEFAULT_MATRIX = {
+  highRiskFlagged: { inApp: true, email: true },
+  newAppointmentBookings: { inApp: true, email: true },
+  cancellationsReschedules: { inApp: true, email: true },
+  upcomingSessionReminder: { inApp: true, email: true },
+  studentNoShow: { inApp: true, email: true },
+  activityDigest: { inApp: false, email: false },
+  systemMaintenance: { inApp: true, email: true },
+};
+
 export const DEFAULT_ADMIN_PREFERENCES = {
   notifications: {
-    appointmentUpdates: true,
-    cancellationAlerts: true,
-    dailyDigest: false,
-    emailAlerts: true,
-    mobilePush: true,
-  },
-  appearance: {
-    compactCards: false,
-    highlightUnread: true,
-    reduceMotion: false,
-    theme: "light",
+    receiveEmail: true,
+    receiveInApp: true,
+    matrix: {
+      highRiskFlagged: { ...DEFAULT_MATRIX.highRiskFlagged },
+      newAppointmentBookings: { ...DEFAULT_MATRIX.newAppointmentBookings },
+      cancellationsReschedules: { ...DEFAULT_MATRIX.cancellationsReschedules },
+      upcomingSessionReminder: { ...DEFAULT_MATRIX.upcomingSessionReminder },
+      studentNoShow: { ...DEFAULT_MATRIX.studentNoShow },
+      activityDigest: { ...DEFAULT_MATRIX.activityDigest },
+      systemMaintenance: { ...DEFAULT_MATRIX.systemMaintenance },
+    },
   },
   privacy: {
     maskStudentNumbers: false,
@@ -27,25 +37,71 @@ const AdminPreferencesContext = createContext({
   loading: false,
 });
 
+function asBool(value, fallback) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function normalizeChannel(raw, defaults) {
+  const channel = raw && typeof raw === "object" ? raw : {};
+  return {
+    inApp: asBool(channel.inApp, defaults.inApp),
+    email: asBool(channel.email, defaults.email),
+  };
+}
+
+function normalizeNotifications(rawNotifications) {
+  const notifications = rawNotifications && typeof rawNotifications === "object" ? rawNotifications : {};
+  const matrixSrc = notifications.matrix && typeof notifications.matrix === "object" ? notifications.matrix : null;
+  const hasMatrix = Boolean(matrixSrc);
+  const matrix = matrixSrc || {};
+
+  const legacyAppointment = notifications.appointmentUpdates !== false;
+  const legacyCancellation = notifications.cancellationAlerts !== false;
+  const legacyDigest = Boolean(notifications.dailyDigest);
+  const legacyEmail = notifications.emailAlerts !== false;
+  const legacyMobile = notifications.mobilePush !== false;
+
+  const highRiskFlagged = normalizeChannel(matrix.highRiskFlagged, { inApp: true, email: true });
+  highRiskFlagged.inApp = true;
+
+  return {
+    receiveEmail: asBool(notifications.receiveEmail, legacyEmail),
+    receiveInApp: asBool(notifications.receiveInApp, hasMatrix ? true : legacyMobile),
+    matrix: {
+      highRiskFlagged,
+      newAppointmentBookings:
+        hasMatrix && matrix.newAppointmentBookings
+          ? normalizeChannel(matrix.newAppointmentBookings, { inApp: true, email: true })
+          : { inApp: legacyAppointment, email: legacyAppointment },
+      cancellationsReschedules:
+        hasMatrix && matrix.cancellationsReschedules
+          ? normalizeChannel(matrix.cancellationsReschedules, { inApp: true, email: true })
+          : { inApp: legacyCancellation, email: legacyCancellation },
+      upcomingSessionReminder:
+        hasMatrix && matrix.upcomingSessionReminder
+          ? normalizeChannel(matrix.upcomingSessionReminder, { inApp: true, email: true })
+          : { inApp: legacyAppointment, email: legacyAppointment },
+      studentNoShow:
+        hasMatrix && matrix.studentNoShow
+          ? normalizeChannel(matrix.studentNoShow, { inApp: true, email: true })
+          : { inApp: legacyAppointment, email: legacyAppointment },
+      activityDigest:
+        hasMatrix && matrix.activityDigest
+          ? normalizeChannel(matrix.activityDigest, { inApp: false, email: false })
+          : { inApp: legacyDigest, email: legacyDigest },
+      systemMaintenance:
+        hasMatrix && matrix.systemMaintenance
+          ? normalizeChannel(matrix.systemMaintenance, { inApp: true, email: true })
+          : { inApp: true, email: true },
+    },
+  };
+}
+
 function normalizePreferences(value) {
-  const notifications = value?.notifications || {};
-  const appearance = value?.appearance || {};
   const privacy = value?.privacy || {};
 
   return {
-    notifications: {
-      appointmentUpdates: notifications.appointmentUpdates !== false,
-      cancellationAlerts: notifications.cancellationAlerts !== false,
-      dailyDigest: Boolean(notifications.dailyDigest),
-      emailAlerts: notifications.emailAlerts !== false,
-      mobilePush: notifications.mobilePush !== false,
-    },
-    appearance: {
-      compactCards: Boolean(appearance.compactCards),
-      highlightUnread: appearance.highlightUnread !== false,
-      reduceMotion: Boolean(appearance.reduceMotion),
-      theme: "light",
-    },
+    notifications: normalizeNotifications(value?.notifications),
     privacy: {
       maskStudentNumbers: Boolean(privacy.maskStudentNumbers),
       requireCancelReason: privacy.requireCancelReason !== false,

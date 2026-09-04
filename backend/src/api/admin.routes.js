@@ -80,6 +80,10 @@ const CONSULTATION_CONCERN_CATEGORY_BY_ALIAS = new Map(
 const adminLoginAttempts = new Map();
 const adminResetSessions = new Map();
 const adminRoleVerificationSessions = new Map();
+const adminChangePasswordSessions = new Map();
+function getChangePasswordSession(email) { return adminChangePasswordSessions.get(email) || null; }
+function setChangePasswordSession(email, session) { adminChangePasswordSessions.set(email, session); }
+function clearChangePasswordSession(email) { adminChangePasswordSessions.delete(email); }
 
 function normalizeCompactSpaces(value) {
   return String(value || "").trim().replace(/\s+/g, " ");
@@ -486,13 +490,62 @@ function normalizeAdminSettings(rawValue) {
   const profilePicture = source.profilePicture && typeof source.profilePicture === "object" ? source.profilePicture : {};
   const normalizedProfilePictureSource = String(profilePicture.source || "").toUpperCase();
 
+  const asBool = (v, fallback) => (typeof v === "boolean" ? v : fallback);
+  const row = (raw, dInApp, dEmail) => {
+    const channel = raw && typeof raw === "object" ? raw : {};
+    return { inApp: asBool(channel.inApp, dInApp), email: asBool(channel.email, dEmail) };
+  };
+
+  const matrixSrc = notifications.matrix && typeof notifications.matrix === "object" ? notifications.matrix : null;
+  const hasMatrix = Boolean(matrixSrc);
+  const matrix = matrixSrc || {};
+
+  const legacyAppointment = notifications.appointmentUpdates !== false;
+  const legacyCancellation = notifications.cancellationAlerts !== false;
+  const legacyDigest = Boolean(notifications.dailyDigest);
+  const legacyEmail = notifications.emailAlerts !== false;
+  const legacyMobile = notifications.mobilePush !== false;
+
+  const highRiskFlagged = row(matrix.highRiskFlagged, true, true);
+  highRiskFlagged.inApp = true;
+
+  const newAppointmentBookings = hasMatrix && matrix.newAppointmentBookings
+    ? row(matrix.newAppointmentBookings, true, true)
+    : { inApp: legacyAppointment, email: legacyAppointment };
+
+  const cancellationsReschedules = hasMatrix && matrix.cancellationsReschedules
+    ? row(matrix.cancellationsReschedules, true, true)
+    : { inApp: legacyCancellation, email: legacyCancellation };
+
+  const upcomingSessionReminder = hasMatrix && matrix.upcomingSessionReminder
+    ? row(matrix.upcomingSessionReminder, true, true)
+    : { inApp: legacyAppointment, email: legacyAppointment };
+
+  const studentNoShow = hasMatrix && matrix.studentNoShow
+    ? row(matrix.studentNoShow, true, true)
+    : { inApp: legacyAppointment, email: legacyAppointment };
+
+  const activityDigest = hasMatrix && matrix.activityDigest
+    ? row(matrix.activityDigest, false, false)
+    : { inApp: legacyDigest, email: legacyDigest };
+
+  const systemMaintenance = hasMatrix && matrix.systemMaintenance
+    ? row(matrix.systemMaintenance, true, true)
+    : { inApp: true, email: true };
+
   return {
     notifications: {
-      appointmentUpdates: notifications.appointmentUpdates !== false,
-      cancellationAlerts: notifications.cancellationAlerts !== false,
-      dailyDigest: Boolean(notifications.dailyDigest),
-      emailAlerts: notifications.emailAlerts !== false,
-      mobilePush: notifications.mobilePush !== false,
+      receiveEmail: asBool(notifications.receiveEmail, legacyEmail),
+      receiveInApp: asBool(notifications.receiveInApp, hasMatrix ? true : legacyMobile),
+      matrix: {
+        highRiskFlagged,
+        newAppointmentBookings,
+        cancellationsReschedules,
+        upcomingSessionReminder,
+        studentNoShow,
+        activityDigest,
+        systemMaintenance,
+      },
     },
     appearance: {
       compactCards: Boolean(appearance.compactCards),
@@ -1104,7 +1157,8 @@ router.post("/login", async (req, res) => {
   const result = await query(
     `select id, email, password_hash, is_active, coalesce(role, 'COUNSELOR') as role,
             coalesce(nullif(full_name, ''), split_part(email, '@', 1)) as full_name,
-            coalesce(profile_picture_url, '') as profile_picture_url
+            coalesce(profile_picture_url, '') as profile_picture_url,
+            deleted_at, scheduled_deletion_at
      from public.admin_accounts
      where email = $1
      limit 1`,
@@ -1112,15 +1166,55 @@ router.post("/login", async (req, res) => {
   );
 
   const admin = result.rows[0];
-  const valid = Boolean(admin) && admin.is_active && verifyPassword(password, admin.password_hash);
-  if (!valid) {
+  if (!admin) {
     const isLocked = registerFailedAttempt(loginKey);
     if (isLocked) {
-      return res.status(429).json({
-        message: "Too many failed login attempts. Please try again later.",
-      });
+      return res.status(429).json({ message: "Too many failed login attempts. Please try again later." });
     }
     return res.status(400).json({ message: "Invalid email or password. Please try again." });
+  }
+
+  if (admin.scheduled_deletion_at && new Date(admin.scheduled_deletion_at).getTime() <= Date.now()) {
+    return res.status(403).json({ message: "This account was permanently deleted." });
+  }
+
+  const isPasswordValid = verifyPassword(password, admin.password_hash);
+  if (!isPasswordValid) {
+    const isLocked = registerFailedAttempt(loginKey);
+    if (isLocked) {
+      return res.status(429).json({ message: "Too many failed login attempts. Please try again later." });
+    }
+    return res.status(400).json({ message: "Invalid email or password. Please try again." });
+  }
+
+  if (admin.deleted_at) {
+    const reactivate = Boolean(req.body.reactivate);
+    if (!reactivate) {
+      return res.status(200).json({
+        requiresReactivation: true,
+        message: "Your account is currently scheduled for deletion. Would you like to reactivate your account?",
+        scheduledDeletionAt: admin.scheduled_deletion_at,
+      });
+    }
+
+    await query(
+      `
+        update public.admin_accounts
+        set is_active = true,
+            deleted_at = null,
+            scheduled_deletion_at = null,
+            updated_at = now()
+        where id = $1::uuid
+      `,
+      [admin.id],
+    );
+    admin.is_active = true;
+    admin.deleted_at = null;
+    admin.scheduled_deletion_at = null;
+  }
+
+  if (!admin.is_active) {
+    return res.status(403).json({ message: "This account has been deactivated. Please contact the Head Counselor." });
   }
 
   adminLoginAttempts.delete(loginKey);
@@ -3440,6 +3534,229 @@ router.get("/analytics", async (req, res) => {
     reports: {
       students: studentReportRows,
     },
+  });
+});
+
+router.post("/auth/reactivate", async (req, res) => {
+  const email = normalizeEmail(req.body.email || "");
+  const password = String(req.body.password || "");
+
+  if (!email || !password) {
+    return res.status(400).json({ message: "Email and password are required." });
+  }
+
+  const result = await query(
+    `select id, email, password_hash, is_active, coalesce(role, 'COUNSELOR') as role,
+            coalesce(nullif(full_name, ''), split_part(email, '@', 1)) as full_name,
+            coalesce(profile_picture_url, '') as profile_picture_url,
+            deleted_at, scheduled_deletion_at
+     from public.admin_accounts
+     where email = $1 limit 1`,
+    [email],
+  );
+
+  const admin = result.rows[0];
+  if (!admin || !verifyPassword(password, admin.password_hash)) {
+    return res.status(400).json({ message: "Invalid email or password." });
+  }
+
+  if (admin.scheduled_deletion_at && new Date(admin.scheduled_deletion_at).getTime() <= Date.now()) {
+    return res.status(403).json({ message: "This account was permanently deleted." });
+  }
+
+  await query(
+    `
+      update public.admin_accounts
+      set is_active = true,
+          deleted_at = null,
+          scheduled_deletion_at = null,
+          updated_at = now()
+      where id = $1::uuid
+    `,
+    [admin.id],
+  );
+
+  admin.is_active = true;
+  admin.deleted_at = null;
+  admin.scheduled_deletion_at = null;
+
+  req.session.admin = buildAdminSessionPayload(admin);
+
+  return res.json({
+    message: "Account reactivated successfully.",
+    admin: req.session.admin,
+  });
+});
+
+router.post("/account/change-password/send-code", requireAdminAuth, async (req, res) => {
+  const email = normalizeEmail(req.admin?.email || "");
+  if (!email) {
+    return res.status(401).json({ message: "Unauthorized." });
+  }
+
+  const session = getChangePasswordSession(email);
+  if (session?.resendAvailableAt && Date.now() < session.resendAvailableAt) {
+    const remainingSeconds = Math.ceil((session.resendAvailableAt - Date.now()) / 1000);
+    return res.status(429).json({
+      message: `Please wait ${remainingSeconds}s before requesting a new code.`,
+      resendAfterSeconds: remainingSeconds,
+    });
+  }
+
+  const sendResult = await sendAdminRecoveryCode(email, `admin change password [${email}]`);
+  if (!sendResult.ok) {
+    return res.status(400).json({ message: sendResult.message || "Failed to send verification code." });
+  }
+
+  const now = Date.now();
+  setChangePasswordSession(email, {
+    email,
+    otpExpiresAt: now + OTP_VALIDITY_MS,
+    resendAvailableAt: now + OTP_COOLDOWN_MS,
+  });
+
+  return res.json({
+    message: "Verification code sent to your email.",
+    resendAfterSeconds: Math.ceil(OTP_COOLDOWN_MS / 1000),
+  });
+});
+
+router.post("/account/change-password/verify-and-update", requireAdminAuth, async (req, res) => {
+  const email = normalizeEmail(req.admin?.email || "");
+  const adminId = String(req.admin?.id || "").trim();
+  const currentPassword = String(req.body.currentPassword || "");
+  const newPassword = String(req.body.newPassword || "");
+  const confirmPassword = String(req.body.confirmPassword || "");
+  const otp = String(req.body.otp || req.body.code || "").trim();
+
+  if (!email || !adminId) {
+    return res.status(401).json({ message: "Unauthorized." });
+  }
+  if (!currentPassword) {
+    return res.status(400).json({ message: "Current password is required." });
+  }
+  if (!newPassword) {
+    return res.status(400).json({ message: "New password is required." });
+  }
+  if (!confirmPassword) {
+    return res.status(400).json({ message: "Confirm password is required." });
+  }
+  if (newPassword !== confirmPassword) {
+    return res.status(400).json({ message: "New passwords do not match." });
+  }
+  if (!STRONG_PASSWORD_PATTERN.test(newPassword)) {
+    return res.status(400).json({
+      message: "Password must be at least 8 characters and include uppercase, lowercase, number, and symbol.",
+    });
+  }
+  if (newPassword === currentPassword) {
+    return res.status(400).json({ message: "New password must be different from current password." });
+  }
+  if (!otp) {
+    return res.status(400).json({ message: "Verification code is required." });
+  }
+
+  const accountResult = await query(
+    `select id, password_hash from public.admin_accounts where id = $1::uuid limit 1`,
+    [adminId],
+  );
+  const account = accountResult.rows[0];
+  if (!account || !verifyPassword(currentPassword, account.password_hash)) {
+    return res.status(400).json({ message: "Current password is incorrect." });
+  }
+  if (verifyPassword(newPassword, account.password_hash)) {
+    return res.status(400).json({ message: "New password must be different from your current password." });
+  }
+
+  const { error: otpError } = await supabaseAdminClient.auth.verifyOtp({
+    email,
+    token: otp,
+    type: "recovery",
+  });
+
+  if (otpError) {
+    return res.status(400).json({ message: "Invalid or expired verification code." });
+  }
+
+  clearChangePasswordSession(email);
+
+  await query(
+    `update public.admin_accounts set password_hash = $1, updated_at = now() where id = $2::uuid`,
+    [hashPassword(newPassword), adminId],
+  );
+
+  await writeAdminActivityLog({
+    actionType: "PASSWORD_CHANGED",
+    actorEmail: email,
+    actorName: req.admin?.fullName || email,
+    actorRole: toRoleManagementLabel(req.admin?.role),
+    entityType: "AUTH",
+    title: `${req.admin?.fullName || email} changed their password`,
+    description: "Password updated successfully from profile settings.",
+  });
+
+  return res.json({ message: "Password changed successfully." });
+});
+
+router.post("/account/schedule-deletion", requireAdminAuth, async (req, res) => {
+  const email = normalizeEmail(req.admin?.email || "");
+  const adminId = String(req.admin?.id || "").trim();
+  const password = String(req.body.password || "");
+
+  if (!email || !adminId) {
+    return res.status(401).json({ message: "Unauthorized." });
+  }
+  if (!password) {
+    return res.status(400).json({ message: "Password is required to confirm account deletion." });
+  }
+
+  const accountResult = await query(
+    `select id, password_hash, role from public.admin_accounts where id = $1::uuid limit 1`,
+    [adminId],
+  );
+  const account = accountResult.rows[0];
+  if (!account || !verifyPassword(password, account.password_hash)) {
+    return res.status(400).json({ message: "Incorrect password." });
+  }
+
+  if (account.role === "HEAD_COUNSELOR") {
+    const headCountResult = await query(
+      `select count(*)::int as total from public.admin_accounts where role = 'HEAD_COUNSELOR' and is_active = true and id <> $1::uuid and deleted_at is null`,
+      [adminId],
+    );
+    if ((headCountResult.rows[0]?.total || 0) === 0) {
+      return res.status(400).json({
+        message: "You cannot delete your account because you are the only active Super Admin. Please assign another Head Counselor first.",
+      });
+    }
+  }
+
+  await query(
+    `
+      update public.admin_accounts
+      set is_active = false,
+          deleted_at = now(),
+          scheduled_deletion_at = now() + interval '30 days',
+          updated_at = now()
+      where id = $1::uuid
+    `,
+    [adminId],
+  );
+
+  await writeAdminActivityLog({
+    actionType: "ACCOUNT_DELETION_SCHEDULED",
+    actorEmail: email,
+    actorName: req.admin?.fullName || email,
+    actorRole: toRoleManagementLabel(account.role),
+    entityType: "AUTH",
+    title: `${email} scheduled account deletion`,
+    description: "Account deactivated and scheduled for permanent deletion in 30 days.",
+  });
+
+  req.session.destroy(() => {});
+
+  return res.json({
+    message: "Your account has been deactivated and scheduled for permanent deletion in 30 days.",
   });
 });
 

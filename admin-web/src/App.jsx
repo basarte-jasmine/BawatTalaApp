@@ -103,7 +103,7 @@ export default function App() {
   );
   if (!sessionChecked) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f4f6ef] text-sm font-semibold text-admin-muted">
+      <div className="flex min-h-screen items-center justify-center bg-[rgba(14,90,58,0.1)] text-sm font-semibold text-admin-muted">
         Checking admin session...
       </div>
     );

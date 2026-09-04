@@ -298,6 +298,33 @@ export async function fetchAdminRoleAssignments() {
   return request("/api/admin/roles");
 }
 
+export async function sendAdminChangePasswordCode() {
+  return request("/api/admin/account/change-password/send-code", {
+    method: "POST",
+  });
+}
+
+export async function changeAdminPassword(payload) {
+  return request("/api/admin/account/change-password/verify-and-update", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function scheduleAdminAccountDeletion(payload = {}) {
+  return request("/api/admin/account/schedule-deletion", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function reactivateAdminAccount(payload) {
+  return request("/api/admin/auth/reactivate", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function fetchAdminSettings() {
   return request("/api/admin/settings");
 }

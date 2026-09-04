@@ -671,6 +671,7 @@ function getAppointmentNotificationMetadata(appointment, extra = {}) {
 }
 
 function buildAppointmentSummaryRows(appointment) {
+  const cancellationReason = appointment.cancellation_reason || appointment.cancellationReason;
   return [
     { label: "Client", value: appointment.student_name || appointment.student_full_name || appointment.student_number || "Student" },
     { label: "Date", value: formatDateLong(appointment.appointment_date) },
@@ -678,9 +679,8 @@ function buildAppointmentSummaryRows(appointment) {
     appointment.counseling_type ? { label: "Counseling Type", value: appointment.counseling_type } : null,
     { label: "Concern", value: appointment.concern },
     { label: "Assigned Counselor", value: getAppointmentCounselorName(appointment) },
-    !isPeerSupportType(appointment.support_type) && appointment.student_note
-      ? { label: "Note", value: appointment.student_note }
-      : null,
+    cancellationReason ? { label: "Cancellation Reason", value: cancellationReason } : null,
+    appointment.student_note ? { label: "Note to Student", value: appointment.student_note } : null,
   ].filter(Boolean);
 }
 
@@ -1093,20 +1093,39 @@ async function markAppointmentReminderSent(appointmentId, columnName) {
 }
 
 async function findStudentProfileByStudentNumber(studentNumber) {
+  const normalized = String(studentNumber || "").trim();
+  if (!normalized) return null;
   const result = await query(
     `
       select
-        student_number,
-        coalesce(full_name, student_number) as full_name,
-        coalesce(email, '') as email
-      from public.student_profiles
-      where student_number = $1
+        sp.student_number,
+        coalesce(nullif(trim(sp.full_name), ''), nullif(trim(pc.full_name), ''), sp.student_number) as full_name,
+        coalesce(nullif(trim(sp.email), ''), pc.email, '') as email
+      from public.student_profiles sp
+      left join public.peer_counselors pc on lower(trim(pc.student_number)) = lower(trim(sp.student_number))
+      where lower(trim(sp.student_number)) = lower(trim($1))
       limit 1
     `,
-    [studentNumber],
+    [normalized],
   );
 
-  return result.rows[0] || null;
+  if (result.rows[0] && result.rows[0].full_name && result.rows[0].full_name !== normalized) {
+    return result.rows[0];
+  }
+
+  const peerResult = await query(
+    `
+      select
+        student_number,
+        full_name,
+        coalesce(email, '') as email
+      from public.peer_counselors
+      where lower(trim(student_number)) = lower(trim($1))
+      limit 1
+    `,
+    [normalized],
+  );
+  return peerResult.rows[0] || result.rows[0] || null;
 }
 
 async function ensureStudentHasNoActiveAppointmentOnDate({
@@ -1322,6 +1341,7 @@ function canManageCounselorDecision(actorAdmin, appointment) {
   const role = String(actorAdmin.role || "").toUpperCase();
   if (role === "HEAD_COUNSELOR") return true;
   if (role !== "COUNSELOR") return false;
+  if (isPeerSupportType(appointment.support_type)) return true;
   const adminId = actorAdmin.id;
   const adminEmail = String(actorAdmin.email || "").trim().toLowerCase();
   const assignedId = appointment.guidance_counselor_id
@@ -1350,6 +1370,7 @@ function sessionActorAdmin(req) {
 function rejectForeignAvailability(req, res, counselorId, supportType) {
   const role = String(req.admin?.role || "").toUpperCase();
   if (role === "HEAD_COUNSELOR") return false;
+  if (isPeerSupportType(supportType)) return false;
   const ownId = String(req.admin?.id || "");
   if (!isPeerSupportType(supportType) && ownId && String(counselorId) === ownId) return false;
   res.status(403).json({ message: "You don't have access to this action." });
@@ -1564,12 +1585,33 @@ async function notifyPeerCounselorAboutScheduledAppointment({
     return;
   }
 
+  const resolvedStudent =
+    (student?.full_name && student.full_name !== student.student_number)
+      ? student
+      : await findStudentProfileByStudentNumber(appointment.student_number);
+
+  const clientName =
+    (resolvedStudent?.full_name && resolvedStudent.full_name !== resolvedStudent.student_number ? resolvedStudent.full_name : null) ||
+    (appointment.student_name && appointment.student_name !== appointment.student_number ? appointment.student_name : null) ||
+    (appointment.student_full_name && appointment.student_full_name !== appointment.student_number ? appointment.student_full_name : null) ||
+    appointment.student_number ||
+    "Student";
+
+  const counselorName =
+    appointment.counselor_name ||
+    appointment.counselor_full_name ||
+    "Peer Counselor";
+
   await sendAppointmentEmail({
     to: appointment.counselor_email,
     subject: "Your peer counseling session is scheduled",
-    greeting: `Hi ${getFirstName(appointment.counselor_name) || "Peer Counselor"},`,
-    intro: `${student?.full_name || appointment.student_number}'s talk-to-peer session with you has been scheduled.`,
-    appointment,
+    greeting: `Hi ${getFirstName(counselorName) || "Peer Counselor"},`,
+    intro: `${clientName}'s talk-to-peer session with you has been scheduled.`,
+    appointment: {
+      ...appointment,
+      student_name: clientName,
+      counselor_name: counselorName,
+    },
     ctaText: "Please be ready for the scheduled peer counseling conversation.",
     closingText: "Thank you for supporting your fellow students.\n\nBest regards,\nBawattala Pro Team",
     context,
@@ -1584,12 +1626,30 @@ async function notifyPeerCounselorAboutCancelledAppointment({
     return;
   }
 
+  const resolvedStudent = await findStudentProfileByStudentNumber(appointment.student_number);
+
+  const clientName =
+    (resolvedStudent?.full_name && resolvedStudent.full_name !== resolvedStudent.student_number ? resolvedStudent.full_name : null) ||
+    (appointment.student_name && appointment.student_name !== appointment.student_number ? appointment.student_name : null) ||
+    (appointment.student_full_name && appointment.student_full_name !== appointment.student_number ? appointment.student_full_name : null) ||
+    appointment.student_number ||
+    "Student";
+
+  const counselorName =
+    appointment.counselor_name ||
+    appointment.counselor_full_name ||
+    "Peer Counselor";
+
   await sendAppointmentEmail({
     to: appointment.counselor_email,
     subject: "Your peer counseling session was cancelled",
-    greeting: `Hi ${getFirstName(appointment.counselor_name) || "Peer Counselor"},`,
-    intro: `The talk-to-peer session with ${appointment.student_name || appointment.student_number} has been cancelled.`,
-    appointment,
+    greeting: `Hi ${getFirstName(counselorName) || "Peer Counselor"},`,
+    intro: `The talk-to-peer session with ${clientName} has been cancelled.`,
+    appointment: {
+      ...appointment,
+      student_name: clientName,
+      counselor_name: counselorName,
+    },
     ctaText: "No action is needed from your side.",
     closingText: "Thank you for supporting your fellow students.\n\nBest regards,\nBawattala Pro Team",
     context,
@@ -1704,11 +1764,13 @@ async function findAppointmentById(appointmentId) {
         ca.created_by_admin_email,
         ca.created_at,
         ca.updated_at,
-        coalesce(sp.full_name, ca.student_number) as student_name,
-        coalesce(sp.email, '') as student_email,
-        coalesce(sp.program, '') as program,
+        coalesce(nullif(trim(sp.full_name), ''), nullif(trim(student_pc.full_name), ''), ca.student_number) as student_name,
+        coalesce(nullif(trim(sp.full_name), ''), nullif(trim(student_pc.full_name), ''), ca.student_number) as student_full_name,
+        coalesce(sp.email, student_pc.email, '') as student_email,
+        coalesce(sp.program, student_pc.program, '') as program,
         coalesce(aa.email, pc.email) as counselor_email,
-        coalesce(nullif(aa.full_name, ''), pc.full_name, split_part(aa.email, '@', 1)) as counselor_name,
+        coalesce(nullif(trim(aa.full_name), ''), nullif(trim(pc.full_name), ''), split_part(aa.email, '@', 1)) as counselor_name,
+        coalesce(nullif(trim(aa.full_name), ''), nullif(trim(pc.full_name), ''), split_part(aa.email, '@', 1)) as counselor_full_name,
         case when coalesce(ca.support_type, 'GUIDANCE') = 'PEER' then 'PEER_COUNSELOR' else coalesce(aa.role, 'COUNSELOR') end as counselor_role,
         coalesce(aa.gender, pc.gender, 'Prefer not to say') as counselor_gender,
         coalesce(nullif(aa.profile_picture_url, ''), nullif(pc.profile_picture_url, ''), '') as counselor_picture_url,
@@ -1717,7 +1779,8 @@ async function findAppointmentById(appointmentId) {
       from public.counselor_appointments ca
       left join public.admin_accounts aa on aa.id = ca.counselor_id
       left join public.peer_counselors pc on pc.id = ca.peer_counselor_id
-      left join public.student_profiles sp on sp.student_number = ca.student_number
+      left join public.student_profiles sp on lower(trim(sp.student_number)) = lower(trim(ca.student_number))
+      left join public.peer_counselors student_pc on lower(trim(student_pc.student_number)) = lower(trim(ca.student_number))
       where ca.id = $1::uuid
       limit 1
     `,
@@ -2593,6 +2656,7 @@ router.post("/admin/book", async (req, res) => {
   }
   if (
     String(req.admin?.role || "").toUpperCase() === "COUNSELOR"
+    && !isPeerSupportType(requestedSupportType)
     && String(counselorId) !== String(req.admin?.id || "")
   ) {
     return res.status(403).json({ message: "You can only manage your own appointments." });
@@ -2619,7 +2683,7 @@ router.post("/admin/book", async (req, res) => {
     return res.status(400).json({ message: "Choose a valid counseling type." });
   }
   const resolvedCounselingType = isPeerSupportType(supportType) ? null : counselingType || "1-on-1";
-  const resolvedStudentNote = isPeerSupportType(supportType) ? "" : studentNote;
+  const resolvedStudentNote = studentNote;
 
   await ensureDefaultAvailability(counselorId, supportType);
   const isEnabled = await isCounselorSlotEnabledForDate(counselorId, appointmentDate, slotTime, supportType);
@@ -2824,7 +2888,7 @@ router.post("/book", requireStudentOnlyAuth, async (req, res) => {
     return res.status(400).json({ message: "Choose a valid counseling type." });
   }
   const resolvedCounselingType = isPeerSupportType(supportType) ? null : counselingType || "1-on-1";
-  const resolvedStudentNote = isPeerSupportType(supportType) ? "" : studentNote;
+  const resolvedStudentNote = studentNote;
 
   await ensureDefaultAvailability(counselorId, supportType);
   const isEnabled = await isCounselorSlotEnabledForDate(counselorId, appointmentDate, slotTime, supportType);
@@ -3058,7 +3122,7 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
   const resolvedCounselingType = isPeerSupportType(supportType)
     ? null
     : counselingType || existingAppointment.counseling_type || "1-on-1";
-  const resolvedStudentNote = isPeerSupportType(supportType) ? "" : studentNote;
+  const resolvedStudentNote = studentNote;
 
   await ensureDefaultAvailability(counselorId, supportType);
   const isEnabled = await isCounselorSlotEnabledForDate(counselorId, appointmentDate, slotTime, supportType);
@@ -3366,6 +3430,7 @@ router.post("/admin/:appointmentId/cancel", async (req, res) => {
   const actorAdmin = sessionActorAdmin(req);
   const actorEmail = actorAdmin.email;
   const cancellationReason = String(req.body.cancellationReason || "").trim();
+  const studentNote = String(req.body.studentNote || req.body.note || "").trim();
 
   if (!appointmentId) {
     return res.status(400).json({ message: "Appointment id is required." });
@@ -3386,10 +3451,12 @@ router.post("/admin/:appointmentId/cancel", async (req, res) => {
   await query(
     `
       update public.counselor_appointments
-      set status = 'CANCELLED', updated_at = now()
+      set status = 'CANCELLED',
+          student_note = case when $2 <> '' then $2 else student_note end,
+          updated_at = now()
       where id = $1::uuid
     `,
-    [appointmentId],
+    [appointmentId, studentNote],
   );
 
   await writeAdminActivityLog({
@@ -3400,7 +3467,7 @@ router.post("/admin/:appointmentId/cancel", async (req, res) => {
     entityType: "APPOINTMENT",
     title: `${actorAdmin?.full_name || actorEmail || "Admin"} cancelled ${toReadableTime(existingAppointment.slot_time)}`,
     description: cancellationReason
-      ? `${existingAppointment.student_number} cancelled with ${existingAppointment.counselor_name} on ${formatDateLong(existingAppointment.appointment_date)}. Reason: ${cancellationReason}`
+      ? `${existingAppointment.student_number} cancelled with ${existingAppointment.counselor_name} on ${formatDateLong(existingAppointment.appointment_date)}. Reason: ${cancellationReason}${studentNote ? `. Note: ${studentNote}` : ""}`
       : `${existingAppointment.student_number} cancelled with ${existingAppointment.counselor_name} on ${formatDateLong(existingAppointment.appointment_date)}`,
     metadata: {
       actorAdminId: actorAdmin?.id || null,
@@ -3413,21 +3480,52 @@ router.post("/admin/:appointmentId/cancel", async (req, res) => {
       slotTime: existingAppointment.slot_time,
       studentNumber: existingAppointment.student_number,
       cancellationReason,
+      studentNote,
+      note: studentNote,
     },
   });
+
+  const studentNotificationMessage = studentNote
+    ? `Your session with ${existingAppointment.counselor_name} on ${formatDateLong(existingAppointment.appointment_date)} at ${toReadableTime(existingAppointment.slot_time)} was cancelled (${cancellationReason}). Note: ${studentNote}`
+    : cancellationReason
+    ? `Your session with ${existingAppointment.counselor_name} on ${formatDateLong(existingAppointment.appointment_date)} at ${toReadableTime(existingAppointment.slot_time)} was cancelled. Reason: ${cancellationReason}`
+    : `Your session on ${formatDateLong(existingAppointment.appointment_date)} at ${toReadableTime(existingAppointment.slot_time)} has been cancelled.`;
 
   await createStudentNotification({
     studentNumber: existingAppointment.student_number,
     kind: "APPOINTMENT_CANCELLED",
     title: "Appointment cancelled",
-    message: `Your session on ${formatDateLong(existingAppointment.appointment_date)} at ${toReadableTime(existingAppointment.slot_time)} has been cancelled.`,
+    message: studentNotificationMessage,
     metadata: getAppointmentNotificationMetadata(existingAppointment, {
       appointmentId,
       cancellationReason,
+      studentNote,
+      note: studentNote,
     }),
   });
+
+  const student = await findStudentProfileByStudentNumber(existingAppointment.student_number);
+  const emailIntro = `Your counseling appointment with ${existingAppointment.counselor_name} on ${formatDateLong(existingAppointment.appointment_date)} at ${toReadableTime(existingAppointment.slot_time)} was cancelled.${cancellationReason ? ` Reason: ${cancellationReason}.` : ""}`;
+
+  await sendAppointmentEmail({
+    to: student?.email || existingAppointment.student_email,
+    subject: "Your counseling appointment was cancelled",
+    intro: emailIntro,
+    appointment: {
+      ...existingAppointment,
+      cancellation_reason: cancellationReason,
+      student_note: studentNote || existingAppointment.student_note,
+    },
+    ctaText: studentNote ? `Note from counselor: ${studentNote}` : "Please open the app if you would like to book a new appointment schedule.",
+    context: "student cancellation notification",
+  });
+
   await notifyPeerCounselorAboutCancelledAppointment({
-    appointment: existingAppointment,
+    appointment: {
+      ...existingAppointment,
+      cancellation_reason: cancellationReason,
+      student_note: studentNote || existingAppointment.student_note,
+    },
     context: "peer counselor cancelled appointment notification",
   });
 
@@ -4434,10 +4532,16 @@ router.post("/admin/availability/day", async (req, res) => {
           ca.student_number,
           ca.appointment_date,
           ca.slot_time,
+          ca.concern,
+          ca.counseling_type,
+          coalesce(nullif(sp.full_name, ''), nullif(student_pc.full_name, ''), ca.student_number) as student_name,
+          coalesce(sp.email, student_pc.email, '') as student_email,
           coalesce(nullif(aa.full_name, ''), pc.full_name, split_part(aa.email, '@', 1)) as counselor_name
         from public.counselor_appointments ca
         left join public.admin_accounts aa on aa.id = ca.counselor_id
         left join public.peer_counselors pc on pc.id = ca.peer_counselor_id
+        left join public.student_profiles sp on lower(trim(sp.student_number)) = lower(trim(ca.student_number))
+        left join public.peer_counselors student_pc on lower(trim(student_pc.student_number)) = lower(trim(ca.student_number))
         where ca.${getAppointmentAssigneeColumn(resolvedSupportType)} = $1::uuid
           and coalesce(ca.support_type, 'GUIDANCE') = $4
           and ca.status = any($3::text[])
@@ -4458,23 +4562,43 @@ router.post("/admin/availability/day", async (req, res) => {
       );
 
       cancelledAppointmentsCount = appointmentsToCancel.rowCount;
+      const defaultCancelReason = isPeerSupportType(resolvedSupportType)
+        ? "Peer Counselor Unavailable"
+        : "Counselor Unavailable";
 
       for (const appointment of appointmentsToCancel.rows) {
+        const studentNotificationMessage = `Your session on ${formatDateLong(appointment.appointment_date)} at ${toReadableTime(appointment.slot_time)} with ${counselor.full_name} has been cancelled because the ${isPeerSupportType(resolvedSupportType) ? "peer counselor" : "counselor"} is unavailable on that day.`;
+
         await createStudentNotification({
           studentNumber: appointment.student_number,
           kind: "APPOINTMENT_CANCELLED",
           title: "Appointment cancelled",
-          message: `Your session on ${formatDateLong(appointment.appointment_date)} at ${toReadableTime(appointment.slot_time)} has been cancelled because ${counselor.full_name} is unavailable that day.`,
-          metadata: {
+          message: studentNotificationMessage,
+          metadata: getAppointmentNotificationMetadata(appointment, {
             appointmentId: appointment.id,
-            cancellationReason: "COUNSELOR_DAY_OFF",
+            cancellationReason: defaultCancelReason,
             counselorId,
-            counselorName: appointment.counselor_name,
+            counselorName: appointment.counselor_name || counselor.full_name,
             dayOfWeek: resolvedDayOfWeek,
             dayLabel: DAY_LABELS[resolvedDayOfWeek],
             supportType: resolvedSupportType,
             targetDate,
+          }),
+        });
+
+        const student = await findStudentProfileByStudentNumber(appointment.student_number);
+        const emailIntro = `Your ${isPeerSupportType(resolvedSupportType) ? "peer counseling" : "counseling"} appointment with ${counselor.full_name} on ${formatDateLong(appointment.appointment_date)} at ${toReadableTime(appointment.slot_time)} was cancelled because the ${isPeerSupportType(resolvedSupportType) ? "peer counselor" : "counselor"} is unavailable on that day.`;
+
+        await sendAppointmentEmail({
+          to: student?.email || appointment.student_email,
+          subject: `Your ${isPeerSupportType(resolvedSupportType) ? "peer counseling" : "counseling"} appointment was cancelled`,
+          intro: emailIntro,
+          appointment: {
+            ...appointment,
+            cancellation_reason: defaultCancelReason,
           },
+          ctaText: "Please open the app if you would like to book a new appointment schedule.",
+          context: "day off cancellation notification",
         });
       }
     }
