@@ -44,7 +44,18 @@ if (trustProxyRaw && trustProxyRaw !== "0" && trustProxyRaw.toLowerCase() !== "f
 
 app.use(
   cors({
-    origin: parsedCorsOrigin,
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (
+        parsedCorsOrigin === true ||
+        (Array.isArray(parsedCorsOrigin) && parsedCorsOrigin.includes(origin)) ||
+        /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+        /^https:\/\/.*\.vercel\.app$/.test(origin)
+      ) {
+        return callback(null, true);
+      }
+      return callback(null, false);
+    },
     credentials: allowCredentials,
   }),
 );

@@ -1,4 +1,34 @@
 const ADMIN_SESSION_STORAGE_KEY = "bt_admin_session_snapshot";
+const ADMIN_TOKEN_STORAGE_KEY = "bt_admin_token";
+
+export function getAdminToken() {
+  try {
+    return window.localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function setAdminToken(token) {
+  try {
+    if (token) {
+      window.localStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, token);
+    } else {
+      window.localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function clearAdminToken() {
+  try {
+    window.localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 function resolveAdminApiBaseUrl() {
   const configured = String(import.meta.env.VITE_ADMIN_API_BASE_URL || "").trim().replace(/\/$/, "");
   if (!configured) return "";
@@ -33,6 +63,7 @@ export function setAdminUnauthorizedHandler(handler) {
 function forgetAdminSessionSnapshot() {
   try {
     window.localStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
+    window.localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
   } catch {
     // Ignore storage failures; the in-memory session is still cleared by callers.
   }
@@ -47,13 +78,15 @@ function redirectToAdminLogin() {
 }
 
 async function request(path, options = {}) {
+  const token = getAdminToken();
   const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers || {}),
     },
     credentials: "include",
-    ...options,
   });
   const data = await response.json().catch(() => ({}));
   const skipAuthRedirect = String(path || "").startsWith("/api/admin/login") || String(path || "").startsWith("/api/admin/forgot-password");
@@ -79,20 +112,33 @@ async function request(path, options = {}) {
 }
 
 export async function adminLogin(payload) {
-  return request("/api/admin/login", {
+  const data = await request("/api/admin/login", {
     method: "POST",
     body: JSON.stringify(omitActorEmail(payload)),
   });
+  if (data?.token) {
+    setAdminToken(data.token);
+  }
+  return data;
 }
 
 export async function fetchAdminSession() {
-  return request("/api/admin/session");
+  const data = await request("/api/admin/session");
+  if (data?.token) {
+    setAdminToken(data.token);
+  }
+  return data;
 }
 
 export async function adminLogout() {
-  return request("/api/admin/logout", {
-    method: "POST",
-  });
+  try {
+    return await request("/api/admin/logout", {
+      method: "POST",
+    });
+  } finally {
+    clearAdminToken();
+    forgetAdminSessionSnapshot();
+  }
 }
 
 export async function sendAdminResetCode(payload) {
@@ -148,6 +194,9 @@ export async function fetchAdminAnalytics(params = {}) {
   }
   if (params.endDate) {
     searchParams.set("endDate", params.endDate);
+  }
+  if (params.activeOnly === true || params.activeOnly === false) {
+    searchParams.set("activeOnly", params.activeOnly ? "true" : "false");
   }
   const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
   return request(`/api/admin/analytics${suffix}`);
@@ -285,6 +334,12 @@ export async function sendAdminStudentNotification(studentNumber, payload) {
   });
 }
 
+export async function deleteAdminStudent(studentNumber) {
+  return request(`/api/admin/students/${encodeURIComponent(studentNumber)}`, {
+    method: "DELETE",
+  });
+}
+
 export async function fetchAdminGlobalSearch(query) {
   const searchParams = new URLSearchParams();
   if (query) {
@@ -382,6 +437,10 @@ export async function fetchAdminAppointmentsOverview(date, supportType = "GUIDAN
   const params = new URLSearchParams();
   if (date) {
     params.set("date", date);
+    const month = String(date).slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(month)) {
+      params.set("month", month);
+    }
   }
   if (supportType) {
     params.set("supportType", supportType);

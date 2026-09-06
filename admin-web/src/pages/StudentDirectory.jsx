@@ -17,18 +17,21 @@ import {
   Sparkles,
   UserCircle2,
   X,
+  Trash2,
 } from "lucide-react";
 import ConfirmActionModal from "../components/ConfirmActionModal";
 import Layout from "../components/Layout";
 import Modal from "../components/Modal";
 import StudentAvatar from "../components/StudentAvatar";
 import {
+  deleteAdminStudent,
   openAdminStudentJournalEntry,
   fetchAdminStudentDirectoryEntries,
   fetchAdminStudentProfile,
   fetchAdminStudents,
   sendAdminStudentNotification,
 } from "../lib/admin-api";
+import { isHeadCounselor } from "../lib/admin-roles";
 import { maskStudentNumber, useAdminPreferences } from "../lib/admin-preferences";
 import { getRiskBadgeClasses, getRiskLevelLabel, normalizeRiskLevel } from "../lib/risk-labels";
 
@@ -213,7 +216,7 @@ function ProfileInfoTile({ label, value }) {
   );
 }
 
-function DirectoryRow({ student, onMessage, onViewProfile, maskStudentNumbers = false }) {
+function DirectoryRow({ student, onMessage, onViewProfile, onDelete, canDelete = false, maskStudentNumbers = false }) {
   const isFlagged = student.status === "Flagged" || student.flaggedEntries > 0;
   const statusLabel = isFlagged ? "Flagged" : student.status;
   const avatarTone =
@@ -275,6 +278,16 @@ function DirectoryRow({ student, onMessage, onViewProfile, maskStudentNumbers = 
           >
             View Profile
           </button>
+          {canDelete ? (
+            <button
+              type="button"
+              onClick={() => onDelete(student)}
+              className="inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-100 hover:text-rose-800"
+              title="Delete Student Account"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          ) : null}
         </div>
       </div>
     </div>
@@ -579,6 +592,7 @@ export default function StudentDirectory({ onLogout, session }) {
   const [searchParams] = useSearchParams();
   const { preferences } = useAdminPreferences();
   const shouldMaskStudentNumbers = Boolean(preferences.privacy.maskStudentNumbers);
+  const isHead = isHeadCounselor(session);
   const [students, setStudents] = useState([]);
   const [programs, setPrograms] = useState([]);
   const [searchTerm, setSearchTerm] = useState(() => searchParams.get("search") || "");
@@ -609,6 +623,8 @@ export default function StudentDirectory({ onLogout, session }) {
   const [entryScope, setEntryScope] = useState("all");
   const [entryDateRange, setEntryDateRange] = useState("all");
   const [entryConcern, setEntryConcern] = useState("");
+  const [studentToDelete, setStudentToDelete] = useState(null);
+  const [isDeletingStudent, setIsDeletingStudent] = useState(false);
 
   async function loadStudents(nextSearch = searchTerm, nextProgram = selectedProgram, nextStatus = selectedStatus) {
     try {
@@ -744,6 +760,28 @@ export default function StudentDirectory({ onLogout, session }) {
     }
   }
 
+  async function handleConfirmDeleteStudent() {
+    if (!studentToDelete?.studentNumber || isDeletingStudent) return;
+    const targetNum = studentToDelete.studentNumber;
+    const targetName = studentToDelete.fullName || targetNum;
+    try {
+      setIsDeletingStudent(true);
+      setErrorMessage("");
+      await deleteAdminStudent(targetNum);
+      setStudentToDelete(null);
+      setSuccessMessage(`Student account ${targetName} (${targetNum}) has been successfully deleted.`);
+      if (selectedStudentNumber === targetNum) {
+        setSelectedStudentNumber("");
+        setStudentProfile(null);
+      }
+      await loadStudents();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to delete student account.");
+    } finally {
+      setIsDeletingStudent(false);
+    }
+  }
+
   const profileEntries = useMemo(
     () => (Array.isArray(studentProfile?.entries) ? studentProfile.entries : []),
     [studentProfile],
@@ -829,6 +867,8 @@ export default function StudentDirectory({ onLogout, session }) {
                     setMessageBody("");
                   }}
                   onViewProfile={handleViewProfile}
+                  onDelete={(target) => setStudentToDelete(target)}
+                  canDelete={isHead}
                 />
               ))
             ) : (
@@ -937,6 +977,18 @@ export default function StudentDirectory({ onLogout, session }) {
                       <ProfileInfoTile label="Student Number" value={maskStudentNumber(studentProfile.profile.studentNumber, shouldMaskStudentNumbers)} />
                       <ProfileInfoTile label="Birthdate" value={formatDate(studentProfile.profile.birthdate)} />
                     </div>
+                    {isHead ? (
+                      <div className="mt-4 flex justify-end border-t border-slate-100 pt-3">
+                        <button
+                          type="button"
+                          onClick={() => setStudentToDelete(studentProfile.profile)}
+                          className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 hover:text-rose-800"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Delete Student Account
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="rounded-[24px] border border-slate-200 bg-[linear-gradient(145deg,#fff7fb_0%,#ffffff_40%,#f9fdf9_100%)] p-5 shadow-sm">
@@ -1169,6 +1221,19 @@ export default function StudentDirectory({ onLogout, session }) {
           onBodyChange={setMessageBody}
           onClose={() => setMessageTarget(null)}
           onSend={() => void handleSendMessage()}
+        />
+
+        <ConfirmActionModal
+          isOpen={Boolean(studentToDelete)}
+          onClose={() => {
+            if (!isDeletingStudent) setStudentToDelete(null);
+          }}
+          onConfirm={() => { if (!isDeletingStudent) void handleConfirmDeleteStudent(); }}
+          title="Permanently Delete Student Account?"
+          description={`Are you sure you want to permanently delete student account ${studentToDelete?.fullName || ""} (${studentToDelete?.studentNumber || ""})? ALL data including journal entries, conversations, moods, appointments, support tickets, rewards, and login credentials will be permanently erased from the database. This action cannot be undone.`}
+          cancelLabel="Cancel"
+          confirmLabel={isDeletingStudent ? "Deleting..." : "Delete Permanently"}
+          confirmTone="rose"
         />
       </div>
     </Layout>

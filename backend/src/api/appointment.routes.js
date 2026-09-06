@@ -1340,12 +1340,11 @@ function canManageCounselorDecision(actorAdmin, appointment) {
   if (!actorAdmin || !appointment) return false;
   const role = String(actorAdmin.role || "").toUpperCase();
   if (role === "HEAD_COUNSELOR") return true;
-  if (role !== "COUNSELOR") return false;
   if (isPeerSupportType(appointment.support_type)) return true;
+  if (role !== "COUNSELOR") return false;
   const adminId = actorAdmin.id;
   const adminEmail = String(actorAdmin.email || "").trim().toLowerCase();
-  const assignedId = appointment.guidance_counselor_id
-    || (isPeerSupportType(appointment.support_type) ? null : appointment.counselor_id);
+  const assignedId = appointment.guidance_counselor_id || appointment.counselor_id;
   if (adminId && assignedId && String(adminId) === String(assignedId)) return true;
   const createdBy = String(appointment.created_by_admin_email || "").trim().toLowerCase();
   if (adminEmail && createdBy && adminEmail === createdBy) return true;
@@ -1372,7 +1371,7 @@ function rejectForeignAvailability(req, res, counselorId, supportType) {
   if (role === "HEAD_COUNSELOR") return false;
   if (isPeerSupportType(supportType)) return false;
   const ownId = String(req.admin?.id || "");
-  if (!isPeerSupportType(supportType) && ownId && String(counselorId) === ownId) return false;
+  if (ownId && String(counselorId) === ownId) return false;
   res.status(403).json({ message: "You don't have access to this action." });
   return true;
 }
@@ -2537,7 +2536,7 @@ router.get("/counselors", requireStudentOrAdminAuth, async (req, res) => {
   });
 });
 
-router.get("/availability", async (req, res) => {
+router.get("/availability", requireStudentOrAdminAuth, async (req, res) => {
   await expirePendingAppointments();
   const counselorId = String(req.query.counselorId || "").trim();
   const requestedSupportType = normalizeSupportType(req.query.supportType || "");
@@ -3097,6 +3096,11 @@ router.post("/admin/:appointmentId/update", async (req, res) => {
   }
   if (rejectUnownedAppointment(req, res, existingAppointment)) return;
 
+  const todayIso = getManilaDateParts().isoDate;
+  if (normalizeDateValue(existingAppointment.appointment_date) < todayIso) {
+    return res.status(400).json({ message: "Cannot edit an appointment scheduled in the past." });
+  }
+
   const counselor = await findSupportCounselorById(counselorId, requestedSupportType);
   if (!counselor) {
     return res.status(404).json({ message: "Counselor not found." });
@@ -3292,6 +3296,9 @@ router.post("/admin/:appointmentId/confirm", async (req, res) => {
     return res.status(404).json({ message: "Appointment not found." });
   }
   if (rejectUnownedAppointment(req, res, context.appointment)) return;
+  if (normalizeDateValue(context.appointment.appointment_date) < getManilaDateParts().isoDate) {
+    return res.status(400).json({ message: "Cannot confirm a past appointment." });
+  }
   if (!(await ensurePendingAppointmentStillOpen(context.appointment))) {
     return res.status(409).json({ message: "This appointment request already expired and was auto-declined." });
   }
@@ -3371,6 +3378,9 @@ router.post("/admin/:appointmentId/decline", async (req, res) => {
     return res.status(404).json({ message: "Appointment not found." });
   }
   if (rejectUnownedAppointment(req, res, context.appointment)) return;
+  if (normalizeDateValue(context.appointment.appointment_date) < getManilaDateParts().isoDate) {
+    return res.status(400).json({ message: "Cannot decline a past appointment." });
+  }
   if (!(await ensurePendingAppointmentStillOpen(context.appointment))) {
     return res.status(409).json({ message: "This appointment request already expired and was auto-declined." });
   }
@@ -3441,6 +3451,9 @@ router.post("/admin/:appointmentId/cancel", async (req, res) => {
     return res.status(404).json({ message: "Appointment not found." });
   }
   if (rejectUnownedAppointment(req, res, existingAppointment)) return;
+  if (normalizeDateValue(existingAppointment.appointment_date) < getManilaDateParts().isoDate) {
+    return res.status(400).json({ message: "Cannot cancel a past appointment." });
+  }
 
   const actorAccount = await findAdminByEmail(actorEmail);
   const requiresCancelReason = actorAccount?.settings?.privacy?.requireCancelReason !== false;
@@ -3549,6 +3562,9 @@ router.delete("/admin/:appointmentId", async (req, res) => {
     return res.status(404).json({ message: "Appointment not found." });
   }
   if (rejectUnownedAppointment(req, res, existingAppointment)) return;
+  if (normalizeDateValue(existingAppointment.appointment_date) < getManilaDateParts().isoDate) {
+    return res.status(400).json({ message: "Cannot delete a past appointment." });
+  }
   await query(
     `
       delete from public.counselor_appointments
@@ -3684,11 +3700,22 @@ router.get("/student", requireStudentOnlyAuth, async (req, res) => {
 
 router.get("/admin/overview", async (req, res) => {
   await expirePendingAppointments();
-  const selectedDate = normalizeDate(req.query.date || "") || getManilaDateParts().isoDate;
+  const monthFromQuery = normalizeMonth(req.query.month || "");
+  const dateFromQuery = normalizeDate(req.query.date || "");
   const supportType = normalizeSupportType(req.query.supportType || SUPPORT_TYPE_GUIDANCE);
-  const monthKey = `${selectedDate.slice(0, 7)}`;
+  // Prefer explicit month=YYYY-MM (Manila); fall back to date's month or today.
+  const monthKey = monthFromQuery
+    || (dateFromQuery ? dateFromQuery.slice(0, 7) : "")
+    || getManilaDateParts().isoDate.slice(0, 7);
   const monthStart = `${monthKey}-01`;
-  const monthEnd = `${monthKey}-${String(new Date(Number(selectedDate.slice(0, 4)), Number(selectedDate.slice(5, 7)), 0).getDate()).padStart(2, "0")}`;
+  const [yearText, monthText] = monthKey.split("-");
+  const lastDay = new Date(Number(yearText), Number(monthText), 0).getDate();
+  const monthEnd = `${monthKey}-${String(lastDay).padStart(2, "0")}`;
+  let selectedDate = dateFromQuery || monthStart;
+  // If a date is outside the requested month, clamp to month start so day list stays coherent.
+  if (selectedDate.slice(0, 7) !== monthKey) {
+    selectedDate = monthStart;
+  }
   const counselors = await ensureAvailabilityTemplates(supportType);
   const { tableName: availabilityTableName, idColumn: availabilityIdColumn } = getAvailabilityStorage(supportType);
   const availabilityRows = await query(

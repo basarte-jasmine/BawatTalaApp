@@ -3,9 +3,14 @@ const { randomBytes, scryptSync, timingSafeEqual } = require("crypto");
 const { google } = require("googleapis");
 const { supabaseAdminClient, supabaseAuthClient } = require("../config/supabase");
 const { JOURNAL_PRIMARY_CONCERN_VALUES, query } = require("../config/db");
-const { requireAdminAuth, requireRoles } = require("../middleware/auth.middleware");
+const { getAuthenticatedAdmin, requireAdminAuth, requireRoles } = require("../middleware/auth.middleware");
 const { mapFeedbackRow } = require("./feedback.routes");
 const { sendPasswordResetCodeEmail } = require("../services/auth-email.service");
+const {
+  createAdminToken,
+  createOAuthState,
+  verifyOAuthState,
+} = require("../services/auth-token.service");
 const { EMOTION_OPTIONS, createEmotionCounts, normalizeEmotionId } = require("../constants/emotions");
 const {
   JOURNAL_TAG_OPTIONS,
@@ -84,6 +89,10 @@ const adminChangePasswordSessions = new Map();
 function getChangePasswordSession(email) { return adminChangePasswordSessions.get(email) || null; }
 function setChangePasswordSession(email, session) { adminChangePasswordSessions.set(email, session); }
 function clearChangePasswordSession(email) { adminChangePasswordSessions.delete(email); }
+
+function normalizeStudentNumber(value) {
+  return String(value || "").trim().toUpperCase();
+}
 
 function normalizeCompactSpaces(value) {
   return String(value || "").trim().replace(/\s+/g, " ");
@@ -246,20 +255,40 @@ async function ensureDefaultAdminAccount() {
   const defaultRole = "HEAD_COUNSELOR";
   const defaultGender = String(process.env.ADMIN_DEFAULT_GENDER || "Female");
 
-  const existing = await query("select id from public.admin_accounts where email = $1", [defaultEmail]);
+  const existing = await query("select id, password_hash from public.admin_accounts where email = $1", [defaultEmail]);
   if (existing.rowCount > 0) {
-    await query(
-      `
-        update public.admin_accounts
-        set
-          full_name = $2,
-          role = $3,
-          gender = $4,
-          updated_at = now()
-        where email = $1
-      `,
-      [defaultEmail, defaultFullName, defaultRole, defaultGender],
-    );
+    const currentHash = existing.rows[0]?.password_hash;
+    const shouldUpdatePassword = configuredDefaultPassword && (!currentHash || !verifyPassword(configuredDefaultPassword, currentHash));
+    if (shouldUpdatePassword) {
+      await query(
+        `
+          update public.admin_accounts
+          set
+            full_name = $2,
+            role = $3,
+            gender = $4,
+            password_hash = $5,
+            is_active = true,
+            updated_at = now()
+          where email = $1
+        `,
+        [defaultEmail, defaultFullName, defaultRole, defaultGender, hashPassword(configuredDefaultPassword)],
+      );
+    } else {
+      await query(
+        `
+          update public.admin_accounts
+          set
+            full_name = $2,
+            role = $3,
+            gender = $4,
+            is_active = true,
+            updated_at = now()
+          where email = $1
+        `,
+        [defaultEmail, defaultFullName, defaultRole, defaultGender],
+      );
+    }
   } else {
     await query(
       `
@@ -959,21 +988,37 @@ function resolveAnalyticsRange(queryValue, customStartRaw, customEndRaw) {
   const todayIso = getRelativeManilaIsoDate(0);
   const normalized = String(queryValue || "30d").trim().toLowerCase();
 
+  if (normalized === "all") {
+    return {
+      rangeKey: "all",
+      startDate: "2026-01-01",
+      endDate: todayIso,
+    };
+  }
+
   if (normalized === "custom") {
     const customStart = normalizeDateValue(customStartRaw);
     const customEnd = normalizeDateValue(customEndRaw);
-    if (customStart && customEnd && customStart <= customEnd) {
+    if (!customStart || !customEnd) {
       return {
-        rangeKey: "custom",
-        startDate: customStart,
-        endDate: customEnd,
+        error: "Valid startDate and endDate are required for a custom range.",
       };
     }
+    if (customStart > customEnd) {
+      return {
+        error: "startDate must be on or before endDate.",
+      };
+    }
+    return {
+      rangeKey: "custom",
+      startDate: customStart,
+      endDate: customEnd,
+    };
   }
 
   const days = normalized === "7d" ? 7 : normalized === "90d" ? 90 : 30;
   return {
-    rangeKey: normalized === "7d" || normalized === "90d" ? normalized : "30d",
+    rangeKey: normalized === "7d" || normalized === "90d" || normalized === "all" ? normalized : "30d",
     startDate: addDaysToIsoDate(todayIso, -(days - 1)),
     endDate: todayIso,
   };
@@ -1024,6 +1069,31 @@ function buildWeeklyBuckets(startIsoDate, endIsoDate) {
   return buckets;
 }
 
+/** Merge weekly risk buckets for long ranges so charts stay at ~8–12 points. */
+function buildAdaptiveRiskBuckets(startIsoDate, endIsoDate, maxBuckets = 12) {
+  const weekly = buildWeeklyBuckets(startIsoDate, endIsoDate);
+  if (weekly.length <= maxBuckets) return weekly;
+
+  const naturalCount = Math.ceil(weekly.length / Math.ceil(weekly.length / maxBuckets));
+  const targetCount = Math.min(maxBuckets, Math.max(8, naturalCount));
+  const size = Math.ceil(weekly.length / targetCount);
+  const buckets = [];
+
+  for (let index = 0; index < weekly.length; index += size) {
+    const chunk = weekly.slice(index, index + size);
+    if (!chunk.length) continue;
+    const startDate = chunk[0].startDate;
+    const endDate = chunk[chunk.length - 1].endDate;
+    buckets.push({
+      startDate,
+      endDate,
+      label: formatShortRangeLabel(startDate, endDate),
+    });
+  }
+
+  return buckets;
+}
+
 function buildDailyTrend(rows, startIsoDate, endIsoDate, dateKey) {
   const counts = new Map();
   for (const row of rows || []) {
@@ -1032,7 +1102,24 @@ function buildDailyTrend(rows, startIsoDate, endIsoDate, dateKey) {
     counts.set(isoDate, (counts.get(isoDate) || 0) + 1);
   }
 
-  return enumerateIsoDates(startIsoDate, endIsoDate).map((isoDate) => ({
+  const dates = enumerateIsoDates(startIsoDate, endIsoDate);
+  // For wide ranges (e.g. all-time spanning 90+ days), sample or compress so charts don't render 300+ bars
+  if (dates.length > 90) {
+    const weekly = buildWeeklyBuckets(startIsoDate, endIsoDate);
+    return weekly.map((b) => {
+      let sum = 0;
+      for (const d of enumerateIsoDates(b.startDate, b.endDate)) {
+        sum += counts.get(d) || 0;
+      }
+      return {
+        isoDate: b.startDate,
+        label: b.label,
+        value: sum,
+      };
+    });
+  }
+
+  return dates.map((isoDate) => ({
     isoDate,
     label: formatShortLabel(isoDate),
     value: counts.get(isoDate) || 0,
@@ -1230,16 +1317,21 @@ router.post("/login", async (req, res) => {
     metadata: { loginMethod: "password" },
   });
 
-  req.session.admin = buildAdminSessionPayload(admin);
+  const adminSession = buildAdminSessionPayload(admin);
+  if (req.session) {
+    req.session.admin = adminSession;
+  }
+  const token = createAdminToken(adminSession);
 
   return res.json({
     message: "Login successful.",
-    admin: req.session.admin,
+    admin: adminSession,
+    token,
   });
 });
 
 router.get("/session", async (req, res) => {
-  const sessionAdmin = buildAdminSessionPayload(req.session?.admin);
+  const sessionAdmin = getAuthenticatedAdmin(req);
   if (!sessionAdmin?.email) {
     return res.status(401).json({ message: "Please sign in again." });
   }
@@ -1262,13 +1354,14 @@ router.get("/session", async (req, res) => {
 
   const adminRow = result.rows[0];
   if (!adminRow?.is_active) {
-    req.session.admin = null;
+    if (req.session) req.session.admin = null;
     return res.status(401).json({ message: "Please sign in again." });
   }
 
   const admin = buildAdminSessionPayload(adminRow);
-  req.session.admin = admin;
-  return res.json({ admin });
+  if (req.session) req.session.admin = admin;
+  const token = createAdminToken(admin);
+  return res.json({ admin, token });
 });
 
 router.post("/logout", (req, res) => {
@@ -1282,8 +1375,15 @@ router.get("/oauth/google/start", (req, res) => {
     return res.status(400).json({ message: "Google OAuth is not configured." });
   }
 
-  const state = randomBytes(16).toString("hex");
-  req.session.googleLoginState = state;
+  const clientOrigin = String(req.query.origin || "").trim();
+  const rawState = randomBytes(16).toString("hex");
+  const state = createOAuthState({
+    nonce: rawState,
+    origin: clientOrigin || undefined,
+  });
+  if (req.session) {
+    req.session.googleLoginState = state;
+  }
 
   const authUrl = client.generateAuthUrl({
     access_type: "offline",
@@ -1314,10 +1414,16 @@ router.get("/oauth/google/callback", async (req, res) => {
 
   const code = String(req.query.code || "");
   const state = String(req.query.state || "");
-  const savedState = String(req.session.googleLoginState || "");
-  if (!code || !state || !savedState || state !== savedState) {
+  const savedState = String(req.session?.googleLoginState || "");
+  const verifiedState = verifyOAuthState(state);
+  const targetOrigin =
+    (verifiedState?.origin && (verifiedState.origin.startsWith("http://localhost:") || verifiedState.origin.startsWith("http://127.0.0.1:") || verifiedState.origin.includes("vercel.app")))
+      ? verifiedState.origin
+      : webBaseUrl;
+
+  if (!code || !state || (!verifiedState && (!savedState || state !== savedState))) {
     return res.redirect(
-      `${webBaseUrl}/login?oauth=error&message=${encodeURIComponent("Invalid OAuth state. Please try again.")}`,
+      `${targetOrigin}/login?oauth=error&message=${encodeURIComponent("Invalid OAuth state. Please try again.")}`,
     );
   }
 
@@ -1330,7 +1436,7 @@ router.get("/oauth/google/callback", async (req, res) => {
 
     if (!email) {
       return res.redirect(
-        `${webBaseUrl}/login?oauth=error&message=${encodeURIComponent("No email found in Google account.")}`,
+        `${targetOrigin}/login?oauth=error&message=${encodeURIComponent("No email found in Google account.")}`,
       );
     }
 
@@ -1344,14 +1450,14 @@ router.get("/oauth/google/callback", async (req, res) => {
          coalesce(profile_picture_url, '') as profile_picture_url,
          coalesce(settings, '{}'::jsonb) as settings
        from public.admin_accounts
-       where email = $1
+       where lower(email) = $1
        limit 1`,
       [email],
     );
     const admin = result.rows[0];
     if (!admin || !admin.is_active) {
       return res.redirect(
-        `${webBaseUrl}/login?oauth=error&message=${encodeURIComponent("This Google account is not allowed for admin access.")}`,
+        `${targetOrigin}/login?oauth=error&message=${encodeURIComponent("This Google account is not allowed for admin access.")}`,
       );
     }
 
@@ -1389,14 +1495,19 @@ router.get("/oauth/google/callback", async (req, res) => {
       );
     }
 
-    req.session.admin = buildAdminSessionPayload({
+    const adminSession = buildAdminSessionPayload({
       ...admin,
       profile_picture_url: effectivePictureUrl,
     });
+    if (req.session) {
+      req.session.admin = adminSession;
+    }
+    const token = createAdminToken(adminSession);
 
     const redirectParams = new URLSearchParams({
       oauth: "success",
       email: admin.email,
+      token,
     });
 
     redirectParams.set("name", String(admin.full_name || ""));
@@ -1405,10 +1516,10 @@ router.get("/oauth/google/callback", async (req, res) => {
       redirectParams.set("picture", effectivePictureUrl);
     }
 
-    return res.redirect(`${webBaseUrl}/login?${redirectParams.toString()}`);
+    return res.redirect(`${targetOrigin}/login?${redirectParams.toString()}`);
   } catch {
     return res.redirect(
-      `${webBaseUrl}/login?oauth=error&message=${encodeURIComponent("Google sign-in failed. Please try again.")}`,
+      `${targetOrigin}/login?oauth=error&message=${encodeURIComponent("Google sign-in failed. Please try again.")}`,
     );
   }
 });
@@ -1646,11 +1757,15 @@ router.post("/notifications/read-all", async (req, res) => {
 });
 
 router.get("/dashboard/summary", async (req, res) => {
-  const { rangeKey, startDate, endDate } = resolveAnalyticsRange(
+  const resolvedAnalyticsRange = resolveAnalyticsRange(
     req.query.range,
     req.query.startDate,
     req.query.endDate,
   );
+  if (resolvedAnalyticsRange.error) {
+    return res.status(400).json({ message: resolvedAnalyticsRange.error });
+  }
+  const { rangeKey, startDate, endDate } = resolvedAnalyticsRange;
   const rangeDays = getDaysBetweenInclusive(startDate, endDate);
   const previousStartDate = addDaysToIsoDate(startDate, -rangeDays);
   const previousEndDate = addDaysToIsoDate(startDate, -1);
@@ -3094,11 +3209,15 @@ router.get("/search", async (req, res) => {
 });
 
 router.get("/analytics", async (req, res) => {
-  const { rangeKey, startDate, endDate } = resolveAnalyticsRange(
+  const resolvedAnalyticsRange = resolveAnalyticsRange(
     req.query.range,
     req.query.startDate,
     req.query.endDate,
   );
+  if (resolvedAnalyticsRange.error) {
+    return res.status(400).json({ message: resolvedAnalyticsRange.error });
+  }
+  const { rangeKey, startDate, endDate } = resolvedAnalyticsRange;
   const [profilesResult, journalRowsResult, appointmentsResult, counselorsResult, peerCounselorsResult] = await Promise.all([
     query(
       `
@@ -3359,9 +3478,17 @@ router.get("/analytics", async (req, res) => {
     value: Number(workloadCounts[assignee.key] || 0),
   }));
 
-  const weeklyBuckets = buildWeeklyBuckets(startDate, endDate);
+  const weeklyBuckets = buildAdaptiveRiskBuckets(startDate, endDate);
   const crisisRiskSeries = Array(weeklyBuckets.length).fill(0);
   const distressedRiskSeries = Array(weeklyBuckets.length).fill(0);
+
+  const riskRankForReport = (level) => {
+    const normalized = String(level || "NONE").toUpperCase();
+    if (normalized === "CRITICAL") return 4;
+    if (normalized === "HIGH") return 3;
+    if (normalized === "LOW" || normalized === "MEDIUM" || normalized === "MODERATE") return 2;
+    return 0;
+  };
 
   for (const row of journalRows) {
     const riskLevel = String(row.risk_level || "").trim().toUpperCase();
@@ -3412,6 +3539,7 @@ router.get("/analytics", async (req, res) => {
         lastEntryDate: "",
         lastEntryCreatedAt: "",
         latestRiskLevel: "NONE",
+        highestRiskInRange: "NONE",
         latestSupportResponse: "",
       });
     }
@@ -3448,6 +3576,9 @@ router.get("/analytics", async (req, res) => {
       stats.latestRiskLevel = riskLevel || "NONE";
       stats.latestSupportResponse = supportResponse;
     }
+    if (riskRankForReport(riskLevel) > riskRankForReport(stats.highestRiskInRange)) {
+      stats.highestRiskInRange = riskLevel || "NONE";
+    }
   }
 
   for (const row of appointmentRows) {
@@ -3462,11 +3593,16 @@ router.get("/analytics", async (req, res) => {
     if (status === "COMPLETED") stats.completedSessions += 1;
   }
 
+  const profileStudentNumbers = new Set(
+    profileRows.map((profile) => String(profile.student_number || "").trim()).filter(Boolean),
+  );
+
   const studentReportRows = profileRows.map((profile) => {
     const studentNumber = String(profile.student_number || "").trim();
     const stats = getReportStats(studentNumber);
     const topConcern =
       [...stats.concernCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+    const distressedFlags = stats.mediumRiskFlags;
 
     return {
       studentNumber,
@@ -3485,19 +3621,51 @@ router.get("/analytics", async (req, res) => {
       flagsInRange: stats.flagsInRange,
       highRiskFlags: stats.highRiskFlags,
       criticalRiskFlags: stats.criticalRiskFlags,
-      mediumRiskFlags: stats.mediumRiskFlags,
+      // Distressed / Needs Support = LOW only. mediumRiskFlags kept as alias for older clients.
+      distressedFlags,
+      lowRiskFlags: distressedFlags,
+      mediumRiskFlags: distressedFlags,
       declinedSupport: stats.declinedSupport,
       contactedSupport: stats.contactedSupport,
       counselingSessions: stats.counselingSessions,
       confirmedSessions: stats.confirmedSessions,
       completedSessions: stats.completedSessions,
       topConcern,
-      latestRiskLevel: stats.latestRiskLevel,
+      latestRiskLevel: stats.flagsInRange > 0 ? (stats.highestRiskInRange || stats.latestRiskLevel) : stats.latestRiskLevel,
       latestSupportResponse: stats.latestSupportResponse,
       lastEntryDate: stats.lastEntryDate,
-      reportStatus: stats.flagsInRange > 0 ? "Flagged" : stats.entriesInRange > 0 ? "Active" : "No entries in range",
+      reportStatus:
+        stats.flagsInRange > 0
+          ? "Flagged"
+          : stats.entriesInRange > 0 || stats.counselingSessions > 0
+            ? "Active"
+            : "No entries in range",
     };
   });
+
+  studentReportRows.sort((a, b) => {
+    const nameCmp = String(a.fullName || "").localeCompare(String(b.fullName || ""), undefined, { sensitivity: "base" });
+    if (nameCmp !== 0) return nameCmp;
+    return String(a.studentNumber || "").localeCompare(String(b.studentNumber || ""));
+  });
+
+  // If range is 'all', show ALL registered students. For specific time ranges (7d, 30d, 90d, custom), only show students who had activity in that range.
+  const filteredStudentReportRows =
+    rangeKey === "all"
+      ? studentReportRows
+      : studentReportRows.filter(
+          (row) =>
+            Number(row.entriesInRange || 0) > 0 ||
+            Number(row.counselingSessions || 0) > 0 ||
+            Number(row.flagsInRange || 0) > 0,
+        );
+
+  // Keep Counseling Sessions card aligned with registered student rows
+  const counselingSessionsFromRows = filteredStudentReportRows.reduce(
+    (total, row) => total + Number(row.counselingSessions || 0),
+    0,
+  );
+  metricCards.counselingSessions.value = counselingSessionsFromRows;
 
   return res.json({
     filters: {
@@ -3532,7 +3700,7 @@ router.get("/analytics", async (req, res) => {
       resolutionRates,
     },
     reports: {
-      students: studentReportRows,
+      students: filteredStudentReportRows,
     },
   });
 });
@@ -4373,6 +4541,113 @@ router.get("/students/:studentNumber", async (req, res) => {
   });
 });
 
+router.delete("/students/:studentNumber", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
+  try {
+    const studentNumber = String(
+      typeof normalizeStudentNumber === "function"
+        ? normalizeStudentNumber(req.params.studentNumber)
+        : req.params.studentNumber || "",
+    )
+      .trim()
+      .toUpperCase();
+    if (!studentNumber) {
+      return res.status(400).json({ message: "Student number is required." });
+    }
+
+    const profileResult = await query(
+      `
+      select student_number, full_name, email, profile_picture_path
+      from public.student_profiles
+      where student_number = $1
+      limit 1
+    `,
+      [studentNumber],
+    );
+
+    if (profileResult.rowCount === 0) {
+      return res.status(404).json({ message: "Student not found." });
+    }
+
+    const student = profileResult.rows[0];
+    const actorAdmin = req.admin;
+    const actorEmail = normalizeEmail(actorAdmin?.email || "");
+    const actorName = normalizeCompactSpaces(actorAdmin?.fullName || actorEmail || "Admin");
+    const actorRole = toRoleLabel(actorAdmin?.role || "COUNSELOR");
+
+    const deleteStatements = [
+      "delete from public.journal_entry_messages where student_number = $1",
+      "delete from public.journal_entries where student_number = $1",
+      "delete from public.student_moods where student_number = $1",
+      "delete from public.counselor_appointments where student_number = $1",
+      "delete from public.student_feedbacks where student_number = $1",
+      "delete from public.student_daily_checkins where student_number = $1",
+      "delete from public.student_library_progress where student_number = $1",
+      "delete from public.student_library_downloads where student_number = $1",
+      "delete from public.student_library_reading_rewards where student_number = $1",
+      "delete from public.student_tala_wallets where student_number = $1",
+      "delete from public.student_muni_wardrobes where student_number = $1",
+      "delete from public.student_muni_purchases where student_number = $1",
+      "delete from public.future_self_messages where student_number = $1",
+      "delete from public.student_notifications where student_number = $1",
+      "delete from public.student_referrals where student_number = $1 or referred_by_student_number = $1",
+      "delete from public.student_app_preferences where student_number = $1",
+      "delete from public.student_profiles where student_number = $1",
+    ];
+
+    for (const statement of deleteStatements) {
+      try {
+        await query(statement, [studentNumber]);
+      } catch (tableError) {
+        // Ignore missing optional tables; fail hard on other SQL errors.
+        if (tableError?.code === "42P01") {
+          console.warn(`Skipping missing table during student delete: ${tableError.message}`);
+          continue;
+        }
+        throw tableError;
+      }
+    }
+
+    if (student.email) {
+      try {
+        const { data: userList } = await supabaseAdminClient.auth.admin.listUsers();
+        const authUser = (userList?.users || []).find((u) => normalizeEmail(u.email) === normalizeEmail(student.email));
+        if (authUser?.id) {
+          await supabaseAdminClient.auth.admin.deleteUser(authUser.id);
+        }
+      } catch (authError) {
+        console.warn("Could not remove Supabase auth user for student:", authError?.message || authError);
+      }
+    }
+
+    try {
+      await writeAdminActivityLog({
+        actionType: "STUDENT_DELETED",
+        actorEmail,
+        actorName,
+        actorRole,
+        entityType: "STUDENT",
+        title: `${actorName} permanently deleted student ${student.full_name || studentNumber}`,
+        description: `All records, journals, moods, appointments, and preferences for student ${studentNumber} (${student.full_name || ""}) were permanently deleted from the database.`,
+        metadata: {
+          studentNumber,
+          studentName: student.full_name,
+          studentEmail: student.email,
+        },
+      });
+    } catch (logErr) {
+      console.warn("Activity log write error on student delete:", logErr?.message || logErr);
+    }
+
+    return res.json({
+      message: `Student account ${studentNumber} and all associated data have been permanently deleted.`,
+    });
+  } catch (error) {
+    console.error("Student delete failed:", error);
+    return res.status(500).json({
+      message: error?.message || "Failed to permanently delete student account.",
+    });
+  }
+});
 router.get("/settings", async (req, res) => {
   const email = normalizeEmail(req.admin?.email || "");
   if (!email) {

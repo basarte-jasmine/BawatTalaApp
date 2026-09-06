@@ -128,6 +128,7 @@ export default function RoleAssignments({ onLogout, session }) {
       [
         member.fullName,
         member.email,
+        member.gender,
         member.roleLabel,
         member.department,
         member.status,
@@ -429,6 +430,7 @@ export default function RoleAssignments({ onLogout, session }) {
                 <tr className="border-b border-gray-200 bg-white text-xs uppercase tracking-wider text-gray-500">
                   <th className="px-6 py-4 font-semibold">Counselor Name</th>
                   <th className="px-6 py-4 font-semibold">Role</th>
+                  <th className="px-6 py-4 font-semibold">Gender</th>
                   <th className="px-6 py-4 font-semibold">Department</th>
                   <th className="px-6 py-4 text-center font-semibold">Students Assigned</th>
                   <th className="px-6 py-4 font-semibold">Status</th>
@@ -438,7 +440,7 @@ export default function RoleAssignments({ onLogout, session }) {
               <tbody className="divide-y divide-gray-100 bg-white text-sm">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-10 text-center text-sm text-slate-500">
+                    <td colSpan={7} className="px-6 py-10 text-center text-sm text-slate-500">
                       Loading team members...
                     </td>
                   </tr>
@@ -468,6 +470,7 @@ export default function RoleAssignments({ onLogout, session }) {
                         </div>
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-gray-600">{member.roleLabel}</td>
+                      <td className="whitespace-nowrap px-6 py-4 text-gray-600">{member.gender || "Not set"}</td>
                       <td className="whitespace-nowrap px-6 py-4 text-gray-500">{member.department}</td>
                       <td className="whitespace-nowrap px-6 py-4 text-center font-medium text-gray-700">
                         {member.role === "HEAD_COUNSELOR" ? "All" : Number(member.assignedStudents || 0)}
@@ -504,7 +507,7 @@ export default function RoleAssignments({ onLogout, session }) {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={6} className="px-6 py-10 text-center text-sm text-slate-500">
+                    <td colSpan={7} className="px-6 py-10 text-center text-sm text-slate-500">
                       No team members matched the current search.
                     </td>
                   </tr>

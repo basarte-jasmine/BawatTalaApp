@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import AuthShell from "../components/auth/AuthShell";
-import { adminLogin, fetchAdminSession, getAdminApiUrl } from "../lib/admin-api";
+import { adminLogin, fetchAdminSession, getAdminApiUrl, setAdminToken } from "../lib/admin-api";
 import { validateAdminLogin } from "../lib/admin-validation";
 
 export default function Login({ onLogin }) {
@@ -19,8 +19,12 @@ export default function Login({ onLogin }) {
   useEffect(() => {
     const oauthStatus = searchParams.get("oauth");
     const oauthMessage = searchParams.get("message");
+    const oauthToken = searchParams.get("token");
 
     if (oauthStatus === "success") {
+      if (oauthToken) {
+        setAdminToken(oauthToken);
+      }
       fetchAdminSession()
         .then((data) => {
           if (!data?.admin) {
@@ -64,6 +68,12 @@ export default function Login({ onLogin }) {
         return;
       }
 
+      if (loginResult?.admin) {
+        onLogin(loginResult.admin);
+        navigate("/dashboard", { replace: true });
+        return;
+      }
+
       const sessionData = await fetchAdminSession();
       if (!sessionData?.admin) {
         throw new Error("Login succeeded but the admin session could not be verified.");
@@ -81,11 +91,16 @@ export default function Login({ onLogin }) {
     try {
       setSubmitting(true);
       setError("");
-      await adminLogin({
+      const loginResult = await adminLogin({
         email: email.trim(),
         password,
         reactivate: true,
       });
+      if (loginResult?.admin) {
+        onLogin(loginResult.admin);
+        navigate("/dashboard", { replace: true });
+        return;
+      }
       const sessionData = await fetchAdminSession();
       if (!sessionData?.admin) {
         throw new Error("Reactivation succeeded but the admin session could not be verified.");
@@ -103,7 +118,8 @@ export default function Login({ onLogin }) {
   function handleGoogleLogin() {
     setError("");
     setGoogleLoading(true);
-    window.location.href = getAdminApiUrl("/api/admin/oauth/google/start?redirect=1");
+    const originParam = typeof window !== "undefined" && window.location.origin ? `&origin=${encodeURIComponent(window.location.origin)}` : "";
+    window.location.href = getAdminApiUrl(`/api/admin/oauth/google/start?redirect=1${originParam}`);
   }
 
   return (

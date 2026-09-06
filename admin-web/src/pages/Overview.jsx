@@ -70,6 +70,7 @@ const ANALYTICS_CARD_DEFS = [
 ];
 
 const RANGE_OPTIONS = [
+  { key: "all", label: "All" },
   { key: "7d", label: "7 Days" },
   { key: "30d", label: "30 Days" },
   { key: "90d", label: "90 Days" },
@@ -304,6 +305,94 @@ function buildChartAxis(maxValue) {
   };
 }
 
+
+function parseIsoDateParts(isoDate) {
+  const match = String(isoDate || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+  };
+}
+
+function addDaysToIsoDate(isoDate, days) {
+  const parts = parseIsoDateParts(isoDate);
+  if (!parts) return isoDate;
+  const utc = Date.UTC(parts.year, parts.month - 1, parts.day + Number(days || 0));
+  const date = new Date(utc);
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(date.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function formatJournalBucketLabel(startIso, endIso) {
+  const start = parseIsoDateParts(startIso);
+  const end = parseIsoDateParts(endIso);
+  if (!start || !end) return startIso;
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const startLabel = `${months[start.month - 1]} ${start.day}`;
+  if (startIso === endIso) return startLabel;
+  if (start.month === end.month) return `${startLabel}-${end.day}`;
+  return `${startLabel}-${months[end.month - 1]} ${end.day}`;
+}
+
+/** Collapse daily journal volume by range length so long charts stay readable. */
+function aggregateJournalEntriesVolume(series) {
+  const points = Array.isArray(series) ? series.filter((item) => item?.isoDate || item?.label) : [];
+  // <=14 days (7d / short custom): keep daily points
+  if (points.length <= 14) return points;
+
+  // ~15-45d => weekly; >45d prefer weekly (~12-13 for 90d), larger buckets only if weekly still >14 points
+  let bucketSize = 7;
+  if (points.length > 45) {
+    const weeklyPointCount = Math.ceil(points.length / 7);
+    if (weeklyPointCount > 14) {
+      bucketSize = Math.max(14, Math.ceil(points.length / 14));
+    }
+  }
+
+  const buckets = [];
+  for (let index = 0; index < points.length; index += bucketSize) {
+    const chunk = points.slice(index, index + bucketSize);
+    const startIso = chunk[0]?.isoDate || chunk[0]?.label;
+    const endIso = chunk[chunk.length - 1]?.isoDate || chunk[chunk.length - 1]?.label;
+    const value = chunk.reduce((total, item) => total + Number(item.value || 0), 0);
+    buckets.push({
+      isoDate: startIso,
+      endIsoDate: endIso,
+      label: formatJournalBucketLabel(startIso, endIso),
+      value,
+      dayCount: chunk.length,
+    });
+  }
+  return buckets;
+}
+
+/** Show numeric point labels only when sparse enough; otherwise peaks / every Nth. */
+function getJournalValueLabelIndexes(points, maxLabels = 12) {
+  const count = Array.isArray(points) ? points.length : 0;
+  if (count <= 0) return new Set();
+  if (count <= maxLabels) return new Set(Array.from({ length: count }, (_, index) => index));
+
+  const peakIndexes = [];
+  for (let index = 0; index < count; index += 1) {
+    const value = Number(points[index]?.value || 0);
+    if (value <= 0) continue;
+    const prev = Number(points[index - 1]?.value || 0);
+    const next = Number(points[index + 1]?.value || 0);
+    const isPeak = value >= prev && value >= next;
+    if (isPeak) peakIndexes.push(index);
+  }
+
+  if (peakIndexes.length > 0 && peakIndexes.length <= maxLabels) {
+    return new Set(peakIndexes);
+  }
+
+  return new Set(getChartTickIndexes(count, maxLabels));
+}
+
 function buildJournalEntriesAxis(maxValue) {
   const max = Math.max(0, Math.ceil(Number(maxValue || 0)));
 
@@ -344,6 +433,7 @@ function JournalEntriesGraph({ data, onSelect }) {
   const max = Math.max(...data.map((item) => Number(item.value || 0)), 0);
   const { axisMax, guides } = buildJournalEntriesAxis(max);
   const tickIndexes = new Set(getChartTickIndexes(data.length));
+  const valueLabelIndexes = getJournalValueLabelIndexes(data, 12);
   const points = data.map((item, index) => {
     const x = padLeft + (index * (width - padLeft - padRight)) / Math.max(1, data.length - 1);
     const y = padTop + ((axisMax - item.value) * (height - padTop - padBottom)) / axisMax;
@@ -383,8 +473,8 @@ function JournalEntriesGraph({ data, onSelect }) {
           Number of Entries
         </text>
         <path d={linePath} fill="none" stroke="#16a34a" strokeWidth="4" strokeLinecap="round" />
-        {points.map((point) => (
-          <g key={point.label}>
+        {points.map((point, index) => (
+          <g key={point.isoDate || `${point.label}-${index}`}>
             <circle
               cx={point.x}
               cy={point.y}
@@ -395,14 +485,16 @@ function JournalEntriesGraph({ data, onSelect }) {
               className={onSelect ? "cursor-pointer" : ""}
               onClick={onSelect ? () => onSelect(`Journal Entries: ${point.label}`) : undefined}
             />
-            <text
-              x={point.x}
-              y={Math.max(12, point.y - 10)}
-              textAnchor="middle"
-              className="fill-[#065f46] text-[16px] font-black"
-            >
-              {point.value.toLocaleString()}
-            </text>
+            {valueLabelIndexes.has(index) ? (
+              <text
+                x={point.x}
+                y={Math.max(12, point.y - 10)}
+                textAnchor="middle"
+                className="fill-[#065f46] text-[16px] font-black"
+              >
+                {Number(point.value || 0).toLocaleString()}
+              </text>
+            ) : null}
           </g>
         ))}
         {points.map((point, index) =>
@@ -674,27 +766,98 @@ function CounselorWorkloadPanel({ analytics, loading }) {
   );
 }
 
+
+/** Compact at-risk axis labels (full text stays on summary cards). */
+function shortenAtRiskAxisLabel(label, maxLen = 12) {
+  const raw = String(label || "").trim();
+  if (!raw) return "";
+  const normalized = raw.replace(/\s*[\u2013\u2014-]\s*/g, "-");
+  const parts = normalized.split("-").map((part) => part.trim()).filter(Boolean);
+  let short = parts.length >= 2 ? parts[0] + "-" + parts[parts.length - 1] : normalized;
+  short = short.replace(/([A-Za-z]{3})\s+(\d{1,2})/g, "$1 $2");
+  if (short.length <= maxLen) return short;
+  const start = parts[0] || short;
+  if (start.length <= maxLen) return start;
+  return start.slice(0, Math.max(1, maxLen - 1)) + "...";
+}
+/** Collapse at-risk weekly points so long-range charts stay readable (mirror journal volume). */
+function aggregateAtRiskTrends(labels, crisisValues, distressedValues, maxBuckets = 12) {
+  const labelList = Array.isArray(labels) ? labels : [];
+  const crisisList = Array.isArray(crisisValues) ? crisisValues : [];
+  const distressedList = Array.isArray(distressedValues) ? distressedValues : [];
+  const count = Math.max(labelList.length, crisisList.length, distressedList.length, 0);
+
+  if (count <= 0) {
+    return { labels: [], crisisValues: [], distressedValues: [], merged: false };
+  }
+
+  const sourceLabels = Array.from({ length: count }, (_, index) => labelList[index] || `W${index + 1}`);
+  const sourceCrisis = Array.from({ length: count }, (_, index) => Number(crisisList[index] || 0));
+  const sourceDistressed = Array.from({ length: count }, (_, index) => Number(distressedList[index] || 0));
+
+  if (count <= maxBuckets) {
+    return {
+      labels: sourceLabels,
+      crisisValues: sourceCrisis,
+      distressedValues: sourceDistressed,
+      merged: false,
+    };
+  }
+
+  const bucketSize = Math.ceil(count / maxBuckets);
+  const outLabels = [];
+  const outCrisis = [];
+  const outDistressed = [];
+
+  for (let index = 0; index < count; index += bucketSize) {
+    const chunkEnd = Math.min(index + bucketSize, count);
+    const startLabel = sourceLabels[index];
+    const endLabel = sourceLabels[chunkEnd - 1];
+    outLabels.push(startLabel === endLabel ? startLabel : `${startLabel} – ${endLabel}`);
+
+    let crisisSum = 0;
+    let distressedSum = 0;
+    for (let cursor = index; cursor < chunkEnd; cursor += 1) {
+      crisisSum += sourceCrisis[cursor];
+      distressedSum += sourceDistressed[cursor];
+    }
+    outCrisis.push(crisisSum);
+    outDistressed.push(distressedSum);
+  }
+
+  return {
+    labels: outLabels,
+    crisisValues: outCrisis,
+    distressedValues: outDistressed,
+    merged: true,
+  };
+}
+
 function AtRiskTrendsPanel({ analytics, loading }) {
   const labels = analytics?.charts?.atRiskStudentTrends?.labels || [];
   const series = analytics?.charts?.atRiskStudentTrends?.series || [];
-  const crisisSeries =
+  const rawCrisisSeries =
     series.find((item) => item.key === "crisis")?.values ||
     series.find((item) => item.key === "critical")?.values ||
     [];
-  const distressedSeries =
+  const rawDistressedSeries =
     series.find((item) => item.key === "distressed")?.values ||
     series.find((item) => item.key === "high")?.values ||
     [];
-  const pointCount = Math.max(labels.length, crisisSeries.length, distressedSeries.length, 1);
-  const chartLabels = Array.from({ length: pointCount }, (_, index) => labels[index] || `W${index + 1}`);
+  const aggregated = aggregateAtRiskTrends(labels, rawCrisisSeries, rawDistressedSeries, 12);
+  const chartLabels = aggregated.labels;
+  const crisisSeries = aggregated.crisisValues;
+  const distressedSeries = aggregated.distressedValues;
+  const pointCount = Math.max(chartLabels.length, crisisSeries.length, distressedSeries.length, 1);
   const maxValue = Math.max(...crisisSeries, ...distressedSeries, 1);
   const { axisMax, guides } = buildChartAxis(maxValue);
+  const tickIndexes = new Set(getChartTickIndexes(pointCount));
   const width = 520;
-  const height = 260;
+  const height = 300;
   const padLeft = 54;
   const padRight = 24;
   const padTop = 28;
-  const padBottom = 48;
+  const padBottom = 86;
   const plotWidth = width - padLeft - padRight;
   const plotHeight = height - padTop - padBottom;
   const xForIndex = (index) => padLeft + (index * plotWidth) / Math.max(1, pointCount - 1);
@@ -714,14 +877,14 @@ function AtRiskTrendsPanel({ analytics, loading }) {
     return <div className="py-16 text-center text-sm text-slate-500">Loading risk trends...</div>;
   }
 
-  if (!crisisSeries.length && !distressedSeries.length) {
+  if (!rawCrisisSeries.length && !rawDistressedSeries.length) {
     return <div className="py-16 text-center text-sm text-slate-500">No at-risk trend data available.</div>;
   }
 
   return (
     <>
       <div className="mt-3 overflow-x-auto">
-        <svg viewBox={`0 0 ${width} ${height}`} className="min-h-[260px] min-w-[520px]">
+        <svg viewBox={`0 0 ${width} ${height}`} className="min-h-[300px] min-w-[520px]">
           {guides.map((guide) => {
             const y = yForValue(guide);
             return (
@@ -735,9 +898,9 @@ function AtRiskTrendsPanel({ analytics, loading }) {
           })}
           <path d={toPath(distressedPoints)} fill="none" stroke={RISK_COLORS.distressed} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
           <path d={toPath(crisisPoints)} fill="none" stroke={RISK_COLORS.crisis} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-          {distressedPoints.map((point) => (
+          {distressedPoints.map((point, index) => (
             <circle
-              key={`distressed-${point.label}`}
+              key={`distressed-${index}`}
               cx={point.x}
               cy={point.y}
               r="6"
@@ -746,9 +909,9 @@ function AtRiskTrendsPanel({ analytics, loading }) {
               strokeWidth="3"
             />
           ))}
-          {crisisPoints.map((point) => (
+          {crisisPoints.map((point, index) => (
             <circle
-              key={`crisis-${point.label}`}
+              key={`crisis-${index}`}
               cx={point.x}
               cy={point.y}
               r="6"
@@ -757,11 +920,23 @@ function AtRiskTrendsPanel({ analytics, loading }) {
               strokeWidth="3"
             />
           ))}
-          {chartLabels.map((label, index) => (
-            <text key={label} x={xForIndex(index)} y={height - 16} textAnchor="middle" className="fill-[#64748b] text-[13px] font-semibold">
-              {label}
-            </text>
-          ))}
+          {chartLabels.map((label, index) => {
+            if (!tickIndexes.has(index)) return null;
+            const labelX = xForIndex(index);
+            const labelY = height - padBottom + 36;
+            return (
+              <text
+                key={`tick-${index}`}
+                x={labelX}
+                y={labelY}
+                textAnchor="end"
+                className="fill-[#64748b] text-[11px] font-semibold"
+                transform={`rotate(-38 ${labelX} ${labelY})`}
+              >
+                {shortenAtRiskAxisLabel(label)}
+              </text>
+            );
+          })}
         </svg>
       </div>
       <div className="mt-4 flex flex-wrap gap-5 text-xs text-slate-600">
@@ -774,9 +949,9 @@ function AtRiskTrendsPanel({ analytics, loading }) {
           Distressed / Needs Support
         </div>
       </div>
-      <div className="mt-4 grid gap-2 text-xs text-slate-600" style={{ gridTemplateColumns: `repeat(${pointCount}, minmax(0, 1fr))` }}>
+      <div className="mt-4 flex gap-2 overflow-x-auto pb-1 text-xs text-slate-600">
         {chartLabels.map((label, index) => (
-          <div key={`summary-${label}`} className="rounded-lg bg-slate-50 px-2 py-2 text-center">
+          <div key={`summary-${index}`} className="min-w-[7.5rem] shrink-0 rounded-lg bg-slate-50 px-2 py-2 text-center">
             <div className="font-bold text-slate-700">{label}</div>
             <div className="mt-1 text-red-500">Crisis: {formatMetricValue(crisisSeries[index] || 0)}</div>
             <div className="text-amber-600">Distressed: {formatMetricValue(distressedSeries[index] || 0)}</div>
@@ -1702,10 +1877,9 @@ function drawMetricCards(context, cards, x, y, width) {
 }
 
 function drawVerticalBarChart(context, data, x, y, width, height, options = {}) {
-  const items = (Array.isArray(data) ? data : [])
-    .map((item) => ({ ...item, value: getNumericValue(item) }))
-    .sort((a, b) => Number(b.value || 0) - Number(a.value || 0))
-    .slice(0, options.limit || 10);
+  const mapped = (Array.isArray(data) ? data : []).map((item) => ({ ...item, value: getNumericValue(item) }));
+  const ordered = options.preserveOrder ? mapped : [...mapped].sort((a, b) => Number(b.value || 0) - Number(a.value || 0));
+  const items = ordered.slice(0, options.limit || 10);
   if (!items.length) {
     drawEmptyChartState(context, x, y, width, height);
     return;
@@ -1714,7 +1888,7 @@ function drawVerticalBarChart(context, data, x, y, width, height, options = {}) 
   const left = x + 56;
   const right = x + width - 22;
   const top = y + 18;
-  const bottom = y + height - 72;
+  const bottom = y + height - 48;
   const plotWidth = right - left;
   const plotHeight = bottom - top;
   const max = Math.max(...items.map(getNumericValue), 1);
@@ -1841,28 +2015,32 @@ function drawDonutCanvasChart(context, data, x, y, size) {
 function drawRiskLineChart(context, trendData, x, y, width, height) {
   const labels = trendData?.labels || [];
   const series = trendData?.series || [];
-  const crisisValues =
+  const rawCrisisValues =
     series.find((item) => item.key === "crisis")?.values ||
     series.find((item) => item.key === "critical")?.values ||
     [];
-  const distressedValues =
+  const rawDistressedValues =
     series.find((item) => item.key === "distressed")?.values ||
     series.find((item) => item.key === "high")?.values ||
     [];
-  const pointCount = Math.max(labels.length, crisisValues.length, distressedValues.length, 0);
+  const aggregated = aggregateAtRiskTrends(labels, rawCrisisValues, rawDistressedValues, 12);
+  const chartLabels = aggregated.labels;
+  const crisisValues = aggregated.crisisValues;
+  const distressedValues = aggregated.distressedValues;
+  const pointCount = Math.max(chartLabels.length, crisisValues.length, distressedValues.length, 0);
 
   if (!pointCount) {
     drawEmptyChartState(context, x, y, width, height);
     return;
   }
 
-  const chartLabels = Array.from({ length: pointCount }, (_, index) => labels[index] || `W${index + 1}`);
   const values = [...crisisValues, ...distressedValues].map(Number);
   const max = Math.max(...values, 1);
+  const tickIndexes = new Set(getChartTickIndexes(pointCount));
   const left = x + 46;
   const right = x + width - 22;
   const top = y + 22;
-  const bottom = y + height - 48;
+  const bottom = y + height - 72;
   const plotWidth = right - left;
   const plotHeight = bottom - top;
   const xForIndex = (index) => left + (index * plotWidth) / Math.max(1, pointCount - 1);
@@ -1907,10 +2085,17 @@ function drawRiskLineChart(context, trendData, x, y, width, height) {
   drawLine(crisisValues, RISK_COLORS.crisis);
 
   context.fillStyle = "#64748b";
-  context.font = "700 13px Arial, Helvetica, sans-serif";
-  context.textAlign = "center";
+  context.font = "700 11px Arial, Helvetica, sans-serif";
   chartLabels.forEach((label, index) => {
-    context.fillText(label, xForIndex(index), bottom + 28);
+    if (!tickIndexes.has(index)) return;
+    const labelX = xForIndex(index);
+    const labelY = bottom + 22;
+    context.save();
+    context.translate(labelX, labelY);
+    context.rotate(-Math.PI / 5);
+    context.textAlign = "right";
+    context.fillText(shortenAtRiskAxisLabel(label), 0, 0);
+    context.restore();
   });
   context.textAlign = "left";
 }
@@ -2000,7 +2185,7 @@ function createOverviewDashboardCanvas({
     title: "Journal Entries Volume",
     subtitle: "Total journal entries per week",
   });
-  drawVerticalBarChart(context, journalEntriesData, margin + 28, y + 92, panelHalfWidth - 56, 306, { color: "#229365" });
+  drawVerticalBarChart(context, journalEntriesData, margin + 28, y + 92, panelHalfWidth - 56, 306, { color: "#229365", limit: 16, preserveOrder: true });
 
   drawPanel(context, {
     x: margin + panelHalfWidth + gap,
@@ -2144,7 +2329,7 @@ function createOverviewDashboardCanvas({
     width: contentWidth,
     height: 390,
     title: "At-Risk Student Trends",
-    subtitle: "Weekly tracking of high and critical severity cases",
+    subtitle: "Tracking of high and critical severity cases",
   });
   drawRiskLineChart(context, atRiskTrendData, margin + 28, y + 96, contentWidth - 56, 240);
 
@@ -2435,8 +2620,7 @@ export default function Overview({ onLogout, session }) {
       tone: analyticsLoading || !hasValue ? "gray" : mapMetricTone(item.key, direction),
     };
   });
-  const journalEntriesData =
-    analyticsOverview?.charts?.journalEntryVolume?.length > 0 ? analyticsOverview.charts.journalEntryVolume : [];
+  const journalEntriesData = aggregateJournalEntriesVolume(analyticsOverview?.charts?.journalEntryVolume?.length > 0 ? analyticsOverview.charts.journalEntryVolume : []);
   const genderData =
     dashboardSummary?.charts?.genderDistribution?.length > 0
       ? withColors(dashboardSummary.charts.genderDistribution, ["#3E8914", "#3DA35D", "#A7F3D0"])
@@ -2864,7 +3048,7 @@ export default function Overview({ onLogout, session }) {
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <Card title="At-Risk Student Trends" subtitle="Weekly tracking of high and critical severity cases">
+          <Card title="At-Risk Student Trends" subtitle="Tracking of high and critical severity cases">
             <AtRiskTrendsPanel analytics={analyticsOverview} loading={analyticsLoading} />
           </Card>
 

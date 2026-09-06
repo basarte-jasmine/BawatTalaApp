@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { CalendarDays, ChevronLeft, ChevronRight, Clock3, Edit2, Plus, RefreshCw, Trash2, UserPlus, Users, X } from "lucide-react";
-import ConfirmActionModal from "../components/ConfirmActionModal";
+ import { useEffect, useMemo, useState } from "react";
+ import { useSearchParams } from "react-router-dom";
+ import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Edit2, Plus, RefreshCw, Trash2, UserPlus, Users, X } from "lucide-react";
+ import ConfirmActionModal from "../components/ConfirmActionModal";
 import Layout from "../components/Layout";
 import {
   buildAvailabilityMap,
@@ -122,6 +122,8 @@ export default function CalendarScheduling({
   const [cancelStudentNote, setCancelStudentNote] = useState("");
   const [cancelError, setCancelError] = useState("");
   const [deleteAppointmentId, setDeleteAppointmentId] = useState("");
+  const [pendingConfirmAppointmentId, setPendingConfirmAppointmentId] = useState("");
+  const [pendingDeclineAppointmentId, setPendingDeclineAppointmentId] = useState("");
   const [dayAvailabilityAction, setDayAvailabilityAction] = useState(null);
   const [peerForm, setPeerForm] = useState(PEER_FORM_INITIAL_STATE);
   const [editingPeerCounselorId, setEditingPeerCounselorId] = useState("");
@@ -322,6 +324,41 @@ export default function CalendarScheduling({
     return filteredRecentActivity.slice(startIndex, startIndex + ACTIVITY_LOGS_PER_PAGE);
   }, [activityLogsPage, filteredRecentActivity]);
 
+  const calendarStats = useMemo(() => {
+    const todayIso = getTodayIsoDate();
+    const sourceList = filteredMonthAppointments;
+    const totalCount = sourceList.length;
+    const pendingCount = sourceList.filter(
+      (item) => String(item.status || "").toUpperCase() === "PENDING",
+    ).length;
+    const confirmedCount = sourceList.filter(
+      (item) => String(item.status || "").toUpperCase() === "CONFIRMED",
+    ).length;
+    const upcomingCount = sourceList.filter(
+      (item) =>
+        String(item.status || "").toUpperCase() === "CONFIRMED" &&
+        String(item.appointmentDate || "") >= todayIso,
+    ).length;
+    const completedCount = sourceList.filter(
+      (item) =>
+        String(item.status || "").toUpperCase() === "COMPLETED" ||
+        (String(item.status || "").toUpperCase() === "CONFIRMED" &&
+          String(item.appointmentDate || "") < todayIso),
+    ).length;
+    const activeStaffCount = isPeerSupport
+      ? peerDirectory.filter((p) => Boolean(p.isActive) || String(p.invitationStatus || "").toUpperCase() === "ACCEPTED").length
+      : counselors.length;
+
+    return {
+      totalCount,
+      pendingCount,
+      confirmedCount,
+      upcomingCount,
+      completedCount,
+      activeStaffCount,
+    };
+  }, [counselors.length, filteredMonthAppointments, isPeerSupport, peerDirectory]);
+
   useEffect(() => {
     setActivityLogsPage(1);
   }, [activityFilterCounselorId, recentActivity]);
@@ -439,6 +476,7 @@ export default function CalendarScheduling({
 
   function canManageAppointment(appointment) {
     if (isHead) return true;
+    // Both Head Counselor and Counselors can manage peer appointments
     if (isPeerSupport || String(appointment?.supportType || "").toUpperCase() === "PEER") return true;
     const currentAdminId = String(session?.id || "");
     const appointmentCounselorId = String(appointment?.counselorId || appointment?.guidanceCounselorId || "");
@@ -447,11 +485,15 @@ export default function CalendarScheduling({
 
   function canEditCounselorAvailability(counselor) {
     if (isHead) return true;
+    // Both Head Counselor and Counselors can edit peer counselor availability
     if (isPeerSupport) return true;
     return Boolean(session?.id && counselor?.id && String(session.id) === String(counselor.id));
   }
 
   function handleOpenModal(appointment = null) {
+    if (appointment && String(appointment.appointmentDate || "") < getTodayIsoDate()) {
+      return;
+    }
     const fallbackDate = selectedDate && selectedDate >= getMinimumBookingIsoDate()
       ? selectedDate
       : getMinimumBookingIsoDate();
@@ -561,6 +603,7 @@ export default function CalendarScheduling({
   async function handleConfirmAppointment(appointmentId) {
     try {
       await confirmAdminAppointment(appointmentId);
+      setPendingConfirmAppointmentId("");
       await refreshOverview();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to confirm appointment.");
@@ -570,6 +613,7 @@ export default function CalendarScheduling({
   async function handleDeclineAppointment(appointmentId) {
     try {
       await declineAdminAppointment(appointmentId);
+      setPendingDeclineAppointmentId("");
       await refreshOverview();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to decline appointment.");
@@ -715,88 +759,150 @@ export default function CalendarScheduling({
           </div>
         ) : null}
 
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={handleOpenModal}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#3DA35D] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#2f8c4d]"
-          >
-            <Plus className="h-4 w-4" />
-            Create {counselorLabel} Appointment
-          </button>
-        </div>
-
         {loading ? (
           <section className="rounded-[2rem] border border-admin-border bg-white px-6 py-12 text-center text-sm text-admin-muted shadow-sm">
             Loading schedule...
           </section>
         ) : (
           <>
+           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+             <div className="flex flex-col justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition hover:shadow-md">
+               <div className="flex items-center justify-between gap-2">
+                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 ring-1 ring-blue-200/60">
+                   <CalendarDays className="h-4 w-4" />
+                 </div>
+               </div>
+               <div className="mt-1">
+                 <p className="text-sm font-semibold text-slate-600">Total Bookings</p>
+                 <div className="mt-1 flex items-baseline justify-between gap-2">
+                   <span className="text-2xl font-black text-slate-900 sm:text-3xl">{calendarStats.totalCount}</span>
+                   <span className="text-xs text-slate-400">{calendarStats.completedCount} completed</span>
+                 </div>
+               </div>
+             </div>
+
+             <div className="flex flex-col justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition hover:shadow-md">
+               <div className="flex items-center justify-between gap-2">
+                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600 ring-1 ring-amber-200/60">
+                   <Clock3 className="h-4 w-4" />
+                 </div>
+               </div>
+               <div className="mt-1">
+                 <p className="text-sm font-semibold text-slate-600">Pending Requests</p>
+                 <div className="mt-1 flex items-baseline justify-between gap-2">
+                   <span className="text-2xl font-black text-slate-900 sm:text-3xl">{calendarStats.pendingCount}</span>
+                   <span className="text-xs text-slate-400">Awaiting response</span>
+                 </div>
+               </div>
+             </div>
+
+             <div className="flex flex-col justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition hover:shadow-md">
+               <div className="flex items-center justify-between gap-2">
+                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200/60">
+                   <CheckCircle2 className="h-4 w-4" />
+                 </div>
+               </div>
+               <div className="mt-1">
+                 <p className="text-sm font-semibold text-slate-600">Confirmed Sessions</p>
+                 <div className="mt-1 flex items-baseline justify-between gap-2">
+                   <span className="text-2xl font-black text-slate-900 sm:text-3xl">{calendarStats.confirmedCount}</span>
+                   <span className="text-xs text-slate-400">Scheduled on calendar</span>
+                 </div>
+               </div>
+             </div>
+
+             <div className="flex flex-col justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition hover:shadow-md">
+               <div className="flex items-center justify-between gap-2">
+                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-purple-50 text-purple-600 ring-1 ring-purple-200/60">
+                   <Users className="h-4 w-4" />
+                 </div>
+               </div>
+               <div className="mt-1">
+                 <p className="text-sm font-semibold text-slate-600">
+                   {isPeerSupport ? "Peer Counselors" : "Active Counselors"}
+                 </p>
+                 <div className="mt-1 flex items-baseline justify-between gap-2">
+                   <span className="text-2xl font-black text-slate-900 sm:text-3xl">{calendarStats.activeStaffCount}</span>
+                   <span className="text-xs text-slate-400">Available roster</span>
+                 </div>
+               </div>
+             </div>
+           </div>
+
             <div className="grid grid-cols-1 gap-6">
               <section id="calendar-schedule-section" className="rounded-[2rem] border border-admin-border bg-white p-6 shadow-sm">
                 <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <h3 className="text-[1.15rem] font-black text-slate-800">{getMonthTitle(selectedMonth)}</h3>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedDate(getTodayIsoDate())}
-                      className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-200"
-                    >
-                      Today
-                    </button>
-                  </div>
+                 <div className="flex flex-wrap items-center gap-3">
+                   <h3 className="text-[1.15rem] font-black text-slate-800">{getMonthTitle(selectedMonth)}</h3>
+                   <button
+                     type="button"
+                     onClick={() => setSelectedDate(getTodayIsoDate())}
+                     className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-200"
+                   >
+                     Today
+                   </button>
+                 </div>
 
-                  <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex items-center gap-2">
-                      <label htmlFor="calendar-counselor-filter" className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                        Filter:
-                      </label>
-                      <select
-                        id="calendar-counselor-filter"
-                        value={calendarCounselorFilter}
-                        onChange={(e) => setCalendarCounselorFilter(e.target.value)}
-                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm outline-none transition focus:border-[#3DA35D] focus:ring-1 focus:ring-[#3DA35D]"
-                      >
-                        <option value="ALL">All {counselorLabelPlural} (Overall)</option>
-                        {!isPeerSupport && session?.id ? (
-                          <option value="ME">My Schedule Only</option>
-                        ) : null}
-                        <optgroup label={counselorLabelPlural}>
-                          {counselors.map((c) => (
-                            <option key={`cal-filter-${c.id}`} value={c.id}>
-                              {c.fullName}
-                            </option>
-                          ))}
-                        </optgroup>
-                      </select>
-                    </div>
+                 <div className="flex flex-wrap items-center gap-3">
+                   <div className="flex items-center gap-2">
+                     <label htmlFor="calendar-counselor-filter" className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                       Filter:
+                     </label>
+                     <select
+                       id="calendar-counselor-filter"
+                       value={calendarCounselorFilter}
+                       onChange={(e) => setCalendarCounselorFilter(e.target.value)}
+                       className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm outline-none transition focus:border-[#3DA35D] focus:ring-1 focus:ring-[#3DA35D]"
+                     >
+                       <option value="ALL">All {counselorLabelPlural} (Overall)</option>
+                       {!isPeerSupport && session?.id ? (
+                         <option value="ME">My Schedule Only</option>
+                       ) : null}
+                       <optgroup label={counselorLabelPlural}>
+                         {counselors.map((c) => (
+                           <option key={`cal-filter-${c.id}`} value={c.id}>
+                             {c.fullName}
+                           </option>
+                         ))}
+                       </optgroup>
+                     </select>
+                   </div>
 
-                    <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const nextMonth = addMonthsManila(selectedMonth, -1);
-                        setSelectedMonth(nextMonth);
-                        setSelectedDate(toFirstDayIso(nextMonth));
-                      }}
-                      className="rounded-xl bg-slate-100 p-3 text-slate-600 transition hover:bg-slate-200"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const nextMonth = addMonthsManila(selectedMonth, 1);
-                        setSelectedMonth(nextMonth);
-                        setSelectedDate(toFirstDayIso(nextMonth));
-                      }}
-                      className="rounded-xl bg-slate-100 p-3 text-slate-600 transition hover:bg-slate-200"
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
+                   <button
+                     type="button"
+                     onClick={handleOpenModal}
+                     className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#3DA35D] px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#2f8c4d]"
+                   >
+                     <Plus className="h-4 w-4" />
+                     Create {counselorLabel} Appointment
+                   </button>
+
+                   <div className="flex items-center gap-2">
+                     <button
+                       type="button"
+                       onClick={() => {
+                         const nextMonth = addMonthsManila(selectedMonth, -1);
+                         setSelectedMonth(nextMonth);
+                         setSelectedDate(toFirstDayIso(nextMonth));
+                       }}
+                       className="rounded-xl bg-slate-100 p-3 text-slate-600 transition hover:bg-slate-200"
+                     >
+                       <ChevronLeft className="h-4 w-4" />
+                     </button>
+                     <button
+                       type="button"
+                       onClick={() => {
+                         const nextMonth = addMonthsManila(selectedMonth, 1);
+                         setSelectedMonth(nextMonth);
+                         setSelectedDate(toFirstDayIso(nextMonth));
+                       }}
+                       className="rounded-xl bg-slate-100 p-3 text-slate-600 transition hover:bg-slate-200"
+                     >
+                       <ChevronRight className="h-4 w-4" />
+                     </button>
+                   </div>
+                 </div>
+               </div>
 
                 <div className="mb-3 grid grid-cols-7 gap-px rounded-t-2xl bg-slate-200">
                   {WEEKDAY_HEADERS.map((label) => (
@@ -1296,7 +1402,10 @@ export default function CalendarScheduling({
             <div className="min-h-0 overflow-y-auto pr-1">
               <div className="space-y-4">
                 {appointmentsModalAppointments.length ? (
-                  appointmentsModalAppointments.map((appointment) => (
+                  appointmentsModalAppointments.map((appointment) => {
+                    const appointmentStatus = String(appointment.status || "").toUpperCase();
+                    const isPastAppointment = String(appointment.appointmentDate || "") < getTodayIsoDate();
+                    return (
                     <div key={appointment.id} className="rounded-[1.6rem] bg-slate-50 px-4 py-4">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
@@ -1336,37 +1445,44 @@ export default function CalendarScheduling({
                       <div className="mt-4 flex flex-wrap justify-end gap-2">
                         {canManageAppointment(appointment) ? (
                           <>
-                            {["PENDING", "CONFIRMED", "DECLINED"].includes(String(appointment.status || "").toUpperCase()) ? (
+                            {["PENDING", "CONFIRMED", "DECLINED"].includes(appointmentStatus) ? (
                               <button
                                 type="button"
+                                disabled={isPastAppointment}
                                 onClick={() => {
+                                  if (isPastAppointment) return;
                                   setAppointmentsModalDate("");
                                   handleOpenModal(appointment);
                                 }}
-                                className="rounded-full bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-300"
+                                title={isPastAppointment ? "Editing is disabled for past scheduled dates." : undefined}
+                                className={
+                                  isPastAppointment
+                                    ? "cursor-not-allowed rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-400 opacity-60"
+                                    : "rounded-full bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-300"
+                                }
                               >
-                                {String(appointment.status || "").toUpperCase() === "PENDING" ? "Reschedule" : "Edit"}
+                                {appointmentStatus === "PENDING" ? "Reschedule" : "Edit"}
                               </button>
                             ) : null}
-                            {String(appointment.status || "").toUpperCase() === "PENDING" ? (
+                            {appointmentStatus === "PENDING" && !isPastAppointment ? (
                               <button
                                 type="button"
-                                onClick={() => void handleConfirmAppointment(appointment.id)}
+                                onClick={() => setPendingConfirmAppointmentId(appointment.id)}
                                 className="rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-200"
                               >
                                 Confirm
                               </button>
                             ) : null}
-                            {String(appointment.status || "").toUpperCase() === "PENDING" ? (
+                            {appointmentStatus === "PENDING" && !isPastAppointment ? (
                               <button
                                 type="button"
-                                onClick={() => void handleDeclineAppointment(appointment.id)}
+                                onClick={() => setPendingDeclineAppointmentId(appointment.id)}
                                 className="rounded-full bg-rose-100 px-3 py-1.5 text-xs font-semibold text-rose-800 transition hover:bg-rose-200"
                               >
                                 Decline
                               </button>
                             ) : null}
-                            {String(appointment.status || "").toUpperCase() === "CONFIRMED" ? (
+                            {appointmentStatus === "CONFIRMED" && !isPastAppointment ? (
                               <button
                                 type="button"
                                 onClick={() => setCancelAppointmentId(appointment.id)}
@@ -1390,7 +1506,8 @@ export default function CalendarScheduling({
                         )}
                       </div>
                     </div>
-                  ))
+                  );
+                  })
                 ) : (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
                     No sessions booked for this date yet.
@@ -1840,6 +1957,28 @@ export default function CalendarScheduling({
         description="Delete this appointment permanently from the database?"
         cancelLabel="Keep"
         confirmLabel="Delete Permanently"
+        confirmTone="rose"
+      />
+
+      <ConfirmActionModal
+        isOpen={Boolean(pendingConfirmAppointmentId)}
+        onClose={() => setPendingConfirmAppointmentId("")}
+        onConfirm={() => void handleConfirmAppointment(pendingConfirmAppointmentId)}
+        title="Confirm Appointment"
+        description="Are you sure you want to confirm this appointment? An email notification will be sent to the student."
+        cancelLabel="Cancel"
+        confirmLabel="Confirm Appointment"
+        confirmTone="emerald"
+      />
+
+      <ConfirmActionModal
+        isOpen={Boolean(pendingDeclineAppointmentId)}
+        onClose={() => setPendingDeclineAppointmentId("")}
+        onConfirm={() => void handleDeclineAppointment(pendingDeclineAppointmentId)}
+        title="Decline Appointment"
+        description="Are you sure you want to decline this appointment request? The student will be notified."
+        cancelLabel="Cancel"
+        confirmLabel="Decline Request"
         confirmTone="rose"
       />
 

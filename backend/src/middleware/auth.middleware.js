@@ -1,4 +1,4 @@
-const { verifyStudentToken } = require("../services/auth-token.service");
+const { verifyAdminToken, verifyStudentToken } = require("../services/auth-token.service");
 
 function normalizeStudentNumber(value) {
   return String(value || "")
@@ -24,12 +24,50 @@ function buildAdminSessionPayload(admin) {
   };
 }
 
-function requireAdminAuth(req, res, next) {
+function getAuthenticatedAdmin(req) {
   const sessionAdmin = buildAdminSessionPayload(req.session?.admin);
-  if (!sessionAdmin?.email || !sessionAdmin.isActive) {
+  if (sessionAdmin?.email && sessionAdmin.isActive) {
+    return sessionAdmin;
+  }
+
+  const authHeader = req.headers?.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.slice(7).trim();
+    const payload = verifyAdminToken(token);
+    if (payload?.email) {
+      return buildAdminSessionPayload({
+        id: payload.adminId,
+        email: payload.email,
+        fullName: payload.fullName,
+        role: payload.role,
+        isActive: true,
+      });
+    }
+  }
+
+  const customToken = req.headers?.["x-admin-token"];
+  if (customToken) {
+    const payload = verifyAdminToken(customToken);
+    if (payload?.email) {
+      return buildAdminSessionPayload({
+        id: payload.adminId,
+        email: payload.email,
+        fullName: payload.fullName,
+        role: payload.role,
+        isActive: true,
+      });
+    }
+  }
+
+  return null;
+}
+
+function requireAdminAuth(req, res, next) {
+  const admin = getAuthenticatedAdmin(req);
+  if (!admin?.email || !admin.isActive) {
     return res.status(401).json({ message: "Please sign in again." });
   }
-  req.admin = sessionAdmin;
+  req.admin = admin;
   next();
 }
 
@@ -74,9 +112,9 @@ function requireStudentAuth(req, res, next) {
 }
 
 function requireStudentOrAdminAuth(req, res, next) {
-  const sessionAdmin = buildAdminSessionPayload(req.session?.admin);
-  if (sessionAdmin?.email && sessionAdmin.isActive) {
-    req.admin = sessionAdmin;
+  const admin = getAuthenticatedAdmin(req);
+  if (admin?.email && admin.isActive) {
+    req.admin = admin;
     return next();
   }
 
@@ -109,22 +147,6 @@ function requireStudentOnlyAuth(req, res, next) {
   next();
 }
 
-function requireStudentOrAdminAuth(req, res, next) {
-  const sessionAdmin = buildAdminSessionPayload(req.session?.admin);
-  if (sessionAdmin?.email && sessionAdmin.isActive) {
-    req.admin = sessionAdmin;
-    return next();
-  }
-
-  const student = getAuthenticatedStudent(req);
-  if (student?.studentNumber) {
-    req.student = student;
-    return next();
-  }
-
-  return res.status(401).json({ message: "Authentication required. Please sign in." });
-}
-
 function resolveStudentNumber(req) {
   const fromAuth = req.student?.studentNumber || getAuthenticatedStudent(req)?.studentNumber;
   return fromAuth || "";
@@ -132,6 +154,7 @@ function resolveStudentNumber(req) {
 
 module.exports = {
   buildAdminSessionPayload,
+  getAuthenticatedAdmin,
   requireAdminAuth,
   requireRoles,
   requireStudentAuth,
