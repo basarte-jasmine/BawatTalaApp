@@ -4572,7 +4572,7 @@ router.delete("/students/:studentNumber", requireRoles("HEAD_COUNSELOR"), async 
     const actorAdmin = req.admin;
     const actorEmail = normalizeEmail(actorAdmin?.email || "");
     const actorName = normalizeCompactSpaces(actorAdmin?.fullName || actorEmail || "Admin");
-    const actorRole = toRoleLabel(actorAdmin?.role || "COUNSELOR");
+    const actorRole = toRoleManagementLabel(actorAdmin?.role || "COUNSELOR");
 
     const deleteStatements = [
       "delete from public.journal_entry_messages where student_number = $1",
@@ -4607,18 +4607,6 @@ router.delete("/students/:studentNumber", requireRoles("HEAD_COUNSELOR"), async 
       }
     }
 
-    if (student.email) {
-      try {
-        const { data: userList } = await supabaseAdminClient.auth.admin.listUsers();
-        const authUser = (userList?.users || []).find((u) => normalizeEmail(u.email) === normalizeEmail(student.email));
-        if (authUser?.id) {
-          await supabaseAdminClient.auth.admin.deleteUser(authUser.id);
-        }
-      } catch (authError) {
-        console.warn("Could not remove Supabase auth user for student:", authError?.message || authError);
-      }
-    }
-
     try {
       await writeAdminActivityLog({
         actionType: "STUDENT_DELETED",
@@ -4638,9 +4626,53 @@ router.delete("/students/:studentNumber", requireRoles("HEAD_COUNSELOR"), async 
       console.warn("Activity log write error on student delete:", logErr?.message || logErr);
     }
 
-    return res.json({
+    // SQL delete already succeeded — respond 200 so the confirm modal can close.
+    // Supabase auth cleanup is best-effort and must never fail / hang this request
+    // (unbounded listUsers previously caused 500s / pool drops after SQL success).
+    const emailForAuthCleanup = student.email ? normalizeEmail(student.email) : "";
+    res.json({
       message: `Student account ${studentNumber} and all associated data have been permanently deleted.`,
     });
+
+    if (emailForAuthCleanup) {
+      setImmediate(() => {
+        void (async () => {
+          try {
+            let page = 1;
+            const maxPages = 10;
+            while (page <= maxPages) {
+              const { data, error } = await supabaseAdminClient.auth.admin.listUsers({
+                page,
+                perPage: 200,
+              });
+              if (error) {
+                console.warn("Student delete auth listUsers soft-fail:", error.message || error);
+                return;
+              }
+              const users = data?.users || [];
+              const matches = users.filter(
+                (user) => normalizeEmail(user.email || "") === emailForAuthCleanup,
+              );
+              for (const user of matches) {
+                try {
+                  const { error: deleteError } = await supabaseAdminClient.auth.admin.deleteUser(user.id);
+                  if (deleteError) {
+                    console.warn("Student delete auth deleteUser soft-fail:", deleteError.message || deleteError);
+                  }
+                } catch (deleteErr) {
+                  console.warn("Student delete auth deleteUser soft-fail:", deleteErr?.message || deleteErr);
+                }
+              }
+              if (users.length < 200) break;
+              page += 1;
+            }
+          } catch (authError) {
+            console.warn("Could not remove Supabase auth user for student:", authError?.message || authError);
+          }
+        })();
+      });
+    }
+    return;
   } catch (error) {
     console.error("Student delete failed:", error);
     return res.status(500).json({

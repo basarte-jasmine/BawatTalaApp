@@ -72,7 +72,10 @@ export const COLLECTION_SECTIONS: MuniCollectionSection[] = [
     label: "Outfit",
     options: [
       { id: "classic", label: "Classic Muni", price: 0, starter: true, source: require("../assets/images/Muni/Body.png") },
-      { id: "spooky-ghost", label: "Spooky Ghost", price: 0, starter: true, source: require("../assets/images/Outfit/Spooky ghost sheet .png") },
+      { id: "leaf-poncho", label: "Leaf Poncho", price: 130, source: require("../assets/images/Outfit/leaf-poncho.png") },
+      { id: "night-cape", label: "Night Cape", price: 150, source: require("../assets/images/Outfit/night-cape.png") },
+      { id: "spooky-ghost", label: "Spooky Ghost", price: 0, starter: true, source: require("../assets/images/Outfit/Spooky_Ghost_Sheet.png") },
+      { id: "star-cloak", label: "Star Cloak", price: 160, source: require("../assets/images/Outfit/star-cloak.png") },
     ],
   },
   {

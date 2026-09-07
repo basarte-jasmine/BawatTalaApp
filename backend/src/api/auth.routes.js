@@ -391,6 +391,43 @@ async function sendVerificationCodeEmail(email, context, copy) {
   return { ok: true };
 }
 
+
+async function sendNewEmailChangeCode(email, context, copy) {
+  // New addresses often have no Supabase auth user yet — prefer OTP that can create one.
+  const { error: otpError } = await supabaseAuthClient.auth.signInWithOtp({
+    email,
+    options: { shouldCreateUser: true },
+  });
+  if (!otpError) {
+    return { ok: true, verifyType: "email" };
+  }
+  const fallback = await sendVerificationCodeEmail(email, context, copy);
+  if (!fallback.ok) {
+    return {
+      ok: false,
+      message: otpError.message || fallback.message || "Failed to send verification code.",
+    };
+  }
+  return { ok: true, verifyType: "recovery" };
+}
+
+async function verifyEmailChangeOtp(email, token, preferredType) {
+  const order = preferredType === "recovery" ? ["recovery", "email"] : ["email", "recovery"];
+  let lastError = null;
+  for (const type of order) {
+    const { error } = await supabaseAuthClient.auth.verifyOtp({
+      email,
+      token,
+      type,
+    });
+    if (!error) {
+      return { ok: true, type };
+    }
+    lastError = error;
+  }
+  return { ok: false, error: lastError };
+}
+
 async function clearStudentProfilePicture(studentNumber) {
   const profileResult = await query(
     `
@@ -1151,7 +1188,7 @@ router.post("/profile/email-change/send-code", requireStudentOnlyAuth, async (re
 
   const { data: existingProfile, error: existingProfileError } = await supabaseAdminClient
     .from("student_profiles")
-    .select("id")
+    .select("student_number")
     .eq("email", newEmail)
     .maybeSingle();
   if (existingProfileError) {
@@ -1159,7 +1196,7 @@ router.post("/profile/email-change/send-code", requireStudentOnlyAuth, async (re
       message: existingProfileError.message || "Unable to validate email status.",
     });
   }
-  if (existingProfile) {
+  if (existingProfile && existingProfile.student_number !== studentNumber) {
     return res.status(409).json({ message: "This email is already registered." });
   }
 
@@ -1210,13 +1247,20 @@ router.post("/profile/email-change/resend-code", requireStudentOnlyAuth, async (
   }
 
   if (session.currentVerifiedAt) {
-    const { error } = await supabaseAuthClient.auth.signInWithOtp({
-      email: session.newEmail,
-      options: { shouldCreateUser: true },
-    });
-    if (error) {
-      return res.status(400).json({ message: error.message || "Failed to send verification code." });
+    const sendResult = await sendNewEmailChangeCode(
+      session.newEmail,
+      `student email change new resend [${studentNumber}]`,
+      {
+        subject: "Verify your new email",
+        heading: "Verify New Email",
+        intro: "Use the verification code below to confirm your new Bawat Tala email address:",
+        ignoreText: "If you did not request an email change, you can safely ignore this email.",
+      },
+    );
+    if (!sendResult.ok) {
+      return res.status(400).json({ message: sendResult.message || "Failed to send verification code." });
     }
+    session.newEmailVerifyType = sendResult.verifyType || "email";
   } else {
     const sendResult = await sendVerificationCodeEmail(
       session.currentEmail,
@@ -1284,23 +1328,33 @@ router.post("/profile/email-change/verify-code", requireStudentOnlyAuth, async (
     });
   }
 
-  const { error: newEmailError } = await supabaseAuthClient.auth.signInWithOtp({
-    email: session.newEmail,
-    options: { shouldCreateUser: true },
-  });
-  if (newEmailError) {
-    return res.status(400).json({
-      message: newEmailError.message || "Unable to send a verification code to the new email.",
-    });
-  }
-
   const now = Date.now();
+  const sendNewResult = await sendNewEmailChangeCode(
+    session.newEmail,
+    `student email change new [${studentNumber}]`,
+    {
+      subject: "Verify your new email",
+      heading: "Verify New Email",
+      intro: "Your current email was confirmed. Use the verification code below to verify your new Bawat Tala email address:",
+      ignoreText: "If you did not request an email change, you can safely ignore this email.",
+    },
+  );
+
   setEmailChangeSession(studentNumber, {
     ...session,
     currentVerifiedAt: now,
     otpExpiresAt: now + OTP_VALIDITY_MS,
     resendAvailableAt: now + OTP_COOLDOWN_MS,
+    newEmailVerifyType: sendNewResult.ok ? sendNewResult.verifyType || "email" : "email",
   });
+
+  if (!sendNewResult.ok) {
+    return res.status(400).json({
+      message: sendNewResult.message || "Unable to send a verification code to the new email. Tap resend to try again.",
+      stage: "new-email",
+      resendAfterSeconds: Math.ceil(OTP_COOLDOWN_MS / 1000),
+    });
+  }
 
   return res.json({
     message: "Current email verified. Enter the code sent to your new email.",
@@ -1330,12 +1384,12 @@ router.post("/profile/email-change/confirm", requireStudentOnlyAuth, async (req,
     });
   }
 
-  const { error } = await supabaseAuthClient.auth.verifyOtp({
-    email: session.newEmail,
+  const verifyResult = await verifyEmailChangeOtp(
+    session.newEmail,
     token,
-    type: "email",
-  });
-  if (error) {
+    session.newEmailVerifyType || "email",
+  );
+  if (!verifyResult.ok) {
     return res.status(400).json({
       message: "The code is invalid. Please check the latest email code and try again.",
       stage: "new-email",
@@ -1344,7 +1398,7 @@ router.post("/profile/email-change/confirm", requireStudentOnlyAuth, async (req,
 
   const { data: existingProfile, error: existingProfileError } = await supabaseAdminClient
     .from("student_profiles")
-    .select("id, student_number")
+    .select("student_number")
     .eq("email", session.newEmail)
     .maybeSingle();
   if (existingProfileError) {
@@ -1579,106 +1633,102 @@ router.patch("/preferences", requireStudentOnlyAuth, async (req, res) => {
        });
      }
      nextJournalLockEnabled = false;
-   } else if (requestedEnable) {
-     const currentPin = normalizePin(
-       req.body.currentJournalLockPin ||
-         req.body.journalLockPin ||
-         req.body.pin,
-     );
-     if (nextJournalLockPinHash) {
-       if (req.body.previousJournalLockPin) {
-         const previousPin = normalizePin(req.body.previousJournalLockPin);
-         const nextPin = normalizePin(req.body.journalLockPin);
-         if (previousPin.length !== 4 || !verifyPassword(previousPin, nextJournalLockPinHash)) {
-           return res.status(403).json({ message: "Previous PIN does not match." });
-         }
-         if (nextPin.length !== 4) {
-           return res.status(400).json({ message: "Use exactly 4 digits for the PIN." });
-         }
-         if (verifyPassword(nextPin, nextJournalLockPinHash)) {
-           return res.status(400).json({ message: "Choose a new PIN that is different from your current PIN." });
-         }
-         nextJournalLockPinHash = hashPassword(nextPin);
-         nextJournalLockEnabled = true;
-       } else {
-         if (currentPin.length !== 4) {
-           return res.status(400).json({
-             message: "Enter your current PIN to turn on Journal Lock.",
-           });
-         }
-         if (!verifyPassword(currentPin, nextJournalLockPinHash)) {
-           return res.status(403).json({
-             message: "That PIN doesn't match. Try again.",
-           });
-         }
-         nextJournalLockEnabled = true;
-       }
-     } else {
-       const nextPin = normalizePin(req.body.journalLockPin || req.body.pin);
-       if (nextPin.length !== 4) {
-         return res.status(400).json({ message: "Create a 4-digit PIN first." });
-       }
-       nextJournalLockPinHash = hashPassword(nextPin);
-       nextJournalLockEnabled = true;
-     }
-   } else if (isBoolean(req.body.journalLockEnabled)) {
-     nextJournalLockEnabled = req.body.journalLockEnabled;
-   }
-
-   const nextPin = normalizePin(req.body.journalLockPin);
-   if (!requestedDisable && !requestedEnable && req.body.journalLockPin != null) {
-     if (nextPin.length !== 4) {
-       return res
-         .status(400)
-          .json({ message: "Use exactly 4 digits for the PIN." });
-      }
-
-      const previousJournalLockPinHash =
-        getPreviousJournalLockPinHash(currentSettings);
-
-      if (currentPreferences.journalLockEnabled && nextJournalLockPinHash) {
+  } else if (requestedEnable) {
+    const currentPin = normalizePin(
+      req.body.currentJournalLockPin ||
+        req.body.journalLockPin ||
+        req.body.pin,
+    );
+    if (nextJournalLockPinHash) {
+      if (req.body.previousJournalLockPin) {
         const previousPin = normalizePin(req.body.previousJournalLockPin);
-        if (
-          previousPin.length !== 4 ||
-          !verifyPassword(previousPin, nextJournalLockPinHash)
-        ) {
-          return res
-            .status(403)
-            .json({ message: "Previous PIN does not match." });
+        const nextPin = normalizePin(req.body.journalLockPin);
+        if (previousPin.length !== 4 || !verifyPassword(previousPin, nextJournalLockPinHash)) {
+          return res.status(403).json({ message: "Previous PIN does not match." });
         }
-
+        if (nextPin.length !== 4) {
+          return res.status(400).json({ message: "Use exactly 4 digits for the PIN." });
+        }
         if (verifyPassword(nextPin, nextJournalLockPinHash)) {
+          return res.status(400).json({ message: "Choose a new PIN that is different from your current PIN." });
+        }
+        nextJournalLockPinHash = hashPassword(nextPin);
+        nextJournalLockEnabled = true;
+      } else {
+        if (currentPin.length !== 4) {
           return res.status(400).json({
-            message: "Choose a new PIN that is different from your current PIN.",
+            message: "Enter your current PIN to turn on Journal Lock.",
           });
         }
-
-        if (
-          previousJournalLockPinHash &&
-          verifyPassword(nextPin, previousJournalLockPinHash)
-        ) {
-          return res.status(400).json({
-            message: "Choose a new PIN that is different from your previous PIN.",
+        if (!verifyPassword(currentPin, nextJournalLockPinHash)) {
+          return res.status(403).json({
+            message: "That PIN doesn't match. Try again.",
           });
         }
-
-        nextSettings.previousJournalLockPinHash = nextJournalLockPinHash;
-      } else if (nextJournalLockEnabled !== true) {
-        return res.status(400).json({
-          message: "Turn on Journal Lock before changing the PIN.",
-        });
-      } else if (
-        previousJournalLockPinHash &&
-        verifyPassword(nextPin, previousJournalLockPinHash)
-      ) {
-        return res.status(400).json({
-          message: "Choose a new PIN that is different from your previous PIN.",
-        });
+        nextJournalLockEnabled = true;
       }
-
+    } else {
+      const nextPin = normalizePin(req.body.journalLockPin || req.body.pin);
+      if (nextPin.length !== 4) {
+        return res.status(400).json({ message: "Create a 4-digit PIN first." });
+      }
       nextJournalLockPinHash = hashPassword(nextPin);
       nextJournalLockEnabled = true;
     }
+  } else if (isBoolean(req.body.journalLockEnabled)) {
+    nextJournalLockEnabled = req.body.journalLockEnabled;
+  }
+
+  const nextPin = normalizePin(req.body.journalLockPin);
+  if (!requestedDisable && !requestedEnable && req.body.journalLockPin != null) {
+    if (nextPin.length !== 4) {
+      return res
+        .status(400)
+         .json({ message: "Use exactly 4 digits for the PIN." });
+     }
+
+     const previousJournalLockPinHash =
+       getPreviousJournalLockPinHash(currentSettings);
+
+      if (nextJournalLockPinHash) {
+       const previousPin = normalizePin(req.body.previousJournalLockPin);
+       if (
+         previousPin.length !== 4 ||
+         !verifyPassword(previousPin, nextJournalLockPinHash)
+       ) {
+         return res
+           .status(403)
+           .json({ message: "Previous PIN does not match." });
+       }
+
+       if (verifyPassword(nextPin, nextJournalLockPinHash)) {
+         return res.status(400).json({
+           message: "Choose a new PIN that is different from your current PIN.",
+         });
+       }
+
+       if (
+         previousJournalLockPinHash &&
+         verifyPassword(nextPin, previousJournalLockPinHash)
+       ) {
+         return res.status(400).json({
+           message: "Choose a new PIN that is different from your previous PIN.",
+         });
+       }
+
+       nextSettings.previousJournalLockPinHash = nextJournalLockPinHash;
+     } else if (
+       previousJournalLockPinHash &&
+       verifyPassword(nextPin, previousJournalLockPinHash)
+     ) {
+       return res.status(400).json({
+         message: "Choose a new PIN that is different from your previous PIN.",
+       });
+     }
+
+     nextJournalLockPinHash = hashPassword(nextPin);
+     nextJournalLockEnabled = true;
+   }
 
     if (nextJournalLockEnabled && !nextJournalLockPinHash) {
       return res.status(400).json({ message: "Create a 4-digit PIN first." });
@@ -1724,8 +1774,8 @@ router.post("/preferences/journal-lock/verify", requireStudentOnlyAuth, async (r
     const preferences = normalizeStudentPreferences(record);
     const pinHash = record?.journal_lock_pin_hash || "";
 
-    if (!preferences.journalLockEnabled || !pinHash) {
-      return res.status(400).json({ message: "Journal Lock is not enabled." });
+    if (!pinHash) {
+      return res.status(400).json({ message: "No Journal Lock PIN is set." });
     }
 
     if (!verifyPassword(pin, pinHash)) {

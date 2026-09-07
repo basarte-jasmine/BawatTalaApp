@@ -284,6 +284,7 @@ export default function LibraryScreen() {
   const [libraryActionMessage, setLibraryActionMessage] = useState("");
   const [libraryActionTone, setLibraryActionTone] = useState<"error" | "success">("success");
   const readingRewardClaimRef = useRef(false);
+  const readerScrollRef = useRef<ScrollView>(null);
 
   const allKnownBooks = useMemo(() => [...myShelfBooks, ...books], [books, myShelfBooks]);
   const selectedBook = useMemo(
@@ -746,6 +747,7 @@ export default function LibraryScreen() {
   const handleReaderPageChange = (nextPage: number) => {
     const boundedPage = Math.min(Math.max(nextPage, 0), Math.max(readerPages.length - 1, 0));
     setReaderPageIndex(boundedPage);
+    readerScrollRef.current?.scrollTo({ y: 0, animated: false });
     if (selectedBook) {
       void persistProgress(
         selectedBook,
@@ -1213,7 +1215,7 @@ export default function LibraryScreen() {
                       <Text style={styles.readerPageEyebrow}>{currentPage?.eyebrow ?? ""}</Text>
                       <Text style={[styles.readerPageTitle, compact && styles.readerPageTitleCompact]}>{currentPage?.title ?? ""}</Text>
 
-                      <ScrollView style={styles.readerPageScroll} showsVerticalScrollIndicator={false}>
+                      <ScrollView ref={readerScrollRef} style={styles.readerPageScroll} showsVerticalScrollIndicator={false}>
                         {currentPage?.paragraphs.map((paragraph, index) => (
                           <Text key={`${currentPage.title}-${index}`} style={[styles.readerPageBody, compact && styles.readerPageBodyCompact]}>
                             {paragraph}

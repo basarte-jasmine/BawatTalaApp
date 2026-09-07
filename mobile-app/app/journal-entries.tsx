@@ -152,10 +152,22 @@ export default function JournalEntriesScreen() {
       source.set(entry.entryDate, current);
     }
 
-    return dayGroups.map((group) => ({
-      ...group,
-      entries: source.get(group.date) ?? [],
-    }));
+    // Start from the rolling 7-day scaffold, then append any older returned dates
+    // so finished entries outside that window are not silently dropped (blank past list).
+    const groupsByDate = new Map(dayGroups.map((group) => [group.date, { ...group, entries: source.get(group.date) ?? [] }]));
+    for (const entryDate of source.keys()) {
+      if (groupsByDate.has(entryDate)) continue;
+      const [year, month, day] = entryDate.split("-").map(Number);
+      const displayDate = new Date(year, month - 1, day);
+      groupsByDate.set(entryDate, {
+        id: `day-${entryDate}`,
+        date: entryDate,
+        label: displayDate.toLocaleString("en-US", { month: "long", day: "numeric", year: "numeric" }),
+        entries: source.get(entryDate) ?? [],
+      });
+    }
+
+    return Array.from(groupsByDate.values()).sort((a, b) => b.date.localeCompare(a.date));
   }, [dayGroups, entries]);
 
   const handleConfirmDelete = async () => {
@@ -265,7 +277,7 @@ export default function JournalEntriesScreen() {
                         <View style={styles.entryTextWrap}>
                           <Text style={styles.entryTime}>{formatCreatedAtTime(entry.createdAt)}</Text>
                           <Text style={styles.entryBody} numberOfLines={2}>
-                            {entry.preview || entry.summary || entry.title || "Journal entry"}
+                            {[entry.preview, entry.summary, entry.title].map((value) => String(value || "").trim()).find(Boolean) || "Journal entry"}
                           </Text>
                         </View>
 

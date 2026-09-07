@@ -1001,7 +1001,8 @@ export default function ProfileSettingsScreen() {
       setPinError("Student session is missing.");
       return;
     }
-    if (appLockEnabled && currentPin.length !== 4) {
+    const isChangingExistingPin = hasAppLockPin || appLockEnabled;
+    if (isChangingExistingPin && currentPin.length !== 4) {
       setPinError("Enter your current PIN first.");
       return;
     }
@@ -1009,7 +1010,7 @@ export default function ProfileSettingsScreen() {
       setPinError("Use exactly 4 digits for the PIN.");
       return;
     }
-    if (appLockEnabled && pin === currentPin) {
+    if (isChangingExistingPin && pin === currentPin) {
       setPinError("Choose a new PIN that is different from your current PIN.");
       return;
     }
@@ -1018,7 +1019,7 @@ export default function ProfileSettingsScreen() {
       return;
     }
     setPinSaving(true);
-    const result = appLockEnabled
+    const result = isChangingExistingPin
       ? await updateAppLockPin(currentPin, pin)
       : await enableAppLock(pin, draftAutoLock);
     setPinSaving(false);
@@ -1047,17 +1048,10 @@ export default function ProfileSettingsScreen() {
 
     setPinError("");
     setPinSaving(true);
-   const verified = await verifyJournalLockPin(user.studentNumber, currentPin);
-   if (!verified.ok || !verified.unlocked) {
-     setPinSaving(false);
-     setPinError(verified.message || "That PIN doesn't match. Journal Lock is still off.");
-     return;
-   }
+    const result = await enableExistingAppLock(draftAutoLock, currentPin);
+    setPinSaving(false);
 
-   const result = await enableExistingAppLock(draftAutoLock, currentPin);
-   setPinSaving(false);
-
-   if (!result.ok) {
+    if (!result.ok) {
       setPinError(result.message || "Unable to turn Journal Lock on.");
       return;
     }
@@ -1566,8 +1560,9 @@ return (
               {editingField === "email" && isChangingEmail ? (
                 <>
                   <TextInput
-                    autoFocus={true}
+                    autoFocus={!profileAwaitingEmailOtp}
                     value={draftEmail}
+                    editable={emailChangeStage === "idle"}
                     onChangeText={(value) => {
                       setDraftEmail(value);
                       setEmailChangeStage("idle");
@@ -1582,9 +1577,67 @@ return (
                     style={[styles.textInput, styles.profileInput]}
                   />
                   {!!profileFieldErrors.email && <Text style={styles.fieldError}>{profileFieldErrors.email}</Text>}
+                  {profileAwaitingEmailOtp ? (
+                    <>
+                      <Text style={styles.helperText}>
+                        {emailChangeStage === "new-email"
+                          ? "Enter the 8-digit code sent to your new email."
+                          : "Enter the 8-digit code sent to your current email."}
+                      </Text>
+                      <OtpCodeInput
+                        length={OTP_LENGTH}
+                        value={profileOtpCode}
+                        onChangeCode={(value) => {
+                          setProfileOtpCode(value);
+                          if (profileError) setProfileError("");
+                        }}
+                        boxStyle={{ width: 28, height: 36 }}
+                      />
+                      <Pressable
+                        style={[styles.fieldCancelButton, (profileOtpSeconds > 0 || profileSaving) && styles.disabledButton]}
+                        disabled={profileOtpSeconds > 0 || profileSaving}
+                        onPress={() => {
+                          void (async () => {
+                            setProfileSaving(true);
+                            setProfileError("");
+                            const result = await resendProfileEmailChangeCode();
+                            setProfileSaving(false);
+                            if (!result.ok) {
+                              setProfileError(result.message || "Unable to resend code.");
+                              return;
+                            }
+                            if (result.stage === "current-email" || result.stage === "new-email") {
+                              setEmailChangeStage(result.stage);
+                            }
+                            setProfileOtpSeconds(result.resendAfterSeconds ?? 60);
+                            setProfileSuccess(result.message || "Verification code resent.");
+                          })();
+                        }}
+                      >
+                        <Text style={styles.fieldCancelText}>
+                          {profileOtpSeconds > 0
+                            ? `Resend code in ${profileOtpSeconds}s`
+                            : profileSaving
+                              ? "Sending..."
+                              : "Resend code"}
+                        </Text>
+                      </Pressable>
+                    </>
+                  ) : null}
+                  {!!profileError && <Text style={styles.fieldError}>{profileError}</Text>}
                   <View style={styles.fieldActionsRow}>
                     <Pressable style={[styles.fieldSaveButton, profileSaving && styles.disabledButton]} onPress={() => void handleSaveField("email")} disabled={profileSaving}>
-                      <Text style={styles.fieldSaveText}>{profileSaving ? "Sending code..." : "Change Email"}</Text>
+                      <Text style={styles.fieldSaveText}>
+                        {profileSaving
+                          ? emailChangeStage === "idle"
+                            ? "Sending code..."
+                            : "Verifying..."
+                          : emailChangeStage === "idle"
+                            ? "Change Email"
+                            : emailChangeStage === "current-email"
+                              ? "Verify Current Email"
+                              : "Confirm New Email"}
+                      </Text>
                     </Pressable>
                     <Pressable style={styles.fieldCancelButton} onPress={cancelEditingProfile} disabled={profileSaving}>
                       <Text style={styles.fieldCancelText}>Cancel</Text>
@@ -2534,11 +2587,11 @@ return (
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>{appLockEnabled ? "Change Journal PIN" : "Create Journal PIN"}</Text>
             <Text style={styles.modalBody}>
-              {appLockEnabled
+              {hasAppLockPin || appLockEnabled
                 ? "Enter your current PIN first, then choose different new 4 digits and confirm them."
                 : "Use the same 4 digits both times. Your journal will lock as soon as you save it."}
             </Text>
-            {appLockEnabled ? (
+            {hasAppLockPin || appLockEnabled ? (
               <TextInput
                 value={currentPin}
                 onChangeText={(value) => {
@@ -2562,9 +2615,9 @@ return (
               keyboardType="number-pad"
               secureTextEntry
               maxLength={4}
-              placeholder={appLockEnabled ? "New 4-digit PIN" : "Enter 4-digit PIN"}
+              placeholder={hasAppLockPin || appLockEnabled ? "New 4-digit PIN" : "Enter 4-digit PIN"}
               placeholderTextColor="#97A1AA"
-              style={[styles.textInput, appLockEnabled && styles.inputGap]}
+              style={[styles.textInput, (hasAppLockPin || appLockEnabled) && styles.inputGap]}
             />
             <TextInput
               value={pinConfirm}
@@ -2590,7 +2643,7 @@ return (
                 disabled={pinSaving}
               >
                 <Text style={styles.modalPrimaryText}>
-                  {pinSaving ? "Saving..." : appLockEnabled ? "Save PIN" : "Create PIN"}
+                  {pinSaving ? "Saving..." : (hasAppLockPin || appLockEnabled) ? "Save PIN" : "Create PIN"}
                 </Text>
               </Pressable>
             </View>

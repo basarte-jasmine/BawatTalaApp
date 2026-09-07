@@ -24,8 +24,8 @@ const REMINDER_TEMPLATES: ReminderTemplate[] = [
     hour: 8,
     minute: 30,
     route: "/home",
-    title: "Muni is checking in",
-    body: (name) => `Good morning, ${name}. How are you feeling as today begins?`,
+    title: "Good morning",
+    body: (name) => `Hi ${name} - how are you feeling as today begins?`,
   },
   {
     id: "late-afternoon-breathe",

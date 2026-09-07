@@ -1,4 +1,4 @@
-﻿import {
+import {
   ActivityIndicator,
   Pressable,
   PressableProps,
@@ -54,12 +54,14 @@ const styles = StyleSheet.create({
   button: {
     width: "100%",
     maxWidth: 320,
-    minHeight: 36,
+    minWidth: 160,
+    minHeight: 40,
     borderRadius: 999,
     backgroundColor: "#79C943",
     alignSelf: "center",
     alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 16,
     shadowColor: "#4B8F22",
     shadowOpacity: 0.18,
     shadowRadius: 4,
@@ -80,6 +82,9 @@ const styles = StyleSheet.create({
   label: {
     color: "#FFFFFF",
     fontSize: 13,
+    lineHeight: 18,
     fontWeight: "700",
+    textAlign: "center",
+    flexShrink: 1,
   },
 });

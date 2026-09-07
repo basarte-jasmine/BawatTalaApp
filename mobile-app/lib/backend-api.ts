@@ -646,15 +646,34 @@ async function removeLocalJournalRecord(studentNumber: string, entryId: string) 
   await writeLocalJournalData(studentNumber, data);
 }
 
+function journalEntryContentScore(entry: {
+  preview?: string;
+  summary?: string;
+  title?: string;
+}) {
+  const preview = String(entry.preview || "").trim();
+  const summary = String(entry.summary || "").trim();
+  const title = String(entry.title || "").trim();
+  return preview.length * 4 + summary.length * 2 + title.length;
+}
+
 function mergeJournalEntryLists<
   T extends {
     entryDate: string;
     id: string;
+    preview?: string;
+    summary?: string;
+    title?: string;
   },
 >(remoteEntries: T[], localEntries: T[]) {
   const entriesById = new Map<string, T>();
   for (const entry of remoteEntries) entriesById.set(entry.id, entry);
-  for (const entry of localEntries) entriesById.set(entry.id, entry);
+  for (const entry of localEntries) {
+    const existing = entriesById.get(entry.id);
+    if (!existing || journalEntryContentScore(entry) >= journalEntryContentScore(existing)) {
+      entriesById.set(entry.id, entry);
+    }
+  }
   return Array.from(entriesById.values()).sort((a, b) => b.id.localeCompare(a.id));
 }
 
@@ -677,65 +696,128 @@ async function getLocalFinishedJournalEntries(studentNumber: string) {
     });
 }
 
+let journalSyncInFlight: Promise<void> | null = null;
+
 async function syncPendingJournalEntries(studentNumber: string) {
-  const data = await readLocalJournalData(studentNumber);
-  const pendingRecords = Object.values(data.entries).filter(
-    (record) => record.entry.syncStatus === "pending",
-  );
+  if (journalSyncInFlight) {
+    await journalSyncInFlight;
+    return;
+  }
 
-  for (const record of pendingRecords) {
-    try {
-      const createResult = await post("/api/journal/session/create", {
-        aiEnabled: false,
-        forceNew: true,
-        studentNumber,
-      });
-      if (!createResult.response.ok || !createResult.data?.entry?.id) {
-        continue;
-      }
+  journalSyncInFlight = (async () => {
+    const data = await readLocalJournalData(studentNumber);
+    const pendingRecords = Object.values(data.entries).filter(
+      (record) => record.entry.syncStatus === "pending",
+    );
 
-      let remoteEntry = createResult.data.entry as JournalEntry;
-      let remoteMessages: JournalMessage[] = createResult.data?.messages ?? [];
-      const userMessages = record.messages.filter((message) => message.role === "user");
+    for (const record of pendingRecords) {
+      const localEntryId = record.entry.id;
+      try {
+        let remoteEntry: JournalEntry;
+        let remoteMessages: JournalMessage[];
+        let alreadyMappedRemote = !localEntryId.startsWith("local-") && Boolean(data.entries[localEntryId]);
 
-      for (const message of userMessages) {
-        const messageResult = await post("/api/journal/message", {
-          aiEnabled: false,
-          entryId: remoteEntry.id,
-          message: message.text,
-          studentNumber,
-        });
-        if (!messageResult.response.ok) {
-          throw new Error("Unable to sync journal message.");
+        if (alreadyMappedRemote) {
+          // Resume an in-progress sync that already remapped local-* -> remote id.
+          remoteEntry = data.entries[localEntryId].entry;
+          remoteMessages = data.entries[localEntryId].messages ?? [];
+        } else {
+          const createResult = await post("/api/journal/session/create", {
+            aiEnabled: Boolean(record.entry.aiEnabled),
+            forceNew: true,
+            studentNumber,
+          });
+          if (!createResult.response.ok || !createResult.data?.entry?.id) {
+            continue;
+          }
+
+          remoteEntry = createResult.data.entry as JournalEntry;
+          remoteMessages = createResult.data?.messages ?? [];
+
+          // Remap immediately so a retry cannot forceNew another duplicate.
+          delete data.entries[localEntryId];
+          data.entries[remoteEntry.id] = {
+            entry: {
+              ...remoteEntry,
+              concernTags: record.entry.concernTags,
+              isFinished: record.entry.isFinished,
+              primaryConcern: record.entry.primaryConcern,
+              summary: record.entry.summary || remoteEntry.summary,
+              syncStatus: "pending",
+              title: record.entry.title || remoteEntry.title,
+            },
+            messages: record.messages.length ? record.messages : remoteMessages,
+          };
+          await writeLocalJournalData(studentNumber, data);
         }
-        remoteEntry = messageResult.data?.entry ?? remoteEntry;
-        remoteMessages = messageResult.data?.messages ?? remoteMessages;
-      }
 
-      if (record.entry.isFinished) {
-        const finishResult = await post("/api/journal/session/finish", {
-          concernTags: record.entry.concernTags,
-          entryId: remoteEntry.id,
-          primaryConcern: record.entry.primaryConcern ?? record.entry.concernTags[0] ?? "Others",
-          studentNumber,
-        });
-        if (!finishResult.response.ok) {
-          throw new Error("Unable to finish synced journal entry.");
+        const working = data.entries[remoteEntry.id];
+        const userMessages = (working?.messages ?? record.messages).filter((message) => message.role === "user");
+        // Only treat server-backed messages as already synced. Local placeholder ids
+        // must still be uploaded after a remapped resume, or content stays blank remotely.
+        const syncedUserTexts = new Set(
+          remoteMessages
+            .filter((message) => {
+              if (message.role !== "user") return false;
+              const id = String(message.id || "");
+              return id && !id.startsWith("local-") && !id.startsWith("preview-");
+            })
+            .map((message) => message.text.trim())
+            .filter(Boolean),
+        );
+
+        for (const message of userMessages) {
+          const text = message.text.trim();
+          if (!text || syncedUserTexts.has(text)) continue;
+          const messageResult = await post("/api/journal/message", {
+            aiEnabled: Boolean(record.entry.aiEnabled),
+            entryId: remoteEntry.id,
+            message: text,
+            studentNumber,
+          });
+          if (!messageResult.response.ok) {
+            throw new Error("Unable to sync journal message.");
+          }
+          remoteEntry = messageResult.data?.entry ?? remoteEntry;
+          remoteMessages = messageResult.data?.messages ?? remoteMessages;
+          syncedUserTexts.add(text);
+          data.entries[remoteEntry.id] = {
+            entry: { ...remoteEntry, syncStatus: "pending", isFinished: record.entry.isFinished },
+            messages: remoteMessages.length ? remoteMessages : working?.messages ?? record.messages,
+          };
+          await writeLocalJournalData(studentNumber, data);
         }
-        remoteEntry = finishResult.data?.entry ?? remoteEntry;
-        remoteMessages = finishResult.data?.messages ?? remoteMessages;
-      }
 
-      delete data.entries[record.entry.id];
-      data.entries[remoteEntry.id] = {
-        entry: { ...remoteEntry, syncStatus: "synced" },
-        messages: remoteMessages,
-      };
-      await writeLocalJournalData(studentNumber, data);
-    } catch {
-      await writeLocalJournalData(studentNumber, data);
-      return;
+        if (record.entry.isFinished || working?.entry.isFinished) {
+          const finishResult = await post("/api/journal/session/finish", {
+            concernTags: record.entry.concernTags,
+            entryId: remoteEntry.id,
+            primaryConcern: record.entry.primaryConcern ?? record.entry.concernTags[0] ?? "Others",
+            studentNumber,
+          });
+          if (!finishResult.response.ok) {
+            throw new Error("Unable to finish synced journal entry.");
+          }
+          remoteEntry = finishResult.data?.entry ?? remoteEntry;
+          remoteMessages = finishResult.data?.messages ?? remoteMessages;
+        }
+
+        data.entries[remoteEntry.id] = {
+          entry: { ...remoteEntry, syncStatus: "synced" },
+          messages: remoteMessages,
+        };
+        await writeLocalJournalData(studentNumber, data);
+      } catch {
+        await writeLocalJournalData(studentNumber, data);
+        return;
+      }
     }
+  })();
+
+  try {
+    await journalSyncInFlight;
+  } finally {
+    journalSyncInFlight = null;
   }
 }
 
@@ -2217,7 +2299,8 @@ export async function createJournalSession(payload: {
       messages: data?.messages ?? [],
     };
   } catch {
-    const entry = createLocalJournalEntry(payload.studentNumber, payload.aiEnabled);
+    // Offline / queued journals default to solo (no Muni co-journal).
+    const entry = createLocalJournalEntry(payload.studentNumber, false);
     await upsertLocalJournalRecord(payload.studentNumber, entry, [], "pending");
     return {
       ok: true,
@@ -2280,7 +2363,8 @@ export async function sendJournalMessage(payload: {
         messages: [],
       };
     }
-    const entry = existingRecord?.entry ?? createLocalJournalEntry(payload.studentNumber, payload.aiEnabled);
+    const entry = existingRecord?.entry ?? createLocalJournalEntry(payload.studentNumber, false);
+    const offlineAiEnabled = existingRecord?.entry?.aiEnabled ?? false;
     const now = getNowIsoString();
     const messages = [
       ...(submittedMessages.length ? submittedMessages : existingRecord?.messages ?? []),
@@ -2294,7 +2378,7 @@ export async function sendJournalMessage(payload: {
     const summary = summarizeLocalMessages(messages);
     const nextEntry: StoredJournalEntry = {
       ...entry,
-      aiEnabled: payload.aiEnabled,
+      aiEnabled: offlineAiEnabled,
       summary,
       syncStatus: "pending",
       title: summary ? summary.slice(0, 48) : entry.title,
@@ -2659,6 +2743,9 @@ export async function deleteJournalEntry(
 
   const params = new URLSearchParams({ studentNumber });
   const { response, data } = await del(`/api/journal/entries/${entryId}?${params.toString()}`);
+  if (response.ok) {
+    await removeLocalJournalRecord(studentNumber, entryId);
+  }
 
   return {
     ok: response.ok,

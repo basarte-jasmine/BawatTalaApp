@@ -148,7 +148,7 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: "#1A1F26",
     letterSpacing: 0.8,
-    fontFamily: "Fraunces-Regular",
+    fontFamily: "Outfit-SemiBold",
   },
   book: {
     width: Math.min(330, width * 0.85),

@@ -4,7 +4,7 @@ import * as Haptics from "expo-haptics";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { useAuthSession } from "../lib/auth-session";
@@ -50,12 +50,19 @@ export default function MuniAvatarScreen() {
   const [pendingLeaveRoute, setPendingLeaveRoute] = useState<string | null>(null);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [isSavingLoadout, setIsSavingLoadout] = useState(false);
+  const [isWardrobeLoading, setIsWardrobeLoading] = useState(true);
 
   const loadWardrobe = useCallback(async () => {
     if (!user?.studentNumber) {
+      setIsWardrobeLoading(false);
       return;
     }
-    await hydrateMuniWardrobe(user.studentNumber);
+    setIsWardrobeLoading(true);
+    try {
+      await hydrateMuniWardrobe(user.studentNumber);
+    } finally {
+      setIsWardrobeLoading(false);
+    }
   }, [user?.studentNumber]);
 
   useFocusEffect(
@@ -227,6 +234,13 @@ export default function MuniAvatarScreen() {
             </View>
           </View>
 
+          {isWardrobeLoading ? (
+            <View style={styles.wardrobeLoadingRow}>
+              <ActivityIndicator size="small" color="#70C943" />
+              <Text style={styles.wardrobeLoadingText}>Loading wardrobe...</Text>
+            </View>
+          ) : null}
+
           <View style={styles.modeSwitch}>
             <Pressable
               style={[styles.modeButton, activeMode === "wardrobe" && styles.modeButtonActive]}
@@ -319,7 +333,7 @@ export default function MuniAvatarScreen() {
                             resizeMode={section.id === "background" ? "cover" : "contain"}
                           />
                         </View>
-                        <Text style={[styles.optionLabel, selected && styles.optionLabelSelected]} numberOfLines={1}>
+                        <Text style={[styles.optionLabel, selected && styles.optionLabelSelected]} numberOfLines={2}>
                           {option.label ?? option.id}
                         </Text>
                         {selected ? (
@@ -744,6 +758,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 15,
     fontWeight: "800",
+  },
+  wardrobeLoadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 8,
+    marginBottom: 10,
+    paddingVertical: 8,
+  },
+  wardrobeLoadingText: {
+    color: "#5E7259",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
   },
   modeSwitch: {
     height: 50,

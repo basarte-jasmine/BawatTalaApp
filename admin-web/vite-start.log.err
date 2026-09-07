@@ -1,0 +1,6 @@
+7:30:22 AM [vite] http proxy error: /api/admin/notifications
+Error: connect ECONNREFUSED 127.0.0.1:4002
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+7:31:22 AM [vite] http proxy error: /api/admin/notifications
+Error: connect ECONNREFUSED 127.0.0.1:4002
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)

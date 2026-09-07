@@ -246,9 +246,11 @@ const styles = StyleSheet.create({
   },
   navLabel: {
     color: "#6A7681",
-    fontSize: 11.5,
-    lineHeight: 14,
+    fontSize: 11,
+    lineHeight: 13,
     fontWeight: "600",
+    textAlign: "center",
+    flexShrink: 1,
   },
   navLabelActive: {
     color: "#386C2A",

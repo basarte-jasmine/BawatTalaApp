@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { AppState, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import {
   fetchStudentPreferences,
   resendJournalLockResetCode,
@@ -68,6 +68,7 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
   const [isAppLocked, setIsAppLocked] = useState(false);
   const [muniRemindersEnabled, setMuniRemindersEnabledState] = useState(false);
   const appStateRef = useRef(AppState.currentState);
+  const journalUnlockedThisSessionRef = useRef(false);
   const studentNumber = user?.studentNumber || "";
 
   const applyPreferences = useCallback((preferences: StudentPreferences) => {
@@ -76,7 +77,14 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
     setAppLockAutoLockState(preferences.journalLockAutoLock);
     setAppLockEnabled(preferences.journalLockEnabled);
     setHasAppLockPin(preferences.hasJournalLockPin);
-    setIsAppLocked(preferences.journalLockEnabled);
+    // Keep an already-unlocked journal session open when prefs refresh.
+    // Re-locking here bounced users back to the PIN gate (esp. during mic permission).
+    if (!preferences.journalLockEnabled) {
+      setIsAppLocked(false);
+      journalUnlockedThisSessionRef.current = false;
+    } else if (!journalUnlockedThisSessionRef.current) {
+      setIsAppLocked(true);
+    }
   }, []);
 
   const resetPreferences = useCallback(() => {
@@ -88,9 +96,13 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!isHydrated) return;
     if (!studentNumber) {
+      journalUnlockedThisSessionRef.current = false;
       resetPreferences();
       return;
     }
+
+    // New student session should start locked again when Journal Lock is enabled.
+    journalUnlockedThisSessionRef.current = false;
 
     let mounted = true;
     void fetchStudentPreferences(studentNumber).then((result) => {
@@ -148,9 +160,14 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
       const currentState = appStateRef.current;
-      const leavingForeground = currentState === "active" && (nextState === "inactive" || nextState === "background");
+      // Only auto-lock on true background. Permission sheets briefly move the app
+      // to "inactive" and were bouncing Start Recording back to the PIN gate on APK.
+      const leavingForeground =
+        currentState === "active" &&
+        (nextState === "background" || (Platform.OS === "web" && nextState === "inactive"));
 
       if (leavingForeground && appLockEnabled && appLockAutoLock) {
+        journalUnlockedThisSessionRef.current = false;
         setIsAppLocked(true);
       }
 
@@ -206,6 +223,7 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
       isAppLocked,
       lockAppNow: () => {
         if (!appLockEnabled) return;
+        journalUnlockedThisSessionRef.current = false;
         setIsAppLocked(true);
       },
       muniRemindersEnabled,
@@ -275,6 +293,7 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
         }
         const result = await verifyJournalLockPin(studentNumber, pin);
         if (!result.ok || !result.unlocked) return false;
+        journalUnlockedThisSessionRef.current = true;
         setIsAppLocked(false);
         return true;
       },

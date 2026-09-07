@@ -88,8 +88,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   loginButtonText: {
+    textAlign: "center",
+    flexShrink: 1,
     color: "#f7efe2",
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: "600",
   },
   registerButton: {
@@ -103,8 +105,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   registerButtonText: {
+    textAlign: "center",
+    flexShrink: 1,
     color: "#b33131",
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "600",
   },
 });

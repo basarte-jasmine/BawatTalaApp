@@ -92,14 +92,20 @@ function summarizeParagraphs(paragraphs: string[]) {
 }
 
 function getEntryFallbackParagraphs(entry: JournalEntry | null) {
-  const summaryText = String(entry?.summary || "").replace(/\s+/g, " ").trim().toLowerCase();
+  // Prefer real entry body even when it matches the AI/offline summary.
+  // Dropping equal content left solo + Muni past entries blank when messages were missing.
   const contentValue = String(entry?.contentText || "").replace(/\s+/g, " ").trim();
-  const contentText = contentValue.toLowerCase() === summaryText ? [] : splitParagraphs(contentValue);
+  const contentText = splitParagraphs(contentValue);
   if (contentText.length > 0) return contentText;
 
   const previewText = String(entry?.preview || "").replace(/\s+/g, " ").trim();
-  if (previewText && previewText.toLowerCase() !== summaryText) {
+  if (previewText) {
     return [previewText];
+  }
+
+  const summaryText = String(entry?.summary || "").replace(/\s+/g, " ").trim();
+  if (summaryText) {
+    return [summaryText];
   }
 
   return [];

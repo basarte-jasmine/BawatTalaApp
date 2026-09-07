@@ -33,24 +33,33 @@ function applyGlobalTypography() {
   if (textDefaultsApplied) return;
   textDefaultsApplied = true;
 
+  // Use the static Regular face as the default family. Avoid synthetic bold on Android
+  // (fontFamily "Outfit" + fontWeight 700 can render blank in release APKs).
   const textComponent = Text as typeof Text & ComponentWithDefaults<TextProps>;
   textComponent.defaultProps = textComponent.defaultProps ?? {};
-  textComponent.defaultProps.style = [{ fontFamily: "Outfit" }, textComponent.defaultProps.style];
+  textComponent.defaultProps.style = [{ fontFamily: "Outfit", fontWeight: "400" as TextProps["fontWeight"] }, textComponent.defaultProps.style];
+  textComponent.defaultProps.allowFontScaling = textComponent.defaultProps.allowFontScaling ?? true;
 
   const textInputComponent = TextInput as typeof TextInput & ComponentWithDefaults<TextInputProps>;
   textInputComponent.defaultProps = textInputComponent.defaultProps ?? {};
-  textInputComponent.defaultProps.style = [{ fontFamily: "Outfit" }, textInputComponent.defaultProps.style];
+  textInputComponent.defaultProps.style = [{ fontFamily: "Outfit", fontWeight: "400" as TextInputProps["fontWeight"] }, textInputComponent.defaultProps.style];
 }
 
 export default function RootLayout() {
   const { width } = useWindowDimensions();
   const [fontsLoaded, fontError] = useFonts({
-    Outfit: require("../assets/fonts/Outfit-Variable.ttf"),
+    Outfit: require("../assets/fonts/Outfit-Regular.ttf"),
+    "Outfit-Medium": require("../assets/fonts/Outfit-Medium.ttf"),
+    "Outfit-SemiBold": require("../assets/fonts/Outfit-SemiBold.ttf"),
+    "Outfit-Bold": require("../assets/fonts/Outfit-Bold.ttf"),
   });
 
   useEffect(() => {
+    // Never crash the release APK on font load failure — fall back to system text.
     if (fontError) {
-      throw fontError;
+      console.warn("Outfit fonts failed to load; using system font.", fontError);
+      void SplashScreen.hideAsync();
+      return;
     }
     if (!fontsLoaded) return;
 
@@ -82,7 +91,7 @@ export default function RootLayout() {
     };
   }, []);
 
-  if (!fontsLoaded) return null;
+  if (!fontsLoaded && !fontError) return null;
 
   const useDesktopFrame = width >= DESKTOP_FRAME_BREAKPOINT;
 

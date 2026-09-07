@@ -315,14 +315,14 @@ export default function WriteEntryScreen() {
         );
         setMessages([]);
         setEntry(null);
-        setAiEnabled(true);
+        setAiEnabled(false);
         setIsLoading(false);
         return;
       }
 
       setEntry(createResult.entry ?? null);
       setMessages(createResult.messages ?? []);
-      setAiEnabled(createResult.entry?.aiEnabled ?? true);
+      setAiEnabled(Boolean(createResult.entry?.aiEnabled) && !(createResult.entry?.id?.startsWith("local-")));
       void loadJournalEmotion();
       setIsLoading(false);
       return;
@@ -336,14 +336,14 @@ export default function WriteEntryScreen() {
       );
       setMessages([]);
       setEntry(null);
-      setAiEnabled(true);
+      setAiEnabled(false);
       setIsLoading(false);
       return;
     }
 
     setEntry(result.entry ?? null);
     setMessages(result.messages ?? []);
-    setAiEnabled(result.entry?.aiEnabled ?? true);
+    setAiEnabled(result.entry ? Boolean(result.entry.aiEnabled) : !/offline/i.test(result.message ?? ""));
     void loadJournalEmotion();
     setIsLoading(false);
   }, [appLockEnabled, isAppLocked, loadJournalEmotion, mode, user?.studentNumber]);
