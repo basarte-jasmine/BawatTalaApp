@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Easing, Image, ImageSourcePropType, StyleProp, StyleSheet, View, ViewStyle } from "react-native";
 import {
   getEyeAccessoryStyle,
@@ -14,7 +14,7 @@ type MuniAvatarProps = {
   style?: StyleProp<ViewStyle>;
 };
 
-// Safe underscore filenames — spaced names can fail Metro asset resolution in release APKs.
+// Safe underscore filenames � spaced names can fail Metro asset resolution in release APKs.
 const MUNI_FEET = require("../../assets/images/Muni/Feet.png");
 const MUNI_BODY = require("../../assets/images/Muni/Body.png");
 const MUNI_LEFT_HAND = require("../../assets/images/Muni/Left_Hand.png");
@@ -45,10 +45,19 @@ let criticalPreloadStarted = false;
 function preloadCriticalBodyParts() {
   if (criticalPreloadStarted) return;
   criticalPreloadStarted = true;
+  // RN Web does not implement Image.resolveAssetSource; calling it blanked the whole Expo web tree.
+  const resolveAssetSource = (Image as typeof Image & {
+    resolveAssetSource?: (source: ImageSourcePropType) => { uri?: string } | null;
+  }).resolveAssetSource;
+  if (typeof resolveAssetSource !== "function") return;
   CRITICAL_BODY_SOURCES.forEach((source) => {
-    const resolved = Image.resolveAssetSource(source);
-    if (resolved?.uri) {
-      void Image.prefetch(resolved.uri).catch(() => undefined);
+    try {
+      const resolved = resolveAssetSource(source);
+      if (resolved?.uri && typeof Image.prefetch === "function") {
+        void Image.prefetch(resolved.uri).catch(() => undefined);
+      }
+    } catch {
+      // Ignore per-asset resolution failures; Images still load via <Image source={...} />.
     }
   });
 }
