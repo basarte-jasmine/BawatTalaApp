@@ -2857,7 +2857,7 @@ router.get("/activity", requireStudentOnlyAuth, async (req, res) => {
         query(
           `
             select je.id, je.entry_date, je.created_at, je.summary, je.title,
-                   coalesce(last_user.message_text, '') as preview
+                   coalesce(nullif(trim(last_user.message_text), ''), nullif(trim(je.summary), ''), nullif(trim(je.title), ''), '') as preview
             from public.journal_entries je
             left join lateral (
               select jem.message_text

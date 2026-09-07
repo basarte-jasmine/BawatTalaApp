@@ -263,12 +263,32 @@ function mapEntryRow(row) {
   };
 }
 
-function buildEntryContentText(messages) {
-  return (Array.isArray(messages) ? messages : [])
+function buildEntryContentText(messages, fallbacks = {}) {
+  const rows = Array.isArray(messages) ? messages : [];
+  const fromUser = rows
     .filter((item) => item.role === "user")
     .map((item) => String(item.text || "").trim())
     .filter(Boolean)
     .join("\n\n");
+  if (fromUser) {
+    return fromUser;
+  }
+
+  // Older/offline/synced entries sometimes lack role=user rows but still have summary/title
+  // (or only assistant lines). Prefer any stored text so APK past-entry views aren't blank.
+  const fromAny = rows
+    .map((item) => String(item.text || "").trim())
+    .filter(Boolean)
+    .join("\n\n");
+  if (fromAny) {
+    return fromAny;
+  }
+
+  const summary = String(fallbacks.summary || "").trim();
+  if (summary) {
+    return summary;
+  }
+  return String(fallbacks.title || "").trim();
 }
 
 async function removeOrSoftDeleteEntry({ studentNumber, entryId, requireOpen }) {
@@ -389,7 +409,7 @@ router.get("/entries/recent", asyncHandler(async (req, res) => {
       `
         select je.id, je.entry_date, je.created_at, je.summary, je.title,
                je.is_finished,
-               coalesce(last_user.message_text, '') as preview
+               coalesce(nullif(trim(last_user.message_text), ''), nullif(trim(je.summary), ''), nullif(trim(je.title), ''), '') as preview
         from public.journal_entries je
         left join lateral (
           select jem.message_text
@@ -465,7 +485,7 @@ router.get("/entries/by-date", asyncHandler(async (req, res) => {
   const result = await query(
     `
       select je.id, je.entry_date, je.created_at, je.summary, je.title, je.insights, je.is_finished,
-             coalesce(last_user.message_text, '') as preview
+             coalesce(nullif(trim(last_user.message_text), ''), nullif(trim(je.summary), ''), nullif(trim(je.title), ''), '') as preview
       from public.journal_entries je
       left join lateral (
         select jem.message_text
@@ -596,7 +616,10 @@ router.get("/entries/:entryId", asyncHandler(async (req, res) => {
   return res.json({
     entry: {
       ...mapEntryRow(entry),
-      contentText: buildEntryContentText(messages),
+      contentText: buildEntryContentText(messages, {
+        summary: entry.summary,
+        title: entry.title,
+      }),
     },
     messages,
   });
