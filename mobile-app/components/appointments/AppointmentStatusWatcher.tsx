@@ -43,8 +43,7 @@ function toSnapshot(appointment: CounselorAppointment): AppointmentSnapshot {
     id: appointment.id,
     slotLabel: appointment.slotLabel || appointment.slotTime || "",
     slotTime: appointment.slotTime || "",
-    status: appointment.status,
-  };
+    status: appointment.status };
 }
 
 function parseStoredSnapshots(rawValue: string | null) {
@@ -86,32 +85,28 @@ function getUpdateCopy(update: AppointmentUpdate) {
         accent: "#68B93E",
         title: "Appointment Confirmed",
         subtitle: `${update.appointment.counselorFullName} confirmed your counseling session.`,
-        footnote: "Please arrive around 5 minutes before your scheduled time.",
-      };
+        footnote: "Please arrive around 5 minutes before your scheduled time." };
     case "rescheduled":
       return {
         icon: "calendar" as const,
         accent: "#5F8FD1",
         title: "Appointment Rescheduled",
         subtitle: `${update.appointment.counselorFullName} updated your counseling schedule.`,
-        footnote: "Please review the new date and time below.",
-      };
+        footnote: "Please review the new date and time below." };
     case "declined":
       return {
         icon: "close-circle" as const,
         accent: "#D69A3B",
         title: "Appointment Declined",
         subtitle: `${update.appointment.counselorFullName} could not confirm this appointment request.`,
-        footnote: "You can return to Consult Support to request another schedule.",
-      };
+        footnote: "You can return to Consult Support to request another schedule." };
     default:
       return {
         icon: "close-circle" as const,
         accent: "#D96B73",
         title: "Appointment Cancelled",
         subtitle: `Your session with ${update.appointment.counselorFullName} was cancelled.`,
-        footnote: "Check your notifications for any additional details from guidance.",
-      };
+        footnote: "Check your notifications for any additional details from guidance." };
   }
 }
 
@@ -263,8 +258,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(24, 31, 28, 0.42)",
-    paddingHorizontal: 18,
-  },
+    paddingHorizontal: 18 },
   card: {
     width: "100%",
     maxWidth: 380,
@@ -278,13 +272,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 5 },
-    elevation: 6,
-  },
+    elevation: 6 },
   avatarStage: {
     width: 96,
     height: 96,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   statusIcon: {
     position: "absolute",
     right: -1,
@@ -296,27 +288,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 3,
-    borderColor: "#FFFFFF",
-  },
+    borderColor: "#FFFFFF" },
   avatar: {
     borderWidth: 4,
-    borderColor: "#EFF9EA",
-  },
+    borderColor: "#EFF9EA" },
   title: {
     color: "#304558",
     fontSize: 22,
     lineHeight: 29,
-    fontWeight: "800",
-    textAlign: "center",
-  },
+    fontFamily: "Outfit-Bold",
+    textAlign: "center" },
   subtitle: {
     color: "#586A79",
     fontSize: 14,
     lineHeight: 20,
     textAlign: "center",
     marginTop: 4,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   detailsCard: {
     width: "100%",
     borderRadius: 16,
@@ -324,63 +312,52 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#D7E9CC",
     paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
+    paddingVertical: 8 },
   detailRow: {
     minHeight: 38,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    columnGap: 12,
-  },
+    columnGap: 12 },
   detailLabel: {
     color: "#66805F",
     fontSize: 12,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   detailValue: {
     flex: 1,
     color: "#344A3B",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "700",
-    textAlign: "right",
-  },
+    fontFamily: "Outfit-Bold",
+    textAlign: "right" },
   detailDivider: {
     height: 1,
-    backgroundColor: "#DFECD7",
-  },
+    backgroundColor: "#DFECD7" },
   footnote: {
     color: "#718078",
     fontSize: 12,
     lineHeight: 17,
     textAlign: "center",
     marginTop: 11,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   primaryButton: {
     width: "100%",
     minHeight: 46,
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#70C943",
-  },
+    backgroundColor: "#70C943" },
   primaryButtonText: {
     color: "#FFFFFF",
     fontSize: 15,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   secondaryButton: {
     minHeight: 40,
     paddingHorizontal: 24,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 4,
-  },
+    marginTop: 4 },
   secondaryButtonText: {
     color: "#6D7984",
     fontSize: 13,
-    fontWeight: "700",
-  },
-});
+    fontFamily: "Outfit-Bold" } });

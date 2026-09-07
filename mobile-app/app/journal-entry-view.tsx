@@ -27,8 +27,7 @@ function formatEntryHeader(entry: JournalEntry | null, createdAt?: string) {
         day: "numeric",
         hour: "numeric",
         minute: "2-digit",
-        hour12: true,
-      });
+        hour12: true });
   return timeLabel ? `\uD83D\uDCD6 ${timeLabel}` : "\uD83D\uDCD6 Journal Entry";
 }
 
@@ -55,7 +54,7 @@ function getAssistantMessages(messages: JournalMessage[]) {
 
 function splitParagraphs(value: string | undefined) {
   return String(value || "")
-    .split(/\n{2,}|\r\n{2,}/)
+    .split(/\n{2 }|\r\n{2 }/)
     .map((item) => item.replace(/\s+/g, " ").trim())
     .filter(Boolean);
 }
@@ -106,6 +105,11 @@ function getEntryFallbackParagraphs(entry: JournalEntry | null) {
   const summaryText = String(entry?.summary || "").replace(/\s+/g, " ").trim();
   if (summaryText) {
     return [summaryText];
+  }
+
+  const titleText = String(entry?.title || "").replace(/\s+/g, " ").trim();
+  if (titleText && titleText.toLowerCase() !== "journal entry") {
+    return [titleText];
   }
 
   return [];
@@ -238,8 +242,7 @@ export default function JournalEntryViewScreen() {
             createdAt: entry?.createdAt || "",
             id: `fallback-user-${index}`,
             role: "user",
-            text: paragraph,
-          }))
+            text: paragraph }))
           : [],
     [entry?.createdAt, fallbackParagraphs, visibleMessages],
   );
@@ -301,8 +304,7 @@ export default function JournalEntryViewScreen() {
       entryId: entry.id,
       rating,
       reason: rating === "NEEDS_WORK" ? trimmedReason : undefined,
-      studentNumber: user.studentNumber,
-    });
+      studentNumber: user.studentNumber });
 
     if (!result.ok || !result.entry) {
       setSummaryFeedbackError(result.message ?? "Unable to save your summary feedback right now.");
@@ -669,8 +671,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F5F9F2",
     paddingHorizontal: 12,
     paddingTop: 8,
-    paddingBottom: 18,
-  },
+    paddingBottom: 18 },
   topBar: {
     height: 52,
     borderBottomWidth: 1,
@@ -686,24 +687,20 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 },
-    elevation: 2,
-  },
+    elevation: 2 },
   topBarBackButton: {
     width: 36,
     height: 36,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   topBarTitle: {
     color: "#2F4155",
     fontSize: 17,
     lineHeight: 22,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   topBarSpacer: {
     width: 36,
-    height: 36,
-  },
+    height: 36 },
   heroCard: {
     borderRadius: 22,
     backgroundColor: "#FFFFFF",
@@ -716,58 +713,48 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
+    elevation: 2 },
   heroCardCompact: {
     paddingHorizontal: 14,
-    paddingVertical: 13,
-  },
+    paddingVertical: 13 },
   crisisCard: {
     backgroundColor: "#F4FBEF",
     borderRadius: 18,
     borderWidth: 1,
     borderColor: "#CCE5BD",
     padding: 12,
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   crisisCardCompact: {
     padding: 10,
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   crisisHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
     columnGap: 10,
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   crisisIconBadge: {
     width: 36,
     height: 36,
     borderRadius: 999,
     backgroundColor: "#68BA39",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   crisisHeaderTextWrap: {
-    flex: 1,
-  },
+    flex: 1 },
   crisisTitle: {
     color: "#2C4054",
     fontSize: 13.5,
     lineHeight: 18,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   crisisSubtitle: {
     marginTop: 2,
     color: "#3F722E",
     fontSize: 11.5,
     lineHeight: 16,
-    fontWeight: "600",
-  },
+    fontFamily: "Outfit-SemiBold" },
   crisisButtonRow: {
     flexDirection: "row",
-    columnGap: 8,
-  },
+    columnGap: 8 },
   crisisButton: {
     flex: 1,
     minHeight: 34,
@@ -777,57 +764,46 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     columnGap: 5,
-    paddingHorizontal: 6,
-  },
+    paddingHorizontal: 6 },
   crisisButtonHotline: {
     backgroundColor: "#E8F6E0",
-    borderColor: "#B8DF9F",
-  },
+    borderColor: "#B8DF9F" },
   crisisButtonHotlineText: {
     color: "#265A1A",
     fontSize: 11,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   crisisButtonCounseling: {
     backgroundColor: "#EAF3FB",
-    borderColor: "#BBD7EE",
-  },
+    borderColor: "#BBD7EE" },
   crisisButtonCounselingText: {
     color: "#23496D",
     fontSize: 11,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   crisisButtonWellness: {
     backgroundColor: "#F3F7EE",
-    borderColor: "#D2E2C8",
-  },
+    borderColor: "#D2E2C8" },
   crisisButtonWellnessText: {
     color: "#3E6029",
     fontSize: 11,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   heroCopy: {
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   heroEyebrow: {
     color: "#7D8F78",
     fontSize: 10,
     lineHeight: 14,
     letterSpacing: 1,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 4 },
   heroTitle: {
     color: "#34475A",
     fontSize: 17,
     lineHeight: 23,
-    fontWeight: "700",
-    flexShrink: 1,
-  },
+    fontFamily: "Outfit-Bold",
+    flexShrink: 1 },
   heroTitleCompact: {
     fontSize: 15.5,
-    lineHeight: 21,
-  },
+    lineHeight: 21 },
   heroStatusPill: {
     alignSelf: "flex-start",
     minHeight: 32,
@@ -838,60 +814,48 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     columnGap: 6,
-    paddingHorizontal: 10,
-  },
+    paddingHorizontal: 10 },
   heroStatusPillCompact: {
-    paddingHorizontal: 9,
-  },
+    paddingHorizontal: 9 },
   heroStatusPillActive: {
     backgroundColor: "#EBF7E0",
-    borderColor: "#D0E7BF",
-  },
+    borderColor: "#D0E7BF" },
   heroStatusText: {
     color: "#5D6E7C",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   heroStatusTextActive: {
-    color: "#2E6B23",
-  },
+    color: "#2E6B23" },
   metaBlock: {
     marginTop: 12,
-    rowGap: 6,
-  },
+    rowGap: 6 },
   metaBlockCompact: {
     marginTop: 10,
-    rowGap: 5,
-  },
+    rowGap: 5 },
   metaLabel: {
     color: "#6E8174",
     fontSize: 10,
     lineHeight: 14,
     letterSpacing: 0.8,
-    fontWeight: "800",
-    textTransform: "uppercase",
-  },
+    fontFamily: "Outfit-Bold",
+    textTransform: "uppercase" },
   metaValue: {
     color: "#31465A",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "700",
-    flexShrink: 1,
-  },
+    fontFamily: "Outfit-Bold",
+    flexShrink: 1 },
   metaValueCompact: {
     fontSize: 12.5,
-    lineHeight: 17,
-  },
+    lineHeight: 17 },
   tagRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
-    alignItems: "flex-start",
-  },
+    alignItems: "flex-start" },
   tagRowCompact: {
-    gap: 6,
-  },
+    gap: 6 },
   tagPill: {
     borderRadius: 999,
     borderWidth: 1,
@@ -899,36 +863,30 @@ const styles = StyleSheet.create({
     backgroundColor: "#F0FAE8",
     paddingHorizontal: 10,
     paddingVertical: 6,
-    maxWidth: "100%",
-  },
+    maxWidth: "100%" },
   tagPillCompact: {
     paddingHorizontal: 9,
-    paddingVertical: 5,
-  },
+    paddingVertical: 5 },
   tagPillText: {
     color: "#2F6F28",
     fontSize: 11,
     lineHeight: 15,
-    fontWeight: "800",
-    flexShrink: 1,
-  },
+    fontFamily: "Outfit-Bold",
+    flexShrink: 1 },
   tagPillTextCompact: {
     fontSize: 10.5,
-    lineHeight: 14,
-  },
+    lineHeight: 14 },
   tagPillMuted: {
     borderRadius: 999,
     backgroundColor: "#F1F4F5",
     paddingHorizontal: 10,
     paddingVertical: 6,
-    maxWidth: "100%",
-  },
+    maxWidth: "100%" },
   tagPillMutedText: {
     color: "#687783",
     fontSize: 11,
     lineHeight: 15,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   pageWrap: {
     flex: 1,
     borderRadius: 24,
@@ -937,48 +895,39 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 5 },
-    elevation: 4,
-  },
+    elevation: 4 },
   pageWrapCompact: {
-    borderRadius: 22,
-  },
+    borderRadius: 22 },
   notebookShell: {
     flex: 1,
     backgroundColor: "#78C654",
     borderRadius: 24,
     padding: 5,
-    flexDirection: "row",
-  },
+    flexDirection: "row" },
   notebookShellCompact: {
-    padding: 4,
-  },
+    padding: 4 },
   spineColumn: {
     width: 30,
     borderTopLeftRadius: 20,
     borderBottomLeftRadius: 20,
     backgroundColor: "#D7EEBE",
-    position: "relative",
-  },
+    position: "relative" },
   spineColumnCompact: {
-    width: 24,
-  },
+    width: 24 },
   ringItem: {
     position: "absolute",
     left: 1,
     width: 32,
     height: 20,
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   ringItemCompact: {
-    width: 26,
-  },
+    width: 26 },
   ringHole: {
     width: 8,
     height: 8,
     borderRadius: 999,
     backgroundColor: "#F7FAF5",
-    marginLeft: 3,
-  },
+    marginLeft: 3 },
   ringArc: {
     position: "absolute",
     left: 8,
@@ -988,8 +937,7 @@ const styles = StyleSheet.create({
     borderRightWidth: 0,
     borderColor: "#8E989F",
     borderTopLeftRadius: 12,
-    borderBottomLeftRadius: 12,
-  },
+    borderBottomLeftRadius: 12 },
   paperCard: {
     flex: 1,
     backgroundColor: "#FFFDF7",
@@ -1000,29 +948,25 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     paddingHorizontal: 14,
     paddingBottom: 10,
-    position: "relative",
-  },
+    position: "relative" },
   paperCardCompact: {
     borderRadius: 16,
     paddingTop: 12,
     paddingHorizontal: 12,
-    paddingBottom: 9,
-  },
+    paddingBottom: 9 },
   ruleLayer: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
     bottom: 58,
-    zIndex: 0,
-  },
+    zIndex: 0 },
   ruleLine: {
     position: "absolute",
     left: 10,
     right: 10,
     height: 1,
-    backgroundColor: "#E2EEE0",
-  },
+    backgroundColor: "#E2EEE0" },
   marginLine: {
     position: "absolute",
     top: 46,
@@ -1030,68 +974,55 @@ const styles = StyleSheet.create({
     left: 30,
     width: 1,
     backgroundColor: "#E7BFC2",
-    zIndex: 0,
-  },
+    zIndex: 0 },
   marginLineCompact: {
-    left: 24,
-  },
+    left: 24 },
   conversationScroll: {
     flex: 1,
-    zIndex: 2,
-  },
+    zIndex: 2 },
   conversationContent: {
     paddingBottom: 16,
     paddingTop: 4,
     flexGrow: 1,
-    rowGap: 8,
-  },
+    rowGap: 8 },
   conversationContentCompact: {
     paddingBottom: 12,
-    rowGap: 7,
-  },
+    rowGap: 7 },
   leftMessageRow: {
     maxWidth: "84%",
     alignSelf: "flex-start",
     marginLeft: 22,
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   leftMessageRowCompact: {
     maxWidth: "88%",
-    marginLeft: 16,
-  },
+    marginLeft: 16 },
   leftMessageText: {
     color: "#2D3B4D",
     fontSize: 15,
     lineHeight: 21,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   messageRoleLabel: {
     color: "#6E8D62",
     fontSize: 10,
     lineHeight: 13,
     letterSpacing: 0.5,
-    fontWeight: "700",
-    marginBottom: 3,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 3 },
   messageRoleLabelSelf: {
     color: "#7B8792",
-    textAlign: "right",
-  },
+    textAlign: "right" },
   rightMessageRow: {
     maxWidth: "78%",
     alignSelf: "flex-end",
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   rightMessageRowCompact: {
-    maxWidth: "84%",
-  },
+    maxWidth: "84%" },
   rightMessageText: {
     color: "#2D3B4D",
     fontSize: 15,
     lineHeight: 23,
     textAlign: "right",
-    fontWeight: "500",
-  },
+    fontFamily: "Outfit-Medium" },
   chatInsightBlock: {
     marginTop: 14,
     marginLeft: 22,
@@ -1100,25 +1031,21 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: "#F4F9EF",
     borderWidth: 1,
-    borderColor: "#DEEBD3",
-  },
+    borderColor: "#DEEBD3" },
   notebookContentBlockCompact: {
     marginLeft: 16,
     marginRight: 6,
-    padding: 12,
-  },
+    padding: 12 },
   chatInsightHeading: {
     color: "#34475A",
     fontSize: 16,
     lineHeight: 22,
-    fontWeight: "700",
-    marginBottom: 6,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 6 },
   chatInsightText: {
     color: "#31465A",
     fontSize: 14,
-    lineHeight: 21,
-  },
+    lineHeight: 21 },
   entryContentBlock: {
     marginLeft: 22,
     marginRight: 10,
@@ -1127,25 +1054,21 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: "#FCFEF8",
     borderWidth: 1,
-    borderColor: "#E2EBD9",
-  },
+    borderColor: "#E2EBD9" },
   entryContentText: {
     color: "#31465A",
     fontSize: 14,
     lineHeight: 22,
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   chatHistoryHeading: {
     marginLeft: 22,
     marginBottom: 6,
     color: "#34475A",
     fontSize: 16,
     lineHeight: 22,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   chatHistoryHeadingCompact: {
-    marginLeft: 16,
-  },
+    marginLeft: 16 },
   footnoteWrap: {
     minHeight: 38,
     justifyContent: "center",
@@ -1153,17 +1076,14 @@ const styles = StyleSheet.create({
     marginTop: 2,
     borderTopWidth: 1,
     borderTopColor: "#EBEFE5",
-    paddingTop: 8,
-  },
+    paddingTop: 8 },
   footnoteWrapCompact: {
-    paddingRight: 36,
-  },
+    paddingRight: 36 },
   footnoteText: {
     color: "#5D6C76",
     fontSize: 11,
     lineHeight: 15,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   muniBadge: {
     position: "absolute",
     right: 1,
@@ -1175,12 +1095,10 @@ const styles = StyleSheet.create({
     borderColor: "#4B8F33",
     backgroundColor: "#C2EDAA",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   muniBadgeImage: {
     width: 24,
-    height: 24,
-  },
+    height: 24 },
   card: {
     flex: 1,
     borderRadius: 24,
@@ -1194,25 +1112,20 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.14,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
-  },
+    elevation: 3 },
   cardCompact: {
     borderRadius: 22,
     paddingHorizontal: 12,
-    paddingTop: 11,
-  },
+    paddingTop: 11 },
   bodyScroll: {
-    flex: 1,
-  },
+    flex: 1 },
   bodyContent: {
-    paddingBottom: 18,
-  },
+    paddingBottom: 18 },
   errorText: {
     color: "#B04444",
     fontSize: 13,
     lineHeight: 18,
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   notebookStateCard: {
     marginLeft: 22,
     marginRight: 10,
@@ -1225,32 +1138,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 14,
     alignItems: "center",
-    rowGap: 6,
-  },
+    rowGap: 6 },
   notebookStateCardCompact: {
     marginLeft: 16,
     marginRight: 6,
-    paddingHorizontal: 12,
-  },
+    paddingHorizontal: 12 },
   notebookStateTitle: {
     color: "#34475A",
     fontSize: 14,
     lineHeight: 19,
-    fontWeight: "800",
-    textAlign: "center",
-  },
+    fontFamily: "Outfit-Bold",
+    textAlign: "center" },
   notebookStateText: {
     color: "#5D6C76",
     fontSize: 12,
     lineHeight: 17,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   paragraphText: {
     color: "#31465A",
     fontSize: 15,
     lineHeight: 24,
-    marginBottom: 18,
-  },
+    marginBottom: 18 },
   emptyContentCard: {
     borderRadius: 18,
     borderWidth: 1,
@@ -1259,21 +1167,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 16,
     alignItems: "center",
-    rowGap: 6,
-  },
+    rowGap: 6 },
   emptyContentTitle: {
     color: "#34475A",
     fontSize: 14,
     lineHeight: 19,
-    fontWeight: "800",
-    textAlign: "center",
-  },
+    fontFamily: "Outfit-Bold",
+    textAlign: "center" },
   emptyContentText: {
     color: "#5D6C76",
     fontSize: 12,
     lineHeight: 17,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   summaryWrap: {
     marginTop: 10,
     paddingTop: 14,
@@ -1282,46 +1187,39 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: "#F4F9EF",
     borderWidth: 1,
-    borderColor: "#DEEBD3",
-  },
+    borderColor: "#DEEBD3" },
   summaryHeading: {
     color: "#34475A",
     fontSize: 16,
     lineHeight: 22,
-    fontWeight: "700",
-    marginBottom: 8,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 8 },
   summaryText: {
     color: "#31465A",
     fontSize: 14,
-    lineHeight: 22,
-  },
+    lineHeight: 22 },
   summarySentimentText: {
     color: "#4B6D52",
     fontSize: 12,
     lineHeight: 17,
-    fontWeight: "800",
-    marginTop: 9,
-  },
+    fontFamily: "Outfit-Bold",
+    marginTop: 9 },
   summaryFeedbackWrap: {
     marginTop: 12,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: "#DDE8D2",
-  },
+    borderTopColor: "#DDE8D2" },
   summaryFeedbackPrompt: {
     color: "#395167",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "700",
-    marginBottom: 8,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 8 },
   summaryFeedbackRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     columnGap: 8,
-    rowGap: 8,
-  },
+    rowGap: 8 },
   summaryFeedbackButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -1331,44 +1229,34 @@ const styles = StyleSheet.create({
     borderColor: "#D5E0D0",
     backgroundColor: "#FCFEF9",
     paddingHorizontal: 12,
-    paddingVertical: 9,
-  },
+    paddingVertical: 9 },
   summaryFeedbackButtonHelpful: {
     borderColor: "#BBD9AE",
-    backgroundColor: "#EAF8DE",
-  },
+    backgroundColor: "#EAF8DE" },
   summaryFeedbackButtonNeedsWork: {
     borderColor: "#E9C5B8",
-    backgroundColor: "#FFF0EA",
-  },
+    backgroundColor: "#FFF0EA" },
   summaryFeedbackButtonLocked: {
-    opacity: 0.52,
-  },
+    opacity: 0.52 },
   summaryFeedbackButtonText: {
     color: "#4D6476",
     fontSize: 13,
     lineHeight: 17,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   summaryFeedbackButtonTextHelpful: {
-    color: "#2F7A25",
-  },
+    color: "#2F7A25" },
   summaryFeedbackButtonTextNeedsWork: {
-    color: "#A24B38",
-  },
+    color: "#A24B38" },
   summaryFeedbackNote: {
     color: "#5E6F7B",
     fontSize: 12,
     lineHeight: 17,
-    marginTop: 9,
-  },
+    marginTop: 9 },
   summaryFeedbackNoteError: {
-    color: "#B04444",
-  },
+    color: "#B04444" },
   summaryFeedbackReasonWrap: {
     marginTop: 10,
-    rowGap: 8,
-  },
+    rowGap: 8 },
   summaryFeedbackReasonInput: {
     minHeight: 92,
     borderRadius: 14,
@@ -1379,42 +1267,33 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
+    paddingVertical: 10 },
   summaryFeedbackReasonInputError: {
     borderColor: "#D98B7C",
-    backgroundColor: "#FFF7F3",
-  },
+    backgroundColor: "#FFF7F3" },
   summaryFeedbackReasonFooter: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    columnGap: 10,
-  },
+    columnGap: 10 },
   summaryFeedbackReasonCount: {
     color: "#6B7C88",
     fontSize: 11,
     lineHeight: 15,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   summaryFeedbackReasonCountError: {
-    color: "#B04444",
-  },
+    color: "#B04444" },
   summaryFeedbackSubmitButton: {
     borderRadius: 999,
     backgroundColor: "#4B8F33",
     paddingHorizontal: 13,
-    paddingVertical: 8,
-  },
+    paddingVertical: 8 },
   summaryFeedbackSubmitButtonDisabled: {
-    opacity: 0.48,
-  },
+    opacity: 0.48 },
   summaryFeedbackSubmitButtonText: {
     color: "#FFFFFF",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "800",
-  },
-});
+    fontFamily: "Outfit-Bold" } });
 
 

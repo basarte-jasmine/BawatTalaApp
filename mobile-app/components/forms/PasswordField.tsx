@@ -27,8 +27,7 @@ export function PasswordField({
   containerStyle,
   inputWrapStyle,
   inputStyle,
-  editable,
-}: PasswordFieldProps) {
+  editable }: PasswordFieldProps) {
   return (
     <FormTextInput
       label={label}
@@ -52,11 +51,8 @@ export function PasswordField({
 
 const styles = StyleSheet.create({
   wrap: {
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   eyeButton: {
     width: 36,
     alignItems: "center",
-    justifyContent: "center",
-  },
-});
+    justifyContent: "center" } });

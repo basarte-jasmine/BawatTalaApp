@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Easing, Image, ImageSourcePropType, StyleProp, StyleSheet, View, ViewStyle } from "react-native";
 import {
   getEyeAccessoryStyle,
@@ -14,13 +14,14 @@ type MuniAvatarProps = {
   style?: StyleProp<ViewStyle>;
 };
 
+// Safe underscore filenames — spaced names can fail Metro asset resolution in release APKs.
 const MUNI_FEET = require("../../assets/images/Muni/Feet.png");
 const MUNI_BODY = require("../../assets/images/Muni/Body.png");
-const MUNI_LEFT_HAND = require("../../assets/images/Muni/Left Hand.png");
-const MUNI_RIGHT_HAND = require("../../assets/images/Muni/Right Hand.png");
-const MUNI_EYES_OPEN = require("../../assets/images/Muni/Eyes Full Open.png");
-const MUNI_EYES_HALF = require("../../assets/images/Muni/Eyes Half Open.png");
-const MUNI_EYES_CLOSED = require("../../assets/images/Muni/Eyes Closed.png");
+const MUNI_LEFT_HAND = require("../../assets/images/Muni/Left_Hand.png");
+const MUNI_RIGHT_HAND = require("../../assets/images/Muni/Right_Hand.png");
+const MUNI_EYES_OPEN = require("../../assets/images/Muni/Eyes_Full_Open.png");
+const MUNI_EYES_HALF = require("../../assets/images/Muni/Eyes_Half_Open.png");
+const MUNI_EYES_CLOSED = require("../../assets/images/Muni/Eyes_Closed.png");
 const AVATAR_CANVAS_SIZE = 205;
 
 const BLINK_FRAMES: ImageSourcePropType[] = [
@@ -30,6 +31,27 @@ const BLINK_FRAMES: ImageSourcePropType[] = [
   MUNI_EYES_HALF,
   MUNI_EYES_OPEN,
 ];
+
+const CRITICAL_BODY_SOURCES: ImageSourcePropType[] = [
+  MUNI_BODY,
+  MUNI_FEET,
+  MUNI_LEFT_HAND,
+  MUNI_RIGHT_HAND,
+  MUNI_EYES_OPEN,
+];
+
+let criticalPreloadStarted = false;
+
+function preloadCriticalBodyParts() {
+  if (criticalPreloadStarted) return;
+  criticalPreloadStarted = true;
+  CRITICAL_BODY_SOURCES.forEach((source) => {
+    const resolved = Image.resolveAssetSource(source);
+    if (resolved?.uri) {
+      void Image.prefetch(resolved.uri).catch(() => undefined);
+    }
+  });
+}
 
 export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps) {
   const savedLoadout = useSavedMuniLoadout();
@@ -42,8 +64,63 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
   const isGhostOutfit = activeLoadout.outfit === "spooky-ghost";
   const breath = useRef(new Animated.Value(0)).current;
   const wave = useRef(new Animated.Value(0)).current;
+  const handsOpacity = useRef(new Animated.Value(0)).current;
+  const faceOpacity = useRef(new Animated.Value(0)).current;
+  const accessoryOpacity = useRef(new Animated.Value(0)).current;
   const [avatarSize, setAvatarSize] = useState({ height: 96, width: 96 });
   const [blinkFrameIndex, setBlinkFrameIndex] = useState(0);
+  const [bodyReady, setBodyReady] = useState(false);
+  const [showHands, setShowHands] = useState(false);
+  const [showFace, setShowFace] = useState(false);
+  const [showAccessories, setShowAccessories] = useState(false);
+
+  useEffect(() => {
+    preloadCriticalBodyParts();
+  }, []);
+
+  useEffect(() => {
+    if (!bodyReady) return;
+    setShowHands(true);
+    Animated.timing(handsOpacity, {
+      toValue: 1,
+      duration: 160,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (!finished) return;
+      setShowFace(true);
+      Animated.timing(faceOpacity, {
+        toValue: 1,
+        duration: 140,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start(({ finished: faceDone }) => {
+        if (!faceDone) return;
+        setShowAccessories(true);
+        Animated.timing(accessoryOpacity, {
+          toValue: 1,
+          duration: 160,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }).start();
+      });
+    });
+  }, [accessoryOpacity, bodyReady, faceOpacity, handsOpacity]);
+
+  useEffect(() => {
+    // Reset progressive layers when the equipped look changes so new sheets fade in.
+    setShowAccessories(false);
+    accessoryOpacity.setValue(0);
+    if (bodyReady) {
+      setShowAccessories(true);
+      Animated.timing(accessoryOpacity, {
+        toValue: 1,
+        duration: 140,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [accessoryOpacity, activeLoadout.eye, activeLoadout.head, activeLoadout.outfit, bodyReady]);
 
   useEffect(() => {
     if (!animated) {
@@ -73,7 +150,7 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
   }, [animated, breath]);
 
   useEffect(() => {
-    if (!animated) {
+    if (!animated || !showHands) {
       wave.setValue(0);
       return undefined;
     }
@@ -99,10 +176,10 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
 
     loop.start();
     return () => loop.stop();
-  }, [animated, wave]);
+  }, [animated, showHands, wave]);
 
   useEffect(() => {
-    if (!animated) {
+    if (!animated || !showFace) {
       setBlinkFrameIndex(0);
       return undefined;
     }
@@ -133,7 +210,7 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
         clearTimeout(timeoutId);
       }
     };
-  }, [animated]);
+  }, [animated, showFace]);
 
   const breathingStyle = useMemo(
     () => ({
@@ -161,28 +238,25 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
     [breath],
   );
 
-  const leftHandWaveStyle = useMemo(
-    () => {
-      const pivotX = (0.24 - 0.5) * AVATAR_CANVAS_SIZE;
-      const pivotY = (0.63 - 0.5) * AVATAR_CANVAS_SIZE;
+  const leftHandWaveStyle = useMemo(() => {
+    const pivotX = (0.24 - 0.5) * AVATAR_CANVAS_SIZE;
+    const pivotY = (0.63 - 0.5) * AVATAR_CANVAS_SIZE;
 
-      return {
-        transform: [
-          { translateX: pivotX },
-          { translateY: pivotY },
-          {
-            rotate: wave.interpolate({
-              inputRange: [0, 0.2, 0.45, 0.7, 1],
-              outputRange: ["0deg", "-34deg", "24deg", "-30deg", "0deg"],
-            }),
-          },
-          { translateX: -pivotX },
-          { translateY: -pivotY },
-        ],
-      };
-    },
-    [wave],
-  );
+    return {
+      transform: [
+        { translateX: pivotX },
+        { translateY: pivotY },
+        {
+          rotate: wave.interpolate({
+            inputRange: [0, 0.2, 0.45, 0.7, 1],
+            outputRange: ["0deg", "-34deg", "24deg", "-30deg", "0deg"],
+          }),
+        },
+        { translateX: -pivotX },
+        { translateY: -pivotY },
+      ],
+    };
+  }, [wave]);
 
   const scaledShellStyle = useMemo(
     () => ({
@@ -207,25 +281,59 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
     >
       <View style={[styles.scaledShell, scaledShellStyle]}>
         <Animated.View style={[styles.avatarStack, breathingStyle]}>
-          <Image source={MUNI_RIGHT_HAND} style={styles.layer} resizeMode="contain" />
-          <Animated.Image source={MUNI_LEFT_HAND} style={[styles.layer, leftHandWaveStyle]} resizeMode="contain" />
-          <Image source={MUNI_BODY} style={styles.layer} resizeMode="contain" />
-          <Image source={MUNI_FEET} style={[styles.layer, styles.feetLayer]} resizeMode="contain" />
-
-          <Image
-            source={BLINK_FRAMES[blinkFrameIndex]}
-            style={[styles.layer, styles.faceLayer, isGhostOutfit && styles.ghostFaceLayer]}
-            resizeMode="contain"
-          />
-
-          {equippedOutfitSource ? <Image source={equippedOutfitSource} style={styles.layer} resizeMode="contain" /> : null}
-
-          {equippedEyeSource ? (
-            <Image source={equippedEyeSource} style={[styles.layer, equippedEyeStyle]} resizeMode="contain" />
+          {showHands ? (
+            <Animated.View style={[styles.layer, { opacity: handsOpacity }]}>
+              <Image source={MUNI_RIGHT_HAND} style={styles.layer} resizeMode="contain" />
+              <Animated.Image source={MUNI_LEFT_HAND} style={[styles.layer, leftHandWaveStyle]} resizeMode="contain" />
+            </Animated.View>
           ) : null}
 
-          {equippedHeadSource ? (
-            <Image source={equippedHeadSource} style={[styles.layer, equippedHeadStyle]} resizeMode="contain" />
+          <Image
+            source={MUNI_BODY}
+            style={styles.layer}
+            resizeMode="contain"
+            onLoad={() => setBodyReady(true)}
+            onError={() => setBodyReady(true)}
+          />
+
+          {showHands ? (
+            <Animated.Image
+              source={MUNI_FEET}
+              style={[styles.layer, styles.feetLayer, { opacity: handsOpacity }]}
+              resizeMode="contain"
+            />
+          ) : null}
+
+          {showFace ? (
+            <Animated.Image
+              source={BLINK_FRAMES[blinkFrameIndex]}
+              style={[styles.layer, styles.faceLayer, isGhostOutfit && styles.ghostFaceLayer, { opacity: faceOpacity }]}
+              resizeMode="contain"
+            />
+          ) : null}
+
+          {showAccessories && equippedOutfitSource ? (
+            <Animated.Image
+              source={equippedOutfitSource}
+              style={[styles.layer, { opacity: accessoryOpacity }]}
+              resizeMode="contain"
+            />
+          ) : null}
+
+          {showAccessories && equippedEyeSource ? (
+            <Animated.Image
+              source={equippedEyeSource}
+              style={[styles.layer, equippedEyeStyle, { opacity: accessoryOpacity }]}
+              resizeMode="contain"
+            />
+          ) : null}
+
+          {showAccessories && equippedHeadSource ? (
+            <Animated.Image
+              source={equippedHeadSource}
+              style={[styles.layer, equippedHeadStyle, { opacity: accessoryOpacity }]}
+              resizeMode="contain"
+            />
           ) : null}
         </Animated.View>
       </View>

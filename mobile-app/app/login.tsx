@@ -9,8 +9,7 @@ import { loginWithStudentId } from "../lib/backend-api";
 import {
   AUTH_MESSAGES,
   isValidStudentId,
-  normalizeStudentIdInput,
-} from "../lib/auth-validation";
+  normalizeStudentIdInput } from "../lib/auth-validation";
 import { useAuthSession } from "../lib/auth-session";
 
 function getLoginErrorMessage(message?: string) {
@@ -143,105 +142,82 @@ const styles = StyleSheet.create({
   scrollContent: {
     justifyContent: "center",
     paddingHorizontal: 26,
-    paddingVertical: 28,
-  },
+    paddingVertical: 28 },
   card: {
-    maxWidth: 320,
-  },
+    maxWidth: 320 },
   logo: {
     width: 72,
     height: 72,
     alignSelf: "center",
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   title: {
     textAlign: "center",
     fontSize: 23,
     lineHeight: 30,
     color: "#111111",
-    fontFamily: "Outfit",
-    fontWeight: "700",
-    marginBottom: 4,
-  },
+
+    fontFamily: "Outfit-Bold",
+    marginBottom: 4 },
   subtitle: {
     textAlign: "center",
     fontSize: 12,
     lineHeight: 18,
     color: "#1B1B1B",
-    marginBottom: 18,
-  },
+    marginBottom: 18 },
   label: {
     fontSize: 12,
     lineHeight: 16,
-    color: "#1A1A1A",
-  },
+    color: "#1A1A1A" },
   input: {
     fontSize: 13,
     color: "#111111",
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   passwordContainer: {
-    marginBottom: 0,
-  },
+    marginBottom: 0 },
   passwordWrap: {
     minHeight: 38,
     borderRadius: 7,
-    marginBottom: 0,
-  },
+    marginBottom: 0 },
   passwordInput: {
     fontSize: 13,
     color: "#111111",
     paddingVertical: 8,
-    textAlignVertical: "center",
-  },
+    textAlignVertical: "center" },
   forgotWrap: {
     alignSelf: "flex-start",
     marginBottom: 18,
-    marginTop: -2,
-  },
+    marginTop: -2 },
   forgotText: {
     color: "#2C7DB0",
-    fontSize: 11,
-  },
+    fontSize: 11 },
   loginButton: {
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   loginButtonText: {
     fontSize: 13,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   errorText: {
     color: "#C31A1A",
     fontSize: 11,
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   orRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   orLine: {
     flex: 1,
     height: 1,
-    backgroundColor: "#BEBEBE",
-  },
+    backgroundColor: "#BEBEBE" },
   orText: {
     marginHorizontal: 10,
     color: "#555555",
     fontSize: 11,
-    fontWeight: "600",
-  },
+    fontFamily: "Outfit-SemiBold" },
   registerWrap: {
-    alignItems: "center",
-  },
+    alignItems: "center" },
   registerText: {
     color: "#2A2A2A",
-    fontSize: 11,
-  },
+    fontSize: 11 },
   registerLink: {
-    color: "#2C7DB0",
-  },
+    color: "#2C7DB0" },
   disabledLink: {
-    opacity: 0.5,
-  },
-});
+    opacity: 0.5 } });

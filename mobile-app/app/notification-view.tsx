@@ -5,8 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import {
   getNotificationDetailTitle,
   getNotificationFallbackRoute,
-  getNotificationVisual,
-} from "../lib/notification-utils";
+  getNotificationVisual } from "../lib/notification-utils";
 
 const TALA_IMAGE = require("../assets/images/Tala_Star.png");
 
@@ -38,8 +37,7 @@ export default function NotificationViewScreen() {
         year: "numeric",
         hour: "numeric",
         minute: "2-digit",
-        hour12: true,
-      })
+        hour12: true })
     : timeLabel || "";
 
   return (
@@ -83,8 +81,7 @@ export default function NotificationViewScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F7FAF5",
-  },
+    backgroundColor: "#F7FAF5" },
   topBar: {
     minHeight: 58,
     paddingHorizontal: 8,
@@ -94,34 +91,28 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(250, 252, 249, 0.98)",
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-  },
+    justifyContent: "space-between" },
   backButton: {
     width: 40,
     height: 40,
     borderRadius: 999,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   topTitle: {
     color: "#33475C",
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   topBarSpacer: {
     width: 40,
-    height: 40,
-  },
+    height: 40 },
   scroll: {
-    flex: 1,
-  },
+    flex: 1 },
   content: {
     paddingHorizontal: 14,
     paddingTop: 18,
     paddingBottom: 28,
-    rowGap: 14,
-  },
+    rowGap: 14 },
   heroCard: {
     borderRadius: 24,
     borderWidth: 1,
@@ -131,24 +122,20 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     flexDirection: "row",
     alignItems: "flex-start",
-    columnGap: 12,
-  },
+    columnGap: 12 },
   heroIconBubble: {
     width: 44,
     height: 44,
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 2,
-  },
+    marginTop: 2 },
   heroTalaIcon: {
     width: 27,
-    height: 27,
-  },
+    height: 27 },
   heroTextWrap: {
     flex: 1,
-    minWidth: 0,
-  },
+    minWidth: 0 },
   kindChip: {
     minHeight: 24,
     paddingHorizontal: 10,
@@ -156,45 +143,37 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   kindChipText: {
     fontSize: 11.5,
     lineHeight: 14,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   title: {
     color: "#33475B",
     fontSize: 22,
     lineHeight: 28,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   meta: {
     marginTop: 6,
     color: "#6B7783",
     fontSize: 14,
-    lineHeight: 20,
-  },
+    lineHeight: 20 },
   bodyCard: {
     borderRadius: 22,
     backgroundColor: "#FFFFFF",
     paddingHorizontal: 16,
     paddingVertical: 18,
     borderWidth: 1,
-    borderColor: "#E2E9E4",
-  },
+    borderColor: "#E2E9E4" },
   bodyLabel: {
     color: "#6A875A",
     fontSize: 11,
     lineHeight: 15,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     letterSpacing: 0.5,
     textTransform: "uppercase",
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   bodyText: {
     color: "#384A5E",
     fontSize: 17,
-    lineHeight: 27,
-  },
-});
+    lineHeight: 27 } });

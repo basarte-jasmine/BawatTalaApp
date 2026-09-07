@@ -9,8 +9,7 @@ import { useAuthSession } from "../lib/auth-session";
 import {
   AUTH_MESSAGES,
   isValidStudentId,
-  normalizeStudentIdInput,
-} from "../lib/auth-validation";
+  normalizeStudentIdInput } from "../lib/auth-validation";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -64,9 +63,7 @@ export default function ResetPasswordScreen() {
       pathname: "/reset-password-otp",
       params: {
         resendAfterSeconds: String(result.resendAfterSeconds ?? 60),
-        studentId: studentNumber,
-      },
-    });
+        studentId: studentNumber } });
   };
 
   const handleReturn = () => {
@@ -120,48 +117,37 @@ export default function ResetPasswordScreen() {
 
 const styles = StyleSheet.create({
   content: {
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   card: {
-    maxWidth: 320,
-  },
+    maxWidth: 320 },
   title: {
     textAlign: "center",
     color: "#111111",
     fontSize: 20,
     lineHeight: 28,
-    fontFamily: "Outfit",
-    fontWeight: "700",
-    marginBottom: 8,
-  },
+
+    fontFamily: "Outfit-Bold",
+    marginBottom: 8 },
   subtitle: {
     textAlign: "center",
     color: "#1A1A1A",
     fontSize: 12,
     lineHeight: 18,
-    marginBottom: 24,
-  },
+    marginBottom: 24 },
   label: {
     color: "#111111",
-    fontSize: 12,
-  },
+    fontSize: 12 },
   actionButton: {
     marginTop: 18,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   errorText: {
     color: "#C31A1A",
     fontSize: 11,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   backToLogin: {
-    alignItems: "center",
-  },
+    alignItems: "center" },
   backText: {
     color: "#111111",
-    fontSize: 11,
-  },
+    fontSize: 11 },
   backLink: {
-    color: "#2C7DB0",
-  },
-});
+    color: "#2C7DB0" } });

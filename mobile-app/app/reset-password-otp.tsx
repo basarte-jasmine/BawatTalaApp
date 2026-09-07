@@ -55,8 +55,7 @@ export default function ResetPasswordOtpScreen() {
 
     router.push({
       pathname: "/reset-password-new",
-      params: { studentId },
-    });
+      params: { studentId } });
   };
 
   const handleResendCode = async () => {
@@ -118,63 +117,48 @@ export default function ResetPasswordOtpScreen() {
 
 const styles = StyleSheet.create({
   content: {
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   card: {
-    maxWidth: 320,
-  },
+    maxWidth: 320 },
   title: {
     textAlign: "center",
     color: "#111111",
     fontSize: 20,
     lineHeight: 28,
-    fontFamily: "Outfit",
-    fontWeight: "700",
-    marginBottom: 8,
-  },
+
+    fontFamily: "Outfit-Bold",
+    marginBottom: 8 },
   subtitle: {
     textAlign: "center",
     color: "#1A1A1A",
     fontSize: 12,
     lineHeight: 18,
-    marginBottom: 24,
-  },
+    marginBottom: 24 },
   label: {
     color: "#111111",
     fontSize: 12,
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   otpRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 18,
-  },
+    marginBottom: 18 },
   actionButton: {
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   resendButton: {
     marginBottom: 12,
-    backgroundColor: "#E4EDF5",
-  },
+    backgroundColor: "#E4EDF5" },
   resendButtonText: {
-    color: "#2D3F4E",
-  },
+    color: "#2D3F4E" },
   disabledButton: {
-    opacity: 0.7,
-  },
+    opacity: 0.7 },
   errorText: {
     color: "#C31A1A",
     fontSize: 11,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   linkButton: {
-    alignItems: "center",
-  },
+    alignItems: "center" },
   linkText: {
     color: "#111111",
-    fontSize: 11,
-  },
+    fontSize: 11 },
   linkAccent: {
-    color: "#2C7DB0",
-  },
-});
+    color: "#2C7DB0" } });

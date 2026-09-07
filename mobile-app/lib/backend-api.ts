@@ -527,15 +527,57 @@ function createLocalJournalEntry(studentNumber: string, aiEnabled: boolean): Sto
   };
 }
 
+function isUserRole(role: unknown) {
+  const normalized = String(role || "").trim().toLowerCase();
+  return normalized === "user" || normalized === "student";
+}
+
 function summarizeLocalMessages(messages: JournalMessage[]) {
   const text = messages
-    .filter((message) => message.role === "user")
-    .map((message) => message.text.trim())
+    .filter((message) => isUserRole(message.role))
+    .map((message) => String(message.text || "").trim())
     .filter(Boolean)
     .join(" ");
 
   if (!text) return "";
   return text.length > 180 ? `${text.slice(0, 177).trim()}...` : text;
+}
+
+function pickJournalPreviewText(entry?: {
+  contentText?: string;
+  preview?: string;
+  summary?: string;
+  title?: string;
+} | null, messages: JournalMessage[] = []) {
+  const fromMessages = summarizeLocalMessages(messages);
+  const candidates = [
+    fromMessages,
+    String(entry?.contentText || "").replace(/\s+/g, " ").trim(),
+    String(entry?.preview || "").replace(/\s+/g, " ").trim(),
+    String(entry?.summary || "").replace(/\s+/g, " ").trim(),
+    String(entry?.title || "").replace(/\s+/g, " ").trim(),
+  ];
+  return candidates.find(Boolean) || "";
+}
+
+function normalizeRecentJournalListEntry<T extends {
+  createdAt?: string;
+  entryDate: string;
+  id: string;
+  insights?: string[];
+  isFinished?: boolean;
+  preview?: string;
+  summary?: string;
+  title?: string;
+  contentText?: string;
+}>(entry: T) {
+  const preview = pickJournalPreviewText(entry);
+  return {
+    ...entry,
+    preview,
+    summary: String(entry.summary || "").trim(),
+    title: String(entry.title || "").trim() || "Journal entry",
+  };
 }
 
 function normalizeJournalMessage(value: unknown): JournalMessage | null {
@@ -567,10 +609,10 @@ function buildPreviewJournalMessages(entry?: {
   createdAt?: string;
   id?: string;
   preview?: string;
+  summary?: string;
+  title?: string;
 } | null): JournalMessage[] {
-  const preview = String(entry?.contentText || entry?.preview || "")
-    .replace(/\s+/g, " ")
-    .trim();
+  const preview = pickJournalPreviewText(entry);
   if (!entry?.id || !preview) return [];
   return [
     {
@@ -682,7 +724,7 @@ async function getLocalFinishedJournalEntries(studentNumber: string) {
   return records
     .filter((record) => record.entry.isFinished)
     .map((record) => {
-      const preview = summarizeLocalMessages(record.messages) || record.entry.summary || record.entry.title;
+      const preview = pickJournalPreviewText(record.entry, record.messages);
       return {
         createdAt: record.entry.createdAt,
         entryDate: record.entry.entryDate,
@@ -2596,32 +2638,61 @@ export async function fetchRecentJournalEntries(
   try {
     await syncPendingJournalEntries(studentNumber);
     const { response, data } = await get(`/api/journal/entries/recent?${params.toString()}`);
-    const remoteEntries = data?.entries ?? [];
+    const remoteEntries = (data?.entries ?? []).map((entry: any) => normalizeRecentJournalListEntry(entry));
     const localEntries = await getLocalFinishedJournalEntries(studentNumber);
-    const entries = mergeJournalEntryLists(remoteEntries, localEntries).slice(0, windowDays);
+    const entries = mergeJournalEntryLists(remoteEntries, localEntries).map((entry) =>
+      normalizeRecentJournalListEntry(entry),
+    );
     const todayIso = getManilaTodayIsoDate();
     const currentMonth = todayIso.slice(0, 7);
 
     for (const entry of remoteEntries) {
       const record = await getLocalJournalRecord(studentNumber, entry.id);
-      if (record) continue;
+      const remotePreview = pickJournalPreviewText(entry);
+      const localPreview = record
+        ? pickJournalPreviewText(record.entry, record.messages)
+        : "";
+      const localHasUserMessages = Boolean(
+        record?.messages?.some((message) => isUserRole(message.role) && String(message.text || "").trim()),
+      );
+      // Skip only when local already has equal/better content; never leave an empty cache forever.
+      const localScore = journalEntryContentScore({
+        preview: localPreview,
+        summary: record?.entry.summary,
+        title: record?.entry.title,
+      });
+      const remoteScore = journalEntryContentScore({
+        preview: remotePreview,
+        summary: entry.summary,
+        title: entry.title,
+      });
+      if (record && (localHasUserMessages || localScore >= remoteScore)) {
+        continue;
+      }
+      if (!remotePreview && !String(entry.summary || "").trim() && !String(entry.title || "").trim()) {
+        continue;
+      }
       await upsertLocalJournalRecord(studentNumber, {
         adminFlagReason: null,
         aiEnabled: false,
         concernTags: [],
-        contentText: entry.preview || "",
+        contentText: remotePreview || entry.summary || "",
         createdAt: entry.createdAt,
         entryDate: entry.entryDate,
         finishedAt: null,
         id: entry.id,
         insights: [],
         isFinished: Boolean(entry.isFinished),
-        preview: entry.preview,
+        preview: remotePreview,
         riskLevel: "NONE",
         summary: entry.summary || "",
-        title: entry.title,
+        title: entry.title || "Journal entry",
         updatedAt: entry.createdAt,
-      }, buildPreviewJournalMessages(entry), "synced");
+      }, buildPreviewJournalMessages({
+        ...entry,
+        contentText: remotePreview || entry.summary || "",
+        preview: remotePreview,
+      }), "synced");
     }
 
     return {
@@ -2635,7 +2706,9 @@ export async function fetchRecentJournalEntries(
       },
     };
   } catch {
-    const entries = (await getLocalFinishedJournalEntries(studentNumber)).slice(0, windowDays);
+    const entries = (await getLocalFinishedJournalEntries(studentNumber)).map((entry) =>
+      normalizeRecentJournalListEntry(entry),
+    );
     const todayIso = getManilaTodayIsoDate();
     const currentMonth = todayIso.slice(0, 7);
     return {
@@ -2660,6 +2733,22 @@ export async function fetchJournalEntryById(
     messages?: JournalMessage[];
   }
 > {
+  const enrichJournalEntry = (
+    entry: JournalEntry | null | undefined,
+    messages: JournalMessage[],
+  ): JournalEntry | null => {
+    if (!entry) return null;
+    const preview = pickJournalPreviewText(entry, messages);
+    const contentText = String(entry.contentText || "").trim() || preview;
+    return {
+      ...entry,
+      contentText,
+      preview: entry.preview || preview,
+      summary: entry.summary || "",
+      title: entry.title || "Journal entry",
+    };
+  };
+
   if (entryId.startsWith("local-")) {
     const record = await getLocalJournalRecord(studentNumber, entryId);
     const localMessages = normalizeJournalMessages(record?.messages);
@@ -2667,7 +2756,7 @@ export async function fetchJournalEntryById(
     return {
       ok: Boolean(record),
       message: record ? "Loaded offline journal entry." : "Unable to load this offline entry.",
-      entry: record?.entry ?? null,
+      entry: enrichJournalEntry(record?.entry ?? null, messages),
       messages,
     };
   }
@@ -2679,28 +2768,46 @@ export async function fetchJournalEntryById(
     const localRecord = await getLocalJournalRecord(studentNumber, entryId);
     const remoteMessages = normalizeJournalMessages(data?.messages);
     const localMessages = normalizeJournalMessages(localRecord?.messages);
-    const responseMessages = remoteMessages.length > 0
+    const remoteEntry = (data?.entry ?? null) as JournalEntry | null;
+    const seedEntry = remoteEntry
+      ? {
+          ...remoteEntry,
+          contentText: remoteEntry.contentText || localRecord?.entry?.contentText || "",
+          preview: remoteEntry.preview || localRecord?.entry?.preview || "",
+          summary: remoteEntry.summary || localRecord?.entry?.summary || "",
+        }
+      : localRecord?.entry ?? null;
+    const remoteHasUserText = remoteMessages.some(
+      (message) => isUserRole(message.role) && String(message.text || "").trim(),
+    );
+    const localHasUserText = localMessages.some(
+      (message) => isUserRole(message.role) && String(message.text || "").trim(),
+    );
+    const responseMessages = remoteHasUserText
       ? remoteMessages
-      : localMessages.length > 0
+      : localHasUserText
         ? localMessages
-        : buildPreviewJournalMessages(data?.entry);
+        : remoteMessages.length > 0
+          ? remoteMessages
+          : buildPreviewJournalMessages(seedEntry);
     if (!response.ok) {
       const fallbackMessages = localMessages.length ? localMessages : buildPreviewJournalMessages(localRecord?.entry);
       return {
         ok: Boolean(localRecord),
         message: localRecord ? "Loaded journal entry saved on this device." : data?.message,
-        entry: localRecord?.entry ?? null,
+        entry: enrichJournalEntry(localRecord?.entry ?? null, fallbackMessages),
         messages: fallbackMessages,
       };
     }
+    const enrichedEntry = enrichJournalEntry(seedEntry, responseMessages);
     if (response.ok) {
-      await upsertLocalJournalRecord(studentNumber, data?.entry ?? null, responseMessages);
+      await upsertLocalJournalRecord(studentNumber, enrichedEntry, responseMessages);
     }
 
     return {
       ok: response.ok,
       message: data?.message,
-      entry: data?.entry ?? null,
+      entry: enrichedEntry,
       messages: responseMessages,
     };
   } catch {
@@ -2710,7 +2817,7 @@ export async function fetchJournalEntryById(
     return {
       ok: Boolean(record),
       message: record ? "Loaded journal entry saved on this device." : "Unable to load this journal entry offline.",
-      entry: record?.entry ?? null,
+      entry: enrichJournalEntry(record?.entry ?? null, messages),
       messages,
     };
   }
@@ -2792,30 +2899,58 @@ export async function fetchJournalEntriesByDate(
     }
 
     const localEntries = (await getLocalFinishedJournalEntries(studentNumber)).filter((entry) => entry.entryDate === date);
-    const remoteEntries = data?.entries ?? [];
+    const remoteEntries = (data?.entries ?? []).map((entry: any) => normalizeRecentJournalListEntry(entry));
     for (const entry of remoteEntries) {
       const record = await getLocalJournalRecord(studentNumber, entry.id);
-      if (record) continue;
+      const remotePreview = pickJournalPreviewText(entry);
+      const localPreview = record
+        ? pickJournalPreviewText(record.entry, record.messages)
+        : "";
+      const localHasUserMessages = Boolean(
+        record?.messages?.some((message) => isUserRole(message.role) && String(message.text || "").trim()),
+      );
+      const localScore = journalEntryContentScore({
+        preview: localPreview,
+        summary: record?.entry.summary,
+        title: record?.entry.title,
+      });
+      const remoteScore = journalEntryContentScore({
+        preview: remotePreview,
+        summary: entry.summary,
+        title: entry.title,
+      });
+      if (record && (localHasUserMessages || localScore >= remoteScore)) {
+        continue;
+      }
+      if (!remotePreview && !String(entry.summary || "").trim() && !String(entry.title || "").trim()) {
+        continue;
+      }
       await upsertLocalJournalRecord(studentNumber, {
         adminFlagReason: null,
         aiEnabled: false,
         concernTags: [],
-        contentText: entry.preview || "",
+        contentText: remotePreview || entry.summary || "",
         createdAt: entry.createdAt,
         entryDate: entry.entryDate,
         finishedAt: null,
         id: entry.id,
         insights: Array.isArray(entry.insights) ? entry.insights : [],
         isFinished: Boolean(entry.isFinished),
-        preview: entry.preview,
+        preview: remotePreview,
         riskLevel: "NONE",
         summary: entry.summary || "",
-        title: entry.title,
+        title: entry.title || "Journal entry",
         updatedAt: entry.createdAt,
-      }, buildPreviewJournalMessages(entry), "synced");
+      }, buildPreviewJournalMessages({
+        ...entry,
+        contentText: remotePreview || entry.summary || "",
+        preview: remotePreview,
+      }), "synced");
     }
 
-    const entries = mergeJournalEntryLists(remoteEntries, localEntries);
+    const entries = mergeJournalEntryLists(remoteEntries, localEntries).map((entry) =>
+      normalizeRecentJournalListEntry(entry),
+    );
     return {
       ok: response.ok,
       message: data?.message,
@@ -2827,7 +2962,9 @@ export async function fetchJournalEntriesByDate(
       ok: true,
       message: "Showing entries saved on this device.",
       date,
-      entries: (await getLocalFinishedJournalEntries(studentNumber)).filter((entry) => entry.entryDate === date),
+      entries: (await getLocalFinishedJournalEntries(studentNumber))
+        .filter((entry) => entry.entryDate === date)
+        .map((entry) => normalizeRecentJournalListEntry(entry)),
     };
   }
 }

@@ -53,10 +53,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
-    backgroundColor: "#DDEED6",
-  },
+    backgroundColor: "#DDEED6" },
   initials: {
     color: "#41684A",
-    fontWeight: "800",
-  },
-});
+    fontFamily: "Outfit-Bold" } });

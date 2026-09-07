@@ -12,8 +12,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  View,
-} from "react-native";
+  View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   createAudioPlayer,
@@ -21,8 +20,7 @@ import {
   RecordingPresets,
   setAudioModeAsync,
   useAudioRecorder,
-  type AudioPlayer,
-} from "expo-audio";
+  type AudioPlayer } from "expo-audio";
 import { File } from "expo-file-system";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
 import {
@@ -36,8 +34,7 @@ import {
   synthesizeVoiceSpeech,
   transcribeAudio,
   type JournalEntry,
-  type JournalMessage,
-} from "../lib/backend-api";
+  type JournalMessage } from "../lib/backend-api";
 import { useAuthSession } from "../lib/auth-session";
 import { JournalLockGate, useAppPreferences } from "../lib/app-preferences";
 
@@ -144,7 +141,7 @@ function base64ToBlobUrl(base64Data: string, contentType = "audio/mp3"): string 
 
 export default function MuniVoiceScreen() {
   const { user } = useAuthSession();
-  const { appLockEnabled, isAppLocked } = useAppPreferences();
+  const { appLockEnabled, isAppLocked, suppressJournalAutoLock } = useAppPreferences();
   const entryRef = useRef<JournalEntry | null>(null);
   const messagesRef = useRef<JournalMessage[]>([]);
   const sessionStartedRef = useRef(false);
@@ -336,8 +333,7 @@ export default function MuniVoiceScreen() {
 
         const result = await synthesizeVoiceSpeech({
           text: cleanText,
-          voice: selectedVoice,
-        });
+          voice: selectedVoice });
 
         if (isDisposedRef.current) {
           setVoiceState("idle");
@@ -383,8 +379,7 @@ export default function MuniVoiceScreen() {
             return;
           }
           await setAudioModeAsync({
-            playsInSilentMode: true,
-          });
+            playsInSilentMode: true });
           const audioUrl = "data:audio/mp3;base64," + result.audioBase64;
           const player = createAudioPlayer(audioUrl);
           nativePlayerRef.current = player;
@@ -439,8 +434,7 @@ export default function MuniVoiceScreen() {
         message: messageText,
         messages: messagesRef.current,
         requireExistingEntry: true,
-        studentNumber: user.studentNumber,
-      });
+        studentNumber: user.studentNumber });
 
       if (isDisposedRef.current) {
         return;
@@ -491,8 +485,7 @@ export default function MuniVoiceScreen() {
         const result = await transcribeAudio({
           audioBase64: base64Audio,
           mimeType,
-          filename,
-        });
+          filename });
 
         if (isDisposedRef.current) {
           return;
@@ -543,8 +536,7 @@ export default function MuniVoiceScreen() {
     const created = await createJournalSession({
       aiEnabled: true,
       forceNew: true,
-      studentNumber: user.studentNumber,
-    });
+      studentNumber: user.studentNumber });
     if (created.ok && created.entry) {
       setActiveEntry(created.entry);
       setConversationMessages(created.messages ?? []);
@@ -620,8 +612,7 @@ export default function MuniVoiceScreen() {
     if (entry?.id && user?.studentNumber && !hasUserMessages) {
       void discardEmptyJournalEntry({
         entryId: entry.id,
-        studentNumber: user.studentNumber,
-      });
+        studentNumber: user.studentNumber });
     }
 
     if (router.canGoBack()) {
@@ -654,13 +645,11 @@ export default function MuniVoiceScreen() {
       if (hasUserMessages) {
         await discardJournalEntry({
           entryId: entry.id,
-          studentNumber: user.studentNumber,
-        });
+          studentNumber: user.studentNumber });
       } else {
         await discardEmptyJournalEntry({
           entryId: entry.id,
-          studentNumber: user.studentNumber,
-        });
+          studentNumber: user.studentNumber });
       }
     }
 
@@ -697,6 +686,8 @@ export default function MuniVoiceScreen() {
 
   const handleStartListening = async () => {
     if (!canListen) return;
+    // Sticky unlock through mic permission / OS dialog AppState transitions.
+    suppressJournalAutoLock(20000);
     await stopSpeaking();
 
     shouldCancelRecordingRef.current = false;
@@ -756,6 +747,8 @@ export default function MuniVoiceScreen() {
 
         recorder.start(250);
       } else {
+        // Keep Journal Lock unlocked across Android mic permission / AppState blips.
+        suppressJournalAutoLock(20000);
         const { granted } = await requestRecordingPermissionsAsync();
         if (!granted) {
           setVoiceState("error");
@@ -765,8 +758,7 @@ export default function MuniVoiceScreen() {
 
         await setAudioModeAsync({
           allowsRecording: true,
-          playsInSilentMode: true,
-        });
+          playsInSilentMode: true });
 
         await nativeRecorder.prepareToRecordAsync();
         nativeRecorder.record();
@@ -850,8 +842,7 @@ export default function MuniVoiceScreen() {
     try {
       const result = await suggestJournalTags({
         entryId: entry.id,
-        studentNumber: user.studentNumber,
-      });
+        studentNumber: user.studentNumber });
 
       if (!result.ok) {
         setStatusMessage(
@@ -908,8 +899,7 @@ export default function MuniVoiceScreen() {
       const supportResult = await saveJournalSupportResponse({
         entryId: entry.id,
         response,
-        studentNumber: user.studentNumber,
-      });
+        studentNumber: user.studentNumber });
       setIsSavingSupportResponse(false);
       if (!supportResult.ok) {
         setStatusMessage(supportResult.message ?? "Unable to save your support response.");
@@ -1011,8 +1001,7 @@ export default function MuniVoiceScreen() {
         forceAnalyze: true,
         messages: messagesRef.current,
         primaryConcern: finalTags[0],
-        studentNumber: user.studentNumber,
-      });
+        studentNumber: user.studentNumber });
 
       if (!finishResult.ok) {
         setStatusMessage(
@@ -1036,8 +1025,7 @@ export default function MuniVoiceScreen() {
       }
       router.replace({
         pathname: "/journal-entry-view",
-        params: { entryId: finishResult.entry?.id ?? entry.id },
-      });
+        params: { entryId: finishResult.entry?.id ?? entry.id } });
     } catch {
       setStatusMessage(
         "Unable to save this voice journal. Check your connection and try again.",
@@ -1583,8 +1571,7 @@ export default function MuniVoiceScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F5F9F1",
-  },
+    backgroundColor: "#F5F9F1" },
   topBar: {
     height: 56,
     borderBottomWidth: 1,
@@ -1593,8 +1580,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 8,
-  },
+    paddingHorizontal: 8 },
   backButton: {
     width: 38,
     height: 38,
@@ -1603,30 +1589,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E0EADC",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   topTitle: {
     color: "#304558",
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   topBarSpacer: {
     width: 38,
-    height: 38,
-  },
+    height: 38 },
   scroll: {
-    flex: 1,
-  },
+    flex: 1 },
   content: {
     padding: 18,
-    rowGap: 14,
-  },
+    rowGap: 14 },
   hero: {
     alignItems: "center",
     paddingTop: 16,
-    paddingBottom: 8,
-  },
+    paddingBottom: 8 },
   muniCircle: {
     width: 128,
     height: 128,
@@ -1636,61 +1616,51 @@ const styles = StyleSheet.create({
     borderColor: "#D4E8CB",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   muniImage: {
     width: 104,
-    height: 104,
-  },
+    height: 104 },
   heading: {
     color: "#304558",
     fontSize: 28,
     lineHeight: 34,
-    fontWeight: "900",
-  },
+    fontFamily: "Outfit-Bold" },
   subheading: {
     marginTop: 8,
     color: "#5F7180",
     fontSize: 14,
     lineHeight: 21,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   voicePanel: {
     borderRadius: 20,
     backgroundColor: "#FFFDF8",
     borderWidth: 1,
     borderColor: "#DCE9D9",
     padding: 16,
-    alignItems: "center",
-  },
+    alignItems: "center" },
   connectionDot: {
     width: 14,
     height: 14,
     borderRadius: 999,
     backgroundColor: "#C7D1C1",
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   connectionDotLive: {
-    backgroundColor: "#70C943",
-  },
+    backgroundColor: "#70C943" },
   connectionDotSpeaking: {
-    backgroundColor: "#3B82F6",
-  },
+    backgroundColor: "#3B82F6" },
   connectionTitle: {
     color: "#304558",
     fontSize: 20,
     lineHeight: 25,
-    fontWeight: "900",
-    textAlign: "center",
-  },
+    fontFamily: "Outfit-Bold",
+    textAlign: "center" },
   connectionMessage: {
     marginTop: 8,
     minHeight: 44,
     color: "#5F7180",
     fontSize: 14,
     lineHeight: 21,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   replyBox: {
     alignSelf: "stretch",
     borderRadius: 16,
@@ -1699,21 +1669,18 @@ const styles = StyleSheet.create({
     borderColor: "#D8E9CB",
     paddingHorizontal: 14,
     paddingVertical: 12,
-    marginTop: 10,
-  },
+    marginTop: 10 },
   replyHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 6,
-  },
+    marginBottom: 6 },
   replyLabel: {
     color: "#5A7A50",
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "900",
-    textTransform: "uppercase",
-  },
+    fontFamily: "Outfit-Bold",
+    textTransform: "uppercase" },
   replayButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -1723,19 +1690,16 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "#E2F0D8",
     borderWidth: 1,
-    borderColor: "#CCE4BF",
-  },
+    borderColor: "#CCE4BF" },
   replayButtonText: {
     color: "#3E6634",
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   replyText: {
     color: "#304558",
     fontSize: 15,
-    lineHeight: 22,
-  },
+    lineHeight: 22 },
   primaryButton: {
     marginTop: 14,
     minHeight: 46,
@@ -1745,21 +1709,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
-    columnGap: 8,
-  },
+    columnGap: 8 },
   primaryButtonDisabled: {
-    backgroundColor: "#B8D6AA",
-  },
+    backgroundColor: "#B8D6AA" },
   buttonIcon: {
     width: 20,
-    height: 20,
-  },
+    height: 20 },
   primaryButtonText: {
     color: "#FFFFFF",
     fontSize: 16,
     lineHeight: 20,
-    fontWeight: "900",
-  },
+    fontFamily: "Outfit-Bold" },
   secondaryButton: {
     marginTop: 10,
     minHeight: 42,
@@ -1771,14 +1731,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
-    columnGap: 6,
-  },
+    columnGap: 6 },
   secondaryButtonText: {
     color: "#365368",
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   cancelRecordingButton: {
     marginTop: 8,
     minHeight: 40,
@@ -1790,21 +1748,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
-    columnGap: 6,
-  },
+    columnGap: 6 },
   cancelRecordingButtonText: {
     color: "#8A4F4A",
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   journalActions: {
     flexDirection: "row",
     alignItems: "stretch",
     columnGap: 10,
     alignSelf: "stretch",
-    marginTop: 14,
-  },
+    marginTop: 14 },
   discardButton: {
     flex: 0.8,
     minHeight: 46,
@@ -1815,14 +1770,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
-    columnGap: 6,
-  },
+    columnGap: 6 },
   discardButtonText: {
     color: "#53685A",
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   saveButton: {
     flex: 1.2,
     minHeight: 46,
@@ -1831,27 +1784,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
-    columnGap: 6,
-  },
+    columnGap: 6 },
   saveButtonDisabled: {
-    backgroundColor: "#B8D6AA",
-  },
+    backgroundColor: "#B8D6AA" },
   actionButtonDisabled: {
-    opacity: 0.75,
-  },
+    opacity: 0.75 },
   saveButtonText: {
     color: "#FFFFFF",
     fontSize: 15,
     lineHeight: 19,
-    fontWeight: "900",
-  },
+    fontFamily: "Outfit-Bold" },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(21, 27, 24, 0.34)",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 22,
-  },
+    paddingHorizontal: 22 },
   modalCard: {
     width: "100%",
     maxWidth: 320,
@@ -1864,47 +1812,39 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
+    elevation: 4 },
   tagReviewModalCard: {
     maxWidth: 380,
-    maxHeight: "82%",
-  },
+    maxHeight: "82%" },
   relationshipTagModalCard: {
-    maxWidth: 340,
-  },
+    maxWidth: 340 },
   concernTitle: {
     color: "#34465A",
     fontSize: 16,
     lineHeight: 22,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 4 },
   concernSubtitle: {
     color: "#5E6E7E",
     fontSize: 12,
     lineHeight: 17,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   tagReviewScroll: {
     maxHeight: 420,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   tagSectionLabel: {
     color: "#53685A",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "800",
+    fontFamily: "Outfit-Bold",
     marginBottom: 8,
-    textTransform: "uppercase",
-  },
+    textTransform: "uppercase" },
   concernGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
     rowGap: 10,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   concernOption: {
     width: "48.5%",
     minHeight: 46,
@@ -1914,26 +1854,21 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     paddingHorizontal: 12,
     paddingVertical: 10,
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   concernOptionSelected: {
     borderColor: "#7BCB46",
-    backgroundColor: "#F1FAEA",
-  },
+    backgroundColor: "#F1FAEA" },
   concernOptionText: {
     color: "#3E556B",
     fontSize: 14,
     lineHeight: 19,
-    fontWeight: "600",
-  },
+    fontFamily: "Outfit-SemiBold" },
   concernOptionTextSelected: {
     color: "#2E6B23",
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   relationshipTagList: {
     rowGap: 10,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   relationshipTagOption: {
     minHeight: 48,
     borderRadius: 14,
@@ -1943,21 +1878,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 12,
-  },
+    paddingHorizontal: 12 },
   relationshipTagOptionSelected: {
     borderColor: "#7BCB46",
-    backgroundColor: "#F1FAEA",
-  },
+    backgroundColor: "#F1FAEA" },
   relationshipTagOptionText: {
     color: "#3E556B",
     fontSize: 14,
     lineHeight: 19,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   relationshipTagOptionTextSelected: {
-    color: "#2E6B23",
-  },
+    color: "#2E6B23" },
   relationshipTagCancelButton: {
     minHeight: 40,
     borderRadius: 999,
@@ -1965,12 +1896,10 @@ const styles = StyleSheet.create({
     borderColor: "#CDD5C7",
     backgroundColor: "#FFFFFF",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   modalActions: {
     flexDirection: "row",
-    columnGap: 10,
-  },
+    columnGap: 10 },
   modalSecondaryButton: {
     flex: 1,
     minHeight: 40,
@@ -1979,58 +1908,49 @@ const styles = StyleSheet.create({
     borderColor: "#CDD5C7",
     backgroundColor: "#FFFFFF",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   modalSecondaryText: {
     color: "#566271",
     fontSize: 13,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   modalPrimaryButton: {
     flex: 1,
     minHeight: 40,
     borderRadius: 999,
     backgroundColor: "#79C943",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   modalPrimaryButtonDisabled: {
-    backgroundColor: "#A8C99C",
-  },
+    backgroundColor: "#A8C99C" },
   modalPrimaryText: {
     color: "#FFFFFF",
     fontSize: 13,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   modalDangerButton: {
     flex: 1,
     minHeight: 40,
     borderRadius: 999,
     backgroundColor: "#DC4C4C",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   modalDangerText: {
     color: "#FFFFFF",
     fontSize: 13,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   exitModalTitle: {
     color: "#34465A",
     fontSize: 17,
     lineHeight: 23,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     textAlign: "center",
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   modalBody: {
     color: "#52606C",
     fontSize: 14,
     lineHeight: 20,
-    fontWeight: "500",
+    fontFamily: "Outfit-Medium",
     textAlign: "center",
-    marginBottom: 16,
-  },
+    marginBottom: 16 },
   riskModalCard: {
     width: "100%",
     maxWidth: 360,
@@ -2043,8 +1963,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
+    elevation: 4 },
   riskCloseButton: {
     position: "absolute",
     top: 12,
@@ -2054,13 +1973,11 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 2,
-  },
+    zIndex: 2 },
   riskHeader: {
     alignItems: "center",
     paddingTop: 8,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   riskIconBadge: {
     width: 46,
     height: 46,
@@ -2068,34 +1985,29 @@ const styles = StyleSheet.create({
     backgroundColor: "#79C943",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   riskTitle: {
     color: "#33475C",
     fontSize: 20,
     lineHeight: 26,
-    fontWeight: "700",
-    textAlign: "center",
-  },
+    fontFamily: "Outfit-Bold",
+    textAlign: "center" },
   riskBody: {
     marginTop: 8,
     color: "#566675",
     fontSize: 14,
     lineHeight: 21,
-    fontWeight: "500",
-    textAlign: "center",
-  },
+    fontFamily: "Outfit-Medium",
+    textAlign: "center" },
   riskHotlineText: {
     marginTop: 10,
     color: "#2E6B23",
     fontSize: 12,
     lineHeight: 17,
-    fontWeight: "700",
-    textAlign: "center",
-  },
+    fontFamily: "Outfit-Bold",
+    textAlign: "center" },
   riskActionStack: {
-    rowGap: 10,
-  },
+    rowGap: 10 },
   riskActionButton: {
     minHeight: 70,
     borderRadius: 18,
@@ -2104,51 +2016,40 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 10,
-  },
+    columnGap: 10 },
   riskActionButtonHotline: {
     backgroundColor: "#F3FBEF",
-    borderColor: "#CFE7BE",
-  },
+    borderColor: "#CFE7BE" },
   riskActionButtonCounseling: {
     backgroundColor: "#F4F8FC",
-    borderColor: "#D7E2EE",
-  },
+    borderColor: "#D7E2EE" },
   riskActionButtonWellness: {
     backgroundColor: "#F8FAF3",
-    borderColor: "#E1E8D8",
-  },
+    borderColor: "#E1E8D8" },
   riskActionButtonDisabled: {
-    opacity: 0.7,
-  },
+    opacity: 0.7 },
   riskActionIconWrap: {
     width: 42,
     height: 42,
     borderRadius: 14,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   riskActionCopy: {
-    flex: 1,
-  },
+    flex: 1 },
   riskActionTitle: {
     color: "#31465A",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   riskActionHint: {
     marginTop: 2,
     color: "#667683",
     fontSize: 12,
-    lineHeight: 17,
-  },
+    lineHeight: 17 },
   riskFooterText: {
     marginTop: 12,
     color: "#7A8691",
     fontSize: 11,
     lineHeight: 16,
-    textAlign: "center",
-  },
-});
+    textAlign: "center" } });

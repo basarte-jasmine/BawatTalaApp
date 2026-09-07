@@ -49,8 +49,7 @@ function formatDisplayDate(year: number, monthIndex: number, dayNumber: number) 
   return new Date(year, monthIndex, dayNumber).toLocaleDateString("en-US", {
     month: "long",
     day: "numeric",
-    year: "numeric",
-  });
+    year: "numeric" });
 }
 
 function formatCheckInTime(value?: string) {
@@ -60,8 +59,7 @@ function formatCheckInTime(value?: string) {
   return date.toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
-    hour12: true,
-  });
+    hour12: true });
 }
 
 function formatMoodSourceLabel(value?: string) {
@@ -117,8 +115,7 @@ export default function MoodOverviewScreen() {
     setMonthlyEntries(result.entries ?? []);
     setMonthlyCounts({
       ...createEmotionCounts(),
-      ...(result.counts ?? {}),
-    });
+      ...(result.counts ?? {}) });
     setMostCommonMoodId(result.mostCommonMoodId ?? null);
     setTotalCheckIns(result.totalCheckIns ?? 0);
   }, [displayMonthIndex, displayYear, user?.studentNumber]);
@@ -151,8 +148,7 @@ export default function MoodOverviewScreen() {
         color: EMOTION_META[id].color,
         count: monthlyCounts[id] ?? 0,
         image: getEmotionImageSource(EMOTION_META[id]),
-        label: EMOTION_META[id].label,
-      })),
+        label: EMOTION_META[id].label })),
     [monthlyCounts],
   );
 
@@ -171,8 +167,7 @@ export default function MoodOverviewScreen() {
         const current = map.get(day);
         map.set(day, {
           count: (current?.count ?? 0) + 1,
-          latestMoodId: entry.moodId,
-        });
+          latestMoodId: entry.moodId });
       }
     });
     return map;
@@ -216,8 +211,7 @@ export default function MoodOverviewScreen() {
       EMOTION_ORDER.map((id) => ({
         id,
         count: selectedDayCounts[id] ?? 0,
-        meta: EMOTION_META[id],
-      })).filter((item) => item.count > 0),
+        meta: EMOTION_META[id] })).filter((item) => item.count > 0),
     [selectedDayCounts],
   );
 
@@ -240,8 +234,7 @@ export default function MoodOverviewScreen() {
         isSelected: selectedDayNumber === dayNumber,
         isOutsideMonth: false,
         moodId,
-        state: moodId ? "mood" : isFutureMonth || isFutureDay ? "future" : "empty",
-      });
+        state: moodId ? "mood" : isFutureMonth || isFutureDay ? "future" : "empty" });
     }
 
     const trailingDays = (7 - (days.length % 7)) % 7;
@@ -250,8 +243,7 @@ export default function MoodOverviewScreen() {
         dayNumber,
         isOutsideMonth: true,
         moodId: null,
-        state: "future",
-      });
+        state: "future" });
     }
 
     return days;
@@ -592,8 +584,7 @@ export default function MoodOverviewScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F6FAF3",
-  },
+    backgroundColor: "#F6FAF3" },
   topBar: {
     height: 52,
     backgroundColor: "#FFFFFF",
@@ -607,32 +598,26 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
+    elevation: 3 },
   backButton: {
     width: 36,
     height: 36,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   topTitle: {
     color: "#33465B",
     fontSize: 36 / 2,
     lineHeight: 24,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   topBarSpacer: {
     width: 36,
-    height: 36,
-  },
+    height: 36 },
   scroll: {
-    flex: 1,
-  },
+    flex: 1 },
   scrollContent: {
     paddingHorizontal: 10,
     paddingTop: 12,
-    paddingBottom: 118,
-  },
+    paddingBottom: 118 },
   summaryCard: {
     borderRadius: 22,
     backgroundColor: "#FFFFFF",
@@ -646,8 +631,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
+    elevation: 2 },
   dailyCard: {
     borderRadius: 22,
     backgroundColor: "#FFFFFF",
@@ -661,44 +645,37 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
+    elevation: 2 },
   dailyHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
     columnGap: 12,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   dailyMoodWrap: {
     alignItems: "center",
     minWidth: 88,
-    flexShrink: 0,
-  },
+    flexShrink: 0 },
   dailyBreakdownHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginTop: 10,
-    marginBottom: 7,
-  },
+    marginBottom: 7 },
   dailyBreakdownTitle: {
     color: "#31465A",
     fontSize: 13,
     lineHeight: 17,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   dailyBreakdownMeta: {
     color: "#7B8876",
     fontSize: 11,
     lineHeight: 15,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   dailyMixScroller: {
     columnGap: 8,
     paddingRight: 2,
-    paddingBottom: 1,
-  },
+    paddingBottom: 1 },
   dailyMixChip: {
     width: 126,
     minHeight: 50,
@@ -710,8 +687,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     columnGap: 8,
     paddingHorizontal: 9,
-    paddingVertical: 7,
-  },
+    paddingVertical: 7 },
   dailyMixFace: {
     width: 42,
     height: 42,
@@ -720,29 +696,24 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     alignItems: "center",
     justifyContent: "center",
-    overflow: "hidden",
-  },
+    overflow: "hidden" },
   dailyMixImage: {
     width: 40,
     height: 40,
-    borderRadius: 14,
-  },
+    borderRadius: 14 },
   dailyMixCopy: {
     flex: 1,
-    minWidth: 0,
-  },
+    minWidth: 0 },
   dailyMixLabel: {
     color: "#31465A",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   dailyMixCount: {
     color: "#6A7481",
     fontSize: 11,
     lineHeight: 15,
-    marginTop: 1,
-  },
+    marginTop: 1 },
   dailyRecordsButton: {
     minHeight: 54,
     borderRadius: 16,
@@ -754,89 +725,74 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     columnGap: 12,
     paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
+    paddingVertical: 10 },
   dailyRecordsButtonDisabled: {
-    opacity: 0.72,
-  },
+    opacity: 0.72 },
   dailyEntryFallback: {
     width: 20,
     height: 20,
-    borderRadius: 999,
-  },
+    borderRadius: 999 },
   dailyRecordsButtonCopy: {
     flex: 1,
-    minWidth: 0,
-  },
+    minWidth: 0 },
   dailyRecordsButtonTitle: {
     color: "#31465A",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   dailyRecordsButtonMeta: {
     color: "#6A7481",
     fontSize: 11,
     lineHeight: 15,
-    marginTop: 1,
-  },
+    marginTop: 1 },
   dailyRecordsEmptyText: {
     color: "#6A7481",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   dailyEmptyText: {
     color: "#6A7481",
     fontSize: 13,
     lineHeight: 18,
-    paddingVertical: 6,
-  },
+    paddingVertical: 6 },
   summaryHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
     columnGap: 12,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   summaryHeaderCopy: {
     flex: 1,
     minWidth: 0,
-    paddingRight: 2,
-  },
+    paddingRight: 2 },
   summaryEyebrow: {
     color: "#7C8F77",
     fontSize: 10,
     lineHeight: 14,
     letterSpacing: 1,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 4 },
   summaryMonth: {
     color: "#31465A",
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   summarySub: {
     color: "#6A7481",
     fontSize: 13,
     lineHeight: 18,
     marginTop: 2,
-    flexShrink: 1,
-  },
+    flexShrink: 1 },
   commonMoodWrap: {
     alignItems: "center",
     minWidth: 84,
-    flexShrink: 0,
-  },
+    flexShrink: 0 },
   commonMoodMeta: {
     color: "#6E7E8B",
     fontSize: 10,
     lineHeight: 14,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 4 },
   commonMoodFace: {
     width: 60,
     height: 60,
@@ -847,40 +803,33 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     borderWidth: 1.5,
     borderColor: "#DCE5DB",
-    overflow: "hidden",
-  },
+    overflow: "hidden" },
   commonMoodImage: {
     width: 56,
     height: 56,
-    borderRadius: 16,
-  },
+    borderRadius: 16 },
   commonMoodPlaceholder: {
     width: 56,
-    height: 56,
-  },
+    height: 56 },
   commonMoodFallback: {
     color: "#3F4F61",
     fontSize: 19,
-    lineHeight: 22,
-  },
+    lineHeight: 22 },
   commonMoodLabel: {
     color: "#3F4F61",
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "600",
+    fontFamily: "Outfit-SemiBold",
     maxWidth: 84,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   statsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    rowGap: 12,
-  },
+    rowGap: 12 },
   statItem: {
     alignItems: "center",
     paddingHorizontal: 2,
-    width: "20%",
-  },
+    width: "20%" },
   statFace: {
     width: 56,
     height: 56,
@@ -891,38 +840,32 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     borderWidth: 1.5,
     borderColor: "#DCE5DB",
-    overflow: "hidden",
-  },
+    overflow: "hidden" },
   statImage: {
     width: 52,
     height: 52,
-    borderRadius: 15,
-  },
+    borderRadius: 15 },
   statImagePlaceholder: {
     width: 52,
-    height: 52,
-  },
+    height: 52 },
   statCount: {
     color: "#4B5968",
     fontSize: 13,
     lineHeight: 16,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   statLabel: {
     color: "#7A8792",
     fontSize: 9,
     lineHeight: 11,
     marginTop: 2,
     minHeight: 22,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   detailModalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(36, 47, 42, 0.28)",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 22,
-  },
+    paddingHorizontal: 22 },
   detailModalCard: {
     width: "100%",
     maxWidth: 340,
@@ -936,8 +879,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 6 },
-    elevation: 6,
-  },
+    elevation: 6 },
   recordsModalCard: {
     width: "100%",
     maxWidth: 390,
@@ -953,54 +895,46 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 6 },
-    elevation: 6,
-  },
+    elevation: 6 },
   recordsModalHeader: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
     columnGap: 12,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   recordsModalHeaderCopy: {
     flex: 1,
-    minWidth: 0,
-  },
+    minWidth: 0 },
   recordsModalCloseButton: {
     width: 36,
     height: 36,
     borderRadius: 14,
     backgroundColor: "#F4F8F1",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   detailModalEyebrow: {
     color: "#7C8F77",
     fontSize: 10,
     lineHeight: 14,
     letterSpacing: 1,
-    fontWeight: "800",
-    marginBottom: 6,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 6 },
   detailModalTitle: {
     color: "#31465A",
     fontSize: 22,
     lineHeight: 28,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   detailModalMeta: {
     color: "#6A7481",
     fontSize: 13,
     lineHeight: 18,
-    marginTop: 4,
-  },
+    marginTop: 4 },
   detailModalTime: {
     color: "#31465A",
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: "700",
-    marginTop: 14,
-  },
+    fontFamily: "Outfit-Bold",
+    marginTop: 14 },
   recordsTableHeader: {
     minHeight: 34,
     borderRadius: 12,
@@ -1008,23 +942,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 10,
-    marginBottom: 6,
-  },
+    marginBottom: 6 },
   recordsTableHeaderText: {
     color: "#647960",
     fontSize: 10,
     lineHeight: 14,
-    fontWeight: "900",
+    fontFamily: "Outfit-Bold",
     letterSpacing: 0.8,
-    textTransform: "uppercase",
-  },
+    textTransform: "uppercase" },
   recordsTableScroll: {
-    maxHeight: 320,
-  },
+    maxHeight: 320 },
   recordsTableContent: {
     rowGap: 6,
-    paddingBottom: 2,
-  },
+    paddingBottom: 2 },
   recordsTableRow: {
     minHeight: 42,
     borderRadius: 12,
@@ -1033,56 +963,47 @@ const styles = StyleSheet.create({
     borderColor: "#E4EDDE",
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 10,
-  },
+    paddingHorizontal: 10 },
   recordsTableText: {
     color: "#31465A",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   recordsEmotionCell: {
     flex: 1.15,
     minWidth: 0,
-    paddingRight: 8,
-  },
+    paddingRight: 8 },
   recordsTimeCell: {
     width: 78,
-    paddingRight: 8,
-  },
+    paddingRight: 8 },
   recordsSourceCell: {
     width: 70,
-    alignItems: "flex-start",
-  },
+    alignItems: "flex-start" },
   recordsSourceHeaderCell: {
     width: 70,
-    paddingRight: 0,
-  },
+    paddingRight: 0 },
   recordsSourcePill: {
     color: "#31465A",
     fontSize: 11,
     lineHeight: 15,
-    fontWeight: "800",
+    fontFamily: "Outfit-Bold",
     backgroundColor: "#EEF5EA",
     borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    overflow: "hidden",
-  },
+    overflow: "hidden" },
   detailModalButton: {
     height: 42,
     borderRadius: 14,
     backgroundColor: "#31465A",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 18,
-  },
+    marginTop: 18 },
   detailModalButtonText: {
     color: "#FFFFFF",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   calendarCard: {
     borderRadius: 22,
     backgroundColor: "#FFFFFF",
@@ -1096,58 +1017,49 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
+    elevation: 2 },
   monthHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 10,
-    paddingHorizontal: 4,
-  },
+    paddingHorizontal: 4 },
   monthArrowButton: {
     width: 32,
     height: 32,
     borderRadius: 12,
     backgroundColor: "#F4F8F1",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   monthLabel: {
     color: "#33475B",
     fontSize: 35 / 2,
     lineHeight: 23,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   weekHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     paddingHorizontal: 2,
-    marginBottom: 6,
-  },
+    marginBottom: 6 },
   weekdayText: {
     width: "13.5%",
     textAlign: "center",
     color: "#384B5F",
     fontSize: 18 / 1.2,
     lineHeight: 18,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   calendarGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
     rowGap: 7,
-    paddingHorizontal: 0,
-  },
+    paddingHorizontal: 0 },
   dayCell: {
     width: "13.6%",
-    alignItems: "center",
-  },
+    alignItems: "center" },
   dayCircleBlank: {
     width: 36,
-    height: 36,
-  },
+    height: 36 },
   dayCircle: {
     width: 36,
     height: 36,
@@ -1156,48 +1068,36 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
     borderColor: "#8BCB68",
-    position: "relative",
-  },
+    position: "relative" },
   dayCircleFuture: {
     backgroundColor: "#D7DADF",
-    borderColor: "#C5CBD2",
-  },
+    borderColor: "#C5CBD2" },
   dayCircleOutsideMonth: {
-    opacity: 0.72,
-  },
+    opacity: 0.72 },
   dayCircleEmpty: {
-    backgroundColor: "#FFFFFF",
-  },
+    backgroundColor: "#FFFFFF" },
   dayCircleEmptyBorder: {
-    borderColor: "#8BCB68",
-  },
+    borderColor: "#8BCB68" },
   dayCircleToday: {
     borderWidth: 2,
-    borderColor: "#5FAD38",
-  },
+    borderColor: "#5FAD38" },
   dayCircleSelected: {
     borderWidth: 2,
-    borderColor: "#31465A",
-  },
+    borderColor: "#31465A" },
   dayNumber: {
     color: "#4B5F73",
     fontSize: 15 / 1.08,
     lineHeight: 18,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   dayNumberMood: {
-    color: "#3D4450",
-  },
+    color: "#3D4450" },
   dayNumberFuture: {
     color: "#7B848E",
-    fontWeight: "600",
-  },
+    fontFamily: "Outfit-SemiBold" },
   dayNumberOutsideMonth: {
-    color: "#8D96A0",
-  },
+    color: "#8D96A0" },
   dayNumberSelected: {
-    color: "#263647",
-  },
+    color: "#263647" },
   dayCountBadge: {
     position: "absolute",
     right: -4,
@@ -1210,14 +1110,12 @@ const styles = StyleSheet.create({
     borderColor: "#6AAF43",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 3,
-  },
+    paddingHorizontal: 3 },
   dayCountBadgeText: {
     color: "#2E6B23",
     fontSize: 9,
     lineHeight: 11,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   insightCard: {
     borderRadius: 22,
     backgroundColor: "#FFFFFF",
@@ -1232,31 +1130,24 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
     elevation: 2,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   insightImageWrap: {
     width: 92,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   insightImage: {
     width: 72,
-    height: 72,
-  },
+    height: 72 },
   insightTextWrap: {
     flex: 1,
     paddingRight: 6,
-    rowGap: 6,
-  },
+    rowGap: 6 },
   insightText: {
     color: "#33485B",
     fontSize: 15,
-    lineHeight: 22,
-  },
+    lineHeight: 22 },
   insightFootnote: {
     color: "#6F7B86",
     fontSize: 10,
-    lineHeight: 14,
-  },
-});
+    lineHeight: 14 } });
 

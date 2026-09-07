@@ -21,20 +21,17 @@ export default function IntroScreen() {
         toValue: 1,
         duration: 700,
         easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
+        useNativeDriver: true }),
       Animated.timing(riseAnim, {
         toValue: 0,
         duration: 820,
         easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
+        useNativeDriver: true }),
       Animated.spring(buttonAnim, {
         toValue: 1,
         friction: 5,
         tension: 50,
-        useNativeDriver: true,
-      }),
+        useNativeDriver: true }),
     ]).start();
 
     const floatLoop = Animated.loop(
@@ -43,14 +40,12 @@ export default function IntroScreen() {
           toValue: -5,
           duration: 1300,
           easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
+          useNativeDriver: true }),
         Animated.timing(bookFloatAnim, {
           toValue: 0,
           duration: 1300,
           easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
+          useNativeDriver: true }),
       ]),
     );
 
@@ -86,8 +81,7 @@ export default function IntroScreen() {
               { translateX: x },
               { translateY: -y },
               { rotate: `${angle * 0.3}deg` },
-            ],
-          },
+            ] },
         ]}
       >
         {char}
@@ -127,38 +121,32 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingTop: height * 0.33,
-    paddingBottom: 60,
-  },
+    paddingBottom: 60 },
   heroWrap: {
     width: "100%",
     maxWidth: 320,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   arcTitleWrap: {
     width: Math.min(290, width * 0.8),
     height: 80,
     marginBottom: 10,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   titleLetter: {
     position: "absolute",
     fontSize: 22,
     lineHeight: 22,
     color: "#1A1F26",
     letterSpacing: 0.8,
-    fontFamily: "Outfit-SemiBold",
-  },
+    fontFamily: "Outfit-SemiBold" },
   book: {
     width: Math.min(330, width * 0.85),
-    height: Math.min(165, width * 0.43),
-  },
+    height: Math.min(165, width * 0.43) },
   buttonWrap: {
     width: "100%",
     maxWidth: 320,
-    alignItems: "center",
-  },
+    alignItems: "center" },
   button: {
     width: 290,
     height: 56,
@@ -170,12 +158,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
+    elevation: 4 },
   buttonText: {
     color: "#FFFFFF",
     fontSize: 30 / 2,
     lineHeight: 18,
-    fontWeight: "700",
-  },
-});
+    fontFamily: "Outfit-Bold" } });

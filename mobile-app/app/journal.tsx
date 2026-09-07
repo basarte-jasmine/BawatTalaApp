@@ -53,8 +53,7 @@ function buildWeekDates(isoDate: string, writtenDays: Set<number>) {
       hasEntries:
         currentYear === year &&
         currentMonth === month - 1 &&
-        writtenDays.has(currentDay),
-    };
+        writtenDays.has(currentDay) };
   });
 }
 
@@ -64,8 +63,7 @@ function formatLongDate(isoDate: string) {
     month: "long",
     day: "numeric",
     year: "numeric",
-    timeZone: "UTC",
-  });
+    timeZone: "UTC" });
 }
 
 export default function JournalScreen() {
@@ -315,31 +313,24 @@ export default function JournalScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F7FAF4",
-  },
+    backgroundColor: "#F7FAF4" },
   scroll: {
-    flex: 1,
-  },
+    flex: 1 },
   content: {
     flexGrow: 1,
     paddingHorizontal: 10,
     paddingTop: 12,
-    paddingBottom: 158,
-  },
+    paddingBottom: 158 },
   contentCompact: {
     paddingTop: 8,
-    paddingBottom: 148,
-  },
+    paddingBottom: 148 },
   contentVeryCompact: {
     paddingTop: 6,
-    paddingBottom: 138,
-  },
+    paddingBottom: 138 },
   topSection: {
-    flexShrink: 0,
-  },
+    flexShrink: 0 },
   topSectionCompact: {
-    marginBottom: 2,
-  },
+    marginBottom: 2 },
   calendarCard: {
     borderRadius: 22,
     backgroundColor: "#FFFFFF",
@@ -352,130 +343,102 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
     elevation: 3,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   calendarCardCompact: {
     marginBottom: 10,
-    paddingVertical: 10,
-  },
+    paddingVertical: 10 },
   calendarHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   calendarHeaderCompact: {
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   cardEyebrow: {
     color: "#7B8D74",
     fontSize: 10,
     lineHeight: 14,
     letterSpacing: 1,
-    fontWeight: "700",
-    marginBottom: 8,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 8 },
   weekArrowButton: {
     width: 32,
     height: 32,
     borderRadius: 12,
     backgroundColor: "#F2F7ED",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   calendarTitle: {
     color: "#34475A",
     fontSize: 18,
     lineHeight: 22,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   calendarTitleCompact: {
     fontSize: 16,
-    lineHeight: 20,
-  },
+    lineHeight: 20 },
   calendarRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
-  },
+    justifyContent: "space-between" },
   dayItem: {
     alignItems: "center",
-    rowGap: 6,
-  },
+    rowGap: 6 },
   dayItemCompact: {
-    rowGap: 4,
-  },
+    rowGap: 4 },
   dayLabel: {
     color: "#3F4F60",
     fontSize: 15,
     lineHeight: 18,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   dayLabelCompact: {
     fontSize: 13,
-    lineHeight: 16,
-  },
+    lineHeight: 16 },
   dayCircle: {
     width: 31,
     height: 31,
     borderRadius: 999,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   dayCircleCompact: {
     width: 28,
-    height: 28,
-  },
+    height: 28 },
   dayCircleEmpty: {
     backgroundColor: "#FFFFFF",
     borderWidth: 1.5,
-    borderColor: "#86C74F",
-  },
+    borderColor: "#86C74F" },
   dayCircleDone: {
     backgroundColor: "#AFE77D",
     borderWidth: 1.5,
-    borderColor: "#AFE77D",
-  },
+    borderColor: "#AFE77D" },
   dayCircleActive: {
     backgroundColor: "#3E8F24",
     borderWidth: 1.5,
-    borderColor: "#3E8F24",
-  },
+    borderColor: "#3E8F24" },
   dayCircleFuture: {
-    backgroundColor: "#D7DDE2",
-  },
+    backgroundColor: "#D7DDE2" },
   dayCircleSelected: {
     borderWidth: 2,
-    borderColor: "#2F6F25",
-  },
+    borderColor: "#2F6F25" },
   dayCircleSelectedFilled: {
     borderWidth: 2,
-    borderColor: "#285F20",
-  },
+    borderColor: "#285F20" },
   dayNumber: {
     color: "#3F4F60",
     fontSize: 15,
     lineHeight: 18,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   dayNumberCompact: {
     fontSize: 13,
-    lineHeight: 16,
-  },
+    lineHeight: 16 },
   dayNumberDone: {
-    color: "#476346",
-  },
+    color: "#476346" },
   dayNumberActive: {
-    color: "#FFFFFF",
-  },
+    color: "#FFFFFF" },
   dayNumberOutline: {
-    color: "#3E4D5E",
-  },
+    color: "#3E4D5E" },
   dayNumberFuture: {
-    color: "#7A8793",
-  },
+    color: "#7A8793" },
   dayNumberSelected: {
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   reflectionCard: {
     borderRadius: 22,
     backgroundColor: "#FFFFFF",
@@ -491,92 +454,75 @@ const styles = StyleSheet.create({
     elevation: 3,
     marginBottom: 10,
     height: 168,
-    overflow: "hidden",
-  },
+    overflow: "hidden" },
   reflectionCardCompact: {
     height: 150,
     paddingHorizontal: 14,
     paddingTop: 12,
     paddingBottom: 10,
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   reflectionFooterRow: {
     flexDirection: "row",
     alignItems: "flex-end",
     columnGap: 10,
     minHeight: 48,
-    marginTop: "auto",
-  },
+    marginTop: "auto" },
   reflectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 6,
-  },
+    marginBottom: 6 },
   expandButton: {
     width: 28,
     height: 28,
     borderRadius: 999,
     backgroundColor: "#F4F8F1",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   reflectionSnippetWrap: {
     flex: 1,
     overflow: "hidden",
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   reflectionFooterRowCompact: {
-    columnGap: 8,
-  },
+    columnGap: 8 },
   reflectionText: {
     color: "#33485B",
     fontSize: 15,
     lineHeight: 21,
-    marginBottom: 0,
-  },
+    marginBottom: 0 },
   reflectionTextCompact: {
     fontSize: 13,
     lineHeight: 18,
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   reflectionFootnote: {
     flex: 1,
     flexShrink: 1,
     color: "#7B858E",
     fontSize: 10,
     lineHeight: 13,
-    paddingTop: 2,
-  },
+    paddingTop: 2 },
   reflectionFootnoteCompact: {
     fontSize: 9,
     lineHeight: 12,
-    paddingTop: 1,
-  },
+    paddingTop: 1 },
   companionWrap: {
     width: 54,
     height: 54,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   companionWrapCompact: {
     width: 44,
-    height: 44,
-  },
+    height: 44 },
   companionImage: {
     width: 52,
-    height: 52,
-  },
+    height: 52 },
   companionImageCompact: {
     width: 42,
-    height: 42,
-  },
+    height: 42 },
   bottomSection: {
-    marginTop: 8,
-  },
+    marginTop: 8 },
   bottomSectionCompact: {
-    marginTop: 4,
-  },
+    marginTop: 4 },
   journalArtWrap: {
     width: 222,
     height: 222,
@@ -593,25 +539,20 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
+    elevation: 2 },
   journalArtWrapCompact: {
     width: 206,
     height: 206,
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   bookImage: {
     width: 184,
-    height: 244,
-  },
+    height: 244 },
   bookImageCompact: {
     width: 168,
-    height: 224,
-  },
+    height: 224 },
   bookImageVeryCompact: {
     width: 146,
-    height: 192,
-  },
+    height: 192 },
   addEntryButton: {
     height: 46,
     borderRadius: 999,
@@ -624,22 +565,18 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
+    elevation: 3 },
   addEntryButtonCompact: {
     height: 42,
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   addEntryText: {
     color: "#FFFFFF",
     fontSize: 18,
     lineHeight: 22,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   addEntryTextCompact: {
     fontSize: 16,
-    lineHeight: 20,
-  },
+    lineHeight: 20 },
   viewEntriesButton: {
     height: 42,
     borderRadius: 999,
@@ -653,28 +590,23 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.14,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+    elevation: 2 },
   viewEntriesButtonCompact: {
-    height: 40,
-  },
+    height: 40 },
   viewEntriesText: {
     color: "#4D6558",
     fontSize: 17,
     lineHeight: 22,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   viewEntriesTextCompact: {
     fontSize: 15,
-    lineHeight: 19,
-  },
+    lineHeight: 19 },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(21, 27, 24, 0.34)",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 22,
-  },
+    paddingHorizontal: 22 },
   modalCard: {
     width: "100%",
     maxWidth: 340,
@@ -690,31 +622,26 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
+    elevation: 4 },
   modalHeader: {
     flexDirection: "row",
     alignItems: "center",
     columnGap: 12,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   modalHeaderCopy: {
-    flex: 1,
-  },
+    flex: 1 },
   modalEyebrow: {
     color: "#7B8D74",
     fontSize: 10,
     lineHeight: 14,
     letterSpacing: 1,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 4 },
   modalTitle: {
     color: "#32465C",
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   modalCompanionWrap: {
     width: 48,
     height: 48,
@@ -723,36 +650,28 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#D8E9CB",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   modalCompanionImage: {
     width: 34,
-    height: 34,
-  },
+    height: 34 },
   modalInsightScroll: {
-    maxHeight: 280,
-  },
+    maxHeight: 280 },
   modalInsightContent: {
-    paddingBottom: 4,
-  },
+    paddingBottom: 4 },
   modalInsightText: {
     color: "#33485B",
     fontSize: 15,
-    lineHeight: 22,
-  },
+    lineHeight: 22 },
   modalCloseButton: {
     marginTop: 14,
     minHeight: 40,
     borderRadius: 999,
     backgroundColor: "#79C943",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   modalCloseButtonText: {
     color: "#FFFFFF",
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: "700",
-  },
-});
+    fontFamily: "Outfit-Bold" } });
 

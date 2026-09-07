@@ -7,7 +7,7 @@ import { AppPrimaryButton } from "../components/ui/AppPrimaryButton";
 import { forgotPasswordReset } from "../lib/backend-api";
 import { useAuthSession } from "../lib/auth-session";
 
-const STRONG_PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
+const STRONG_PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8 }$/;
 
 function getPasswordStrength(value: string) {
   const checks = [
@@ -151,70 +151,54 @@ export default function ResetPasswordNewScreen() {
 
 const styles = StyleSheet.create({
   content: {
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   card: {
-    maxWidth: 320,
-  },
+    maxWidth: 320 },
   title: {
     textAlign: "center",
     color: "#111111",
     fontSize: 20,
     lineHeight: 28,
-    fontFamily: "Outfit",
-    fontWeight: "700",
-    marginBottom: 8,
-  },
+
+    fontFamily: "Outfit-Bold",
+    marginBottom: 8 },
   subtitle: {
     textAlign: "center",
     color: "#1A1A1A",
     fontSize: 12,
     lineHeight: 18,
-    marginBottom: 26,
-  },
+    marginBottom: 26 },
   passwordContainer: {
-    marginBottom: 0,
-  },
+    marginBottom: 0 },
   passwordWrap: {
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   passwordInput: {
     fontSize: 13,
-    color: "#111111",
-  },
+    color: "#111111" },
   passwordStrengthText: {
     fontSize: 11,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     marginTop: -8,
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   passwordStrengthLine: {
     height: 3,
     borderRadius: 999,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   actionButton: {
     marginTop: 8,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   errorText: {
     color: "#C31A1A",
     fontSize: 11,
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   successText: {
     color: "#16803A",
     fontSize: 11,
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   backToLogin: {
-    alignItems: "center",
-  },
+    alignItems: "center" },
   backText: {
     color: "#111111",
-    fontSize: 11,
-  },
+    fontSize: 11 },
   backLink: {
-    color: "#2C7DB0",
-  },
-});
+    color: "#2C7DB0" } });

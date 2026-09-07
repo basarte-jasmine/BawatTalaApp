@@ -93,20 +93,17 @@ export default function Index() {
         toValue: 1,
         duration: 620,
         easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
+        useNativeDriver: true }),
       Animated.timing(logoRiseAnim, {
         toValue: 0,
         duration: 840,
         easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
+        useNativeDriver: true }),
       Animated.spring(logoScaleAnim, {
         toValue: 1,
         friction: 7,
         tension: 52,
-        useNativeDriver: true,
-      }),
+        useNativeDriver: true }),
     ]).start();
 
     const floatLoop = Animated.loop(
@@ -115,14 +112,12 @@ export default function Index() {
           toValue: -5,
           duration: 1500,
           easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
+          useNativeDriver: true }),
         Animated.timing(logoFloatAnim, {
           toValue: 0,
           duration: 1500,
           easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
+          useNativeDriver: true }),
       ]),
     );
 
@@ -147,20 +142,17 @@ export default function Index() {
         toValue: 0,
         duration: 320,
         easing: Easing.inOut(Easing.cubic),
-        useNativeDriver: true,
-      }),
+        useNativeDriver: true }),
       Animated.timing(logoRiseAnim, {
         toValue: -84,
         duration: 380,
         easing: Easing.inOut(Easing.cubic),
-        useNativeDriver: true,
-      }),
+        useNativeDriver: true }),
       Animated.timing(logoScaleAnim, {
         toValue: 0.72,
         duration: 380,
         easing: Easing.inOut(Easing.cubic),
-        useNativeDriver: true,
-      }),
+        useNativeDriver: true }),
     ]).start(() => {
       router.replace(user ? "/home" : "/login");
     });
@@ -183,8 +175,7 @@ export default function Index() {
             compact && styles.contentCompact,
             {
               opacity: fadeAnim,
-              transform: [{ scale: logoScaleAnim }, { translateY: logoRiseAnim }],
-            },
+              transform: [{ scale: logoScaleAnim }, { translateY: logoRiseAnim }] },
           ]}
         >
           <View style={styles.brandCopy}>
@@ -201,8 +192,7 @@ export default function Index() {
                 {
                   width: logoSize,
                   height: logoSize,
-                  transform: [{ translateY: logoFloatAnim }],
-                },
+                  transform: [{ translateY: logoFloatAnim }] },
               ]}
               resizeMode="contain"
             />
@@ -221,53 +211,44 @@ export default function Index() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F8FFF8",
-  },
+    backgroundColor: "#F8FFF8" },
   backdropSvg: {
     ...StyleSheet.absoluteFillObject,
-    pointerEvents: "none",
-  },
+    pointerEvents: "none" },
   safeArea: {
     flex: 1,
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   content: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 28,
     paddingBottom: 42,
-    paddingTop: 32,
-  },
+    paddingTop: 32 },
   contentCompact: {
     paddingBottom: 24,
-    paddingTop: 22,
-  },
+    paddingTop: 22 },
   brandCopy: {
     alignItems: "center",
     marginBottom: 26,
-    maxWidth: 310,
-  },
+    maxWidth: 310 },
   title: {
     color: "#213A35",
     fontSize: 38,
     lineHeight: 44,
-    fontWeight: "800",
-    textAlign: "center",
-  },
+    fontFamily: "Outfit-Bold",
+    textAlign: "center" },
   subtitle: {
     color: "#56706A",
     fontSize: 16,
     lineHeight: 22,
     marginTop: 6,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   logoStage: {
     width: "100%",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 30,
-  },
+    marginBottom: 30 },
   logoShelf: {
     position: "absolute",
     bottom: 4,
@@ -279,14 +260,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 22,
     shadowOffset: { width: 0, height: 12 },
-    elevation: 3,
-  },
+    elevation: 3 },
   logo: {
     shadowColor: "#365E48",
     shadowOpacity: 0.18,
     shadowRadius: 10,
-    shadowOffset: { width: 0, height: 7 },
-  },
+    shadowOffset: { width: 0, height: 7 } },
   ctaButton: {
     minWidth: 152,
     height: 48,
@@ -300,15 +279,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.22,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 6 },
-    elevation: 4,
-  },
+    elevation: 4 },
   ctaButtonDisabled: {
-    opacity: 0.72,
-  },
+    opacity: 0.72 },
   ctaText: {
     color: "#FFFFFF",
     fontSize: 17,
     lineHeight: 22,
-    fontWeight: "800",
-  },
-});
+    fontFamily: "Outfit-Bold" } });

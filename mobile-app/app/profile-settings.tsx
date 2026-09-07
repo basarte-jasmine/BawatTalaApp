@@ -14,8 +14,7 @@ import {
   Switch,
   Text,
   TextInput,
-  View,
-} from "react-native";
+  View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { OtpCodeInput } from "../components/forms/OtpCodeInput";
 import { SelectField } from "../components/forms/SelectField";
@@ -34,8 +33,7 @@ import {
   updateStudentProfile,
   verifyJournalLockPin,
   verifyProfileEmailChangeCode,
-  StudentProfile,
-} from "../lib/backend-api";
+  StudentProfile } from "../lib/backend-api";
 import { useAuthSession } from "../lib/auth-session";
 import { getManilaDaysInMonth, getManilaMonthName, getManilaTodayParts, getManilaWeekdayIndex } from "../lib/manila-date";
 import { getAppointmentNoticeStatus, getNotificationRoute } from "../lib/notification-utils";
@@ -62,29 +60,22 @@ type RecentEntryItem = {
 const SCREEN_COPY: Record<SettingsSection, { subtitle: string; title: string }> = {
   schedule: {
     title: "My Schedule",
-    subtitle: "See your counseling schedule and jump back into booking when needed.",
-  },
+    subtitle: "See your counseling schedule and jump back into booking when needed." },
   "app-lock": {
     title: "Journal Lock",
-    subtitle: "Protect your journal with a simple 4-digit PIN. Once enabled, the journal locks right away.",
-  },
+    subtitle: "Protect your journal with a simple 4-digit PIN. Once enabled, the journal locks right away." },
   "help-support": {
     title: "Help & Support",
-    subtitle: "Quick ways to get support and answers inside Bawat Tala.",
-  },
+    subtitle: "Quick ways to get support and answers inside Bawat Tala." },
   "personal-details": {
     title: "Personal Details",
-    subtitle: "Review and update your account information.",
-  },
+    subtitle: "Review and update your account information." },
   "privacy-security": {
     title: "Privacy & Security",
-    subtitle: "Choose how private the app feels when you're using it around other people.",
-  },
+    subtitle: "Choose how private the app feels when you're using it around other people." },
   "recent-activity": {
     title: "Recent Activity",
-    subtitle: "A short summary of your latest entries, alerts, and support activity.",
-  },
-};
+    subtitle: "A short summary of your latest entries, alerts, and support activity." } };
 
 const FEEDBACK_CATEGORIES = ["Suggestion", "App Experience", "Bug Report", "Other"] as const;
 const SUPPORT_CATEGORIES = ["Account Issue", "Consultation/Booking Help", "Technical Issue", "Other"] as const;
@@ -130,8 +121,7 @@ function formatDateTime(value?: string | null) {
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
-    hour12: true,
-  });
+    hour12: true });
 }
 
 function parseIsoDate(value?: string | null) {
@@ -142,8 +132,7 @@ function parseIsoDate(value?: string | null) {
       day: Number(iso[3]),
       isoDate: `${iso[1]}-${iso[2]}-${iso[3]}`,
       monthIndex: Number(iso[2]) - 1,
-      year: Number(iso[1]),
-    };
+      year: Number(iso[1]) };
   }
   const us = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (!us) return null;
@@ -154,8 +143,7 @@ function parseIsoDate(value?: string | null) {
     day,
     isoDate: toIsoDate(year, monthIndex, day),
     monthIndex,
-    year,
-  };
+    year };
 }
 
 const BIRTHDATE_MONTHS = [
@@ -175,8 +163,7 @@ const BIRTHDATE_MONTHS = [
 
 function BirthdateCalendarPicker({
   value,
-  onChange,
-}: {
+  onChange }: {
   value: string;
   onChange: (next: string) => void;
 }) {
@@ -272,8 +259,7 @@ function BirthdateCalendarPicker({
         day,
         isDisabled: isFuture,
         isSelected,
-        isToday,
-      });
+        isToday });
     }
 
     while (cells.length % 7 !== 0) {
@@ -400,9 +386,7 @@ function openNotificationFromActivity(item: AppNotification) {
         kind: item.kind,
         message: item.message,
         timeLabel: item.timeLabel,
-        title: item.title,
-      },
-    } as never);
+        title: item.title } } as never);
   };
 
   if (status === "DISAPPROVED") {
@@ -510,8 +494,7 @@ export default function ProfileSettingsScreen() {
     setMuniRemindersEnabled,
     setNotificationPreviewsEnabled,
     setPrivateJournalModeEnabled,
-    updateAppLockPin,
-  } = useAppPreferences();
+    updateAppLockPin } = useAppPreferences();
 
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
@@ -700,8 +683,7 @@ export default function ProfileSettingsScreen() {
             createdAt: entry.createdAt,
             id: entry.id,
             preview: entry.preview || entry.summary || "Journal entry",
-            title: entry.title || "Journal entry",
-          })),
+            title: entry.title || "Journal entry" })),
         );
         setRecentEntriesTotalCount(entriesResult.progress?.totalCount ?? entries.length);
         const inboxItems = notificationsResult.notifications ?? [];
@@ -761,8 +743,7 @@ export default function ProfileSettingsScreen() {
         isToday:
           scheduleYear === todayParts.year &&
           scheduleMonthIndex === todayParts.monthIndex &&
-          day === todayParts.day,
-      });
+          day === todayParts.day });
     }
 
     while (cells.length % 7 !== 0) {
@@ -859,14 +840,12 @@ export default function ProfileSettingsScreen() {
           ? {
               contentType: feedbackAttachment.contentType,
               dataUrl: feedbackAttachment.dataUrl,
-              fileName: feedbackAttachment.fileName,
-            }
+              fileName: feedbackAttachment.fileName }
           : null,
         category: feedbackCategory,
         message: feedbackMessage.trim(),
         submissionType,
-        subject: feedbackSubject.trim() || undefined,
-      });
+        subject: feedbackSubject.trim() || undefined });
 
       if (!result.ok) {
         setFeedbackErrorBanner(result.message || "Unable to send request.");
@@ -910,8 +889,7 @@ export default function ProfileSettingsScreen() {
         mediaTypes: ["images"],
         allowsEditing: false,
         quality: 0.55,
-        base64: true,
-      });
+        base64: true });
 
       if (result.canceled || !result.assets[0]) return;
       const asset = result.assets[0];
@@ -936,8 +914,7 @@ export default function ProfileSettingsScreen() {
         contentType,
         dataUrl: `data:${contentType};base64,${asset.base64}`,
         fileName: asset.fileName || "feedback-image.jpg",
-        uri: asset.uri,
-      });
+        uri: asset.uri });
     } catch {
       Alert.alert("Image not attached", "Please try choosing the image again.");
     }
@@ -1165,8 +1142,7 @@ export default function ProfileSettingsScreen() {
     program: draftProgram,
     province: draftProvince,
     region: draftRegion,
-    street: draftStreet,
-  });
+    street: draftStreet });
 
   const applyProfileSnapshot = (snapshot: ProfileDraftSnapshot) => {
     setDraftBarangay(snapshot.barangay);
@@ -1400,8 +1376,7 @@ export default function ProfileSettingsScreen() {
           ...user,
           email: confirmResult.profile.email || nextEmail,
           firstName: (confirmResult.profile.fullName || profile?.fullName || user.fullName || "").split(/\s+/)[0] || user.firstName,
-          fullName: confirmResult.profile.fullName || profile?.fullName || user.fullName || "",
-        });
+          fullName: confirmResult.profile.fullName || profile?.fullName || user.fullName || "" });
       }
       setEmailChangeStage("idle");
       setProfileAwaitingEmailOtp(false);
@@ -1458,10 +1433,8 @@ export default function ProfileSettingsScreen() {
         province: "",
         region: "",
         street: "",
-        studentNumber: user?.studentNumber || "",
-      }),
-      ...payload,
-    };
+        studentNumber: user?.studentNumber || "" }),
+      ...payload };
     setProfile(updatedProfile);
 
     if (field === "fullName" && user && payload.fullName) {
@@ -1469,8 +1442,7 @@ export default function ProfileSettingsScreen() {
       setUser({
         ...user,
         firstName: nextName.split(/\s+/)[0] || user.firstName,
-        fullName: nextName,
-      });
+        fullName: nextName });
     }
 
     setEditingField(null);
@@ -2752,8 +2724,7 @@ function ToggleItem({
   description,
   onValueChange,
   title,
-  value,
-}: {
+  value }: {
   bordered?: boolean;
   description: string;
   onValueChange: (value: boolean) => void;
@@ -2781,8 +2752,7 @@ function ActionRow({
   bordered = false,
   meta,
   onPress,
-  title,
-}: {
+  title }: {
   body: string;
   bordered?: boolean;
   meta?: string;
@@ -2873,10 +2843,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 },
-    elevation: 2,
-  },
+    elevation: 2 },
   backButton: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
-  topTitle: { color: "#314258", fontSize: 17, lineHeight: 23, fontWeight: "700" },
+  topTitle: { color: "#314258", fontSize: 17, lineHeight: 23, fontFamily: "Outfit-Bold" },
   topBarSpacer: { width: 38, height: 38 },
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 12, paddingTop: 16, paddingBottom: 28 },
@@ -2894,13 +2863,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
-  },
-  cardTitle: { color: "#304558", fontSize: 16, lineHeight: 22, fontWeight: "700", marginBottom: 8 },
+    elevation: 1 },
+  cardTitle: { color: "#304558", fontSize: 16, lineHeight: 22, fontFamily: "Outfit-Bold", marginBottom: 8 },
   row: { paddingVertical: 10 },
   rowBorder: { borderTopWidth: 1, borderTopColor: "#EEF2F5" },
-  rowLabel: { color: "#68807C", fontSize: 12, lineHeight: 16, fontWeight: "600", marginBottom: 3 },
-  rowValue: { color: "#2D4053", fontSize: 15, lineHeight: 20, fontWeight: "700" },
+  rowLabel: { color: "#68807C", fontSize: 12, lineHeight: 16, fontFamily: "Outfit-SemiBold", marginBottom: 3 },
+  rowValue: { color: "#2D4053", fontSize: 15, lineHeight: 20, fontFamily: "Outfit-Bold" },
   helperText: { color: "#566878", fontSize: 13, lineHeight: 18, marginTop: 2 },
   tipCard: {
     borderRadius: 16,
@@ -2909,21 +2877,18 @@ const styles = StyleSheet.create({
     borderColor: "#DDEAD2",
     paddingHorizontal: 14,
     paddingVertical: 14,
-    marginBottom: 12,
-  },
-  tipTitle: { color: "#304558", fontSize: 16, lineHeight: 22, fontWeight: "700", marginBottom: 4 },
+    marginBottom: 12 },
+  tipTitle: { color: "#304558", fontSize: 16, lineHeight: 22, fontFamily: "Outfit-Bold", marginBottom: 4 },
   primaryButton: {
     minHeight: 46,
     borderRadius: 999,
     backgroundColor: "#79C943",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   primaryButtonDisabled: {
-    opacity: 0.58,
-  },
-  primaryText: { color: "#FFFFFF", fontSize: 16, lineHeight: 20, fontWeight: "700" },
+    opacity: 0.58 },
+  primaryText: { color: "#FFFFFF", fontSize: 16, lineHeight: 20, fontFamily: "Outfit-Bold" },
   secondaryButton: {
     minHeight: 46,
     borderRadius: 999,
@@ -2932,9 +2897,8 @@ const styles = StyleSheet.create({
     borderColor: "#DDE4EB",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10,
-  },
-  secondaryText: { color: "#3D5569", fontSize: 16, lineHeight: 20, fontWeight: "700" },
+    marginBottom: 10 },
+  secondaryText: { color: "#3D5569", fontSize: 16, lineHeight: 20, fontFamily: "Outfit-Bold" },
   dangerButton: {
     minHeight: 46,
     borderRadius: 999,
@@ -2943,32 +2907,27 @@ const styles = StyleSheet.create({
     borderColor: "#F3C5CB",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10,
-  },
-  dangerText: { color: "#D54A5B", fontSize: 16, lineHeight: 20, fontWeight: "700" },
+    marginBottom: 10 },
+  dangerText: { color: "#D54A5B", fontSize: 16, lineHeight: 20, fontFamily: "Outfit-Bold" },
   toggleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", columnGap: 12 },
   toggleText: { flex: 1, paddingRight: 8 },
   scheduleOverviewTitle: {
     color: "#324254",
     fontSize: 19,
     lineHeight: 25,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 4 },
   scheduleOverviewBody: {
     color: "#4C5F72",
     fontSize: 14,
     lineHeight: 20,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   scheduleOverviewBlock: {
-    marginBottom: 2,
-  },
+    marginBottom: 2 },
   scheduleStatsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   scheduleStatCard: {
     width: "48.3%",
     minHeight: 94,
@@ -2984,26 +2943,22 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
-  },
+    elevation: 1 },
   scheduleStatValue: {
     color: "#314258",
     fontSize: 44,
     lineHeight: 48,
-    fontWeight: "700",
-    textAlign: "center",
-  },
+    fontFamily: "Outfit-Bold",
+    textAlign: "center" },
   scheduleStatFooter: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-  },
+    justifyContent: "space-between" },
   scheduleStatLabel: {
     color: "#5B6A57",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "600",
-  },
+    fontFamily: "Outfit-SemiBold" },
   scheduleCalendarCard: {
     borderRadius: 22,
     backgroundColor: "#FFFFFF",
@@ -3017,60 +2972,50 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
+    elevation: 2 },
   scheduleCalendarYear: {
     color: "#324254",
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: "700",
-    marginBottom: 2,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 2 },
   scheduleMonthBar: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   scheduleMonthArrow: {
     width: 32,
     height: 32,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   scheduleMonthLabel: {
     color: "#33475B",
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   scheduleWeekRow: {
     flexDirection: "row",
     justifyContent: "flex-start",
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   scheduleWeekText: {
     width: "14.2857%",
     textAlign: "center",
     color: "#3F5264",
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   scheduleGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "flex-start",
-    rowGap: 10,
-  },
+    rowGap: 10 },
   scheduleGridCell: {
     width: "14.2857%",
-    alignItems: "center",
-  },
+    alignItems: "center" },
   scheduleDayBlank: {
     width: 34,
-    height: 34,
-  },
+    height: 34 },
   scheduleDayCircle: {
     width: 34,
     height: 34,
@@ -3078,50 +3023,41 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "transparent",
-  },
+    borderColor: "transparent" },
   scheduleDayCircleBooked: {
     borderColor: "#738B68",
-    backgroundColor: "#FFFFFF",
-  },
+    backgroundColor: "#FFFFFF" },
   scheduleDayCircleToday: {
     borderColor: "#6FCB43",
     borderWidth: 2,
-    backgroundColor: "#F7FFE9",
-  },
+    backgroundColor: "#F7FFE9" },
   scheduleDayText: {
     color: "#728469",
     fontSize: 15,
     lineHeight: 18,
-    fontWeight: "600",
-  },
+    fontFamily: "Outfit-SemiBold" },
   scheduleDayTextBooked: {
     color: "#4D5F51",
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   scheduleDayTextToday: {
-    color: "#2E5232",
-  },
+    color: "#2E5232" },
   scheduleLegendRow: {
     flexDirection: "row",
     alignItems: "center",
     columnGap: 8,
-    marginTop: 14,
-  },
+    marginTop: 14 },
   scheduleLegendMarker: {
     width: 12,
     height: 12,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: "#738B68",
-    backgroundColor: "#FFFFFF",
-  },
+    backgroundColor: "#FFFFFF" },
   scheduleLegendText: {
     color: "#6B7B89",
     fontSize: 12,
     lineHeight: 16,
-    flex: 1,
-  },
+    flex: 1 },
   scheduleUpcomingShell: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -3132,8 +3068,7 @@ const styles = StyleSheet.create({
     borderColor: "#DBEDC6",
     paddingHorizontal: 14,
     paddingVertical: 14,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   scheduleUpcomingIcon: {
     width: 40,
     height: 40,
@@ -3143,43 +3078,36 @@ const styles = StyleSheet.create({
     borderColor: "#D7E8C2",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 2,
-  },
+    marginTop: 2 },
   scheduleUpcomingContent: {
-    flex: 1,
-  },
+    flex: 1 },
   scheduleUpcomingHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     columnGap: 10,
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   scheduleUpcomingEyebrow: {
     color: "#6D8648",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   scheduleUpcomingName: {
     color: "#31475B",
     fontSize: 16,
     lineHeight: 22,
-    fontWeight: "700",
-    marginBottom: 3,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 3 },
   scheduleUpcomingMeta: {
     color: "#556676",
     fontSize: 13,
     lineHeight: 18,
-    marginBottom: 2,
-  },
+    marginBottom: 2 },
   scheduleUpcomingStatus: {
     color: "#5F8A42",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   scheduleEmptyCard: {
     borderRadius: 18,
     backgroundColor: "#FAFCFE",
@@ -3187,20 +3115,17 @@ const styles = StyleSheet.create({
     borderColor: "#E3EAF0",
     paddingHorizontal: 16,
     paddingVertical: 16,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   scheduleEmptyTitle: {
     color: "#324254",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 4 },
   scheduleEmptyText: {
     color: "#627484",
     fontSize: 13,
-    lineHeight: 18,
-  },
+    lineHeight: 18 },
   statsRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
   statBox: {
     width: "31.5%",
@@ -3210,9 +3135,8 @@ const styles = StyleSheet.create({
     borderColor: "#DDEAD2",
     alignItems: "center",
     paddingVertical: 14,
-    paddingHorizontal: 8,
-  },
-  statValue: { color: "#304558", fontSize: 24, lineHeight: 28, fontWeight: "700", marginBottom: 2 },
+    paddingHorizontal: 8 },
+  statValue: { color: "#304558", fontSize: 24, lineHeight: 28, fontFamily: "Outfit-Bold", marginBottom: 2 },
   statLabel: { color: "#60727B", fontSize: 12, lineHeight: 16, textAlign: "center" },
   actionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", columnGap: 12 },
   actionText: { flex: 1 },
@@ -3223,9 +3147,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#DDEACF",
     paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  summaryTitle: { color: "#31475B", fontSize: 15, lineHeight: 20, fontWeight: "700", marginBottom: 2 },
+    paddingVertical: 12 },
+  summaryTitle: { color: "#31475B", fontSize: 15, lineHeight: 20, fontFamily: "Outfit-Bold", marginBottom: 2 },
   summaryText: { color: "#556676", fontSize: 13, lineHeight: 18, marginBottom: 2 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: {
@@ -3234,11 +3157,10 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: "#D8E3D0",
-    backgroundColor: "#FFFFFF",
-  },
+    backgroundColor: "#FFFFFF" },
   chipActive: { borderColor: "#79C943", backgroundColor: "#EDF8E6" },
-  chipText: { color: "#566879", fontSize: 13, lineHeight: 18, fontWeight: "600" },
-  chipTextActive: { color: "#2E6D25", fontWeight: "700" },
+  chipText: { color: "#566879", fontSize: 13, lineHeight: 18, fontFamily: "Outfit-SemiBold" },
+  chipTextActive: { color: "#2E6D25", fontFamily: "Outfit-Bold" },
   feedbackInput: {
     minHeight: 156,
     borderRadius: 14,
@@ -3249,8 +3171,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 14,
     lineHeight: 20,
-    color: "#2D4053",
-  },
+    color: "#2D4053" },
   feedbackAttachmentButton: {
     minHeight: 78,
     borderRadius: 16,
@@ -3261,8 +3182,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     columnGap: 12,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
+    paddingVertical: 12 },
   feedbackAttachmentPreview: {
     borderRadius: 16,
     borderWidth: 1,
@@ -3272,49 +3192,41 @@ const styles = StyleSheet.create({
     alignItems: "center",
     columnGap: 12,
     paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
+    paddingVertical: 12 },
   feedbackAttachmentImage: {
     width: 56,
     height: 56,
     borderRadius: 12,
-    backgroundColor: "#E8EFE2",
-  },
+    backgroundColor: "#E8EFE2" },
   feedbackAttachmentInfo: {
-    flex: 1,
-  },
+    flex: 1 },
   feedbackAttachmentTitle: {
     color: "#31475B",
     fontSize: 14,
     lineHeight: 19,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   feedbackAttachmentMeta: {
     color: "#697989",
     fontSize: 12,
     lineHeight: 16,
-    marginTop: 2,
-  },
+    marginTop: 2 },
   feedbackAttachmentRemove: {
     width: 34,
     height: 34,
     borderRadius: 999,
     backgroundColor: "#FCEEEE",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   feedbackSuccessText: {
     color: "#2E6D25",
     fontSize: 14,
     lineHeight: 19,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     marginBottom: 10,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   inputError: {
     borderColor: "#D24C59",
-    backgroundColor: "#FFF8F8",
-  },
+    backgroundColor: "#FFF8F8" },
   feedbackErrorBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -3325,22 +3237,19 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   feedbackErrorBannerText: {
     color: "#C93B3B",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "600",
-    flex: 1,
-  },
+    fontFamily: "Outfit-SemiBold",
+    flex: 1 },
   modalBackdrop: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(33, 43, 52, 0.42)",
-    paddingHorizontal: 18,
-  },
+    paddingHorizontal: 18 },
   modalCard: {
     width: "100%",
     maxWidth: 430,
@@ -3355,26 +3264,22 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 8 },
-    elevation: 7,
-  },
+    elevation: 7 },
   modalTitle: {
     color: "#304558",
     fontSize: 19,
     lineHeight: 25,
-    fontWeight: "800",
-    marginBottom: 6,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 6 },
   modalBody: {
     color: "#5A6B7A",
     fontSize: 14,
     lineHeight: 20,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   modalActions: {
     flexDirection: "row",
     columnGap: 10,
-    marginTop: 14,
-  },
+    marginTop: 14 },
   modalCancelButton: {
     flex: 1,
     minHeight: 46,
@@ -3383,31 +3288,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#DDE4EB",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   modalCancelText: {
     color: "#3D5569",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   modalPrimaryButton: {
     flex: 1,
     minHeight: 46,
     borderRadius: 999,
     backgroundColor: "#79C943",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   modalButtonDisabled: {
-    opacity: 0.65,
-  },
+    opacity: 0.65 },
   modalPrimaryText: {
     color: "#FFFFFF",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   textInput: {
     minHeight: 46,
     borderRadius: 14,
@@ -3416,8 +3316,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FAFCFD",
     paddingHorizontal: 12,
     fontSize: 15,
-    color: "#2D4053",
-  },
+    color: "#2D4053" },
   inputGap: { marginTop: 10 },
   profileInput: { marginBottom: 12 },
   profileReadOnly: { marginBottom: 12, color: "#5A6B7A" },
@@ -3426,12 +3325,10 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     justifyContent: "space-between",
     columnGap: 10,
-    marginBottom: 2,
-  },
+    marginBottom: 2 },
   detailsHeaderCopy: {
     flex: 1,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   editIconButton: {
     width: 38,
     height: 38,
@@ -3440,15 +3337,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "#F4F7FA",
     borderWidth: 1,
-    borderColor: "#DDE4EB",
-  },
+    borderColor: "#DDE4EB" },
   fieldActionsRow: {
     flexDirection: "row",
     alignItems: "center",
     columnGap: 8,
     marginTop: 2,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   fieldSaveButton: {
     flex: 1,
     minHeight: 38,
@@ -3457,14 +3352,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#79C943",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 14,
-  },
+    paddingHorizontal: 14 },
   fieldSaveText: {
     color: "#FFFFFF",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   fieldCancelButton: {
     minHeight: 38,
     height: 38,
@@ -3474,20 +3367,17 @@ const styles = StyleSheet.create({
     borderColor: "#DDE4EB",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 14,
-  },
+    paddingHorizontal: 14 },
   fieldCancelText: {
     color: "#5A6B7A",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   fieldHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   fieldEditButton: {
     width: 26,
     height: 26,
@@ -3496,48 +3386,40 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#DDE4EB",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   readOnlyDatePickerRow: {
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   profileReadOnlyText: {
     color: "#5A6B7A",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   fieldError: {
     color: "#D24C59",
     fontSize: 12,
     lineHeight: 16,
     marginTop: -6,
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   changeEmailButton: {
     alignSelf: "flex-start",
     marginTop: -6,
     marginBottom: 12,
-    paddingVertical: 4,
-  },
+    paddingVertical: 4 },
   changeEmailText: {
     color: "#3D5569",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   birthdateCalendarWrapper: {
     width: "100%",
     marginTop: 4,
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   birthdateControlsRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 10,
-    columnGap: 6,
-  },
+    columnGap: 6 },
   birthdateArrowBtn: {
     width: 36,
     height: 36,
@@ -3546,27 +3428,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#DDE4EB",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   birthdateArrowBtnDisabled: {
     opacity: 0.35,
-    backgroundColor: "#F8FAFC",
-  },
+    backgroundColor: "#F8FAFC" },
   birthdateSelectsRow: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 8,
-  },
+    columnGap: 8 },
   birthdateMonthSelectWrap: {
-    flex: 1.35,
-  },
+    flex: 1.35 },
   birthdateYearSelectWrap: {
-    flex: 1,
-  },
+    flex: 1 },
   birthdateSelectContainer: {
-    marginBottom: 0,
-  },
+    marginBottom: 0 },
   birthdateSelectTrigger: {
     minHeight: 36,
     height: 36,
@@ -3576,44 +3452,37 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#DDE4EB",
     backgroundColor: "#FAFCFD",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   birthdateSelectValue: {
     fontSize: 13,
-    fontWeight: "700",
-    color: "#2D4053",
-  },
+    fontFamily: "Outfit-Bold",
+    color: "#2D4053" },
   birthdateWeekdaysRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     paddingVertical: 6,
     borderBottomWidth: 1,
     borderBottomColor: "#EEF2F6",
-    marginBottom: 6,
-  },
+    marginBottom: 6 },
   birthdateWeekdayText: {
     width: "14.2857%",
     textAlign: "center",
     color: "#5E7182",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   birthdateGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "flex-start",
-    rowGap: 6,
-  },
+    rowGap: 6 },
   birthdateGridCell: {
     width: "14.2857%",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   birthdateGridCellBlank: {
     width: "14.2857%",
-    height: 34,
-  },
+    height: 34 },
   birthdateDayCircle: {
     width: 34,
     height: 34,
@@ -3621,36 +3490,28 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1.5,
-    borderColor: "transparent",
-  },
+    borderColor: "transparent" },
   birthdateDayCircleSelected: {
     backgroundColor: "#79C943",
-    borderColor: "#79C943",
-  },
+    borderColor: "#79C943" },
   birthdateDayCircleToday: {
     borderColor: "#79C943",
-    backgroundColor: "#F7FFE9",
-  },
+    backgroundColor: "#F7FFE9" },
   birthdateDayCircleDisabled: {
-    opacity: 0.3,
-  },
+    opacity: 0.3 },
   birthdateDayText: {
     color: "#2D4053",
     fontSize: 13,
     lineHeight: 16,
-    fontWeight: "600",
-  },
+    fontFamily: "Outfit-SemiBold" },
   birthdateDayTextSelected: {
     color: "#FFFFFF",
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   birthdateDayTextToday: {
     color: "#356525",
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   birthdateDayTextDisabled: {
-    color: "#9AA6B2",
-  },
+    color: "#9AA6B2" },
   birthdateSelectionBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -3663,14 +3524,12 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     paddingHorizontal: 12,
     marginTop: 10,
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   birthdateSelectionText: {
     color: "#356525",
     fontSize: 13,
     lineHeight: 17,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   datePickerField: {
     minHeight: 46,
     borderRadius: 14,
@@ -3680,34 +3539,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-  },
+    justifyContent: "space-between" },
   datePickerValue: {
     color: "#2D4053",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   datePickerPlaceholder: {
     color: "#97A1AA",
     fontSize: 15,
-    lineHeight: 20,
-  },
+    lineHeight: 20 },
   disabledButton: { opacity: 0.62 },
   scheduleDayCircleSelected: {
     borderColor: "#5A8A36",
     borderWidth: 2,
-    backgroundColor: "#F3FBE8",
-  },
+    backgroundColor: "#F3FBE8" },
   journalPinHint: {
     color: "#5A6B7A",
     fontSize: 13,
     lineHeight: 18,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   pinEditorActionWrap: {
-    marginTop: 6,
-  },
+    marginTop: 6 },
   errorText: { color: "#D24C59", fontSize: 13, lineHeight: 18, marginTop: 8, marginBottom: 10 },
   journalLockHero: {
     borderRadius: 20,
@@ -3719,8 +3572,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     flexDirection: "row",
     alignItems: "flex-start",
-    columnGap: 12,
-  },
+    columnGap: 12 },
   journalLockHeroIcon: {
     width: 46,
     height: 46,
@@ -3730,24 +3582,19 @@ const styles = StyleSheet.create({
     borderColor: "#D6E7C5",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 2,
-  },
+    marginTop: 2 },
   journalLockHeroCopy: {
-    flex: 1,
-  },
+    flex: 1 },
   journalLockHeroTitle: {
     color: "#31475B",
     fontSize: 17,
     lineHeight: 22,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 4 },
   journalLockHeroBody: {
     color: "#5A6B7A",
     fontSize: 13,
-    lineHeight: 18,
-  },
+    lineHeight: 18 },
   shareFooter: { flexDirection: "row", alignItems: "center", justifyContent: "center", columnGap: 8, marginTop: 8 },
-  shareFooterText: { color: "#4A5F72", fontSize: 13, lineHeight: 18, fontWeight: "600" },
-});
+  shareFooterText: { color: "#4A5F72", fontSize: 13, lineHeight: 18, fontFamily: "Outfit-SemiBold" } });
 

@@ -1,4 +1,4 @@
-import { HomeBottomNav } from "../components/home/HomeBottomNav";
+﻿import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect } from "@react-navigation/native";
@@ -21,8 +21,7 @@ import {
   TALA_IMAGE,
   useAvailableMuniTala,
   useOwnedMuniItems,
-  useSavedMuniLoadout,
-} from "../lib/muni-wardrobe";
+  useSavedMuniLoadout } from "../lib/muni-wardrobe";
 
 type AvatarMode = "wardrobe" | "shop";
 type PurchaseNotice = {
@@ -35,8 +34,7 @@ const SECTION_META: Record<keyof MuniLoadout, { icon: string }> = {
   background: { icon: "image-outline" },
   eye: { icon: "eye-outline" },
   head: { icon: "sparkles-outline" },
-  outfit: { icon: "shirt-outline" },
-};
+  outfit: { icon: "shirt-outline" } };
 
 export default function MuniAvatarScreen() {
   const { user } = useAuthSession();
@@ -50,13 +48,14 @@ export default function MuniAvatarScreen() {
   const [pendingLeaveRoute, setPendingLeaveRoute] = useState<string | null>(null);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [isSavingLoadout, setIsSavingLoadout] = useState(false);
-  const [isWardrobeLoading, setIsWardrobeLoading] = useState(true);
+  const [isWardrobeLoading, setIsWardrobeLoading] = useState(false);
 
   const loadWardrobe = useCallback(async () => {
     if (!user?.studentNumber) {
       setIsWardrobeLoading(false);
       return;
     }
+    // Soft indicator only — hydrate returns cached state immediately and refreshes remotely in background.
     setIsWardrobeLoading(true);
     try {
       await hydrateMuniWardrobe(user.studentNumber);
@@ -129,8 +128,7 @@ export default function MuniAvatarScreen() {
   const handleEquipItem = useCallback((sectionId: keyof MuniLoadout, optionId: string | null) => {
     setEquippedItems((current) => ({
       ...current,
-      [sectionId]: optionId,
-    }));
+      [sectionId]: optionId }));
     void Haptics.selectionAsync().catch(() => undefined);
   }, []);
 
@@ -151,8 +149,7 @@ export default function MuniAvatarScreen() {
       setPurchaseNotice({
         itemLabel: option.label ?? option.id,
         optionId: option.id,
-        sectionId,
-      });
+        sectionId });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
     },
     [availableTala],
@@ -442,8 +439,7 @@ export default function MuniAvatarScreen() {
                 if (purchaseNotice) {
                   setEquippedItems((current) => ({
                     ...current,
-                    [purchaseNotice.sectionId]: purchaseNotice.optionId,
-                  }));
+                    [purchaseNotice.sectionId]: purchaseNotice.optionId }));
                   setActiveMode("wardrobe");
                 }
                 setPurchaseNotice(null);
@@ -528,8 +524,7 @@ export default function MuniAvatarScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F5F9F1",
-  },
+    backgroundColor: "#F5F9F1" },
   topBar: {
     height: 56,
     borderBottomWidth: 1,
@@ -543,8 +538,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+    elevation: 2 },
   backButton: {
     width: 38,
     height: 38,
@@ -553,29 +547,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E0EADC",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   topTitle: {
     color: "#304558",
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   topBarSpacer: {
     width: 38,
-    height: 38,
-  },
+    height: 38 },
   scroll: {
-    flex: 1,
-  },
+    flex: 1 },
   scrollContent: {
-    paddingBottom: 116,
-  },
+    paddingBottom: 116 },
   previewSection: {
     paddingHorizontal: 14,
     paddingTop: 12,
-    paddingBottom: 18,
-  },
+    paddingBottom: 18 },
   heroCard: {
     height: 292,
     borderRadius: 24,
@@ -588,18 +576,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.14,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
-    elevation: 4,
-  },
+    elevation: 4 },
   heroBackgroundImage: {
     ...StyleSheet.absoluteFillObject,
     width: "100%",
-    height: "100%",
-  },
+    height: "100%" },
   heroOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(255, 255, 255, 0.16)",
-    zIndex: 1,
-  },
+    zIndex: 1 },
   heroTopRow: {
     position: "absolute",
     top: 12,
@@ -609,8 +594,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    columnGap: 10,
-  },
+    columnGap: 10 },
   talaPill: {
     minWidth: 96,
     height: 38,
@@ -622,18 +606,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 12,
-    columnGap: 5,
-  },
+    columnGap: 5 },
   talaIcon: {
     width: 17,
-    height: 17,
-  },
+    height: 17 },
   talaText: {
     color: "#465665",
     fontSize: 16,
     lineHeight: 21,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   saveButton: {
     minWidth: 104,
     height: 38,
@@ -642,8 +623,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 12,
-    columnGap: 5,
-  },
+    columnGap: 5 },
   saveButtonActive: {
     backgroundColor: "#70C943",
     borderWidth: 1,
@@ -652,22 +632,18 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+    elevation: 2 },
   saveButtonSaved: {
     backgroundColor: "rgba(255, 255, 255, 0.88)",
     borderWidth: 1,
-    borderColor: "rgba(218, 231, 212, 0.92)",
-  },
+    borderColor: "rgba(218, 231, 212, 0.92)" },
   saveButtonText: {
     color: "#5E7259",
     fontSize: 13,
     lineHeight: 17,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   saveButtonTextActive: {
-    color: "#FFFFFF",
-  },
+    color: "#FFFFFF" },
   muniPreviewWrap: {
     position: "absolute",
     left: "50%",
@@ -675,12 +651,10 @@ const styles = StyleSheet.create({
     width: 205,
     height: 205,
     marginLeft: -102.5,
-    zIndex: 3,
-  },
+    zIndex: 3 },
   muniPreviewAvatar: {
     width: 205,
-    height: 205,
-  },
+    height: 205 },
   heroStatsRow: {
     position: "absolute",
     left: 12,
@@ -688,8 +662,7 @@ const styles = StyleSheet.create({
     bottom: 12,
     zIndex: 4,
     flexDirection: "row",
-    columnGap: 8,
-  },
+    columnGap: 8 },
   heroStatPill: {
     flex: 1,
     minHeight: 38,
@@ -702,45 +675,38 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    columnGap: 6,
-  },
+    columnGap: 6 },
   heroStatValue: {
     color: "#304558",
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: "900",
-  },
+    fontFamily: "Outfit-Bold" },
   heroStatLabel: {
     color: "#607181",
     fontSize: 12,
     lineHeight: 15,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   collectionHeader: {
     marginTop: 18,
     marginBottom: 12,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    columnGap: 12,
-  },
+    columnGap: 12 },
   collectionTitleWrap: {
-    flex: 1,
-  },
+    flex: 1 },
   collectionKicker: {
     color: "#6F845C",
     fontSize: 12,
     lineHeight: 15,
-    fontWeight: "800",
-    textTransform: "uppercase",
-  },
+    fontFamily: "Outfit-Bold",
+    textTransform: "uppercase" },
   collectionTitle: {
     marginTop: 2,
     color: "#304558",
     fontSize: 23,
     lineHeight: 29,
-    fontWeight: "900",
-  },
+    fontFamily: "Outfit-Bold" },
   collectionCountPill: {
     minHeight: 34,
     borderRadius: 999,
@@ -751,28 +717,24 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    columnGap: 5,
-  },
+    columnGap: 5 },
   collectionCountText: {
     color: "#507143",
     fontSize: 12,
     lineHeight: 15,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   wardrobeLoadingRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     columnGap: 8,
     marginBottom: 10,
-    paddingVertical: 8,
-  },
+    paddingVertical: 8 },
   wardrobeLoadingText: {
     color: "#5E7259",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   modeSwitch: {
     height: 50,
     borderRadius: 18,
@@ -781,49 +743,41 @@ const styles = StyleSheet.create({
     borderColor: "#D6E6CF",
     padding: 4,
     flexDirection: "row",
-    columnGap: 6,
-  },
+    columnGap: 6 },
   modeButton: {
     flex: 1,
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
-    columnGap: 6,
-  },
+    columnGap: 6 },
   modeButtonActive: {
     backgroundColor: "#70C943",
     shadowColor: "#5D9742",
     shadowOpacity: 0.16,
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+    elevation: 2 },
   modeButtonText: {
     color: "#62746A",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   modeButtonTextActive: {
-    color: "#FFFFFF",
-  },
+    color: "#FFFFFF" },
   sectionBlock: {
     marginBottom: 18,
-    paddingHorizontal: 14,
-  },
+    paddingHorizontal: 14 },
   sectionHeader: {
     marginBottom: 10,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-  },
+    justifyContent: "space-between" },
   sectionTitleRow: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 8,
-  },
+    columnGap: 8 },
   sectionIconBadge: {
     width: 30,
     height: 30,
@@ -832,26 +786,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#D7E7CF",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   sectionTitle: {
     color: "#304558",
     fontSize: 17,
     lineHeight: 22,
-    fontWeight: "900",
-  },
+    fontFamily: "Outfit-Bold" },
   sectionCountText: {
     color: "#6B7B88",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   optionRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     rowGap: 10,
-    columnGap: 8,
-  },
+    columnGap: 8 },
   optionCard: {
     width: "31.4%",
     minHeight: 124,
@@ -865,12 +815,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+    elevation: 2 },
   optionCardSelected: {
     borderColor: "#70C943",
-    backgroundColor: "#F7FCF3",
-  },
+    backgroundColor: "#F7FCF3" },
   optionImageWell: {
     height: 78,
     borderRadius: 14,
@@ -879,30 +827,24 @@ const styles = StyleSheet.create({
     borderColor: "#E4ECE0",
     alignItems: "center",
     justifyContent: "center",
-    overflow: "hidden",
-  },
+    overflow: "hidden" },
   optionImageWellBackground: {
-    backgroundColor: "#DDEFD6",
-  },
+    backgroundColor: "#DDEFD6" },
   optionImage: {
     width: "78%",
-    height: "78%",
-  },
+    height: "78%" },
   backgroundOptionImage: {
     width: "100%",
-    height: "100%",
-  },
+    height: "100%" },
   optionLabel: {
     marginTop: 7,
     color: "#405368",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "800",
-    textAlign: "center",
-  },
+    fontFamily: "Outfit-Bold",
+    textAlign: "center" },
   optionLabelSelected: {
-    color: "#2F6F25",
-  },
+    color: "#2F6F25" },
   checkBadge: {
     position: "absolute",
     top: 7,
@@ -914,14 +856,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#FFFFFF",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   shopGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     rowGap: 12,
-    columnGap: 10,
-  },
+    columnGap: 10 },
   shopCard: {
     width: "48%",
     alignSelf: "flex-start",
@@ -936,14 +876,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 7,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
+    elevation: 2 },
   shopCardOwned: {
-    backgroundColor: "#F7FCF3",
-  },
+    backgroundColor: "#F7FCF3" },
   shopCardSelected: {
-    borderColor: "#70C943",
-  },
+    borderColor: "#70C943" },
   shopImageWrap: {
     height: 86,
     borderRadius: 15,
@@ -953,41 +890,34 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
-    marginBottom: 9,
-  },
+    marginBottom: 9 },
   shopOptionImage: {
     width: "76%",
-    height: "76%",
-  },
+    height: "76%" },
   shopBackgroundImage: {
     width: "100%",
-    height: "100%",
-  },
+    height: "100%" },
   shopLabel: {
     minHeight: 36,
     color: "#304558",
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: "900",
-    marginBottom: 8,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 8 },
   priceRow: {
     minHeight: 28,
     flexDirection: "row",
     alignItems: "center",
     columnGap: 5,
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   shopPriceIcon: {
     width: 15,
-    height: 15,
-  },
+    height: 15 },
   shopPriceText: {
     color: "#4F6047",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "900",
-  },
+    fontFamily: "Outfit-Bold" },
   buyButton: {
     minHeight: 34,
     borderRadius: 999,
@@ -996,20 +926,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     flexDirection: "row",
     columnGap: 5,
-    paddingHorizontal: 10,
-  },
+    paddingHorizontal: 10 },
   buyButtonDisabled: {
-    backgroundColor: "#E4ECD9",
-  },
+    backgroundColor: "#E4ECD9" },
   buyButtonText: {
     color: "#FFFFFF",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "900",
-  },
+    fontFamily: "Outfit-Bold" },
   buyButtonTextDisabled: {
-    color: "#8A9583",
-  },
+    color: "#8A9583" },
   shopStatusChip: {
     minHeight: 28,
     borderRadius: 999,
@@ -1020,20 +946,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     flexDirection: "row",
     columnGap: 4,
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   shopStatusChipActive: {
-    backgroundColor: "#70C943",
-  },
+    backgroundColor: "#70C943" },
   shopStatusText: {
     color: "#5C7257",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "900",
-  },
+    fontFamily: "Outfit-Bold" },
   shopStatusTextActive: {
-    color: "#FFFFFF",
-  },
+    color: "#FFFFFF" },
   wearButton: {
     minHeight: 34,
     borderRadius: 999,
@@ -1042,28 +964,23 @@ const styles = StyleSheet.create({
     borderColor: "#D8E6D0",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 10,
-  },
+    paddingHorizontal: 10 },
   wearButtonSelected: {
     backgroundColor: "#F0F7EA",
-    borderColor: "#D8E6D0",
-  },
+    borderColor: "#D8E6D0" },
   wearButtonText: {
     color: "#355468",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "900",
-  },
+    fontFamily: "Outfit-Bold" },
   wearButtonTextSelected: {
-    color: "#5D7258",
-  },
+    color: "#5D7258" },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(21, 27, 24, 0.34)",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 22,
-  },
+    paddingHorizontal: 22 },
   unlockModalCard: {
     width: "100%",
     maxWidth: 320,
@@ -1077,8 +994,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
+    elevation: 4 },
   unlockIconBadge: {
     width: 58,
     height: 58,
@@ -1086,23 +1002,20 @@ const styles = StyleSheet.create({
     backgroundColor: "#70C943",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   unlockTitle: {
     color: "#33475C",
     fontSize: 22,
     lineHeight: 28,
-    fontWeight: "800",
-    textAlign: "center",
-  },
+    fontFamily: "Outfit-Bold",
+    textAlign: "center" },
   unlockBody: {
     marginTop: 8,
     color: "#66776B",
     fontSize: 15,
     lineHeight: 22,
-    fontWeight: "500",
-    textAlign: "center",
-  },
+    fontFamily: "Outfit-Medium",
+    textAlign: "center" },
   unlockButton: {
     marginTop: 18,
     minWidth: 140,
@@ -1111,21 +1024,17 @@ const styles = StyleSheet.create({
     backgroundColor: "#70C943",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 18,
-  },
+    paddingHorizontal: 18 },
   unlockSecondaryButton: {
     backgroundColor: "#EEF4E8",
-    marginTop: 8,
-  },
+    marginTop: 8 },
   unlockSecondaryButtonText: {
-    color: "#4E6748",
-  },
+    color: "#4E6748" },
   unlockButtonText: {
     color: "#FFFFFF",
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   modalCard: {
     width: "100%",
     maxWidth: 320,
@@ -1138,28 +1047,24 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
+    elevation: 4 },
   modalTitle: {
     color: "#34465A",
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: "800",
+    fontFamily: "Outfit-Bold",
     textAlign: "center",
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   modalBody: {
     color: "#52606C",
     fontSize: 14,
     lineHeight: 20,
-    fontWeight: "500",
+    fontFamily: "Outfit-Medium",
     textAlign: "center",
-    marginBottom: 16,
-  },
+    marginBottom: 16 },
   modalActions: {
     flexDirection: "row",
-    columnGap: 10,
-  },
+    columnGap: 10 },
   modalSecondaryButton: {
     flex: 1,
     minHeight: 40,
@@ -1168,37 +1073,30 @@ const styles = StyleSheet.create({
     borderColor: "#CDD5C7",
     backgroundColor: "#FFFFFF",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   modalSecondaryText: {
     color: "#566271",
     fontSize: 13,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   modalDangerButton: {
     flex: 1,
     minHeight: 40,
     borderRadius: 999,
     backgroundColor: "#DC4C4C",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   modalDangerText: {
     color: "#FFFFFF",
     fontSize: 13,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   modalPrimaryButton: {
     marginTop: 8,
     minHeight: 40,
     borderRadius: 999,
     backgroundColor: "#70C943",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   modalPrimaryText: {
     color: "#FFFFFF",
     fontSize: 13,
-    fontWeight: "700",
-  },
-});
+    fontFamily: "Outfit-Bold" } });

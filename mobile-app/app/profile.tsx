@@ -133,8 +133,7 @@ export default function ProfileScreen() {
       const compressed = await ImageManipulator.manipulateAsync(asset.uri, actions, {
         base64: true,
         compress: 0.72,
-        format: ImageManipulator.SaveFormat.JPEG,
-      });
+        format: ImageManipulator.SaveFormat.JPEG });
       if (!compressed.base64) {
         throw new Error("The compressed image could not be read.");
       }
@@ -148,8 +147,7 @@ export default function ProfileScreen() {
       const result = await updateStudentProfilePicture(user.studentNumber, {
         contentType: "image/jpeg",
         dataUrl: `data:image/jpeg;base64,${compressed.base64}`,
-        fileName: `${user.studentNumber}-profile`,
-      });
+        fileName: `${user.studentNumber}-profile` });
       if (!result.ok || !result.profilePictureUrl) {
         showAppAlert("Upload failed", result.message || "Please try again in a moment.");
         return;
@@ -189,14 +187,12 @@ export default function ProfileScreen() {
             allowsEditing: true,
             aspect: [1, 1],
             mediaTypes: ["images"],
-            quality: 1,
-          })
+            quality: 1 })
         : await ImagePicker.launchImageLibraryAsync({
             allowsEditing: true,
             aspect: [1, 1],
             mediaTypes: ["images"],
-            quality: 1,
-          });
+            quality: 1 });
 
       if (!result.canceled && result.assets[0]) {
         await saveSelectedProfilePicture(result.assets[0]);
@@ -488,8 +484,7 @@ function SettingRowItem({ onPress, row }: { onPress: (rowId: string) => void | P
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F7FAFC",
-  },
+    backgroundColor: "#F7FAFC" },
   topBar: {
     height: 52,
     backgroundColor: "#FFFFFF",
@@ -503,32 +498,26 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     elevation: 2,
     borderBottomWidth: 1,
-    borderBottomColor: "#EEF2F5",
-  },
+    borderBottomColor: "#EEF2F5" },
   backButton: {
     width: 38,
     height: 38,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   topTitle: {
     color: "#314258",
     fontSize: 34 / 2,
     lineHeight: 23,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   topBarSpacer: {
     width: 38,
-    height: 38,
-  },
+    height: 38 },
   scroll: {
-    flex: 1,
-  },
+    flex: 1 },
   scrollContent: {
     paddingTop: 16,
     paddingHorizontal: 12,
-    paddingBottom: 32,
-  },
+    paddingBottom: 32 },
   profileHero: {
     borderRadius: 24,
     backgroundColor: "#FFFFFF",
@@ -540,8 +529,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
-  },
+    elevation: 2 },
   heroGlowLeft: {
     position: "absolute",
     top: -36,
@@ -550,8 +538,7 @@ const styles = StyleSheet.create({
     height: 120,
     borderRadius: 999,
     backgroundColor: "#DDF8C7",
-    opacity: 0.75,
-  },
+    opacity: 0.75 },
   heroGlowRight: {
     position: "absolute",
     right: -30,
@@ -560,23 +547,19 @@ const styles = StyleSheet.create({
     height: 140,
     borderRadius: 999,
     backgroundColor: "#E8F5FF",
-    opacity: 0.85,
-  },
+    opacity: 0.85 },
   profileWrap: {
     alignItems: "center",
     paddingHorizontal: 18,
-    paddingVertical: 20,
-  },
+    paddingVertical: 20 },
   avatarStage: {
     height: 128,
     width: 128,
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   avatarCircle: {
     backgroundColor: "#89E1D4",
     borderWidth: 4,
-    borderColor: "#F2FFFA",
-  },
+    borderColor: "#F2FFFA" },
   avatarLoadingOverlay: {
     position: "absolute",
     left: 0,
@@ -586,8 +569,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(33, 55, 47, 0.52)",
-  },
+    backgroundColor: "rgba(33, 55, 47, 0.52)" },
   cameraButton: {
     position: "absolute",
     right: 2,
@@ -604,22 +586,19 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.22,
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
-  },
+    elevation: 4 },
   cameraButtonPressed: {
     opacity: 0.82,
-    transform: [{ scale: 0.96 }],
-  },
+    transform: [{ scale: 0.96 }] },
   name: {
     width: "100%",
     maxWidth: 300,
     color: "#304558",
     fontSize: 28,
     lineHeight: 34,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     textAlign: "center",
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   email: {
     width: "100%",
     maxWidth: 300,
@@ -627,12 +606,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     textAlign: "center",
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   identityRow: {
     flexDirection: "row",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   identityChip: {
     flexDirection: "row",
     alignItems: "center",
@@ -642,14 +619,12 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "#F4F9EF",
     borderWidth: 1,
-    borderColor: "#DAEAC8",
-  },
+    borderColor: "#DAEAC8" },
   identityChipText: {
     color: "#58704C",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   groupCard: {
     borderRadius: 18,
     backgroundColor: "#FFFFFF",
@@ -661,8 +636,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+    elevation: 2 },
   scheduleShortcut: {
     minHeight: 74,
     borderRadius: 20,
@@ -679,8 +653,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+    elevation: 2 },
   scheduleShortcutIconWrap: {
     width: 42,
     height: 42,
@@ -689,47 +662,40 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "#E0EAD2",
-  },
+    borderColor: "#E0EAD2" },
   scheduleShortcutContent: {
-    flex: 1,
-  },
+    flex: 1 },
   scheduleShortcutText: {
     color: "#33475C",
     fontSize: 18,
     lineHeight: 22,
-    fontWeight: "700",
-    marginBottom: 2,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 2 },
   scheduleShortcutMeta: {
     color: "#6B7685",
     fontSize: 13,
-    lineHeight: 18,
-  },
+    lineHeight: 18 },
   groupTitle: {
     color: "#2E3F54",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     paddingHorizontal: 14,
     paddingTop: 12,
-    paddingBottom: 8,
-  },
+    paddingBottom: 8 },
   rowItem: {
     minHeight: 54,
     paddingHorizontal: 14,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "#FFFFFF",
-  },
+    backgroundColor: "#FFFFFF" },
   rowLeading: {
     flexDirection: "row",
     alignItems: "center",
     columnGap: 12,
     flex: 1,
-    paddingRight: 12,
-  },
+    paddingRight: 12 },
   rowIconWrap: {
     width: 34,
     height: 34,
@@ -738,19 +704,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#DBEAC8",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   rowLabel: {
     color: "#34475D",
     fontSize: 16,
     lineHeight: 21,
-    fontWeight: "500",
-  },
+    fontFamily: "Outfit-Medium" },
   rowDivider: {
     height: 1,
     backgroundColor: "#EEF3F6",
-    marginLeft: 60,
-  },
+    marginLeft: 60 },
   signOutButton: {
     height: 50,
     borderRadius: 999,
@@ -765,39 +728,33 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 1 },
-    elevation: 2,
-  },
+    elevation: 2 },
   signOutText: {
     color: "#EE596B",
     fontSize: 40 / 2,
     lineHeight: 26,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   aboutFooter: {
     alignItems: "center",
     marginTop: 18,
     paddingBottom: 8,
-    rowGap: 2,
-  },
+    rowGap: 2 },
   aboutFooterBrand: {
     color: "#516476",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   aboutFooterMeta: {
     color: "#8A96A1",
     fontSize: 11,
     lineHeight: 15,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(21, 27, 24, 0.34)",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 22,
-  },
+    paddingHorizontal: 22 },
   modalCard: {
     width: "100%",
     maxWidth: 320,
@@ -810,8 +767,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
+    elevation: 4 },
   photoOptionsCard: {
     width: "100%",
     maxWidth: 390,
@@ -823,35 +779,30 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 5 },
-    elevation: 5,
-  },
+    elevation: 5 },
   photoOptionsHeader: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
     columnGap: 12,
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   photoOptionsTitle: {
     color: "#304558",
     fontSize: 19,
     lineHeight: 25,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   photoOptionsSubtitle: {
     color: "#6A7885",
     fontSize: 13,
     lineHeight: 19,
-    marginTop: 2,
-  },
+    marginTop: 2 },
   photoOptionsClose: {
     width: 34,
     height: 34,
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#F3F6F8",
-  },
+    backgroundColor: "#F3F6F8" },
   photoOptionButton: {
     minHeight: 70,
     borderRadius: 16,
@@ -862,59 +813,49 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 11,
-  },
+    columnGap: 11 },
   photoOptionButtonPressed: {
-    opacity: 0.76,
-  },
+    opacity: 0.76 },
   photoOptionIcon: {
     width: 42,
     height: 42,
     borderRadius: 14,
     backgroundColor: "#EDF7E7",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   photoOptionCopy: {
     flex: 1,
-    minWidth: 0,
-  },
+    minWidth: 0 },
   photoOptionTitle: {
     color: "#344A3B",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   photoOptionDescription: {
     color: "#718078",
     fontSize: 12,
     lineHeight: 17,
-    marginTop: 2,
-  },
+    marginTop: 2 },
   photoOptionsCancel: {
     minHeight: 42,
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 2,
-  },
+    marginTop: 2 },
   photoOptionsCancelText: {
     color: "#687681",
     fontSize: 14,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   modalBody: {
     color: "#52606C",
     fontSize: 17,
     lineHeight: 24,
-    fontWeight: "600",
+    fontFamily: "Outfit-SemiBold",
     textAlign: "center",
-    marginBottom: 16,
-  },
+    marginBottom: 16 },
   modalActions: {
     flexDirection: "row",
-    columnGap: 10,
-  },
+    columnGap: 10 },
   modalSecondaryButton: {
     flex: 1,
     minHeight: 40,
@@ -926,13 +867,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
-  },
+    elevation: 1 },
   modalSecondaryText: {
     color: "#566271",
     fontSize: 13,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   modalPrimaryButton: {
     flex: 1,
     minHeight: 40,
@@ -944,12 +883,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+    elevation: 2 },
   modalPrimaryText: {
     color: "#FFFFFF",
     fontSize: 13,
-    fontWeight: "700",
-  },
-});
+    fontFamily: "Outfit-Bold" } });
 

@@ -30,12 +30,9 @@ export default function StudioScreen() {
 const styles = StyleSheet.create({
   studioScreen: {
     flex: 1,
-    backgroundColor: "#ffffff",
-  },
+    backgroundColor: "#ffffff" },
   centeredScreen: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 24,
-  },
-});
+    padding: 24 } });

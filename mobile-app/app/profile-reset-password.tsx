@@ -9,22 +9,20 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View,
-} from "react-native";
+  View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { PasswordField } from "../components/forms/PasswordField";
 import {
   forgotPasswordResendCode,
   forgotPasswordReset,
   forgotPasswordVerifyCode,
-  profilePasswordSendCode,
-} from "../lib/backend-api";
+  profilePasswordSendCode } from "../lib/backend-api";
 import { useAuthSession } from "../lib/auth-session";
 import { isValidStudentId, normalizeStudentIdInput } from "../lib/auth-validation";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const OTP_LENGTH = 8;
-const STRONG_PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
+const STRONG_PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8 }$/;
 
 type Step = "account" | "code" | "password" | "done";
 type ReturnSection = "personal-details" | "privacy-security";
@@ -460,10 +458,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 },
-    elevation: 2,
-  },
+    elevation: 2 },
   backButton: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
-  topTitle: { color: "#314258", fontSize: 17, lineHeight: 23, fontWeight: "700" },
+  topTitle: { color: "#314258", fontSize: 17, lineHeight: 23, fontFamily: "Outfit-Bold" },
   topBarSpacer: { width: 38, height: 38 },
   keyboardView: { flex: 1 },
   scroll: { flex: 1 },
@@ -476,8 +473,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 18,
     marginBottom: 14,
-    alignItems: "center",
-  },
+    alignItems: "center" },
   heroIcon: {
     width: 54,
     height: 54,
@@ -487,22 +483,19 @@ const styles = StyleSheet.create({
     borderColor: "#DAEAC8",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   heroTitle: {
     color: "#304558",
     fontSize: 22,
     lineHeight: 28,
-    fontWeight: "800",
+    fontFamily: "Outfit-Bold",
     textAlign: "center",
-    marginBottom: 5,
-  },
+    marginBottom: 5 },
   heroBody: {
     color: "#5A6B7A",
     fontSize: 14,
     lineHeight: 20,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   card: {
     borderRadius: 20,
     backgroundColor: "#FFFFFF",
@@ -514,22 +507,19 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
+    elevation: 2 },
   fieldLabel: {
     color: "#304558",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "800",
-    marginBottom: 6,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 6 },
   sectionTitle: {
     color: "#304558",
     fontSize: 17,
     lineHeight: 22,
-    fontWeight: "800",
-    marginBottom: 10,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 10 },
   textInput: {
     minHeight: 48,
     borderRadius: 14,
@@ -540,15 +530,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
     color: "#2D4053",
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   codeInput: {
     fontSize: 24,
     lineHeight: 30,
-    fontWeight: "800",
+    fontFamily: "Outfit-Bold",
     textAlign: "center",
-    letterSpacing: 0,
-  },
+    letterSpacing: 0 },
   primaryButton: {
     minHeight: 48,
     borderRadius: 999,
@@ -556,9 +544,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginTop: 4,
-    marginBottom: 10,
-  },
-  primaryText: { color: "#FFFFFF", fontSize: 16, lineHeight: 20, fontWeight: "800" },
+    marginBottom: 10 },
+  primaryText: { color: "#FFFFFF", fontSize: 16, lineHeight: 20, fontFamily: "Outfit-Bold" },
   secondaryButton: {
     minHeight: 46,
     borderRadius: 999,
@@ -567,44 +554,36 @@ const styles = StyleSheet.create({
     borderColor: "#DDE4EB",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10,
-  },
-  secondaryText: { color: "#3D5569", fontSize: 15, lineHeight: 20, fontWeight: "800" },
+    marginBottom: 10 },
+  secondaryText: { color: "#3D5569", fontSize: 15, lineHeight: 20, fontFamily: "Outfit-Bold" },
   disabledButton: { opacity: 0.62 },
   passwordField: {
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   passwordWrap: {
     minHeight: 48,
     borderRadius: 14,
     borderColor: "#DDE4EB",
     backgroundColor: "#FAFCFD",
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   passwordInput: {
     color: "#2D4053",
-    fontSize: 15,
-  },
+    fontSize: 15 },
   passwordStrengthWrap: {
     marginTop: -4,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   passwordStrengthTrack: {
     height: 3,
     borderRadius: 999,
     backgroundColor: "#E7EEF4",
-    overflow: "hidden",
-  },
+    overflow: "hidden" },
   passwordStrengthFill: {
     height: "100%",
-    borderRadius: 999,
-  },
+    borderRadius: 999 },
   passwordStrengthText: {
     fontSize: 12,
     lineHeight: 17,
-    fontWeight: "800",
-    marginTop: 5,
-  },
+    fontFamily: "Outfit-Bold",
+    marginTop: 5 },
   doneIcon: {
     width: 58,
     height: 58,
@@ -613,45 +592,37 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   doneTitle: {
     color: "#304558",
     fontSize: 19,
     lineHeight: 25,
-    fontWeight: "800",
+    fontFamily: "Outfit-Bold",
     textAlign: "center",
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   doneBody: {
     color: "#5A6B7A",
     fontSize: 14,
     lineHeight: 20,
     textAlign: "center",
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   errorText: {
     color: "#D24C59",
     fontSize: 13,
     lineHeight: 18,
-    marginTop: 2,
-  },
+    marginTop: 2 },
   successText: {
     color: "#4E8334",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "700",
-    marginTop: 2,
-  },
+    fontFamily: "Outfit-Bold",
+    marginTop: 2 },
   profileReturnLink: {
     alignItems: "center",
     paddingTop: 12,
-    paddingBottom: 2,
-  },
+    paddingBottom: 2 },
   profileReturnText: {
     color: "#2E6D7A",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "800",
-  },
-});
+    fontFamily: "Outfit-Bold" } });

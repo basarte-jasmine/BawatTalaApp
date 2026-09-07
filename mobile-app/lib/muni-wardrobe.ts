@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+﻿import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useState } from "react";
 import { ImageSourcePropType } from "react-native";
 import {
@@ -387,18 +387,21 @@ export async function hydrateMuniWardrobe(studentNumber: string) {
     }
   }
   if (existing) {
+    existing.hydrated = true;
     hydratedStudentNumber = nextStudent;
     notifyAll(existing);
+    // Refresh remotely in the background so wardrobe UI is not blocked on network.
+    void fetchMuniWardrobe(nextStudent).then((result) => {
+      if (!result.ok || activeStudentNumber !== nextStudent) {
+        return;
+      }
+      applyRemoteWardrobe(result);
+    });
+    return existing;
   }
 
   const result = await fetchMuniWardrobe(nextStudent);
   if (!result.ok) {
-    if (existing) {
-      existing.hydrated = true;
-      hydratedStudentNumber = nextStudent;
-      notifyAll(existing);
-      return existing;
-    }
     hydratedStudentNumber = "";
     return createUnhydratedState();
   }

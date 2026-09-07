@@ -12,14 +12,12 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View,
-} from "react-native";
+  View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   fetchStudentReferral,
   redeemStudentReferralCode,
-  type StudentReferral,
-} from "../lib/backend-api";
+  type StudentReferral } from "../lib/backend-api";
 import { useAuthSession } from "../lib/auth-session";
 
 const TALA_IMAGE = require("../assets/images/Tala_Star.png");
@@ -82,8 +80,7 @@ export default function ReferralScreen() {
     if (!referral?.referralCode) return;
     await Share.share({
       message: shareMessage,
-      title: "Invite a Friend",
-    });
+      title: "Invite a Friend" });
   };
 
   const handleRedeem = async () => {
@@ -253,10 +250,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 },
-    elevation: 2,
-  },
+    elevation: 2 },
   backButton: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
-  topTitle: { color: "#314258", fontSize: 17, lineHeight: 23, fontWeight: "700" },
+  topTitle: { color: "#314258", fontSize: 17, lineHeight: 23, fontFamily: "Outfit-Bold" },
   topBarSpacer: { width: 38, height: 38 },
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 14, paddingTop: 18, paddingBottom: 30 },
@@ -270,8 +266,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 18,
     paddingVertical: 22,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   heroIconWrap: {
     width: 86,
     height: 86,
@@ -281,24 +276,21 @@ const styles = StyleSheet.create({
     borderColor: "#DCECCF",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   heroIcon: { width: 58, height: 58 },
   heroTitle: {
     color: "#304558",
     fontSize: 28,
     lineHeight: 34,
-    fontWeight: "800",
+    fontFamily: "Outfit-Bold",
     textAlign: "center",
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   heroSubtitle: {
     color: "#557144",
     fontSize: 16,
     lineHeight: 22,
-    fontWeight: "700",
-    textAlign: "center",
-  },
+    fontFamily: "Outfit-Bold",
+    textAlign: "center" },
   loadingCard: {
     borderRadius: 18,
     backgroundColor: "#FFFFFF",
@@ -307,8 +299,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 20,
-    rowGap: 10,
-  },
+    rowGap: 10 },
   loadingText: { color: "#60727B", fontSize: 13, lineHeight: 18 },
   codeCard: {
     borderRadius: 20,
@@ -322,23 +313,20 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
+    elevation: 2 },
   codeHeader: {
     alignItems: "center",
     justifyContent: "center",
     rowGap: 10,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   cardEyebrow: {
     color: "#536B43",
     fontSize: 16,
     lineHeight: 21,
-    fontWeight: "800",
+    fontFamily: "Outfit-Bold",
     textAlign: "center",
-    textTransform: "uppercase",
-  },
-  cardTitle: { color: "#304558", fontSize: 18, lineHeight: 24, fontWeight: "800" },
+    textTransform: "uppercase" },
+  cardTitle: { color: "#304558", fontSize: 18, lineHeight: 24, fontFamily: "Outfit-Bold" },
   rewardPill: {
     minWidth: 78,
     minHeight: 34,
@@ -350,10 +338,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     columnGap: 5,
-    paddingHorizontal: 10,
-  },
+    paddingHorizontal: 10 },
   rewardIcon: { width: 20, height: 20 },
-  rewardText: { color: "#4F7E31", fontSize: 15, lineHeight: 20, fontWeight: "800" },
+  rewardText: { color: "#4F7E31", fontSize: 15, lineHeight: 20, fontFamily: "Outfit-Bold" },
   codeRow: {
     minHeight: 64,
     borderRadius: 16,
@@ -364,16 +351,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingLeft: 16,
     paddingRight: 8,
-    columnGap: 10,
-  },
+    columnGap: 10 },
   codeText: {
     flex: 1,
     color: "#2E4053",
     fontSize: 30,
     lineHeight: 36,
-    fontWeight: "800",
-    letterSpacing: 0,
-  },
+    fontFamily: "Outfit-Bold",
+    letterSpacing: 0 },
   copyButton: {
     width: 46,
     height: 46,
@@ -382,8 +367,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#DCE7EF",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   helperText: { color: "#566878", fontSize: 13, lineHeight: 18, marginTop: 2 },
   primaryButton: {
     minHeight: 50,
@@ -393,9 +377,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     columnGap: 8,
-    marginBottom: 12,
-  },
-  primaryText: { color: "#FFFFFF", fontSize: 16, lineHeight: 20, fontWeight: "800" },
+    marginBottom: 12 },
+  primaryText: { color: "#FFFFFF", fontSize: 16, lineHeight: 20, fontFamily: "Outfit-Bold" },
   redeemCard: {
     borderRadius: 20,
     backgroundColor: "#FFFFFF",
@@ -407,14 +390,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
+    elevation: 2 },
   redeemHeader: {
     flexDirection: "row",
     alignItems: "center",
     columnGap: 12,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   redeemIconWrap: {
     width: 46,
     height: 46,
@@ -423,8 +404,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#DAEDC7",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   redeemIcon: { width: 28, height: 28 },
   redeemHeaderText: { flex: 1 },
   textInput: {
@@ -437,19 +417,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 20,
     color: "#2D4053",
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   errorText: { color: "#D24C59", fontSize: 13, lineHeight: 18, marginTop: 8 },
-  successInline: { color: "#4E8334", fontSize: 13, lineHeight: 18, marginTop: 8, fontWeight: "700" },
+  successInline: { color: "#4E8334", fontSize: 13, lineHeight: 18, marginTop: 8, fontFamily: "Outfit-Bold" },
   secondaryActionButton: {
     minHeight: 46,
     borderRadius: 999,
     backgroundColor: "#31515F",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 12,
-  },
-  secondaryActionText: { color: "#FFFFFF", fontSize: 15, lineHeight: 20, fontWeight: "800" },
+    marginTop: 12 },
+  secondaryActionText: { color: "#FFFFFF", fontSize: 15, lineHeight: 20, fontFamily: "Outfit-Bold" },
   buttonDisabled: { opacity: 0.62 },
   successBox: {
     borderRadius: 16,
@@ -460,9 +438,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     columnGap: 10,
     paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
+    paddingVertical: 12 },
   successCopy: { flex: 1 },
-  successTitle: { color: "#345D2E", fontSize: 15, lineHeight: 20, fontWeight: "800", marginBottom: 2 },
-  successText: { color: "#526A4F", fontSize: 13, lineHeight: 18 },
-});
+  successTitle: { color: "#345D2E", fontSize: 15, lineHeight: 20, fontFamily: "Outfit-Bold", marginBottom: 2 },
+  successText: { color: "#526A4F", fontSize: 13, lineHeight: 18 } });

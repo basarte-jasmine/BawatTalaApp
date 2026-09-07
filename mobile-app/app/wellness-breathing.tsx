@@ -42,14 +42,12 @@ export default function WellnessBreathingScreen() {
             toValue: 1,
             duration: PHASE_SECONDS * 1000,
             easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
+            useNativeDriver: true }),
           Animated.timing(breathPulse, {
             toValue: 0,
             duration: PHASE_SECONDS * 1000,
             easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
+            useNativeDriver: true }),
         ]),
       );
       loop.start();
@@ -88,16 +86,13 @@ export default function WellnessBreathingScreen() {
 
   const outerScale = breathPulse.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.95, 1],
-  });
+    outputRange: [0.95, 1] });
   const middleScale = breathPulse.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.9, 1],
-  });
+    outputRange: [0.9, 1] });
   const innerScale = breathPulse.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.86, 1],
-  });
+    outputRange: [0.86, 1] });
 
   const handleBack = useCallback(() => {
     if (router.canGoBack()) {
@@ -177,8 +172,7 @@ export default function WellnessBreathingScreen() {
                   width: ringSize,
                   height: ringSize,
                   borderRadius: ringSize / 2,
-                  transform: [{ scale: outerScale }],
-                },
+                  transform: [{ scale: outerScale }] },
               ]}
             >
               <Animated.View
@@ -188,8 +182,7 @@ export default function WellnessBreathingScreen() {
                     width: middleRingSize,
                     height: middleRingSize,
                     borderRadius: middleRingSize / 2,
-                    transform: [{ scale: middleScale }],
-                  },
+                    transform: [{ scale: middleScale }] },
                 ]}
               >
                 <Animated.View
@@ -199,8 +192,7 @@ export default function WellnessBreathingScreen() {
                       width: innerRingSize,
                       height: innerRingSize,
                       borderRadius: innerRingSize / 2,
-                      transform: [{ scale: innerScale }],
-                    },
+                      transform: [{ scale: innerScale }] },
                   ]}
                 >
                   <Text style={styles.phaseText}>{isSessionActive ? phase : "READY"}</Text>
@@ -242,8 +234,7 @@ export default function WellnessBreathingScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F7FAF6",
-  },
+    backgroundColor: "#F7FAF6" },
   topBar: {
     height: 52,
     borderBottomWidth: 1,
@@ -257,32 +248,26 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 },
-    elevation: 2,
-  },
+    elevation: 2 },
   backButton: {
     width: 36,
     height: 36,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   topTitle: {
     color: "#33475C",
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   topBarSpacer: {
     width: 36,
-    height: 36,
-  },
+    height: 36 },
   scroll: {
-    flex: 1,
-  },
+    flex: 1 },
   scrollContent: {
     paddingHorizontal: 12,
     paddingTop: 14,
-    paddingBottom: 28,
-  },
+    paddingBottom: 28 },
   heroCard: {
     borderRadius: 24,
     borderWidth: 1,
@@ -296,8 +281,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
+    elevation: 2 },
   heroBadge: {
     alignSelf: "flex-start",
     flexDirection: "row",
@@ -309,26 +293,22 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.74)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.86)",
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   heroBadgeText: {
     color: "#4B7C2E",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   selectedToolTitle: {
     color: "#33495D",
     fontSize: 21,
     lineHeight: 27,
-    fontWeight: "700",
-    marginBottom: 6,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 6 },
   selectedToolDesc: {
     color: "#496158",
     fontSize: 14,
-    lineHeight: 20,
-  },
+    lineHeight: 20 },
   instructionsCard: {
     borderRadius: 18,
     backgroundColor: "#FFFFFF",
@@ -336,22 +316,19 @@ const styles = StyleSheet.create({
     borderColor: "#E6EEE7",
     paddingHorizontal: 14,
     paddingVertical: 14,
-    marginBottom: 16,
-  },
+    marginBottom: 16 },
   instructionsEyebrow: {
     color: "#6E875A",
     fontSize: 11,
     lineHeight: 15,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     letterSpacing: 0.5,
     textTransform: "uppercase",
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   instructions: {
     color: "#33475C",
     fontSize: 15,
-    lineHeight: 21,
-  },
+    lineHeight: 21 },
   breathCard: {
     borderRadius: 28,
     backgroundColor: "#FFFFFF",
@@ -365,8 +342,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
+    elevation: 2 },
   phasePill: {
     alignSelf: "center",
     paddingHorizontal: 14,
@@ -375,50 +351,42 @@ const styles = StyleSheet.create({
     backgroundColor: "#EEF8E5",
     borderWidth: 1,
     borderColor: "#D8EBC7",
-    marginBottom: 16,
-  },
+    marginBottom: 16 },
   phasePillText: {
     color: "#4B7C2E",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   circleWrap: {
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   outerRing: {
     borderWidth: 12,
     borderColor: "#67C343",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   middleRing: {
     borderWidth: 11,
     borderColor: "#B3EA84",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   innerRing: {
     borderWidth: 9,
     borderColor: "#3D8E1A",
     backgroundColor: "#FFFFFF",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   phaseText: {
     color: "#334254",
     fontSize: 22 / 1.1,
     lineHeight: 30 / 1.1,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-  },
+    fontFamily: "Outfit-Bold",
+    letterSpacing: 0.5 },
   secondsText: {
     color: "#334254",
     fontSize: 21 / 1.1,
     lineHeight: 27 / 1.1,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   sessionHint: {
     color: "#61717F",
     fontSize: 13,
@@ -426,8 +394,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 18,
     marginBottom: 14,
-    paddingHorizontal: 10,
-  },
+    paddingHorizontal: 10 },
   sessionButton: {
     minHeight: 50,
     borderRadius: 999,
@@ -435,20 +402,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    columnGap: 8,
-  },
+    columnGap: 8 },
   startButton: {
-    backgroundColor: "#5CBA36",
-  },
+    backgroundColor: "#5CBA36" },
   stopButton: {
-    backgroundColor: "#5C6F7E",
-  },
+    backgroundColor: "#5C6F7E" },
   sessionButtonText: {
     color: "#FFFFFF",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   tipCard: {
     borderRadius: 18,
     backgroundColor: "#F8FCF3",
@@ -458,12 +421,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     flexDirection: "row",
     alignItems: "flex-start",
-    columnGap: 10,
-  },
+    columnGap: 10 },
   tipText: {
     flex: 1,
     color: "#4D6072",
     fontSize: 13,
-    lineHeight: 19,
-  },
-});
+    lineHeight: 19 } });

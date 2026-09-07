@@ -16,8 +16,7 @@ import {
   markAllStudentNotificationsRead,
   markStudentMessageThreadRead,
   markStudentNotificationRead,
-  StudentNotificationCategory,
-} from "../../lib/backend-api";
+  StudentNotificationCategory } from "../../lib/backend-api";
 import {
   AdminMessageThread,
   getAdminMessageInitials,
@@ -28,8 +27,7 @@ import {
   getNotificationVisual,
   groupAdminMessageThreads,
   isAdminMessageNotification,
-  isOutgoingAdminMessage,
-} from "../../lib/notification-utils";
+  isOutgoingAdminMessage } from "../../lib/notification-utils";
 
 type StudentInboxScreenProps = {
   variant: "messages" | "notifications";
@@ -341,11 +339,9 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
             counselorId: result.thread?.counselorId || threadId,
             counselorName: result.thread?.counselorName || thread.displayName,
             from: entry.from,
-            pictureUrl: result.thread?.pictureUrl || result.thread?.photoUrl,
-          },
+            pictureUrl: result.thread?.pictureUrl || result.thread?.photoUrl },
           timeLabel: "",
-          title: result.thread?.counselorName || thread.displayName,
-        }));
+          title: result.thread?.counselorName || thread.displayName }));
         mapped.sort((a, b) => (Date.parse(a.createdAt) || 0) - (Date.parse(b.createdAt) || 0));
         setRemoteThreadMessages(mapped);
         if (result.thread.pictureUrl || result.thread.photoUrl) {
@@ -385,9 +381,7 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
         kind: item.kind,
         message: item.message,
         timeLabel: item.timeLabel,
-        title: item.title,
-      },
-    });
+        title: item.title } });
   };
 
   const handleConfirmDelete = async () => {
@@ -443,8 +437,7 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
             styles.itemCard,
             {
               borderColor: item.isRead ? "#E6EAF0" : visual.chip,
-              backgroundColor: item.isRead ? "#FFFFFF" : visual.surface,
-            },
+              backgroundColor: item.isRead ? "#FFFFFF" : visual.surface },
             item.isRead && styles.itemCardRead,
           ]}
           onPress={() => void handleOpenNotification(item)}
@@ -515,8 +508,7 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
             styles.itemCard,
             {
               borderColor: isUnread ? "#B7D8C4" : "#E6EAF0",
-              backgroundColor: isUnread ? "#F4FBF6" : "#FFFFFF",
-            },
+              backgroundColor: isUnread ? "#F4FBF6" : "#FFFFFF" },
             isUnread ? styles.itemCardUnread : styles.itemCardRead,
           ]}
           onPress={() => void handleOpenThread(thread)}
@@ -741,8 +733,7 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F7FAF5",
-  },
+    backgroundColor: "#F7FAF5" },
   topBar: {
     minHeight: 58,
     paddingHorizontal: 8,
@@ -752,32 +743,27 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(250, 252, 249, 0.98)",
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-  },
+    justifyContent: "space-between" },
   backButton: {
     width: 40,
     height: 40,
     borderRadius: 999,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   topTitle: {
     color: "#33475C",
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     flex: 1,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   topBarSpacer: {
     width: 40,
-    height: 40,
-  },
+    height: 40 },
   summaryWrap: {
     paddingHorizontal: 12,
     paddingTop: 14,
-    paddingBottom: 8,
-  },
+    paddingBottom: 8 },
   summaryCard: {
     borderRadius: 22,
     borderWidth: 1,
@@ -790,46 +776,38 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
+    elevation: 2 },
   summaryIconBubble: {
     width: 44,
     height: 44,
     borderRadius: 999,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   summaryTextWrap: {
-    flex: 1,
-  },
+    flex: 1 },
   summaryTitle: {
     color: "#2F4656",
     fontSize: 17,
     lineHeight: 22,
-    fontWeight: "700",
-    marginBottom: 2,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 2 },
   summaryBody: {
     color: "#55706B",
     fontSize: 13,
-    lineHeight: 18,
-  },
+    lineHeight: 18 },
   dayRow: {
     marginTop: 12,
     marginBottom: 8,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    columnGap: 10,
-  },
+    columnGap: 10 },
   filterScroll: {
-    marginTop: 12,
-  },
+    marginTop: 12 },
   filterRow: {
     flexDirection: "row",
     columnGap: 8,
-    paddingRight: 12,
-  },
+    paddingRight: 12 },
   filterButton: {
     minHeight: 34,
     borderRadius: 999,
@@ -838,28 +816,23 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     paddingHorizontal: 14,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   filterButtonActive: {
     borderColor: "#6FAE46",
-    backgroundColor: "#EAF7DD",
-  },
+    backgroundColor: "#EAF7DD" },
   filterButtonText: {
     color: "#65746C",
     fontSize: 13,
     lineHeight: 17,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   filterButtonTextActive: {
-    color: "#4B7F34",
-  },
+    color: "#4B7F34" },
   dayLabel: {
     color: "#324254",
     fontSize: 16.5,
     lineHeight: 22,
-    fontWeight: "700",
-    flexShrink: 1,
-  },
+    fontFamily: "Outfit-Bold",
+    flexShrink: 1 },
   markAsReadButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -869,39 +842,31 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#DDE9D5",
-  },
+    borderColor: "#DDE9D5" },
   markAsReadButtonDisabled: {
     backgroundColor: "#F5F7F8",
-    borderColor: "#E4E8EB",
-  },
+    borderColor: "#E4E8EB" },
   markAsReadText: {
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   markAsReadTextDisabled: {
-    color: "#9CA6AE",
-  },
+    color: "#9CA6AE" },
   loadingWrap: {
     flex: 1,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   scroll: {
-    flex: 1,
-  },
+    flex: 1 },
   scrollContent: {
     paddingHorizontal: 12,
     paddingBottom: 28,
-    rowGap: 10,
-  },
+    rowGap: 10 },
   threadScrollContent: {
     paddingHorizontal: 12,
     paddingTop: 14,
     paddingBottom: 28,
-    rowGap: 10,
-  },
+    rowGap: 10 },
   itemCard: {
     borderRadius: 20,
     borderWidth: 1,
@@ -911,26 +876,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
-  },
+    elevation: 1 },
   itemCardRead: {
-    shadowOpacity: 0.04,
-  },
+    shadowOpacity: 0.04 },
   itemCardUnread: {
     shadowOpacity: 0.12,
-    shadowRadius: 8,
-  },
+    shadowRadius: 8 },
   itemTitleUnread: {
     color: "#24384A",
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   avatarImage: {
     width: 44,
     height: 44,
     borderRadius: 999,
     backgroundColor: "#DCE8DF",
-    marginTop: 1,
-  },
+    marginTop: 1 },
   avatarFallback: {
     width: 44,
     height: 44,
@@ -938,78 +898,63 @@ const styles = StyleSheet.create({
     backgroundColor: "#4F7D63",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 1,
-  },
+    marginTop: 1 },
   avatarInitials: {
     color: "#FFFFFF",
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   avatarUnreadRing: {
     borderWidth: 2,
-    borderColor: "#6FAE46",
-  },
+    borderColor: "#6FAE46" },
   readHint: {
     color: "#8A969E",
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   dateSeparator: {
     alignSelf: "center",
     marginVertical: 8,
     paddingHorizontal: 12,
     paddingVertical: 5,
     borderRadius: 999,
-    backgroundColor: "#E6F4EA",
-  },
+    backgroundColor: "#E6F4EA" },
   dateSeparatorText: {
     color: "#4F7D63",
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   bubbleRow: {
     flexDirection: "row",
     alignItems: "flex-end",
     columnGap: 8,
-    marginBottom: 2,
-  },
+    marginBottom: 2 },
   bubbleRowOutgoing: {
-    justifyContent: "flex-end",
-  },
+    justifyContent: "flex-end" },
   bubbleIncoming: {
     backgroundColor: "#FFFFFF",
-    borderColor: "#E6F4EA",
-  },
+    borderColor: "#E6F4EA" },
   bubbleOutgoing: {
     alignSelf: "flex-end",
     backgroundColor: "#4F7D63",
-    borderColor: "#4F7D63",
-  },
+    borderColor: "#4F7D63" },
   bubbleUnread: {
     borderColor: "#6FAE46",
-    backgroundColor: "#F4FBF6",
-  },
+    backgroundColor: "#F4FBF6" },
   bubbleBodyOutgoing: {
-    color: "#FFFFFF",
-  },
+    color: "#FFFFFF" },
   bubbleMetaRow: {
     marginTop: 8,
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 8,
-  },
+    columnGap: 8 },
   bubbleTimeOutgoing: {
-    color: "#E6F4EA",
-  },
+    color: "#E6F4EA" },
   bubbleUnreadLabel: {
     color: "#4F7D63",
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   deleteSwipeAction: {
     width: 92,
     borderRadius: 20,
@@ -1017,35 +962,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     rowGap: 4,
-    marginLeft: 10,
-  },
+    marginLeft: 10 },
   deleteSwipeText: {
     color: "#FFFFFF",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   itemRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    columnGap: 12,
-  },
+    columnGap: 12 },
   itemIconWrap: {
     width: 42,
     height: 42,
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 1,
-  },
+    marginTop: 1 },
   itemTalaIcon: {
     width: 25,
-    height: 25,
-  },
+    height: 25 },
   itemTextWrap: {
     flex: 1,
-    minWidth: 0,
-  },
+    minWidth: 0 },
   itemTopRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -1053,54 +992,46 @@ const styles = StyleSheet.create({
     columnGap: 8,
     rowGap: 6,
     flexWrap: "wrap",
-    marginBottom: 6,
-  },
+    marginBottom: 6 },
   itemTimePill: {
     minHeight: 24,
     borderRadius: 999,
     paddingHorizontal: 8,
     backgroundColor: "#F4F7F8",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   itemTime: {
     color: "#5F6C74",
     fontSize: 11.5,
     lineHeight: 14,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   itemTitle: {
     color: "#33475B",
     fontSize: 16,
     lineHeight: 21,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     flexGrow: 1,
-    flexShrink: 1,
-  },
+    flexShrink: 1 },
   itemMetaRow: {
     flexDirection: "row",
     alignItems: "center",
     columnGap: 8,
     marginBottom: 6,
-    flexWrap: "wrap",
-  },
+    flexWrap: "wrap" },
   itemKindChip: {
     minHeight: 22,
     paddingHorizontal: 8,
     borderRadius: 999,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   itemKindText: {
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   itemUnreadDot: {
     width: 8,
     height: 8,
-    borderRadius: 999,
-  },
+    borderRadius: 999 },
   unreadBadge: {
     minHeight: 20,
     minWidth: 20,
@@ -1108,41 +1039,34 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "#4F7D63",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   unreadBadgeText: {
     color: "#FFFFFF",
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   itemMessage: {
     color: "#384A5E",
     fontSize: 14,
-    lineHeight: 20,
-  },
+    lineHeight: 20 },
   itemTextRead: {
-    color: "#647280",
-  },
+    color: "#647280" },
   bubbleCard: {
     maxWidth: "78%",
     borderRadius: 18,
     borderWidth: 1,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
+    paddingVertical: 12 },
   bubbleBody: {
     color: "#33475B",
     fontSize: 15,
-    lineHeight: 21,
-  },
+    lineHeight: 21 },
   bubbleTime: {
     color: "#6A7A72",
     fontSize: 11,
     lineHeight: 15,
-    fontWeight: "600",
-    marginTop: 8,
-  },
+    fontFamily: "Outfit-SemiBold",
+    marginTop: 8 },
   emptyCard: {
     borderRadius: 20,
     backgroundColor: "#FFFFFF",
@@ -1150,8 +1074,7 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#E6ECF0",
-  },
+    borderColor: "#E6ECF0" },
   emptyIconBubble: {
     width: 54,
     height: 54,
@@ -1159,19 +1082,15 @@ const styles = StyleSheet.create({
     backgroundColor: "#F0F8E8",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   emptyTitle: {
     color: "#324254",
     fontSize: 17,
     lineHeight: 22,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 4 },
   emptyText: {
     color: "#647280",
     fontSize: 14,
     lineHeight: 19,
-    textAlign: "center",
-  },
-});
+    textAlign: "center" } });

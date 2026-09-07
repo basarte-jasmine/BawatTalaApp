@@ -14,8 +14,7 @@ export function StudentProfileAvatar({
   iconSize,
   imageUrl,
   size,
-  style,
-}: StudentProfileAvatarProps) {
+  style }: StudentProfileAvatarProps) {
   const radius = size / 2;
 
   return (
@@ -44,6 +43,4 @@ const styles = StyleSheet.create({
   container: {
     alignItems: "center",
     justifyContent: "center",
-    overflow: "hidden",
-  },
-});
+    overflow: "hidden" } });

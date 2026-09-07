@@ -61,8 +61,7 @@ function formatDateHeading(isoDate: string) {
   return date.toLocaleString("en-US", {
     month: "long",
     day: "numeric",
-    year: "numeric",
-  });
+    year: "numeric" });
 }
 
 function formatEntryTime(createdAt: string) {
@@ -73,8 +72,7 @@ function formatEntryTime(createdAt: string) {
   return date.toLocaleString("en-US", {
     hour: "numeric",
     minute: "2-digit",
-    hour12: true,
-  });
+    hour12: true });
 }
 
 export default function JournalCalendarScreen() {
@@ -347,8 +345,7 @@ export default function JournalCalendarScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F6FAF3",
-  },
+    backgroundColor: "#F6FAF3" },
   topBar: {
     height: 52,
     borderBottomWidth: 1,
@@ -362,32 +359,26 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 },
-    elevation: 2,
-  },
+    elevation: 2 },
   backButton: {
     width: 36,
     height: 36,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   topBarTitle: {
     color: "#2F4155",
     fontSize: 17,
     lineHeight: 22,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   topBarSpacer: {
     width: 36,
-    height: 36,
-  },
+    height: 36 },
   scroll: {
-    flex: 1,
-  },
+    flex: 1 },
   scrollContent: {
     paddingHorizontal: 12,
     paddingTop: 12,
-    paddingBottom: 40,
-  },
+    paddingBottom: 40 },
   heroCard: {
     borderRadius: 24,
     backgroundColor: "#FFFFFF",
@@ -403,25 +394,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
+    elevation: 2 },
   heroCopy: {
-    flex: 1,
-  },
+    flex: 1 },
   heroEyebrow: {
     color: "#7D8F78",
     fontSize: 10,
     lineHeight: 14,
     letterSpacing: 1,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 4 },
   heroTitle: {
     color: "#34475A",
     fontSize: 16,
     lineHeight: 22,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   heroIconBubble: {
     width: 48,
     height: 48,
@@ -430,8 +417,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#D9ECC9",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   yearControlRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -447,27 +433,23 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+    elevation: 2 },
   yearArrowButton: {
     width: 36,
     height: 36,
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#F2F7EE",
-  },
+    backgroundColor: "#F2F7EE" },
   yearArrowButtonDisabled: {
-    opacity: 0.45,
-  },
+    opacity: 0.45 },
   yearLabel: {
     color: "#3B4A5A",
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     minWidth: 56,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   monthSection: {
     marginBottom: 16,
     borderRadius: 24,
@@ -480,93 +462,74 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+    elevation: 2 },
   monthHeader: {
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   monthTitle: {
     textAlign: "center",
     color: "#3F4E5E",
     fontSize: 20,
     lineHeight: 26,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   weekHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: 3,
-    paddingHorizontal: 4,
-  },
+    paddingHorizontal: 4 },
   weekHeaderText: {
     width: `${100 / 7}%`,
     textAlign: "center",
     color: "#435365",
     fontSize: 16,
     lineHeight: 20,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   daysGrid: {
     flexDirection: "row",
-    flexWrap: "wrap",
-  },
+    flexWrap: "wrap" },
   dayCell: {
     width: `${100 / 7}%`,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 5,
-  },
+    paddingVertical: 5 },
   dayCircle: {
     width: 40,
     height: 40,
     borderRadius: 999,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   dayCircleEmpty: {
     backgroundColor: "#FFFFFF",
     borderWidth: 1.5,
-    borderColor: "#9BC96F",
-  },
+    borderColor: "#9BC96F" },
   dayCircleHasEntry: {
     backgroundColor: "#EFF8E7",
     borderWidth: 1.5,
-    borderColor: "#BDE09D",
-  },
+    borderColor: "#BDE09D" },
   dayCircleTodayHasEntry: {
     backgroundColor: "#8FCE61",
-    borderColor: "#7ABD4D",
-  },
+    borderColor: "#7ABD4D" },
   dayCircleFuture: {
-    backgroundColor: "#D7DDE2",
-  },
+    backgroundColor: "#D7DDE2" },
   dayCircleSelectedEmpty: {
     borderWidth: 2,
-    borderColor: "#2F6F25",
-  },
+    borderColor: "#2F6F25" },
   dayCircleSelectedFilled: {
     borderWidth: 2,
-    borderColor: "#2F6F25",
-  },
+    borderColor: "#2F6F25" },
   dayNumber: {
     fontSize: 16,
     lineHeight: 20,
-    fontWeight: "600",
-  },
+    fontFamily: "Outfit-SemiBold" },
   dayNumberEmpty: {
-    color: "#4A5968",
-  },
+    color: "#4A5968" },
   dayNumberHasEntry: {
     color: "#406152",
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   dayNumberFuture: {
-    color: "#7A8793",
-  },
+    color: "#7A8793" },
   dayNumberSelected: {
     color: "#2F4257",
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   selectedEntriesCard: {
     width: "100%",
     maxWidth: 340,
@@ -580,62 +543,51 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
-  },
+    elevation: 3 },
   selectedEntriesTitle: {
     color: "#2F4257",
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: "700",
-    marginBottom: 10,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 10 },
   selectedEntriesList: {
-    rowGap: 8,
-  },
+    rowGap: 8 },
   entryCard: {
     borderRadius: 16,
     backgroundColor: "#F8FCF4",
     borderWidth: 1,
     borderColor: "#E2ECD9",
     paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
+    paddingVertical: 12 },
   entryTime: {
     color: "#32465C",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "700",
-    marginBottom: 2,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 2 },
   entryPreview: {
     color: "#425566",
     fontSize: 14,
-    lineHeight: 19,
-  },
+    lineHeight: 19 },
   emptyEntriesText: {
     color: "#70808D",
     fontSize: 14,
-    lineHeight: 20,
-  },
+    lineHeight: 20 },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(21, 27, 24, 0.34)",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 22,
-  },
+    paddingHorizontal: 22 },
   closeModalButton: {
     marginTop: 12,
     minHeight: 40,
     borderRadius: 999,
     backgroundColor: "#79C943",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   closeModalButtonText: {
     color: "#FFFFFF",
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: "700",
-  },
-});
+    fontFamily: "Outfit-Bold" } });

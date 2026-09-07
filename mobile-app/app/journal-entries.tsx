@@ -29,8 +29,7 @@ function formatDateBox(entryDate: string) {
   const date = new Date(year, month - 1, day);
   return {
     dayNumber: String(day),
-    monthLabel: date.toLocaleString("en-US", { month: "short" }).toUpperCase(),
-  };
+    monthLabel: date.toLocaleString("en-US", { month: "short" }).toUpperCase() };
 }
 
 function shiftIsoDate(isoDate: string, deltaDays: number) {
@@ -58,9 +57,7 @@ function buildDateGroups() {
       date,
       label: displayDate.toLocaleString("en-US", {
         month: "long",
-        day: "numeric",
-      }),
-    };
+        day: "numeric" }) };
   });
 }
 
@@ -78,8 +75,7 @@ function formatCreatedAtTime(createdAt: string) {
   return date.toLocaleString("en-US", {
     hour: "numeric",
     minute: "2-digit",
-    hour12: true,
-  });
+    hour12: true });
 }
 
 export default function JournalEntriesScreen() {
@@ -89,8 +85,7 @@ export default function JournalEntriesScreen() {
   const [progress, setProgress] = useState({
     monthlyCount: 0,
     todayCount: 0,
-    totalCount: 0,
-  });
+    totalCount: 0 });
   const [pendingDeleteEntryId, setPendingDeleteEntryId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -113,8 +108,7 @@ export default function JournalEntriesScreen() {
       result.progress ?? {
         monthlyCount: 0,
         todayCount: 0,
-        totalCount: 0,
-      },
+        totalCount: 0 },
     );
   }, [user?.studentNumber]);
 
@@ -163,8 +157,7 @@ export default function JournalEntriesScreen() {
         id: `day-${entryDate}`,
         date: entryDate,
         label: displayDate.toLocaleString("en-US", { month: "long", day: "numeric", year: "numeric" }),
-        entries: source.get(entryDate) ?? [],
-      });
+        entries: source.get(entryDate) ?? [] });
     }
 
     return Array.from(groupsByDate.values()).sort((a, b) => b.date.localeCompare(a.date));
@@ -315,8 +308,7 @@ export default function JournalEntriesScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F6FAF3",
-  },
+    backgroundColor: "#F6FAF3" },
   topBar: {
     height: 52,
     borderBottomWidth: 1,
@@ -330,32 +322,26 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 },
-    elevation: 2,
-  },
+    elevation: 2 },
   backButton: {
     width: 36,
     height: 36,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   topBarTitle: {
     color: "#2F4155",
     fontSize: 17,
     lineHeight: 22,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   topBarSpacer: {
     width: 36,
-    height: 36,
-  },
+    height: 36 },
   scroll: {
-    flex: 1,
-  },
+    flex: 1 },
   scrollContent: {
     paddingHorizontal: 12,
     paddingTop: 12,
-    paddingBottom: 110,
-  },
+    paddingBottom: 110 },
   progressCard: {
     borderRadius: 22,
     backgroundColor: "#FFFFFF",
@@ -369,40 +355,34 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
     elevation: 2,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   progressHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   progressCalendarButton: {
     width: 34,
     height: 34,
     borderRadius: 14,
     backgroundColor: "#F2F7EE",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   progressEyebrow: {
     color: "#7D8F78",
     fontSize: 10,
     lineHeight: 14,
     letterSpacing: 1,
-    fontWeight: "700",
-    marginBottom: 2,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 2 },
   progressTitle: {
     color: "#31465A",
     fontSize: 17,
     lineHeight: 22,
-    fontWeight: "600",
-  },
+    fontFamily: "Outfit-SemiBold" },
   progressRow: {
     flexDirection: "row",
-    columnGap: 8,
-  },
+    columnGap: 8 },
   progressItem: {
     flex: 1,
     minHeight: 72,
@@ -412,42 +392,35 @@ const styles = StyleSheet.create({
     backgroundColor: "#F3FBEA",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 8,
-  },
+    paddingVertical: 8 },
   progressValue: {
     color: "#32465C",
     fontSize: 26,
     lineHeight: 32,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   progressLabel: {
     color: "#5B6E62",
     fontSize: 12,
     lineHeight: 16,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   recentHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 12,
-    paddingHorizontal: 4,
-  },
+    paddingHorizontal: 4 },
   recentTitle: {
     color: "#324254",
     fontSize: 20,
     lineHeight: 24,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   entryGroup: {
-    marginBottom: 20,
-  },
+    marginBottom: 20 },
   groupHeadRow: {
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 12,
-    columnGap: 10,
-  },
+    columnGap: 10 },
   groupDateBox: {
     width: 56,
     height: 60,
@@ -456,39 +429,33 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#D9EBCB",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   groupDayNumber: {
     color: "#2F4256",
     fontSize: 17,
     lineHeight: 21,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   groupMonth: {
     color: "#3D5669",
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: "600",
-    marginTop: -1,
-  },
+    fontFamily: "Outfit-SemiBold",
+    marginTop: -1 },
   groupTextWrap: {
     flex: 1,
-    paddingTop: 1,
-  },
+    paddingTop: 1 },
   groupDayLabel: {
     color: "#344A61",
     fontSize: 18,
     lineHeight: 23,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   groupSubLabel: {
     color: "#75808A",
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "600",
+    fontFamily: "Outfit-SemiBold",
     letterSpacing: 0.2,
-    marginTop: 1,
-  },
+    marginTop: 1 },
   emptyDayCard: {
     borderRadius: 18,
     backgroundColor: "#FFFFFF",
@@ -500,16 +467,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+    elevation: 2 },
   emptyDayText: {
     color: "#677784",
     fontSize: 14,
-    lineHeight: 19,
-  },
+    lineHeight: 19 },
   groupEntriesList: {
-    rowGap: 8,
-  },
+    rowGap: 8 },
   entryCard: {
     borderRadius: 18,
     backgroundColor: "#FFFFFF",
@@ -524,8 +488,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
-  },
+    elevation: 1 },
   deleteSwipeAction: {
     width: 92,
     borderRadius: 18,
@@ -533,14 +496,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     rowGap: 4,
-    marginLeft: 8,
-  },
+    marginLeft: 8 },
   deleteSwipeText: {
     color: "#FFFFFF",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   entryIconWrap: {
     width: 54,
     height: 54,
@@ -549,33 +510,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E0EBD8",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   entryIconImage: {
     width: 40,
-    height: 40,
-  },
+    height: 40 },
   entryTextWrap: {
-    flex: 1,
-  },
+    flex: 1 },
   entryTime: {
     color: "#2E4155",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "700",
-    marginBottom: 2,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 2 },
   entryBody: {
     color: "#526372",
     fontSize: 13,
-    lineHeight: 19,
-  },
+    lineHeight: 19 },
   entryChevronWrap: {
     width: 28,
     height: 28,
     borderRadius: 999,
     backgroundColor: "#F5F8F2",
     alignItems: "center",
-    justifyContent: "center",
-  },
-});
+    justifyContent: "center" } });

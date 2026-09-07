@@ -17,8 +17,7 @@ export function ConfirmationModal({
   message,
   onCancel,
   onConfirm,
-  visible,
-}: ConfirmationModalProps) {
+  visible }: ConfirmationModalProps) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <View style={styles.modalBackdrop}>
@@ -49,8 +48,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(21, 27, 24, 0.34)",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 22,
-  },
+    paddingHorizontal: 22 },
   modalCard: {
     width: "100%",
     maxWidth: 320,
@@ -63,20 +61,17 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
+    elevation: 4 },
   modalBody: {
     color: "#52606C",
     fontSize: 17,
     lineHeight: 24,
-    fontWeight: "600",
+    fontFamily: "Outfit-SemiBold",
     textAlign: "center",
-    marginBottom: 16,
-  },
+    marginBottom: 16 },
   modalActions: {
     flexDirection: "row",
-    columnGap: 10,
-  },
+    columnGap: 10 },
   modalSecondaryButton: {
     flex: 1,
     minHeight: 40,
@@ -85,29 +80,22 @@ const styles = StyleSheet.create({
     borderColor: "#CDD5C7",
     backgroundColor: "#FFFFFF",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   modalSecondaryText: {
     color: "#566271",
     fontSize: 13,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   modalConfirmButton: {
     flex: 1,
     minHeight: 40,
     borderRadius: 999,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   modalConfirmButtonPrimary: {
-    backgroundColor: "#79C943",
-  },
+    backgroundColor: "#79C943" },
   modalConfirmButtonDanger: {
-    backgroundColor: "#D85B5B",
-  },
+    backgroundColor: "#D85B5B" },
   modalConfirmText: {
     color: "#FFFFFF",
     fontSize: 13,
-    fontWeight: "700",
-  },
-});
+    fontFamily: "Outfit-Bold" } });

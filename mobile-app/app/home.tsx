@@ -27,8 +27,7 @@ import {
   saveDailyMood,
   saveFutureSelfMessage,
   updateFutureSelfMessage,
-  type LibraryBookRecord,
-} from "../lib/backend-api";
+  type LibraryBookRecord } from "../lib/backend-api";
 import { EMOTIONS, getEmotionImageSource } from "../lib/emotions";
 import { getManilaNow, getManilaStartOfToday, getManilaTodayParts } from "../lib/manila-date";
 import { isAdminMessageNotification } from "../lib/notification-utils";
@@ -149,8 +148,7 @@ function normalizeScheduledBottleNote(value: unknown): ScheduledBottleNote | nul
     id: typeof raw.id === "string" && raw.id ? raw.id : `future-bottle-${deliveryAt.getTime()}`,
     createdAt: typeof raw.createdAt === "string" && raw.createdAt ? raw.createdAt : new Date().toISOString(),
     deliveryAt: deliveryAt.toISOString(),
-    message,
-  };
+    message };
 }
 
 function sortBottleNotes(notes: ScheduledBottleNote[]) {
@@ -182,8 +180,7 @@ function mergeBottleNoteLists(...noteLists: ScheduledBottleNote[][]) {
     for (const note of noteList) {
       notesById.set(note.id, {
         ...notesById.get(note.id),
-        ...note,
-      });
+        ...note });
     }
   }
   return sortBottleNotes(Array.from(notesById.values()));
@@ -246,24 +243,21 @@ function formatBottleDeliveryDateTime(value: Date | string) {
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
-    hour12: true,
-  });
+    hour12: true });
 }
 
 function formatBottleDeliveryDate(value: Date) {
   return value.toLocaleDateString("en-US", {
     month: "long",
     day: "numeric",
-    year: "numeric",
-  });
+    year: "numeric" });
 }
 
 function formatBottleDeliveryTime(value: Date) {
   return value.toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
-    hour12: true,
-  });
+    hour12: true });
 }
 
 function getBottleCountdownLabel(deliveryAt: Date, nowMs: number) {
@@ -297,8 +291,7 @@ const DRIFTING_BOTTLE_NOTES: DriftingBottleNote[] = [
     startOffset: 36,
     top: 132,
     sender: "From another shore",
-    message: "You do not have to feel ready to begin again. Starting gently is enough.",
-  },
+    message: "You do not have to feel ready to begin again. Starting gently is enough." },
   {
     baseRotate: "14deg",
     delay: 2100,
@@ -311,8 +304,7 @@ const DRIFTING_BOTTLE_NOTES: DriftingBottleNote[] = [
     startOffset: 112,
     top: 214,
     sender: "A drifting note",
-    message: "I wrote this on a hard day. If you found it, I hope tomorrow feels softer for you.",
-  },
+    message: "I wrote this on a hard day. If you found it, I hope tomorrow feels softer for you." },
   {
     baseRotate: "-28deg",
     delay: 4700,
@@ -325,8 +317,7 @@ const DRIFTING_BOTTLE_NOTES: DriftingBottleNote[] = [
     startOffset: 74,
     top: 312,
     sender: "From a quiet wave",
-    message: "Small wins count. I made tea, breathed, and stayed. That became my brave thing today.",
-  },
+    message: "Small wins count. I made tea, breathed, and stayed. That became my brave thing today." },
   {
     baseRotate: "22deg",
     delay: 1200,
@@ -339,8 +330,7 @@ const DRIFTING_BOTTLE_NOTES: DriftingBottleNote[] = [
     startOffset: 148,
     top: 166,
     sender: "A note from the tide",
-    message: "Rest counted today too. I hope whoever finds this remembers that softness is still strength.",
-  },
+    message: "Rest counted today too. I hope whoever finds this remembers that softness is still strength." },
   {
     baseRotate: "-10deg",
     delay: 3600,
@@ -353,8 +343,7 @@ const DRIFTING_BOTTLE_NOTES: DriftingBottleNote[] = [
     startOffset: 12,
     top: 262,
     sender: "Across the sea",
-    message: "You are allowed to outgrow the version of you that only knew how to survive.",
-  },
+    message: "You are allowed to outgrow the version of you that only knew how to survive." },
   {
     baseRotate: "28deg",
     delay: 6200,
@@ -367,8 +356,7 @@ const DRIFTING_BOTTLE_NOTES: DriftingBottleNote[] = [
     startOffset: 196,
     top: 388,
     sender: "From another player",
-    message: "I wrote this after a long day: I am still here, and that is already something worth keeping.",
-  },
+    message: "I wrote this after a long day: I am still here, and that is already something worth keeping." },
 ];
 
 export default function HomeScreen() {
@@ -519,14 +507,12 @@ export default function HomeScreen() {
           toValue: 1,
           duration: 1150,
           easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
+          useNativeDriver: true }),
         Animated.timing(activeMoodValue, {
           toValue: 0,
           duration: 1150,
           easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
+          useNativeDriver: true }),
       ]),
     );
 
@@ -545,14 +531,12 @@ export default function HomeScreen() {
           toValue: 1,
           duration: 3600,
           easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
+          useNativeDriver: true }),
         Animated.timing(quoteWaveDrift, {
           toValue: 0,
           duration: 3600,
           easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
+          useNativeDriver: true }),
       ]),
     );
 
@@ -575,14 +559,12 @@ export default function HomeScreen() {
           toValue: 1,
           duration: 3600,
           easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
+          useNativeDriver: true }),
         Animated.timing(futureBottleDrift, {
           toValue: 0,
           duration: 3600,
           easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
+          useNativeDriver: true }),
       ]),
     );
 
@@ -611,13 +593,11 @@ export default function HomeScreen() {
             toValue: 1,
             duration: note.duration,
             easing: Easing.linear,
-            useNativeDriver: true,
-          }),
+            useNativeDriver: true }),
           Animated.timing(value, {
             toValue: 0,
             duration: 0,
-            useNativeDriver: true,
-          }),
+            useNativeDriver: true }),
         ]),
       );
 
@@ -637,14 +617,12 @@ export default function HomeScreen() {
           toValue: 1,
           duration: 5600,
           easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
+          useNativeDriver: true }),
         Animated.timing(quoteAuraDrift, {
           toValue: 0,
           duration: 5600,
           easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
+          useNativeDriver: true }),
       ]),
     );
 
@@ -654,14 +632,12 @@ export default function HomeScreen() {
           toValue: 1,
           duration: 3200,
           easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
+          useNativeDriver: true }),
         Animated.timing(quoteAuraPulse, {
           toValue: 0,
           duration: 3200,
           easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
+          useNativeDriver: true }),
       ]),
     );
 
@@ -695,20 +671,17 @@ export default function HomeScreen() {
           toValue: 0,
           duration: 240,
           easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
+          useNativeDriver: true }),
         Animated.timing(quoteTranslateY, {
           toValue: -14,
           duration: 240,
           easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
+          useNativeDriver: true }),
         Animated.timing(quoteScale, {
           toValue: 0.97,
           duration: 240,
           easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
+          useNativeDriver: true }),
       ]).start(() => {
         setQuoteIndex((prev) => (prev + 1) % HOME_QUOTES.length);
         quoteOpacity.setValue(0);
@@ -720,20 +693,17 @@ export default function HomeScreen() {
             toValue: 1,
             duration: 320,
             easing: Easing.out(Easing.cubic),
-            useNativeDriver: true,
-          }),
+            useNativeDriver: true }),
           Animated.spring(quoteTranslateY, {
             toValue: 0,
             useNativeDriver: true,
             speed: 15,
-            bounciness: 8,
-          }),
+            bounciness: 8 }),
           Animated.spring(quoteScale, {
             toValue: 1,
             useNativeDriver: true,
             speed: 16,
-            bounciness: 7,
-          }),
+            bounciness: 7 }),
         ]).start();
       });
     };
@@ -795,20 +765,17 @@ export default function HomeScreen() {
         toValue: 1,
         duration: 240,
         easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }),
+        useNativeDriver: true }),
       Animated.spring(welcomeScale, {
         toValue: 1,
         useNativeDriver: true,
         speed: 14,
-        bounciness: 8,
-      }),
+        bounciness: 8 }),
       Animated.timing(welcomeTranslateY, {
         toValue: 0,
         duration: 300,
         easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
+        useNativeDriver: true }),
     ]);
 
     const starLoop = Animated.loop(
@@ -817,14 +784,12 @@ export default function HomeScreen() {
           toValue: 1,
           duration: 1250,
           easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
+          useNativeDriver: true }),
         Animated.timing(welcomeStarMotion, {
           toValue: 0,
           duration: 1250,
           easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
+          useNativeDriver: true }),
       ]),
     );
 
@@ -913,10 +878,8 @@ export default function HomeScreen() {
           day: "numeric",
           hour: "numeric",
           minute: "2-digit",
-          hour12: true,
-        }),
-        preview: entry.preview || entry.summary || entry.title || "Journal entry",
-      })),
+          hour12: true }),
+        preview: entry.preview || entry.summary || entry.title || "Journal entry" })),
     );
   }, [user?.studentNumber]);
 
@@ -1142,8 +1105,7 @@ export default function HomeScreen() {
       toValue: 0.9,
       useNativeDriver: true,
       speed: 30,
-      bounciness: 8,
-    }).start();
+      bounciness: 8 }).start();
   };
 
   const handleMoodPressOut = (index: number) => {
@@ -1151,8 +1113,7 @@ export default function HomeScreen() {
       toValue: 1,
       useNativeDriver: true,
       speed: 20,
-      bounciness: 10,
-    }).start();
+      bounciness: 10 }).start();
   };
 
   const updateFutureBottleVisibility = useCallback(
@@ -1364,16 +1325,14 @@ export default function HomeScreen() {
           ? scheduledBottleNotes.find((note) => note.id === editingBottleNoteId)?.createdAt ?? new Date().toISOString()
           : new Date().toISOString(),
       message: trimmedMessage,
-      deliveryAt: deliveryAt.toISOString(),
-    };
+      deliveryAt: deliveryAt.toISOString() };
 
     try {
       let savedId = editingBottleNoteId;
       if (editingBottleNoteId) {
         let result = await updateFutureSelfMessage(editingBottleNoteId, {
           deliveryAt: nextNote.deliveryAt,
-          message: nextNote.message,
-        });
+          message: nextNote.message });
         if (!result.ok) {
           setBottleFormMessage(result.message ?? "Could not update this letter.");
           return;
@@ -1383,8 +1342,7 @@ export default function HomeScreen() {
         let result = await saveFutureSelfMessage({
           deliveryAt: nextNote.deliveryAt,
           message: nextNote.message,
-          studentNumber: user.studentNumber,
-        });
+          studentNumber: user.studentNumber });
         if (!result.ok) {
           setBottleFormMessage(result.message ?? "Could not save this letter.");
           return;
@@ -1394,8 +1352,7 @@ export default function HomeScreen() {
 
       const persistedNote: ScheduledBottleNote = {
         ...nextNote,
-        id: savedId || nextNote.id,
-      };
+        id: savedId || nextNote.id };
       const nextNotes = sortBottleNotes(
         editingBottleNoteId
           ? scheduledBottleNotes.map((note) => (note.id === editingBottleNoteId ? persistedNote : note))
@@ -1436,8 +1393,7 @@ export default function HomeScreen() {
         value: bottleDeliveryAt,
         display: "calendar",
         minimumDate: getManilaNow(),
-        onChange: handleBottleDatePickerChange,
-      });
+        onChange: handleBottleDatePickerChange });
       return;
     }
 
@@ -1451,8 +1407,7 @@ export default function HomeScreen() {
         value: bottleDeliveryAt,
         display: "clock",
         is24Hour: false,
-        onChange: handleBottleTimePickerChange,
-      });
+        onChange: handleBottleTimePickerChange });
       return;
     }
 
@@ -1541,80 +1496,61 @@ export default function HomeScreen() {
 
   const waveTranslateX = quoteWaveDrift.interpolate({
     inputRange: [0, 1],
-    outputRange: [-22, 22],
-  });
+    outputRange: [-22, 22] });
   const waveTranslateXReverse = quoteWaveDrift.interpolate({
     inputRange: [0, 1],
-    outputRange: [16, -16],
-  });
+    outputRange: [16, -16] });
   const welcomeBigTranslateY = welcomeStarMotion.interpolate({
     inputRange: [0, 1],
-    outputRange: [6, -8],
-  });
+    outputRange: [6, -8] });
   const welcomeBigScale = welcomeStarMotion.interpolate({
     inputRange: [0, 0.5, 1],
-    outputRange: [0.97, 1.05, 1],
-  });
+    outputRange: [0.97, 1.05, 1] });
   const welcomeSmallTranslateY = welcomeStarMotion.interpolate({
     inputRange: [0, 1],
-    outputRange: [-4, 5],
-  });
+    outputRange: [-4, 5] });
   const welcomeSmallScale = welcomeStarMotion.interpolate({
     inputRange: [0, 0.5, 1],
-    outputRange: [0.95, 1.06, 1],
-  });
+    outputRange: [0.95, 1.06, 1] });
   const quoteAuraOneX = quoteAuraDrift.interpolate({
     inputRange: [0, 1],
-    outputRange: [-34, 26],
-  });
+    outputRange: [-34, 26] });
   const quoteAuraOneY = quoteAuraPulse.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, -10],
-  });
+    outputRange: [0, -10] });
   const quoteAuraOneScale = quoteAuraPulse.interpolate({
     inputRange: [0, 1],
-    outputRange: [1, 1.12],
-  });
+    outputRange: [1, 1.12] });
   const quoteAuraTwoX = quoteAuraDrift.interpolate({
     inputRange: [0, 1],
-    outputRange: [20, -28],
-  });
+    outputRange: [20, -28] });
   const quoteAuraTwoY = quoteAuraPulse.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, 12],
-  });
+    outputRange: [0, 12] });
   const quoteAuraTwoScale = quoteAuraPulse.interpolate({
     inputRange: [0, 1],
-    outputRange: [1.04, 0.94],
-  });
+    outputRange: [1.04, 0.94] });
   const quoteTextShadowDrift = quoteAuraDrift.interpolate({
     inputRange: [0, 1],
-    outputRange: [-3, 3],
-  });
+    outputRange: [-3, 3] });
   const seaWaveTranslate = futureBottleDrift.interpolate({
     inputRange: [0, 1],
-    outputRange: [-44, 44],
-  });
+    outputRange: [-44, 44] });
   const seaWaveTranslateReverse = futureBottleDrift.interpolate({
     inputRange: [0, 1],
-    outputRange: [28, -28],
-  });
+    outputRange: [28, -28] });
   const driftingBottleBob = futureBottleDrift.interpolate({
     inputRange: [0, 0.5, 1],
-    outputRange: [0, -10, 0],
-  });
+    outputRange: [0, -10, 0] });
   const driftingBottleBobReverse = futureBottleDrift.interpolate({
     inputRange: [0, 0.5, 1],
-    outputRange: [0, 8, 0],
-  });
+    outputRange: [0, 8, 0] });
   const driftingBottleTilt = futureBottleDrift.interpolate({
     inputRange: [0, 0.5, 1],
-    outputRange: ["-4deg", "3deg", "-4deg"],
-  });
+    outputRange: ["-4deg", "3deg", "-4deg"] });
   const driftingBottleTiltReverse = futureBottleDrift.interpolate({
     inputRange: [0, 0.5, 1],
-    outputRange: ["3deg", "-3deg", "3deg"],
-  });
+    outputRange: ["3deg", "-3deg", "3deg"] });
   const driftingBottleTravelDistance = frameWidth + 168;
   const arrivedBottleNotes = getArrivedBottleNotes(scheduledBottleNotes, bottleClockNow);
   const pendingBottleNotes = scheduledBottleNotes.filter((note) => {
@@ -1639,8 +1575,7 @@ export default function HomeScreen() {
   const bottleCalendarDays = useMemo(() => buildBottleCalendarDays(bottlePickerMonth), [bottlePickerMonth]);
   const bottlePickerMonthLabel = bottlePickerMonth.toLocaleDateString("en-US", {
     month: "long",
-    year: "numeric",
-  });
+    year: "numeric" });
   const bottleSelectedHour12 = bottleDeliveryAt.getHours() % 12 || 12;
   const bottleSelectedPeriod = bottleDeliveryAt.getHours() >= 12 ? "PM" : "AM";
 
@@ -1784,8 +1719,7 @@ export default function HomeScreen() {
                 styles.quoteTextWrap,
                 {
                   opacity: quoteOpacity,
-                  transform: [{ translateY: quoteTranslateY }, { translateX: quoteTextShadowDrift }, { scale: quoteScale }],
-                },
+                  transform: [{ translateY: quoteTranslateY }, { translateX: quoteTextShadowDrift }, { scale: quoteScale }] },
               ]}
             >
               <Text style={styles.quoteText}>{HOME_QUOTES[quoteIndex]}</Text>
@@ -1868,8 +1802,7 @@ export default function HomeScreen() {
               const moodTranslateY = isMoodActive
                 ? idleValues[index].interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, -4],
-                  })
+                    outputRange: [0, -4] })
                 : 0;
 
               return (
@@ -1887,8 +1820,7 @@ export default function HomeScreen() {
                           transform: [
                             { translateY: moodTranslateY },
                             { scale: pressScales[index] },
-                          ],
-                        },
+                          ] },
                       ]}
                     >
                       {moodImageSource ? (
@@ -1966,8 +1898,7 @@ export default function HomeScreen() {
                       {
                         width: rewardTileIconSize,
                         height: rewardTileIconSize,
-                        borderRadius: rewardTileIconSize / 2,
-                      },
+                        borderRadius: rewardTileIconSize / 2 },
                     ]}
                   >
                     <Ionicons name="checkmark" size={20} color="#FFFFFF" />
@@ -2292,13 +2223,10 @@ export default function HomeScreen() {
                         {
                           translateX: driftingBottleProgress[index].interpolate({
                             inputRange: [0, 1],
-                            outputRange: [driftingBottleTravelDistance + note.startOffset, note.endOffset],
-                          }),
-                        },
+                            outputRange: [driftingBottleTravelDistance + note.startOffset, note.endOffset] }) },
                         { rotate: note.baseRotate },
                         { scale: note.scale },
-                      ],
-                    },
+                      ] },
                   ]}
                 >
                   <Animated.View
@@ -2306,8 +2234,7 @@ export default function HomeScreen() {
                       transform: [
                         { translateY: index % 2 === 0 ? driftingBottleBob : driftingBottleBobReverse },
                         { rotate: index % 2 === 0 ? driftingBottleTilt : driftingBottleTiltReverse },
-                      ],
-                    }}
+                      ] }}
                   >
                     <Pressable
                       style={styles.driftingBottleButton}
@@ -2915,8 +2842,7 @@ export default function HomeScreen() {
               styles.welcomeCard,
               {
                 opacity: welcomeOpacity,
-                transform: [{ translateY: welcomeTranslateY }, { scale: welcomeScale }],
-              },
+                transform: [{ translateY: welcomeTranslateY }, { scale: welcomeScale }] },
             ]}
           >
             <Text style={styles.welcomeTitle}>
@@ -2930,8 +2856,7 @@ export default function HomeScreen() {
                 style={[
                   styles.welcomeTalaLarge,
                   {
-                    transform: [{ translateY: welcomeBigTranslateY }, { scale: welcomeBigScale }],
-                  },
+                    transform: [{ translateY: welcomeBigTranslateY }, { scale: welcomeBigScale }] },
                 ]}
               />
               <Animated.Image
@@ -2940,8 +2865,7 @@ export default function HomeScreen() {
                 style={[
                   styles.welcomeTalaSmall,
                   {
-                    transform: [{ translateY: welcomeSmallTranslateY }, { scale: welcomeSmallScale }],
-                  },
+                    transform: [{ translateY: welcomeSmallTranslateY }, { scale: welcomeSmallScale }] },
                 ]}
               />
             </View>
@@ -3097,8 +3021,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F7FAF6",
-  },
+    backgroundColor: "#F7FAF6" },
   stickyHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -3110,22 +3033,17 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 0,
     left: 0,
-    right: 0,
-  },
+    right: 0 },
   stickyHeaderTop: {
-    backgroundColor: "transparent",
-  },
+    backgroundColor: "transparent" },
   stickyHeaderScrolled: {
-    backgroundColor: "transparent",
-  },
+    backgroundColor: "transparent" },
   contentScroll: {
-    flex: 1,
-  },
+    flex: 1 },
   scrollContent: {
     paddingHorizontal: 12,
     paddingTop: 0,
-    paddingBottom: 0,
-  },
+    paddingBottom: 0 },
   quoteHero: {
     backgroundColor: "#B6DBA0",
     paddingTop: 16,
@@ -3134,17 +3052,15 @@ const styles = StyleSheet.create({
     position: "relative",
     overflow: "hidden",
     marginHorizontal: -12,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   sectionEyebrow: {
     color: "#6E875A",
     fontSize: 11,
     lineHeight: 15,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     letterSpacing: 0.6,
     textTransform: "uppercase",
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   surfaceGlow: {
     position: "absolute",
     top: -26,
@@ -3152,25 +3068,19 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 999,
-    backgroundColor: "rgba(210, 243, 178, 0.34)",
-  },
+    backgroundColor: "rgba(210, 243, 178, 0.34)" },
   quoteHeroCompact: {
-    paddingBottom: 92,
-  },
+    paddingBottom: 92 },
   quoteHeroTiny: {
-    paddingBottom: 80,
-  },
+    paddingBottom: 80 },
   quoteHeroAtmosphere: {
-    ...StyleSheet.absoluteFillObject,
-  },
+    ...StyleSheet.absoluteFillObject },
   quoteHeroGradient: {
-    ...StyleSheet.absoluteFillObject,
-  },
+    ...StyleSheet.absoluteFillObject },
   headerLeft: {
     flex: 1,
     minWidth: 0,
-    marginRight: 12,
-  },
+    marginRight: 12 },
   headerProfileCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -3185,16 +3095,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
+    elevation: 2 },
   headerProfileCardTop: {
     backgroundColor: "rgba(248, 251, 246, 0.86)",
-    borderColor: "rgba(83, 116, 91, 0.18)",
-  },
+    borderColor: "rgba(83, 116, 91, 0.18)" },
   headerProfileCardScrolled: {
     backgroundColor: "#FFFFFF",
-    borderColor: "#DCE8DD",
-  },
+    borderColor: "#DCE8DD" },
   avatarCircle: {
     width: 36,
     height: 36,
@@ -3202,34 +3109,28 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#FFFFFF",
-  },
+    backgroundColor: "#FFFFFF" },
   avatarCircleTop: {
-    borderColor: "#B8D7BE",
-  },
+    borderColor: "#B8D7BE" },
   avatarCircleScrolled: {
-    borderColor: "#CFE3D3",
-  },
+    borderColor: "#CFE3D3" },
   headerGreetingWrap: {
     flex: 1,
-    minWidth: 0,
-  },
+    minWidth: 0 },
   headerGreetingEyebrow: {
     color: "#6D846F",
     fontSize: 10.5,
     lineHeight: 14,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     letterSpacing: 0.5,
-    textTransform: "uppercase",
-  },
+    textTransform: "uppercase" },
   headerGreetingName: {
     marginTop: 1,
     color: "#294238",
     fontSize: 16,
     lineHeight: 20,
-    fontFamily: "Outfit",
-    fontWeight: "700",
-  },
+
+    fontFamily: "Outfit-Bold" },
   headerActionCluster: {
     flexDirection: "row",
     alignItems: "center",
@@ -3241,29 +3142,24 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
+    elevation: 2 },
   headerActionClusterTop: {
     backgroundColor: "rgba(248, 251, 246, 0.88)",
-    borderColor: "rgba(83, 116, 91, 0.16)",
-  },
+    borderColor: "rgba(83, 116, 91, 0.16)" },
   headerActionClusterScrolled: {
     backgroundColor: "#FFFFFF",
-    borderColor: "#DCE8DD",
-  },
+    borderColor: "#DCE8DD" },
   headerActionButton: {
     width: 40,
     height: 40,
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
-    position: "relative",
-  },
+    position: "relative" },
   headerActionDivider: {
     width: 1,
     height: 20,
-    backgroundColor: "#DDE7DE",
-  },
+    backgroundColor: "#DDE7DE" },
   headerActionBadge: {
     position: "absolute",
     top: 8,
@@ -3273,15 +3169,13 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "#F44343",
     borderWidth: 1.5,
-    borderColor: "#F8FBF6",
-  },
+    borderColor: "#F8FBF6" },
   quoteHeroBody: {
     alignItems: "center",
     justifyContent: "center",
     minHeight: 212,
     paddingHorizontal: 24,
-    zIndex: 2,
-  },
+    zIndex: 2 },
   quoteTextWrap: {
     minHeight: 112,
     alignItems: "center",
@@ -3290,64 +3184,55 @@ const styles = StyleSheet.create({
     maxWidth: 336,
     paddingHorizontal: 16,
     paddingVertical: 16,
-    zIndex: 2,
-  },
+    zIndex: 2 },
   quoteWaveBase: {
     position: "absolute",
     left: 0,
     right: 0,
     bottom: 0,
     height: 40,
-    backgroundColor: "#FFFFFF",
-  },
+    backgroundColor: "#FFFFFF" },
   quoteWaveWrap: {
     position: "absolute",
     left: -48,
     right: -48,
     bottom: 0,
-    height: 96,
-  },
+    height: 96 },
   quoteWaveShadeWrap: {
     position: "absolute",
     left: -48,
     right: -48,
     bottom: 20,
-    height: 54,
-  },
+    height: 54 },
   quoteWaveLineWrap: {
     position: "absolute",
     left: -48,
     right: -48,
     bottom: 20,
-    height: 52,
-  },
+    height: 52 },
   quoteText: {
     textAlign: "center",
     color: "#31455A",
     fontSize: 20,
     lineHeight: 30,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     maxWidth: 312,
     textShadowColor: "rgba(255,255,255,0.44)",
     textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 10,
-  },
+    textShadowRadius: 10 },
   quoteAuraBlob: {
     position: "absolute",
-    opacity: 0.88,
-  },
+    opacity: 0.88 },
   quoteAuraBlobOne: {
     width: 232,
     height: 210,
     top: 20,
-    left: -26,
-  },
+    left: -26 },
   quoteAuraBlobTwo: {
     width: 248,
     height: 224,
     top: 8,
-    right: -38,
-  },
+    right: -38 },
   moodCard: {
     borderRadius: 24,
     backgroundColor: "#FFFFFF",
@@ -3362,36 +3247,30 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: "#E6EEE7",
-    overflow: "hidden",
-  },
+    overflow: "hidden" },
   moodHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 12,
-    paddingHorizontal: 4,
-  },
+    paddingHorizontal: 4 },
   moodPetArt: {
     width: 86,
     height: 86,
     marginLeft: -8,
-    marginRight: 4,
-  },
+    marginRight: 4 },
   moodHeaderTextWrap: {
     flex: 1,
-    paddingRight: 4,
-  },
+    paddingRight: 4 },
   moodHeading: {
     color: "#2F3946",
     fontSize: 43 / 2,
     lineHeight: 28,
-    fontWeight: "700",
-    marginBottom: 3,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 3 },
   moodSubHeading: {
     color: "#374A5D",
     fontSize: 36 / 2,
-    lineHeight: 24,
-  },
+    lineHeight: 24 },
   moodCheckInStatus: {
     minHeight: 34,
     borderRadius: 999,
@@ -3402,38 +3281,32 @@ const styles = StyleSheet.create({
     alignItems: "center",
     columnGap: 7,
     paddingHorizontal: 12,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   moodCheckInStatusText: {
     flex: 1,
     color: "#4B6653",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   moodSaveStatusText: {
     color: "#4B6653",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     marginTop: -5,
     marginBottom: 10,
-    paddingHorizontal: 4,
-  },
+    paddingHorizontal: 4 },
   moodSaveStatusTextError: {
-    color: "#B14A4A",
-  },
+    color: "#B14A4A" },
   moodRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     rowGap: 12,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   moodItem: {
     alignItems: "center",
     paddingHorizontal: 1,
-    width: "20%",
-  },
+    width: "20%" },
   moodFace: {
     width: 64,
     height: 64,
@@ -3444,25 +3317,21 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     borderWidth: 1.5,
     borderColor: "#A6B3BC",
-    overflow: "hidden",
-  },
+    overflow: "hidden" },
   moodIcon: {
     width: 60,
     height: 60,
-    borderRadius: 16,
-  },
+    borderRadius: 16 },
   moodIconPlaceholder: {
     width: 60,
-    height: 60,
-  },
+    height: 60 },
   moodLabel: {
     color: "#4A4A4A",
     fontSize: 10.5,
     lineHeight: 13.5,
     minHeight: 30,
     textAlign: "center",
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   moodConfirmBar: {
     borderRadius: 18,
     borderWidth: 1,
@@ -3470,19 +3339,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 12,
-    rowGap: 10,
-  },
+    rowGap: 10 },
   moodConfirmText: {
     color: "#31465A",
     fontSize: 14,
     lineHeight: 19,
-    fontWeight: "800",
-    textAlign: "center",
-  },
+    fontFamily: "Outfit-Bold",
+    textAlign: "center" },
   moodConfirmActions: {
     flexDirection: "row",
-    columnGap: 8,
-  },
+    columnGap: 8 },
   moodConfirmSecondaryButton: {
     flex: 1,
     minHeight: 38,
@@ -3491,31 +3357,26 @@ const styles = StyleSheet.create({
     borderColor: "#DCE6DE",
     backgroundColor: "#FFFFFF",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   moodConfirmPrimaryButton: {
     flex: 1,
     minHeight: 38,
     borderRadius: 999,
     backgroundColor: "#70C943",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   moodConfirmPrimaryButtonDisabled: {
-    backgroundColor: "#A8D88E",
-  },
+    backgroundColor: "#A8D88E" },
   moodConfirmSecondaryText: {
     color: "#526474",
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   moodConfirmPrimaryText: {
     color: "#FFFFFF",
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   moodHistoryButton: {
     height: 40,
     borderRadius: 999,
@@ -3527,33 +3388,28 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
+    elevation: 3 },
   moodHistoryButtonText: {
     color: "#FFFFFF",
     fontSize: 17,
     lineHeight: 22,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   modalKeyboardAvoidingView: {
-    flex: 1,
-  },
+    flex: 1 },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(21, 27, 24, 0.34)",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 22,
-    paddingVertical: 18,
-  },
+    paddingVertical: 18 },
   welcomeBackdrop: {
     flex: 1,
     backgroundColor: "rgba(17, 22, 19, 0.38)",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16,
-    paddingBottom: 48,
-  },
+    paddingBottom: 48 },
   welcomeCard: {
     width: "100%",
     maxWidth: 350,
@@ -3567,35 +3423,30 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.22,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 6 },
-    elevation: 6,
-  },
+    elevation: 6 },
   welcomeTitle: {
     color: "#1E1E1E",
     fontSize: 22,
     lineHeight: 31,
-    fontFamily: "Outfit",
-    fontWeight: "700",
-    textAlign: "center",
-  },
+
+    fontFamily: "Outfit-Bold",
+    textAlign: "center" },
   welcomeArtWrap: {
     width: 228,
     height: 206,
     alignItems: "center",
     justifyContent: "center",
     marginTop: 8,
-    marginBottom: 16,
-  },
+    marginBottom: 16 },
   welcomeTalaLarge: {
     width: 168,
-    height: 168,
-  },
+    height: 168 },
   welcomeTalaSmall: {
     width: 74,
     height: 74,
     position: "absolute",
     top: 20,
-    right: 24,
-  },
+    right: 24 },
   welcomeButton: {
     width: "100%",
     minHeight: 46,
@@ -3607,14 +3458,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
-  },
+    elevation: 3 },
   welcomeButtonText: {
     color: "#FFFFFF",
     fontSize: 19,
     lineHeight: 24,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   modalCard: {
     width: "100%",
     maxWidth: 320,
@@ -3627,21 +3476,18 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
+    elevation: 4 },
   modalBody: {
     color: "#52606C",
     fontSize: 17,
     lineHeight: 24,
-    fontWeight: "600",
+    fontFamily: "Outfit-SemiBold",
     textAlign: "center",
-    marginBottom: 16,
-  },
+    marginBottom: 16 },
   modalActions: {
     flexDirection: "row",
     columnGap: 10,
-    flexShrink: 0,
-  },
+    flexShrink: 0 },
   modalSecondaryButton: {
     flex: 1,
     minHeight: 40,
@@ -3650,13 +3496,11 @@ const styles = StyleSheet.create({
     borderColor: "#CDD5C7",
     backgroundColor: "#FFFFFF",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   modalSecondaryText: {
     color: "#566271",
     fontSize: 13,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   modalPrimaryButton: {
     flex: 1,
     minHeight: 40,
@@ -3668,8 +3512,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+    elevation: 2 },
   modalPrimaryButtonSingle: {
     flex: 1,
     minHeight: 40,
@@ -3681,36 +3524,29 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+    elevation: 2 },
   modalPrimaryText: {
     color: "#FFFFFF",
     fontSize: 13,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   filterModalList: {
-    rowGap: 8,
-  },
+    rowGap: 8 },
   filterModalOption: {
     minHeight: 40,
     borderRadius: 12,
     backgroundColor: "#F6F8F5",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   filterModalOptionActive: {
-    backgroundColor: "#DFF3CF",
-  },
+    backgroundColor: "#DFF3CF" },
   filterModalOptionText: {
     color: "#566271",
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: "600",
-  },
+    fontFamily: "Outfit-SemiBold" },
   filterModalOptionTextActive: {
     color: "#2F6F25",
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   dailyCheckinCard: {
     borderRadius: 24,
     backgroundColor: "#FFFFFF",
@@ -3725,20 +3561,17 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: "#E6EEE7",
-    overflow: "hidden",
-  },
+    overflow: "hidden" },
   dailyCheckinHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   dailyCheckinTitle: {
     color: "#34465A",
     fontSize: 25 / 2 * 2,
     lineHeight: 32,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   dailyTalaPill: {
     minWidth: 124,
     height: 40,
@@ -3749,25 +3582,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 14,
-  },
+    paddingHorizontal: 14 },
   dailyTalaPillIcon: {
     width: 18,
     height: 18,
-    marginRight: 4,
-  },
+    marginRight: 4 },
   dailyTalaPillText: {
     color: "#A58E26",
     fontSize: 21 / 2 * 2,
     lineHeight: 26,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   dailyRewardsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     columnGap: 4,
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   dailyRewardBox: {
     borderRadius: 10,
     alignItems: "center",
@@ -3775,51 +3604,39 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     borderWidth: 1,
     paddingTop: 8,
-    paddingBottom: 6,
-  },
+    paddingBottom: 6 },
   dailyRewardBoxDone: {
     backgroundColor: "#EEF1ED",
-    borderColor: "transparent",
-  },
+    borderColor: "transparent" },
   dailyRewardBoxActive: {
     backgroundColor: "#FFFFFF",
-    borderColor: "#1F2328",
-  },
+    borderColor: "#1F2328" },
   dailyRewardBoxLocked: {
     backgroundColor: "#FFFFFF",
-    borderColor: "#A6B3BC",
-  },
+    borderColor: "#A6B3BC" },
   dailyRewardDoneCircle: {
     backgroundColor: "#A1C4B3",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   dailyRewardTalaIcon: {
-    marginTop: 2,
-  },
+    marginTop: 2 },
   dailyRewardValue: {
     fontSize: 30 / 2,
     lineHeight: 20,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   dailyRewardValueDone: {
-    color: "#BAC1C1",
-  },
+    color: "#BAC1C1" },
   dailyRewardValueActive: {
-    color: "#1E1E1E",
-  },
+    color: "#1E1E1E" },
   dailyRewardValueLocked: {
-    color: "#2E503C",
-  },
+    color: "#2E503C" },
   dailyRewardDayLabel: {
     color: "#526373",
     fontSize: 8,
     lineHeight: 10,
-    fontWeight: "600",
-  },
+    fontFamily: "Outfit-SemiBold" },
   dailyRewardDayLabelDone: {
-    color: "#A0A8AA",
-  },
+    color: "#A0A8AA" },
   dailyCheckinButton: {
     height: 44,
     borderRadius: 999,
@@ -3832,17 +3649,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
+    elevation: 3 },
   dailyCheckinButtonDisabled: {
-    backgroundColor: "#A8C99C",
-  },
+    backgroundColor: "#A8C99C" },
   dailyCheckinButtonText: {
     color: "#FFFFFF",
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   wellnessCard: {
     borderRadius: 24,
     backgroundColor: "#F5FBF2",
@@ -3857,8 +3671,7 @@ const styles = StyleSheet.create({
     elevation: 2,
     borderWidth: 1,
     borderColor: "#DCEBCD",
-    overflow: "hidden",
-  },
+    overflow: "hidden" },
   wellnessAuraOne: {
     position: "absolute",
     top: -40,
@@ -3866,8 +3679,7 @@ const styles = StyleSheet.create({
     width: 140,
     height: 140,
     borderRadius: 999,
-    backgroundColor: "rgba(191, 228, 165, 0.34)",
-  },
+    backgroundColor: "rgba(191, 228, 165, 0.34)" },
   wellnessAuraTwo: {
     position: "absolute",
     left: -26,
@@ -3875,55 +3687,44 @@ const styles = StyleSheet.create({
     width: 122,
     height: 122,
     borderRadius: 999,
-    backgroundColor: "rgba(182, 225, 202, 0.24)",
-  },
+    backgroundColor: "rgba(182, 225, 202, 0.24)" },
   wellnessHeroRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
     columnGap: 12,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   wellnessHeroRowStacked: {
-    flexDirection: "column",
-  },
+    flexDirection: "column" },
   wellnessHeroTextWrap: {
     flex: 1,
-    paddingRight: 4,
-  },
+    paddingRight: 4 },
   wellnessHeroTextWrapStacked: {
-    paddingRight: 0,
-  },
+    paddingRight: 0 },
   wellnessTitle: {
     color: "#304558",
     fontSize: 18,
     lineHeight: 23,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 4 },
   wellnessTitleCompact: {
     fontSize: 16,
-    lineHeight: 21,
-  },
+    lineHeight: 21 },
   wellnessSubtitle: {
     color: "#627282",
     fontSize: 13,
-    lineHeight: 18,
-  },
+    lineHeight: 18 },
   wellnessSubtitleCompact: {
     fontSize: 12,
-    lineHeight: 17,
-  },
+    lineHeight: 17 },
   wellnessOrbitScene: {
     width: 92,
     height: 104,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   wellnessOrbitSceneStacked: {
     alignSelf: "center",
-    marginTop: 2,
-  },
+    marginTop: 2 },
   wellnessOrbitOuter: {
     position: "absolute",
     width: 84,
@@ -3931,8 +3732,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: "#CEE4C1",
-    backgroundColor: "rgba(255,255,255,0.42)",
-  },
+    backgroundColor: "rgba(255,255,255,0.42)" },
   wellnessOrbitMiddle: {
     position: "absolute",
     width: 60,
@@ -3940,15 +3740,13 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: "#D7E9CE",
-    backgroundColor: "rgba(236, 247, 228, 0.78)",
-  },
+    backgroundColor: "rgba(236, 247, 228, 0.78)" },
   wellnessOrbitInner: {
     position: "absolute",
     width: 38,
     height: 38,
     borderRadius: 999,
-    backgroundColor: "#E6F4D8",
-  },
+    backgroundColor: "#E6F4D8" },
   wellnessOrbitCore: {
     width: 46,
     height: 46,
@@ -3962,13 +3760,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+    elevation: 2 },
   wellnessMetaRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   wellnessMetaPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -3978,23 +3774,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#DCEACF",
     paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
+    paddingVertical: 7 },
   wellnessMetaPillText: {
     color: "#546754",
     fontSize: 12,
     lineHeight: 15,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   wellnessToolRow: {
     flexDirection: "row",
     columnGap: 8,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   wellnessToolRowStacked: {
     flexDirection: "column",
-    rowGap: 8,
-  },
+    rowGap: 8 },
   wellnessToolChip: {
     flex: 1,
     minHeight: 108,
@@ -4004,25 +3796,21 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 12,
     borderWidth: 1,
-    borderColor: "#DFECD4",
-  },
+    borderColor: "#DFECD4" },
   wellnessToolChipStacked: {
     width: "100%",
-    flex: 0,
-  },
+    flex: 0 },
   wellnessToolChipTitle: {
     color: "#304558",
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: "700",
-    marginBottom: 6,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 6 },
   wellnessToolChipMeta: {
     color: "#6E7B7A",
     fontSize: 12,
     lineHeight: 17,
-    marginTop: "auto",
-  },
+    marginTop: "auto" },
   wellnessPrimaryButton: {
     minHeight: 44,
     borderRadius: 999,
@@ -4035,14 +3823,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
+    elevation: 3 },
   wellnessPrimaryButtonText: {
     color: "#FFFFFF",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   libraryCard: {
     borderRadius: 24,
     backgroundColor: "#FFF9F0",
@@ -4057,8 +3843,7 @@ const styles = StyleSheet.create({
     elevation: 2,
     borderWidth: 1,
     borderColor: "#EEE3D2",
-    overflow: "hidden",
-  },
+    overflow: "hidden" },
   libraryAuraOne: {
     position: "absolute",
     top: -36,
@@ -4066,8 +3851,7 @@ const styles = StyleSheet.create({
     width: 126,
     height: 126,
     borderRadius: 999,
-    backgroundColor: "rgba(231, 214, 184, 0.34)",
-  },
+    backgroundColor: "rgba(231, 214, 184, 0.34)" },
   libraryAuraTwo: {
     position: "absolute",
     left: -24,
@@ -4075,55 +3859,44 @@ const styles = StyleSheet.create({
     width: 118,
     height: 118,
     borderRadius: 999,
-    backgroundColor: "rgba(181, 213, 197, 0.22)",
-  },
+    backgroundColor: "rgba(181, 213, 197, 0.22)" },
   libraryHeroRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
     columnGap: 12,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   libraryHeroRowStacked: {
-    flexDirection: "column",
-  },
+    flexDirection: "column" },
   libraryHeroTextWrap: {
     flex: 1,
-    paddingRight: 4,
-  },
+    paddingRight: 4 },
   libraryHeroTextWrapStacked: {
-    paddingRight: 0,
-  },
+    paddingRight: 0 },
   libraryTitle: {
     color: "#304558",
     fontSize: 18,
     lineHeight: 23,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 4 },
   libraryTitleCompact: {
     fontSize: 16,
-    lineHeight: 21,
-  },
+    lineHeight: 21 },
   librarySubtitle: {
     color: "#6B7280",
     fontSize: 13,
-    lineHeight: 18,
-  },
+    lineHeight: 18 },
   librarySubtitleCompact: {
     fontSize: 12,
-    lineHeight: 17,
-  },
+    lineHeight: 17 },
   libraryShelfScene: {
     width: 86,
     height: 102,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   libraryShelfSceneStacked: {
     alignSelf: "center",
-    marginTop: 4,
-  },
+    marginTop: 4 },
   libraryShelfLine: {
     position: "absolute",
     bottom: 16,
@@ -4131,33 +3904,27 @@ const styles = StyleSheet.create({
     right: 6,
     height: 8,
     borderRadius: 999,
-    backgroundColor: "#D8C7AE",
-  },
+    backgroundColor: "#D8C7AE" },
   librarySpine: {
     position: "absolute",
     bottom: 24,
     width: 20,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "rgba(85, 90, 76, 0.12)",
-  },
+    borderColor: "rgba(85, 90, 76, 0.12)" },
   librarySpineTall: {
     left: 14,
-    height: 62,
-  },
+    height: 62 },
   librarySpineMid: {
     left: 34,
-    height: 52,
-  },
+    height: 52 },
   librarySpineShort: {
     left: 55,
-    height: 44,
-  },
+    height: 44 },
   libraryMetaRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   libraryMetaPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -4167,23 +3934,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E8DCC8",
     paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
+    paddingVertical: 7 },
   libraryMetaPillText: {
     color: "#5C675B",
     fontSize: 12,
     lineHeight: 15,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   libraryShelfRow: {
     flexDirection: "row",
     columnGap: 8,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   libraryShelfRowStacked: {
     flexDirection: "column",
-    rowGap: 8,
-  },
+    rowGap: 8 },
   libraryBookChip: {
     flex: 1,
     minHeight: 118,
@@ -4194,34 +3957,29 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     borderWidth: 1,
     borderColor: "#EEE2D2",
-    borderLeftWidth: 6,
-  },
+    borderLeftWidth: 6 },
   libraryBookChipStacked: {
     width: "100%",
-    flex: 0,
-  },
+    flex: 0 },
   libraryBookChipCategory: {
     color: "#6F845C",
     fontSize: 10,
     lineHeight: 13,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     textTransform: "uppercase",
     letterSpacing: 0.4,
-    marginBottom: 6,
-  },
+    marginBottom: 6 },
   libraryBookChipTitle: {
     color: "#304558",
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: "700",
-    marginBottom: 6,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 6 },
   libraryBookChipMeta: {
     color: "#7A7F73",
     fontSize: 11,
     lineHeight: 14,
-    marginTop: "auto",
-  },
+    marginTop: "auto" },
   libraryPrimaryButton: {
     minHeight: 44,
     borderRadius: 999,
@@ -4234,14 +3992,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
+    elevation: 3 },
   libraryPrimaryButtonText: {
     color: "#FFFFFF",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   recentCard: {
     borderRadius: 24,
     backgroundColor: "#FFFFFF",
@@ -4255,31 +4011,26 @@ const styles = StyleSheet.create({
     elevation: 2,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: "#E6EEE7",
-  },
+    borderColor: "#E6EEE7" },
   recentHeader: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
     marginBottom: 12,
-    paddingHorizontal: 2,
-  },
+    paddingHorizontal: 2 },
   recentHeaderTextWrap: {
     flex: 1,
-    paddingRight: 12,
-  },
+    paddingRight: 12 },
   recentTitle: {
     color: "#324254",
     fontSize: 37 / 2,
     lineHeight: 24,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   recentSubtitle: {
     color: "#607181",
     fontSize: 13,
     lineHeight: 18,
-    marginTop: 3,
-  },
+    marginTop: 3 },
   recentFilterButton: {
     width: 34,
     height: 34,
@@ -4289,19 +4040,15 @@ const styles = StyleSheet.create({
     borderColor: "#E0E7EE",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 2,
-  },
+    marginTop: 2 },
   recentListWrap: {
     position: "relative",
-    height: 454,
-  },
+    height: 454 },
   recentList: {
-    flex: 1,
-  },
+    flex: 1 },
   recentListContent: {
     paddingBottom: 8,
-    rowGap: 10,
-  },
+    rowGap: 10 },
   entryItem: {
     borderRadius: 14,
     backgroundColor: "#F6FFF0",
@@ -4311,8 +4058,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     columnGap: 12,
     borderWidth: 1,
-    borderColor: "#E1EED9",
-  },
+    borderColor: "#E1EED9" },
   entryIconWrap: {
     width: 68,
     height: 68,
@@ -4321,51 +4067,41 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E5EBE0",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   entryIcon: {
     fontSize: 34,
-    lineHeight: 36,
-  },
+    lineHeight: 36 },
   entryTextWrap: {
     flex: 1,
-    paddingTop: 8,
-  },
+    paddingTop: 8 },
   entryMeta: {
     color: "#34465A",
     fontSize: 35 / 2,
     lineHeight: 24,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 4 },
   entryPreview: {
     color: "#2F3F52",
     fontSize: 33 / 2,
-    lineHeight: 22,
-  },
+    lineHeight: 22 },
   futureBottleScene: {
     marginHorizontal: -12,
     marginTop: 10,
-    overflow: "hidden",
-  },
+    overflow: "hidden" },
   futureBottlePlaceholder: {
-    backgroundColor: "#F7FAF6",
-  },
+    backgroundColor: "#F7FAF6" },
   futureBottleScenePressable: {
     overflow: "hidden",
-    paddingTop: 0,
-  },
+    paddingTop: 0 },
   futureBottleSceneSky: {
     position: "relative",
     overflow: "hidden",
-    backgroundColor: "#C8F0E8",
-  },
+    backgroundColor: "#C8F0E8" },
   futureBottleSceneTopBlend: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 1,
     top: 0,
-    height: 112,
-  },
+    height: 112 },
   futureBottleCard: {
     borderRadius: 24,
     backgroundColor: "#FFFFFF",
@@ -4377,18 +4113,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
+    elevation: 2 },
   futureBottleHero: {
     position: "relative",
     justifyContent: "space-between",
     overflow: "hidden",
-    backgroundColor: "#C8F0E8",
-  },
+    backgroundColor: "#C8F0E8" },
   futureBottleSkyFill: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "#C8F0E8",
-  },
+    backgroundColor: "#C8F0E8" },
   futureBottleSkyBlobOne: {
     position: "absolute",
     width: 208,
@@ -4396,8 +4129,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "rgba(241, 255, 210, 0.42)",
     top: -84,
-    right: -12,
-  },
+    right: -12 },
   futureBottleSkyBlobTwo: {
     position: "absolute",
     width: 168,
@@ -4405,19 +4137,16 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "rgba(143, 226, 209, 0.34)",
     top: 16,
-    right: 46,
-  },
+    right: 46 },
   futureBottleIslandButton: {
     position: "absolute",
     alignSelf: "center",
     zIndex: 4,
     width: 256,
-    height: 140,
-  },
+    height: 140 },
   futureBottleIslandArt: {
     width: "100%",
-    height: "100%",
-  },
+    height: "100%" },
   futureBottleTopGlow: {
     position: "absolute",
     top: -36,
@@ -4425,8 +4154,7 @@ const styles = StyleSheet.create({
     width: 168,
     height: 168,
     borderRadius: 999,
-    backgroundColor: "rgba(248, 255, 196, 0.55)",
-  },
+    backgroundColor: "rgba(248, 255, 196, 0.55)" },
   futureBottleInfoCard: {
     marginTop: 28,
     marginLeft: 16,
@@ -4437,23 +4165,19 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.56)",
     paddingHorizontal: 14,
     paddingVertical: 12,
-    zIndex: 2,
-  },
+    zIndex: 2 },
   futureBottleEyebrow: {
-    color: "#5A7D53",
-  },
+    color: "#5A7D53" },
   futureBottleInfoTitle: {
     color: "#2F4257",
     fontSize: 18,
     lineHeight: 23,
-    fontWeight: "700",
-    marginBottom: 2,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 2 },
   futureBottleInfoSubtitle: {
     color: "#5A6C7B",
     fontSize: 13,
-    lineHeight: 18,
-  },
+    lineHeight: 18 },
   futureBottleStatusPill: {
     marginTop: 10,
     borderRadius: 999,
@@ -4464,22 +4188,18 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 5,
-  },
+    columnGap: 5 },
   futureBottleStatusPillArrived: {
     backgroundColor: "rgba(238, 250, 226, 0.88)",
-    borderColor: "rgba(137, 201, 95, 0.64)",
-  },
+    borderColor: "rgba(137, 201, 95, 0.64)" },
   futureBottleStatusPillText: {
     flex: 1,
     color: "#355368",
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   futureBottleStatusPillTextArrived: {
-    color: "#2F6F25",
-  },
+    color: "#2F6F25" },
   futureBottleNoteGlow: {
     position: "absolute",
     alignSelf: "center",
@@ -4487,51 +4207,42 @@ const styles = StyleSheet.create({
     height: 42,
     borderRadius: 999,
     backgroundColor: "rgba(255, 250, 182, 0.28)",
-    zIndex: 3,
-  },
+    zIndex: 3 },
   futureBottleWaterScene: {
     position: "relative",
     overflow: "hidden",
     backgroundColor: "#5CBCCB",
-    marginTop: -2,
-  },
+    marginTop: -2 },
   futureBottleWaterGradient: {
-    ...StyleSheet.absoluteFillObject,
-  },
+    ...StyleSheet.absoluteFillObject },
   futureBottleWaterWaveFill: {
     position: "absolute",
     left: -52,
     right: -52,
     top: 6,
-    height: 104,
-  },
+    height: 104 },
   futureBottleWaterWaveLine: {
     position: "absolute",
     left: -44,
     right: -44,
     top: 14,
-    height: 70,
-  },
+    height: 70 },
   futureBottleWaterWaveSoft: {
     position: "absolute",
     left: -40,
     right: -40,
     top: 46,
-    height: 90,
-  },
+    height: 90 },
   driftingBottleWrap: {
     position: "absolute",
     left: -78,
-    zIndex: 5,
-  },
+    zIndex: 5 },
   driftingBottleButton: {
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   driftingBottleImage: {
     width: 62,
-    height: 62,
-  },
+    height: 62 },
   driftingBottleModalCard: {
     width: "100%",
     maxWidth: 340,
@@ -4544,33 +4255,28 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 6 },
-    elevation: 6,
-  },
+    elevation: 6 },
   driftingBottleModalHeader: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
     columnGap: 10,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   driftingBottleModalTitleWrap: {
-    flex: 1,
-  },
+    flex: 1 },
   driftingBottleModalEyebrow: {
     color: "#78916A",
     fontSize: 11,
     lineHeight: 15,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     letterSpacing: 0.6,
     textTransform: "uppercase",
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   driftingBottleModalTitle: {
     color: "#304558",
     fontSize: 20,
     lineHeight: 26,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   driftingBottleModalBody: {
     borderRadius: 20,
     backgroundColor: "#FBFCF8",
@@ -4578,19 +4284,16 @@ const styles = StyleSheet.create({
     borderColor: "#E7ECE2",
     paddingHorizontal: 16,
     paddingVertical: 16,
-    alignItems: "center",
-  },
+    alignItems: "center" },
   driftingBottleModalImage: {
     width: 74,
     height: 74,
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   driftingBottleModalMessage: {
     color: "#344B5E",
     fontSize: 15,
     lineHeight: 23,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   driftingBottleWarningCard: {
     borderRadius: 20,
     backgroundColor: "#FBFCF8",
@@ -4598,8 +4301,7 @@ const styles = StyleSheet.create({
     borderColor: "#E7ECE2",
     paddingHorizontal: 16,
     paddingVertical: 16,
-    alignItems: "center",
-  },
+    alignItems: "center" },
   driftingBottleWarningIcon: {
     width: 48,
     height: 48,
@@ -4607,21 +4309,18 @@ const styles = StyleSheet.create({
     backgroundColor: "#EDF6E7",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   driftingBottleWarningText: {
     color: "#344B5E",
     fontSize: 15,
     lineHeight: 22,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   driftingBottleWarningSubtext: {
     color: "#607181",
     fontSize: 13,
     lineHeight: 19,
     textAlign: "center",
-    marginTop: 8,
-  },
+    marginTop: 8 },
   driftingBottleWarningCheckboxRow: {
     alignSelf: "center",
     minHeight: 28,
@@ -4631,32 +4330,27 @@ const styles = StyleSheet.create({
     columnGap: 6,
     paddingHorizontal: 8,
     marginTop: 10,
-    opacity: 0.82,
-  },
+    opacity: 0.82 },
   driftingBottleWarningCheckboxText: {
     color: "#6F7F8A",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "600",
-  },
+    fontFamily: "Outfit-SemiBold" },
   driftingBottleWarningActions: {
     width: "100%",
     rowGap: 10,
-    marginTop: 16,
-  },
+    marginTop: 16 },
   driftingBottleWarningOpenButton: {
     minHeight: 44,
     borderRadius: 999,
     backgroundColor: "#70C943",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   driftingBottleWarningOpenText: {
     color: "#FFFFFF",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   driftingBottleWarningBackButton: {
     minHeight: 42,
     borderRadius: 999,
@@ -4664,36 +4358,29 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#D5E0E7",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   driftingBottleWarningBackText: {
     color: "#526678",
     fontSize: 14,
     lineHeight: 19,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   futureBottleBody: {
     paddingHorizontal: 14,
     paddingTop: 14,
-    paddingBottom: 16,
-  },
+    paddingBottom: 16 },
   futureBottleEmptyState: {
-    rowGap: 14,
-  },
+    rowGap: 14 },
   futureBottleEmptyCopy: {
-    rowGap: 4,
-  },
+    rowGap: 4 },
   futureBottleEmptyTitle: {
     color: "#304558",
     fontSize: 18,
     lineHeight: 23,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   futureBottleEmptyBody: {
     color: "#5D7080",
     fontSize: 14,
-    lineHeight: 20,
-  },
+    lineHeight: 20 },
   futureBottlePrimaryButton: {
     minHeight: 44,
     borderRadius: 999,
@@ -4706,17 +4393,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
+    elevation: 3 },
   futureBottlePrimaryButtonDisabled: {
-    backgroundColor: "#A8C99C",
-  },
+    backgroundColor: "#A8C99C" },
   futureBottlePrimaryButtonText: {
     color: "#FFFFFF",
     fontSize: 16,
     lineHeight: 20,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   futureBottlePreviewCard: {
     borderRadius: 18,
     backgroundColor: "#F8FBF6",
@@ -4724,33 +4408,28 @@ const styles = StyleSheet.create({
     borderColor: "#DCE9D9",
     paddingHorizontal: 14,
     paddingTop: 14,
-    paddingBottom: 12,
-  },
+    paddingBottom: 12 },
   futureBottlePreviewHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
     columnGap: 12,
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   futureBottlePreviewTextWrap: {
-    flex: 1,
-  },
+    flex: 1 },
   futureBottlePreviewEyebrow: {
     color: "#6F845C",
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     letterSpacing: 0.5,
     textTransform: "uppercase",
-    marginBottom: 2,
-  },
+    marginBottom: 2 },
   futureBottlePreviewDate: {
     color: "#304558",
     fontSize: 18,
     lineHeight: 23,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   futureBottleDeliveryPill: {
     borderRadius: 999,
     backgroundColor: "#EDF6E7",
@@ -4760,32 +4439,27 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 5,
-  },
+    columnGap: 5 },
   futureBottleDeliveryPillText: {
     color: "#5A7A50",
     fontSize: 12,
     lineHeight: 15,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   futureBottlePreviewMessage: {
     color: "#2F4257",
     fontSize: 15,
     lineHeight: 22,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   futureBottlePreviewFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    columnGap: 12,
-  },
+    columnGap: 12 },
   futureBottlePreviewHint: {
     flex: 1,
     color: "#6B7B88",
     fontSize: 12,
-    lineHeight: 16,
-  },
+    lineHeight: 16 },
   futureBottleEditButton: {
     borderRadius: 999,
     backgroundColor: "#FFFFFF",
@@ -4795,14 +4469,12 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 6,
-  },
+    columnGap: 6 },
   futureBottleEditButtonText: {
     color: "#355468",
     fontSize: 12,
     lineHeight: 15,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   memorySeaCard: {
     borderRadius: 24,
     backgroundColor: "#FFFFFF",
@@ -4814,14 +4486,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
+    elevation: 2 },
   memorySeaHero: {
     minHeight: 194,
     overflow: "hidden",
     backgroundColor: "#D7F3EE",
-    position: "relative",
-  },
+    position: "relative" },
   memorySeaHeroGlow: {
     position: "absolute",
     top: -34,
@@ -4829,8 +4499,7 @@ const styles = StyleSheet.create({
     width: 164,
     height: 164,
     borderRadius: 999,
-    backgroundColor: "rgba(248,255,197,0.58)",
-  },
+    backgroundColor: "rgba(248,255,197,0.58)" },
   memorySeaHeroGlowTwo: {
     position: "absolute",
     top: 26,
@@ -4838,16 +4507,14 @@ const styles = StyleSheet.create({
     width: 148,
     height: 148,
     borderRadius: 999,
-    backgroundColor: "rgba(115, 213, 203, 0.18)",
-  },
+    backgroundColor: "rgba(115, 213, 203, 0.18)" },
   memorySeaWaterBand: {
     position: "absolute",
     left: 0,
     right: 0,
     bottom: 0,
     height: "37%",
-    backgroundColor: "#66C5CB",
-  },
+    backgroundColor: "#66C5CB" },
   memorySeaWaveLine: {
     position: "absolute",
     left: -8,
@@ -4855,36 +4522,30 @@ const styles = StyleSheet.create({
     bottom: 68,
     height: 28,
     borderRadius: 999,
-    backgroundColor: "rgba(198, 247, 241, 0.26)",
-  },
+    backgroundColor: "rgba(198, 247, 241, 0.26)" },
   memorySeaHeroTextWrap: {
     paddingHorizontal: 16,
     paddingTop: 18,
     paddingRight: 88,
     maxWidth: 272,
-    zIndex: 2,
-  },
+    zIndex: 2 },
   memorySeaEyebrow: {
-    color: "#5B7B59",
-  },
+    color: "#5B7B59" },
   memorySeaTitle: {
     color: "#304558",
     fontSize: 24,
     lineHeight: 30,
-    fontWeight: "700",
-    marginBottom: 6,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 6 },
   memorySeaSubtitle: {
     color: "#4E6778",
     fontSize: 13,
     lineHeight: 18,
-    maxWidth: 210,
-  },
+    maxWidth: 210 },
   memorySeaBody: {
     paddingHorizontal: 14,
     paddingTop: 12,
-    paddingBottom: 14,
-  },
+    paddingBottom: 14 },
   memorySeaComingSoonCard: {
     borderRadius: 16,
     backgroundColor: "#F5FBFF",
@@ -4895,14 +4556,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    columnGap: 8,
-  },
+    columnGap: 8 },
   memorySeaComingSoonText: {
     color: "#365368",
     fontSize: 15,
     lineHeight: 19,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   futureBottleIntroCard: {
     borderRadius: 20,
     backgroundColor: "#F8FBF6",
@@ -4911,8 +4570,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 16,
     alignItems: "center",
-    marginBottom: 16,
-  },
+    marginBottom: 16 },
   futureBottleIntroIconWrap: {
     width: 62,
     height: 62,
@@ -4920,26 +4578,22 @@ const styles = StyleSheet.create({
     backgroundColor: "#E9F7DD",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   futureBottleIntroImage: {
     width: 46,
-    height: 46,
-  },
+    height: 46 },
   futureBottleIntroTitle: {
     color: "#304558",
     fontSize: 18,
     lineHeight: 23,
-    fontWeight: "800",
+    fontFamily: "Outfit-Bold",
     textAlign: "center",
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   futureBottleIntroText: {
     color: "#5D7080",
     fontSize: 14,
     lineHeight: 21,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   bottleModalCard: {
     width: "100%",
     maxWidth: 356,
@@ -4954,39 +4608,33 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 6 },
     elevation: 6,
-    overflow: "hidden",
-  },
+    overflow: "hidden" },
   bottleModalHeader: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
     columnGap: 10,
-    marginBottom: 16,
-  },
+    marginBottom: 16 },
   bottleModalTextWrap: {
-    flex: 1,
-  },
+    flex: 1 },
   bottleModalEyebrow: {
     color: "#6D8758",
     fontSize: 11,
     lineHeight: 15,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     letterSpacing: 0.6,
     textTransform: "uppercase",
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   bottleModalTitle: {
     color: "#304558",
     fontSize: 22,
     lineHeight: 28,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 4 },
   bottleModalDescription: {
     color: "#607181",
     fontSize: 14,
-    lineHeight: 19,
-  },
+    lineHeight: 19 },
   bottleModalCloseButton: {
     width: 34,
     height: 34,
@@ -4995,8 +4643,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "#E2E8E0",
-  },
+    borderColor: "#E2E8E0" },
   bottleInputCard: {
     borderRadius: 18,
     backgroundColor: "#FBFCF8",
@@ -5005,32 +4652,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: 12,
     paddingBottom: 10,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   bottleInput: {
     minHeight: 118,
     color: "#314456",
     fontSize: 15,
-    lineHeight: 22,
-  },
+    lineHeight: 22 },
   bottleCharacterCount: {
     alignSelf: "flex-end",
     color: "#91A0AB",
     fontSize: 11,
     lineHeight: 14,
-    marginTop: 8,
-  },
+    marginTop: 8 },
   bottleOptionLabel: {
     color: "#304558",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "700",
-    marginBottom: 10,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 10 },
   bottleDateTimeGrid: {
     rowGap: 8,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   bottleDateTimeButton: {
     minHeight: 58,
     borderRadius: 16,
@@ -5041,33 +4683,28 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 10,
-  },
+    columnGap: 10 },
   bottleDateTimeIcon: {
     width: 34,
     height: 34,
     borderRadius: 12,
     backgroundColor: "#E9F7DD",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   bottleDateTimeTextWrap: {
-    flex: 1,
-  },
+    flex: 1 },
   bottleDateTimeLabel: {
     color: "#71806E",
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "700",
-    textTransform: "uppercase",
-  },
+    fontFamily: "Outfit-Bold",
+    textTransform: "uppercase" },
   bottleDateTimeValue: {
     marginTop: 2,
     color: "#304558",
     fontSize: 15,
     lineHeight: 19,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   bottleInlinePickerCard: {
     borderRadius: 16,
     backgroundColor: "#FBFCF8",
@@ -5076,15 +4713,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     overflow: "hidden",
     paddingHorizontal: 10,
-    paddingTop: 10,
-  },
+    paddingTop: 10 },
   bottleCalendarHeader: {
     minHeight: 34,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   bottleCalendarNavButton: {
     width: 32,
     height: 32,
@@ -5093,119 +4728,97 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#DCE8D6",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   bottleCalendarTitle: {
     flex: 1,
     color: "#304558",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "800",
-    textAlign: "center",
-  },
+    fontFamily: "Outfit-Bold",
+    textAlign: "center" },
   bottleCalendarWeekRow: {
     flexDirection: "row",
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   bottleCalendarWeekday: {
     width: "14.285%",
     color: "#71806E",
     fontSize: 10,
     lineHeight: 14,
-    fontWeight: "800",
+    fontFamily: "Outfit-Bold",
     textAlign: "center",
-    textTransform: "uppercase",
-  },
+    textTransform: "uppercase" },
   bottleCalendarGrid: {
     flexDirection: "row",
-    flexWrap: "wrap",
-  },
+    flexWrap: "wrap" },
   bottleCalendarDay: {
     width: "14.285%",
     aspectRatio: 1,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 12,
-  },
+    borderRadius: 12 },
   bottleCalendarDayMuted: {
-    opacity: 0.45,
-  },
+    opacity: 0.45 },
   bottleCalendarDaySelected: {
-    backgroundColor: "#70C943",
-  },
+    backgroundColor: "#70C943" },
   bottleCalendarDayDisabled: {
-    opacity: 0.28,
-  },
+    opacity: 0.28 },
   bottleCalendarDayText: {
     color: "#304558",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   bottleCalendarDayTextMuted: {
-    color: "#7B8A95",
-  },
+    color: "#7B8A95" },
   bottleCalendarDayTextSelected: {
     color: "#FFFFFF",
-    fontWeight: "900",
-  },
+    fontFamily: "Outfit-Bold" },
   bottleCalendarDayTextDisabled: {
-    color: "#9AA6AE",
-  },
+    color: "#9AA6AE" },
   bottleClockHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     columnGap: 10,
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   bottleClockTitle: {
     flex: 1,
     color: "#304558",
     fontSize: 20,
     lineHeight: 25,
-    fontWeight: "900",
-  },
+    fontFamily: "Outfit-Bold" },
   bottleClockPeriodRow: {
     flexDirection: "row",
     borderRadius: 999,
     backgroundColor: "#EDF4EA",
     borderWidth: 1,
     borderColor: "#D6E1D0",
-    padding: 2,
-  },
+    padding: 2 },
   bottleClockPeriodButton: {
     minWidth: 42,
     borderRadius: 999,
     paddingVertical: 7,
-    alignItems: "center",
-  },
+    alignItems: "center" },
   bottleClockPeriodButtonActive: {
-    backgroundColor: "#70C943",
-  },
+    backgroundColor: "#70C943" },
   bottleClockPeriodText: {
     color: "#5E6F7E",
     fontSize: 12,
     lineHeight: 15,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   bottleClockPeriodTextActive: {
-    color: "#FFFFFF",
-  },
+    color: "#FFFFFF" },
   bottleClockSectionLabel: {
     color: "#71806E",
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "800",
+    fontFamily: "Outfit-Bold",
     textTransform: "uppercase",
-    marginBottom: 6,
-  },
+    marginBottom: 6 },
   bottleClockGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 6,
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   bottleClockChip: {
     minWidth: 42,
     minHeight: 34,
@@ -5215,38 +4828,31 @@ const styles = StyleSheet.create({
     borderColor: "#DCE8D6",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 10,
-  },
+    paddingHorizontal: 10 },
   bottleClockChipActive: {
     backgroundColor: "#70C943",
-    borderColor: "#70C943",
-  },
+    borderColor: "#70C943" },
   bottleClockChipText: {
     color: "#304558",
     fontSize: 13,
     lineHeight: 17,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   bottleClockChipTextActive: {
-    color: "#FFFFFF",
-  },
+    color: "#FFFFFF" },
   bottleInlinePickerDoneButton: {
     alignSelf: "flex-end",
     paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
+    paddingVertical: 10 },
   bottleInlinePickerDoneText: {
     color: "#2F6F25",
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   bottleOptionGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   bottleOptionChip: {
     minWidth: 72,
     borderRadius: 999,
@@ -5256,22 +4862,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 9,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   bottleOptionChipActive: {
     backgroundColor: "#E9F7DD",
-    borderColor: "#89C95F",
-  },
+    borderColor: "#89C95F" },
   bottleOptionChipText: {
     color: "#5E6F7E",
     fontSize: 13,
     lineHeight: 16,
-    fontWeight: "600",
-  },
+    fontFamily: "Outfit-SemiBold" },
   bottleOptionChipTextActive: {
     color: "#2F6F25",
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   bottleArrivalCard: {
     borderRadius: 16,
     backgroundColor: "#F3FAEF",
@@ -5282,32 +4884,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     columnGap: 8,
-    marginBottom: 16,
-  },
+    marginBottom: 16 },
   bottleArrivalCardText: {
     flex: 1,
     color: "#4F6473",
     fontSize: 13,
-    lineHeight: 18,
-  },
+    lineHeight: 18 },
   bottleArrivalCardTextStrong: {
     color: "#355368",
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   bottleFormMessage: {
     color: "#B94A48",
     fontSize: 12,
     lineHeight: 16,
     marginTop: -6,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   bottleComposeScroll: {
     flexShrink: 1,
-    marginBottom: 16,
-  },
+    marginBottom: 16 },
   bottleComposeContent: {
-    paddingBottom: 2,
-  },
+    paddingBottom: 2 },
   bottleShelfOpenButton: {
     minHeight: 38,
     borderRadius: 999,
@@ -5320,26 +4916,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     columnGap: 7,
-    flexShrink: 0,
-  },
+    flexShrink: 0 },
   bottleShelfOpenText: {
     color: "#2F6F25",
     fontSize: 13,
     lineHeight: 17,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   bottleShelfScroll: {
     maxHeight: 460,
-    marginBottom: 16,
-  },
+    marginBottom: 16 },
   bottleShelfContent: {
-    paddingBottom: 4,
-  },
+    paddingBottom: 4 },
   bottleShelfSummaryRow: {
     flexDirection: "row",
     columnGap: 8,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   bottleShelfSummaryChip: {
     flex: 1,
     minHeight: 38,
@@ -5351,21 +4942,18 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    columnGap: 6,
-  },
+    columnGap: 6 },
   bottleShelfSummaryText: {
     color: "#40576A",
     fontSize: 13,
     lineHeight: 17,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   bottleShelfSectionTitle: {
     color: "#304558",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "800",
-    marginBottom: 8,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 8 },
   bottleShelfNoteCard: {
     borderRadius: 18,
     backgroundColor: "#F8FBF6",
@@ -5374,14 +4962,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 13,
     paddingTop: 12,
     paddingBottom: 12,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   bottleShelfActionRow: {
     flexDirection: "row",
     alignItems: "center",
     columnGap: 8,
-    marginTop: 10,
-  },
+    marginTop: 10 },
   bottleShelfEditButton: {
     minHeight: 34,
     borderRadius: 999,
@@ -5391,14 +4977,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 5,
-  },
+    columnGap: 5 },
   bottleShelfEditText: {
     color: "#2F6F25",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   bottleShelfDeleteButton: {
     minHeight: 34,
     borderRadius: 999,
@@ -5408,55 +4992,45 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 5,
-  },
+    columnGap: 5 },
   bottleShelfDeleteText: {
     color: "#8B4C43",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   bottleShelfArrivedCard: {
-    backgroundColor: "#FBFDF8",
-  },
+    backgroundColor: "#FBFDF8" },
   bottleShelfNoteHeader: {
     flexDirection: "row",
     alignItems: "center",
     columnGap: 10,
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   bottleShelfNoteIcon: {
     width: 36,
     height: 36,
     borderRadius: 13,
     backgroundColor: "#EDF6E7",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   bottleShelfNoteIconArrived: {
-    backgroundColor: "#E9F7DD",
-  },
+    backgroundColor: "#E9F7DD" },
   bottleShelfNoteTextWrap: {
-    flex: 1,
-  },
+    flex: 1 },
   bottleShelfNoteTitle: {
     color: "#304558",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   bottleShelfNoteMeta: {
     color: "#667789",
     fontSize: 12,
     lineHeight: 16,
-    marginTop: 1,
-  },
+    marginTop: 1 },
   bottleShelfLockedText: {
     color: "#5D7080",
     fontSize: 13,
     lineHeight: 18,
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   bottleShelfEmptyCard: {
     borderRadius: 16,
     backgroundColor: "#F6F8F5",
@@ -5464,13 +5038,11 @@ const styles = StyleSheet.create({
     borderColor: "#E1E9DD",
     paddingHorizontal: 13,
     paddingVertical: 12,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   bottleShelfEmptyText: {
     color: "#667789",
     fontSize: 13,
-    lineHeight: 18,
-  },
+    lineHeight: 18 },
   bottleStatusCard: {
     borderRadius: 20,
     backgroundColor: "#F8FBF6",
@@ -5480,8 +5052,7 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 14,
     alignItems: "center",
-    marginBottom: 16,
-  },
+    marginBottom: 16 },
   bottleStatusIconWrap: {
     width: 54,
     height: 54,
@@ -5489,26 +5060,22 @@ const styles = StyleSheet.create({
     backgroundColor: "#EDF6E7",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   bottleStatusIconWrapArrived: {
-    backgroundColor: "#E9F7DD",
-  },
+    backgroundColor: "#E9F7DD" },
   bottleStatusTitle: {
     color: "#304558",
     fontSize: 20,
     lineHeight: 25,
-    fontWeight: "800",
+    fontFamily: "Outfit-Bold",
     textAlign: "center",
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   bottleStatusBody: {
     color: "#5D7080",
     fontSize: 14,
     lineHeight: 21,
     textAlign: "center",
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   bottleDeliveredMessageCard: {
     width: "100%",
     borderRadius: 18,
@@ -5517,18 +5084,15 @@ const styles = StyleSheet.create({
     borderColor: "#D5E0E7",
     paddingHorizontal: 14,
     paddingVertical: 13,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   bottleDeliveredMessageText: {
     color: "#2F4257",
     fontSize: 15,
-    lineHeight: 23,
-  },
+    lineHeight: 23 },
   bottleStatusDateRow: {
     width: "100%",
     flexDirection: "row",
-    columnGap: 8,
-  },
+    columnGap: 8 },
   bottleStatusDateItem: {
     flex: 1,
     borderRadius: 14,
@@ -5536,22 +5100,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E1E9DD",
     paddingHorizontal: 10,
-    paddingVertical: 10,
-  },
+    paddingVertical: 10 },
   bottleStatusDateLabel: {
     color: "#71806E",
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     textTransform: "uppercase",
-    marginBottom: 3,
-  },
+    marginBottom: 3 },
   bottleStatusDateValue: {
     color: "#304558",
     fontSize: 13,
     lineHeight: 17,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   consultOverlay: {
     position: "absolute",
     top: 0,
@@ -5562,16 +5123,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 12,
-    paddingBottom: 64,
-  },
+    paddingBottom: 64 },
   consultOverlayBackdrop: {
     position: "absolute",
     top: 0,
     right: 0,
     bottom: 0,
     left: 0,
-    backgroundColor: "rgba(26, 30, 34, 0.28)",
-  },
+    backgroundColor: "rgba(26, 30, 34, 0.28)" },
   consultOverlayCard: {
     width: "100%",
     borderRadius: 20,
@@ -5586,28 +5145,24 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
     elevation: 4,
-    alignItems: "center",
-  },
+    alignItems: "center" },
   consultAvatar: {
     marginBottom: 12,
     borderWidth: 3,
-    borderColor: "#FFFFFF",
-  },
+    borderColor: "#FFFFFF" },
   consultOverlayTitle: {
     color: "#32475B",
     fontSize: 44 / 2,
     lineHeight: 30,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     textAlign: "center",
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   consultOverlaySubtitle: {
     color: "#3D5165",
     fontSize: 15,
     lineHeight: 20,
     textAlign: "center",
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   consultInfoCard: {
     width: "100%",
     borderRadius: 12,
@@ -5616,35 +5171,28 @@ const styles = StyleSheet.create({
     backgroundColor: "#CDE6C3",
     paddingHorizontal: 14,
     paddingVertical: 12,
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   consultInfoText: {
     color: "#2F4356",
     fontSize: 15 / 1.02,
-    lineHeight: 22,
-  },
+    lineHeight: 22 },
   consultInfoLabel: {
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   consultOverlayFootnote: {
     color: "#68737E",
     fontSize: 12,
     lineHeight: 16,
     textAlign: "center",
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   consultOverlayButton: {
     width: "92%",
     height: 44,
     borderRadius: 999,
     backgroundColor: "#70C943",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   consultOverlayButtonText: {
     color: "#FFFFFF",
     fontSize: 33 / 2,
     lineHeight: 22,
-    fontWeight: "700",
-  },
-});
+    fontFamily: "Outfit-Bold" } });

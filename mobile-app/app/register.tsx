@@ -11,8 +11,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  View,
-} from "react-native";
+  View } from "react-native";
 import type { NativeScrollEvent, NativeSyntheticEvent } from "react-native";
 import { FormTextInput } from "../components/forms/FormTextInput";
 import { OtpCodeInput } from "../components/forms/OtpCodeInput";
@@ -23,23 +22,20 @@ import {
   registerProfile,
   scanSchoolId,
   sendOtp,
-  verifyOtp,
-} from "../lib/backend-api";
+  verifyOtp } from "../lib/backend-api";
 import { formatBirthdate, normalizeStudentNumber } from "../lib/format";
 import { parseIdText } from "../lib/ocr-parse";
 import {
   BARANGAY_OPTIONS,
   FIXED_ADDRESS,
   GENDER_OPTIONS,
-  PROGRAM_OPTIONS,
-} from "../lib/register-data";
+  PROGRAM_OPTIONS } from "../lib/register-data";
 import { useAuthSession } from "../lib/auth-session";
 import {
   isLikelySchoolId,
   isValidBirthdate,
   isValidName,
-  isValidStudentNumber,
-} from "../lib/register-validation";
+  isValidStudentNumber } from "../lib/register-validation";
 
 const TOTAL_STEPS = 5;
 const OTP_LENGTH = 8;
@@ -222,8 +218,7 @@ export default function RegisterScreen() {
       mediaTypes: ["images"],
       allowsEditing: true,
       quality: 0.25,
-      base64: true,
-    });
+      base64: true });
 
     if (result.canceled || !result.assets[0]) return;
 
@@ -334,8 +329,7 @@ export default function RegisterScreen() {
       street: street.trim(),
       email: email.trim().toLowerCase(),
       birthdate: birthdate,
-      password: password.trim(),
-    });
+      password: password.trim() });
     setIsBusy(false);
 
     if (!saveResult.ok) {
@@ -355,8 +349,7 @@ export default function RegisterScreen() {
       studentNumber: normalizeStudentNumber(studentNumber),
       fullName: normalizedFullName,
       firstName: normalizedFullName.split(" ")[0] || "User",
-      email: email.trim().toLowerCase(),
-    });
+      email: email.trim().toLowerCase() });
     router.replace("/studio");
   };
 
@@ -378,8 +371,7 @@ export default function RegisterScreen() {
         const formatted = formatBirthdate(selectedDate);
         setBirthdate(formatted);
         setPassword(formatted);
-      },
-    });
+      } });
   };
 
   const openPolicyModal = (type: "terms" | "privacy") => {
@@ -857,49 +849,42 @@ function PolicyDocument({ content }: { content: string }) {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
-  },
+    backgroundColor: "#FFFFFF" },
   content: {
     flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: 16,
     paddingBottom: 24,
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
-  },
+    backgroundColor: "#FFFFFF" },
   backButton: {
     alignSelf: "flex-start",
     marginBottom: 12,
-    paddingRight: 6,
-  },
+    paddingRight: 6 },
   formArea: {
     flex: 1,
     justifyContent: "flex-start",
     width: "100%",
-    maxWidth: 320,
-  },
+    maxWidth: 320 },
   logo: {
     width: 64,
     height: 64,
     alignSelf: "center",
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   title: {
     textAlign: "center",
     fontSize: 23,
     lineHeight: 30,
     color: "#111111",
-    fontFamily: "Outfit",
-    fontWeight: "700",
-    marginBottom: 4,
-  },
+
+    fontFamily: "Outfit-Bold",
+    marginBottom: 4 },
   subtitle: {
     textAlign: "center",
     fontSize: 12,
     lineHeight: 18,
     color: "#1A1A1A",
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   consentCard: {
     backgroundColor: "#F8FCF5",
     borderRadius: 14,
@@ -912,19 +897,16 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+    elevation: 2 },
   consentBody: {
     color: "#52646F",
     fontSize: 11,
     lineHeight: 16,
-    marginTop: 10,
-  },
+    marginTop: 10 },
   checkboxRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 8,
-  },
+    gap: 8 },
   checkbox: {
     width: 18,
     height: 18,
@@ -934,32 +916,26 @@ const styles = StyleSheet.create({
     marginTop: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#FFFFFF",
-  },
+    backgroundColor: "#FFFFFF" },
   checkboxChecked: {
     backgroundColor: "#79C943",
-    borderColor: "#79C943",
-  },
+    borderColor: "#79C943" },
   checkboxText: {
     flex: 1,
     color: "#243442",
     fontSize: 12,
-    lineHeight: 17,
-  },
+    lineHeight: 17 },
   linkText: {
     color: "#2E7130",
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   progressRow: {
-    marginBottom: 20,
-  },
+    marginBottom: 20 },
   sectionTitle: {
     textAlign: "center",
     color: "#111111",
     fontSize: 12,
-    fontWeight: "600",
-    marginBottom: 18,
-  },
+    fontFamily: "Outfit-SemiBold",
+    marginBottom: 18 },
   uploadWrap: {
     borderWidth: 1,
     borderStyle: "dashed",
@@ -967,18 +943,15 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     minHeight: 140,
     justifyContent: "flex-end",
-    overflow: "hidden",
-  },
+    overflow: "hidden" },
   uploadInner: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingTop: 16,
-  },
+    paddingTop: 16 },
   preview: {
     width: "100%",
-    height: 104,
-  },
+    height: 104 },
   fileButton: {
     width: "100%",
     marginTop: 8,
@@ -987,82 +960,66 @@ const styles = StyleSheet.create({
     borderColor: "#7D8790",
     backgroundColor: "#E7EAEC",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   fileButtonText: {
     color: "#111111",
     fontSize: 12,
-    fontWeight: "600",
-  },
+    fontFamily: "Outfit-SemiBold" },
   headerBody: {
     textAlign: "center",
     color: "#111111",
     fontSize: 12,
     lineHeight: 17,
-    fontWeight: "600",
-    marginBottom: 16,
-  },
+    fontFamily: "Outfit-SemiBold",
+    marginBottom: 16 },
   label: {
     color: "#111111",
     fontSize: 12,
-    marginBottom: 6,
-  },
+    marginBottom: 6 },
   otpLabel: {
     color: "#111111",
     fontSize: 12,
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   input: {
     fontSize: 13,
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   passwordInputWrap: {
     marginBottom: 10,
-    minHeight: 38,
-  },
+    minHeight: 38 },
   passwordInputText: {
     fontSize: 13,
     color: "#111111",
     paddingVertical: 8,
-    textAlignVertical: "center",
-  },
+    textAlignVertical: "center" },
   helperText: {
     color: "#5A5A5A",
     fontSize: 10,
     marginTop: 2,
     marginBottom: 12,
-    textAlign: "left",
-  },
+    textAlign: "left" },
   errorText: {
     color: "#C31A1A",
     fontSize: 11,
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   actionButton: {
-    marginTop: 14,
-  },
+    marginTop: 14 },
   secondaryButton: {
     marginTop: 8,
-    backgroundColor: "#EDF4E7",
-  },
+    backgroundColor: "#EDF4E7" },
   secondaryButtonText: {
-    color: "#476223",
-  },
+    color: "#476223" },
   disabledButton: {
-    opacity: 0.7,
-  },
+    opacity: 0.7 },
   eyeButton: {
     width: 36,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(24, 34, 42, 0.48)",
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 18,
-  },
+    paddingHorizontal: 18 },
   modalCard: {
     width: "100%",
     maxWidth: 390,
@@ -1078,21 +1035,18 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 8 },
-    elevation: 7,
-  },
+    elevation: 7 },
   modalHeader: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
     columnGap: 10,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   modalTitleWrap: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 10,
-  },
+    columnGap: 10 },
   modalIconWrap: {
     width: 38,
     height: 38,
@@ -1101,92 +1055,75 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#D8EBCB",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   modalTitle: {
     flex: 1,
     color: "#243442",
     fontSize: 19,
     lineHeight: 24,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   modalBody: {
     borderRadius: 16,
     backgroundColor: "#FAFCF8",
     borderWidth: 1,
     borderColor: "#E5ECE1",
-    maxHeight: 430,
-  },
+    maxHeight: 430 },
   modalBodyContent: {
     paddingHorizontal: 14,
     paddingTop: 14,
-    paddingBottom: 18,
-  },
+    paddingBottom: 18 },
   policyDocumentTitle: {
     color: "#243442",
     fontSize: 17,
     lineHeight: 23,
-    fontWeight: "800",
-    marginBottom: 8,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 8 },
   policyMetaText: {
     color: "#66805E",
     fontSize: 12,
     lineHeight: 17,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   policySectionTitle: {
     color: "#2D4053",
     fontSize: 14,
     lineHeight: 19,
-    fontWeight: "800",
+    fontFamily: "Outfit-Bold",
     marginTop: 10,
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   policyParagraph: {
     color: "#536575",
     fontSize: 12,
-    lineHeight: 18,
-  },
+    lineHeight: 18 },
   policyBulletRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     columnGap: 8,
-    marginTop: 4,
-  },
+    marginTop: 4 },
   policyBulletDot: {
     width: 5,
     height: 5,
     borderRadius: 999,
     backgroundColor: "#79C943",
-    marginTop: 7,
-  },
+    marginTop: 7 },
   policyBulletText: {
     flex: 1,
     color: "#536575",
     fontSize: 12,
-    lineHeight: 18,
-  },
+    lineHeight: 18 },
   policySpacer: {
-    height: 4,
-  },
+    height: 4 },
   policyReadHint: {
     color: "#627369",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     textAlign: "center",
-    marginTop: 10,
-  },
+    marginTop: 10 },
   modalCloseButton: {
-    marginTop: 12,
-  },
+    marginTop: 12 },
   modalCloseButtonDisabled: {
     backgroundColor: "#C9D8C2",
     shadowOpacity: 0,
-    elevation: 0,
-  },
+    elevation: 0 },
   modalCloseButtonTextDisabled: {
-    color: "#EEF6EA",
-  },
-});
+    color: "#EEF6EA" } });

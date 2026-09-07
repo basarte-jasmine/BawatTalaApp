@@ -21,17 +21,13 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignSelf: "center",
-    gap: 3,
-  },
+    gap: 3 },
   pill: {
     width: 20,
     height: 4,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: "#6F7A57",
-    backgroundColor: "#FFFFFF",
-  },
+    backgroundColor: "#FFFFFF" },
   pillActive: {
-    backgroundColor: "#334E16",
-  },
-});
+    backgroundColor: "#334E16" } });

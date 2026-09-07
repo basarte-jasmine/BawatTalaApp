@@ -150,8 +150,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: 40,
-    paddingHorizontal: 12,
-  },
+    paddingHorizontal: 12 },
   navShell: {
     minHeight: 76,
     borderRadius: 28,
@@ -166,13 +165,11 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
     elevation: 12,
-    overflow: "hidden",
-  },
+    overflow: "hidden" },
   navShellTransparent: {
     backgroundColor: "rgba(247,250,246,0.76)",
     borderColor: "rgba(221,233,211,0.72)",
-    shadowOpacity: 0.08,
-  },
+    shadowOpacity: 0.08 },
   navGlowOne: {
     position: "absolute",
     top: -34,
@@ -180,8 +177,7 @@ const styles = StyleSheet.create({
     width: 104,
     height: 104,
     borderRadius: 999,
-    backgroundColor: "rgba(212, 243, 181, 0.28)",
-  },
+    backgroundColor: "rgba(212, 243, 181, 0.28)" },
   navGlowTwo: {
     position: "absolute",
     left: -16,
@@ -189,21 +185,18 @@ const styles = StyleSheet.create({
     width: 86,
     height: 86,
     borderRadius: 999,
-    backgroundColor: "rgba(204, 231, 218, 0.22)",
-  },
+    backgroundColor: "rgba(204, 231, 218, 0.22)" },
   navGrid: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    columnGap: 6,
-  },
+    columnGap: 6 },
   navSideGroup: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    columnGap: 6,
-  },
+    columnGap: 6 },
   navItem: {
     flex: 1,
     minHeight: 58,
@@ -211,61 +204,49 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 4,
-    paddingVertical: 6,
-  },
+    paddingVertical: 6 },
   navItemActive: {
     backgroundColor: "rgba(242, 249, 236, 0.96)",
     borderWidth: 1,
-    borderColor: "#D8E8CB",
-  },
+    borderColor: "#D8E8CB" },
   navItemActiveTransparent: {
-    backgroundColor: "rgba(255,255,255,0.82)",
-  },
+    backgroundColor: "rgba(255,255,255,0.82)" },
   navIconBubble: {
     width: 34,
     height: 34,
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   navIconBubbleActive: {
     backgroundColor: "#EAF5DE",
     borderWidth: 1,
-    borderColor: "#D7E7CB",
-  },
+    borderColor: "#D7E7CB" },
   navIconBubbleInactive: {
-    backgroundColor: "rgba(255,255,255,0.58)",
-  },
+    backgroundColor: "rgba(255,255,255,0.58)" },
   navIconBubbleInactiveTransparent: {
-    backgroundColor: "rgba(255,255,255,0.28)",
-  },
+    backgroundColor: "rgba(255,255,255,0.28)" },
   navMuniImage: {
     width: 28,
-    height: 28,
-  },
+    height: 28 },
   navLabel: {
     color: "#6A7681",
     fontSize: 11,
     lineHeight: 13,
-    fontWeight: "600",
+    fontFamily: "Outfit-SemiBold",
     textAlign: "center",
-    flexShrink: 1,
-  },
+    flexShrink: 1 },
   navLabelActive: {
     color: "#386C2A",
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   centerSlot: {
-    width: 76,
-  },
+    width: 76 },
   centerActionWrap: {
     position: "absolute",
     left: 0,
     right: 0,
     top: -18,
-    alignItems: "center",
-  },
+    alignItems: "center" },
   centerActionButton: {
     width: 68,
     height: 68,
@@ -279,15 +260,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.24,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
-    elevation: 10,
-  },
+    elevation: 10 },
   centerActionButtonActive: {
     backgroundColor: "#9CDA68",
-    borderColor: "#78BE49",
-  },
+    borderColor: "#78BE49" },
   centerActionButtonTransparent: {
-    backgroundColor: "rgba(174,225,126,0.94)",
-  },
+    backgroundColor: "rgba(174,225,126,0.94)" },
   centerActionInnerRing: {
     position: "absolute",
     width: 48,
@@ -295,12 +273,9 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "rgba(255,255,255,0.28)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.38)",
-  },
+    borderColor: "rgba(255,255,255,0.38)" },
   centerMicImage: {
     width: 32,
-    height: 32,
-  },
-});
+    height: 32 } });
 
 

@@ -14,8 +14,7 @@ export function OtpCodeInput({
   value,
   onChangeCode,
   containerStyle,
-  boxStyle,
-}: OtpCodeInputProps) {
+  boxStyle }: OtpCodeInputProps) {
   const inputRefs = useRef<(TextInput | null)[]>([]);
 
   const digits = useMemo(
@@ -83,8 +82,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   box: {
     width: 32,
     height: 38,
@@ -94,6 +92,4 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 15,
     color: "#111111",
-    backgroundColor: "#FFFFFF",
-  },
-});
+    backgroundColor: "#FFFFFF" } });

@@ -7,8 +7,7 @@ import {
   Text,
   TextStyle,
   View,
-  ViewStyle,
-} from "react-native";
+  ViewStyle } from "react-native";
 
 type AppPrimaryButtonProps = {
   label: string;
@@ -66,25 +65,19 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+    elevation: 2 },
   buttonDisabled: {
-    opacity: 0.7,
-  },
+    opacity: 0.7 },
   loadingRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   spinner: {
-    marginRight: 8,
-  },
+    marginRight: 8 },
   label: {
     color: "#FFFFFF",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     textAlign: "center",
-    flexShrink: 1,
-  },
-});
+    flexShrink: 1 } });

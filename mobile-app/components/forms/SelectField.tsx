@@ -8,8 +8,7 @@ import {
   Text,
   TextStyle,
   View,
-  ViewStyle,
-} from "react-native";
+  ViewStyle } from "react-native";
 
 type SelectFieldProps = {
   label: string;
@@ -34,8 +33,7 @@ export function SelectField({
   containerStyle,
   labelStyle,
   valueStyle,
-  triggerStyle,
-}: SelectFieldProps) {
+  triggerStyle }: SelectFieldProps) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -80,8 +78,7 @@ const styles = StyleSheet.create({
   label: {
     color: "#111111",
     fontSize: 13,
-    marginBottom: 6,
-  },
+    marginBottom: 6 },
   trigger: {
     minHeight: 38,
     borderWidth: 1,
@@ -90,39 +87,30 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     paddingHorizontal: 12,
     justifyContent: "center",
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   triggerDisabled: {
-    backgroundColor: "#F3F3F3",
-  },
+    backgroundColor: "#F3F3F3" },
   value: {
     fontSize: 13,
-    color: "#111111",
-  },
+    color: "#111111" },
   placeholder: {
-    color: "#8D8D8D",
-  },
+    color: "#8D8D8D" },
   backdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.35)",
     justifyContent: "center",
-    paddingHorizontal: 24,
-  },
+    paddingHorizontal: 24 },
   sheet: {
     maxHeight: 360,
     borderRadius: 12,
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#D7D7D7",
-  },
+    borderColor: "#D7D7D7" },
   option: {
     paddingHorizontal: 14,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#EFEFEF",
-  },
+    borderBottomColor: "#EFEFEF" },
   optionText: {
     color: "#111111",
-    fontSize: 14,
-  },
-});
+    fontSize: 14 } });

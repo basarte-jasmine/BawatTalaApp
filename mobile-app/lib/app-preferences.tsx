@@ -41,6 +41,7 @@ type AppPreferencesContextValue = {
   resetAppLockWithEmailCode: (journalLockPin: string) => Promise<{ ok: boolean; message?: string }>;
   sendAppLockResetCode: () => Promise<{ ok: boolean; message?: string; resendAfterSeconds?: number }>;
   verifyAppLockResetCode: (token: string) => Promise<{ ok: boolean; message?: string }>;
+  suppressJournalAutoLock: (durationMs?: number) => void;
   unlockApp: (pin: string) => Promise<boolean>;
   updateAppLockPin: (previousPin: string, pin: string) => Promise<{ ok: boolean; message?: string }>;
 };
@@ -69,6 +70,8 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
   const [muniRemindersEnabled, setMuniRemindersEnabledState] = useState(false);
   const appStateRef = useRef(AppState.currentState);
   const journalUnlockedThisSessionRef = useRef(false);
+  const suppressAutoLockUntilRef = useRef(0);
+  const autoLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const studentNumber = user?.studentNumber || "";
 
   const applyPreferences = useCallback((preferences: StudentPreferences) => {
@@ -158,23 +161,51 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
   );
 
   useEffect(() => {
+    const clearPendingAutoLock = () => {
+      if (autoLockTimerRef.current) {
+        clearTimeout(autoLockTimerRef.current);
+        autoLockTimerRef.current = null;
+      }
+    };
+
     const subscription = AppState.addEventListener("change", (nextState) => {
       const currentState = appStateRef.current;
-      // Only auto-lock on true background. Permission sheets briefly move the app
-      // to "inactive" and were bouncing Start Recording back to the PIN gate on APK.
+      // Ignore inactive on native (permission sheets). Debounce true background so
+      // mic/notification permission dialogs that briefly report "background" on Android
+      // cannot bounce an unlocked journal session back to the PIN gate forever.
       const leavingForeground =
         currentState === "active" &&
         (nextState === "background" || (Platform.OS === "web" && nextState === "inactive"));
 
       if (leavingForeground && appLockEnabled && appLockAutoLock) {
-        journalUnlockedThisSessionRef.current = false;
-        setIsAppLocked(true);
+        clearPendingAutoLock();
+        autoLockTimerRef.current = setTimeout(function attemptAutoLock() {
+          autoLockTimerRef.current = null;
+          const suppressRemaining = suppressAutoLockUntilRef.current - Date.now();
+          if (suppressRemaining > 0) {
+            // Permission handoff still protected — re-arm so a real background after
+            // suppress expires still locks the journal.
+            autoLockTimerRef.current = setTimeout(attemptAutoLock, suppressRemaining + 50);
+            return;
+          }
+          if (AppState.currentState === "active") {
+            return;
+          }
+          if (!(appLockEnabled && appLockAutoLock)) {
+            return;
+          }
+          journalUnlockedThisSessionRef.current = false;
+          setIsAppLocked(true);
+        }, 2500);
+      } else if (nextState === "active") {
+        clearPendingAutoLock();
       }
 
       appStateRef.current = nextState;
     });
 
     return () => {
+      clearPendingAutoLock();
       subscription.remove();
     };
   }, [appLockAutoLock, appLockEnabled]);
@@ -287,6 +318,17 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
         }
         return result;
       },
+      suppressJournalAutoLock: (durationMs = 20000) => {
+        const safeDuration = Math.max(0, Number(durationMs) || 0);
+        suppressAutoLockUntilRef.current = Math.max(
+          suppressAutoLockUntilRef.current,
+          Date.now() + safeDuration,
+        );
+        if (autoLockTimerRef.current) {
+          clearTimeout(autoLockTimerRef.current);
+          autoLockTimerRef.current = null;
+        }
+      },
       unlockApp: async (pin: string) => {
         if (!appLockEnabled || !studentNumber) {
           return false;
@@ -294,6 +336,15 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
         const result = await verifyJournalLockPin(studentNumber, pin);
         if (!result.ok || !result.unlocked) return false;
         journalUnlockedThisSessionRef.current = true;
+        // Keep unlock sticky through the next permission/navigation handoff.
+        suppressAutoLockUntilRef.current = Math.max(
+          suppressAutoLockUntilRef.current,
+          Date.now() + 20000,
+        );
+        if (autoLockTimerRef.current) {
+          clearTimeout(autoLockTimerRef.current);
+          autoLockTimerRef.current = null;
+        }
         setIsAppLocked(false);
         return true;
       },

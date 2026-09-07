@@ -19,8 +19,7 @@ import {
   saveLibraryBookProgress,
   type LibraryBookProgress,
   type LibraryBookRecord,
-  type ReadingAchievementReward,
-} from "../lib/backend-api";
+  type ReadingAchievementReward } from "../lib/backend-api";
 import { BUILT_IN_LIBRARY_BOOK_IDS, BUILT_IN_LIBRARY_BOOKS } from "../lib/builtin-library-books";
 import {
   deleteCachedEpubFile,
@@ -29,8 +28,7 @@ import {
   readEpubCoverUriFromFile,
   readEpubPagesFromFile,
   resolveBundledEpubUri,
-  type EpubReaderPage as ReaderPage,
-} from "../lib/epub-reader";
+  type EpubReaderPage as ReaderPage } from "../lib/epub-reader";
 
 const BOOK_COVER_IMAGE = require("../assets/images/book_sample.png");
 const TALA_IMAGE = require("../assets/images/Tala_Star.png");
@@ -46,32 +44,28 @@ const READING_ACHIEVEMENT_FALLBACKS: ReadingAchievementReward[] = [
     rewardTala: 20,
     title: "Steady Reader",
     description: "Read for 5 minutes",
-    durationLabel: "5 minutes",
-  },
+    durationLabel: "5 minutes" },
   {
     key: "read_15_minutes",
     seconds: 15 * 60,
     rewardTala: 35,
     title: "Quiet Chapter",
     description: "Read for 15 minutes",
-    durationLabel: "15 minutes",
-  },
+    durationLabel: "15 minutes" },
   {
     key: "read_30_minutes",
     seconds: 30 * 60,
     rewardTala: 50,
     title: "Deep Reader",
     description: "Read for 30 minutes",
-    durationLabel: "30 minutes",
-  },
+    durationLabel: "30 minutes" },
   {
     key: "read_1_hour",
     seconds: 60 * 60,
     rewardTala: 80,
     title: "Library Glow",
     description: "Read for 1 hour",
-    durationLabel: "1 hour",
-  },
+    durationLabel: "1 hour" },
 ];
 const FIRST_READING_ACHIEVEMENT = READING_ACHIEVEMENT_FALLBACKS[0];
 
@@ -156,8 +150,7 @@ function applyProgressToBook(book: LibraryBookRecord, progress: LibraryBookProgr
   return {
     ...book,
     progress,
-    rewardLabel: getProgressRewardLabel(book, progress),
-  };
+    rewardLabel: getProgressRewardLabel(book, progress) };
 }
 
 function buildBuiltInShelfBooks(
@@ -168,8 +161,7 @@ function buildBuiltInShelfBooks(
     applyProgressToBook(
       {
         ...book,
-        coverImageUrl: coverUrlsByBookId[book.id] || book.coverImageUrl,
-      },
+        coverImageUrl: coverUrlsByBookId[book.id] || book.coverImageUrl },
       progressByBookId[book.id],
     ),
   );
@@ -233,20 +225,17 @@ function buildFallbackReaderPages(book: LibraryBookRecord): ReaderPage[] {
     {
       eyebrow: book.category,
       title: book.title,
-      paragraphs: [book.blurb || "A mental-health and wellbeing read from the library catalog."],
-    },
+      paragraphs: [book.blurb || "A mental-health and wellbeing read from the library catalog."] },
     {
       eyebrow: "Book Details",
       title: "About this book",
-      paragraphs: detailLines.length ? detailLines : ["The library catalog did not provide extra details for this title."],
-    },
+      paragraphs: detailLines.length ? detailLines : ["The library catalog did not provide extra details for this title."] },
     {
       eyebrow: "Reading Access",
       title: "Continue in the reader",
       paragraphs: [
         "This EPUB could not be fully parsed, but your download is saved in the app. Try another EPUB result if the text does not appear correctly.",
-      ],
-    },
+      ] },
   ];
 }
 
@@ -323,8 +312,7 @@ export default function LibraryScreen() {
       Object.entries(storedFiles).map(async ([bookId, file]) => ({
         bookId,
         file,
-        exists: await localFileExists(file.uri).catch(() => false),
-      })),
+        exists: await localFileExists(file.uri).catch(() => false) })),
     );
     const existingFiles = new Map(existingEntries.filter((entry) => entry.exists).map((entry) => [entry.bookId, entry.file]));
 
@@ -338,8 +326,7 @@ export default function LibraryScreen() {
         downloadedAt: book.downloadedAt ?? localFile.downloadedAt ?? null,
         localEpubUri: localFile.uri,
         readerLink: "",
-        shelfLabel: "Downloaded",
-      };
+        shelfLabel: "Downloaded" };
     });
   }, [user?.studentNumber]);
 
@@ -358,8 +345,7 @@ export default function LibraryScreen() {
               downloadUrl: download?.downloadUrl ?? book.downloadUrl ?? "",
               localEpubUri,
               readerLink: "",
-              shelfLabel: "Downloaded",
-            }
+              shelfLabel: "Downloaded" }
           : book
       ));
 
@@ -374,8 +360,7 @@ export default function LibraryScreen() {
           ? {
               ...book,
               downloaded: true,
-              localEpubUri,
-            }
+              localEpubUri }
           : book
       ));
 
@@ -497,8 +482,7 @@ export default function LibraryScreen() {
           bookTitle: book.title,
           currentPage,
           status,
-          totalPages,
-        });
+          totalPages });
         if (result.ok) {
           updateBookProgress(book.id, result.progress);
         }
@@ -591,8 +575,7 @@ export default function LibraryScreen() {
         readerLink: book.readerLink,
         sourceId: book.sourceId,
         sourceReaderLink: book.sourceReaderLink,
-        studentNumber: user.studentNumber,
-      });
+        studentNumber: user.studentNumber });
 
       if (!result.ok) {
         setLibraryActionTone("error");
@@ -779,8 +762,7 @@ export default function LibraryScreen() {
         currentPage: readerPageIndex,
         rating,
         status: selectedBook.progress?.status === "FINISHED" ? "FINISHED" : "STARTED",
-        totalPages: readerPages.length || 1,
-      });
+        totalPages: readerPages.length || 1 });
       if (result.ok) {
         updateBookProgress(selectedBook.id, result.progress);
       } else {
@@ -818,8 +800,7 @@ export default function LibraryScreen() {
                 downloadedAt: null,
                 localEpubUri: undefined,
                 readerLink: book.downloadUrl || book.readerLink,
-                shelfLabel: book.shelfLabel === "Downloaded" ? "Free full EPUB" : book.shelfLabel,
-              }
+                shelfLabel: book.shelfLabel === "Downloaded" ? "Free full EPUB" : book.shelfLabel }
             : book
         )),
       );
@@ -853,8 +834,7 @@ export default function LibraryScreen() {
         bookId: selectedBook.id,
         bookTitle: selectedBook.title,
         readingSeconds: nextReadingAchievement.seconds,
-        studentNumber: user.studentNumber,
-      });
+        studentNumber: user.studentNumber });
 
       if (result.ok) {
         const claimedAchievement = result.achievement ?? nextReadingAchievement;
@@ -1422,8 +1402,7 @@ export default function LibraryScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F7F1E8",
-  },
+    backgroundColor: "#F7F1E8" },
   topBar: {
     height: 52,
     borderBottomWidth: 1,
@@ -1437,41 +1416,33 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 1 },
-    elevation: 2,
-  },
+    elevation: 2 },
   backButton: {
     width: 36,
     height: 36,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   topTitle: {
     color: "#37475C",
     fontSize: 18,
     lineHeight: 24,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   topBarSpacer: {
     width: 36,
-    height: 36,
-  },
+    height: 36 },
   scroll: {
-    flex: 1,
-  },
+    flex: 1 },
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 14,
     paddingBottom: 92,
-    alignItems: "center",
-  },
+    alignItems: "center" },
   scrollContentCompact: {
-    paddingHorizontal: 12,
-  },
+    paddingHorizontal: 12 },
   contentFrame: {
     width: "100%",
     maxWidth: 420,
-    alignSelf: "center",
-  },
+    alignSelf: "center" },
   heroCard: {
     width: "100%",
     borderRadius: 30,
@@ -1482,13 +1453,11 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 18,
     overflow: "hidden",
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   heroCardCompact: {
     paddingHorizontal: 14,
     paddingTop: 16,
-    paddingBottom: 16,
-  },
+    paddingBottom: 16 },
   heroGlowOne: {
     position: "absolute",
     top: -34,
@@ -1496,8 +1465,7 @@ const styles = StyleSheet.create({
     width: 162,
     height: 162,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.24)",
-  },
+    backgroundColor: "rgba(255,255,255,0.24)" },
   heroGlowTwo: {
     position: "absolute",
     left: -28,
@@ -1505,99 +1473,82 @@ const styles = StyleSheet.create({
     width: 132,
     height: 132,
     borderRadius: 999,
-    backgroundColor: "rgba(197, 220, 197, 0.24)",
-  },
+    backgroundColor: "rgba(197, 220, 197, 0.24)" },
   heroHeaderRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
     columnGap: 12,
-    rowGap: 10,
-  },
+    rowGap: 10 },
   heroHeaderRowStacked: {
-    flexDirection: "column",
-  },
+    flexDirection: "column" },
   heroTextWrap: {
     flex: 1,
-    paddingRight: 4,
-  },
+    paddingRight: 4 },
   heroBooksCluster: {
     width: 80,
     height: 102,
     justifyContent: "flex-end",
     alignItems: "center",
     alignSelf: "flex-end",
-    marginTop: 2,
-  },
+    marginTop: 2 },
   heroBooksClusterStacked: {
     alignSelf: "center",
-    marginTop: 8,
-  },
+    marginTop: 8 },
   heroBookSpine: {
     position: "absolute",
     bottom: 8,
     width: 20,
     borderRadius: 11,
     borderWidth: 1,
-    borderColor: "rgba(82, 71, 54, 0.08)",
-  },
+    borderColor: "rgba(82, 71, 54, 0.08)" },
   heroBookSpineOne: {
     left: 8,
     height: 66,
-    backgroundColor: "#D8B07C",
-  },
+    backgroundColor: "#D8B07C" },
   heroBookSpineTwo: {
     left: 30,
     height: 56,
-    backgroundColor: "#9EBE95",
-  },
+    backgroundColor: "#9EBE95" },
   heroBookSpineThree: {
     left: 52,
     height: 46,
-    backgroundColor: "#D9A6A0",
-  },
+    backgroundColor: "#D9A6A0" },
   heroBadge: {
     alignSelf: "flex-start",
     color: "#6F624F",
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     letterSpacing: 0.5,
     textTransform: "uppercase",
-    marginBottom: 10,
-  },
+    marginBottom: 10 },
   heroTitle: {
     color: "#35485B",
     fontSize: 28,
     lineHeight: 34,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     maxWidth: 280,
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   heroTitleCompact: {
     fontSize: 24,
     lineHeight: 30,
-    maxWidth: "100%",
-  },
+    maxWidth: "100%" },
   heroBody: {
     color: "#665F54",
     fontSize: 14,
     lineHeight: 20,
-    maxWidth: 286,
-  },
+    maxWidth: 286 },
   heroBodyCompact: {
-    maxWidth: "100%",
-  },
+    maxWidth: "100%" },
   heroStatsRow: {
     flexDirection: "row",
     columnGap: 8,
-    marginTop: 16,
-  },
+    marginTop: 16 },
   heroStatsRowWrap: {
     flexWrap: "wrap",
     rowGap: 8,
-    justifyContent: "space-between",
-  },
+    justifyContent: "space-between" },
   heroStatPill: {
     flex: 1,
     minWidth: 92,
@@ -1606,23 +1557,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(228, 214, 195, 0.88)",
     paddingHorizontal: 10,
-    paddingVertical: 10,
-  },
+    paddingVertical: 10 },
   heroStatPillCompact: {
-    minWidth: "48%",
-  },
+    minWidth: "48%" },
   heroStatValue: {
     color: "#394B5A",
     fontSize: 20,
     lineHeight: 24,
-    fontWeight: "700",
-    marginBottom: 2,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 2 },
   heroStatLabel: {
     color: "#776D61",
     fontSize: 11,
-    lineHeight: 14,
-  },
+    lineHeight: 14 },
   introCard: {
     width: "100%",
     borderRadius: 24,
@@ -1637,34 +1584,29 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
+    elevation: 2 },
   introCardCompact: {
     paddingHorizontal: 13,
     paddingTop: 13,
-    paddingBottom: 13,
-  },
+    paddingBottom: 13 },
   introEyebrow: {
     color: "#7D715F",
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     letterSpacing: 0.5,
     textTransform: "uppercase",
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   introTitle: {
     color: "#35485B",
     fontSize: 18,
     lineHeight: 23,
-    fontWeight: "700",
-    marginBottom: 6,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 6 },
   introBody: {
     color: "#6A645A",
     fontSize: 13,
-    lineHeight: 19,
-  },
+    lineHeight: 19 },
   shelfTabs: {
     width: "100%",
     minHeight: 52,
@@ -1675,16 +1617,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     padding: 5,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   shelfTabButton: {
     flex: 1,
     minHeight: 40,
     borderRadius: 15,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 8,
-  },
+    paddingHorizontal: 8 },
   shelfTabButtonActive: {
     backgroundColor: "#FFFDF8",
     borderWidth: 1,
@@ -1693,19 +1633,16 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+    elevation: 2 },
   shelfTabText: {
     color: "#596B80",
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: "600",
-    textAlign: "center",
-  },
+    fontFamily: "Outfit-SemiBold",
+    textAlign: "center" },
   shelfTabTextActive: {
     color: "#0C2341",
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   searchCard: {
     width: "100%",
     borderRadius: 22,
@@ -1716,13 +1653,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 8,
-  },
+    columnGap: 8 },
   searchCardCompact: {
     flexDirection: "column",
     alignItems: "stretch",
-    rowGap: 8,
-  },
+    rowGap: 8 },
   searchInputWrap: {
     flex: 1,
     minHeight: 44,
@@ -1734,23 +1669,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     columnGap: 8,
     paddingLeft: 12,
-    paddingRight: 6,
-  },
+    paddingRight: 6 },
   searchInput: {
     flex: 1,
     minWidth: 0,
     color: "#4B453C",
     fontSize: 14,
     lineHeight: 19,
-    paddingVertical: 8,
-  },
+    paddingVertical: 8 },
   searchIconButton: {
     width: 32,
     height: 32,
     borderRadius: 999,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   searchButton: {
     minHeight: 44,
     borderRadius: 16,
@@ -1759,46 +1691,38 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     columnGap: 6,
-    paddingHorizontal: 14,
-  },
+    paddingHorizontal: 14 },
   searchButtonText: {
     color: "#FFFFFF",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   libraryActionMessage: {
     color: "#4F7E3E",
     fontSize: 12,
     lineHeight: 17,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     marginBottom: 10,
-    paddingHorizontal: 4,
-  },
+    paddingHorizontal: 4 },
   libraryActionMessageError: {
-    color: "#9B4B3D",
-  },
+    color: "#9B4B3D" },
   sectionHeader: {
     width: "100%",
     marginBottom: 10,
-    paddingHorizontal: 2,
-  },
+    paddingHorizontal: 2 },
   sectionTitle: {
     color: "#35485B",
     fontSize: 20,
     lineHeight: 26,
-    fontWeight: "700",
-    marginBottom: 2,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 2 },
   sectionSubTitle: {
     color: "#726A5E",
     fontSize: 13,
-    lineHeight: 18,
-  },
+    lineHeight: 18 },
   bookList: {
     width: "100%",
-    rowGap: 12,
-  },
+    rowGap: 12 },
   loadingCard: {
     width: "100%",
     borderRadius: 20,
@@ -1808,14 +1732,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 24,
     alignItems: "center",
-    rowGap: 10,
-  },
+    rowGap: 10 },
   loadingText: {
     color: "#6A645A",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "600",
-  },
+    fontFamily: "Outfit-SemiBold" },
   emptyCard: {
     width: "100%",
     borderRadius: 20,
@@ -1824,22 +1746,19 @@ const styles = StyleSheet.create({
     borderColor: "#E7DDD0",
     paddingHorizontal: 18,
     paddingVertical: 22,
-    alignItems: "center",
-  },
+    alignItems: "center" },
   emptyTitle: {
     color: "#35485B",
     fontSize: 17,
     lineHeight: 22,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     marginBottom: 6,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   emptyText: {
     color: "#665F54",
     fontSize: 13,
     lineHeight: 19,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   retryButton: {
     marginTop: 14,
     minHeight: 40,
@@ -1847,14 +1766,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#70C943",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 18,
-  },
+    paddingHorizontal: 18 },
   retryButtonText: {
     color: "#FFFFFF",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   bookCard: {
     width: "100%",
     borderRadius: 24,
@@ -1869,13 +1786,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
+    elevation: 2 },
   bookCardCompact: {
     paddingHorizontal: 12,
     paddingTop: 13,
-    paddingBottom: 13,
-  },
+    paddingBottom: 13 },
   bookSpine: {
     position: "absolute",
     top: 14,
@@ -1883,8 +1798,7 @@ const styles = StyleSheet.create({
     left: 0,
     width: 10,
     borderTopRightRadius: 8,
-    borderBottomRightRadius: 8,
-  },
+    borderBottomRightRadius: 8 },
   bookCardTopRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1893,106 +1807,87 @@ const styles = StyleSheet.create({
     columnGap: 8,
     rowGap: 6,
     marginBottom: 12,
-    marginLeft: 4,
-  },
+    marginLeft: 4 },
   bookTag: {
     borderRadius: 999,
     backgroundColor: "#F7F2E8",
     borderWidth: 1,
     borderColor: "#E9DED0",
     paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
+    paddingVertical: 6 },
   bookTagText: {
     color: "#746B5E",
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   bookStatusText: {
     color: "#5C655B",
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   bookStatusTextDone: {
-    color: "#5C8A4A",
-  },
+    color: "#5C8A4A" },
   bookStatusTextLocked: {
-    color: "#9A6B42",
-  },
+    color: "#9A6B42" },
   bookCardBody: {
     flexDirection: "row",
     alignItems: "flex-start",
-    columnGap: 12,
-  },
+    columnGap: 12 },
   bookCardBodyStacked: {
     flexDirection: "column",
-    rowGap: 8,
-  },
+    rowGap: 8 },
   bookCoverWrap: {
     width: 92,
     height: 118,
     borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
-    padding: 10,
-  },
+    padding: 10 },
   bookCoverWrapCompact: {
     width: 100,
     height: 108,
-    borderRadius: 20,
-  },
+    borderRadius: 20 },
   bookCoverWrapStacked: {
     alignSelf: "center",
-    marginBottom: 2,
-  },
+    marginBottom: 2 },
   bookCoverImage: {
     width: 64,
-    height: 82,
-  },
+    height: 82 },
   bookInfoWrap: {
     flex: 1,
     minWidth: 0,
-    paddingTop: 2,
-  },
+    paddingTop: 2 },
   bookCategory: {
     color: "#6F845C",
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     letterSpacing: 0.4,
     textTransform: "uppercase",
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   bookTitle: {
     color: "#35485B",
     fontSize: 19,
     lineHeight: 24,
-    fontWeight: "700",
-    marginBottom: 2,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 2 },
   bookTitleCompact: {
     fontSize: 18,
-    lineHeight: 23,
-  },
+    lineHeight: 23 },
   bookAuthor: {
     color: "#81776A",
     fontSize: 12,
     lineHeight: 16,
-    marginBottom: 7,
-  },
+    marginBottom: 7 },
   bookBlurb: {
     color: "#5D564D",
     fontSize: 13,
-    lineHeight: 19,
-  },
+    lineHeight: 19 },
   bookMetaRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
-    marginTop: 10,
-  },
+    marginTop: 10 },
   bookMetaPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -2002,21 +1897,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E9DED0",
     paddingHorizontal: 9,
-    paddingVertical: 6,
-  },
+    paddingVertical: 6 },
   bookMetaText: {
     color: "#6D675A",
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "600",
-  },
+    fontFamily: "Outfit-SemiBold" },
   bookActionRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "flex-end",
     gap: 8,
-    marginTop: 12,
-  },
+    marginTop: 12 },
   bookReadButton: {
     minHeight: 38,
     borderRadius: 999,
@@ -2025,14 +1917,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     columnGap: 6,
-    paddingHorizontal: 15,
-  },
+    paddingHorizontal: 15 },
   bookReadButtonText: {
     color: "#FFFFFF",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   bookDownloadButton: {
     minHeight: 38,
     borderRadius: 999,
@@ -2043,17 +1933,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     columnGap: 6,
-    paddingHorizontal: 15,
-  },
+    paddingHorizontal: 15 },
   bookActionButtonDisabled: {
-    opacity: 0.68,
-  },
+    opacity: 0.68 },
   bookDownloadButtonText: {
     color: "#4D6243",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   bookRemoveButton: {
     minHeight: 38,
     borderRadius: 999,
@@ -2064,14 +1951,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     columnGap: 6,
-    paddingHorizontal: 13,
-  },
+    paddingHorizontal: 13 },
   bookRemoveButtonText: {
     color: "#8B4C43",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   bookExternalButton: {
     minHeight: 38,
     borderRadius: 999,
@@ -2080,28 +1965,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     columnGap: 6,
-    paddingHorizontal: 15,
-  },
+    paddingHorizontal: 15 },
   bookExternalButtonText: {
     color: "#FFFFFF",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   readerScreen: {
     flex: 1,
     backgroundColor: "#EDE3D3",
     paddingHorizontal: 16,
     paddingTop: 6,
     paddingBottom: 20,
-    alignItems: "center",
-  },
+    alignItems: "center" },
   readerFrame: {
     flex: 1,
     width: "100%",
     maxWidth: 420,
-    alignSelf: "center",
-  },
+    alignSelf: "center" },
   readerAuraOne: {
     position: "absolute",
     top: -34,
@@ -2109,8 +1990,7 @@ const styles = StyleSheet.create({
     width: 188,
     height: 188,
     borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.26)",
-  },
+    backgroundColor: "rgba(255,255,255,0.26)" },
   readerAuraTwo: {
     position: "absolute",
     left: -36,
@@ -2118,23 +1998,19 @@ const styles = StyleSheet.create({
     width: 164,
     height: 164,
     borderRadius: 999,
-    backgroundColor: "rgba(193, 213, 191, 0.28)",
-  },
+    backgroundColor: "rgba(193, 213, 191, 0.28)" },
   readerTopBar: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     columnGap: 10,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   readerTopBarCompact: {
-    columnGap: 8,
-  },
+    columnGap: 8 },
   readerTopBarStacked: {
     flexDirection: "column",
     alignItems: "stretch",
-    rowGap: 10,
-  },
+    rowGap: 10 },
   readerTopButton: {
     width: 38,
     height: 38,
@@ -2143,36 +2019,30 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(219, 203, 180, 0.9)",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   readerTopTextWrap: {
     flex: 1,
     minWidth: 0,
     alignItems: "center",
-    paddingHorizontal: 6,
-  },
+    paddingHorizontal: 6 },
   readerTopTextWrapCompact: {
-    paddingHorizontal: 2,
-  },
+    paddingHorizontal: 2 },
   readerTopEyebrow: {
     color: "#7B6F5F",
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     textTransform: "uppercase",
     letterSpacing: 0.5,
-    marginBottom: 2,
-  },
+    marginBottom: 2 },
   readerTopTitle: {
     color: "#4A4439",
     fontSize: 16,
     lineHeight: 20,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   readerTopTitleCompact: {
     fontSize: 14,
-    lineHeight: 18,
-  },
+    lineHeight: 18 },
   readerPageBadge: {
     minWidth: 48,
     height: 38,
@@ -2183,26 +2053,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 10,
-    alignSelf: "center",
-  },
+    alignSelf: "center" },
   readerPageBadgeStacked: {
-    alignSelf: "flex-start",
-  },
+    alignSelf: "flex-start" },
   readerPageBadgeText: {
     color: "#61584A",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   readerBookShell: {
     flex: 1,
     position: "relative",
     marginBottom: 14,
-    width: "100%",
-  },
+    width: "100%" },
   readerBookShellCompact: {
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   readerSpineShadow: {
     position: "absolute",
     top: 22,
@@ -2211,13 +2076,11 @@ const styles = StyleSheet.create({
     width: 24,
     borderTopLeftRadius: 22,
     borderBottomLeftRadius: 22,
-    backgroundColor: "#D1BEA3",
-  },
+    backgroundColor: "#D1BEA3" },
   readerSpineShadowCompact: {
     top: 16,
     bottom: 16,
-    width: 20,
-  },
+    width: 20 },
   readerPageCard: {
     flex: 1,
     position: "relative",
@@ -2231,84 +2094,70 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 5 },
     elevation: 5,
     marginLeft: 12,
-    alignSelf: "stretch",
-  },
+    alignSelf: "stretch" },
   readerPageCardCompact: {
-    marginLeft: 8,
-  },
+    marginLeft: 8 },
   readerPageInner: {
     flex: 1,
     paddingHorizontal: 22,
     paddingTop: 24,
-    paddingBottom: 18,
-  },
+    paddingBottom: 18 },
   readerPageInnerCompact: {
     paddingHorizontal: 16,
     paddingTop: 18,
-    paddingBottom: 14,
-  },
+    paddingBottom: 14 },
   readerLoadingWrap: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    rowGap: 10,
-  },
+    rowGap: 10 },
   readerLoadingText: {
     color: "#6A645A",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   readerInlineErrorText: {
     color: "#9B4B3D",
     fontSize: 12,
     lineHeight: 17,
-    fontWeight: "700",
-    marginBottom: 10,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 10 },
   readerPageEyebrow: {
     color: "#877B68",
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     textTransform: "uppercase",
     letterSpacing: 0.6,
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   readerPageTitle: {
     color: "#4E4539",
     fontFamily: "serif",
     fontSize: 30,
     lineHeight: 36,
-    marginBottom: 18,
-  },
+    marginBottom: 18 },
   readerPageTitleCompact: {
     fontSize: 24,
     lineHeight: 30,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   readerPageScroll: {
-    flex: 1,
-  },
+    flex: 1 },
   readerPageBody: {
     color: "#534B41",
     fontFamily: "serif",
     fontSize: 18,
     lineHeight: 31,
-    marginBottom: 16,
-  },
+    marginBottom: 16 },
   readerPageBodyCompact: {
     fontSize: 16,
     lineHeight: 27,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   readerPageNumber: {
     alignSelf: "center",
     color: "#9A8C78",
     fontSize: 12,
     lineHeight: 16,
-    marginTop: 8,
-  },
+    marginTop: 8 },
   readerRewardBubble: {
     position: "absolute",
     right: 12,
@@ -2316,13 +2165,11 @@ const styles = StyleSheet.create({
     width: READING_REWARD_RING_SIZE,
     height: READING_REWARD_RING_SIZE + 20,
     alignItems: "center",
-    justifyContent: "flex-start",
-  },
+    justifyContent: "flex-start" },
   readerRewardRing: {
     position: "absolute",
     left: 0,
-    top: 0,
-  },
+    top: 0 },
   readerRewardIconWrap: {
     width: 42,
     height: 42,
@@ -2337,12 +2184,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.14,
     shadowRadius: 7,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
+    elevation: 3 },
   readerRewardIcon: {
     width: 24,
-    height: 24,
-  },
+    height: 24 },
   readerRewardGoalPill: {
     marginTop: 4,
     minWidth: 38,
@@ -2352,14 +2197,12 @@ const styles = StyleSheet.create({
     borderColor: "#E6D8BE",
     paddingHorizontal: 7,
     paddingVertical: 2,
-    alignItems: "center",
-  },
+    alignItems: "center" },
   readerRewardGoalText: {
     color: "#5B6B38",
     fontSize: 10,
     lineHeight: 13,
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   readerUtilityRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -2367,31 +2210,26 @@ const styles = StyleSheet.create({
     columnGap: 10,
     rowGap: 8,
     marginBottom: 10,
-    flexWrap: "wrap",
-  },
+    flexWrap: "wrap" },
   ratingWrap: {
     flexDirection: "row",
     alignItems: "center",
     columnGap: 8,
-    flexShrink: 1,
-  },
+    flexShrink: 1 },
   ratingLabel: {
     color: "#665D50",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   ratingStars: {
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 2,
-  },
+    columnGap: 2 },
   ratingStarButton: {
     width: 26,
     height: 28,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   openReaderButton: {
     minHeight: 34,
     borderRadius: 999,
@@ -2402,34 +2240,28 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     columnGap: 6,
-    paddingHorizontal: 12,
-  },
+    paddingHorizontal: 12 },
   openReaderText: {
     color: "#524B42",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   ratingErrorText: {
     color: "#B85C5C",
     fontSize: 12,
     lineHeight: 16,
     textAlign: "center",
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   readerFooter: {
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 10,
-  },
+    columnGap: 10 },
   readerFooterStacked: {
     flexDirection: "column-reverse",
     alignItems: "stretch",
-    rowGap: 8,
-  },
+    rowGap: 8 },
   readerFooterButtonFull: {
-    width: "100%",
-  },
+    width: "100%" },
   readerNavButton: {
     minWidth: 0,
     minHeight: 46,
@@ -2441,20 +2273,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     columnGap: 8,
-    paddingHorizontal: 14,
-  },
+    paddingHorizontal: 14 },
   readerNavButtonDisabled: {
-    backgroundColor: "rgba(247, 239, 227, 0.6)",
-  },
+    backgroundColor: "rgba(247, 239, 227, 0.6)" },
   readerNavButtonText: {
     color: "#524B42",
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   readerNavButtonTextDisabled: {
-    color: "#B1A796",
-  },
+    color: "#B1A796" },
   readerPrimaryButton: {
     flex: 1,
     minHeight: 46,
@@ -2464,24 +2292,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     columnGap: 8,
-    paddingHorizontal: 16,
-  },
+    paddingHorizontal: 16 },
   readerPrimaryButtonDisabled: {
-    opacity: 0.68,
-  },
+    opacity: 0.68 },
   readerPrimaryButtonText: {
     color: "#FFFFFF",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   confirmModalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(45, 38, 28, 0.38)",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 24,
-  },
+    paddingHorizontal: 24 },
   confirmModalCard: {
     width: "100%",
     maxWidth: 342,
@@ -2497,8 +2321,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
-    elevation: 7,
-  },
+    elevation: 7 },
   confirmModalIconWrap: {
     width: 58,
     height: 58,
@@ -2508,36 +2331,30 @@ const styles = StyleSheet.create({
     borderColor: "#F0D88A",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   confirmModalRemoveIconWrap: {
     backgroundColor: "#FCECE8",
-    borderColor: "#F2C7BD",
-  },
+    borderColor: "#F2C7BD" },
   confirmModalIcon: {
     width: 30,
-    height: 30,
-  },
+    height: 30 },
   confirmModalTitle: {
     color: "#33485B",
     fontSize: 22,
     lineHeight: 28,
-    fontWeight: "800",
+    fontFamily: "Outfit-Bold",
     textAlign: "center",
-    marginBottom: 7,
-  },
+    marginBottom: 7 },
   confirmModalBody: {
     color: "#675F53",
     fontSize: 14,
     lineHeight: 20,
     textAlign: "center",
-    marginBottom: 18,
-  },
+    marginBottom: 18 },
   confirmModalActions: {
     width: "100%",
     flexDirection: "row",
-    columnGap: 9,
-  },
+    columnGap: 9 },
   confirmModalSecondaryButton: {
     flex: 1,
     minHeight: 44,
@@ -2547,15 +2364,13 @@ const styles = StyleSheet.create({
     borderColor: "#E6D9C8",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 12,
-  },
+    paddingHorizontal: 12 },
   confirmModalSecondaryText: {
     color: "#5E574D",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "800",
-    textAlign: "center",
-  },
+    fontFamily: "Outfit-Bold",
+    textAlign: "center" },
   confirmModalDangerButton: {
     flex: 1,
     minHeight: 44,
@@ -2563,25 +2378,21 @@ const styles = StyleSheet.create({
     backgroundColor: "#8B4C43",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 12,
-  },
+    paddingHorizontal: 12 },
   confirmModalButtonDisabled: {
-    opacity: 0.68,
-  },
+    opacity: 0.68 },
   confirmModalDangerText: {
     color: "#FFFFFF",
     fontSize: 13,
     lineHeight: 18,
-    fontWeight: "800",
-    textAlign: "center",
-  },
+    fontFamily: "Outfit-Bold",
+    textAlign: "center" },
   rewardModalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(45, 38, 28, 0.36)",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 24,
-  },
+    paddingHorizontal: 24 },
   rewardModalCard: {
     width: "100%",
     maxWidth: 340,
@@ -2597,8 +2408,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
-    elevation: 7,
-  },
+    elevation: 7 },
   rewardModalIconHalo: {
     width: 82,
     height: 82,
@@ -2608,15 +2418,13 @@ const styles = StyleSheet.create({
     borderColor: "#F0D88A",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   rewardModalIcon: {
     position: "absolute",
     right: -4,
     bottom: -2,
     width: 28,
-    height: 28,
-  },
+    height: 28 },
   rewardModalArtPlaceholder: {
     width: 58,
     height: 58,
@@ -2625,43 +2433,36 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#DCECA9",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   rewardModalEyebrow: {
     color: "#8A7552",
     fontSize: 11,
     lineHeight: 14,
-    fontWeight: "800",
+    fontFamily: "Outfit-Bold",
     letterSpacing: 0.6,
     textTransform: "uppercase",
-    marginBottom: 5,
-  },
+    marginBottom: 5 },
   rewardModalTitle: {
     color: "#33485B",
     fontSize: 28,
     lineHeight: 34,
-    fontWeight: "800",
-    marginBottom: 7,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 7 },
   rewardModalBody: {
     color: "#675F53",
     fontSize: 14,
     lineHeight: 20,
     textAlign: "center",
-    marginBottom: 18,
-  },
+    marginBottom: 18 },
   rewardModalButton: {
     minHeight: 44,
     borderRadius: 999,
     backgroundColor: "#70C943",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 22,
-  },
+    paddingHorizontal: 22 },
   rewardModalButtonText: {
     color: "#FFFFFF",
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: "800",
-  },
-});
+    fontFamily: "Outfit-Bold" } });

@@ -7,8 +7,7 @@ import {
   TextInputProps,
   TextStyle,
   View,
-  ViewStyle,
-} from "react-native";
+  ViewStyle } from "react-native";
 
 type FormTextInputProps = {
   label: string;
@@ -57,8 +56,7 @@ const styles = StyleSheet.create({
   label: {
     color: "#111111",
     fontSize: 13,
-    marginBottom: 6,
-  },
+    marginBottom: 6 },
   input: {
     minHeight: 38,
     borderWidth: 1,
@@ -69,11 +67,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     fontSize: 13,
     color: "#111111",
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   nativeInputReset: {
-    outlineWidth: 0,
-  },
+    outlineWidth: 0 },
   inputWrap: {
     minHeight: 38,
     borderWidth: 1,
@@ -83,12 +79,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginBottom: 12,
     flexDirection: "row",
-    alignItems: "center",
-  },
+    alignItems: "center" },
   inputField: {
     flex: 1,
     fontSize: 13,
     color: "#111111",
-    paddingVertical: 8,
-  },
-});
+    paddingVertical: 8 } });

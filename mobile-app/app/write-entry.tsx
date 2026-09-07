@@ -16,8 +16,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View,
-} from "react-native";
+  View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { JournalLockGate, useAppPreferences } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
@@ -33,8 +32,7 @@ import {
   saveJournalSupportResponse,
   saveDailyMood,
   sendJournalMessage,
-  suggestJournalTags,
-} from "../lib/backend-api";
+  suggestJournalTags } from "../lib/backend-api";
 import { EMOTIONS, getEmotionImageSource } from "../lib/emotions";
 import { getManilaTodayParts } from "../lib/manila-date";
 
@@ -101,8 +99,7 @@ function getIntroMessages(
       createdAt: "",
       id: "intro",
       role: "assistant",
-      text: `Hello, ${firstName || "friend"}!\nWhat happened today, and what part of it is still sitting with you?`,
-    },
+      text: `Hello, ${firstName || "friend"}!\nWhat happened today, and what part of it is still sitting with you?` },
   ];
 }
 
@@ -306,8 +303,7 @@ export default function WriteEntryScreen() {
       const createResult = await createJournalSession({
         aiEnabled: true,
         forceNew: true,
-        studentNumber: user.studentNumber,
-      });
+        studentNumber: user.studentNumber });
 
       if (!createResult.ok) {
         setErrorMessage(
@@ -397,8 +393,7 @@ export default function WriteEntryScreen() {
               createdAt: "",
               id: "pending-user-message",
               role: "user" as const,
-              text: pendingUserMessage,
-            },
+              text: pendingUserMessage },
           ]
         : visibleMessages,
     [pendingUserMessage, visibleMessages],
@@ -443,12 +438,10 @@ export default function WriteEntryScreen() {
       const result = hasSavedUserMessages
         ? await discardJournalEntry({
             entryId: entry.id,
-            studentNumber: user.studentNumber,
-          })
+            studentNumber: user.studentNumber })
         : await discardEmptyJournalEntry({
             entryId: entry.id,
-            studentNumber: user.studentNumber,
-          });
+            studentNumber: user.studentNumber });
 
       if (!result.ok) {
         setIsDiscarding(false);
@@ -484,8 +477,7 @@ export default function WriteEntryScreen() {
       aiEnabled,
       entryId: entry?.id,
       message: trimmedMessage,
-      studentNumber: user.studentNumber,
-    });
+      studentNumber: user.studentNumber });
 
     setIsSending(false);
 
@@ -523,8 +515,7 @@ export default function WriteEntryScreen() {
     const result = await createJournalSession({
       aiEnabled,
       forceNew: true,
-      studentNumber: user.studentNumber,
-    });
+      studentNumber: user.studentNumber });
 
     if (!result.ok) {
       setErrorMessage(result.message ?? "Unable to open a new journal entry.");
@@ -609,8 +600,7 @@ export default function WriteEntryScreen() {
       const result = await saveJournalSupportResponse({
         entryId: entry.id,
         response,
-        studentNumber: user.studentNumber,
-      });
+        studentNumber: user.studentNumber });
       setIsSavingSupportResponse(false);
 
       if (!result.ok) {
@@ -638,8 +628,7 @@ export default function WriteEntryScreen() {
       const supportResult = await saveJournalSupportResponse({
         entryId: entry.id,
         response,
-        studentNumber: user.studentNumber,
-      });
+        studentNumber: user.studentNumber });
 
       if (!supportResult.ok) {
         setIsSavingSupportResponse(false);
@@ -655,8 +644,7 @@ export default function WriteEntryScreen() {
           concernTags: fallbackTags,
           entryId: nextEntry.id,
           primaryConcern: fallbackTags[0] ?? "Mental health",
-          studentNumber: user.studentNumber,
-        });
+          studentNumber: user.studentNumber });
 
         if (!finishResult.ok) {
           setIsSavingSupportResponse(false);
@@ -780,8 +768,7 @@ export default function WriteEntryScreen() {
       concernTags: finalTags,
       entryId: entry.id,
       primaryConcern: finalTags[0],
-      studentNumber: user.studentNumber,
-    });
+      studentNumber: user.studentNumber });
     setIsFinishing(false);
     setIsSavingTags(false);
 
@@ -832,8 +819,7 @@ export default function WriteEntryScreen() {
         aiEnabled,
         entryId: entry.id,
         message: inputValue.trim(),
-        studentNumber,
-      });
+        studentNumber });
 
       if (!sendResult.ok || !sendResult.entry) {
         setIsAnalyzingTags(false);
@@ -849,8 +835,7 @@ export default function WriteEntryScreen() {
 
     const result = await suggestJournalTags({
       entryId: activeEntry.id,
-      studentNumber,
-    });
+      studentNumber });
     setIsAnalyzingTags(false);
 
     if (!result.ok) {
@@ -1520,17 +1505,14 @@ export default function WriteEntryScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F5F9F2",
-  },
+    backgroundColor: "#F5F9F2" },
   content: {
     flex: 1,
     paddingTop: 4,
     paddingHorizontal: 10,
-    paddingBottom: 18,
-  },
+    paddingBottom: 18 },
   contentKeyboardVisible: {
-    paddingBottom: 6,
-  },
+    paddingBottom: 6 },
   pageWrap: {
     flex: 1,
     minHeight: 420,
@@ -1541,40 +1523,34 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 5 },
-    elevation: 4,
-  },
+    elevation: 4 },
   pageWrapKeyboardVisible: {
     minHeight: 0,
-    marginBottom: 6,
-  },
+    marginBottom: 6 },
   notebookShell: {
     flex: 1,
     backgroundColor: "#78C654",
     borderRadius: 24,
     padding: 5,
-    flexDirection: "row",
-  },
+    flexDirection: "row" },
   spineColumn: {
     width: 30,
     borderTopLeftRadius: 20,
     borderBottomLeftRadius: 20,
     backgroundColor: "#D7EEBE",
-    position: "relative",
-  },
+    position: "relative" },
   ringItem: {
     position: "absolute",
     left: 1,
     width: 32,
     height: 20,
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   ringHole: {
     width: 8,
     height: 8,
     borderRadius: 999,
     backgroundColor: "#F7FAF5",
-    marginLeft: 3,
-  },
+    marginLeft: 3 },
   ringArc: {
     position: "absolute",
     left: 8,
@@ -1584,8 +1560,7 @@ const styles = StyleSheet.create({
     borderRightWidth: 0,
     borderColor: "#8E989F",
     borderTopLeftRadius: 12,
-    borderBottomLeftRadius: 12,
-  },
+    borderBottomLeftRadius: 12 },
   paperCard: {
     flex: 1,
     backgroundColor: "#FFFDF7",
@@ -1596,46 +1571,40 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     paddingHorizontal: 14,
     paddingBottom: 10,
-    position: "relative",
-  },
+    position: "relative" },
   ruleLayer: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
-    bottom: 58,
-  },
+    bottom: 58 },
   ruleLine: {
     position: "absolute",
     left: 10,
     right: 10,
     height: 1,
-    backgroundColor: "#E2EEE0",
-  },
+    backgroundColor: "#E2EEE0" },
   marginLine: {
     position: "absolute",
     top: 46,
     bottom: 58,
     left: 30,
     width: 1,
-    backgroundColor: "#E7BFC2",
-  },
+    backgroundColor: "#E7BFC2" },
   paperHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginLeft: 22,
     marginBottom: 8,
-    columnGap: 8,
-  },
+    columnGap: 8 },
   dateText: {
     color: "#586B63",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
+    fontFamily: "Outfit-Bold",
     letterSpacing: 0.2,
-    flex: 1,
-  },
+    flex: 1 },
   muniToggle: {
     minHeight: 34,
     borderRadius: 999,
@@ -1644,149 +1613,122 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     columnGap: 6,
-    paddingHorizontal: 10,
-  },
+    paddingHorizontal: 10 },
   muniToggleOn: {
     backgroundColor: "#EFF8E8",
-    borderColor: "#CFE5C1",
-  },
+    borderColor: "#CFE5C1" },
   muniToggleOff: {
     backgroundColor: "#F3F4F5",
-    borderColor: "#D9DFE3",
-  },
+    borderColor: "#D9DFE3" },
   muniToggleDisabled: {
-    opacity: 0.7,
-  },
+    opacity: 0.7 },
   muniToggleIconBubble: {
     width: 18,
     height: 18,
     borderRadius: 999,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   muniToggleIconBubbleOn: {
-    backgroundColor: "#DFF2D1",
-  },
+    backgroundColor: "#DFF2D1" },
   muniToggleIconBubbleOff: {
-    backgroundColor: "#E7EBEE",
-  },
+    backgroundColor: "#E7EBEE" },
   muniToggleText: {
     color: "#2E6B23",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   muniToggleTextOff: {
     color: "#687787",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   summaryText: {
     marginLeft: 22,
     marginBottom: 8,
     color: "#5D6E65",
     fontSize: 11,
     lineHeight: 15,
-    fontWeight: "600",
-  },
+    fontFamily: "Outfit-SemiBold" },
   conversationScroll: {
-    flex: 1,
-  },
+    flex: 1 },
   conversationContent: {
     paddingBottom: 16,
     paddingTop: 4,
-    rowGap: 8,
-  },
+    rowGap: 8 },
   loadingWrap: {
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 20,
-    rowGap: 6,
-  },
+    rowGap: 6 },
   loadingText: {
     color: "#45515E",
     fontSize: 13,
-    lineHeight: 18,
-  },
+    lineHeight: 18 },
   emptyText: {
     color: "#4D5B69",
     fontSize: 14,
     lineHeight: 20,
     textAlign: "center",
     paddingHorizontal: 26,
-    paddingTop: 16,
-  },
+    paddingTop: 16 },
   leftMessageRow: {
     maxWidth: "84%",
     alignSelf: "flex-start",
     marginLeft: 22,
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   leftMessageText: {
     color: "#2D3B4D",
     fontSize: 15,
     lineHeight: 23,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   typewriterCursor: {
     color: "#5B8D4E",
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   muniWritingRow: {
     flexDirection: "row",
     alignItems: "center",
     columnGap: 4,
-    marginTop: 5,
-  },
+    marginTop: 5 },
   muniWritingText: {
     color: "#5B8D4E",
     fontSize: 11,
     lineHeight: 15,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   messageRoleLabel: {
     color: "#6E8D62",
     fontSize: 10,
     lineHeight: 13,
     letterSpacing: 0.5,
-    fontWeight: "700",
-    marginBottom: 3,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 3 },
   messageRoleLabelSelf: {
     color: "#7B8792",
-    textAlign: "right",
-  },
+    textAlign: "right" },
   rightMessageRow: {
     maxWidth: "78%",
     alignSelf: "flex-end",
-    marginBottom: 4,
-  },
+    marginBottom: 4 },
   rightMessageText: {
     color: "#2D3B4D",
     fontSize: 15,
     lineHeight: 23,
     textAlign: "right",
-    fontWeight: "500",
-  },
+    fontFamily: "Outfit-Medium" },
   userTypewriterCursor: {
     color: "#63727F",
-    fontWeight: "800",
-  },
+    fontFamily: "Outfit-Bold" },
   userWritingRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "flex-end",
     columnGap: 4,
-    marginTop: 5,
-  },
+    marginTop: 5 },
   userWritingText: {
     color: "#63727F",
     fontSize: 11,
     lineHeight: 15,
-    fontWeight: "700",
-    textAlign: "right",
-  },
+    fontFamily: "Outfit-Bold",
+    textAlign: "right" },
   footnoteWrap: {
     minHeight: 38,
     justifyContent: "center",
@@ -1794,14 +1736,12 @@ const styles = StyleSheet.create({
     marginTop: 2,
     borderTopWidth: 1,
     borderTopColor: "#EBEFE5",
-    paddingTop: 8,
-  },
+    paddingTop: 8 },
   footnoteText: {
     color: "#5D6C76",
     fontSize: 11,
     lineHeight: 15,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   plainCard: {
     flex: 1,
     borderRadius: 24,
@@ -1816,51 +1756,42 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.14,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
-  },
+    elevation: 3 },
   plainCardKeyboardVisible: {
-    marginBottom: 6,
-  },
+    marginBottom: 6 },
   plainHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     columnGap: 8,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   plainDateText: {
     flex: 1,
     color: "#586B63",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "700",
-    letterSpacing: 0.2,
-  },
+    fontFamily: "Outfit-Bold",
+    letterSpacing: 0.2 },
   plainBody: {
-    flex: 1,
-  },
+    flex: 1 },
   plainBodyContent: {
-    paddingBottom: 16,
-  },
+    paddingBottom: 16 },
   plainParagraph: {
     color: "#31465A",
     fontSize: 15,
     lineHeight: 24,
-    marginBottom: 18,
-  },
+    marginBottom: 18 },
   plainPlaceholder: {
     color: "#6D7A87",
     fontSize: 15,
     lineHeight: 22,
-    paddingTop: 4,
-  },
+    paddingTop: 4 },
   plainFootnote: {
     color: "#334256",
     fontSize: 11,
     lineHeight: 15,
     textAlign: "center",
-    marginTop: 8,
-  },
+    marginTop: 8 },
   inputCard: {
     minHeight: 72,
     borderRadius: 20,
@@ -1877,11 +1808,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-end",
     columnGap: 10,
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   inputCardKeyboardVisible: {
-    marginBottom: 0,
-  },
+    marginBottom: 0 },
   input: {
     flex: 1,
     minHeight: 50,
@@ -1889,8 +1818,7 @@ const styles = StyleSheet.create({
     color: "#2E4155",
     fontSize: 15,
     lineHeight: 20,
-    paddingVertical: 0,
-  },
+    paddingVertical: 0 },
   emotionMenuButton: {
     width: 44,
     height: 44,
@@ -1899,33 +1827,27 @@ const styles = StyleSheet.create({
     borderColor: "#D9E6D2",
     backgroundColor: "#F7FAF4",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   emotionMenuButtonDisabled: {
-    opacity: 0.6,
-  },
+    opacity: 0.6 },
   emotionMenuImage: {
     width: 32,
-    height: 32,
-  },
+    height: 32 },
   sendButton: {
     width: 44,
     height: 44,
     borderRadius: 999,
     backgroundColor: "#73CB47",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   sendButtonDisabled: {
-    backgroundColor: "#A3C88F",
-  },
+    backgroundColor: "#A3C88F" },
   actionRow: {
     marginHorizontal: 2,
     marginBottom: 8,
     flexDirection: "row",
     alignItems: "stretch",
-    columnGap: 8,
-  },
+    columnGap: 8 },
   concernIconButton: {
     width: 56,
     minHeight: 56,
@@ -1939,38 +1861,31 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+    elevation: 2 },
   concernIconButtonSelected: {
     borderColor: "#7BCB46",
-    backgroundColor: "#F4FBEE",
-  },
+    backgroundColor: "#F4FBEE" },
   concernModalCard: {
-    maxWidth: 360,
-  },
+    maxWidth: 360 },
   emotionPickerModalCard: {
-    maxWidth: 360,
-  },
+    maxWidth: 360 },
   emotionPickerHeader: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
-    columnGap: 12,
-  },
+    columnGap: 12 },
   emotionPickerCloseButton: {
     width: 34,
     height: 34,
     borderRadius: 999,
     backgroundColor: "#F2F5F0",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   emotionPickerGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
-    rowGap: 10,
-  },
+    rowGap: 10 },
   emotionPickerOption: {
     width: "48.5%",
     minHeight: 62,
@@ -1982,8 +1897,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     columnGap: 8,
     paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
+    paddingVertical: 8 },
   emotionPickerIcon: {
     width: 34,
     height: 34,
@@ -1991,58 +1905,48 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   emotionPickerImage: {
     width: 26,
-    height: 26,
-  },
+    height: 26 },
   emotionPickerFallback: {
     width: 18,
     height: 18,
-    borderRadius: 999,
-  },
+    borderRadius: 999 },
   emotionPickerLabel: {
     flex: 1,
     color: "#3E556B",
     fontSize: 12,
     lineHeight: 15,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   tagReviewModalCard: {
     maxWidth: 380,
-    maxHeight: "82%",
-  },
+    maxHeight: "82%" },
   relationshipTagModalCard: {
-    maxWidth: 340,
-  },
+    maxWidth: 340 },
   concernTitle: {
     color: "#34465A",
     fontSize: 16,
     lineHeight: 22,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 4 },
   concernSubtitle: {
     color: "#5E6E7E",
     fontSize: 12,
     lineHeight: 17,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   concernCurrentText: {
     color: "#2E6B23",
     fontSize: 12,
     lineHeight: 17,
-    fontWeight: "700",
-    marginBottom: 12,
-  },
+    fontFamily: "Outfit-Bold",
+    marginBottom: 12 },
   concernGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
     rowGap: 10,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   concernOption: {
     width: "48.5%",
     minHeight: 46,
@@ -2052,39 +1956,32 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     paddingHorizontal: 12,
     paddingVertical: 10,
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   concernOptionSelected: {
     borderColor: "#7BCB46",
-    backgroundColor: "#F1FAEA",
-  },
+    backgroundColor: "#F1FAEA" },
   concernOptionText: {
     color: "#3E556B",
     fontSize: 14,
     lineHeight: 19,
-    fontWeight: "600",
-  },
+    fontFamily: "Outfit-SemiBold" },
   concernOptionTextSelected: {
     color: "#2E6B23",
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   tagReviewScroll: {
     maxHeight: 420,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   tagSectionLabel: {
     color: "#53685A",
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: "800",
+    fontFamily: "Outfit-Bold",
     letterSpacing: 0.4,
     marginBottom: 8,
-    textTransform: "uppercase",
-  },
+    textTransform: "uppercase" },
   relationshipTagList: {
     rowGap: 10,
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   relationshipTagOption: {
     minHeight: 48,
     borderRadius: 14,
@@ -2094,21 +1991,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 12,
-  },
+    paddingHorizontal: 12 },
   relationshipTagOptionSelected: {
     borderColor: "#7BCB46",
-    backgroundColor: "#F1FAEA",
-  },
+    backgroundColor: "#F1FAEA" },
   relationshipTagOptionText: {
     color: "#3E556B",
     fontSize: 14,
     lineHeight: 19,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   relationshipTagOptionTextSelected: {
-    color: "#2E6B23",
-  },
+    color: "#2E6B23" },
   relationshipTagCancelButton: {
     minHeight: 40,
     borderRadius: 999,
@@ -2116,31 +2009,27 @@ const styles = StyleSheet.create({
     borderColor: "#CDD5C7",
     backgroundColor: "#FFFFFF",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   errorText: {
     color: "#B04444",
     fontSize: 12,
     lineHeight: 16,
     marginHorizontal: 16,
-    marginBottom: 8,
-  },
+    marginBottom: 8 },
   statusText: {
     color: "#53685A",
     fontSize: 12,
     lineHeight: 16,
     marginHorizontal: 16,
     marginBottom: 8,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   lockedText: {
     color: "#5B6774",
     fontSize: 12,
     lineHeight: 16,
     marginHorizontal: 16,
     marginBottom: 8,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   finishButton: {
     flex: 1,
     minHeight: 56,
@@ -2152,25 +2041,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
+    elevation: 3 },
   finishButtonDisabled: {
-    backgroundColor: "#A8C99C",
-  },
+    backgroundColor: "#A8C99C" },
   finishButtonText: {
     color: "#FFFFFF",
     fontSize: 17,
     lineHeight: 24,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   helperText: {
     color: "#6B7784",
     fontSize: 12,
     lineHeight: 16,
     marginHorizontal: 16,
     marginBottom: 8,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   exitButton: {
     flex: 0.8,
     minHeight: 56,
@@ -2184,14 +2069,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
+    elevation: 2 },
   exitButtonText: {
     color: "#53685A",
     fontSize: 16,
     lineHeight: 21,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   newEntryButton: {
     height: 40,
     borderRadius: 999,
@@ -2199,21 +2082,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginHorizontal: 12,
-    marginTop: 8,
-  },
+    marginTop: 8 },
   newEntryButtonText: {
     color: "#436152",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(21, 27, 24, 0.34)",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 22,
-  },
+    paddingHorizontal: 22 },
   modalCard: {
     width: "100%",
     maxWidth: 320,
@@ -2226,8 +2106,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
+    elevation: 4 },
   riskModalCard: {
     width: "100%",
     maxWidth: 360,
@@ -2240,8 +2119,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
+    elevation: 4 },
   riskCloseButton: {
     position: "absolute",
     top: 12,
@@ -2251,13 +2129,11 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 2,
-  },
+    zIndex: 2 },
   riskHeader: {
     alignItems: "center",
     paddingTop: 8,
-    marginBottom: 14,
-  },
+    marginBottom: 14 },
   riskIconBadge: {
     width: 46,
     height: 46,
@@ -2265,34 +2141,29 @@ const styles = StyleSheet.create({
     backgroundColor: "#79C943",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
-  },
+    marginBottom: 12 },
   riskTitle: {
     color: "#33475C",
     fontSize: 20,
     lineHeight: 26,
-    fontWeight: "700",
-    textAlign: "center",
-  },
+    fontFamily: "Outfit-Bold",
+    textAlign: "center" },
   riskBody: {
     marginTop: 8,
     color: "#566675",
     fontSize: 14,
     lineHeight: 21,
-    fontWeight: "500",
-    textAlign: "center",
-  },
+    fontFamily: "Outfit-Medium",
+    textAlign: "center" },
   riskHotlineText: {
     marginTop: 10,
     color: "#2E6B23",
     fontSize: 12,
     lineHeight: 17,
-    fontWeight: "700",
-    textAlign: "center",
-  },
+    fontFamily: "Outfit-Bold",
+    textAlign: "center" },
   riskActionStack: {
-    rowGap: 10,
-  },
+    rowGap: 10 },
   riskActionButton: {
     minHeight: 70,
     borderRadius: 18,
@@ -2301,65 +2172,53 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 10,
-  },
+    columnGap: 10 },
   riskActionButtonHotline: {
     backgroundColor: "#F3FBEF",
-    borderColor: "#CFE7BE",
-  },
+    borderColor: "#CFE7BE" },
   riskActionButtonCounseling: {
     backgroundColor: "#F4F8FC",
-    borderColor: "#D7E2EE",
-  },
+    borderColor: "#D7E2EE" },
   riskActionButtonWellness: {
     backgroundColor: "#F8FAF3",
-    borderColor: "#E1E8D8",
-  },
+    borderColor: "#E1E8D8" },
   riskActionButtonDisabled: {
-    opacity: 0.7,
-  },
+    opacity: 0.7 },
   riskActionIconWrap: {
     width: 42,
     height: 42,
     borderRadius: 14,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   riskActionCopy: {
-    flex: 1,
-  },
+    flex: 1 },
   riskActionTitle: {
     color: "#31465A",
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   riskActionHint: {
     marginTop: 2,
     color: "#667683",
     fontSize: 12,
-    lineHeight: 17,
-  },
+    lineHeight: 17 },
   riskFooterText: {
     marginTop: 12,
     color: "#7A8691",
     fontSize: 11,
     lineHeight: 16,
-    textAlign: "center",
-  },
+    textAlign: "center" },
   modalBody: {
     color: "#52606C",
     fontSize: 16,
     lineHeight: 23,
-    fontWeight: "600",
+    fontFamily: "Outfit-SemiBold",
     textAlign: "center",
-    marginBottom: 16,
-  },
+    marginBottom: 16 },
   modalActions: {
     flexDirection: "row",
-    columnGap: 10,
-  },
+    columnGap: 10 },
   modalSecondaryButton: {
     flex: 1,
     minHeight: 40,
@@ -2368,37 +2227,30 @@ const styles = StyleSheet.create({
     borderColor: "#CDD5C7",
     backgroundColor: "#FFFFFF",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   modalSecondaryText: {
     color: "#566271",
     fontSize: 13,
-    fontWeight: "700",
-  },
+    fontFamily: "Outfit-Bold" },
   modalPrimaryButton: {
     flex: 1,
     minHeight: 40,
     borderRadius: 999,
     backgroundColor: "#79C943",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   modalPrimaryButtonDisabled: {
-    backgroundColor: "#A8C99C",
-  },
+    backgroundColor: "#A8C99C" },
   modalDangerButton: {
     flex: 1,
     minHeight: 40,
     borderRadius: 999,
     backgroundColor: "#C85656",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center" },
   modalPrimaryText: {
     color: "#FFFFFF",
     fontSize: 13,
-    fontWeight: "700",
-  },
-});
+    fontFamily: "Outfit-Bold" } });
 
 
