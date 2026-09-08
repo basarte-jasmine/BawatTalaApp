@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Image, Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { Alert, Image, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { fetchJournalEntryById, JournalEntry, JournalMessage, rateJournalEntrySummary } from "../lib/backend-api";
@@ -549,6 +549,9 @@ export default function JournalEntryViewScreen() {
                   style={styles.conversationScroll}
                   contentContainerStyle={[styles.conversationContent, compact && styles.conversationContentCompact]}
                   showsVerticalScrollIndicator={false}
+                  removeClippedSubviews={false}
+                  nestedScrollEnabled
+                  collapsable={false}
                   refreshControl={
                     <RefreshControl
                       refreshing={isRefreshing || isSyncing}
@@ -560,6 +563,7 @@ export default function JournalEntryViewScreen() {
                 >
                   {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
+                  <View collapsable={false} style={styles.conversationPaint}>
                   {isLoadingEntry ? (
                     <View style={[styles.notebookStateCard, compact && styles.notebookStateCardCompact]}>
                       <Ionicons name="book-outline" size={20} color="#4B8F33" />
@@ -588,6 +592,7 @@ export default function JournalEntryViewScreen() {
                       </Text>
                     </View>
                   )}
+                  </View>
 
                   {hasGeneratedSummary ? (
                     <View style={[styles.chatInsightBlock, compact && styles.notebookContentBlockCompact]}>
@@ -979,7 +984,11 @@ const styles = StyleSheet.create({
     left: 24 },
   conversationScroll: {
     flex: 1,
-    zIndex: 2 },
+    zIndex: 2,
+    minHeight: 180 },
+  conversationPaint: {
+    minHeight: 120,
+    width: "100%" },
   conversationContent: {
     paddingBottom: 16,
     paddingTop: 4,
@@ -999,8 +1008,7 @@ const styles = StyleSheet.create({
   leftMessageText: {
     color: "#2D3B4D",
     fontSize: 15,
-    lineHeight: 21,
-    fontFamily: "Outfit-Bold" },
+    lineHeight: 21 },
   messageRoleLabel: {
     color: "#6E8D62",
     fontSize: 10,
@@ -1021,8 +1029,7 @@ const styles = StyleSheet.create({
     color: "#2D3B4D",
     fontSize: 15,
     lineHeight: 23,
-    textAlign: "right",
-    fontFamily: "Outfit-Medium" },
+    textAlign: "right" },
   chatInsightBlock: {
     marginTop: 14,
     marginLeft: 22,

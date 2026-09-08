@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Easing, Image, ImageSourcePropType, StyleProp, StyleSheet, View, ViewStyle } from "react-native";
+import { Animated, Easing, Image, ImageSourcePropType, Platform, StyleProp, StyleSheet, View, ViewStyle } from "react-native";
 import {
   getEyeAccessoryStyle,
   getHeadAccessoryStyle,
@@ -14,7 +14,7 @@ type MuniAvatarProps = {
   style?: StyleProp<ViewStyle>;
 };
 
-// Safe underscore filenames — spaced names can fail Metro asset resolution in release APKs.
+// Safe underscore filenames - spaced names can fail Metro asset resolution in release APKs.
 const MUNI_FEET = require("../../assets/images/Muni/Feet.png");
 const MUNI_BODY = require("../../assets/images/Muni/Body.png");
 const MUNI_LEFT_HAND = require("../../assets/images/Muni/Left_Hand.png");
@@ -86,6 +86,21 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
   useEffect(() => {
     preloadCriticalBodyParts();
   }, []);
+
+  // Android release often never fires Image onLoad, and native-driver fades can stay at 0
+  // until a tap. Reveal the full avatar if the staggered fade has not finished.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setBodyReady(true);
+      setShowHands(true);
+      setShowFace(true);
+      setShowAccessories(true);
+      handsOpacity.setValue(1);
+      faceOpacity.setValue(1);
+      accessoryOpacity.setValue(1);
+    }, Platform.OS === "android" ? 350 : 1200);
+    return () => clearTimeout(timer);
+  }, [accessoryOpacity, faceOpacity, handsOpacity]);
 
   useEffect(() => {
     if (!bodyReady) return;
@@ -386,4 +401,4 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
   },
-});
+});
