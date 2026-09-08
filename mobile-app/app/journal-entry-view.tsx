@@ -444,6 +444,7 @@ export default function JournalEntryViewScreen() {
       </View>
 
       <JournalLockGate>
+        <View style={styles.journalContent}>
         <View style={[styles.heroCard, compact && styles.heroCardCompact]}>
           <View style={styles.heroCopy}>
             <Text style={styles.heroEyebrow}>READ ONLY</Text>
@@ -665,12 +666,15 @@ export default function JournalEntryViewScreen() {
             </ScrollView>
           </View>
         )}
+        </View>
       </JournalLockGate>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  journalContent: {
+    flex: 1 },
   screen: {
     flex: 1,
     backgroundColor: "#F5F9F2",

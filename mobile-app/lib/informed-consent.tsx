@@ -151,13 +151,9 @@ export function InformedConsentGate({ children, feature }: InformedConsentGatePr
     setIsSaving(false);
   }, [feature, isSaving, studentNumber]);
 
-  const handleLeave = useCallback(() => {
-    if (router.canGoBack()) {
-      router.back();
-      return;
-    }
-    router.replace("/home");
-  }, []);
+ const handleLeave = useCallback(() => {
+   router.replace("/home");
+ }, []);
 
   const content = useMemo(
     () => (

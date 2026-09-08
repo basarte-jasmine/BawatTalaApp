@@ -33,6 +33,11 @@ import { getManilaNow, getManilaStartOfToday, getManilaTodayParts } from "../lib
 import { isAdminMessageNotification } from "../lib/notification-utils";
 import { useOfflineSync } from "../lib/offline-sync";
 import { hydrateMuniWardrobe, subscribeAvailableMuniTala } from "../lib/muni-wardrobe";
+import {
+  fetchAffirmationFromApi,
+  getStoredAffirmations,
+  storeAffirmation,
+} from "../lib/affirmations";
 
 type DailyCheckinReward = {
   id: string;
@@ -84,14 +89,6 @@ type DriftingBottleNote = {
   startOffset: number;
   top: number;
 };
-
-const HOME_QUOTES = [
-  "It's okay to not have it all figured out.",
-  "You do not need to rush your healing to deserve peace.",
-  "Small steps still count, especially on heavy days.",
-  "You are allowed to rest and begin again gently.",
-  "Even quiet progress is still progress worth honoring.",
-];
 
 const FUTURE_BOTTLE_STORAGE_PREFIX = "@bawat-tala/future-bottle";
 const FUTURE_BOTTLE_INTRO_STORAGE_PREFIX = "@bawat-tala/future-bottle-intro";
@@ -426,7 +423,11 @@ export default function HomeScreen() {
   const [scheduledBottleNotes, setScheduledBottleNotes] = useState<ScheduledBottleNote[]>([]);
   const [bottleClockNow, setBottleClockNow] = useState(() => Date.now());
   const [waterZoneStartY, setWaterZoneStartY] = useState<number | null>(null);
-  const [quoteIndex, setQuoteIndex] = useState(0);
+  const [quoteText, setQuoteText] = useState<string>("");
+  const quoteTextRef = useRef<string>(quoteText);
+  const affirmationPoolRef = useRef<string[]>([]);
+  const isFetchingAffirmationRef = useRef<boolean>(false);
+  const recentlyShownQuotesRef = useRef<string[]>([]);
   const [upcomingAppointment, setUpcomingAppointment] = useState<Awaited<ReturnType<typeof fetchStudentAppointments>>["upcomingAppointment"]>(null);
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
@@ -661,11 +662,80 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
-    if (HOME_QUOTES.length <= 1) {
-      return;
-    }
+    let isMounted = true;
 
-    const cycleQuote = () => {
+    const initAffirmations = async () => {
+      const cached = await getStoredAffirmations();
+      if (isMounted && cached.length > 0) {
+        affirmationPoolRef.current = cached;
+        const randomIndex = Math.floor(Math.random() * cached.length);
+        const initialPick = cached[randomIndex] || cached[0];
+        quoteTextRef.current = initialPick;
+        recentlyShownQuotesRef.current = [initialPick];
+        setQuoteText(initialPick);
+      }
+
+      const fresh = await fetchAffirmationFromApi();
+      if (isMounted && fresh) {
+        void storeAffirmation(fresh);
+        const updatedPool = [fresh, ...affirmationPoolRef.current.filter((item) => item !== fresh)];
+        affirmationPoolRef.current = updatedPool;
+        if (!quoteTextRef.current) {
+          quoteTextRef.current = fresh;
+          recentlyShownQuotesRef.current = [fresh];
+          setQuoteText(fresh);
+        }
+      }
+    };
+
+    void initAffirmations();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const fetchNextAffirmation = async (): Promise<string | null> => {
+      if (isFetchingAffirmationRef.current) return null;
+      isFetchingAffirmationRef.current = true;
+      try {
+        const fresh = await fetchAffirmationFromApi();
+        if (fresh) {
+          void storeAffirmation(fresh);
+          const currentPool = affirmationPoolRef.current;
+          if (!currentPool.includes(fresh)) {
+            affirmationPoolRef.current = [fresh, ...currentPool].slice(0, 50);
+          }
+          if (!recentlyShownQuotesRef.current.includes(fresh)) {
+            return fresh;
+          }
+        }
+      } finally {
+        isFetchingAffirmationRef.current = false;
+      }
+      return null;
+    };
+
+    const cycleQuote = async () => {
+      let nextText = await fetchNextAffirmation();
+      if (!nextText) {
+        const unshown = affirmationPoolRef.current.filter(
+          (item) => !recentlyShownQuotesRef.current.includes(item),
+        );
+        const pool = unshown.length > 0 ? unshown : affirmationPoolRef.current.filter((item) => item !== quoteTextRef.current);
+        if (pool.length > 0) {
+          const randomIndex = Math.floor(Math.random() * pool.length);
+          nextText = pool[randomIndex];
+        }
+      }
+
+      if (!nextText || nextText === quoteTextRef.current) {
+        return;
+      }
+
+      recentlyShownQuotesRef.current = [nextText, ...recentlyShownQuotesRef.current.filter((item) => item !== nextText)].slice(0, 20);
+
       Animated.parallel([
         Animated.timing(quoteOpacity, {
           toValue: 0,
@@ -683,7 +753,8 @@ export default function HomeScreen() {
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true }),
       ]).start(() => {
-        setQuoteIndex((prev) => (prev + 1) % HOME_QUOTES.length);
+        quoteTextRef.current = nextText;
+        setQuoteText(nextText);
         quoteOpacity.setValue(0);
         quoteTranslateY.setValue(18);
         quoteScale.setValue(0.96);
@@ -708,7 +779,9 @@ export default function HomeScreen() {
       });
     };
 
-    const interval = setInterval(cycleQuote, 5600);
+    const interval = setInterval(() => {
+      void cycleQuote();
+    }, 7000);
 
     return () => {
       clearInterval(interval);
@@ -1722,7 +1795,7 @@ export default function HomeScreen() {
                   transform: [{ translateY: quoteTranslateY }, { translateX: quoteTextShadowDrift }, { scale: quoteScale }] },
               ]}
             >
-              <Text style={styles.quoteText}>{HOME_QUOTES[quoteIndex]}</Text>
+              <Text style={styles.quoteText}>{quoteText || " "}</Text>
             </Animated.View>
           </View>
 

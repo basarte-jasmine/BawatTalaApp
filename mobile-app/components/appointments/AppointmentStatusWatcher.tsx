@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, usePathname } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { AppState, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useAuthSession } from "../../lib/auth-session";
@@ -28,9 +28,50 @@ type AppointmentUpdate = {
 
 const POLL_INTERVAL_MS = 20_000;
 const SNAPSHOT_STORAGE_PREFIX = "bawat-tala.appointment-status.v1";
+const DISMISSED_STORAGE_PREFIX = "bawat-tala.appointment-status.dismissed.v1";
 
 function getStorageKey(studentNumber: string) {
   return `${SNAPSHOT_STORAGE_PREFIX}:${studentNumber}`;
+}
+
+function getDismissedStorageKey(studentNumber: string) {
+  return `${DISMISSED_STORAGE_PREFIX}:${studentNumber}`;
+}
+
+function isPreAuthOrLaunchRoute(pathname: string | null | undefined): boolean {
+  if (!pathname) return true;
+  const path = pathname.trim().toLowerCase();
+  return (
+    path === "/" ||
+    path === "" ||
+    path === "/index" ||
+    path === "/intro" ||
+    path.startsWith("/login") ||
+    path.startsWith("/auth-choice") ||
+    path.startsWith("/register") ||
+    path.startsWith("/reset-password")
+  );
+}
+
+function getUpdateKey(update: AppointmentUpdate): string {
+  return `${update.appointment.id}:${update.kind}:${update.appointment.status || ""}:${update.appointment.appointmentDate || ""}:${update.appointment.slotTime || ""}`;
+}
+
+function getSimpleKey(appointmentId: string, status: string): string {
+  return `${appointmentId}:${String(status).toUpperCase()}`;
+}
+
+function parseStoredDismissedKeys(rawValue: string | null): Set<string> {
+  if (!rawValue) return new Set();
+  try {
+    const parsed = JSON.parse(rawValue);
+    if (Array.isArray(parsed)) {
+      return new Set(parsed.filter((item): item is string => typeof item === "string"));
+    }
+    return new Set();
+  } catch {
+    return new Set();
+  }
 }
 
 function toSnapshot(appointment: CounselorAppointment): AppointmentSnapshot {
@@ -112,8 +153,11 @@ function getUpdateCopy(update: AppointmentUpdate) {
 
 export function AppointmentStatusWatcher() {
   const { user } = useAuthSession();
+  const pathname = usePathname();
+  const isPreAuth = isPreAuthOrLaunchRoute(pathname);
   const [updates, setUpdates] = useState<AppointmentUpdate[]>([]);
   const snapshotsRef = useRef<Record<string, AppointmentSnapshot>>({});
+  const dismissedKeysRef = useRef<Set<string>>(new Set());
   const checkingRef = useRef(false);
   const currentUpdate = updates[0] || null;
 
@@ -121,6 +165,7 @@ export function AppointmentStatusWatcher() {
     const studentNumber = user?.studentNumber;
     if (!studentNumber) {
       snapshotsRef.current = {};
+      dismissedKeysRef.current = new Set();
       setUpdates([]);
       return;
     }
@@ -148,12 +193,23 @@ export function AppointmentStatusWatcher() {
           if (!previous) continue;
 
           const kind = detectAppointmentUpdate(previous, current);
-          if (kind) detectedUpdates.push({ appointment: current, kind });
+          if (kind) {
+            const updateCandidate: AppointmentUpdate = { appointment: current, kind };
+            const fullKey = getUpdateKey(updateCandidate);
+            const simpleKey = getSimpleKey(current.id, current.status);
+            if (!dismissedKeysRef.current.has(fullKey) && !dismissedKeysRef.current.has(simpleKey)) {
+              detectedUpdates.push(updateCandidate);
+            }
+          }
         }
 
         snapshotsRef.current = nextSnapshots;
         if (mounted && detectedUpdates.length) {
-          setUpdates((current) => [...current, ...detectedUpdates]);
+          setUpdates((current) => {
+            const existingKeys = new Set(current.map(getUpdateKey));
+            const fresh = detectedUpdates.filter((u) => !existingKeys.has(getUpdateKey(u)));
+            return fresh.length ? [...current, ...fresh] : current;
+          });
         }
         try {
           await AsyncStorage.setItem(getStorageKey(studentNumber), JSON.stringify(nextSnapshots));
@@ -167,13 +223,20 @@ export function AppointmentStatusWatcher() {
 
     const startWatching = async () => {
       let storedValue: string | null = null;
+      let storedDismissed: string | null = null;
       try {
-        storedValue = await AsyncStorage.getItem(getStorageKey(studentNumber));
+        [storedValue, storedDismissed] = await Promise.all([
+          AsyncStorage.getItem(getStorageKey(studentNumber)),
+          AsyncStorage.getItem(getDismissedStorageKey(studentNumber)),
+        ]);
       } catch {
         storedValue = null;
+        storedDismissed = null;
       }
       if (!mounted) return;
       snapshotsRef.current = parseStoredSnapshots(storedValue);
+      dismissedKeysRef.current = parseStoredDismissedKeys(storedDismissed);
+
       await checkAppointments();
       if (!mounted) return;
       interval = setInterval(() => void checkAppointments(), POLL_INTERVAL_MS);
@@ -192,17 +255,42 @@ export function AppointmentStatusWatcher() {
     };
   }, [user?.studentNumber]);
 
-  if (!currentUpdate) return null;
-  const copy = getUpdateCopy(currentUpdate);
+  const dismissUpdate = (targetUpdate: AppointmentUpdate) => {
+    const studentNumber = user?.studentNumber;
+    const fullKey = getUpdateKey(targetUpdate);
+    const simpleKey = getSimpleKey(targetUpdate.appointment.id, targetUpdate.appointment.status);
+    dismissedKeysRef.current.add(fullKey);
+    dismissedKeysRef.current.add(simpleKey);
+
+    if (studentNumber) {
+      const serialized = JSON.stringify(Array.from(dismissedKeysRef.current));
+      void AsyncStorage.setItem(getDismissedStorageKey(studentNumber), serialized).catch(() => {});
+      if (snapshotsRef.current[targetUpdate.appointment.id]) {
+        snapshotsRef.current[targetUpdate.appointment.id] = targetUpdate.appointment;
+        void AsyncStorage.setItem(getStorageKey(studentNumber), JSON.stringify(snapshotsRef.current)).catch(() => {});
+      }
+    }
+
+    setUpdates((current) => current.filter((u) => u !== targetUpdate && getUpdateKey(u) !== fullKey));
+  };
 
   const closeCurrentUpdate = () => {
-    setUpdates((current) => current.slice(1));
+    if (currentUpdate) {
+      dismissUpdate(currentUpdate);
+    } else {
+      setUpdates((current) => current.slice(1));
+    }
   };
 
   const openSchedule = () => {
-    closeCurrentUpdate();
+    if (currentUpdate) {
+      dismissUpdate(currentUpdate);
+    }
     router.push({ pathname: "/profile-settings", params: { section: "schedule" } });
   };
+
+  if (isPreAuth || !currentUpdate) return null;
+  const copy = getUpdateCopy(currentUpdate);
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={closeCurrentUpdate}>
