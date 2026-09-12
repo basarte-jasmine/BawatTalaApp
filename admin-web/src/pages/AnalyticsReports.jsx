@@ -61,6 +61,27 @@ function getManilaDateTimeLabel(date = new Date()) {
   }).format(date);
 }
 
+function formatToMMDDYYYY(dateInput) {
+  if (!dateInput) return "--";
+  const str = String(dateInput).trim();
+  const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    return `${match[2]}-${match[3]}-${match[1]}`;
+  }
+  const date = new Date(dateInput);
+  if (Number.isNaN(date.getTime())) return str;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const mm = parts.find((p) => p.type === "month")?.value || "01";
+  const dd = parts.find((p) => p.type === "day")?.value || "01";
+  const yyyy = parts.find((p) => p.type === "year")?.value || "1970";
+  return `${mm}-${dd}-${yyyy}`;
+}
+
 function formatNumber(value) {
   return new Intl.NumberFormat("en-US").format(Number(value || 0));
 }
@@ -97,6 +118,14 @@ function getDistressedCount(row) {
 }
 
 
+function normalizeReportGender(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "male") return "Male";
+  if (normalized === "female") return "Female";
+  const trimmed = String(value || "").trim();
+  return trimmed || "—";
+}
+
 function formatLocation(row) {
   const parts = [row?.barangay, row?.city, row?.province]
     .map((part) => String(part || "").trim())
@@ -129,7 +158,7 @@ function getRowRiskCategory(row) {
   return "none";
 }
 
-function applyClientFilters(rows, { flaggedOnly, programFilter, riskLevelFilter }) {
+function applyClientFilters(rows, { flaggedOnly, programFilter, riskLevelFilter, genderFilter, locationFilter }) {
   return (Array.isArray(rows) ? rows : []).filter((row) => {
     if (flaggedOnly && !isFlaggedOrAtRisk(row)) return false;
     if (programFilter) {
@@ -137,7 +166,18 @@ function applyClientFilters(rows, { flaggedOnly, programFilter, riskLevelFilter 
       if (program !== programFilter) return false;
     }
     if (riskLevelFilter && riskLevelFilter !== "all") {
-      if (getRowRiskCategory(row) !== riskLevelFilter) return false;
+      const category = getRowRiskCategory(row);
+      if (riskLevelFilter === "at_risk") {
+        if (category !== "crisis" && category !== "distressed") return false;
+      } else if (category !== riskLevelFilter) {
+        return false;
+      }
+    }
+    if (genderFilter && genderFilter !== "all") {
+      if (normalizeReportGender(row?.gender) !== genderFilter) return false;
+    }
+    if (locationFilter && locationFilter !== "all") {
+      if (formatLocation(row) !== locationFilter) return false;
     }
     return true;
   });
@@ -172,7 +212,7 @@ function buildStudentReportCsv(rows, filters = {}) {
   const endDate = filters?.endDate || "--";
   const lines = [
     "# Bawat Tala Guidance Analytics Report",
-    `# Date Range: ${startDate} to ${endDate}`,
+    `# Date Range: ${formatToMMDDYYYY(startDate)} to ${formatToMMDDYYYY(endDate)}`,
     `# Generated On: ${getManilaDateTimeLabel()}`,
     REPORT_COLUMNS.map((column) => escapeCsv(column.label)).join(","),
   ];
@@ -221,17 +261,18 @@ function createStudentReportPdf({ rows, filters, summary }) {
   };
 
   const pdfColumns = [
-    { key: "identity", label: "Student", width: 150, align: "left" },
-    { key: "program", label: "Program", width: 95, align: "left" },
-    { key: "location", label: "Location", width: 110, align: "left" },
-    { key: "entriesInRange", label: "Entries", width: 42, align: "right" },
-    { key: "flagsInRange", label: "Flags", width: 38, align: "right" },
-    { key: "highRiskFlags", label: "Crisis", width: 40, align: "right", accent: true },
-    { key: "distressedFlags", label: "Distress", width: 46, align: "right" },
-    { key: "counselingSessions", label: "Sess.", width: 36, align: "right" },
-    { key: "topConcern", label: "Top Concern", width: 90, align: "left" },
-    { key: "latestRiskLevel", label: "Risk", width: 54, align: "left" },
-    { key: "reportStatus", label: "Status", width: 85, align: "left" },
+    { key: "identity", label: "Student", width: 140, align: "left" },
+    { key: "program", label: "Program", width: 85, align: "left" },
+    { key: "gender", label: "Gender", width: 50, align: "left" },
+    { key: "location", label: "Location", width: 100, align: "left" },
+    { key: "entriesInRange", label: "Entries", width: 40, align: "right" },
+    { key: "flagsInRange", label: "Flags", width: 36, align: "right" },
+    { key: "highRiskFlags", label: "Crisis", width: 38, align: "right", accent: true },
+    { key: "distressedFlags", label: "Distress", width: 44, align: "right" },
+    { key: "counselingSessions", label: "Sess.", width: 34, align: "right" },
+    { key: "topConcern", label: "Top Concern", width: 85, align: "left" },
+    { key: "latestRiskLevel", label: "Risk", width: 50, align: "left" },
+    { key: "reportStatus", label: "Status", width: 84, align: "left" },
   ];
 
   const setStroke = (r, g, b, width = 0.6) => {
@@ -271,7 +312,7 @@ function createStudentReportPdf({ rows, filters, summary }) {
       0.38,
       0.42,
     ]);
-    addTextAt(`Date range: ${startDate} to ${endDate}`, margin + 320, pageHeight - margin - 48, 8, false, [
+    addTextAt(`Date range: ${formatToMMDDYYYY(startDate)} to ${formatToMMDDYYYY(endDate)}`, margin + 320, pageHeight - margin - 48, 8, false, [
       0.35,
       0.38,
       0.42,
@@ -344,6 +385,8 @@ function createStudentReportPdf({ rows, filters, summary }) {
         );
       case "program":
         return truncatePdfText(row.program || "—", 22);
+      case "gender":
+        return truncatePdfText(normalizeReportGender(row.gender), 10);
       case "location":
         return truncatePdfText(formatLocation(row), 26);
       case "entriesInRange":
@@ -495,61 +538,172 @@ function createStudentReportPdf({ rows, filters, summary }) {
   return new Blob(parts, { type: "application/pdf" });
 }
 
-function StudentReportTable({ rows, loading }) {
+function StudentReportTable({
+  rows,
+  loading,
+  riskLevelFilter,
+  setRiskLevelFilter,
+  programFilter,
+  setProgramFilter,
+  genderFilter,
+  setGenderFilter,
+  locationFilter,
+  setLocationFilter,
+  programOptions = [],
+  locationOptions = [],
+  filteredCount = 0,
+  totalCount = 0,
+}) {
+  const RISK_LEVEL_OPTIONS = [
+    { key: "all", label: "All Risk Levels" },
+    { key: "at_risk", label: "At-Risk (Crisis & Distressed)" },
+    { key: "crisis", label: "Crisis Only" },
+    { key: "distressed", label: "Distressed Only" },
+    { key: "none", label: "No Risk (None)" },
+  ];
+
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-100 px-5 py-4">
-        <h3 className="text-lg font-semibold text-slate-900">Student User Report</h3>
-        <p className="mt-1 text-sm text-slate-500">
-          One row per student user. Distressed = LOW; Crisis = HIGH/CRITICAL. Journal content, insights, admin users,
-          and counselor names are excluded.
+      {/* Card Header */}
+      <div className="border-b border-slate-200 px-6 py-5">
+        <h3 className="text-xl font-bold text-slate-900">Student User Report</h3>
+        <p className="mt-1 text-sm font-medium text-slate-500">
+          Displays student activity metrics (Low = Distressed, High = Crisis); excludes journal content, insights, and names
         </p>
       </div>
 
+      {/* Integrated Filters Toolbar */}
+      <div className="border-b border-slate-200 bg-slate-50/70 p-5 space-y-4">
+        {/* Risk Level Combined Filter Pills */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500 mr-1">Risk Filter:</span>
+          {RISK_LEVEL_OPTIONS.map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              onClick={() => setRiskLevelFilter(option.key)}
+              className={`rounded-full border px-3.5 py-1.5 text-xs font-bold transition ${
+                riskLevelFilter === option.key
+                  ? option.key === "at_risk" || option.key === "crisis"
+                    ? "border-rose-400 bg-rose-600 text-white shadow-sm"
+                    : option.key === "distressed"
+                      ? "border-amber-400 bg-amber-600 text-white shadow-sm"
+                      : "border-slate-900 bg-slate-900 text-white shadow-sm"
+                  : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Dropdowns Row */}
+        <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between border-t border-slate-200/60">
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Program Dropdown */}
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">Program:</span>
+              <select
+                value={programFilter}
+                onChange={(event) => setProgramFilter(event.target.value)}
+                className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600"
+              >
+                <option value="">All programs</option>
+                {programOptions.map((program) => (
+                  <option key={program} value={program}>
+                    {program}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {/* Gender Dropdown */}
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">Gender:</span>
+              <select
+                value={genderFilter}
+                onChange={(event) => setGenderFilter(event.target.value)}
+                className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600"
+              >
+                <option value="all">All genders</option>
+                <option value="Female">Female</option>
+                <option value="Male">Male</option>
+              </select>
+            </label>
+
+            {/* Location Dropdown */}
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">Location:</span>
+              <select
+                value={locationFilter}
+                onChange={(event) => setLocationFilter(event.target.value)}
+                className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 max-w-[200px] truncate"
+              >
+                <option value="all">All locations</option>
+                {locationOptions.map((loc) => (
+                  <option key={loc} value={loc}>
+                    {loc}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="text-xs font-semibold text-slate-600">
+            Showing <span className="font-bold text-slate-900">{formatNumber(filteredCount)}</span> of{" "}
+            <span className="font-bold text-slate-900">{formatNumber(totalCount)}</span> students
+          </div>
+        </div>
+      </div>
+
+      {/* Report Table */}
       <div className="overflow-x-auto">
-        <table className="min-w-[1180px] w-full border-separate border-spacing-0 text-sm">
-          <thead className="bg-slate-50">
+        <table className="min-w-[1240px] w-full border-separate border-spacing-0 text-sm">
+          <thead className="border-b border-slate-200 bg-slate-50 text-xs font-extrabold uppercase tracking-wider text-slate-700">
             <tr>
               <th
                 scope="col"
-                className="sticky left-0 z-20 whitespace-nowrap border-b border-slate-100 bg-slate-50 px-4 py-3 text-left font-semibold text-slate-600 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]"
+                className="sticky left-0 z-20 whitespace-nowrap border-b border-slate-200 bg-slate-50 px-4 py-3.5 text-left font-extrabold text-slate-700 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.12)]"
               >
                 Identity
               </th>
-              <th scope="col" className="whitespace-nowrap border-b border-slate-100 px-4 py-3 text-left font-semibold text-slate-600">
+              <th scope="col" className="whitespace-nowrap border-b border-slate-200 px-4 py-3.5 text-left font-extrabold text-slate-700">
                 Program
               </th>
-              <th scope="col" className="whitespace-nowrap border-b border-slate-100 px-4 py-3 text-left font-semibold text-slate-600">
+              <th scope="col" className="whitespace-nowrap border-b border-slate-200 px-4 py-3.5 text-left font-extrabold text-slate-700">
+                Gender
+              </th>
+              <th scope="col" className="whitespace-nowrap border-b border-slate-200 px-4 py-3.5 text-left font-extrabold text-slate-700">
                 Location
               </th>
-              <th scope="col" className="whitespace-nowrap border-b border-slate-100 px-4 py-3 text-right font-semibold text-slate-600">
+              <th scope="col" className="whitespace-nowrap border-b border-slate-200 px-4 py-3.5 text-right font-extrabold text-slate-700">
                 Entries
               </th>
-              <th scope="col" className="whitespace-nowrap border-b border-slate-100 px-4 py-3 text-right font-semibold text-slate-600">
+              <th scope="col" className="whitespace-nowrap border-b border-slate-200 px-4 py-3.5 text-right font-extrabold text-slate-700">
                 Flags
               </th>
-              <th scope="col" className="whitespace-nowrap border-b border-slate-100 px-4 py-3 text-right font-semibold text-slate-600">
+              <th scope="col" className="whitespace-nowrap border-b border-slate-200 px-4 py-3.5 text-right font-extrabold text-slate-700">
                 Crisis
               </th>
-              <th scope="col" className="whitespace-nowrap border-b border-slate-100 px-4 py-3 text-right font-semibold text-slate-600">
+              <th scope="col" className="whitespace-nowrap border-b border-slate-200 px-4 py-3.5 text-right font-extrabold text-slate-700">
                 Distressed
               </th>
-              <th scope="col" className="whitespace-nowrap border-b border-slate-100 px-4 py-3 text-right font-semibold text-slate-600">
+              <th scope="col" className="whitespace-nowrap border-b border-slate-200 px-4 py-3.5 text-right font-extrabold text-slate-700">
                 Declined
               </th>
-              <th scope="col" className="whitespace-nowrap border-b border-slate-100 px-4 py-3 text-right font-semibold text-slate-600">
+              <th scope="col" className="whitespace-nowrap border-b border-slate-200 px-4 py-3.5 text-right font-extrabold text-slate-700">
                 Contacted
               </th>
-              <th scope="col" className="whitespace-nowrap border-b border-slate-100 px-4 py-3 text-right font-semibold text-slate-600">
+              <th scope="col" className="whitespace-nowrap border-b border-slate-200 px-4 py-3.5 text-right font-extrabold text-slate-700">
                 Sessions
               </th>
-              <th scope="col" className="whitespace-nowrap border-b border-slate-100 px-4 py-3 text-left font-semibold text-slate-600">
+              <th scope="col" className="whitespace-nowrap border-b border-slate-200 px-4 py-3.5 text-left font-extrabold text-slate-700">
                 Top Concern
               </th>
-              <th scope="col" className="whitespace-nowrap border-b border-slate-100 px-4 py-3 text-left font-semibold text-slate-600">
+              <th scope="col" className="whitespace-nowrap border-b border-slate-200 px-4 py-3.5 text-left font-extrabold text-slate-700">
                 Highest Risk
               </th>
-              <th scope="col" className="whitespace-nowrap border-b border-slate-100 px-4 py-3 text-left font-semibold text-slate-600">
+              <th scope="col" className="whitespace-nowrap border-b border-slate-200 px-4 py-3.5 text-left font-extrabold text-slate-700">
                 Status
               </th>
             </tr>
@@ -557,7 +711,7 @@ function StudentReportTable({ rows, loading }) {
           <tbody className="bg-white">
             {loading ? (
               <tr>
-                <td colSpan={13} className="px-5 py-10 text-center text-slate-500">
+                <td colSpan={14} className="px-5 py-10 text-center text-slate-500">
                   Loading student report...
                 </td>
               </tr>
@@ -565,6 +719,7 @@ function StudentReportTable({ rows, loading }) {
               rows.map((row) => {
                 const riskLabel = getShortRiskLabel(row.latestRiskLevel);
                 const statusLabel = row.reportStatus || "No entries";
+                const genderDisplay = normalizeReportGender(row.gender);
                 return (
                   <tr key={row.studentNumber || row.email || row.fullName} className="group hover:bg-slate-50/80">
                     <td className="sticky left-0 z-10 max-w-[280px] border-b border-slate-100 bg-white px-4 py-3 shadow-[2px_0_6px_-2px_rgba(15,23,42,0.10)] group-hover:bg-slate-50">
@@ -585,6 +740,9 @@ function StudentReportTable({ rows, loading }) {
                     </td>
                     <td className="whitespace-nowrap border-b border-slate-100 px-4 py-3 text-slate-700">
                       {row.program || "—"}
+                    </td>
+                    <td className="whitespace-nowrap border-b border-slate-100 px-4 py-3 font-semibold text-slate-700">
+                      {genderDisplay}
                     </td>
                     <td className="max-w-[200px] border-b border-slate-100 px-4 py-3 text-slate-600">
                       <div className="truncate" title={formatLocation(row)}>
@@ -658,7 +816,7 @@ function StudentReportTable({ rows, loading }) {
               })
             ) : (
               <tr>
-                <td colSpan={13} className="px-5 py-10 text-center text-slate-500">
+                <td colSpan={14} className="px-5 py-10 text-center text-slate-500">
                   No data for this range
                 </td>
               </tr>
@@ -678,8 +836,9 @@ export default function AnalyticsReports({ onLogout, session }) {
   const [loading, setLoading] = useState(true);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isExportingCsv, setIsExportingCsv] = useState(false);
-  const [flaggedOnly, setFlaggedOnly] = useState(false);
   const [programFilter, setProgramFilter] = useState("");
+  const [genderFilter, setGenderFilter] = useState("all");
+  const [locationFilter, setLocationFilter] = useState("all");
   const [riskLevelFilter, setRiskLevelFilter] = useState("all");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -695,14 +854,25 @@ export default function AnalyticsReports({ onLogout, session }) {
     }
     return Array.from(values).sort((a, b) => a.localeCompare(b));
   }, [studentRows]);
+
+  const locationOptions = useMemo(() => {
+    const values = new Set();
+    for (const row of studentRows) {
+      const loc = formatLocation(row);
+      if (loc && loc !== "—") values.add(loc);
+    }
+    return Array.from(values).sort((a, b) => a.localeCompare(b));
+  }, [studentRows]);
+
   const filteredStudentRows = useMemo(
     () =>
       applyClientFilters(studentRows, {
-        flaggedOnly,
-        programFilter,
         riskLevelFilter,
+        programFilter,
+        genderFilter,
+        locationFilter,
       }),
-    [studentRows, flaggedOnly, programFilter, riskLevelFilter],
+    [studentRows, riskLevelFilter, programFilter, genderFilter, locationFilter],
   );
   const totals = useMemo(
     () =>
@@ -719,9 +889,10 @@ export default function AnalyticsReports({ onLogout, session }) {
   );
   const cardSessions = Number(analytics?.cards?.counselingSessions?.value ?? totals.sessions);
   const hasClientRowFilters =
-    flaggedOnly ||
+    (Boolean(riskLevelFilter) && riskLevelFilter !== "all") ||
     Boolean(programFilter) ||
-    (Boolean(riskLevelFilter) && riskLevelFilter !== "all");
+    (Boolean(genderFilter) && genderFilter !== "all") ||
+    (Boolean(locationFilter) && locationFilter !== "all");
   const displaySessions = hasClientRowFilters ? totals.sessions : cardSessions;
 
   async function loadAnalytics(nextRangeKey = rangeKey, nextCustomRange = customRange) {
@@ -801,9 +972,10 @@ export default function AnalyticsReports({ onLogout, session }) {
       const currentAnalytics = await getAnalyticsForCurrentFilters();
       const rawRows = Array.isArray(currentAnalytics?.reports?.students) ? currentAnalytics.reports.students : [];
       const rows = applyClientFilters(rawRows, {
-        flaggedOnly,
-        programFilter,
         riskLevelFilter,
+        programFilter,
+        genderFilter,
+        locationFilter,
       });
       const filters = currentAnalytics?.filters || {};
       setErrorMessage("");
@@ -825,9 +997,10 @@ export default function AnalyticsReports({ onLogout, session }) {
       const currentAnalytics = await getAnalyticsForCurrentFilters();
       const rawRows = Array.isArray(currentAnalytics?.reports?.students) ? currentAnalytics.reports.students : [];
       const rows = applyClientFilters(rawRows, {
-        flaggedOnly,
-        programFilter,
         riskLevelFilter,
+        programFilter,
+        genderFilter,
+        locationFilter,
       });
       const filters = currentAnalytics?.filters || {};
       const exportTotals = rows.reduce(
@@ -953,7 +1126,7 @@ export default function AnalyticsReports({ onLogout, session }) {
           <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
             <div className="text-slate-500">Report Range</div>
             <div className="mt-1 font-semibold text-slate-900">
-              {analytics?.filters?.startDate || "--"} to {analytics?.filters?.endDate || "--"}
+              {formatToMMDDYYYY(analytics?.filters?.startDate)} to {formatToMMDDYYYY(analytics?.filters?.endDate)}
             </div>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
@@ -974,70 +1147,22 @@ export default function AnalyticsReports({ onLogout, session }) {
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Quick filters</span>
-            <button
-              type="button"
-              onClick={() => setFlaggedOnly((value) => !value)}
-              className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${
-                flaggedOnly
-                  ? "border-rose-300 bg-rose-50 text-rose-700"
-                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              Flagged / At-Risk
-            </button>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Risk level</span>
-            {[
-              { key: "all", label: "All" },
-              { key: "crisis", label: "Crisis" },
-              { key: "distressed", label: "Distressed" },
-              { key: "none", label: "None" },
-            ].map((option) => (
-              <button
-                key={option.key}
-                type="button"
-                onClick={() => setRiskLevelFilter(option.key)}
-                className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${
-                  riskLevelFilter === option.key
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="flex min-w-[180px] flex-col gap-1 text-sm text-slate-600">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Program</span>
-              <select
-                value={programFilter}
-                onChange={(event) => setProgramFilter(event.target.value)}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
-              >
-                <option value="">All programs</option>
-                {programOptions.map((program) => (
-                  <option key={program} value={program}>
-                    {program}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <div className="ml-auto text-sm text-slate-500">
-              Showing <span className="font-semibold text-slate-800">{formatNumber(filteredStudentRows.length)}</span> of{" "}
-              <span className="font-semibold text-slate-800">{formatNumber(studentRows.length)}</span> students
-            </div>
-          </div>
-        </div>
-
-        <StudentReportTable rows={filteredStudentRows} loading={loading} />
+        <StudentReportTable
+          rows={filteredStudentRows}
+          loading={loading}
+          riskLevelFilter={riskLevelFilter}
+          setRiskLevelFilter={setRiskLevelFilter}
+          programFilter={programFilter}
+          setProgramFilter={setProgramFilter}
+          genderFilter={genderFilter}
+          setGenderFilter={setGenderFilter}
+          locationFilter={locationFilter}
+          setLocationFilter={setLocationFilter}
+          programOptions={programOptions}
+          locationOptions={locationOptions}
+          filteredCount={filteredStudentRows.length}
+          totalCount={studentRows.length}
+        />
       </div>
     </Layout>
   );

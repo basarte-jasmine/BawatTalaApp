@@ -27,6 +27,27 @@ import Modal from "./Modal";
 import { getAdminRoleLabel, isHeadCounselor } from "../lib/admin-roles";
 
 const NOTIFICATION_REFRESH_MS = 60000;
+const SEEN_NOTIF_TOAST_STORAGE_KEY = "bt_admin_seen_notif_toast_ids";
+
+function getSeenNotificationToastIds() {
+  try {
+    const raw = window.sessionStorage.getItem(SEEN_NOTIF_TOAST_STORAGE_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    return new Set(Array.isArray(parsed) ? parsed : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function rememberSeenNotificationToastId(id) {
+  if (!id) return;
+  try {
+    const current = getSeenNotificationToastIds();
+    current.add(id);
+    window.sessionStorage.setItem(SEEN_NOTIF_TOAST_STORAGE_KEY, JSON.stringify([...current].slice(-200)));
+  } catch {}
+}
 const EMPTY_GLOBAL_SEARCH_RESULTS = {
   students: [],
   entries: [],
@@ -178,9 +199,23 @@ function getAdminNotificationTarget(item) {
 
 function formatSearchDate(value) {
   if (!value) return "";
+  const str = String(value).trim();
+  const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    return `${match[2]}-${match[3]}-${match[1]}`;
+  }
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return String(value);
-  return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(parsed);
+  const mm = parts.find((p) => p.type === "month")?.value || "01";
+  const dd = parts.find((p) => p.type === "day")?.value || "01";
+  const yyyy = parts.find((p) => p.type === "year")?.value || "1970";
+  return `${mm}-${dd}-${yyyy}`;
 }
 
 function getPageSearchResults(query, session) {
@@ -350,25 +385,32 @@ export default function Header({
   useEffect(() => {
     if (!adminEmail) {
       setNotificationToast(null);
-      notificationsInitializedRef.current = false;
-      seenNotificationIdsRef.current = new Set();
       return undefined;
     }
 
-    const currentIds = new Set(notifications.map((item) => item.id).filter(Boolean));
+    const seenIds = getSeenNotificationToastIds();
     if (!notificationsInitializedRef.current) {
-      seenNotificationIdsRef.current = currentIds;
-      notificationsInitializedRef.current = true;
+      // On initial screen load or navigation, record all existing notifications as seen so we do not pop them up on navigation
+      notifications.forEach((item) => {
+        if (item?.id) seenIds.add(item.id);
+      });
+      try {
+        window.sessionStorage.setItem(SEEN_NOTIF_TOAST_STORAGE_KEY, JSON.stringify([...seenIds].slice(-200)));
+      } catch {}
+      if (notifications.length > 0) {
+        notificationsInitializedRef.current = true;
+      }
       return undefined;
     }
 
-    const newestUnread = notifications.find((item) => item?.id && !item.isRead && !seenNotificationIdsRef.current.has(item.id));
-    seenNotificationIdsRef.current = currentIds;
+    // Only alert for genuinely new unread notifications that arrive via active polling
+    const newestUnread = notifications.find((item) => item?.id && !item.isRead && !seenIds.has(item.id));
 
     if (!newestUnread) {
       return undefined;
     }
 
+    rememberSeenNotificationToastId(newestUnread.id);
     setNotificationToast(newestUnread);
     const timeoutId = window.setTimeout(() => {
       setNotificationToast((current) => (current?.id === newestUnread.id ? null : current));
@@ -630,6 +672,9 @@ export default function Header({
             aria-label="Close notification"
             onClick={(event) => {
               event.stopPropagation();
+              if (notificationToast?.id) {
+                rememberSeenNotificationToastId(notificationToast.id);
+              }
               setNotificationToast(null);
             }}
             className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full text-[#6d816d] transition hover:bg-[#edf7e8] hover:text-[#1f5d2f] focus:outline-none focus:ring-2 focus:ring-emerald-300"

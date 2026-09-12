@@ -255,6 +255,16 @@ async function ensureStudentProfilePictureSchema() {
     alter table if exists public.student_profiles
     add column if not exists profile_picture_path text;
   `);
+
+  await pool.query(`
+    alter table if exists public.student_profiles
+    add column if not exists deleted_at timestamptz;
+  `);
+
+  await pool.query(`
+    alter table if exists public.student_profiles
+    add column if not exists scheduled_deletion_at timestamptz;
+  `);
 }
 
 async function ensureDatabaseSchema() {
@@ -747,12 +757,84 @@ async function ensureDatabaseSchema() {
 
   await pool.query(`
     alter table public.journal_entries
+    add column if not exists purged_from_student_at timestamptz;
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
     add column if not exists primary_concern text;
   `);
 
   await pool.query(`
     alter table public.journal_entries
     add column if not exists concern_tags jsonb not null default '[]'::jsonb;
+  `);
+
+
+  await pool.query(`
+    alter table public.journal_entries
+    add column if not exists student_action text;
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    add column if not exists student_action_at timestamptz;
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    add column if not exists counselor_resolved_at timestamptz;
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    add column if not exists counselor_resolved_by_email text;
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    add column if not exists counselor_resolved_by_name text;
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    drop constraint if exists journal_entries_student_action_check;
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    add constraint journal_entries_student_action_check
+    check (
+      student_action is null
+      or student_action in ('CLICKED_HOTLINE', 'SCHEDULED_COUNSELING', 'VIEWED_WELLNESS', 'DISMISSED')
+    );
+  `);
+
+  await pool.query(`
+    create table if not exists public.journal_flag_history (
+      id uuid primary key default gen_random_uuid(),
+      entry_id uuid not null references public.journal_entries(id) on delete cascade,
+      student_number text,
+      actor_type text not null,
+      actor_email text,
+      actor_name text,
+      actor_role text,
+      action_type text not null,
+      from_risk_level text,
+      to_risk_level text,
+      from_student_action text,
+      to_student_action text,
+      from_counselor_resolved boolean,
+      to_counselor_resolved boolean,
+      note text,
+      metadata jsonb not null default '{}'::jsonb,
+      created_at timestamptz not null default now()
+    );
+  `);
+
+  await pool.query(`
+    create index if not exists journal_flag_history_entry_created_idx
+      on public.journal_flag_history (entry_id, created_at desc);
   `);
 
   await pool.query(`

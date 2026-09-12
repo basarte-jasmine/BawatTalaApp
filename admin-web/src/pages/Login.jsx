@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Clock } from "lucide-react";
 import AuthShell from "../components/auth/AuthShell";
 import { adminLogin, fetchAdminSession, getAdminApiUrl, setAdminToken } from "../lib/admin-api";
 import { validateAdminLogin } from "../lib/admin-validation";
@@ -15,6 +16,15 @@ export default function Login({ onLogin }) {
   const [submitting, setSubmitting] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [reactivationPrompt, setReactivationPrompt] = useState(null);
+  const [lockCountdown, setLockCountdown] = useState(0);
+
+  useEffect(() => {
+    if (lockCountdown <= 0) return undefined;
+    const timer = setInterval(() => {
+      setLockCountdown((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [lockCountdown]);
 
   useEffect(() => {
     const oauthStatus = searchParams.get("oauth");
@@ -81,7 +91,10 @@ export default function Login({ onLogin }) {
       onLogin(sessionData.admin);
       navigate("/dashboard", { replace: true });
     } catch (requestError) {
-      setError(requestError.message || "Invalid email or password. Please try again.");
+      if (requestError?.retryAfterSeconds) {
+        setLockCountdown(Number(requestError.retryAfterSeconds));
+      }
+      setError(requestError?.message || "Invalid email or password. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -127,7 +140,30 @@ export default function Login({ onLogin }) {
       <form onSubmit={handleSubmit} className="space-y-5" autoComplete="off">
         <input type="text" name="username" autoComplete="username" className="hidden" tabIndex="-1" aria-hidden="true" />
         <input type="password" name="password" autoComplete="current-password" className="hidden" tabIndex="-1" aria-hidden="true" />
-        {error ? <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
+        {searchParams.get("notice") === "idle-timeout" ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-xs font-semibold text-amber-800">
+            You were automatically logged out due to inactivity.
+          </div>
+        ) : null}
+        {lockCountdown > 0 ? (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-xs text-rose-800 space-y-2 shadow-sm">
+            <div className="flex items-center gap-2 text-sm font-bold text-rose-900">
+              <Clock className="h-4 w-4 text-rose-600" />
+              <span>Account Temporarily Locked</span>
+            </div>
+            <p className="leading-relaxed font-medium">
+              Too many failed login attempts. Please wait for the countdown before trying again:
+            </p>
+            <div className="flex items-center gap-2 pt-1 font-mono text-xl font-black text-rose-700">
+              <span className="rounded-lg bg-white px-3 py-1 border border-rose-200 shadow-inner">
+                {Math.floor(lockCountdown / 60)}:{(lockCountdown % 60).toString().padStart(2, "0")}
+              </span>
+              <span className="text-xs font-sans font-semibold text-rose-600">remaining</span>
+            </div>
+          </div>
+        ) : error ? (
+          <p className="rounded-xl bg-red-50 p-3 text-sm font-medium text-red-700 border border-red-200">{error}</p>
+        ) : null}
 
         <div>
           <label className="mb-1 block text-sm font-semibold text-admin-ink">Email</label>

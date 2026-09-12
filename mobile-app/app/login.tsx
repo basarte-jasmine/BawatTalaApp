@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import { useState } from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { FormTextInput } from "../components/forms/FormTextInput";
 import { PasswordField } from "../components/forms/PasswordField";
 import { AuthCardLayout } from "../components/layout/AuthCardLayout";
@@ -35,6 +35,7 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [isBusy, setIsBusy] = useState(false);
+  const [reactivationPrompt, setReactivationPrompt] = useState<{ message?: string; scheduledDeletionAt?: string } | null>(null);
 
   const handleLogin = async () => {
     const studentNumber = normalizeStudentIdInput(studentId);
@@ -62,6 +63,14 @@ export default function LoginScreen() {
     const result = await loginWithStudentId(studentNumber, passwordValue);
     setIsBusy(false);
 
+    if (result.requiresReactivation) {
+      setReactivationPrompt({
+        message: result.message,
+        scheduledDeletionAt: result.scheduledDeletionAt,
+      });
+      return;
+    }
+
     if (!result.ok) {
       setErrorMessage(getLoginErrorMessage(result.message));
       return;
@@ -72,6 +81,27 @@ export default function LoginScreen() {
       return;
     }
 
+    setUser(result.user);
+    router.replace({ pathname: "/studio", params: { welcome: "1" } });
+  };
+
+  const handleConfirmReactivation = async () => {
+    const studentNumber = normalizeStudentIdInput(studentId);
+    const passwordValue = password.trim();
+    if (!studentNumber || !passwordValue) return;
+
+    setIsBusy(true);
+    setErrorMessage("");
+    const result = await loginWithStudentId(studentNumber, passwordValue, { reactivate: true });
+    setIsBusy(false);
+
+    if (!result.ok || !result.user?.token) {
+      setErrorMessage(result.message || "Reactivation failed. Please try again.");
+      setReactivationPrompt(null);
+      return;
+    }
+
+    setReactivationPrompt(null);
     setUser(result.user);
     router.replace({ pathname: "/studio", params: { welcome: "1" } });
   };
@@ -134,6 +164,37 @@ export default function LoginScreen() {
           Don&apos;t have an account? <Text style={styles.registerLink}>Register</Text>
         </Text>
       </Pressable>
+      <Modal
+        visible={Boolean(reactivationPrompt)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setReactivationPrompt(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Reactivate Account?</Text>
+            <Text style={styles.modalBody}>
+              Your account is currently scheduled for deletion. Would you like to cancel deletion and reactivate your account?
+            </Text>
+            <View style={styles.modalActions}>
+              <Pressable
+                style={styles.modalSecondaryButton}
+                onPress={() => setReactivationPrompt(null)}
+                disabled={isBusy}
+              >
+                <Text style={styles.modalSecondaryText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={styles.modalPrimaryButton}
+                onPress={() => void handleConfirmReactivation()}
+                disabled={isBusy}
+              >
+                <Text style={styles.modalPrimaryText}>{isBusy ? "Reactivating..." : "Reactivate"}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </AuthCardLayout>
   );
 }
@@ -220,4 +281,69 @@ const styles = StyleSheet.create({
   registerLink: {
     color: "#2C7DB0" },
   disabledLink: {
-    opacity: 0.5 } });
+    opacity: 0.5 }
+,  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(21, 27, 24, 0.44)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 22,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 320,
+    borderRadius: 20,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 18,
+    shadowColor: "#5F695D",
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  modalTitle: {
+    color: "#1B2E24",
+    fontSize: 18,
+    fontFamily: "Outfit-Bold",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  modalBody: {
+    color: "#52606C",
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  modalActions: {
+    flexDirection: "row",
+    columnGap: 10,
+  },
+  modalSecondaryButton: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 999,
+    backgroundColor: "#F2F5F3",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalSecondaryText: {
+    color: "#566271",
+    fontSize: 13,
+    fontFamily: "Outfit-Bold",
+  },
+  modalPrimaryButton: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 999,
+    backgroundColor: "#79C943",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalPrimaryText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontFamily: "Outfit-Bold",
+  },});

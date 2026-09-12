@@ -26,7 +26,7 @@ function normalizeStudentGender(value) {
   const normalized = normalizeCompactSpaces(value).toLowerCase();
   if (normalized === "male") return "Male";
   if (normalized === "female") return "Female";
-  if (normalized === "prefer not to say") return "Prefer not to say";
+  if (normalized === "prefer not to say") return "Female";
   return "";
 }
 
@@ -51,7 +51,7 @@ async function main() {
   );
 
   if (!defaultGender) {
-    throw new Error("DEFAULT_STUDENT_GENDER must be Male, Female, or Prefer not to say.");
+    throw new Error("DEFAULT_STUDENT_GENDER must be Male or Female.");
   }
 
   const payload = {

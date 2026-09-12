@@ -1,11 +1,9 @@
-import Toast from "../components/Toast";
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import Toast from "../components/Toast";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
   CalendarDays,
-  Check,
-  CheckCheck,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -27,6 +25,7 @@ import StudentAvatar from "../components/StudentAvatar";
 import {
   fetchAdminRiskFlags,
   fetchAdminStudentProfile,
+  openAdminStudentJournalEntry,
   sendAdminStudentNotification,
   updateAdminJournalFlag,
   fetchAdminStudentFollowUps,
@@ -57,36 +56,6 @@ const FLAG_OPTIONS = [
   { label: "None", value: "NONE" },
 ];
 
-const PRIMARY_CONCERN_OPTIONS = [
-  "Personal problems",
-  "Mental health",
-  "Academic problems",
-  "Interpersonal relationships",
-  "Peer",
-  "Family",
-  "Romantic",
-  "Career guidance",
-  "Financial guidance",
-  "Burnout / Exhaustion",
-  "Anxiety",
-  "Stress",
-  "Bullying",
-  "Adjustment",
-  "Others",
-];
-
-const RESOLUTION_ACTION_OPTIONS = [
-  "Reached out to student",
-  "Spoke with student",
-  "Scheduled counseling session",
-  "Referred to hotline / emergency support",
-  "Safety plan / resources provided",
-  "Coordinated with another counselor",
-  "Monitoring / follow-up planned",
-  "No further action needed",
-  "Other",
-];
-
 function normalizeRiskLevel(value) {
   return String(value || "NONE").trim().toUpperCase();
 }
@@ -100,7 +69,7 @@ function isSupportNeeded(entry) {
 }
 
 function isResolved(entry) {
-  return Boolean(entry?.counselorResolvedAt);
+  return Boolean(entry?.counselorResolvedAt) || String(entry?.supportResponse || "").toUpperCase() === "CONTACTED";
 }
 
 function getEntryFlag(entry) {
@@ -169,78 +138,6 @@ function getConcernTags(entry) {
     .filter((item, index, list) => list.indexOf(item) === index);
 }
 
-function getEntryDateValue(entry) {
-  return entry?.createdAt || entry?.entryDate || entry?.updatedAt || "";
-}
-
-function riskSeverityRank(entry) {
-  const level = normalizeRiskLevel(entry?.riskLevel);
-  if (["HIGH", "CRITICAL"].includes(level)) return 3;
-  if (["LOW", "MEDIUM", "MODERATE"].includes(level)) return 2;
-  const supportResponse = String(entry?.supportResponse || "").toUpperCase();
-  const studentAction = String(entry?.studentAction || "").toUpperCase();
-  if (supportResponse === "DECLINED" || studentAction === "DISMISSED") return 2;
-  return 1;
-}
-
-function isFinishedEntry(entry) {
-  if (!entry) return true;
-  if (typeof entry.isFinished === "boolean") return entry.isFinished;
-  if (typeof entry.is_finished === "boolean") return entry.is_finished;
-  // Risk-flags list is finished-only; missing field means treat as finished.
-  return true;
-}
-
-function isUnresolvedFlagged(entry) {
-  return isFlaggedEntry(entry) && !isResolved(entry);
-}
-
-function pickMostSevereUnresolvedEntry(entries) {
-  const list = Array.isArray(entries) ? entries : [];
-  // Official queue prefers finished entries; unfinished mid-chat stays labeled, not primary.
-  const finished = list.filter(isFinishedEntry);
-  const scope = finished.length ? finished : list;
-  const unresolved = scope.filter(isUnresolvedFlagged);
-  const pool = unresolved.length ? unresolved : scope;
-  if (!pool.length) return null;
-  return [...pool].sort((a, b) => {
-    const finishedDiff = Number(isFinishedEntry(b)) - Number(isFinishedEntry(a));
-    if (finishedDiff) return finishedDiff;
-    const rankDiff = riskSeverityRank(b) - riskSeverityRank(a);
-    if (rankDiff) return rankDiff;
-    return new Date(getEntryDateValue(b)) - new Date(getEntryDateValue(a));
-  })[0];
-}
-
-function splitActiveAndHistoricalTags(entries) {
-  const active = [];
-  const historical = [];
-  const seenActive = new Set();
-  const seenHistorical = new Set();
-  (entries || []).forEach((entry) => {
-    const tags = getConcernTags(entry);
-    const resolved = isResolved(entry);
-    const dest = resolved ? historical : active;
-    const seen = resolved ? seenHistorical : seenActive;
-    tags.forEach((tag) => {
-      if (!tag || seen.has(tag)) return;
-      seen.add(tag);
-      dest.push(tag);
-    });
-  });
-  return {
-    activeTags: active,
-    historicalTags: historical.filter((tag) => !seenActive.has(tag)),
-  };
-}
-
-function formatEntryLabel(entry) {
-  const dateStr = formatDate(getEntryDateValue(entry), { withTime: true });
-  const title = String(entry?.title || "").trim();
-  if (title) return title + " · " + dateStr;
-  return getEntryFlag(entry) + " · " + dateStr;
-}
-
 function isFlaggedEntry(entry) {
   const riskLevel = normalizeRiskLevel(entry?.riskLevel);
   const supportResponse = String(entry?.supportResponse || "").toUpperCase();
@@ -263,7 +160,7 @@ function countCrisisFlagsInWindow(entries, windowDays = CRISIS_FREQUENCY_WINDOW_
   const cutoff = Date.now() - windowDays * 24 * 60 * 60 * 1000;
   return (entries || []).filter((entry) => {
     if (!isCritical(entry)) return false;
-    const ts = new Date(getEntryDateValue(entry)).getTime();
+    const ts = new Date(entry?.createdAt || entry?.entryDate).getTime();
     return Number.isFinite(ts) && ts >= cutoff;
   }).length;
 }
@@ -299,22 +196,15 @@ function groupEntriesByStudent(entries) {
 
   return [...groups.values()]
     .map((group) => {
-      const sortedEntries = [...group.entries].sort((a, b) => {
-        const finishedDiff = Number(isFinishedEntry(b)) - Number(isFinishedEntry(a));
-        if (finishedDiff) return finishedDiff;
-        return new Date(b.createdAt || b.entryDate) - new Date(a.createdAt || a.entryDate);
-      });
+      const sortedEntries = [...group.entries].sort((a, b) => new Date(b.createdAt || b.entryDate) - new Date(a.createdAt || a.entryDate));
       const latestEntry = sortedEntries[0] || {};
       const crisisFlagsLast14Days = countCrisisFlagsInWindow(sortedEntries);
-      const { activeTags, historicalTags } = splitActiveAndHistoricalTags(sortedEntries);
       return {
         ...group,
         entries: sortedEntries,
         latestEntry,
         flag: getGroupFlag(sortedEntries),
         concernTags: [...new Set(sortedEntries.flatMap(getConcernTags))],
-        activeTags,
-        historicalTags,
         crisisFlagsLast14Days,
       };
     })
@@ -403,22 +293,11 @@ function FlaggedStudentRow({ student, onReview, maskStudentNumbers = false }) {
       </td>
       <td className="px-5 py-4">
         <div className="flex max-w-sm flex-wrap gap-1.5">
-          {(student.activeTags || []).map((tag) => (
-            <span key={student.studentNumber + "-active-" + tag} className="rounded-full border border-amber-300 bg-amber-50/70 px-3 py-1 text-xs font-semibold text-amber-800">
+          {student.concernTags.slice(0, 3).map((tag) => (
+            <span key={student.studentNumber + "-" + tag} className="rounded-full border border-amber-300 bg-amber-50/70 px-3 py-1 text-xs font-semibold text-amber-800">
               {tag}
             </span>
           ))}
-          {(student.historicalTags || []).slice(0, 2).map((tag) => (
-            <span key={student.studentNumber + "-hist-" + tag} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-400">
-              {tag}
-            </span>
-          ))}
-          {(student.historicalTags || []).length > 2 ? (
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-400">
-              {/* + past */}
-              {"+" + ((student.historicalTags || []).length - 2) + " past"}
-            </span>
-          ) : null}
         </div>
       </td>
       <td className="px-5 py-4">
@@ -439,7 +318,7 @@ function FlaggedStudentRow({ student, onReview, maskStudentNumbers = false }) {
         <button
           type="button"
           onClick={() => onReview(student)}
-          className="inline-flex items-center gap-2 rounded-xl bg-[#0e5a3a] px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#0b482e]"
+          className="inline-flex items-center gap-2 rounded-xl bg-[#229365] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#1b7b54] shadow-sm"
         >
           <Eye className="h-4 w-4" />
           Review
@@ -450,9 +329,10 @@ function FlaggedStudentRow({ student, onReview, maskStudentNumbers = false }) {
   );
 }
 
-function EntryCard({ entry, isSelected, onSelect }) {
+function EntryCard({ entry, index, isSelected, onSelect }) {
   const flag = getEntryFlag(entry);
   const actionLabel = getStudentActionLabel(entry);
+  const formattedDate = formatDate(entry.createdAt || entry.entryDate, { withTime: true });
 
   return (
     <button
@@ -468,29 +348,19 @@ function EntryCard({ entry, isSelected, onSelect }) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-bold text-slate-900">
-            {formatEntryLabel(entry)}
+            {entry.title ? String(entry.title) + " - " + formattedDate : "Journal Entry - " + formattedDate}
           </div>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-1.5">
-          {!isFinishedEntry(entry) ? (
-            <span
-              className="rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-bold text-sky-700"
-              title="Mid-chat / not finished — not the official Flagged case yet"
-            >
-              In progress
-            </span>
-          ) : null}
-          <span
-            className={
-              "rounded-md px-2 py-0.5 text-xs font-bold " +
-              (isResolved(entry)
-                ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
-                : "border border-amber-200 bg-amber-50 text-amber-700")
-            }
-          >
-            {isResolved(entry) ? "Resolved" : "Pending"}
-          </span>
-        </div>
+        <span
+          className={
+            "rounded-md px-2 py-0.5 text-xs font-bold " +
+            (isResolved(entry)
+              ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+              : "border border-amber-200 bg-amber-50 text-amber-700")
+          }
+        >
+          {isResolved(entry) ? "Resolved" : "Pending"}
+        </span>
       </div>
       <div className="mt-2.5 flex flex-wrap gap-1.5">
         {getConcernTags(entry).slice(0, 3).map((tag) => (
@@ -511,7 +381,7 @@ function EntryCard({ entry, isSelected, onSelect }) {
   );
 }
 
-function JournalEntryViewer({ entry }) {
+function JournalEntryViewer({ entry, onOpenJournal }) {
   const visibleMessages = Array.isArray(entry?.messages) ? entry.messages.filter((message) => message.text) : [];
 
   if (visibleMessages.length) {
@@ -555,8 +425,16 @@ function JournalEntryViewer({ entry }) {
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800">
         <div className="flex items-start gap-2">
           <Lock className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>Journal Lock is on for this student. Conversation stays locked by default — summary and risk details only.</span>
+          <span>Journal Lock is on for this student. Only the summary is available until the student's Journal Lock PIN is entered.</span>
         </div>
+        <button
+          type="button"
+          onClick={() => onOpenJournal?.(entry)}
+          className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[#229365] px-4 py-2 text-sm font-bold text-white hover:bg-[#1b7b54]"
+        >
+          <Lock className="h-4 w-4" />
+          Open Journal
+        </button>
       </div>
     );
   }
@@ -636,88 +514,6 @@ function SummaryNotes({ entry }) {
   );
 }
 
-function FlagHistory({ entry }) {
-  const items = entry?.flagHistory || entry?.history || [];
-
-  function formatRiskName(level) {
-    const norm = normalizeRiskLevel(level);
-    if (norm === "HIGH" || norm === "CRITICAL") return "Critical Case";
-    if (norm === "LOW" || norm === "MEDIUM" || norm === "MODERATE" || norm === "DISTRESSED") return "Support Needed";
-    if (norm === "NONE") return "None";
-    return norm;
-  }
-
-  function humanizeAction(value) {
-    const raw = String(value || "").trim();
-    if (!raw) return "Update";
-    return raw
-      .replace(/[_-]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .replace(/\b\w/g, (char) => char.toUpperCase());
-  }
-
-  function buildDetail(item) {
-    const note = String(item?.note || "").trim();
-    if (note) return note;
-
-    const parts = [];
-    if (item?.fromRiskLevel || item?.toRiskLevel) {
-      const fromLabel = formatRiskName(item?.fromRiskLevel);
-      const toLabel = formatRiskName(item?.toRiskLevel);
-      if (fromLabel !== toLabel) {
-        parts.push(`Risk: ${fromLabel} -> ${toLabel}`);
-      }
-    }
-    if (item?.fromStudentAction || item?.toStudentAction) {
-      const fromAction = item?.fromStudentAction || "-";
-      const toAction = item?.toStudentAction || "-";
-      if (fromAction !== toAction) parts.push(`Student action: ${fromAction} -> ${toAction}`);
-    }
-    if (item?.fromCounselorResolved != null || item?.toCounselorResolved != null) {
-      const fromResolved = item?.fromCounselorResolved ? "resolved" : "unresolved";
-      const toResolved = item?.toCounselorResolved ? "resolved" : "unresolved";
-      if (fromResolved !== toResolved) parts.push(`Counselor: ${fromResolved} -> ${toResolved}`);
-    }
-    return parts.join(" | ");
-  }
-
-  return (
-    <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-      <h3 className="mb-3 text-sm font-bold text-slate-800">Change History</h3>
-      {items.length ? (
-        <ul className="space-y-2">
-          {items.map((item, index) => {
-            const title = humanizeAction(item?.actionType || item?.action || item?.type || "Update");
-            const when = item?.createdAtManila || formatDate(item?.createdAt, { withTime: true });
-            const actor = item?.actorName || item?.actorEmail || "";
-            const detail = buildDetail(item);
-            const key = item?.id || `${entry?.id || "entry"}-history-${index}`;
-
-            return (
-              <li key={key} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-sm font-bold text-slate-800">{title}</div>
-                    {actor ? <div className="mt-0.5 text-xs font-medium text-emerald-700">{actor}</div> : null}
-                    {detail ? <div className="mt-1 text-xs leading-5 text-slate-600">{detail}</div> : null}
-                  </div>
-                  <div className="shrink-0 text-[11px] font-semibold text-slate-400">{when}</div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
-          No audit history for this entry yet.
-        </div>
-      )}
-    </div>
-  );
-}
-
-
 function FlagDetails({ entry, isEditing, editState, saving, onChange, onEdit, onCancel, onSave }) {
   const flag = getEntryFlag(entry);
   const actionLabel = getStudentActionLabel(entry);
@@ -752,19 +548,12 @@ function FlagDetails({ entry, isEditing, editState, saving, onChange, onEdit, on
           </label>
           <label className="block text-xs font-semibold text-slate-500">
             Primary Concern
-            <select
+            <input
               value={editState.primaryConcern}
               onChange={(event) => onChange("primaryConcern", event.target.value)}
               className="mt-1 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 focus:border-[#229365] focus:outline-none"
-            >
-              <option value="">Not set</option>
-              {editState.primaryConcern && !PRIMARY_CONCERN_OPTIONS.includes(editState.primaryConcern) ? (
-                <option value={editState.primaryConcern}>{editState.primaryConcern}</option>
-              ) : null}
-              {PRIMARY_CONCERN_OPTIONS.map((option) => (
-                <option key={option} value={option}>{option}</option>
-              ))}
-            </select>
+              placeholder="Not set"
+            />
           </label>
           <label className="block text-xs font-semibold text-slate-500">
             Reason
@@ -784,7 +573,7 @@ function FlagDetails({ entry, isEditing, editState, saving, onChange, onEdit, on
               type="button"
               onClick={onSave}
               disabled={saving}
-              className="rounded-xl bg-[#0e5a3a] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0b482e] disabled:opacity-60"
+              className="rounded-xl bg-[#229365] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1b7b54] disabled:opacity-60"
             >
               {saving ? "Saving..." : "Save"}
             </button>
@@ -835,6 +624,7 @@ function ReviewModal({
   onMessage,
   onViewProfile,
   onMarkResolved,
+  onOpenJournal,
   onRemoveFlag,
   maskStudentNumbers = false,
   followUpInfo = null,
@@ -843,23 +633,23 @@ function ReviewModal({
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm">
-      <div className="h-full w-full max-w-5xl bg-white shadow-2xl flex flex-col overflow-hidden">
-        <div className="shrink-0 border-b border-slate-200 bg-white px-7 py-6">
+      <div className="h-full w-full max-w-5xl overflow-y-auto bg-white shadow-2xl flex flex-col">
+        <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-7 py-6">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-2xl font-black text-slate-900 tracking-wide uppercase">{student.fullName}</h2>
               <div className="mt-2 flex flex-wrap items-center gap-2.5 text-sm text-slate-500 font-medium">
                 <span>{maskStudentNumber(student.studentNumber, maskStudentNumbers)}</span>
-                <span>•</span>
+                <span>-</span>
                 <span className="uppercase">{student.program || "Unspecified"}</span>
                 {followUpInfo?.lastFollowUpAt ? (
                   <>
                     <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-0.5 text-xs font-bold text-emerald-800">
-                      Follow-up sent {formatDate(followUpInfo.lastFollowUpAt, { withTime: true })} • {followUpInfo.lastFollowUpByName || "Counselor"}
+                      Follow-up sent {formatDate(followUpInfo.lastFollowUpAt, { withTime: true })} ï¿½ {followUpInfo.lastFollowUpByName || "Counselor"}
                     </span>
                   </>
                 ) : null}
-                <span>•</span>
+                <span>-</span>
                 <span className="font-black text-[#EF4444]">{entries.length} Flagged Entries</span>
               </div>
             </div>
@@ -872,26 +662,27 @@ function ReviewModal({
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 grid gap-6 px-7 py-6 lg:grid-cols-[0.95fr,1.1fr] overflow-hidden">
-          <div className="h-full overflow-y-auto pr-2 space-y-4">
+        <div className="grid gap-6 px-7 py-6 lg:grid-cols-[0.95fr,1.1fr] flex-1">
+          <div className="space-y-4">
             {loading ? <div className="rounded-xl border border-slate-200 p-4 text-sm text-slate-500">Loading flagged entries...</div> : null}
             {error ? <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
-            {entries.map((entry) => (
+            {entries.map((entry, index) => (
               <EntryCard
                 key={entry.id}
                 entry={entry}
+                index={entries.length - index}
                 isSelected={selectedEntry?.id === entry.id}
                 onSelect={onSelectEntry}
               />
             ))}
           </div>
 
-          <div className="h-full overflow-y-auto pr-2 space-y-6">
+          <div className="space-y-6">
             {selectedEntry ? (
               <>
                 <div>
                   <h3 className="text-sm font-bold text-slate-800 mb-2.5">Flagged Journal Entry</h3>
-                  <JournalEntryViewer entry={selectedEntry} />
+                  <JournalEntryViewer entry={selectedEntry} onOpenJournal={onOpenJournal} />
                 </div>
 
                 <SummaryNotes entry={selectedEntry} />
@@ -911,8 +702,6 @@ function ReviewModal({
                   onCancel={onCancelEdit}
                   onSave={onSaveEdit}
                 />
-
-                <FlagHistory entry={selectedEntry} />
               </>
             ) : (
               <div className="rounded-xl border border-slate-200 p-4 text-sm text-slate-500">Select an entry to review.</div>
@@ -920,11 +709,11 @@ function ReviewModal({
           </div>
         </div>
 
-        <div className="shrink-0 flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 bg-white px-7 py-4 shadow-lg">
+        <div className="sticky bottom-0 flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 bg-white px-7 py-4 shadow-lg">
           <button
             type="button"
             onClick={onMessage}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition"
           >
             <MessageSquare className="h-4 w-4" />
             Message Student
@@ -932,7 +721,7 @@ function ReviewModal({
           <button
             type="button"
             onClick={() => onViewProfile(student.studentNumber)}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50/50 px-4 py-2.5 text-sm font-bold text-[#229365] hover:bg-emerald-50 transition"
           >
             <ExternalLink className="h-4 w-4" />
             View Full Student Profile
@@ -941,7 +730,7 @@ function ReviewModal({
             type="button"
             onClick={onRemoveFlag}
             disabled={!selectedEntry || saving}
-            className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-bold text-rose-700 transition hover:bg-rose-100 disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-bold text-[#EF4444] hover:bg-red-50 disabled:opacity-60 transition"
           >
             <Trash2 className="h-4 w-4" />
             Remove Flag
@@ -950,7 +739,7 @@ function ReviewModal({
             type="button"
             onClick={onMarkResolved}
             disabled={!selectedEntry || saving}
-            className="inline-flex items-center gap-2 rounded-xl bg-[#0e5a3a] px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-[#0b482e] disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-xl bg-[#229365] px-5 py-2.5 text-sm font-bold text-white hover:bg-[#1b7b54] disabled:opacity-60 shadow-sm transition"
           >
             <CheckCircle2 className="h-4 w-4" />
             {isResolved(selectedEntry) ? "Undo Resolved" : "Mark Resolved"}
@@ -961,203 +750,66 @@ function ReviewModal({
   );
 }
 
-function MessageModal({
-  student,
-  maskStudentNumbers = false,
-  onClose,
-  onSuccess,
-}) {
-  const [messages, setMessages] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [title, setTitle] = useState("Counselor Follow-up");
-  const [body, setBody] = useState("");
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState("");
-  const scrollRef = useRef(null);
-  useEffect(() => {
-    if (!student?.studentNumber) return;
-    let isMounted = true;
-    async function loadHistory() {
-      try {
-        setLoading(true);
-        const data = await fetchAdminStudentFollowUps(student.studentNumber);
-        if (!isMounted) return;
-        const msgList = Array.isArray(data?.messages)
-          ? data.messages
-          : (data?.threads || []).flatMap((t) => t.messages || []);
-        msgList.sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
-        setMessages(msgList);
-        setError("");
-      } catch (err) {
-        if (!isMounted) return;
-        setError(err instanceof Error ? err.message : "Failed to load conversation history.");
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    }
-    void loadHistory();
-    return () => {
-      isMounted = false;
-    };
-  }, [student?.studentNumber]);
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, loading]);
-  async function handleSend(e) {
-    e?.preventDefault();
-    if (!body.trim() || sending || !student?.studentNumber) return;
-    try {
-      setSending(true);
-      setError("");
-      const payload = {
-        title: title.trim() || "Counselor Follow-up",
-        message: body.trim(),
-      };
-      await sendAdminStudentNotification(student.studentNumber, payload);
-      const newMsg = {
-        id: `local-${Date.now()}`,
-        title: payload.title,
-        body: payload.message,
-        createdAt: new Date().toISOString(),
-        from: {
-          name: "Guidance Counselor",
-          role: "Counselor",
-        },
-      };
-      setMessages((prev) => [...prev, newMsg]);
-      setBody("");
-      onSuccess?.(`Message sent to ${student.fullName || student.studentNumber}.`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send message.");
-    } finally {
-      setSending(false);
-    }
-  }
-  function handleKeyDown(e) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      void handleSend();
-    }
-  }
+function MessageModal({ student, title, body, sending, maskStudentNumbers = false, onTitleChange, onBodyChange, onClose, onSend }) {
   if (!student) return null;
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-      <div className="flex h-[85vh] max-h-[660px] w-full max-w-2xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl animate-in fade-in duration-150">
-        <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
+      <div className="w-full max-w-xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between border-b border-slate-100 px-6 py-5">
           <div className="flex items-center gap-3.5">
             <StudentAvatar
-              className="h-11 w-11 rounded-full text-sm font-bold shadow-sm"
+              className="h-11 w-11 rounded-full text-base"
               fullName={student.fullName}
               profilePictureUrl={student.profilePictureUrl}
             />
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-slate-900">{student.fullName}</h2>
-                <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
-                  Student Channel
-                </span>
-              </div>
-              <div className="text-xs font-semibold text-slate-500">
-                {maskStudentNumber(student.studentNumber, maskStudentNumbers)} • {student.program || "Unspecified"}
-              </div>
+              <h2 className="font-black text-slate-900 text-base">Message {student.fullName?.split(" ")[0] || "Student"}</h2>
+              <div className="text-xs font-medium text-slate-500 mt-0.5">{maskStudentNumber(student.studentNumber, maskStudentNumbers)} - {student.program || "Unspecified"}</div>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
-            aria-label="Close conversation"
-          >
+          <button type="button" onClick={onClose} className="rounded-full p-2 text-slate-400 hover:bg-slate-100 transition">
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div ref={scrollRef} className="flex-1 overflow-y-auto bg-slate-50/70 p-6 space-y-4">
-          {loading ? (
-            <div className="flex h-full items-center justify-center text-sm font-semibold text-slate-500">
-              Loading conversation history...
-            </div>
-          ) : error ? (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs font-semibold text-rose-700">
-              {error}
-            </div>
-          ) : messages.length ? (
-            messages.map((msg, idx) => (
-              <div key={msg.id || idx} className="flex flex-col items-end space-y-1">
-                <div className="max-w-[85%] rounded-2xl rounded-tr-sm bg-emerald-800 p-4 text-white shadow-sm">
-                  {msg.title && msg.title !== "Counselor Follow-up" ? (
-                    <div className="mb-1 text-xs font-bold text-emerald-200 border-b border-emerald-700/60 pb-1">
-                      {msg.title}
-                    </div>
-                  ) : null}
-                  <p className="text-sm font-medium leading-relaxed whitespace-pre-wrap">{msg.body || msg.message}</p>
-                </div>
-                <div className="flex items-center gap-1.5 pr-1 text-[11px] font-semibold text-slate-500">
-                  <span>{msg.from?.name ? `${msg.from.name}` : "Counselor"}</span>
-                  <span>•</span>
-                  <span>{formatDate(msg.createdAt, { withTime: true })}</span>
-                  <span>•</span>
-                  {msg.isRead ? (
-                    <span className="inline-flex items-center gap-1 font-bold text-emerald-700" title={msg.readAt ? `Seen ${formatDate(msg.readAt, { withTime: true })}` : "Seen"}>
-                      <CheckCheck className="h-3.5 w-3.5 text-emerald-600" />
-                      <span>Seen</span>
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 text-slate-400 font-medium" title="Delivered to student">
-                      <Check className="h-3.5 w-3.5 text-slate-400" />
-                      <span>Delivered</span>
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="flex h-full flex-col items-center justify-center text-center p-6 space-y-2">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
-                <MessageSquare className="h-6 w-6" />
-              </div>
-              <p className="text-sm font-bold text-slate-700">No previous messages</p>
-              <p className="max-w-sm text-xs font-medium text-slate-500">
-                Send a check-in message to {student.fullName?.split(" ")[0] || "this student"}. They will receive it directly in their app.
-              </p>
-            </div>
-          )}
-        </div>
-        <form onSubmit={handleSend} className="shrink-0 border-t border-slate-200 bg-white p-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">Subject:</span>
+        <div className="space-y-4 px-6 py-5">
+          <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
+            Title
             <input
-              type="text"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Counselor Follow-up"
-              className="h-8 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs font-semibold text-slate-800 outline-none focus:border-emerald-600 focus:bg-white focus:ring-1 focus:ring-emerald-600"
+              onChange={(event) => onTitleChange(event.target.value)}
+              className="mt-1.5 h-11 w-full rounded-xl border border-slate-200 px-3.5 text-sm text-slate-800 font-medium focus:border-[#229365] focus:outline-none"
             />
-          </div>
-          <div className="flex items-end gap-2.5">
+          </label>
+          <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
+            Message
             <textarea
               value={body}
-              onChange={(e) => setBody(e.target.value)}
-              onKeyDown={handleKeyDown}
-              rows={2}
-              placeholder={`Write a message to ${student.fullName?.split(" ")[0] || "student"}... (Press Enter to send)`}
-              className="flex-1 resize-none rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-600/20"
+              onChange={(event) => onBodyChange(event.target.value)}
+              rows={6}
+              placeholder={"Write a message to " + (student.fullName?.split(" ")[0] || "the student") + "..."}
+              className="mt-1.5 w-full rounded-xl border border-slate-200 p-3.5 text-sm text-slate-800 font-medium focus:border-[#229365] focus:outline-none"
             />
-            <button
-              type="submit"
-              disabled={sending || !body.trim()}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Send className="h-4 w-4" />
-              <span>{sending ? "Sending..." : "Send"}</span>
-            </button>
+          </label>
+          <div className="flex items-center gap-2 text-xs text-slate-400 font-medium">
+            <Lock className="h-3.5 w-3.5" />
+            Encrypted and logged in the student's confidential record.
           </div>
-          <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
-            <Lock className="h-3 w-3" />
-            <span>Encrypted and logged in student wellness records.</span>
-          </div>
-        </form>
+        </div>
+        <div className="flex justify-end gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4">
+          <button type="button" onClick={onClose} className="rounded-xl px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-white transition">
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onSend}
+            disabled={sending || !title.trim() || !body.trim()}
+            className="inline-flex items-center gap-2 rounded-xl bg-[#229365] px-5 py-2.5 text-sm font-bold text-white hover:bg-[#1b7b54] disabled:opacity-60 transition shadow-sm"
+          >
+            <Send className="h-4 w-4" />
+            {sending ? "Sending..." : "Send message"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1189,11 +841,16 @@ export default function FlaggedEntries({ onLogout, session }) {
     adminFlagReason: "",
   });
   const [messageTarget, setMessageTarget] = useState(null);
+  const [messageTitle, setMessageTitle] = useState("Counselor Follow-up");
+  const [messageBody, setMessageBody] = useState("");
+  const [isSending, setIsSending] = useState(false);
   const [savingFlag, setSavingFlag] = useState(false);
   const [resolveCandidate, setResolveCandidate] = useState(null);
-  const [resolveAction, setResolveAction] = useState("");
-  const [resolveNote, setResolveNote] = useState("");
   const [removeCandidate, setRemoveCandidate] = useState(null);
+  const [journalUnlockTarget, setJournalUnlockTarget] = useState(null);
+  const [journalUnlockPin, setJournalUnlockPin] = useState("");
+  const [journalUnlockError, setJournalUnlockError] = useState("");
+  const [journalUnlockSaving, setJournalUnlockSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -1304,9 +961,8 @@ export default function FlaggedEntries({ onLogout, session }) {
     setSelectedStudent(student);
     setReviewEntries(student.entries);
     setReviewFilter("All");
-    const initialEntry = pickMostSevereUnresolvedEntry(student.entries) || student.entries[0] || null;
-    setSelectedEntry(initialEntry);
-    resetEditState(initialEntry);
+    setSelectedEntry(student.entries[0] || null);
+    resetEditState(student.entries[0] || null);
     setReviewError("");
     setReviewLoading(true);
 
@@ -1318,20 +974,10 @@ export default function FlaggedEntries({ onLogout, session }) {
 
       if (profileData?.entries) {
         const flaggedEntries = profileData.entries.filter(isFlaggedEntry);
-        const historyMap = new Map((student.entries || []).map((e) => [e.id, e.flagHistory || e.history || []]));
-        const enriched = (flaggedEntries.length ? flaggedEntries : student.entries).map((entry) => ({
-          ...entry,
-          flagHistory: (Array.isArray(entry.flagHistory) && entry.flagHistory.length) ? entry.flagHistory : (historyMap.get(entry.id) || []),
-        }));
-        enriched.sort((a, b) => {
-          const finishedDiff = Number(isFinishedEntry(b)) - Number(isFinishedEntry(a));
-          if (finishedDiff) return finishedDiff;
-          return new Date(getEntryDateValue(b)) - new Date(getEntryDateValue(a));
-        });
-        const nextEntry = pickMostSevereUnresolvedEntry(enriched) || enriched.find(isFinishedEntry) || enriched[0] || null;
+        const enriched = flaggedEntries.length ? flaggedEntries : student.entries;
         setReviewEntries(enriched);
-        setSelectedEntry(nextEntry);
-        resetEditState(nextEntry);
+        setSelectedEntry(enriched[0] || null);
+        resetEditState(enriched[0] || null);
       }
 
       if (followUpData?.threads) {
@@ -1389,41 +1035,12 @@ export default function FlaggedEntries({ onLogout, session }) {
       return;
     }
 
-    setEntries((current) => current.map((entry) => {
-      if (entry.id !== updatedEntry.id) return entry;
-      const merged = { ...entry, ...updatedEntry };
-      if (!Array.isArray(updatedEntry?.flagHistory) && Array.isArray(entry?.flagHistory)) {
-        merged.flagHistory = entry.flagHistory;
-      }
-      if (!Array.isArray(updatedEntry?.history) && Array.isArray(entry?.history)) {
-        merged.history = entry.history;
-      }
-      return merged;
-    }));
+    setEntries((current) => current.map((entry) => (entry.id === updatedEntry.id ? { ...entry, ...updatedEntry } : entry)));
     setReviewEntries((current) => {
-      const nextEntries = current.map((entry) => {
-        if (entry.id !== updatedEntry.id) return entry;
-        const merged = { ...entry, ...updatedEntry };
-        if (!Array.isArray(updatedEntry?.flagHistory) && Array.isArray(entry?.flagHistory)) {
-          merged.flagHistory = entry.flagHistory;
-        }
-        if (!Array.isArray(updatedEntry?.history) && Array.isArray(entry?.history)) {
-          merged.history = entry.history;
-        }
-        return merged;
-      });
+      const nextEntries = current.map((entry) => (entry.id === updatedEntry.id ? { ...entry, ...updatedEntry } : entry));
       setSelectedEntry((currentEntry) => {
         if (currentEntry?.id !== updatedEntry.id) return currentEntry;
-        if (entryMatchesFlag(updatedEntry, reviewFilter)) {
-          const merged = { ...currentEntry, ...updatedEntry };
-          if (!Array.isArray(updatedEntry?.flagHistory) && Array.isArray(currentEntry?.flagHistory)) {
-            merged.flagHistory = currentEntry.flagHistory;
-          }
-          if (!Array.isArray(updatedEntry?.history) && Array.isArray(currentEntry?.history)) {
-            merged.history = currentEntry.history;
-          }
-          return merged;
-        }
+        if (entryMatchesFlag(updatedEntry, reviewFilter)) return { ...currentEntry, ...updatedEntry };
         const nextEntry = nextEntries.find((entry) => entryMatchesFlag(entry, reviewFilter)) || nextEntries[0] || null;
         resetEditState(nextEntry);
         return nextEntry;
@@ -1465,25 +1082,15 @@ export default function FlaggedEntries({ onLogout, session }) {
     const targetEntry = resolveCandidate || selectedEntry;
     if (!targetEntry?.id) return;
     const undoResolved = isResolved(targetEntry);
-    const resolutionAction = String(resolveAction || "").trim();
-    const note = String(resolveNote || "").trim();
-    if (!undoResolved && (!resolutionAction || !note)) {
-      setReviewError("Choose an intervention action and add counselor notes to mark resolved.");
-      return;
-    }
+    setEditState((current) => ({ ...current, supportResponse: undoResolved ? "" : "CONTACTED" }));
     try {
       setSavingFlag(true);
-      const payload = {
+      const data = await updateAdminJournalFlag(targetEntry.id, {
         riskLevel: isCritical(targetEntry) ? "HIGH" : isSupportNeeded(targetEntry) ? "LOW" : "NONE",
         primaryConcern: targetEntry.primaryConcern || "",
+        supportResponse: undoResolved ? null : "CONTACTED",
         adminFlagReason: targetEntry.adminFlagReason || "",
-        markResolved: !undoResolved,
-      };
-      if (!undoResolved) {
-        payload.note = note;
-        payload.resolutionAction = resolutionAction;
-      }
-      const data = await updateAdminJournalFlag(targetEntry.id, payload);
+      });
       if (data?.entry) {
         reconcileUpdatedEntry(data.entry);
       }
@@ -1493,8 +1100,6 @@ export default function FlaggedEntries({ onLogout, session }) {
     } finally {
       setSavingFlag(false);
       setResolveCandidate(null);
-      setResolveAction("");
-      setResolveNote("");
     }
   }
 
@@ -1522,9 +1127,66 @@ export default function FlaggedEntries({ onLogout, session }) {
     }
   }
 
+  async function handleSendMessage() {
+    if (!messageTarget?.studentNumber) return;
+    try {
+      setIsSending(true);
+      await sendAdminStudentNotification(messageTarget.studentNumber, {
+        title: messageTitle,
+        message: messageBody,
+      });
+      setSuccessMessage("Message sent to " + (messageTarget.fullName || messageTarget.studentNumber) + ".");
+      setFollowUpsByStudent((prev) => ({
+        ...prev,
+        [messageTarget.studentNumber]: {
+          lastFollowUpAt: new Date().toISOString(),
+          lastFollowUpByName: session?.fullName || "Counselor",
+        },
+      }));
+      setMessageTarget(null);
+      setMessageBody("");
+      setMessageTitle("Counselor Follow-up");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to send student notification.");
+    } finally {
+      setIsSending(false);
+    }
+  }
+
+  function mergeUnlockedEntry(unlockedEntry) {
+    if (!unlockedEntry?.id) return;
+    setEntries((current) => current.map((entry) => (entry.id === unlockedEntry.id ? { ...entry, ...unlockedEntry } : entry)));
+    setReviewEntries((current) => current.map((entry) => (entry.id === unlockedEntry.id ? { ...entry, ...unlockedEntry } : entry)));
+    setSelectedEntry((current) => (current?.id === unlockedEntry.id ? { ...current, ...unlockedEntry } : current));
+  }
+
+  async function handleOpenJournal() {
+    const studentNumber = selectedStudent?.studentNumber || journalUnlockTarget?.studentNumber;
+    if (!studentNumber || !journalUnlockTarget?.id) return;
+    if (String(journalUnlockPin || "").length < 4) {
+      setJournalUnlockError("Enter the 4-digit Journal Lock PIN.");
+      return;
+    }
+
+    try {
+      setJournalUnlockSaving(true);
+      const data = await openAdminStudentJournalEntry(studentNumber, journalUnlockTarget.id, journalUnlockPin);
+      if (data?.entry) {
+        mergeUnlockedEntry(data.entry);
+      }
+      setJournalUnlockTarget(null);
+      setJournalUnlockError("");
+      setSuccessMessage("Journal opened for this flagged entry.");
+    } catch (error) {
+      setJournalUnlockError(error instanceof Error ? error.message : "Failed to open journal.");
+    } finally {
+      setJournalUnlockSaving(false);
+    }
+  }
+
   function handleViewProfile(studentNum) {
     if (!studentNum) return;
-    navigate(`/users?student=${encodeURIComponent(studentNum)}`);
+    navigate("/student-directory?search=" + encodeURIComponent(studentNum));
   }
 
   return (
@@ -1540,16 +1202,16 @@ export default function FlaggedEntries({ onLogout, session }) {
         <Toast message={successMessage} onClose={() => setSuccessMessage("")} />
 
         {/* Top Controls Bar */}
-        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm lg:flex-row lg:items-center">
+        <div className="flex flex-col gap-3.5 lg:flex-row lg:items-center lg:justify-between">
           {/* Search Bar */}
-          <div className="relative w-full lg:flex-1">
+          <div className="relative flex-1 max-w-md">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               placeholder="Search name or student number..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50/70 pl-10 pr-4 text-sm font-medium text-slate-800 placeholder-slate-400 outline-none transition focus:border-[#229365] focus:bg-white focus:ring-2 focus:ring-emerald-100"
+              className="h-11 w-full rounded-2xl border border-slate-200 bg-white pl-10 pr-4 text-sm font-medium text-slate-800 placeholder-slate-400 shadow-sm focus:border-[#229365] focus:outline-none"
             />
           </div>
 
@@ -1561,7 +1223,7 @@ export default function FlaggedEntries({ onLogout, session }) {
               <select
                 value={dateFilter}
                 onChange={(e) => setDateFilter(e.target.value)}
-                className="h-11 appearance-none rounded-xl border border-slate-200 bg-slate-50/70 pl-10 pr-9 text-xs font-bold text-slate-700 outline-none transition focus:border-[#229365] focus:bg-white focus:ring-1 focus:ring-emerald-100"
+                className="h-11 appearance-none rounded-2xl border border-slate-200 bg-white pl-10 pr-9 text-sm font-bold text-slate-700 shadow-sm focus:border-[#229365] focus:outline-none"
               >
                 {DATE_FILTERS.map((item) => (
                   <option key={item.value} value={item.value}>{item.label}</option>
@@ -1576,7 +1238,7 @@ export default function FlaggedEntries({ onLogout, session }) {
               <select
                 value={concernFilter}
                 onChange={(e) => setConcernFilter(e.target.value)}
-                className="h-11 min-w-[11rem] appearance-none rounded-xl border border-slate-200 bg-slate-50/70 pl-10 pr-9 text-xs font-bold text-slate-700 outline-none transition focus:border-[#229365] focus:bg-white focus:ring-1 focus:ring-emerald-100"
+                className="h-11 min-w-[11rem] appearance-none rounded-2xl border border-slate-200 bg-white pl-10 pr-9 text-sm font-bold text-slate-700 shadow-sm focus:border-[#229365] focus:outline-none"
               >
                 <option value="all">All Concern Types</option>
                 {concernOptions.map((item) => (
@@ -1592,7 +1254,7 @@ export default function FlaggedEntries({ onLogout, session }) {
               <select
                 value={programFilter}
                 onChange={(e) => setProgramFilter(e.target.value)}
-                className="h-11 min-w-[10rem] appearance-none rounded-xl border border-slate-200 bg-slate-50/70 pl-10 pr-9 text-xs font-bold text-slate-700 outline-none transition focus:border-[#229365] focus:bg-white focus:ring-1 focus:ring-emerald-100"
+                className="h-11 min-w-[10rem] appearance-none rounded-2xl border border-slate-200 bg-white pl-10 pr-9 text-sm font-bold text-slate-700 shadow-sm focus:border-[#229365] focus:outline-none"
               >
                 <option value="all">All Programs</option>
                 {PROGRAM_OPTIONS.map((prog) => (
@@ -1605,10 +1267,9 @@ export default function FlaggedEntries({ onLogout, session }) {
         </div>
 
         {/* Count Bar & Tabs */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-1">
-          <div className="text-sm font-extrabold text-slate-800">
-            Showing <span className="text-[#0e5a3a]">{filteredStudents.length}</span> students{" "}
-            <span className="font-semibold text-slate-500">({totalFilteredEntries} flagged entries)</span>
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="text-sm font-bold text-slate-700">
+            Showing {filteredStudents.length} students ({totalFilteredEntries} flagged entries)
           </div>
           <FilterTabs activeTab={activeTab} counts={counts} onChange={setActiveTab} />
         </div>
@@ -1617,7 +1278,7 @@ export default function FlaggedEntries({ onLogout, session }) {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[980px] border-separate border-spacing-y-3.5 text-left">
             <thead>
-              <tr className="text-xs font-extrabold uppercase tracking-wider text-slate-700">
+              <tr className="text-xs font-bold uppercase tracking-wider text-slate-400">
                 <th className="px-5 py-2">Student Name</th>
                 <th className="px-5 py-2">Concern Type</th>
                 <th className="px-5 py-2">Risk Flag</th>
@@ -1669,6 +1330,8 @@ export default function FlaggedEntries({ onLogout, session }) {
           setReviewEntries([]);
           setReviewFilter("All");
           setEditingFlag(false);
+          setJournalUnlockTarget(null);
+          setJournalUnlockError("");
         }}
         onSelectEntry={handleSelectEntry}
         onFilterChange={handleReviewFilterChange}
@@ -1681,120 +1344,63 @@ export default function FlaggedEntries({ onLogout, session }) {
         onSaveEdit={handleSaveFlag}
         onMessage={() => {
           setMessageTarget(selectedStudent);
+          setMessageTitle("Counselor Follow-up");
+          setMessageBody("");
         }}
         onViewProfile={handleViewProfile}
-        onMarkResolved={() => {
-          setResolveAction("");
-          setResolveNote("");
-          setResolveCandidate(selectedEntry);
+        onMarkResolved={() => setResolveCandidate(selectedEntry)}
+        onOpenJournal={(entry) => {
+          setJournalUnlockTarget(entry);
+          setJournalUnlockError("");
         }}
         onRemoveFlag={() => setRemoveCandidate(selectedEntry)}
         maskStudentNumbers={shouldMaskStudentNumbers}
         followUpInfo={selectedStudent ? followUpsByStudent[selectedStudent.studentNumber] : null}
       />
 
+      <ConfirmActionModal
+        isOpen={Boolean(journalUnlockTarget)}
+        onClose={() => {
+          if (journalUnlockSaving) return;
+          setJournalUnlockTarget(null);
+          setJournalUnlockPin("");
+          setJournalUnlockError("");
+        }}
+        onConfirm={() => void handleOpenJournal()}
+        title="Open Journal"
+        description={journalUnlockError || "Enter the student's 4-digit Journal Lock PIN to view this flagged journal conversation."}
+        confirmLabel={journalUnlockSaving ? "Opening..." : "Open Journal"}
+        inputLabel="Journal PIN"
+        inputPlaceholder="4-digit PIN"
+        inputRequired
+        inputValue={journalUnlockPin}
+        onInputChange={(value) => setJournalUnlockPin(String(value || "").replace(/[^0-9]/g, "").slice(0, 4))}
+      />
 
       <MessageModal
         student={messageTarget}
+        title={messageTitle}
+        body={messageBody}
+        sending={isSending}
         maskStudentNumbers={shouldMaskStudentNumbers}
+        onTitleChange={setMessageTitle}
+        onBodyChange={setMessageBody}
         onClose={() => setMessageTarget(null)}
-        onSuccess={(msg) => {
-          const studentNumber = messageTarget?.studentNumber;
-          setSuccessMessage(msg || "Message sent.");
-          if (studentNumber) {
-            setFollowUpsByStudent((prev) => ({
-              ...prev,
-              [studentNumber]: {
-                lastFollowUpAt: new Date().toISOString(),
-                lastFollowUpByName: session?.fullName || "Counselor",
-              },
-            }));
-          }
-          setMessageTarget(null);
-        }}
+        onSend={() => void handleSendMessage()}
       />
 
-      {resolveCandidate && !isResolved(resolveCandidate) ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
-            <div className="flex items-start justify-between border-b border-slate-100 px-6 py-5">
-              <div>
-                <h2 className="font-black text-slate-900 text-base">Mark Entry Resolved</h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  Record the intervention action and counselor notes. Both are required.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setResolveCandidate(null);
-                  setResolveAction("");
-                  setResolveNote("");
-                }}
-                className="rounded-full p-2 text-slate-400 hover:bg-slate-100 transition"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="space-y-4 px-6 py-5">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-                Intervention action
-                <select
-                  value={resolveAction}
-                  onChange={(event) => setResolveAction(event.target.value)}
-                  className="mt-1.5 h-11 w-full rounded-xl border border-slate-200 px-3.5 text-sm font-medium text-slate-800 focus:border-[#229365] focus:outline-none"
-                >
-                  <option value="">Select action</option>
-                  {RESOLUTION_ACTION_OPTIONS.map((option) => (
-                    <option key={option} value={option}>{option}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-                Counselor notes
-                <textarea
-                  value={resolveNote}
-                  onChange={(event) => setResolveNote(event.target.value)}
-                  rows={5}
-                  placeholder="Describe the follow-up, outcome, or next step..."
-                  className="mt-1.5 w-full rounded-xl border border-slate-200 p-3.5 text-sm font-medium text-slate-800 focus:border-[#229365] focus:outline-none"
-                />
-              </label>
-            </div>
-            <div className="flex justify-end gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4">
-              <button
-                type="button"
-                onClick={() => {
-                  setResolveCandidate(null);
-                  setResolveAction("");
-                  setResolveNote("");
-                }}
-                className="rounded-xl px-4 py-2.5 text-sm font-bold text-slate-600 hover:bg-white transition"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleMarkResolved()}
-                disabled={savingFlag || !String(resolveAction || "").trim() || !String(resolveNote || "").trim()}
-                className="inline-flex items-center gap-2 rounded-xl bg-[#0e5a3a] px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-[#0b482e] disabled:opacity-60"
-              >
-                <CheckCircle2 className="h-4 w-4" />
-                {savingFlag ? "Saving..." : "Mark Resolved"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       <ConfirmActionModal
-        isOpen={Boolean(resolveCandidate) && isResolved(resolveCandidate)}
+        isOpen={Boolean(resolveCandidate)}
         onClose={() => setResolveCandidate(null)}
         onConfirm={() => void handleMarkResolved()}
-        title="Undo Resolved"
-        description="Undo resolved for this entry? It will return to the appropriate unresolved flag tab."
+        title={isResolved(resolveCandidate) ? "Undo Resolved" : "Mark Entry Resolved"}
+        description={
+          isResolved(resolveCandidate)
+            ? "Undo resolved for this entry? It will return to the appropriate unresolved flag tab."
+            : "Mark this flagged entry as resolved? The student can still remain in other tabs if they have other unresolved critical or support-needed entries."
+        }
         cancelLabel="Cancel"
-        confirmLabel="Undo Resolved"
+        confirmLabel={isResolved(resolveCandidate) ? "Undo Resolved" : "Mark Resolved"}
       />
 
       <ConfirmActionModal

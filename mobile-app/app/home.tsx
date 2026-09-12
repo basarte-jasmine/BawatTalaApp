@@ -24,6 +24,8 @@ import {
   fetchLibraryBooks,
   fetchStudentAppointments,
   fetchStudentNotifications,
+  peekPendingRiskPromptEntryIds,
+  consumePendingRiskPrompt,
   saveDailyMood,
   saveFutureSelfMessage,
   updateFutureSelfMessage,
@@ -359,6 +361,24 @@ const DRIFTING_BOTTLE_NOTES: DriftingBottleNote[] = [
 export default function HomeScreen() {
   const { user } = useAuthSession();
   const { isSyncing, refreshKey, syncNow } = useOfflineSync();
+  const handledRiskPromptKeyRef = useRef<string>("");
+
+  useEffect(() => {
+    if (!user?.studentNumber || isSyncing) return;
+    const key = `${user.studentNumber}:${refreshKey}`;
+    if (handledRiskPromptKeyRef.current === key) return;
+    handledRiskPromptKeyRef.current = key;
+
+    void (async () => {
+      const pendingIds = await peekPendingRiskPromptEntryIds(user.studentNumber);
+      const entryId = pendingIds[0];
+      if (!entryId) return;
+      await consumePendingRiskPrompt(user.studentNumber, entryId);
+      router.push(
+        `/journal-entry-view?entryId=${encodeURIComponent(entryId)}&promptSupport=1`,
+      );
+    })();
+  }, [isSyncing, refreshKey, user?.studentNumber]);
   const { height, width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { consultConfirmed, appointmentId, appointmentNoticeTitle, welcome } = useLocalSearchParams<{

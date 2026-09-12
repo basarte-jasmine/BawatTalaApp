@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -76,6 +76,65 @@ function formatCreatedAtTime(createdAt: string) {
     hour: "numeric",
     minute: "2-digit",
     hour12: true });
+}
+
+
+function SwipeSafeEntryCard({
+  entry,
+  onDelete,
+  onOpen,
+}: {
+  entry: RecentEntryItem;
+  onDelete: () => void;
+  onOpen: () => void;
+}) {
+  const suppressOpenRef = useRef(false);
+
+  return (
+    <Swipeable
+      overshootRight={false}
+      onSwipeableOpenStartDrag={() => {
+        suppressOpenRef.current = true;
+      }}
+      onSwipeableWillOpen={() => {
+        suppressOpenRef.current = true;
+      }}
+      onSwipeableClose={() => {
+        setTimeout(() => {
+          suppressOpenRef.current = false;
+        }, 180);
+      }}
+      renderRightActions={() => (
+        <Pressable style={styles.deleteSwipeAction} onPress={onDelete}>
+          <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
+          <Text style={styles.deleteSwipeText}>Delete</Text>
+        </Pressable>
+      )}
+    >
+      <Pressable
+        style={styles.entryCard}
+        onPress={() => {
+          if (suppressOpenRef.current) return;
+          onOpen();
+        }}
+      >
+        <View style={styles.entryIconWrap}>
+          <Image source={BOOK_IMAGE} style={styles.entryIconImage} resizeMode="contain" />
+        </View>
+
+        <View style={styles.entryTextWrap}>
+          <Text style={styles.entryTime}>{formatCreatedAtTime(entry.createdAt)}</Text>
+          <Text style={styles.entryBody} numberOfLines={2}>
+            {[entry.preview, entry.summary, entry.title].map((value) => String(value || "").trim()).find(Boolean) || "Journal entry"}
+          </Text>
+        </View>
+
+        <View style={styles.entryChevronWrap}>
+          <Ionicons name="chevron-forward" size={18} color="#6E7D89" />
+        </View>
+      </Pressable>
+    </Swipeable>
+  );
 }
 
 export default function JournalEntriesScreen() {
@@ -249,36 +308,12 @@ export default function JournalEntriesScreen() {
               ) : (
                 <View style={styles.groupEntriesList}>
                   {group.entries.map((entry) => (
-                    <Swipeable
+                    <SwipeSafeEntryCard
                       key={entry.id}
-                      overshootRight={false}
-                      renderRightActions={() => (
-                        <Pressable style={styles.deleteSwipeAction} onPress={() => setPendingDeleteEntryId(entry.id)}>
-                          <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
-                          <Text style={styles.deleteSwipeText}>Delete</Text>
-                        </Pressable>
-                      )}
-                    >
-                      <Pressable
-                        style={styles.entryCard}
-                        onPress={() => router.push(`/journal-entry-view?entryId=${entry.id}`)}
-                      >
-                        <View style={styles.entryIconWrap}>
-                          <Image source={BOOK_IMAGE} style={styles.entryIconImage} resizeMode="contain" />
-                        </View>
-
-                        <View style={styles.entryTextWrap}>
-                          <Text style={styles.entryTime}>{formatCreatedAtTime(entry.createdAt)}</Text>
-                          <Text style={styles.entryBody} numberOfLines={2}>
-                            {[entry.preview, entry.summary, entry.title].map((value) => String(value || "").trim()).find(Boolean) || "Journal entry"}
-                          </Text>
-                        </View>
-
-                        <View style={styles.entryChevronWrap}>
-                          <Ionicons name="chevron-forward" size={18} color="#6E7D89" />
-                        </View>
-                      </Pressable>
-                    </Swipeable>
+                      entry={entry}
+                      onDelete={() => setPendingDeleteEntryId(entry.id)}
+                      onOpen={() => router.push(`/journal-entry-view?entryId=${entry.id}`)}
+                    />
                   ))}
                 </View>
               )}

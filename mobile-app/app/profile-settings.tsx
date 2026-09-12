@@ -17,6 +17,7 @@ import {
   View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { OtpCodeInput } from "../components/forms/OtpCodeInput";
+import { ConfirmationModal } from "../components/ui/ConfirmationModal";
 import { SelectField } from "../components/forms/SelectField";
 import { useAppPreferences } from "../lib/app-preferences";
 import {
@@ -33,6 +34,10 @@ import {
   updateStudentProfile,
   verifyJournalLockPin,
   verifyProfileEmailChangeCode,
+  fetchRecentlyDeletedJournalEntries,
+  restoreJournalEntriesBulk,
+  permanentlyDeleteJournalEntriesBulk,
+  scheduleStudentAccountDeletion,
   StudentProfile } from "../lib/backend-api";
 import { useAuthSession } from "../lib/auth-session";
 import { getManilaDaysInMonth, getManilaMonthName, getManilaTodayParts, getManilaWeekdayIndex } from "../lib/manila-date";
@@ -46,7 +51,8 @@ type SettingsSection =
   | "privacy-security"
   | "recent-activity"
   | "help-support"
-  | "app-lock";
+  | "app-lock"
+  | "recently-deleted";
 
 type HelpSubmissionType = "FEEDBACK" | "SUPPORT";
 
@@ -75,7 +81,10 @@ const SCREEN_COPY: Record<SettingsSection, { subtitle: string; title: string }> 
     subtitle: "Choose how private the app feels when you're using it around other people." },
   "recent-activity": {
     title: "Recent Activity",
-    subtitle: "A short summary of your latest entries, alerts, and support activity." } };
+    subtitle: "A short summary of your latest entries, alerts, and support activity." },
+  "recently-deleted": {
+    title: "Recently Deleted",
+    subtitle: "Manage recently removed journal entries. You can restore or permanently delete them." } };
 
 const FEEDBACK_CATEGORIES = ["Suggestion", "App Experience", "Bug Report", "Other"] as const;
 const SUPPORT_CATEGORIES = ["Account Issue", "Consultation/Booking Help", "Technical Issue", "Other"] as const;
@@ -475,10 +484,11 @@ export default function ProfileSettingsScreen() {
   const activeSection: SettingsSection = resolveSettingsSection(section);
   const [showContactForm, setShowContactForm] = useState(view === "contact" || view === "form");
   const { title, subtitle } = SCREEN_COPY[activeSection];
-  const { setUser, user } = useAuthSession();
+  const { clearUser, setUser, user } = useAuthSession();
   const {
     appLockAutoLock,
     appLockEnabled,
+    clearPreferences,
     disableAppLock,
     enableAppLock,
     enableExistingAppLock,
@@ -518,6 +528,110 @@ export default function ProfileSettingsScreen() {
     type?: string;
   }>({});
   const [feedbackErrorBanner, setFeedbackErrorBanner] = useState("");
+
+  // Recently Deleted State
+  const [deletedEntries, setDeletedEntries] = useState<any[]>([]);
+  const [deletedLoading, setDeletedLoading] = useState(false);
+  const [deletedActionBusy, setDeletedActionBusy] = useState(false);
+  const [deletedSelectionMode, setDeletedSelectionMode] = useState(false);
+  const [selectedDeletedIds, setSelectedDeletedIds] = useState<string[]>([]);
+  const [pendingPermanentDelete, setPendingPermanentDelete] = useState(false);
+
+  // Delete Account State
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [deleteAccountPassword, setDeleteAccountPassword] = useState("");
+  const [deleteAccountError, setDeleteAccountError] = useState("");
+  const [deleteAccountBusy, setDeleteAccountBusy] = useState(false);
+
+  const clearDeletedSelection = useCallback(() => {
+    setDeletedSelectionMode(false);
+    setSelectedDeletedIds([]);
+    setPendingPermanentDelete(false);
+  }, []);
+
+  const loadRecentlyDeleted = useCallback(async () => {
+    if (!user?.studentNumber) return;
+    setDeletedLoading(true);
+    const result = await fetchRecentlyDeletedJournalEntries(user.studentNumber);
+    setDeletedLoading(false);
+    if (result.ok && result.entries) {
+      setDeletedEntries(result.entries);
+      setSelectedDeletedIds((prev) => prev.filter((id) => result.entries?.some((entry) => entry.id === id)));
+    }
+  }, [user?.studentNumber]);
+
+  useEffect(() => {
+    if (activeSection === "recently-deleted") {
+      void loadRecentlyDeleted();
+      return;
+    }
+    clearDeletedSelection();
+  }, [activeSection, clearDeletedSelection, loadRecentlyDeleted]);
+
+  const toggleDeletedSelection = (entryId: string) => {
+    setSelectedDeletedIds((prev) =>
+      prev.includes(entryId) ? prev.filter((id) => id !== entryId) : [...prev, entryId],
+    );
+  };
+
+  const enterDeletedSelection = (entryId: string) => {
+    setDeletedSelectionMode(true);
+    setSelectedDeletedIds((prev) => (prev.includes(entryId) ? prev : [...prev, entryId]));
+  };
+
+  const handleBulkRestore = async () => {
+    if (!selectedDeletedIds.length || deletedActionBusy) return;
+    setDeletedActionBusy(true);
+    const result = await restoreJournalEntriesBulk(selectedDeletedIds);
+    setDeletedActionBusy(false);
+    if (!result.ok) {
+      showAppAlert("Restore Failed", result.message || "Could not restore selected entries.");
+      return;
+    }
+    const restored = new Set(result.restoredIds?.length ? result.restoredIds : selectedDeletedIds);
+    setDeletedEntries((prev) => prev.filter((entry) => !restored.has(entry.id)));
+    clearDeletedSelection();
+    showAppAlert(
+      "Restored",
+      result.restoredCount && result.restoredCount > 1
+        ? `${result.restoredCount} journal entries were restored.`
+        : "Journal entry has been restored to your journal.",
+    );
+  };
+
+  const handleBulkPermanentDelete = async () => {
+    if (!selectedDeletedIds.length || deletedActionBusy) return;
+    setDeletedActionBusy(true);
+    const result = await permanentlyDeleteJournalEntriesBulk(selectedDeletedIds);
+    setDeletedActionBusy(false);
+    setPendingPermanentDelete(false);
+    if (!result.ok) {
+      showAppAlert("Delete Failed", result.message || "Could not permanently delete selected entries.");
+      return;
+    }
+    const deleted = new Set(result.deletedIds?.length ? result.deletedIds : selectedDeletedIds);
+    setDeletedEntries((prev) => prev.filter((entry) => !deleted.has(entry.id)));
+    clearDeletedSelection();
+  };
+
+  const handleConfirmDeleteAccount = async () => {
+    if (!deleteAccountPassword.trim()) {
+      setDeleteAccountError("Password is required.");
+      return;
+    }
+    setDeleteAccountBusy(true);
+    setDeleteAccountError("");
+    const result = await scheduleStudentAccountDeletion(deleteAccountPassword.trim());
+    setDeleteAccountBusy(false);
+    if (!result.ok) {
+      setDeleteAccountError(result.message || "Failed to schedule account deletion.");
+      return;
+    }
+    setShowDeleteAccountModal(false);
+    clearPreferences();
+    clearUser();
+    router.replace("/login");
+  };
 
   useEffect(() => {
     if (view === "contact" || view === "form") {
@@ -1267,8 +1381,8 @@ export default function ProfileSettingsScreen() {
       case "gender": {
         const val = draftGender.trim().toUpperCase();
         if (!val) return "Gender is required.";
-        if (!findOption(GENDER_OPTIONS, val) && !findOption(withCurrentOption(GENDER_OPTIONS, profileSnapshot?.gender || profile?.gender || ""), val)) {
-          return "Choose a gender from the list.";
+        if (!findOption(GENDER_OPTIONS, val)) {
+          return "Choose Male or Female from the list.";
         }
         return null;
       }
@@ -1462,8 +1576,8 @@ return (
         <View style={styles.topBarSpacer} />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {activeSection !== "schedule" ? (
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, deletedSelectionMode && selectedDeletedIds.length > 0 ? { paddingBottom: 110 } : null]} showsVerticalScrollIndicator={false}>
+        {activeSection !== "schedule" && activeSection !== "app-lock" ? (
           <Text style={styles.subtitle}>
             {activeSection === "help-support" && showContactForm
               ? "Submit a support request or feedback and we'll get back to you."
@@ -1677,7 +1791,7 @@ return (
                   <SelectField
                     label=""
                     value={draftGender ? draftGender.toUpperCase() : ""}
-                    options={withCurrentOption(GENDER_OPTIONS, draftGender)}
+                    options={GENDER_OPTIONS.map((opt) => opt.toUpperCase())}
                     onSelect={(value) => {
                       setDraftGender(value.toUpperCase());
                       clearProfileFieldError("gender");
@@ -1923,8 +2037,7 @@ return (
               )}
             </Card>
 
-            {!!profileSuccess && <Text style={styles.feedbackSuccessText}>{profileSuccess}</Text>} 
-            <PrimaryButton label="Reset Password" onPress={() => openProfilePasswordReset("personal-details")} />
+            {!!profileSuccess && <Text style={styles.feedbackSuccessText}>{profileSuccess}</Text>}
           </>
         ) : null}
 
@@ -2095,39 +2208,10 @@ return (
                 bordered
               />
             </Card>
-            <Card title="Journal Privacy">
-              <ToggleItem
-                title="Auto-lock journal in background"
-                description={
-                  appLockEnabled
-                    ? "Lock your journal whenever Bawat Tala leaves the foreground."
-                    : "Turn on Journal Lock first to use this."
-                }
-                value={draftAutoLock}
-                onValueChange={(value) => {
-                  setDraftAutoLock(value);
-                  if (appLockEnabled) setAppLockAutoLock(value);
-                }}
-              />
-            </Card>
-            <TipCard
-              title={
-                appLockEnabled
-                  ? "Journal Lock is on"
-                  : hasAppLockPin
-                    ? "Journal Lock is off"
-                    : "Journal Lock is off"
-              }
-              body={
-                appLockEnabled
-                  ? "Your journal can stay protected with a 4-digit PIN whenever you leave the app or lock it manually."
-                  : hasAppLockPin
-                    ? "Your saved PIN is still kept. Turn Journal Lock on again to use the same PIN."
-                    : "Turn it on if you want your journal kept behind a PIN without locking the rest of the app."
-              }
-            />
-            <PrimaryButton label="Manage Journal Lock" onPress={() => router.push("/profile-settings?section=app-lock")} />
-            <SecondaryButton label="Change Password" onPress={() => openProfilePasswordReset("privacy-security")} />
+            <PrimaryButton label="Reset Password" onPress={() => openProfilePasswordReset("privacy-security")} />
+            <Pressable style={styles.deleteAccountButton} onPress={() => setShowDeleteAccountModal(true)}>
+              <Text style={styles.deleteAccountButtonText}>Delete Account</Text>
+            </Pressable>
           </>
         ) : null}
 
@@ -2188,6 +2272,63 @@ return (
                 </View>
               ) : (
                 <EmptyText text="No upcoming consultation right now." />
+              )}
+            </Card>
+          </>
+        ) : null}
+
+        {activeSection === "recently-deleted" ? (
+          <>
+            {deletedLoading ? <ActivityIndicator color="#70C943" style={styles.loader} /> : null}
+            {deletedSelectionMode ? (
+              <View style={styles.deletedSelectHintRow}>
+                <Text style={styles.deletedSelectHintText}>
+                  {selectedDeletedIds.length} selected · tap to toggle · long-press also works
+                </Text>
+                <Pressable onPress={clearDeletedSelection} hitSlop={8}>
+                  <Text style={styles.deletedSelectCancelText}>Cancel</Text>
+                </Pressable>
+              </View>
+            ) : null}
+            <Card title={`Deleted Entries · ${deletedEntries.length}`}>
+              {deletedEntries.length ? (
+                deletedEntries.map((entry, index) => {
+                  const isSelected = selectedDeletedIds.includes(entry.id);
+                  return (
+                    <Pressable
+                      key={entry.id}
+                      style={[
+                        styles.deletedItemCard,
+                        index > 0 && styles.deletedItemBorder,
+                        isSelected && styles.deletedItemCardSelected,
+                      ]}
+                      onLongPress={() => enterDeletedSelection(entry.id)}
+                      delayLongPress={280}
+                      onPress={() => {
+                        if (deletedSelectionMode) {
+                          toggleDeletedSelection(entry.id);
+                        }
+                      }}
+                    >
+                      {deletedSelectionMode ? (
+                        <View style={[styles.deletedCheckbox, isSelected && styles.deletedCheckboxChecked]}>
+                          {isSelected ? <Ionicons name="checkmark" size={14} color="#FFFFFF" /> : null}
+                        </View>
+                      ) : null}
+                      <View style={styles.deletedItemInfo}>
+                        <Text style={styles.deletedItemTitle}>{entry.title || "Untitled Entry"}</Text>
+                        <Text style={styles.deletedItemMeta}>Deleted {formatDateTime(entry.deletedAt)}</Text>
+                        {entry.summary ? (
+                          <Text style={styles.deletedItemSummary} numberOfLines={2}>
+                            {entry.summary}
+                          </Text>
+                        ) : null}
+                      </View>
+                    </Pressable>
+                  );
+                })
+              ) : (
+                <EmptyText text="No recently deleted journal entries." />
               )}
             </Card>
           </>
@@ -2430,7 +2571,10 @@ return (
                 title="Lock journal when app goes to background"
                 description="Useful if you switch apps often or hand your phone to someone else."
                 value={draftAutoLock}
-                onValueChange={setDraftAutoLock}
+                onValueChange={(value) => {
+                  setDraftAutoLock(value);
+                  if (appLockEnabled) setAppLockAutoLock(value);
+                }}
               />
             </Card>
             {!appLockEnabled && !hasAppLockPin ? (
@@ -2460,7 +2604,7 @@ return (
           </>
         ) : null}
 
-        {(!showContactForm || activeSection !== "help-support") && (
+        {(!showContactForm || activeSection !== "help-support") && activeSection !== "recently-deleted" ? (
         <Pressable
           style={styles.shareFooter}
           onPress={() => router.push("/referral" as never)}
@@ -2468,7 +2612,7 @@ return (
           <Ionicons name="share-social-outline" size={18} color="#4A5F72" />
           <Text style={styles.shareFooterText}>Refer a friend from here too</Text>
         </Pressable>
-        )}
+        ) : null}
       </ScrollView>
 
       <Modal
@@ -2706,6 +2850,99 @@ return (
           </View>
         </View>
       </Modal>
+      <Modal
+        visible={showDeleteAccountModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDeleteAccountModal(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.deleteModalHeader}>
+              <View style={styles.deleteModalIconWrap}>
+                <Ionicons name="warning-outline" size={24} color="#C62828" />
+              </View>
+              <Text style={styles.deleteModalTitle}>Delete Account?</Text>
+            </View>
+            <Text style={styles.deleteModalBody}>
+              Your account will be deactivated immediately and permanently deleted after 30 days. You can sign in anytime within 30 days to cancel deletion.
+            </Text>
+            <Text style={styles.deleteModalLabel}>Confirm your password</Text>
+            <TextInput
+              secureTextEntry
+              value={deleteAccountPassword}
+              onChangeText={(val) => {
+                setDeleteAccountPassword(val);
+                setDeleteAccountError("");
+              }}
+              placeholder="Enter password"
+              placeholderTextColor="#97A1AA"
+              style={styles.deleteModalInput}
+            />
+            {deleteAccountError ? <Text style={styles.deleteModalError}>{deleteAccountError}</Text> : null}
+            <View style={styles.modalActions}>
+              <Pressable
+                style={styles.modalSecondaryButton}
+                onPress={() => {
+                  setShowDeleteAccountModal(false);
+                  setDeleteAccountPassword("");
+                  setDeleteAccountError("");
+                }}
+                disabled={deleteAccountBusy}
+              >
+                <Text style={styles.modalSecondaryText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalDangerButton, deleteAccountBusy && styles.disabledButton]}
+                onPress={() => void handleConfirmDeleteAccount()}
+                disabled={deleteAccountBusy}
+              >
+                <Text style={styles.modalDangerText}>{deleteAccountBusy ? "Deleting..." : "Delete Account"}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      {activeSection === "recently-deleted" && deletedSelectionMode && selectedDeletedIds.length > 0 ? (
+        <View style={styles.deletedActionBar}>
+          <Text style={styles.deletedActionBarCount}>{selectedDeletedIds.length} selected</Text>
+          <View style={styles.deletedActionBarButtons}>
+            <Pressable
+              style={[styles.deletedActionBarRestore, deletedActionBusy && styles.disabledButton]}
+              disabled={deletedActionBusy}
+              onPress={() => void handleBulkRestore()}
+            >
+              <Ionicons name="refresh-outline" size={18} color="#2E7D32" />
+              <Text style={styles.deletedActionBarRestoreText}>Restore</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.deletedActionBarDelete, deletedActionBusy && styles.disabledButton]}
+              disabled={deletedActionBusy}
+              onPress={() => setPendingPermanentDelete(true)}
+            >
+              <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
+              <Text style={styles.deletedActionBarDeleteText}>Delete Permanently</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+
+      <ConfirmationModal
+        visible={pendingPermanentDelete}
+        message={
+          selectedDeletedIds.length > 1
+            ? `Permanently delete ${selectedDeletedIds.length} journal entries? This cannot be undone.`
+            : "Permanently delete this journal entry? This cannot be undone."
+        }
+        cancelLabel="Cancel"
+        confirmLabel="Delete"
+        confirmTone="danger"
+        onCancel={() => setPendingPermanentDelete(false)}
+        onConfirm={() => {
+          void handleBulkPermanentDelete();
+        }}
+      />
+
     </SafeAreaView>
   );
 }
@@ -3308,6 +3545,108 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
     fontFamily: "Outfit-Bold" },
+  deleteAccountButton: {
+    minHeight: 46,
+    borderRadius: 999,
+    backgroundColor: "#FFF7F8",
+    borderWidth: 1,
+    borderColor: "#F4D8DC",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 14,
+    marginBottom: 10,
+    shadowColor: "#B49AA1",
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2 },
+  deleteAccountButtonText: {
+    color: "#EE596B",
+    fontSize: 16,
+    lineHeight: 20,
+    fontFamily: "Outfit-Bold" },
+  deleteModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 10,
+    marginBottom: 14 },
+  deleteModalIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 999,
+    backgroundColor: "#FDEBEC",
+    alignItems: "center",
+    justifyContent: "center" },
+  deleteModalTitle: {
+    flex: 1,
+    color: "#304558",
+    fontSize: 18,
+    lineHeight: 24,
+    fontFamily: "Outfit-Bold" },
+  deleteModalBody: {
+    color: "#5A6B7A",
+    fontSize: 14,
+    lineHeight: 20,
+    fontFamily: "Outfit-Medium",
+    marginBottom: 16 },
+  deleteModalLabel: {
+    color: "#324254",
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: "Outfit-Bold",
+    marginBottom: 8 },
+  deleteModalInput: {
+    minHeight: 46,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#DDE4EB",
+    backgroundColor: "#FAFCFD",
+    paddingHorizontal: 12,
+    fontSize: 15,
+    color: "#2D4053" },
+  modalSecondaryButton: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E3E9EF",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#B5BCC4",
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1 },
+  modalSecondaryText: {
+    color: "#566271",
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: "Outfit-Bold" },
+  modalDangerButton: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 999,
+    backgroundColor: "#EE596B",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#B83E4E",
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2 },
+  modalDangerText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: "Outfit-Bold" },
+  deleteModalError: {
+    color: "#D24C59",
+    fontSize: 12,
+    lineHeight: 16,
+    fontFamily: "Outfit-SemiBold",
+    marginTop: 8,
+    marginBottom: 2 },
   textInput: {
     minHeight: 46,
     borderRadius: 14,
@@ -3596,5 +3935,115 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18 },
   shareFooter: { flexDirection: "row", alignItems: "center", justifyContent: "center", columnGap: 8, marginTop: 8 },
-  shareFooterText: { color: "#4A5F72", fontSize: 13, lineHeight: 18, fontFamily: "Outfit-SemiBold" } });
+  shareFooterText: { color: "#4A5F72", fontSize: 13, lineHeight: 18, fontFamily: "Outfit-SemiBold" },
+  deletedSelectHintRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+    columnGap: 10 },
+  deletedSelectHintText: {
+    flex: 1,
+    color: "#5A6B7A",
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 8 },
+  deletedSelectCancelText: {
+    color: "#4A5F72",
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: "Outfit-Bold",
+    marginBottom: 8 },
+  deletedItemCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    columnGap: 10,
+    paddingVertical: 10 },
+  deletedItemBorder: {
+    borderTopWidth: 1,
+    borderTopColor: "#EEF2F5" },
+  deletedItemCardSelected: {
+    backgroundColor: "#F4FBEA",
+    marginHorizontal: -6,
+    paddingHorizontal: 6,
+    borderRadius: 12 },
+  deletedCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: "#9BB08A",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+    backgroundColor: "#FFFFFF" },
+  deletedCheckboxChecked: {
+    backgroundColor: "#70C943",
+    borderColor: "#5A9A35" },
+  deletedItemInfo: {
+    flex: 1 },
+  deletedItemTitle: {
+    color: "#2D4053",
+    fontSize: 15,
+    lineHeight: 20,
+    fontFamily: "Outfit-Bold" },
+  deletedItemMeta: {
+    color: "#7A8793",
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 2 },
+  deletedItemSummary: {
+    color: "#526372",
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 4 },
+  deletedActionBar: {
+    borderTopWidth: 1,
+    borderTopColor: "#D8E3D4",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 12,
+    shadowColor: "#5C6570",
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: -2 },
+    elevation: 6 },
+  deletedActionBarCount: {
+    color: "#314258",
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: "Outfit-Bold",
+    marginBottom: 8 },
+  deletedActionBarButtons: {
+    flexDirection: "row",
+    columnGap: 10 },
+  deletedActionBarRestore: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#B7D9A3",
+    backgroundColor: "#F3FBEA",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 6 },
+  deletedActionBarRestoreText: {
+    color: "#2E7D32",
+    fontSize: 13,
+    fontFamily: "Outfit-Bold" },
+  deletedActionBarDelete: {
+    flex: 1.2,
+    minHeight: 44,
+    borderRadius: 999,
+    backgroundColor: "#D85B5B",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 6 },
+  deletedActionBarDeleteText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontFamily: "Outfit-Bold" } });
 

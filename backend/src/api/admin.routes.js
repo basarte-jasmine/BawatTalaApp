@@ -585,6 +585,17 @@ function normalizeAdminSettings(rawValue) {
     privacy: {
       maskStudentNumbers: Boolean(privacy.maskStudentNumbers),
       requireCancelReason: privacy.requireCancelReason !== false,
+      idleTimeoutEnabled: Boolean(
+        privacy.idleTimeoutEnabled ??
+        source.security?.idleTimeoutEnabled ??
+        privacy.idleTimeout?.enabled ??
+        false,
+      ),
+      idleTimeoutMinutes: [5, 10, 15, 30, 60].includes(
+        Number(privacy.idleTimeoutMinutes ?? source.security?.idleTimeoutMinutes ?? privacy.idleTimeout?.minutes),
+      )
+        ? Number(privacy.idleTimeoutMinutes ?? source.security?.idleTimeoutMinutes ?? privacy.idleTimeout?.minutes)
+        : 30,
     },
     profilePicture: {
       googlePictureUrl: normalizeCompactSpaces(profilePicture.googlePictureUrl || ""),
@@ -752,11 +763,14 @@ function isJournalLockEnabled(row) {
   return Boolean(row?.journal_lock_enabled && row?.journal_lock_pin_hash);
 }
 
-function canAdminReviewJournalConversation(riskLevel, supportResponse) {
+function canAdminReviewJournalConversation(riskLevel, supportResponse, studentAction) {
   const normalizedRiskLevel = String(riskLevel || "NONE").toUpperCase();
   const normalizedSupportResponse = String(supportResponse || "").toUpperCase();
-  return ["LOW", "MEDIUM", "MODERATE", "HIGH", "CRITICAL"].includes(normalizedRiskLevel) ||
-    normalizedSupportResponse === "DECLINED";
+  const normalizedStudentAction = String(studentAction || "").toUpperCase();
+  return ["LOW", "HIGH", "CRITICAL"].includes(normalizedRiskLevel) ||
+    normalizedSupportResponse === "DECLINED" ||
+    normalizedStudentAction === "DISMISSED" ||
+    ["CLICKED_HOTLINE", "SCHEDULED_COUNSELING", "VIEWED_WELLNESS"].includes(normalizedStudentAction);
 }
 
 function serializeAdminJournalMessage(message) {
@@ -877,10 +891,13 @@ function groupFollowUpThreads(rows) {
 function serializeFollowUpMessage(row) {
   const meta = parseNotificationMetadata(row.metadata);
   const counselorId = String(meta.counselorId || "").trim() || followUpThreadKey(meta);
-  const name = String(meta.actorName || meta.counselorName || row.title || "").trim();
-  const role = String(meta.actorRole || "").trim();
+  const name = String(meta.actorName || meta.counselorName || row.title || "").trim() || "Counselor";
+  const role = String(meta.actorRole || "").trim() || "Counselor";
   return {
     id: row.id,
+    title: row.title || "Counselor Follow-up",
+    isRead: Boolean(row.is_read),
+    readAt: row.read_at || null,
     createdAt: row.created_at,
     body: row.message,
     from: {
@@ -929,6 +946,7 @@ function isHeadCounselor(admin) {
 
 
 function toStudentStatus(row) {
+  if (row?.deleted_at) return "Deleted by student";
   const flaggedCount = Number(row?.flagged_entries || 0);
   const totalEntries = Number(row?.total_entries || 0);
   if (flaggedCount > 0) return "Flagged";
@@ -1236,8 +1254,12 @@ router.post("/login", async (req, res) => {
   const loginKey = `${email}:${req.ip || "unknown"}`;
   const attemptState = getAttemptState(loginKey);
   if (attemptState.lockUntil && Date.now() < attemptState.lockUntil) {
+    const remainingSeconds = Math.max(1, Math.ceil((attemptState.lockUntil - Date.now()) / 1000));
+    const remainingMinutes = Math.ceil(remainingSeconds / 60);
     return res.status(429).json({
-      message: "Too many failed login attempts. Please try again later.",
+      message: `Too many failed login attempts. Please wait ${remainingMinutes} minute${remainingMinutes === 1 ? "" : "s"} before trying again.`,
+      retryAfterSeconds: remainingSeconds,
+      lockUntil: attemptState.lockUntil,
     });
   }
 
@@ -1256,7 +1278,14 @@ router.post("/login", async (req, res) => {
   if (!admin) {
     const isLocked = registerFailedAttempt(loginKey);
     if (isLocked) {
-      return res.status(429).json({ message: "Too many failed login attempts. Please try again later." });
+      const lockState = getAttemptState(loginKey);
+      const remainingSeconds = Math.max(1, Math.ceil((lockState.lockUntil - Date.now()) / 1000));
+      const remainingMinutes = Math.ceil(remainingSeconds / 60);
+      return res.status(429).json({
+        message: `Too many failed login attempts. Please wait ${remainingMinutes} minute${remainingMinutes === 1 ? "" : "s"} before trying again.`,
+        retryAfterSeconds: remainingSeconds,
+        lockUntil: lockState.lockUntil,
+      });
     }
     return res.status(400).json({ message: "Invalid email or password. Please try again." });
   }
@@ -1269,9 +1298,18 @@ router.post("/login", async (req, res) => {
   if (!isPasswordValid) {
     const isLocked = registerFailedAttempt(loginKey);
     if (isLocked) {
-      return res.status(429).json({ message: "Too many failed login attempts. Please try again later." });
+      const lockState = getAttemptState(loginKey);
+      const remainingSeconds = Math.max(1, Math.ceil((lockState.lockUntil - Date.now()) / 1000));
+      const remainingMinutes = Math.ceil(remainingSeconds / 60);
+      return res.status(429).json({
+        message: `Too many failed login attempts. Please wait ${remainingMinutes} minute${remainingMinutes === 1 ? "" : "s"} before trying again.`,
+        retryAfterSeconds: remainingSeconds,
+        lockUntil: lockState.lockUntil,
+      });
     }
-    return res.status(400).json({ message: "Invalid email or password. Please try again." });
+    return res.status(400).json({
+      message: "Invalid email or password. Please try again.",
+    });
   }
 
   if (admin.deleted_at) {
@@ -1365,7 +1403,14 @@ router.get("/session", async (req, res) => {
 });
 
 router.post("/logout", (req, res) => {
-  req.session = null;
+  if (req.session) {
+    req.session.admin = null;
+    req.session = null;
+  }
+  try {
+    res.clearCookie("bt_admin_session", { path: "/" });
+    res.clearCookie("bt_admin_session.sig", { path: "/" });
+  } catch {}
   return res.json({ message: "Logged out." });
 });
 
@@ -1919,19 +1964,19 @@ router.get("/dashboard/summary", async (req, res) => {
     isIsoDateInInclusiveRange(row.created_at, previousStartDate, previousEndDate),
   );
 
-  const genderCounts = safeProfiles.reduce((acc, row) => {
-    const key = String(row.gender || "UNSPECIFIED").toUpperCase();
+  const genderCounts = allProfiles.reduce((acc, row) => {
+    const key = String(row.gender || "").trim().toUpperCase() === "MALE" ? "MALE" : "FEMALE";
     acc[key] = (acc[key] || 0) + 1;
     return acc;
-  }, {});
+  }, { MALE: 0, FEMALE: 0 });
 
-  const courseCounts = safeProfiles.reduce((acc, row) => {
+  const courseCounts = allProfiles.reduce((acc, row) => {
     const key = String(row.program || "UNSPECIFIED");
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
 
-  const barangayCounts = safeProfiles.reduce((acc, row) => {
+  const barangayCounts = allProfiles.reduce((acc, row) => {
     const key = String(row.barangay || "UNSPECIFIED");
     acc[key] = (acc[key] || 0) + 1;
     return acc;
@@ -1969,7 +2014,7 @@ router.get("/dashboard/summary", async (req, res) => {
     ? Math.round((sentimentConfidenceTotal / sentimentConfidenceCount) * 100)
     : null;
 
-  const activeUsageSeries = toMonthlyBuckets(safeProfiles, "created_at");
+  const activeUsageSeries = toMonthlyBuckets(allProfiles, "created_at");
   const journalEntriesSeries = buildDailyTrend(completedJournals, startDate, endDate, "entry_date");
   const moodCountsByDate = new Map();
 
@@ -2009,12 +2054,11 @@ router.get("/dashboard/summary", async (req, res) => {
   }));
 
   const demographicSplit = [
-    { label: "Female", value: Number(genderCounts.FEMALE || 0) },
     { label: "Male", value: Number(genderCounts.MALE || 0) },
-    { label: "Prefer not to say", value: Number(genderCounts["PREFER NOT TO SAY"] || genderCounts.UNSPECIFIED || 0) },
+    { label: "Female", value: Number(genderCounts.FEMALE || 0) },
   ].filter((item) => item.value > 0);
 
-  const programTotals = safeProfiles.reduce((acc, row) => {
+  const programTotals = allProfiles.reduce((acc, row) => {
     const program = normalizeDisplayLabel(row.program || "Unspecified");
     acc[program] = (acc[program] || 0) + 1;
     return acc;
@@ -2026,7 +2070,7 @@ router.get("/dashboard/summary", async (req, res) => {
     .slice(0, 4);
 
   const activeUsageGroupsMap = new Map();
-  for (const profile of safeProfiles) {
+  for (const profile of allProfiles) {
     const yearLevel = inferYearLevelFromStudentNumber(profile.student_number);
     if (yearLevel === "Unknown") continue;
     const current = activeUsageGroupsMap.get(yearLevel) || { label: yearLevel };
@@ -2137,7 +2181,6 @@ router.get("/dashboard/summary", async (req, res) => {
       genderDistribution: [
         { label: "Male", value: Number(genderCounts.MALE || 0) },
         { label: "Female", value: Number(genderCounts.FEMALE || 0) },
-        { label: "Prefer not to say", value: Number(genderCounts["PREFER NOT TO SAY"] || genderCounts.UNSPECIFIED || 0) },
       ].filter((item) => item.value > 0),
       studentDemographics: {
         locations: demographicRows,
@@ -2188,7 +2231,78 @@ router.get("/dashboard/summary", async (req, res) => {
   });
 });
 
-router.get("/dashboard/risk-flags", async (_req, res) => {
+router.get("/dashboard/risk-flags", async (req, res) => {
+  const search = String(req.query.search || "").trim();
+  const dateRange = String(req.query.dateRange || "all").trim().toLowerCase();
+  const startDate = req.query.startDate ? String(req.query.startDate).slice(0, 10) : "";
+  const endDate = req.query.endDate ? String(req.query.endDate).slice(0, 10) : "";
+  const page = Math.max(1, Number.parseInt(String(req.query.page || "1"), 10) || 1);
+  const pageSize = Math.min(200, Math.max(1, Number.parseInt(String(req.query.pageSize || "100"), 10) || 100));
+  const offset = (page - 1) * pageSize;
+
+  const params = [];
+  const conditions = [
+    "je.is_finished = true",
+    `(
+      (
+        (
+          upper(coalesce(je.risk_level, 'NONE')) in ('LOW', 'HIGH', 'CRITICAL')
+          or upper(coalesce(je.student_action, '')) = 'DISMISSED'
+          or upper(coalesce(je.support_response, '')) = 'DECLINED'
+        )
+        and je.deleted_by_student_at is null
+      )
+      or upper(coalesce(je.risk_level, 'NONE')) in ('HIGH', 'CRITICAL')
+    )`,
+  ];
+
+  if (dateRange === "today") {
+    conditions.push("je.entry_date = ((timezone('Asia/Manila', now()))::date)");
+  } else if (dateRange === "7" || dateRange === "30") {
+    const days = dateRange === "7" ? 7 : 30;
+    params.push(days);
+    conditions.push(
+      `je.entry_date >= ((timezone('Asia/Manila', now())::date) - ($${params.length}::int - 1))`,
+    );
+  } else if (dateRange === "custom" && startDate && endDate) {
+    params.push(startDate);
+    const sIdx = params.length;
+    params.push(endDate);
+    const eIdx = params.length;
+    conditions.push(`je.entry_date between $${sIdx}::date and $${eIdx}::date`);
+  }
+
+  if (search) {
+    params.push(`%${search}%`);
+    conditions.push(`(
+      je.student_number ilike $${params.length}
+      or coalesce(sp.full_name, '') ilike $${params.length}
+      or coalesce(sp.email, '') ilike $${params.length}
+      or coalesce(je.title, '') ilike $${params.length}
+      or coalesce(je.summary, '') ilike $${params.length}
+      or coalesce(je.admin_flag_reason, '') ilike $${params.length}
+      or coalesce(je.primary_concern, '') ilike $${params.length}
+    )`);
+  }
+
+  const whereClause = `where ${conditions.join(" and ")}`;
+
+  const countResult = await query(
+    `
+      select count(*)::int as total
+      from public.journal_entries je
+      left join public.student_profiles sp on sp.student_number = je.student_number
+      ${whereClause}
+    `,
+    params,
+  );
+  const totalCount = countResult.rows[0]?.total || 0;
+
+  params.push(pageSize);
+  const limitIdx = params.length;
+  params.push(offset);
+  const offsetIdx = params.length;
+
   const result = await query(
     `
       select
@@ -2206,6 +2320,12 @@ router.get("/dashboard/risk-flags", async (_req, res) => {
         je.concern_tags,
         je.support_response,
         je.support_response_at,
+        je.student_action,
+        je.student_action_at,
+        je.counselor_resolved_at,
+        je.counselor_resolved_by_email,
+        je.counselor_resolved_by_name,
+        je.deleted_by_student_at,
         je.created_at,
         coalesce(sp.full_name, '') as full_name,
         coalesce(sp.program, '') as program,
@@ -2213,36 +2333,89 @@ router.get("/dashboard/risk-flags", async (_req, res) => {
         coalesce(sp.profile_picture_url, '') as profile_picture_url
       from public.journal_entries je
       left join public.student_profiles sp on sp.student_number = je.student_number
-      where je.is_finished = true
-        and (
-          (
-            (
-              upper(coalesce(je.risk_level, 'NONE')) in ('LOW', 'MEDIUM', 'MODERATE', 'HIGH', 'CRITICAL')
-              or upper(coalesce(je.support_response, '')) = 'DECLINED'
-            )
-            and je.deleted_by_student_at is null
-          )
-          or upper(coalesce(je.risk_level, 'NONE')) in ('HIGH', 'CRITICAL')
-        )
+      ${whereClause}
       order by je.entry_date desc, je.created_at desc
-      limit 100
+      limit $${limitIdx} offset $${offsetIdx}
     `,
+    params,
   );
+
+  const entryIds = result.rows.map((row) => row.id);
+  let historyByEntry = new Map();
+  if (entryIds.length > 0) {
+    const historyResult = await query(
+      `
+        select
+          id,
+          entry_id,
+          actor_type,
+          actor_email,
+          actor_name,
+          actor_role,
+          action_type,
+          from_risk_level,
+          to_risk_level,
+          from_student_action,
+          to_student_action,
+          from_counselor_resolved,
+          to_counselor_resolved,
+          note,
+          created_at
+        from public.journal_flag_history
+        where entry_id = any($1::uuid[])
+        order by created_at desc
+      `,
+      [entryIds],
+    );
+    historyByEntry = historyResult.rows.reduce((acc, row) => {
+      const key = row.entry_id;
+      if (!acc.has(key)) acc.set(key, []);
+      acc.get(key).push({
+        id: row.id,
+        actorType: row.actor_type,
+        actorEmail: row.actor_email || null,
+        actorName: row.actor_name || null,
+        actorRole: row.actor_role || null,
+        actionType: row.action_type,
+        fromRiskLevel: row.from_risk_level || null,
+        toRiskLevel: row.to_risk_level || null,
+        fromStudentAction: row.from_student_action || null,
+        toStudentAction: row.to_student_action || null,
+        fromCounselorResolved: Boolean(row.from_counselor_resolved),
+        toCounselorResolved: Boolean(row.to_counselor_resolved),
+        note: row.note || null,
+        createdAt: row.created_at,
+        createdAtManila: row.created_at
+          ? new Date(row.created_at).toLocaleString("en-PH", { timeZone: "Asia/Manila" })
+          : null,
+      });
+      return acc;
+    }, new Map());
+  }
 
   return res.json({
     entries: result.rows.map((row) => ({
       adminFlagReason: row.admin_flag_reason || null,
       concernTags: getJournalTagsForAdmin(row),
+      counselorResolvedAt: row.counselor_resolved_at || null,
+      counselorResolvedByEmail: row.counselor_resolved_by_email || null,
+      counselorResolvedByName: row.counselor_resolved_by_name || null,
       createdAt: row.created_at,
+      deletedByStudentAt: row.deleted_by_student_at || null,
+      isDeletedByStudent: Boolean(row.deleted_by_student_at),
       entryDate: row.entry_date,
       email: row.email || "",
+      flagHistory: historyByEntry.get(row.id) || [],
       fullName: row.full_name || "",
       id: row.id,
       insights: Array.isArray(row.insights) ? row.insights : [],
+      isResolved: Boolean(row.counselor_resolved_at),
       primaryConcern: row.primary_concern || null,
       program: row.program || "",
       profilePictureUrl: row.profile_picture_url || "",
       riskLevel: row.risk_level,
+      studentAction: row.student_action || null,
+      studentActionAt: row.student_action_at || null,
       supportResponse: row.support_response || null,
       supportResponseAt: row.support_response_at || null,
       studentNumber: row.student_number,
@@ -2251,6 +2424,10 @@ router.get("/dashboard/risk-flags", async (_req, res) => {
       summaryRating: row.summary_rating || null,
       title: row.title || "",
     })),
+    totalCount,
+    page,
+    pageSize,
+    hasMore: offset + result.rows.length < totalCount,
   });
 });
 
@@ -2447,7 +2624,7 @@ router.delete("/feedbacks/:feedbackId", async (req, res) => {
 router.patch("/journal-entries/:entryId/flag", async (req, res) => {
   try {
     const entryId = normalizeCompactSpaces(req.params.entryId || "");
-    const riskLevel = String(req.body?.riskLevel || "").trim().toUpperCase();
+    let riskLevel = String(req.body?.riskLevel || "").trim().toUpperCase();
     const adminFlagReasonProvided = Object.prototype.hasOwnProperty.call(req.body || {}, "adminFlagReason");
     const adminFlagReason = adminFlagReasonProvided
       ? normalizeCompactSpaces(req.body.adminFlagReason || "")
@@ -2456,20 +2633,57 @@ router.patch("/journal-entries/:entryId/flag", async (req, res) => {
     const resolvedPrimaryConcern = primaryConcernProvided
       ? resolveAdminPrimaryConcern(req.body.primaryConcern)
       : { apply: false, value: null };
-    const supportResponseProvided = Object.prototype.hasOwnProperty.call(req.body || {}, "supportResponse");
-    const supportResponse = supportResponseProvided
-      ? String(req.body.supportResponse || "").trim().toUpperCase()
-      : undefined;
+    const markResolvedProvided = Object.prototype.hasOwnProperty.call(req.body || {}, "markResolved");
+    const markResolved = markResolvedProvided ? Boolean(req.body.markResolved) : null;
+    const note = normalizeCompactSpaces(req.body?.note || "");
+    const resolutionAction = normalizeCompactSpaces(req.body?.resolutionAction || req.body?.interventionAction || "");
+    if (
+      primaryConcernProvided &&
+      String(req.body.primaryConcern || "").trim() &&
+      !resolvedPrimaryConcern.apply
+    ) {
+      return res.status(400).json({
+        message: "Primary concern must match a guidance category (or leave blank). Use the dropdown values.",
+        allowedPrimaryConcerns: JOURNAL_PRIMARY_CONCERN_VALUES,
+      });
+    }
+    if (markResolved === true) {
+      if (!resolutionAction) {
+        return res.status(400).json({
+          message: "Intervention action is required when marking resolved.",
+        });
+      }
+      if (!note) {
+        return res.status(400).json({
+          message: "Counselor notes are required when marking resolved.",
+        });
+      }
+    }
+    const actorEmail = normalizeEmail(req.admin?.email || "");
+    const actorName = normalizeCompactSpaces(req.admin?.fullName || req.admin?.name || actorEmail || "Counselor");
+    const actorRole = String(req.admin?.role || "COUNSELOR").trim();
 
     if (!entryId) {
       return res.status(400).json({ message: "Journal entry id is required." });
     }
     if (!["NONE", "LOW", "HIGH", "CRITICAL"].includes(riskLevel)) {
-      return res.status(400).json({ message: "A valid risk flag is required." });
+      return res.status(400).json({ message: "Risk flag must be CRITICAL, HIGH, LOW, or NONE." });
+    }
+    if (riskLevel === "CRITICAL") {
+      riskLevel = "HIGH";
     }
     const existingFlag = await query(
       `
-        select risk_level
+        select
+          id,
+          student_number,
+          risk_level,
+          admin_flag_reason,
+          primary_concern,
+          student_action,
+          counselor_resolved_at,
+          counselor_resolved_by_email,
+          counselor_resolved_by_name
         from public.journal_entries
         where id = $1
           and is_finished = true
@@ -2481,12 +2695,24 @@ router.patch("/journal-entries/:entryId/flag", async (req, res) => {
     if (existingFlag.rowCount === 0) {
       return res.status(404).json({ message: "Journal entry not found." });
     }
-    const currentRisk = String(existingFlag.rows[0].risk_level || "NONE").toUpperCase();
+    const before = existingFlag.rows[0];
+    const currentRisk = String(before.risk_level || "NONE").toUpperCase();
     if (riskLevel === "LOW" && (currentRisk === "HIGH" || currentRisk === "CRITICAL")) {
       return res.status(400).json({ message: "LOW cannot overwrite HIGH or CRITICAL." });
     }
-    if (supportResponseProvided && supportResponse && !["CONTACTED", "DECLINED"].includes(supportResponse)) {
-      return res.status(400).json({ message: "A valid intervention status is required." });
+
+    const wasResolved = Boolean(before.counselor_resolved_at);
+    let nextResolved = wasResolved;
+    let nextResolvedEmail = before.counselor_resolved_by_email || null;
+    let nextResolvedName = before.counselor_resolved_by_name || null;
+    if (markResolved === true) {
+      nextResolved = true;
+      nextResolvedEmail = actorEmail || nextResolvedEmail;
+      nextResolvedName = actorName || nextResolvedName;
+    } else if (markResolved === false || riskLevel === "NONE") {
+      nextResolved = false;
+      nextResolvedEmail = null;
+      nextResolvedName = null;
     }
 
     const result = await query(
@@ -2496,24 +2722,24 @@ router.patch("/journal-entries/:entryId/flag", async (req, res) => {
           risk_level = $2,
           admin_flag_reason = case
             when $2 = 'NONE' then null
-            when $7::boolean is true then nullif($3, '')
+            when $5::boolean is true then nullif($3, '')
             else admin_flag_reason
           end,
           primary_concern = case
-            when $8::boolean is true then nullif($4, '')
+            when $6::boolean is true then nullif($4, '')
             else primary_concern
           end,
-          support_response = case
-            when $2 = 'NONE' then null
-            when $5::boolean is false then support_response
-            when nullif($6, '') is null then null
-            else $6
+          counselor_resolved_at = case
+            when $7::boolean is true then coalesce(counselor_resolved_at, now())
+            else null
           end,
-          support_response_at = case
-            when $2 = 'NONE' then null
-            when $5::boolean is false then support_response_at
-            when nullif($6, '') is null then null
-            else coalesce(support_response_at, now())
+          counselor_resolved_by_email = case
+            when $7::boolean is true then nullif($8, '')
+            else null
+          end,
+          counselor_resolved_by_name = case
+            when $7::boolean is true then nullif($9, '')
+            else null
           end,
           updated_at = now()
         where id = $1
@@ -2532,6 +2758,11 @@ router.patch("/journal-entries/:entryId/flag", async (req, res) => {
           concern_tags,
           support_response,
           support_response_at,
+          student_action,
+          student_action_at,
+          counselor_resolved_at,
+          counselor_resolved_by_email,
+          counselor_resolved_by_name,
           created_at
       `,
       [
@@ -2539,10 +2770,11 @@ router.patch("/journal-entries/:entryId/flag", async (req, res) => {
         riskLevel,
         adminFlagReason,
         resolvedPrimaryConcern.value,
-        supportResponseProvided,
-        supportResponse || null,
         adminFlagReasonProvided,
         resolvedPrimaryConcern.apply,
+        nextResolved,
+        nextResolvedEmail,
+        nextResolvedName,
       ],
     );
 
@@ -2551,16 +2783,82 @@ router.patch("/journal-entries/:entryId/flag", async (req, res) => {
     }
 
     const row = result.rows[0];
+    const actionType =
+      riskLevel === "NONE"
+        ? "FLAG_CLEARED"
+        : markResolved === true
+          ? "MARKED_RESOLVED"
+          : markResolved === false
+            ? "MARKED_UNRESOLVED"
+            : "FLAG_UPDATED";
+
+    await query(
+      `
+        insert into public.journal_flag_history (
+          entry_id, student_number, actor_type, actor_email, actor_name, actor_role, action_type,
+          from_risk_level, to_risk_level, from_student_action, to_student_action,
+          from_counselor_resolved, to_counselor_resolved, note, metadata
+        ) values (
+          $1, $2, 'ADMIN', $3, $4, $5, $6,
+          $7, $8, $9, $9,
+          $10, $11, nullif($12, ''), $13::jsonb
+        )
+      `,
+      [
+        entryId,
+        row.student_number,
+        actorEmail || null,
+        actorName || null,
+        actorRole || null,
+        actionType,
+        currentRisk,
+        riskLevel,
+        before.student_action || null,
+        wasResolved,
+        nextResolved,
+        note,
+        JSON.stringify({
+          adminFlagReason: row.admin_flag_reason || null,
+          primaryConcern: row.primary_concern || null,
+          resolutionAction: resolutionAction || null,
+        }),
+      ],
+    );
+
+    await writeAdminActivityLog({
+      actionType: "JOURNAL_FLAG_UPDATED",
+      actorEmail,
+      actorName,
+      actorRole,
+      entityType: "journal_entry",
+      title: `${actorName || actorEmail || "Counselor"} updated journal flag`,
+      description: `Entry ${entryId}: ${currentRisk} → ${riskLevel}${nextResolved ? " (resolved)" : ""}`,
+      metadata: {
+        entryId,
+        fromRiskLevel: currentRisk,
+        toRiskLevel: riskLevel,
+        markResolved: nextResolved,
+        note: note || null,
+        resolutionAction: resolutionAction || null,
+      },
+    });
+
     return res.json({
       entry: {
         adminFlagReason: row.admin_flag_reason || null,
         concernTags: getJournalTagsForAdmin(row),
+        counselorResolvedAt: row.counselor_resolved_at || null,
+        counselorResolvedByEmail: row.counselor_resolved_by_email || null,
+        counselorResolvedByName: row.counselor_resolved_by_name || null,
         createdAt: row.created_at,
         entryDate: row.entry_date,
         id: row.id,
         insights: Array.isArray(row.insights) ? row.insights : [],
+        isResolved: Boolean(row.counselor_resolved_at),
         primaryConcern: row.primary_concern || null,
         riskLevel: row.risk_level,
+        studentAction: row.student_action || null,
+        studentActionAt: row.student_action_at || null,
         studentNumber: row.student_number,
         summary: row.summary || "",
         supportResponse: row.support_response || null,
@@ -2879,7 +3177,13 @@ router.post("/students/:studentNumber/notify", async (req, res) => {
   });
 
   const rows = await listStudentAdminMessages(studentNumber);
-  const groups = groupFollowUpThreads(rows);
+  const ownRows = rows.filter((row) => {
+    const meta = parseNotificationMetadata(row.metadata);
+    const rowCounselorId = String(meta.counselorId || "").trim();
+    const rowActorEmail = normalizeEmail(meta.actorEmail || meta.email || "");
+    return (rowCounselorId && rowCounselorId === counselorId) || (rowActorEmail && rowActorEmail === actorEmail);
+  });
+  const groups = groupFollowUpThreads(ownRows);
   const threadRows = groups.get(counselorId) || groups.get(actorEmail) || [];
   const thread = summarizeFollowUpThread(counselorId, threadRows);
 
@@ -2899,9 +3203,20 @@ router.get("/students/:studentNumber/follow-ups", async (req, res) => {
     return res.status(400).json({ message: "Student number is required." });
   }
 
-  const rows = await listStudentAdminMessages(studentNumber);
+  const ownId = String(req.admin?.id || "").trim();
+  const ownEmail = normalizeEmail(req.admin?.email || "");
+
+  const allRows = await listStudentAdminMessages(studentNumber);
+  // Strictly enforce DRBAC / counselor privacy: any counselor (including Head Counselor) can ONLY view messages they themselves exchanged with this student
+  const rows = allRows.filter((row) => {
+    const meta = parseNotificationMetadata(row.metadata);
+    const counselorId = String(meta.counselorId || "").trim();
+    const actorEmail = normalizeEmail(meta.actorEmail || meta.email || "");
+    return (counselorId && counselorId === ownId) || (actorEmail && actorEmail === ownEmail);
+  });
+
   const groups = groupFollowUpThreads(rows);
-  let threads = Array.from(groups.entries()).map(([counselorId, threadRows]) => {
+  const threads = Array.from(groups.entries()).map(([counselorId, threadRows]) => {
     const summary = summarizeFollowUpThread(counselorId, threadRows);
     return {
       counselorId: summary.counselorId,
@@ -2910,17 +3225,13 @@ router.get("/students/:studentNumber/follow-ups", async (req, res) => {
       lastBody: summary.lastBody,
       lastCreatedAt: summary.lastCreatedAt,
       messageCount: summary.messageCount,
+      messages: summary.messages,
     };
   });
 
-  if (!isHeadCounselor(req.admin)) {
-    const ownId = String(req.admin?.id || "").trim();
-    const ownEmail = normalizeEmail(req.admin?.email || "");
-    threads = threads.filter((item) => item.counselorId === ownId || item.counselorId === ownEmail);
-  }
-
   threads.sort((a, b) => new Date(b.lastCreatedAt || 0) - new Date(a.lastCreatedAt || 0));
-  return res.json({ threads });
+  const messages = rows.map(serializeFollowUpMessage);
+  return res.json({ threads, messages });
 });
 
 router.get("/students/:studentNumber/follow-ups/:counselorId", async (req, res) => {
@@ -2935,15 +3246,23 @@ router.get("/students/:studentNumber/follow-ups/:counselorId", async (req, res) 
 
   const ownId = String(req.admin?.id || "").trim();
   const ownEmail = normalizeEmail(req.admin?.email || "");
-  if (!isHeadCounselor(req.admin) && counselorId !== ownId && counselorId !== ownEmail) {
-    return res.status(403).json({ message: "You don't have access to this action." });
+  // Strict DRBAC privacy: counselors cannot view other counselors' student message threads
+  if (counselorId !== ownId && counselorId !== ownEmail) {
+    return res.status(403).json({ message: "You don't have access to this conversation." });
   }
 
-  const rows = await listStudentAdminMessages(studentNumber);
+  const allRows = await listStudentAdminMessages(studentNumber);
+  const rows = allRows.filter((row) => {
+    const meta = parseNotificationMetadata(row.metadata);
+    const metaCounselorId = String(meta.counselorId || "").trim();
+    const actorEmail = normalizeEmail(meta.actorEmail || meta.email || "");
+    return (metaCounselorId && metaCounselorId === ownId) || (actorEmail && actorEmail === ownEmail);
+  });
+
   const groups = groupFollowUpThreads(rows);
   const threadRows = groups.get(counselorId) || (counselorId === ownId ? groups.get(ownEmail) : null);
   if (!threadRows || threadRows.length === 0) {
-    return res.status(404).json({ message: "No messages with that counselor." });
+    return res.status(404).json({ message: "No messages found for your account with this student." });
   }
 
   const thread = summarizeFollowUpThread(counselorId, threadRows);
@@ -3226,7 +3545,12 @@ router.get("/analytics", async (req, res) => {
           coalesce(nullif(full_name, ''), student_number) as full_name,
           coalesce(email, '') as email,
           coalesce(program, '') as program,
-          coalesce(gender, 'Prefer not to say') as gender,
+          case
+            when lower(trim(coalesce(gender, ''))) = 'male' then 'Male'
+            when lower(trim(coalesce(gender, ''))) = 'female' then 'Female'
+            when nullif(trim(coalesce(gender, '')), '') is null then 'Female'
+            else initcap(trim(gender))
+          end as gender,
           coalesce(region, '') as region,
           coalesce(province, '') as province,
           coalesce(city, '') as city,
@@ -3610,7 +3934,7 @@ router.get("/analytics", async (req, res) => {
       email: profile.email || "",
       program: normalizeDisplayLabel(profile.program || "Unspecified"),
       yearLevel: inferYearLevelFromStudentNumber(studentNumber),
-      gender: normalizeDisplayLabel(profile.gender || "Prefer not to say"),
+      gender: profile.gender && profile.gender.toLowerCase() === "male" ? "Male" : "Female",
       region: profile.region || "",
       province: profile.province || "",
       city: profile.city || "",
@@ -3937,7 +4261,7 @@ router.get("/roles", requireRoles("HEAD_COUNSELOR"), async (_req, res) => {
           aa.email,
           coalesce(nullif(aa.full_name, ''), split_part(aa.email, '@', 1)) as full_name,
           coalesce(aa.role, 'COUNSELOR') as role,
-          coalesce(aa.gender, 'Prefer not to say') as gender,
+          case when lower(trim(coalesce(aa.gender, ''))) = 'male' then 'Male' else 'Female' end as gender,
           coalesce(aa.profile_picture_url, '') as profile_picture_url,
           coalesce(aa.specialties, '[]'::jsonb) as specialties,
           aa.is_active,
@@ -4094,8 +4418,16 @@ router.get("/students", async (req, res) => {
         coalesce(sp.barangay, '') as barangay,
         coalesce(sp.street, '') as street,
         coalesce(sp.profile_picture_url, '') as profile_picture_url,
+        case
+          when lower(trim(coalesce(sp.gender, ''))) = 'male' then 'Male'
+          when lower(trim(coalesce(sp.gender, ''))) = 'female' then 'Female'
+          when nullif(trim(coalesce(sp.gender, '')), '') is null then ''
+          else initcap(trim(sp.gender))
+        end as gender,
         sp.birthdate,
         sp.created_at,
+        sp.deleted_at,
+        sp.scheduled_deletion_at,
         coalesce(stats.total_entries, 0) as total_entries,
         stats.last_entry_at,
         coalesce(stats.flagged_entries, 0) as flagged_entries
@@ -4105,8 +4437,9 @@ router.get("/students", async (req, res) => {
           count(*)::int as total_entries,
           max(je.created_at) as last_entry_at,
           count(*) filter (
-            where upper(coalesce(je.risk_level, 'NONE')) in ('LOW', 'MEDIUM', 'MODERATE', 'HIGH', 'CRITICAL')
+            where upper(coalesce(je.risk_level, 'NONE')) in ('LOW', 'HIGH', 'CRITICAL')
               or upper(coalesce(je.support_response, '')) = 'DECLINED'
+              or upper(coalesce(je.student_action, '')) = 'DISMISSED'
           )::int as flagged_entries
         from public.journal_entries je
         where je.student_number = sp.student_number
@@ -4136,11 +4469,15 @@ router.get("/students", async (req, res) => {
     barangay: row.barangay || "",
     street: row.street || "",
     profilePictureUrl: row.profile_picture_url || "",
+    gender: row.gender && row.gender.toLowerCase() === "male" ? "Male" : "Female",
     birthdate: row.birthdate || null,
     createdAt: row.created_at,
     totalEntries: Number(row.total_entries || 0),
     lastEntryAt: row.last_entry_at || null,
     flaggedEntries: Number(row.flagged_entries || 0),
+    deletedAt: row.deleted_at || null,
+    scheduledDeletionAt: row.scheduled_deletion_at || null,
+    isScheduledForDeletion: Boolean(row.deleted_at),
     status: toStudentStatus(row),
   }));
 
@@ -4189,6 +4526,10 @@ router.get("/students/recent-entries", async (req, res) => {
     conditions.push(flaggedCondition);
   } else if (entryScope === "balanced") {
     conditions.push(`not ${flaggedCondition}`);
+  } else if (entryScope === "ai") {
+    conditions.push("exists (select 1 from public.journal_entry_messages jem where jem.entry_id = je.id and jem.role = 'assistant')");
+  } else if (entryScope === "manual") {
+    conditions.push("not exists (select 1 from public.journal_entry_messages jem where jem.entry_id = je.id and jem.role = 'assistant')");
   }
 
   if (dateRange === "today") {
@@ -4356,9 +4697,12 @@ router.post("/students/:studentNumber/journal-entries/:entryId/open", async (req
   const messages = Array.isArray(row.messages)
     ? row.messages.map(serializeAdminJournalMessage)
     : [];
+  const isAiAssisted = messages.some((m) => String(m.role || "").toLowerCase() === "assistant");
 
   return res.json({
     entry: {
+      mode: isAiAssisted ? "ai" : "manual",
+      isAiAssisted,
       adminFlagReason: row.admin_flag_reason || null,
       canOpenJournal: false,
       canViewConversation: true,
@@ -4405,8 +4749,11 @@ router.get("/students/:studentNumber", async (req, res) => {
         coalesce(sp.barangay, '') as barangay,
         coalesce(sp.street, '') as street,
         coalesce(sp.profile_picture_url, '') as profile_picture_url,
+        coalesce(sp.gender, '') as gender,
         sp.birthdate,
-        sp.created_at
+        sp.created_at,
+        sp.deleted_at,
+        sp.scheduled_deletion_at
       from public.student_profiles sp
       where sp.student_number = $1
       limit 1
@@ -4446,6 +4793,11 @@ router.get("/students/:studentNumber", async (req, res) => {
         je.concern_tags,
         je.support_response,
         je.support_response_at,
+        je.student_action,
+        je.student_action_at,
+        je.counselor_resolved_at,
+        je.counselor_resolved_by_name,
+        je.deleted_by_student_at,
         je.created_at,
         je.updated_at,
         coalesce(
@@ -4471,17 +4823,74 @@ router.get("/students/:studentNumber", async (req, res) => {
     [studentNumber],
   );
 
+  const entryIds = entriesResult.rows.map((row) => row.id);
+  let historyByEntry = new Map();
+  if (entryIds.length > 0) {
+    const historyResult = await query(
+      `
+        select
+          id,
+          entry_id,
+          actor_type,
+          actor_email,
+          actor_name,
+          actor_role,
+          action_type,
+          from_risk_level,
+          to_risk_level,
+          from_student_action,
+          to_student_action,
+          from_counselor_resolved,
+          to_counselor_resolved,
+          note,
+          created_at
+        from public.journal_flag_history
+        where entry_id = any($1::uuid[])
+        order by created_at desc
+      `,
+      [entryIds],
+    );
+    historyByEntry = historyResult.rows.reduce((acc, row) => {
+      const key = row.entry_id;
+      if (!acc.has(key)) acc.set(key, []);
+      acc.get(key).push({
+        id: row.id,
+        actorType: row.actor_type,
+        actorEmail: row.actor_email || null,
+        actorName: row.actor_name || null,
+        actorRole: row.actor_role || null,
+        actionType: row.action_type,
+        fromRiskLevel: row.from_risk_level || null,
+        toRiskLevel: row.to_risk_level || null,
+        fromStudentAction: row.from_student_action || null,
+        toStudentAction: row.to_student_action || null,
+        fromCounselorResolved: Boolean(row.from_counselor_resolved),
+        toCounselorResolved: Boolean(row.to_counselor_resolved),
+        note: row.note || null,
+        createdAt: row.created_at,
+        createdAtManila: row.created_at
+          ? new Date(row.created_at).toLocaleString("en-PH", { timeZone: "Asia/Manila" })
+          : null,
+      });
+      return acc;
+    }, new Map());
+  }
+
   const entries = entriesResult.rows.map((row) => {
     const riskLevel = String(row.risk_level || "NONE").toUpperCase();
     const allMessages = Array.isArray(row.messages)
       ? row.messages.map(serializeAdminJournalMessage)
       : [];
     const supportResponse = String(row.support_response || "").toUpperCase();
-    const canReviewConversation = canAdminReviewJournalConversation(riskLevel, supportResponse);
+    const studentAction = String(row.student_action || "").toUpperCase() || null;
+    const canReviewConversation = canAdminReviewJournalConversation(riskLevel, supportResponse, studentAction);
     const canViewConversation = canReviewConversation && !journalLockEnabled;
     const canOpenJournal = canReviewConversation && journalLockEnabled;
+    const isAiAssisted = allMessages.some((m) => String(m.role || "").toLowerCase() === "assistant");
 
     return {
+      mode: isAiAssisted ? "ai" : "manual",
+      isAiAssisted,
       id: row.id,
       entryDate: normalizeDateValue(row.entry_date),
       title: row.title || "",
@@ -4495,8 +4904,15 @@ router.get("/students/:studentNumber", async (req, res) => {
       concernTags: getJournalTagsForAdmin(row),
       supportResponse: row.support_response || null,
       supportResponseAt: row.support_response_at || null,
+      studentAction: row.student_action || null,
+      studentActionAt: row.student_action_at || null,
+      counselorResolvedAt: row.counselor_resolved_at || null,
+      counselorResolvedByName: row.counselor_resolved_by_name || null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      deletedByStudentAt: row.deleted_by_student_at || null,
+      isDeletedByStudent: Boolean(row.deleted_by_student_at),
+      flagHistory: historyByEntry.get(row.id) || [],
       canOpenJournal,
       canViewConversation,
       journalLockEnabled,
@@ -4512,7 +4928,10 @@ router.get("/students/:studentNumber", async (req, res) => {
   const flaggedEntryCount = entries.filter((entry) => {
     const riskLevel = String(entry.riskLevel || "").toUpperCase();
     const supportResponse = String(entry.supportResponse || "").toUpperCase();
-    return ["LOW", "MEDIUM", "MODERATE", "HIGH", "CRITICAL"].includes(riskLevel) || supportResponse === "DECLINED";
+    const studentAction = String(entry.studentAction || "").toUpperCase();
+    return ["LOW", "HIGH", "CRITICAL"].includes(riskLevel) ||
+      supportResponse === "DECLINED" ||
+      studentAction === "DISMISSED";
   }).length;
   return res.json({
     profile: {
@@ -4520,6 +4939,7 @@ router.get("/students/:studentNumber", async (req, res) => {
       fullName: profile.full_name,
       email: profile.email,
       program: normalizeDisplayLabel(profile.program || "Unspecified"),
+      gender: profile.gender || "",
       region: profile.region || "",
       province: profile.province || "",
       city: profile.city || "",
@@ -4693,7 +5113,7 @@ router.get("/settings", async (req, res) => {
         email,
         coalesce(nullif(full_name, ''), split_part(email, '@', 1)) as full_name,
         coalesce(role, 'COUNSELOR') as role,
-        coalesce(gender, 'Prefer not to say') as gender,
+        case when lower(trim(coalesce(gender, ''))) = 'male' then 'Male' else 'Female' end as gender,
         coalesce(profile_picture_url, '') as profile_picture_url,
         coalesce(specialties, '[]'::jsonb) as specialties,
         coalesce(settings, '{}'::jsonb) as settings,
@@ -4723,7 +5143,8 @@ router.get("/settings", async (req, res) => {
 router.patch("/settings", async (req, res) => {
   const email = normalizeEmail(req.admin?.email || "");
   const fullName = normalizeCompactSpaces(req.body.fullName || "");
-  const gender = normalizeCompactSpaces(req.body.gender || "Prefer not to say");
+  const rawGender = normalizeCompactSpaces(req.body.gender || "Female");
+  const gender = rawGender.toLowerCase() === "male" ? "Male" : "Female";
   const profilePictureUrl = normalizeCompactSpaces(req.body.profilePictureUrl || "");
   const requestedProfilePictureSource = String(req.body.profilePictureSource || "").trim().toUpperCase();
   const uploadedProfilePicture = parseUploadedImagePayload(req.body.uploadedProfilePicture);
@@ -4736,7 +5157,7 @@ router.patch("/settings", async (req, res) => {
   if (!fullName) {
     return res.status(400).json({ message: "Full name is required." });
   }
-  if (!["Male", "Female", "Prefer not to say"].includes(gender)) {
+  if (!["Male", "Female"].includes(gender)) {
     return res.status(400).json({ message: "Invalid gender value." });
   }
 
@@ -4848,7 +5269,7 @@ router.patch("/settings", async (req, res) => {
         email,
         coalesce(nullif(full_name, ''), split_part(email, '@', 1)) as full_name,
         coalesce(role, 'COUNSELOR') as role,
-        coalesce(gender, 'Prefer not to say') as gender,
+        case when lower(trim(coalesce(gender, ''))) = 'male' then 'Male' else 'Female' end as gender,
         coalesce(profile_picture_url, '') as profile_picture_url,
         coalesce(specialties, '[]'::jsonb) as specialties,
         coalesce(settings, '{}'::jsonb) as settings,
@@ -4893,7 +5314,8 @@ router.patch("/settings", async (req, res) => {
 router.post("/roles", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
   const email = normalizeEmail(req.body.email || "");
   const fullName = normalizeCompactSpaces(req.body.fullName || "");
-  const gender = normalizeCompactSpaces(req.body.gender || "Prefer not to say");
+  const rawGender = normalizeCompactSpaces(req.body.gender || "");
+  const gender = rawGender.toLowerCase() === "male" ? "Male" : rawGender.toLowerCase() === "female" ? "Female" : "";
   const role = String(req.body.role || "COUNSELOR").trim().toUpperCase();
   const password = String(req.body.password || "");
   const confirmPassword = String(req.body.confirmPassword || "");
@@ -4907,7 +5329,7 @@ router.post("/roles", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
   if (role !== "COUNSELOR") {
     return res.status(400).json({ message: "Selected role is not available yet." });
   }
-  if (!["Male", "Female", "Prefer not to say"].includes(gender)) {
+  if (!["Male", "Female"].includes(gender)) {
     return res.status(400).json({ message: "Invalid gender value." });
   }
   if (!password) {
@@ -4925,9 +5347,19 @@ router.post("/roles", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
     return res.status(400).json({ message: "Passwords do not match." });
   }
 
-  const existing = await query("select id from public.admin_accounts where email = $1 limit 1", [email]);
-  if (existing.rowCount > 0) {
-    return res.status(409).json({ message: "That email is already registered." });
+  const [adminExist, peerExist, studentExist] = await Promise.all([
+    query("select id from public.admin_accounts where lower(email) = lower($1) limit 1", [email]),
+    query("select id from public.peer_counselors where lower(email) = lower($1) limit 1", [email]),
+    query("select id from public.student_profiles where lower(email) = lower($1) limit 1", [email]),
+  ]);
+  if (adminExist.rowCount > 0) {
+    return res.status(409).json({ message: "This email is already registered as an admin or counselor. Strictly one account per email only." });
+  }
+  if (peerExist.rowCount > 0) {
+    return res.status(409).json({ message: "This email is already registered as a peer counselor. Strictly one account per email only." });
+  }
+  if (studentExist.rowCount > 0) {
+    return res.status(409).json({ message: "This email is already registered as a student. Strictly one account per email only." });
   }
 
   const sendResult = await sendAdminRecoveryCode(email, `guidance admin account verification [${email}]`);
@@ -5068,7 +5500,8 @@ router.post("/roles/resend-code", requireRoles("HEAD_COUNSELOR"), async (req, re
 router.patch("/roles/:memberId", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
   const memberId = String(req.params.memberId || "").trim();
   const fullName = normalizeCompactSpaces(req.body.fullName || "");
-  const gender = normalizeCompactSpaces(req.body.gender || "Prefer not to say");
+  const rawGender = normalizeCompactSpaces(req.body.gender || "");
+  const gender = rawGender.toLowerCase() === "male" ? "Male" : rawGender.toLowerCase() === "female" ? "Female" : "";
   const role = String(req.body.role || "").trim().toUpperCase();
   const isActive = typeof req.body.isActive === "boolean" ? req.body.isActive : null;
 
@@ -5081,7 +5514,7 @@ router.patch("/roles/:memberId", requireRoles("HEAD_COUNSELOR"), async (req, res
   if (role !== "COUNSELOR") {
     return res.status(400).json({ message: "Selected role is not available yet." });
   }
-  if (!["Male", "Female", "Prefer not to say"].includes(gender)) {
+  if (!["Male", "Female"].includes(gender)) {
     return res.status(400).json({ message: "Invalid gender value." });
   }
   if (isActive === null) {

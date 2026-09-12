@@ -20,16 +20,14 @@ type SettingRow = {
 const ACCOUNT_ROWS: SettingRow[] = [
   { id: "personal-details", icon: "person-circle-outline", label: "Personal Details", showChevron: true },
   { id: "privacy-security", icon: "shield-checkmark-outline", label: "Privacy & Security", showChevron: true },
+  { id: "refer-friend", icon: "share-social-outline", label: "Refer a friend", showChevron: true },
 ];
 
 const APP_ROWS: SettingRow[] = [
   { id: "recent-activity", icon: "time-outline", label: "Recent Activity", showChevron: true },
-  { id: "help-support", icon: "help-buoy-outline", label: "Help & Support", showChevron: true },
-];
-
-const EXTRA_ROWS: SettingRow[] = [
-  { id: "refer-friend", icon: "share-social-outline", label: "Refer a friend", showChevron: true },
   { id: "app-lock", icon: "lock-closed-outline", label: "Journal Lock", showChevron: true },
+  { id: "recently-deleted", icon: "trash-bin-outline", label: "Recently Deleted", showChevron: true },
+  { id: "help-support", icon: "help-buoy-outline", label: "Help & Support", showChevron: true },
 ];
 const APP_VERSION = "1.0.0";
 const PROFILE_PICTURE_LIMIT_BYTES = 5 * 1024 * 1024;
@@ -239,6 +237,7 @@ export default function ProfileScreen() {
       case "recent-activity":
       case "help-support":
       case "app-lock":
+      case "recently-deleted":
         router.push(`/profile-settings?section=${rowId}`);
         return;
       case "refer-friend":
@@ -331,14 +330,7 @@ export default function ProfileScreen() {
           ))}
         </View>
 
-        <View style={styles.groupCard}>
-          {EXTRA_ROWS.map((row, index) => (
-            <View key={row.id}>
-              <SettingRowItem row={row} onPress={handleRowPress} />
-              {index < EXTRA_ROWS.length - 1 ? <View style={styles.rowDivider} /> : null}
-            </View>
-          ))}
-        </View>
+
 
         <Pressable style={styles.signOutButton} onPress={() => setShowSignOutModal(true)}>
           <Text style={styles.signOutText}>Sign Out</Text>
@@ -715,7 +707,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#EEF3F6",
     marginLeft: 60 },
   signOutButton: {
-    height: 50,
+    minHeight: 46,
     borderRadius: 999,
     backgroundColor: "#FFF7F8",
     borderWidth: 1,
@@ -723,6 +715,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginTop: 18,
+    marginBottom: 10,
     marginHorizontal: 10,
     shadowColor: "#B49AA1",
     shadowOpacity: 0.1,
@@ -731,8 +724,8 @@ const styles = StyleSheet.create({
     elevation: 2 },
   signOutText: {
     color: "#EE596B",
-    fontSize: 40 / 2,
-    lineHeight: 26,
+    fontSize: 16,
+    lineHeight: 20,
     fontFamily: "Outfit-Bold" },
   aboutFooter: {
     alignItems: "center",

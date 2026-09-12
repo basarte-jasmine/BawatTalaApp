@@ -1,11 +1,9 @@
-import Toast from "../components/Toast";
+﻿import Toast from "../components/Toast";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
   CalendarDays,
-  Check,
-  CheckCheck,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -183,29 +181,16 @@ function riskSeverityRank(entry) {
   return 1;
 }
 
-function isFinishedEntry(entry) {
-  if (!entry) return true;
-  if (typeof entry.isFinished === "boolean") return entry.isFinished;
-  if (typeof entry.is_finished === "boolean") return entry.is_finished;
-  // Risk-flags list is finished-only; missing field means treat as finished.
-  return true;
-}
-
 function isUnresolvedFlagged(entry) {
   return isFlaggedEntry(entry) && !isResolved(entry);
 }
 
 function pickMostSevereUnresolvedEntry(entries) {
   const list = Array.isArray(entries) ? entries : [];
-  // Official queue prefers finished entries; unfinished mid-chat stays labeled, not primary.
-  const finished = list.filter(isFinishedEntry);
-  const scope = finished.length ? finished : list;
-  const unresolved = scope.filter(isUnresolvedFlagged);
-  const pool = unresolved.length ? unresolved : scope;
+  const unresolved = list.filter(isUnresolvedFlagged);
+  const pool = unresolved.length ? unresolved : list;
   if (!pool.length) return null;
   return [...pool].sort((a, b) => {
-    const finishedDiff = Number(isFinishedEntry(b)) - Number(isFinishedEntry(a));
-    if (finishedDiff) return finishedDiff;
     const rankDiff = riskSeverityRank(b) - riskSeverityRank(a);
     if (rankDiff) return rankDiff;
     return new Date(getEntryDateValue(b)) - new Date(getEntryDateValue(a));
@@ -299,11 +284,7 @@ function groupEntriesByStudent(entries) {
 
   return [...groups.values()]
     .map((group) => {
-      const sortedEntries = [...group.entries].sort((a, b) => {
-        const finishedDiff = Number(isFinishedEntry(b)) - Number(isFinishedEntry(a));
-        if (finishedDiff) return finishedDiff;
-        return new Date(b.createdAt || b.entryDate) - new Date(a.createdAt || a.entryDate);
-      });
+      const sortedEntries = [...group.entries].sort((a, b) => new Date(b.createdAt || b.entryDate) - new Date(a.createdAt || a.entryDate));
       const latestEntry = sortedEntries[0] || {};
       const crisisFlagsLast14Days = countCrisisFlagsInWindow(sortedEntries);
       const { activeTags, historicalTags } = splitActiveAndHistoricalTags(sortedEntries);
@@ -471,26 +452,16 @@ function EntryCard({ entry, isSelected, onSelect }) {
             {formatEntryLabel(entry)}
           </div>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-1.5">
-          {!isFinishedEntry(entry) ? (
-            <span
-              className="rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-bold text-sky-700"
-              title="Mid-chat / not finished — not the official Flagged case yet"
-            >
-              In progress
-            </span>
-          ) : null}
-          <span
-            className={
-              "rounded-md px-2 py-0.5 text-xs font-bold " +
-              (isResolved(entry)
-                ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
-                : "border border-amber-200 bg-amber-50 text-amber-700")
-            }
-          >
-            {isResolved(entry) ? "Resolved" : "Pending"}
-          </span>
-        </div>
+        <span
+          className={
+            "rounded-md px-2 py-0.5 text-xs font-bold " +
+            (isResolved(entry)
+              ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+              : "border border-amber-200 bg-amber-50 text-amber-700")
+          }
+        >
+          {isResolved(entry) ? "Resolved" : "Pending"}
+        </span>
       </div>
       <div className="mt-2.5 flex flex-wrap gap-1.5">
         {getConcernTags(entry).slice(0, 3).map((tag) => (
@@ -636,88 +607,6 @@ function SummaryNotes({ entry }) {
   );
 }
 
-function FlagHistory({ entry }) {
-  const items = entry?.flagHistory || entry?.history || [];
-
-  function formatRiskName(level) {
-    const norm = normalizeRiskLevel(level);
-    if (norm === "HIGH" || norm === "CRITICAL") return "Critical Case";
-    if (norm === "LOW" || norm === "MEDIUM" || norm === "MODERATE" || norm === "DISTRESSED") return "Support Needed";
-    if (norm === "NONE") return "None";
-    return norm;
-  }
-
-  function humanizeAction(value) {
-    const raw = String(value || "").trim();
-    if (!raw) return "Update";
-    return raw
-      .replace(/[_-]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .replace(/\b\w/g, (char) => char.toUpperCase());
-  }
-
-  function buildDetail(item) {
-    const note = String(item?.note || "").trim();
-    if (note) return note;
-
-    const parts = [];
-    if (item?.fromRiskLevel || item?.toRiskLevel) {
-      const fromLabel = formatRiskName(item?.fromRiskLevel);
-      const toLabel = formatRiskName(item?.toRiskLevel);
-      if (fromLabel !== toLabel) {
-        parts.push(`Risk: ${fromLabel} -> ${toLabel}`);
-      }
-    }
-    if (item?.fromStudentAction || item?.toStudentAction) {
-      const fromAction = item?.fromStudentAction || "-";
-      const toAction = item?.toStudentAction || "-";
-      if (fromAction !== toAction) parts.push(`Student action: ${fromAction} -> ${toAction}`);
-    }
-    if (item?.fromCounselorResolved != null || item?.toCounselorResolved != null) {
-      const fromResolved = item?.fromCounselorResolved ? "resolved" : "unresolved";
-      const toResolved = item?.toCounselorResolved ? "resolved" : "unresolved";
-      if (fromResolved !== toResolved) parts.push(`Counselor: ${fromResolved} -> ${toResolved}`);
-    }
-    return parts.join(" | ");
-  }
-
-  return (
-    <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-      <h3 className="mb-3 text-sm font-bold text-slate-800">Change History</h3>
-      {items.length ? (
-        <ul className="space-y-2">
-          {items.map((item, index) => {
-            const title = humanizeAction(item?.actionType || item?.action || item?.type || "Update");
-            const when = item?.createdAtManila || formatDate(item?.createdAt, { withTime: true });
-            const actor = item?.actorName || item?.actorEmail || "";
-            const detail = buildDetail(item);
-            const key = item?.id || `${entry?.id || "entry"}-history-${index}`;
-
-            return (
-              <li key={key} className="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-sm font-bold text-slate-800">{title}</div>
-                    {actor ? <div className="mt-0.5 text-xs font-medium text-emerald-700">{actor}</div> : null}
-                    {detail ? <div className="mt-1 text-xs leading-5 text-slate-600">{detail}</div> : null}
-                  </div>
-                  <div className="shrink-0 text-[11px] font-semibold text-slate-400">{when}</div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
-          No audit history for this entry yet.
-        </div>
-      )}
-    </div>
-  );
-}
-
-
 function FlagDetails({ entry, isEditing, editState, saving, onChange, onEdit, onCancel, onSave }) {
   const flag = getEntryFlag(entry);
   const actionLabel = getStudentActionLabel(entry);
@@ -843,23 +732,23 @@ function ReviewModal({
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm">
-      <div className="h-full w-full max-w-5xl bg-white shadow-2xl flex flex-col overflow-hidden">
-        <div className="shrink-0 border-b border-slate-200 bg-white px-7 py-6">
+      <div className="h-full w-full max-w-5xl overflow-y-auto bg-white shadow-2xl flex flex-col">
+        <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-7 py-6">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-2xl font-black text-slate-900 tracking-wide uppercase">{student.fullName}</h2>
               <div className="mt-2 flex flex-wrap items-center gap-2.5 text-sm text-slate-500 font-medium">
                 <span>{maskStudentNumber(student.studentNumber, maskStudentNumbers)}</span>
-                <span>•</span>
+                <span>-</span>
                 <span className="uppercase">{student.program || "Unspecified"}</span>
                 {followUpInfo?.lastFollowUpAt ? (
                   <>
                     <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-0.5 text-xs font-bold text-emerald-800">
-                      Follow-up sent {formatDate(followUpInfo.lastFollowUpAt, { withTime: true })} • {followUpInfo.lastFollowUpByName || "Counselor"}
+                      Follow-up sent {formatDate(followUpInfo.lastFollowUpAt, { withTime: true })} ï¿½ {followUpInfo.lastFollowUpByName || "Counselor"}
                     </span>
                   </>
                 ) : null}
-                <span>•</span>
+                <span>-</span>
                 <span className="font-black text-[#EF4444]">{entries.length} Flagged Entries</span>
               </div>
             </div>
@@ -872,8 +761,8 @@ function ReviewModal({
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 grid gap-6 px-7 py-6 lg:grid-cols-[0.95fr,1.1fr] overflow-hidden">
-          <div className="h-full overflow-y-auto pr-2 space-y-4">
+        <div className="grid gap-6 px-7 py-6 lg:grid-cols-[0.95fr,1.1fr] flex-1">
+          <div className="space-y-4">
             {loading ? <div className="rounded-xl border border-slate-200 p-4 text-sm text-slate-500">Loading flagged entries...</div> : null}
             {error ? <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
             {entries.map((entry) => (
@@ -886,7 +775,7 @@ function ReviewModal({
             ))}
           </div>
 
-          <div className="h-full overflow-y-auto pr-2 space-y-6">
+          <div className="space-y-6">
             {selectedEntry ? (
               <>
                 <div>
@@ -911,8 +800,6 @@ function ReviewModal({
                   onCancel={onCancelEdit}
                   onSave={onSaveEdit}
                 />
-
-                <FlagHistory entry={selectedEntry} />
               </>
             ) : (
               <div className="rounded-xl border border-slate-200 p-4 text-sm text-slate-500">Select an entry to review.</div>
@@ -920,7 +807,7 @@ function ReviewModal({
           </div>
         </div>
 
-        <div className="shrink-0 flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 bg-white px-7 py-4 shadow-lg">
+        <div className="sticky bottom-0 flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 bg-white px-7 py-4 shadow-lg">
           <button
             type="button"
             onClick={onMessage}
@@ -1097,18 +984,6 @@ function MessageModal({
                   <span>{msg.from?.name ? `${msg.from.name}` : "Counselor"}</span>
                   <span>•</span>
                   <span>{formatDate(msg.createdAt, { withTime: true })}</span>
-                  <span>•</span>
-                  {msg.isRead ? (
-                    <span className="inline-flex items-center gap-1 font-bold text-emerald-700" title={msg.readAt ? `Seen ${formatDate(msg.readAt, { withTime: true })}` : "Seen"}>
-                      <CheckCheck className="h-3.5 w-3.5 text-emerald-600" />
-                      <span>Seen</span>
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 text-slate-400 font-medium" title="Delivered to student">
-                      <Check className="h-3.5 w-3.5 text-slate-400" />
-                      <span>Delivered</span>
-                    </span>
-                  )}
                 </div>
               </div>
             ))
@@ -1318,17 +1193,8 @@ export default function FlaggedEntries({ onLogout, session }) {
 
       if (profileData?.entries) {
         const flaggedEntries = profileData.entries.filter(isFlaggedEntry);
-        const historyMap = new Map((student.entries || []).map((e) => [e.id, e.flagHistory || e.history || []]));
-        const enriched = (flaggedEntries.length ? flaggedEntries : student.entries).map((entry) => ({
-          ...entry,
-          flagHistory: (Array.isArray(entry.flagHistory) && entry.flagHistory.length) ? entry.flagHistory : (historyMap.get(entry.id) || []),
-        }));
-        enriched.sort((a, b) => {
-          const finishedDiff = Number(isFinishedEntry(b)) - Number(isFinishedEntry(a));
-          if (finishedDiff) return finishedDiff;
-          return new Date(getEntryDateValue(b)) - new Date(getEntryDateValue(a));
-        });
-        const nextEntry = pickMostSevereUnresolvedEntry(enriched) || enriched.find(isFinishedEntry) || enriched[0] || null;
+        const enriched = flaggedEntries.length ? flaggedEntries : student.entries;
+        const nextEntry = pickMostSevereUnresolvedEntry(enriched) || enriched[0] || null;
         setReviewEntries(enriched);
         setSelectedEntry(nextEntry);
         resetEditState(nextEntry);
@@ -1389,41 +1255,12 @@ export default function FlaggedEntries({ onLogout, session }) {
       return;
     }
 
-    setEntries((current) => current.map((entry) => {
-      if (entry.id !== updatedEntry.id) return entry;
-      const merged = { ...entry, ...updatedEntry };
-      if (!Array.isArray(updatedEntry?.flagHistory) && Array.isArray(entry?.flagHistory)) {
-        merged.flagHistory = entry.flagHistory;
-      }
-      if (!Array.isArray(updatedEntry?.history) && Array.isArray(entry?.history)) {
-        merged.history = entry.history;
-      }
-      return merged;
-    }));
+    setEntries((current) => current.map((entry) => (entry.id === updatedEntry.id ? { ...entry, ...updatedEntry } : entry)));
     setReviewEntries((current) => {
-      const nextEntries = current.map((entry) => {
-        if (entry.id !== updatedEntry.id) return entry;
-        const merged = { ...entry, ...updatedEntry };
-        if (!Array.isArray(updatedEntry?.flagHistory) && Array.isArray(entry?.flagHistory)) {
-          merged.flagHistory = entry.flagHistory;
-        }
-        if (!Array.isArray(updatedEntry?.history) && Array.isArray(entry?.history)) {
-          merged.history = entry.history;
-        }
-        return merged;
-      });
+      const nextEntries = current.map((entry) => (entry.id === updatedEntry.id ? { ...entry, ...updatedEntry } : entry));
       setSelectedEntry((currentEntry) => {
         if (currentEntry?.id !== updatedEntry.id) return currentEntry;
-        if (entryMatchesFlag(updatedEntry, reviewFilter)) {
-          const merged = { ...currentEntry, ...updatedEntry };
-          if (!Array.isArray(updatedEntry?.flagHistory) && Array.isArray(currentEntry?.flagHistory)) {
-            merged.flagHistory = currentEntry.flagHistory;
-          }
-          if (!Array.isArray(updatedEntry?.history) && Array.isArray(currentEntry?.history)) {
-            merged.history = currentEntry.history;
-          }
-          return merged;
-        }
+        if (entryMatchesFlag(updatedEntry, reviewFilter)) return { ...currentEntry, ...updatedEntry };
         const nextEntry = nextEntries.find((entry) => entryMatchesFlag(entry, reviewFilter)) || nextEntries[0] || null;
         resetEditState(nextEntry);
         return nextEntry;
@@ -1540,16 +1377,16 @@ export default function FlaggedEntries({ onLogout, session }) {
         <Toast message={successMessage} onClose={() => setSuccessMessage("")} />
 
         {/* Top Controls Bar */}
-        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm lg:flex-row lg:items-center">
+        <div className="flex flex-col gap-3.5 lg:flex-row lg:items-center lg:justify-between">
           {/* Search Bar */}
-          <div className="relative w-full lg:flex-1">
+          <div className="relative flex-1 max-w-md">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               placeholder="Search name or student number..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50/70 pl-10 pr-4 text-sm font-medium text-slate-800 placeholder-slate-400 outline-none transition focus:border-[#229365] focus:bg-white focus:ring-2 focus:ring-emerald-100"
+              className="h-11 w-full rounded-2xl border border-slate-200 bg-white pl-10 pr-4 text-sm font-medium text-slate-800 placeholder-slate-400 shadow-sm focus:border-[#229365] focus:outline-none"
             />
           </div>
 
@@ -1561,7 +1398,7 @@ export default function FlaggedEntries({ onLogout, session }) {
               <select
                 value={dateFilter}
                 onChange={(e) => setDateFilter(e.target.value)}
-                className="h-11 appearance-none rounded-xl border border-slate-200 bg-slate-50/70 pl-10 pr-9 text-xs font-bold text-slate-700 outline-none transition focus:border-[#229365] focus:bg-white focus:ring-1 focus:ring-emerald-100"
+                className="h-11 appearance-none rounded-2xl border border-slate-200 bg-white pl-10 pr-9 text-sm font-bold text-slate-700 shadow-sm focus:border-[#229365] focus:outline-none"
               >
                 {DATE_FILTERS.map((item) => (
                   <option key={item.value} value={item.value}>{item.label}</option>
@@ -1576,7 +1413,7 @@ export default function FlaggedEntries({ onLogout, session }) {
               <select
                 value={concernFilter}
                 onChange={(e) => setConcernFilter(e.target.value)}
-                className="h-11 min-w-[11rem] appearance-none rounded-xl border border-slate-200 bg-slate-50/70 pl-10 pr-9 text-xs font-bold text-slate-700 outline-none transition focus:border-[#229365] focus:bg-white focus:ring-1 focus:ring-emerald-100"
+                className="h-11 min-w-[11rem] appearance-none rounded-2xl border border-slate-200 bg-white pl-10 pr-9 text-sm font-bold text-slate-700 shadow-sm focus:border-[#229365] focus:outline-none"
               >
                 <option value="all">All Concern Types</option>
                 {concernOptions.map((item) => (
@@ -1592,7 +1429,7 @@ export default function FlaggedEntries({ onLogout, session }) {
               <select
                 value={programFilter}
                 onChange={(e) => setProgramFilter(e.target.value)}
-                className="h-11 min-w-[10rem] appearance-none rounded-xl border border-slate-200 bg-slate-50/70 pl-10 pr-9 text-xs font-bold text-slate-700 outline-none transition focus:border-[#229365] focus:bg-white focus:ring-1 focus:ring-emerald-100"
+                className="h-11 min-w-[10rem] appearance-none rounded-2xl border border-slate-200 bg-white pl-10 pr-9 text-sm font-bold text-slate-700 shadow-sm focus:border-[#229365] focus:outline-none"
               >
                 <option value="all">All Programs</option>
                 {PROGRAM_OPTIONS.map((prog) => (
@@ -1605,10 +1442,9 @@ export default function FlaggedEntries({ onLogout, session }) {
         </div>
 
         {/* Count Bar & Tabs */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-1">
-          <div className="text-sm font-extrabold text-slate-800">
-            Showing <span className="text-[#0e5a3a]">{filteredStudents.length}</span> students{" "}
-            <span className="font-semibold text-slate-500">({totalFilteredEntries} flagged entries)</span>
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="text-sm font-bold text-slate-700">
+            Showing {filteredStudents.length} students ({totalFilteredEntries} flagged entries)
           </div>
           <FilterTabs activeTab={activeTab} counts={counts} onChange={setActiveTab} />
         </div>
@@ -1617,7 +1453,7 @@ export default function FlaggedEntries({ onLogout, session }) {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[980px] border-separate border-spacing-y-3.5 text-left">
             <thead>
-              <tr className="text-xs font-extrabold uppercase tracking-wider text-slate-700">
+              <tr className="text-xs font-bold uppercase tracking-wider text-slate-400">
                 <th className="px-5 py-2">Student Name</th>
                 <th className="px-5 py-2">Concern Type</th>
                 <th className="px-5 py-2">Risk Flag</th>

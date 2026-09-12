@@ -401,7 +401,7 @@ export function JournalLockGate({ children }: PropsWithChildren) {
   }, [isAppLocked]);
 
   if (!appLockEnabled || !isAppLocked) {
-    return <>{children}</>;
+    return <View style={styles.journalGateHost}>{children}</View>;
   }
 
   const handleUnlock = async () => {
@@ -494,6 +494,8 @@ export function AppLockOverlay() {
 }
 
 const styles = StyleSheet.create({
+  journalGateHost: {
+    flex: 1 },
   journalLockWrap: {
     flex: 1,
     alignItems: "center",

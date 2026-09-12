@@ -28,6 +28,8 @@ export const DEFAULT_ADMIN_PREFERENCES = {
   privacy: {
     maskStudentNumbers: false,
     requireCancelReason: true,
+    idleTimeoutEnabled: false,
+    idleTimeoutMinutes: 30,
   },
 };
 
@@ -105,6 +107,17 @@ function normalizePreferences(value) {
     privacy: {
       maskStudentNumbers: Boolean(privacy.maskStudentNumbers),
       requireCancelReason: privacy.requireCancelReason !== false,
+      idleTimeoutEnabled: Boolean(
+        privacy.idleTimeoutEnabled ??
+        value?.security?.idleTimeoutEnabled ??
+        privacy.idleTimeout?.enabled ??
+        false,
+      ),
+      idleTimeoutMinutes: [5, 10, 15, 30, 60].includes(
+        Number(privacy.idleTimeoutMinutes ?? value?.security?.idleTimeoutMinutes ?? privacy.idleTimeout?.minutes),
+      )
+        ? Number(privacy.idleTimeoutMinutes ?? value?.security?.idleTimeoutMinutes ?? privacy.idleTimeout?.minutes)
+        : 30,
     },
   };
 }

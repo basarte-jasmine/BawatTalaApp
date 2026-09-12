@@ -1,6 +1,6 @@
 import Toast from "../components/Toast";
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Bell, KeyRound, Shield, Trash2, User, X } from "lucide-react";
+import { AlertTriangle, Bell, Clock, KeyRound, Shield, Trash2, User, X } from "lucide-react";
 import Layout from "../components/Layout";
 import Modal from "../components/Modal";
 import { changeAdminPassword, fetchAdminSettings, scheduleAdminAccountDeletion, sendAdminChangePasswordCode, updateAdminSettings } from "../lib/admin-api";
@@ -13,7 +13,7 @@ const DEFAULT_FORM_STATE = {
   fullName: "",
   email: "",
   roleLabel: "",
-  gender: "Prefer not to say",
+  gender: "Female",
   profilePictureUrl: "",
   profilePictureSource: "NONE",
   googleProfilePictureUrl: "",
@@ -34,6 +34,8 @@ const DEFAULT_FORM_STATE = {
   privacy: {
     maskStudentNumbers: false,
     requireCancelReason: true,
+    idleTimeoutEnabled: false,
+    idleTimeoutMinutes: 30,
   },
   isActive: true,
   createdAt: "",
@@ -44,13 +46,22 @@ function formatDateTime(value) {
   if (!value) return "Not available";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "Not available";
-  return parsed.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Manila",
     year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
     hour: "numeric",
     minute: "2-digit",
-  });
+    hour12: true,
+  }).formatToParts(parsed);
+  const mm = parts.find((p) => p.type === "month")?.value || "01";
+  const dd = parts.find((p) => p.type === "day")?.value || "01";
+  const yyyy = parts.find((p) => p.type === "year")?.value || "1970";
+  const hour = parts.find((p) => p.type === "hour")?.value || "12";
+  const minute = parts.find((p) => p.type === "minute")?.value || "00";
+  const dayPeriod = parts.find((p) => p.type === "dayPeriod")?.value || "AM";
+  return `${mm}-${dd}-${yyyy}, ${hour}:${minute} ${dayPeriod}`;
 }
 
 function fileToDataUrl(file) {
@@ -300,7 +311,7 @@ export default function Settings({ onLogout, session }) {
           fullName: data?.profile?.fullName || session?.name || "",
           email: data?.profile?.email || session?.email || "",
           roleLabel: data?.profile?.roleLabel || "Counselor",
-          gender: data?.profile?.gender || "Prefer not to say",
+          gender: data?.profile?.gender || "Female",
           profilePictureUrl: data?.profile?.profilePictureUrl || session?.pictureUrl || "",
           profilePictureSource: data?.profile?.profilePictureSource || (data?.profile?.profilePictureUrl ? "UPLOAD" : "NONE"),
           googleProfilePictureUrl: data?.profile?.googleProfilePictureUrl || session?.pictureUrl || "",
@@ -310,6 +321,10 @@ export default function Settings({ onLogout, session }) {
           privacy: {
             maskStudentNumbers: Boolean(data?.preferences?.privacy?.maskStudentNumbers),
             requireCancelReason: data?.preferences?.privacy?.requireCancelReason !== false,
+            idleTimeoutEnabled: Boolean(data?.preferences?.privacy?.idleTimeoutEnabled),
+            idleTimeoutMinutes: [5, 10, 15, 30, 60].includes(Number(data?.preferences?.privacy?.idleTimeoutMinutes))
+              ? Number(data?.preferences?.privacy?.idleTimeoutMinutes)
+              : 30,
           },
           isActive: Boolean(data?.profile?.isActive),
           createdAt: data?.profile?.createdAt || "",
@@ -318,7 +333,7 @@ export default function Settings({ onLogout, session }) {
         setSavedSnapshot(
           JSON.stringify({
             fullName: data?.profile?.fullName || session?.name || "",
-            gender: data?.profile?.gender || "Prefer not to say",
+            gender: data?.profile?.gender || "Female",
             profilePictureUrl: data?.profile?.profilePictureUrl || session?.pictureUrl || "",
             profilePictureSource: data?.profile?.profilePictureSource || (data?.profile?.profilePictureUrl ? "UPLOAD" : "NONE"),
             specialtiesInput: Array.isArray(data?.profile?.specialties) ? data.profile.specialties.join(", ") : "",
@@ -327,6 +342,10 @@ export default function Settings({ onLogout, session }) {
             privacy: {
               maskStudentNumbers: Boolean(data?.preferences?.privacy?.maskStudentNumbers),
               requireCancelReason: data?.preferences?.privacy?.requireCancelReason !== false,
+              idleTimeoutEnabled: Boolean(data?.preferences?.privacy?.idleTimeoutEnabled),
+              idleTimeoutMinutes: [5, 10, 15, 30, 60].includes(Number(data?.preferences?.privacy?.idleTimeoutMinutes))
+                ? Number(data?.preferences?.privacy?.idleTimeoutMinutes)
+                : 30,
             },
           }),
         );
@@ -722,7 +741,7 @@ export default function Settings({ onLogout, session }) {
                       >
                         <option value="Female">Female</option>
                         <option value="Male">Male</option>
-                        <option value="Prefer not to say">Prefer not to say</option>
+                        
                       </select>
                     </div>
                   </div>

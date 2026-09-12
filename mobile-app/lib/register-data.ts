@@ -56,7 +56,6 @@ export const BARANGAY_OPTIONS = [
 export const GENDER_OPTIONS = [
   "Male",
   "Female",
-  "Prefer not to say",
 ];
 
 export const FIXED_ADDRESS = {

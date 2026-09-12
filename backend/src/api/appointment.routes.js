@@ -1771,7 +1771,7 @@ async function findAppointmentById(appointmentId) {
         coalesce(nullif(trim(aa.full_name), ''), nullif(trim(pc.full_name), ''), split_part(aa.email, '@', 1)) as counselor_name,
         coalesce(nullif(trim(aa.full_name), ''), nullif(trim(pc.full_name), ''), split_part(aa.email, '@', 1)) as counselor_full_name,
         case when coalesce(ca.support_type, 'GUIDANCE') = 'PEER' then 'PEER_COUNSELOR' else coalesce(aa.role, 'COUNSELOR') end as counselor_role,
-        coalesce(aa.gender, pc.gender, 'Prefer not to say') as counselor_gender,
+        case when lower(trim(coalesce(aa.gender, pc.gender, ''))) = 'male' then 'Male' else 'Female' end as counselor_gender,
         coalesce(nullif(aa.profile_picture_url, ''), nullif(pc.profile_picture_url, ''), '') as counselor_picture_url,
         coalesce(pc.student_number, '') as peer_student_number,
         coalesce(pc.program, '') as peer_program
@@ -1829,7 +1829,7 @@ async function listCounselors() {
         email,
         coalesce(nullif(full_name, ''), split_part(email, '@', 1)) as full_name,
         coalesce(nullif(role, ''), 'COUNSELOR') as role,
-        coalesce(nullif(gender, ''), 'Prefer not to say') as gender,
+        case when lower(trim(coalesce(gender, ''))) = 'male' then 'Male' else 'Female' end as gender,
         coalesce(profile_picture_url, '') as profile_picture_url,
         coalesce(specialties, '[]'::jsonb) as specialties
       from public.admin_accounts
@@ -2061,7 +2061,7 @@ async function findCounselorById(counselorId) {
         email,
         coalesce(nullif(full_name, ''), split_part(email, '@', 1)) as full_name,
         coalesce(nullif(role, ''), 'COUNSELOR') as role,
-        coalesce(nullif(gender, ''), 'Prefer not to say') as gender,
+        case when lower(trim(coalesce(gender, ''))) = 'male' then 'Male' else 'Female' end as gender,
         coalesce(profile_picture_url, '') as profile_picture_url,
         coalesce(specialties, '[]'::jsonb) as specialties
       from public.admin_accounts
@@ -3635,7 +3635,7 @@ router.get("/student", requireStudentOnlyAuth, async (req, res) => {
         coalesce(ca.support_type, case when ca.peer_counselor_id is not null then 'PEER' else 'GUIDANCE' end) as support_type,
         coalesce(nullif(aa.full_name, ''), pc.full_name, split_part(aa.email, '@', 1)) as counselor_name,
         case when coalesce(ca.support_type, 'GUIDANCE') = 'PEER' then 'PEER_COUNSELOR' else coalesce(aa.role, 'COUNSELOR') end as counselor_role,
-        coalesce(aa.gender, pc.gender, 'Prefer not to say') as counselor_gender,
+        case when lower(trim(coalesce(aa.gender, pc.gender, ''))) = 'male' then 'Male' else 'Female' end as counselor_gender,
         coalesce(nullif(aa.profile_picture_url, ''), nullif(pc.profile_picture_url, ''), '') as counselor_picture_url,
         coalesce(pc.student_number, '') as peer_student_number,
         coalesce(pc.program, '') as peer_program
@@ -3993,6 +3993,24 @@ router.post("/admin/peer-counselors", requireRoles("HEAD_COUNSELOR"), async (req
   if (!gender) {
     return res.status(400).json({ message: "Please choose Male or Female for the peer counselor." });
   }
+  const [peerExist, adminExist, studentExist, studentNumberExist] = await Promise.all([
+    query("select id from public.peer_counselors where lower(email) = lower($1) limit 1", [email]),
+    query("select id from public.admin_accounts where lower(email) = lower($1) limit 1", [email]),
+    query("select id from public.student_profiles where lower(email) = lower($1) limit 1", [email]),
+    query("select id from public.peer_counselors where lower(trim(student_number)) = lower(trim($1)) limit 1", [studentNumber]),
+  ]);
+  if (peerExist.rowCount > 0) {
+    return res.status(409).json({ message: "This email is already registered as a peer counselor. Strictly one account per email only." });
+  }
+  if (adminExist.rowCount > 0) {
+    return res.status(409).json({ message: "This email is already registered as a counselor. Strictly one account per email only." });
+  }
+  if (studentExist.rowCount > 0) {
+    return res.status(409).json({ message: "This email is already registered as a student. Strictly one account per email only." });
+  }
+  if (studentNumberExist.rowCount > 0) {
+    return res.status(409).json({ message: "This student number is already registered for another peer counselor." });
+  }
   const invitationToken = createPeerInviteToken();
   const invitationTokenHash = hashPeerInviteToken(invitationToken);
   const insertResult = await query(
@@ -4011,39 +4029,6 @@ router.post("/admin/peer-counselors", requireRoles("HEAD_COUNSELOR"), async (req
         invitation_responded_at
       )
       values ($1, $2, $3, $4, $5, $6::jsonb, false, 'PENDING', $7, now(), null)
-      on conflict (email)
-      do update set
-        full_name = excluded.full_name,
-        gender = excluded.gender,
-        student_number = excluded.student_number,
-        program = excluded.program,
-        specialties = excluded.specialties,
-        is_active = case
-          when coalesce(public.peer_counselors.invitation_status, 'ACCEPTED') = 'ACCEPTED'
-            then public.peer_counselors.is_active
-          else false
-        end,
-        invitation_status = case
-          when coalesce(public.peer_counselors.invitation_status, 'ACCEPTED') = 'ACCEPTED'
-            then public.peer_counselors.invitation_status
-          else 'PENDING'
-        end,
-        invitation_token_hash = case
-          when coalesce(public.peer_counselors.invitation_status, 'ACCEPTED') = 'ACCEPTED'
-            then public.peer_counselors.invitation_token_hash
-          else excluded.invitation_token_hash
-        end,
-        invitation_sent_at = case
-          when coalesce(public.peer_counselors.invitation_status, 'ACCEPTED') = 'ACCEPTED'
-            then public.peer_counselors.invitation_sent_at
-          else now()
-        end,
-        invitation_responded_at = case
-          when coalesce(public.peer_counselors.invitation_status, 'ACCEPTED') = 'ACCEPTED'
-            then public.peer_counselors.invitation_responded_at
-          else null
-        end,
-        updated_at = now()
       returning id, email, full_name, gender, student_number, program, specialties, profile_picture_url, google_profile_picture_url, is_active, invitation_status, invitation_sent_at, invitation_responded_at, created_at, updated_at
     `,
     [fullName, email, gender, studentNumber, program, JSON.stringify(specialties), invitationTokenHash],
@@ -4119,6 +4104,24 @@ router.patch("/admin/peer-counselors/:peerCounselorId", requireRoles("HEAD_COUNS
   }
   if (!gender) {
     return res.status(400).json({ message: "Please choose Male or Female for the peer counselor." });
+  }
+  const [peerExist, adminExist, studentExist, studentNumberExist] = await Promise.all([
+    query("select id from public.peer_counselors where lower(email) = lower($1) and id <> $2::uuid limit 1", [email, peerCounselorId]),
+    query("select id from public.admin_accounts where lower(email) = lower($1) limit 1", [email]),
+    query("select id from public.student_profiles where lower(email) = lower($1) limit 1", [email]),
+    query("select id from public.peer_counselors where lower(trim(student_number)) = lower(trim($1)) and id <> $2::uuid limit 1", [studentNumber, peerCounselorId]),
+  ]);
+  if (peerExist.rowCount > 0) {
+    return res.status(409).json({ message: "This email is already in use by another peer counselor." });
+  }
+  if (adminExist.rowCount > 0) {
+    return res.status(409).json({ message: "This email is already registered as a counselor." });
+  }
+  if (studentExist.rowCount > 0) {
+    return res.status(409).json({ message: "This email is already registered as a student account." });
+  }
+  if (studentNumberExist.rowCount > 0) {
+    return res.status(409).json({ message: "This student number is already in use by another peer counselor." });
   }
   const updateResult = await query(
     `

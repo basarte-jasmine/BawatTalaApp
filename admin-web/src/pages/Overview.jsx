@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   Download,
   Mail,
-  PhoneCall,
   Users,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -187,6 +186,27 @@ function EmptyState({ children = "No live data available yet." }) {
       {children}
     </div>
   );
+}
+
+function formatToMMDDYYYY(dateInput) {
+  if (!dateInput) return "";
+  const str = String(dateInput).trim();
+  const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    return `${match[2]}-${match[3]}-${match[1]}`;
+  }
+  const date = new Date(dateInput);
+  if (Number.isNaN(date.getTime())) return str;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const mm = parts.find((p) => p.type === "month")?.value || "01";
+  const dd = parts.find((p) => p.type === "day")?.value || "01";
+  const yyyy = parts.find((p) => p.type === "year")?.value || "1970";
+  return `${mm}-${dd}-${yyyy}`;
 }
 
 function formatMetricValue(value) {
@@ -745,23 +765,39 @@ function CounselorWorkloadPanel({ analytics, loading }) {
 
   return (
     <div className="space-y-6">
-      {workload.map((counselor) => (
-        <div key={counselor.key || counselor.label} className="grid grid-cols-[180px_1fr_52px] items-center gap-4">
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-slate-700">{counselor.label}</div>
-            <div className="text-xs text-slate-400">{counselor.role || "Counselor"}</div>
-          </div>
-          <div>
-            <div className="h-5 rounded-full bg-slate-100">
-              <div
-                className={`h-5 rounded-full ${counselor.supportType === "PEER" ? "bg-[#4D8FEF]" : "bg-[#20C08D]"}`}
-                style={{ width: `${Math.max(10, (Number(counselor.value || 0) / max) * 100)}%` }}
-              />
+      <div className="space-y-5">
+        {workload.map((counselor) => {
+          const val = Number(counselor.value || 0);
+          const widthPercent = val > 0 ? `${Math.max(6, (val / max) * 100)}%` : "0%";
+          return (
+            <div key={counselor.key || counselor.label} className="grid grid-cols-[180px_1fr_52px] items-center gap-4">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold text-slate-700">{counselor.label}</div>
+                <div className="text-xs text-slate-400">{counselor.role || "Counselor"}</div>
+              </div>
+              <div>
+                <div className="h-5 rounded-full bg-slate-100">
+                  <div
+                    className={`h-5 rounded-full ${counselor.supportType === "PEER" ? "bg-[#4D8FEF]" : "bg-[#20C08D]"}`}
+                    style={{ width: widthPercent }}
+                  />
+                </div>
+              </div>
+              <div className="text-right text-sm font-bold text-slate-700">{formatMetricValue(counselor.value)}</div>
             </div>
-          </div>
-          <div className="text-right text-sm font-bold text-slate-700">{formatMetricValue(counselor.value)}</div>
+          );
+        })}
+      </div>
+      <div className="mt-4 flex flex-wrap gap-5 text-xs text-slate-600 pt-3 border-t border-slate-100">
+        <div className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded-full bg-[#20C08D]" />
+          Counselors
         </div>
-      ))}
+        <div className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded-full bg-[#4D8FEF]" />
+          Peer Counselors
+        </div>
+      </div>
     </div>
   );
 }
@@ -1831,6 +1867,82 @@ function drawEmptyChartState(context, x, y, width, height, label = "No live data
   context.textAlign = "left";
 }
 
+function drawMetricCardIcon(context, iconKey, cx, cy, color) {
+  context.save();
+  context.strokeStyle = color;
+  context.fillStyle = color;
+  context.lineWidth = 2;
+  context.lineCap = "round";
+  context.lineJoin = "round";
+
+  if (iconKey === "flagged") {
+    context.beginPath();
+    context.moveTo(cx, cy - 8);
+    context.lineTo(cx + 9, cy + 8);
+    context.lineTo(cx - 9, cy + 8);
+    context.closePath();
+    context.stroke();
+    context.beginPath();
+    context.moveTo(cx, cy - 3);
+    context.lineTo(cx, cy + 2);
+    context.stroke();
+    context.beginPath();
+    context.arc(cx, cy + 5.5, 1.2, 0, Math.PI * 2);
+    context.fill();
+  } else if (iconKey === "students") {
+    context.lineWidth = 1.8;
+    context.beginPath();
+    context.arc(cx - 3, cy - 3, 3.5, 0, Math.PI * 2);
+    context.stroke();
+    context.beginPath();
+    context.arc(cx - 3, cy + 9, 6.5, Math.PI * 1.15, Math.PI * 1.85);
+    context.stroke();
+    context.beginPath();
+    context.arc(cx + 5, cy - 4, 2.8, 0, Math.PI * 2);
+    context.stroke();
+    context.beginPath();
+    context.arc(cx + 5, cy + 7, 5.5, Math.PI * 1.2, Math.PI * 1.8);
+    context.stroke();
+  } else if (iconKey === "entries" || iconKey === "averageEntriesPerStudent") {
+    context.beginPath();
+    context.moveTo(cx - 10, cy);
+    context.lineTo(cx - 5, cy);
+    context.lineTo(cx - 2, cy - 7);
+    context.lineTo(cx + 2, cy + 7);
+    context.lineTo(cx + 5, cy);
+    context.lineTo(cx + 10, cy);
+    context.stroke();
+  } else if (iconKey === "futureMessages") {
+    context.lineWidth = 1.8;
+    context.strokeRect(cx - 9, cy - 6, 18, 13);
+    context.beginPath();
+    context.moveTo(cx - 9, cy - 6);
+    context.lineTo(cx, cy + 1);
+    context.lineTo(cx + 9, cy - 6);
+    context.stroke();
+  } else if (iconKey === "scheduled") {
+    context.lineWidth = 1.8;
+    context.strokeRect(cx - 8, cy - 5, 16, 13);
+    context.beginPath();
+    context.moveTo(cx - 8, cy - 1);
+    context.lineTo(cx + 8, cy - 1);
+    context.stroke();
+    context.fillRect(cx - 5, cy - 7, 2, 3);
+    context.fillRect(cx + 3, cy - 7, 2, 3);
+  } else {
+    context.beginPath();
+    context.arc(cx, cy, 8, 0, Math.PI * 2);
+    context.stroke();
+    context.beginPath();
+    context.moveTo(cx - 4, cy);
+    context.lineTo(cx - 1, cy + 3);
+    context.lineTo(cx + 4, cy - 3);
+    context.stroke();
+  }
+
+  context.restore();
+}
+
 function drawMetricCards(context, cards, x, y, width) {
   const gap = 18;
   const columns = 4;
@@ -1842,35 +1954,60 @@ function drawMetricCards(context, cards, x, y, width) {
     const row = Math.floor(index / columns);
     const cardX = x + column * (cardWidth + gap);
     const cardY = y + row * (cardHeight + gap);
-    const accent =
-      card.tone === "amber"
-        ? "#f59e0b"
-        : card.tone === "green"
-          ? "#229365"
-          : card.direction === "down"
-            ? "#64748b"
-            : "#3e8914";
+    const isAmber = card.tone === "amber";
+    const isGreen = card.tone === "green";
+    const accent = isAmber ? "#d97706" : isGreen ? "#059669" : "#64748b";
+    const iconBg = isAmber ? "#fffbeb" : isGreen ? "#ecfdf5" : "#f1f5f9";
+    const iconRing = isAmber ? "#fde68a" : isGreen ? "#a7f3d0" : "#cbd5e1";
+    const chipBg = isAmber ? "#fffbeb" : isGreen ? "#ecfdf5" : "#f1f5f9";
+    const chipBorder = isAmber ? "#fde68a" : isGreen ? "#a7f3d0" : "#e2e8f0";
+    const chipText = isAmber ? "#b45309" : isGreen ? "#047857" : "#475569";
 
-    fillRoundRect(context, cardX, cardY, cardWidth, cardHeight, 18, "#ffffff", "#dbe7d2");
-    fillRoundRect(context, cardX + 22, cardY + 22, 42, 42, 13, `${accent}22`);
-    context.fillStyle = accent;
-    context.beginPath();
-    context.arc(cardX + 43, cardY + 43, 8, 0, Math.PI * 2);
-    context.fill();
+    fillRoundRect(context, cardX, cardY, cardWidth, cardHeight, 18, "#ffffff", "#e2e8f0");
+    fillRoundRect(context, cardX + 18, cardY + 18, 38, 38, 12, iconBg, iconRing);
+    drawMetricCardIcon(context, card.key, cardX + 37, cardY + 37, accent);
 
     context.fillStyle = "#334155";
-    context.font = "700 16px Arial, Helvetica, sans-serif";
-    drawWrappedCanvasText(context, card.title, cardX + 78, cardY + 36, cardWidth - 104, 19, 2);
-
-    context.fillStyle = "#111827";
-    context.font = "800 38px Arial, Helvetica, sans-serif";
-    context.fillText(String(card.value ?? "--"), cardX + 22, cardY + 108);
-
-    context.fillStyle = accent;
     context.font = "700 15px Arial, Helvetica, sans-serif";
-    context.textAlign = "right";
-    context.fillText(String(card.delta ?? "--"), cardX + cardWidth - 22, cardY + 108);
-    context.textAlign = "left";
+    drawWrappedCanvasText(context, card.title, cardX + 66, cardY + 32, cardWidth - 84, 18, 2);
+
+    context.fillStyle = "#0f172a";
+    context.font = "800 32px Arial, Helvetica, sans-serif";
+    context.fillText(String(card.value ?? "--"), cardX + 18, cardY + 104);
+
+    const deltaText = String(card.delta ?? "--");
+    context.font = "700 12px Arial, Helvetica, sans-serif";
+    const textWidth = context.measureText(deltaText).width;
+    const hasArrow = card.direction === "up" || card.direction === "down";
+    const pillWidth = textWidth + (hasArrow ? 26 : 18);
+    const pillHeight = 24;
+    const pillX = cardX + cardWidth - pillWidth - 18;
+    const pillY = cardY + 84;
+
+    fillRoundRect(context, pillX, pillY, pillWidth, pillHeight, 12, chipBg, chipBorder);
+
+    let textStartX = pillX + 9;
+    if (hasArrow) {
+      context.fillStyle = chipText;
+      context.beginPath();
+      const arrowCx = pillX + 11;
+      const arrowCy = pillY + 12;
+      if (card.direction === "up") {
+        context.moveTo(arrowCx - 3.5, arrowCy + 3);
+        context.lineTo(arrowCx, arrowCy - 3.5);
+        context.lineTo(arrowCx + 3.5, arrowCy + 3);
+      } else {
+        context.moveTo(arrowCx - 3.5, arrowCy - 3);
+        context.lineTo(arrowCx, arrowCy + 3.5);
+        context.lineTo(arrowCx + 3.5, arrowCy - 3);
+      }
+      context.fill();
+      textStartX = pillX + 18;
+    }
+
+    context.fillStyle = chipText;
+    context.font = "700 12px Arial, Helvetica, sans-serif";
+    context.fillText(deltaText, textStartX, pillY + 16);
   });
 
   return y + Math.ceil(cards.length / columns) * cardHeight + (Math.ceil(cards.length / columns) - 1) * gap;
@@ -1951,7 +2088,7 @@ function drawHorizontalBars(context, data, x, y, width, height, options = {}) {
     const rowY = y + index * rowHeight;
     const label = String(item.label || item.name || item.key || "Item");
     const value = getNumericValue(item);
-    const percent = Math.max(0.04, value / max);
+    const percent = value > 0 ? Math.max(0.04, value / max) : 0;
 
     context.fillStyle = "#334155";
     context.font = "700 14px Arial, Helvetica, sans-serif";
@@ -1963,7 +2100,9 @@ function drawHorizontalBars(context, data, x, y, width, height, options = {}) {
     context.textAlign = "left";
 
     fillRoundRect(context, x, rowY + 25, width, 10, 8, "#edf4e9");
-    fillRoundRect(context, x, rowY + 25, width * percent, 10, 8, item.color || options.color || "#229365");
+    if (percent > 0) {
+      fillRoundRect(context, x, rowY + 25, width * percent, 10, 8, item.color || options.color || "#229365");
+    }
   });
 }
 
@@ -2005,11 +2144,234 @@ function drawDonutCanvasChart(context, data, x, y, size) {
 
   items.slice(0, 5).forEach((item, index) => {
     const legendY = y + 28 + index * 34;
-    fillRoundRect(context, x + size + 34, legendY - 12, 18, 18, 6, item.color || PRIMARY_STUDENT_CONCERN_COLORS[index]);
+    fillRoundRect(context, x + size + 34, legendY - 12, 18, 18, 6, item.color || PRIMARY_STUDENT_CONCERN_COLORS[index % PRIMARY_STUDENT_CONCERN_COLORS.length]);
     context.fillStyle = "#334155";
     context.font = "700 15px Arial, Helvetica, sans-serif";
     context.fillText(`${item.label}: ${formatMetricValue(getNumericValue(item))}`, x + size + 62, legendY + 3);
   });
+}
+
+function drawJournalEntriesLineChart(context, data, x, y, width, height) {
+  if (!data || !data.length) {
+    drawEmptyChartState(context, x, y, width, height);
+    return;
+  }
+
+  const padLeft = 60;
+  const padRight = 24;
+  const padTop = 38;
+  const padBottom = 60;
+  const max = Math.max(...data.map((item) => Number(item.value || 0)), 0);
+  const { axisMax, guides } = buildJournalEntriesAxis(max);
+  const tickIndexes = new Set(getChartTickIndexes(data.length));
+  const valueLabelIndexes = getJournalValueLabelIndexes(data, 12);
+  const plotWidth = width - padLeft - padRight;
+  const plotHeight = height - padTop - padBottom;
+
+  guides.forEach((guide) => {
+    const guideY = y + padTop + ((axisMax - guide) * plotHeight) / axisMax;
+    context.strokeStyle = "#e5e7eb";
+    context.lineWidth = 1;
+    context.setLineDash([3, 5]);
+    context.beginPath();
+    context.moveTo(x + padLeft, guideY);
+    context.lineTo(x + width - padRight, guideY);
+    context.stroke();
+    context.setLineDash([]);
+
+    context.fillStyle = "#6b7280";
+    context.font = "600 12px Arial, Helvetica, sans-serif";
+    context.textAlign = "right";
+    context.fillText(String(guide), x + padLeft - 10, guideY + 4);
+  });
+
+  context.save();
+  context.translate(x + 18, y + padTop + plotHeight / 2);
+  context.rotate(-Math.PI / 2);
+  context.fillStyle = "#334155";
+  context.font = "700 13px Arial, Helvetica, sans-serif";
+  context.textAlign = "center";
+  context.fillText("Number of Entries", 0, 0);
+  context.restore();
+
+  const points = data.map((item, index) => {
+    const px = x + padLeft + (index * plotWidth) / Math.max(1, data.length - 1);
+    const py = y + padTop + ((axisMax - Number(item.value || 0)) * plotHeight) / axisMax;
+    return { ...item, x: px, y: py };
+  });
+
+  if (points.length > 0) {
+    context.beginPath();
+    context.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      const prev = points[i - 1];
+      const cur = points[i];
+      const midX = (prev.x + cur.x) / 2;
+      context.bezierCurveTo(midX, prev.y, midX, cur.y, cur.x, cur.y);
+    }
+    context.strokeStyle = "#16a34a";
+    context.lineWidth = 4;
+    context.lineCap = "round";
+    context.lineJoin = "round";
+    context.stroke();
+  }
+
+  points.forEach((point, index) => {
+    context.beginPath();
+    context.arc(point.x, point.y, 6, 0, Math.PI * 2);
+    context.fillStyle = "#16a34a";
+    context.fill();
+    context.strokeStyle = "#ffffff";
+    context.lineWidth = 2.5;
+    context.stroke();
+
+    if (valueLabelIndexes.has(index)) {
+      context.fillStyle = "#065f46";
+      context.font = "800 14px Arial, Helvetica, sans-serif";
+      context.textAlign = "center";
+      context.fillText(Number(point.value || 0).toLocaleString(), point.x, Math.max(y + 16, point.y - 10));
+    }
+  });
+
+  context.fillStyle = "#334155";
+  context.font = "700 12px Arial, Helvetica, sans-serif";
+  points.forEach((point, index) => {
+    if (!tickIndexes.has(index)) return;
+    context.textAlign = index === 0 ? "start" : index === points.length - 1 ? "end" : "center";
+    context.fillText(point.label, point.x, y + height - padBottom + 22);
+  });
+  context.textAlign = "left";
+}
+
+function drawProgramDistributionVerticalBars(context, data, x, y, width, height) {
+  const sortedData = [...(Array.isArray(data) ? data : [])].sort((a, b) => b.value - a.value);
+  if (!sortedData.length) {
+    drawEmptyChartState(context, x, y, width, height);
+    return;
+  }
+
+  const max = Math.max(...sortedData.map((item) => Number(item.value || 0)), 1);
+  const padLeft = 60;
+  const padRight = 24;
+  const padTop = 38;
+  const padBottom = 72;
+  const { axisMax, guides } = buildChartAxis(max);
+  const plotWidth = width - padLeft - padRight;
+  const plotHeight = height - padTop - padBottom;
+  const slotWidth = plotWidth / Math.max(1, sortedData.length);
+  const barWidth = Math.min(68, Math.max(34, slotWidth * 0.58));
+  const palette = ["#38bdf8", "#34d399", "#818cf8", "#fbbf24", "#f472b6", "#a78bfa", "#4ade80"];
+
+  guides.forEach((guide) => {
+    const guideY = y + padTop + ((axisMax - guide) * plotHeight) / axisMax;
+    context.strokeStyle = "#e5e7eb";
+    context.lineWidth = 1;
+    context.setLineDash([3, 5]);
+    context.beginPath();
+    context.moveTo(x + padLeft, guideY);
+    context.lineTo(x + width - padRight, guideY);
+    context.stroke();
+    context.setLineDash([]);
+
+    context.fillStyle = "#64748b";
+    context.font = "600 12px Arial, Helvetica, sans-serif";
+    context.textAlign = "right";
+    context.fillText(String(guide), x + padLeft - 10, guideY + 4);
+  });
+
+  context.save();
+  context.translate(x + 18, y + padTop + plotHeight / 2);
+  context.rotate(-Math.PI / 2);
+  context.fillStyle = "#334155";
+  context.font = "700 13px Arial, Helvetica, sans-serif";
+  context.textAlign = "center";
+  context.fillText("Students", 0, 0);
+  context.restore();
+
+  sortedData.forEach((item, index) => {
+    const val = Number(item.value || 0);
+    const barX = x + padLeft + index * slotWidth + (slotWidth - barWidth) / 2;
+    const barHeight = (val / axisMax) * plotHeight;
+    const barY = y + padTop + plotHeight - barHeight;
+    const color = item.color || palette[index % palette.length];
+
+    fillRoundRect(context, barX, barY, barWidth, Math.max(2, barHeight), 8, color);
+
+    context.fillStyle = "#134611";
+    context.font = "800 13px Arial, Helvetica, sans-serif";
+    context.textAlign = "center";
+    context.fillText(val.toLocaleString(), barX + barWidth / 2, Math.max(y + 16, barY - 8));
+
+    const shortLabel = String(item.label || "").replace(/^BS/i, "").trim() || item.label;
+    context.save();
+    context.translate(barX + barWidth / 2, y + height - padBottom + 20);
+    context.rotate(-Math.PI / 5);
+    context.fillStyle = "#334155";
+    context.font = "800 12px Arial, Helvetica, sans-serif";
+    context.textAlign = "right";
+    context.fillText(shortLabel, 0, 0);
+    context.restore();
+  });
+  context.textAlign = "left";
+}
+
+function drawCounselorWorkload(context, data, x, y, width, height) {
+  const workload = Array.isArray(data) ? data : [];
+  if (!workload.length) {
+    drawEmptyChartState(context, x, y, width, height);
+    return;
+  }
+
+  const max = Math.max(...workload.map((item) => Number(item.value || 0)), 1);
+  const rowCount = Math.min(workload.length, 6);
+  const rowHeight = Math.min(48, (height - 50) / rowCount);
+
+  workload.slice(0, 6).forEach((counselor, index) => {
+    const rowY = y + index * rowHeight;
+    const val = Number(counselor.value || 0);
+    const isPeer = counselor.supportType === "PEER";
+    const barColor = isPeer ? "#4D8FEF" : "#20C08D";
+
+    context.fillStyle = "#334155";
+    context.font = "700 14px Arial, Helvetica, sans-serif";
+    context.fillText(String(counselor.label || "").slice(0, 24), x, rowY + 16);
+
+    context.fillStyle = "#94a3b8";
+    context.font = "600 11px Arial, Helvetica, sans-serif";
+    context.fillText(counselor.role || (isPeer ? "Peer Counselor" : "Counselor"), x, rowY + 30);
+
+    const trackX = x + 190;
+    const trackWidth = width - 250;
+    const trackY = rowY + 10;
+    fillRoundRect(context, trackX, trackY, trackWidth, 14, 7, "#f1f5f9");
+
+    if (val > 0) {
+      const barWidth = Math.max(6, (val / max) * trackWidth);
+      fillRoundRect(context, trackX, trackY, barWidth, 14, 7, barColor);
+    }
+
+    context.fillStyle = "#334155";
+    context.font = "800 14px Arial, Helvetica, sans-serif";
+    context.textAlign = "right";
+    context.fillText(formatMetricValue(val), x + width, rowY + 22);
+    context.textAlign = "left";
+  });
+
+  const legendY = y + height - 12;
+  context.fillStyle = "#20C08D";
+  context.beginPath();
+  context.arc(x + 10, legendY, 5, 0, Math.PI * 2);
+  context.fill();
+  context.fillStyle = "#475569";
+  context.font = "700 12px Arial, Helvetica, sans-serif";
+  context.fillText("Counselors", x + 22, legendY + 4);
+
+  context.fillStyle = "#4D8FEF";
+  context.beginPath();
+  context.arc(x + 120, legendY, 5, 0, Math.PI * 2);
+  context.fill();
+  context.fillStyle = "#475569";
+  context.fillText("Peer Counselors", x + 132, legendY + 4);
 }
 
 function drawRiskLineChart(context, trendData, x, y, width, height) {
@@ -2036,25 +2398,33 @@ function drawRiskLineChart(context, trendData, x, y, width, height) {
 
   const values = [...crisisValues, ...distressedValues].map(Number);
   const max = Math.max(...values, 1);
+  const { axisMax, guides } = buildChartAxis(max);
   const tickIndexes = new Set(getChartTickIndexes(pointCount));
-  const left = x + 46;
-  const right = x + width - 22;
-  const top = y + 22;
-  const bottom = y + height - 72;
-  const plotWidth = right - left;
-  const plotHeight = bottom - top;
-  const xForIndex = (index) => left + (index * plotWidth) / Math.max(1, pointCount - 1);
-  const yForValue = (value) => bottom - (Number(value || 0) / max) * plotHeight;
+  const padLeft = 54;
+  const padRight = 24;
+  const padTop = 24;
+  const padBottom = 110;
+  const plotWidth = width - padLeft - padRight;
+  const plotHeight = height - padTop - padBottom;
+  const xForIndex = (index) => x + padLeft + (index * plotWidth) / Math.max(1, pointCount - 1);
+  const yForValue = (value) => y + padTop + ((axisMax - Number(value || 0)) * plotHeight) / axisMax;
 
-  context.strokeStyle = "#d8e0ec";
-  context.lineWidth = 1;
-  for (let index = 0; index <= 4; index += 1) {
-    const guideY = bottom - (plotHeight * index) / 4;
+  guides.forEach((guide) => {
+    const guideY = yForValue(guide);
+    context.strokeStyle = "#d8e0ec";
+    context.lineWidth = 1;
+    context.setLineDash([4, 6]);
     context.beginPath();
-    context.moveTo(left, guideY);
-    context.lineTo(right, guideY);
+    context.moveTo(x + padLeft, guideY);
+    context.lineTo(x + width - padRight, guideY);
     context.stroke();
-  }
+    context.setLineDash([]);
+
+    context.fillStyle = "#64748b";
+    context.font = "600 12px Arial, Helvetica, sans-serif";
+    context.textAlign = "right";
+    context.fillText(String(guide), x + padLeft - 10, guideY + 4);
+  });
 
   const drawLine = (lineValues, color) => {
     context.beginPath();
@@ -2065,7 +2435,7 @@ function drawRiskLineChart(context, trendData, x, y, width, height) {
       else context.lineTo(px, py);
     });
     context.strokeStyle = color;
-    context.lineWidth = 5;
+    context.lineWidth = 4;
     context.lineCap = "round";
     context.lineJoin = "round";
     context.stroke();
@@ -2074,8 +2444,8 @@ function drawRiskLineChart(context, trendData, x, y, width, height) {
       context.beginPath();
       context.fillStyle = "#ffffff";
       context.strokeStyle = color;
-      context.lineWidth = 4;
-      context.arc(xForIndex(index), yForValue(value), 7, 0, Math.PI * 2);
+      context.lineWidth = 3;
+      context.arc(xForIndex(index), yForValue(value), 6, 0, Math.PI * 2);
       context.fill();
       context.stroke();
     });
@@ -2089,7 +2459,7 @@ function drawRiskLineChart(context, trendData, x, y, width, height) {
   chartLabels.forEach((label, index) => {
     if (!tickIndexes.has(index)) return;
     const labelX = xForIndex(index);
-    const labelY = bottom + 22;
+    const labelY = y + padTop + plotHeight + 22;
     context.save();
     context.translate(labelX, labelY);
     context.rotate(-Math.PI / 5);
@@ -2097,6 +2467,44 @@ function drawRiskLineChart(context, trendData, x, y, width, height) {
     context.fillText(shortenAtRiskAxisLabel(label), 0, 0);
     context.restore();
   });
+
+  const legendY = y + padTop + plotHeight + 46;
+  context.fillStyle = "#FF5D5D";
+  context.beginPath();
+  context.arc(x + padLeft + 10, legendY, 5, 0, Math.PI * 2);
+  context.fill();
+  context.fillStyle = "#475569";
+  context.font = "700 12px Arial, Helvetica, sans-serif";
+  context.textAlign = "left";
+  context.fillText("Crisis / Critical Need", x + padLeft + 22, legendY + 4);
+
+  context.fillStyle = "#F59E0B";
+  context.beginPath();
+  context.arc(x + padLeft + 180, legendY, 5, 0, Math.PI * 2);
+  context.fill();
+  context.fillStyle = "#475569";
+  context.fillText("Distressed / Needs Support", x + padLeft + 192, legendY + 4);
+
+  const cardGap = 8;
+  const cardCount = Math.min(chartLabels.length, 8);
+  const cardW = (plotWidth - cardGap * (cardCount - 1)) / cardCount;
+  const cardsY = legendY + 16;
+
+  for (let i = 0; i < cardCount; i++) {
+    const cardX = x + padLeft + i * (cardW + cardGap);
+    fillRoundRect(context, cardX, cardsY, cardW, 40, 8, "#f8fafc", "#e2e8f0");
+    context.fillStyle = "#334155";
+    context.font = "700 11px Arial, Helvetica, sans-serif";
+    context.textAlign = "center";
+    context.fillText(shortenAtRiskAxisLabel(chartLabels[i], 10), cardX + cardW / 2, cardsY + 14);
+
+    context.font = "700 10px Arial, Helvetica, sans-serif";
+    context.fillStyle = "#dc2626";
+    context.fillText("C: " + String(crisisValues[i] || 0), cardX + cardW * 0.3, cardsY + 28);
+    context.fillStyle = "#d97706";
+    context.fillText("D: " + String(distressedValues[i] || 0), cardX + cardW * 0.7, cardsY + 28);
+  }
+
   context.textAlign = "left";
 }
 
@@ -2183,9 +2591,9 @@ function createOverviewDashboardCanvas({
     width: panelHalfWidth,
     height: 440,
     title: "Journal Entries Volume",
-    subtitle: "Total journal entries per week",
+    subtitle: `Journal entries from ${rangeLabel || todayLabel || "selected range"}`
   });
-  drawVerticalBarChart(context, journalEntriesData, margin + 28, y + 92, panelHalfWidth - 56, 306, { color: "#229365", limit: 16, preserveOrder: true });
+  drawJournalEntriesLineChart(context, journalEntriesData, margin + 28, y + 84, panelHalfWidth - 56, 326);
 
   drawPanel(context, {
     x: margin + panelHalfWidth + gap,
@@ -2241,9 +2649,7 @@ function createOverviewDashboardCanvas({
     title: "Student Distribution by Program",
     subtitle: "Enrolled students grouped by program",
   });
-  drawHorizontalBars(context, activeUsageSeries, margin + panelHalfWidth + gap + 28, y + 96, panelHalfWidth - 56, 246, {
-    color: "#229365",
-  });
+  drawProgramDistributionVerticalBars(context, activeUsageSeries, margin + panelHalfWidth + gap + 28, y + 92, panelHalfWidth - 56, 266);
   y += 390 + gap;
   pageBreaks.push(y * scale);
 
@@ -2297,11 +2703,11 @@ function createOverviewDashboardCanvas({
     x: margin,
     y,
     width: panelHalfWidth,
-    height: 390,
+    height: 420,
     title: "Counselor Workload",
     subtitle: `Confirmed/completed sessions for ${rangeLabel || todayLabel || "this period"} (one count per booking)`,
   });
-  drawHorizontalBars(context, counselorWorkloadData, margin + 28, y + 96, panelHalfWidth - 56, 246, { color: "#20c08d" });
+  drawCounselorWorkload(context, counselorWorkloadData, margin + 28, y + 96, panelHalfWidth - 56, 280);
 
   drawPanel(context, {
     x: margin + panelHalfWidth + gap,
@@ -2514,13 +2920,10 @@ export default function Overview({ onLogout, session }) {
     };
   }, []);
 
-  const todayLabel = new Intl.DateTimeFormat("en-US", {
+  const todayLabel = `${new Intl.DateTimeFormat("en-US", {
     weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
     timeZone: "Asia/Manila",
-  }).format(now);
+  }).format(now)}, ${formatToMMDDYYYY(now)}`;
   const selectedRangeRows = Array.isArray(analyticsOverview?.reports?.students)
     ? analyticsOverview.reports.students
     : [];
@@ -2535,7 +2938,7 @@ export default function Overview({ onLogout, session }) {
     { entries: 0, flags: 0, crisis: 0, distressed: 0, contacted: 0 },
   );
   const selectedRangeLabel = analyticsOverview?.filters
-    ? `${analyticsOverview.filters.startDate} to ${analyticsOverview.filters.endDate}`
+    ? `${formatToMMDDYYYY(analyticsOverview.filters.startDate)} to ${formatToMMDDYYYY(analyticsOverview.filters.endDate)}`
     : "Loading selected range...";
   const hasScheduledInRange =
     dashboardSummary?.cards?.scheduledInRange !== undefined && dashboardSummary?.cards?.scheduledInRange !== null;
@@ -2549,22 +2952,9 @@ export default function Overview({ onLogout, session }) {
   const summaryCards = SUMMARY_CARD_DEFS.map((item) => {
     const isRangeMetric = item.key === "flagged" || item.key === "entries";
     const cardLoading = isRangeMetric ? analyticsLoading : summaryLoading;
-    const source =
-      item.key === "flagged"
-        ? {
-            value: selectedRangeTotals.flags,
-            direction: "neutral",
-            percentageText: "Selected range",
-          }
-        : item.key === "students"
+    const source = item.key === "flagged" ? (dashboardSummary?.cards?.flaggedEntries || { value: selectedRangeTotals.flags, direction: "neutral", percentageText: "Selected range" }) : item.key === "students"
           ? dashboardSummary?.cards?.totalStudents
-          : item.key === "entries"
-            ? {
-                value: selectedRangeTotals.entries,
-                direction: "neutral",
-                percentageText: "Selected range",
-              }
-            : item.key === "futureMessages"
+          : item.key === "entries" ? (dashboardSummary?.cards?.totalEntries || { value: selectedRangeTotals.entries, direction: "neutral", percentageText: "Selected range" }) : item.key === "futureMessages"
               ? dashboardSummary?.cards?.futureSelfMessages
               : item.key === "scheduled"
                 ? scheduledCardSource
@@ -2621,9 +3011,27 @@ export default function Overview({ onLogout, session }) {
     };
   });
   const journalEntriesData = aggregateJournalEntriesVolume(analyticsOverview?.charts?.journalEntryVolume?.length > 0 ? analyticsOverview.charts.journalEntryVolume : []);
+  const rawGenderDistribution = dashboardSummary?.charts?.genderDistribution || [];
+  const normalizedGenderDistribution = (() => {
+    let male = 0;
+    let female = 0;
+    for (const item of rawGenderDistribution) {
+      const label = String(item.label || "").trim().toLowerCase();
+      const val = Number(item.value || 0);
+      if (label === "male") {
+        male += val;
+      } else {
+        female += val;
+      }
+    }
+    const list = [];
+    if (male > 0) list.push({ label: "Male", value: male });
+    if (female > 0) list.push({ label: "Female", value: female });
+    return list;
+  })();
   const genderData =
-    dashboardSummary?.charts?.genderDistribution?.length > 0
-      ? withColors(dashboardSummary.charts.genderDistribution, ["#3E8914", "#3DA35D", "#A7F3D0"])
+    normalizedGenderDistribution.length > 0
+      ? withColors(normalizedGenderDistribution, ["#2E7D32", "#43A047"])
       : [];
   const moodTrendData =
     dashboardSummary?.charts?.moodTrends?.series?.length > 0
@@ -2707,10 +3115,10 @@ export default function Overview({ onLogout, session }) {
       sentimentDistributionData,
       studentDemographicLocations,
       summaryCards,
-      todayLabel: `${todayLabel} | Analytics range: ${reportStartDate} to ${reportEndDate}`,
+      todayLabel: `${todayLabel} | Analytics range: ${formatToMMDDYYYY(reportStartDate)} to ${formatToMMDDYYYY(reportEndDate)}`,
       rangeLabel: selectedRangeLabel && selectedRangeLabel !== "Loading selected range..."
         ? selectedRangeLabel
-        : `${reportStartDate} to ${reportEndDate}`,
+        : `${formatToMMDDYYYY(reportStartDate)} to ${formatToMMDDYYYY(reportEndDate)}`,
     };
 
     try {
@@ -2718,7 +3126,7 @@ export default function Overview({ onLogout, session }) {
       await new Promise((resolve) => window.requestAnimationFrame(resolve));
       let pdfBlob;
       const pdfPageOptions = {
-        rangeLabel: `Analytics range: ${reportStartDate} to ${reportEndDate}`,
+        rangeLabel: `Analytics range: ${formatToMMDDYYYY(reportStartDate)} to ${formatToMMDDYYYY(reportEndDate)}`,
         todayLabel: reportPdfOptions.todayLabel,
       };
       try {
@@ -3015,18 +3423,13 @@ export default function Overview({ onLogout, session }) {
               <button
                 type="button"
                 onClick={() => navigate("/flagged")}
-                className="flex w-full items-center justify-between rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-4 text-left transition hover:border-emerald-200"
+                className="flex w-full items-center justify-between rounded-2xl border border-emerald-100 bg-emerald-50/80 px-4 py-4 text-left transition hover:border-emerald-200"
               >
-                <div className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-emerald-600 shadow-sm">
-                    <PhoneCall className="h-4 w-4" />
-                  </span>
-                  <div>
-                    <div className="text-sm font-semibold text-emerald-700">Contacted support</div>
-                    <div className="mt-1 text-sm text-emerald-600">Live flagged entries with counselor contact recorded</div>
-                  </div>
+                <div>
+                  <div className="text-sm font-semibold text-emerald-900">Contacted support</div>
+                  <div className="mt-1 text-sm text-emerald-700/80">Live flagged entries with counselor contact recorded</div>
                 </div>
-                <div className="text-2xl font-bold text-emerald-700">
+                <div className="text-2xl font-bold text-emerald-900">
                   {riskFlagsError ? "--" : formatMetricValue(contactedSignalCount)}
                 </div>
               </button>

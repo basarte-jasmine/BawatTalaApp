@@ -78,6 +78,23 @@ function countWords(value) {
     .filter(Boolean).length;
 }
 
+function normalizeDateValue(value) {
+  if (!value) return "";
+  if (value instanceof Date) {
+    return getManilaDateParts(value).isoDate;
+  }
+  const raw = String(value).trim();
+  if (!raw) return "";
+  if (raw.includes("T")) {
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      return getManilaDateParts(parsed).isoDate;
+    }
+  }
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : raw.slice(0, 10);
+}
+
 function normalizeVoiceSessionMessages(value) {
   if (!Array.isArray(value)) return null;
 
@@ -143,6 +160,7 @@ async function getOpenEntryByStudentAndDate(studentNumber, entryDate) {
              insights, risk_level, admin_flag_reason,
              primary_concern, concern_tags,
              ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
+             student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
              created_at, updated_at
       from public.journal_entries
       where student_number = $1 and entry_date = $2 and is_finished = false and deleted_by_student_at is null
@@ -165,6 +183,7 @@ async function createEntry(studentNumber, entryDate, aiEnabled) {
                 insights, risk_level, admin_flag_reason,
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
+                student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
                 created_at, updated_at
     `,
     [studentNumber, entryDate, aiEnabled],
@@ -222,6 +241,7 @@ async function getEntryById(studentNumber, entryId) {
              insights, risk_level, admin_flag_reason,
              primary_concern, concern_tags,
              ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
+             student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
              created_at, updated_at
       from public.journal_entries
       where id = $1 and student_number = $2 and deleted_by_student_at is null
@@ -258,6 +278,11 @@ function mapEntryRow(row) {
     supportPromptShownAt: row.support_prompt_shown_at || null,
     supportResponse: row.support_response || null,
     supportResponseAt: row.support_response_at || null,
+    studentAction: row.student_action || null,
+    studentActionAt: row.student_action_at || null,
+    counselorResolvedAt: row.counselor_resolved_at || null,
+    counselorResolvedByEmail: row.counselor_resolved_by_email || null,
+    counselorResolvedByName: row.counselor_resolved_by_name || null,
     title: row.title || "",
     updatedAt: row.updated_at,
   };
@@ -311,28 +336,11 @@ async function removeOrSoftDeleteEntry({ studentNumber, entryId, requireOpen }) 
     return { found: true, removed: false, softDeleted: false, invalidState: true };
   }
 
-  if (String(entry.risk_level || "").toUpperCase() === "HIGH") {
-    const result = await query(
-      `
-        update public.journal_entries
-        set deleted_by_student_at = now(), updated_at = now()
-        where id = $1 and student_number = $2 and deleted_by_student_at is null
-        returning id
-      `,
-      [entryId, studentNumber],
-    );
-
-    return {
-      found: true,
-      removed: result.rowCount > 0,
-      softDeleted: result.rowCount > 0,
-    };
-  }
-
-  const deleteResult = await query(
+  const result = await query(
     `
-      delete from public.journal_entries
-      where id = $1 and student_number = $2
+      update public.journal_entries
+      set deleted_by_student_at = now(), updated_at = now()
+      where id = $1 and student_number = $2 and deleted_by_student_at is null
       returning id
     `,
     [entryId, studentNumber],
@@ -340,8 +348,8 @@ async function removeOrSoftDeleteEntry({ studentNumber, entryId, requireOpen }) 
 
   return {
     found: true,
-    removed: deleteResult.rowCount > 0,
-    softDeleted: false,
+    removed: result.rowCount > 0,
+    softDeleted: true,
   };
 }
 
@@ -376,6 +384,205 @@ function buildVisibleEntriesWhereClause(alias = "je") {
     and ${alias}.is_finished = true
   `;
 }
+
+router.get("/entries/recently-deleted", asyncHandler(async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  const result = await query(
+    `
+      select
+        je.id,
+        je.entry_date,
+        je.title,
+        je.summary,
+        je.summary_rating,
+        je.insights,
+        je.risk_level,
+        je.primary_concern,
+        je.concern_tags,
+        je.deleted_by_student_at,
+        je.created_at,
+        je.updated_at
+      from public.journal_entries je
+      where je.student_number = $1
+        and je.deleted_by_student_at is not null
+        and je.purged_from_student_at is null
+        and je.deleted_by_student_at >= now() - interval '30 days'
+      order by je.deleted_by_student_at desc
+    `,
+    [studentNumber],
+  );
+
+  return res.json({
+    entries: result.rows.map((row) => ({
+      id: row.id,
+      title: row.title || "Untitled Entry",
+      entryDate: normalizeDateValue(row.entry_date),
+      summary: row.summary || "",
+      deletedAt: row.deleted_by_student_at,
+      createdAt: row.created_at,
+      riskLevel: row.risk_level || "NONE",
+      concernTags: resolveJournalEntryTags(row),
+    })),
+  });
+}));
+
+function normalizeEntryIdList(raw) {
+  const list = Array.isArray(raw) ? raw : [];
+  const ids = [];
+  const seen = new Set();
+  for (const value of list) {
+    const id = String(value || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
+
+async function permanentlyDeleteStudentEntry(entryId, studentNumber) {
+  const lookup = await query(
+    `select id, risk_level from public.journal_entries where id = $1 and student_number = $2 limit 1`,
+    [entryId, studentNumber],
+  );
+  if (lookup.rowCount === 0) {
+    return { ok: false, reason: "not_found" };
+  }
+  const row = lookup.rows[0];
+  const isFlagged = ["LOW", "HIGH", "CRITICAL"].includes(String(row.risk_level || "").toUpperCase());
+  if (isFlagged) {
+    await query(
+      `
+        update public.journal_entries
+        set
+          deleted_by_student_at = coalesce(deleted_by_student_at, now()),
+          purged_from_student_at = now(),
+          updated_at = now()
+        where id = $1
+          and student_number = $2
+          and purged_from_student_at is null
+      `,
+      [entryId, studentNumber],
+    );
+    return { ok: true, mode: "purged_for_student" };
+  }
+  await query(`delete from public.journal_entry_messages where entry_id = $1`, [entryId]);
+  await query(`delete from public.journal_entries where id = $1 and student_number = $2`, [entryId, studentNumber]);
+  return { ok: true, mode: "hard_deleted" };
+}
+
+router.post("/entries/recently-deleted/restore", asyncHandler(async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  const entryIds = normalizeEntryIdList(req.body?.entryIds || req.body?.ids);
+  if (!entryIds.length) {
+    return res.status(400).json({ message: "entryIds is required." });
+  }
+
+  const result = await query(
+    `
+      update public.journal_entries
+      set deleted_by_student_at = null, updated_at = now()
+      where student_number = $1
+        and id = any($2::uuid[])
+        and deleted_by_student_at is not null
+        and purged_from_student_at is null
+      returning id
+    `,
+    [studentNumber, entryIds],
+  );
+
+  return res.json({
+    restoredCount: result.rowCount,
+    restoredIds: result.rows.map((row) => row.id),
+    message: result.rowCount === 1
+      ? "Journal entry restored."
+      : `${result.rowCount} journal entries restored.`,
+  });
+}));
+
+router.post("/entries/recently-deleted/permanent", asyncHandler(async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  const entryIds = normalizeEntryIdList(req.body?.entryIds || req.body?.ids);
+  if (!entryIds.length) {
+    return res.status(400).json({ message: "entryIds is required." });
+  }
+
+  let deletedCount = 0;
+  const deletedIds = [];
+  for (const entryId of entryIds) {
+    const outcome = await permanentlyDeleteStudentEntry(entryId, studentNumber);
+    if (outcome.ok) {
+      deletedCount += 1;
+      deletedIds.push(entryId);
+    }
+  }
+
+  return res.json({
+    deletedCount,
+    deletedIds,
+    message: deletedCount === 1
+      ? "Journal entry permanently deleted."
+      : `${deletedCount} journal entries permanently deleted.`,
+  });
+}));
+
+router.post("/entries/:entryId/restore", asyncHandler(async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  const { entryId } = req.params;
+
+  const result = await query(
+    `
+      update public.journal_entries
+      set deleted_by_student_at = null, updated_at = now()
+      where id = $1 and student_number = $2
+        and deleted_by_student_at is not null
+        and purged_from_student_at is null
+      returning id
+    `,
+    [entryId, studentNumber],
+  );
+
+  if (result.rowCount === 0) {
+    return res.status(404).json({ message: "Journal entry not found in recently deleted." });
+  }
+
+  return res.json({ message: "Journal entry restored." });
+}));
+
+router.delete("/entries/:entryId/permanent", asyncHandler(async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  const { entryId } = req.params;
+
+  const lookup = await query(
+    `select id, risk_level from public.journal_entries where id = $1 and student_number = $2 limit 1`,
+    [entryId, studentNumber],
+  );
+
+  if (lookup.rowCount === 0) {
+    return res.status(404).json({ message: "Journal entry not found." });
+  }
+
+  const row = lookup.rows[0];
+  const isFlagged = ["LOW", "HIGH", "CRITICAL"].includes(String(row.risk_level || "").toUpperCase());
+
+  if (isFlagged) {
+    await query(
+      `
+        update public.journal_entries
+        set
+          deleted_by_student_at = coalesce(deleted_by_student_at, now()),
+          purged_from_student_at = now(),
+          updated_at = now()
+        where id = $1
+      `,
+      [entryId],
+    );
+  } else {
+    await query(`delete from public.journal_entry_messages where entry_id = $1`, [entryId]);
+    await query(`delete from public.journal_entries where id = $1`, [entryId]);
+  }
+
+  return res.json({ message: "Journal entry permanently deleted." });
+}));
 
 router.get("/entries/recent", asyncHandler(async (req, res) => {
   const studentNumber = resolveRequestStudentNumber(req);
@@ -472,6 +679,9 @@ router.get("/entries/recent", asyncHandler(async (req, res) => {
 router.get("/entries/by-date", asyncHandler(async (req, res) => {
   const studentNumber = resolveRequestStudentNumber(req);
   const entryDate = formatEntryDateLabel(req.query.date);
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const pageSize = Math.min(50, Math.max(1, Number(req.query.pageSize) || 10));
+  const offset = (page - 1) * pageSize;
 
   if (!studentNumber) {
     return res.status(400).json({ message: "Student number is required." });
@@ -481,6 +691,18 @@ router.get("/entries/by-date", asyncHandler(async (req, res) => {
   }
 
   await cleanupStaleEmptyDrafts(studentNumber);
+
+  const countResult = await query(
+    `
+      select count(*)::int as total_count
+      from public.journal_entries je
+      where je.student_number = $1
+        and je.entry_date = $2::date
+        and ${buildVisibleEntriesWhereClause("je")}
+    `,
+    [studentNumber, entryDate],
+  );
+  const totalCount = Number(countResult.rows[0]?.total_count || 0);
 
   const result = await query(
     `
@@ -498,12 +720,17 @@ router.get("/entries/by-date", asyncHandler(async (req, res) => {
         and je.entry_date = $2::date
         and ${buildVisibleEntriesWhereClause("je")}
       order by je.created_at desc
+      limit $3 offset $4
     `,
-    [studentNumber, entryDate],
+    [studentNumber, entryDate, pageSize, offset],
   );
 
   return res.json({
     date: entryDate,
+    page,
+    pageSize,
+    totalCount,
+    hasMore: offset + result.rows.length < totalCount,
     entries: result.rows.map((row) => ({
       createdAt: row.created_at,
       entryDate: formatEntryDateLabel(row.entry_date),
@@ -679,6 +906,7 @@ router.post("/entries/:entryId/summary-rating", asyncHandler(async (req, res) =>
                 insights, risk_level, admin_flag_reason,
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
+                student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
                 created_at, updated_at
     `,
     [entryId, studentNumber, summaryRating, summaryRating === "NEEDS_WORK" ? feedbackReason : null],
@@ -713,7 +941,7 @@ router.delete("/entries/:entryId", asyncHandler(async (req, res) => {
 
   return res.json({
     message: result.softDeleted
-      ? "High-risk journal entry hidden from student view but retained for admin review."
+      ? "Journal entry moved to Recently Deleted."
       : "Journal entry deleted.",
     removed: true,
     softDeleted: result.softDeleted,
@@ -848,6 +1076,7 @@ router.post("/session/tag-suggestions", asyncHandler(async (req, res) => {
              insights, risk_level, admin_flag_reason,
              primary_concern, concern_tags,
              ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
+             student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
              created_at, updated_at
       from public.journal_entries
       where id = $1 and student_number = $2
@@ -905,17 +1134,11 @@ router.post("/session/finish", asyncHandler(async (req, res) => {
 
   const existingTags = resolveJournalEntryTags(entry);
   let finalTags = requestedTags.length ? requestedTags : existingTags;
-  let analysis = null;
-  const hasStoredAnalysis =
-    Boolean(String(entry.summary || "").trim()) ||
-    (Array.isArray(entry.insights) && entry.insights.length > 0);
-  const hasStoredSentiment = Boolean(String(entry.sentiment_label || "").trim());
-
-  if (forceAnalyze || !hasStoredAnalysis || !hasStoredSentiment || finalTags.length === 0) {
-    analysis = await analyzeFinalEntry({ entryId, existingMessages, studentNumber });
-    if (forceAnalyze || finalTags.length === 0) {
-      finalTags = normalizeConcernTags(analysis.suggested_tags);
-    }
+  // Official Flagged risk/summary/tags come from full-transcript analysis on Finish.
+  // Mid-chat risk_level stays provisional for safety prompts only (Flagged requires is_finished).
+  const analysis = await analyzeFinalEntry({ entryId, existingMessages, studentNumber });
+  if (forceAnalyze || finalTags.length === 0) {
+    finalTags = normalizeConcernTags(analysis.suggested_tags);
   }
 
   if (finalTags.length === 0) {
@@ -941,6 +1164,7 @@ router.post("/session/finish", asyncHandler(async (req, res) => {
                 insights, risk_level, admin_flag_reason,
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
+                student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
                 created_at, updated_at
     `,
     [entryId, studentNumber, primaryConcern, JSON.stringify(finalTags)],
@@ -1032,6 +1256,7 @@ router.post("/session/concerns", asyncHandler(async (req, res) => {
                 insights, risk_level, admin_flag_reason,
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
+                student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
                 created_at, updated_at
     `,
     [entryId, studentNumber, primaryConcern, JSON.stringify(normalizedTags)],
@@ -1050,22 +1275,44 @@ router.post("/session/concerns", asyncHandler(async (req, res) => {
 router.post("/session/support-response", asyncHandler(async (req, res) => {
   const studentNumber = resolveRequestStudentNumber(req);
   const entryId = String(req.body.entryId || "").trim();
-  const response = String(req.body.response || "").trim().toUpperCase();
+  const rawAction = String(req.body.studentAction || req.body.response || "").trim().toUpperCase();
+  const studentAction =
+    rawAction === "CLICKED_HOTLINE" || rawAction === "SCHEDULED_COUNSELING" || rawAction === "VIEWED_WELLNESS" || rawAction === "DISMISSED"
+      ? rawAction
+      : rawAction === "CONTACTED"
+        ? "CLICKED_HOTLINE"
+        : rawAction === "DECLINED"
+          ? "DISMISSED"
+          : "";
 
   if (!studentNumber || !entryId) {
     return res.status(400).json({ message: "Student number and entry id are required." });
   }
-  if (response !== "CONTACTED" && response !== "DECLINED") {
-    return res.status(400).json({ message: "A valid support response is required." });
+  if (!studentAction) {
+    return res.status(400).json({ message: "A valid student support action is required." });
   }
+
+  const existing = await query(
+    `
+      select id, student_number, risk_level, student_action, counselor_resolved_at
+      from public.journal_entries
+      where id = $1 and student_number = $2
+      limit 1
+    `,
+    [entryId, studentNumber],
+  );
+  if (existing.rowCount === 0) {
+    return res.status(404).json({ message: "Journal entry not found." });
+  }
+  const before = existing.rows[0];
 
   const result = await query(
     `
       update public.journal_entries
       set
         support_prompt_shown_at = coalesce(support_prompt_shown_at, now()),
-        support_response = $3,
-        support_response_at = now(),
+        student_action = $3,
+        student_action_at = now(),
         updated_at = now()
       where id = $1 and student_number = $2
       returning id, student_number, entry_date, title, summary, summary_rating, summary_feedback_reason, summary_rated_at,
@@ -1073,18 +1320,42 @@ router.post("/session/support-response", asyncHandler(async (req, res) => {
                 insights, risk_level, admin_flag_reason,
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
+                student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
                 created_at, updated_at
     `,
-    [entryId, studentNumber, response],
+    [entryId, studentNumber, studentAction],
   );
 
   if (result.rowCount === 0) {
     return res.status(404).json({ message: "Journal entry not found." });
   }
 
+  await query(
+    `
+      insert into public.journal_flag_history (
+        entry_id, student_number, actor_type, actor_name, action_type,
+        from_risk_level, to_risk_level, from_student_action, to_student_action,
+        from_counselor_resolved, to_counselor_resolved, note, metadata
+      ) values (
+        $1, $2, 'STUDENT', $2, 'STUDENT_ACTION',
+        $3, $3, $4, $5,
+        $6, $6, null, $7::jsonb
+      )
+    `,
+    [
+      entryId,
+      studentNumber,
+      before.risk_level || "NONE",
+      before.student_action || null,
+      studentAction,
+      Boolean(before.counselor_resolved_at),
+      JSON.stringify({ source: "mobile_support_prompt" }),
+    ],
+  );
+
   return res.json({
     entry: mapEntryRow(result.rows[0]),
-    message: "Support response saved.",
+    message: "Student support action saved.",
   });
 }));
 
@@ -1128,6 +1399,7 @@ router.post("/message", asyncHandler(async (req, res) => {
                insights, risk_level, admin_flag_reason,
                primary_concern, concern_tags,
                ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
+               student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
                created_at, updated_at
         from public.journal_entries
         where id = $1 and student_number = $2
@@ -1171,6 +1443,7 @@ router.post("/message", asyncHandler(async (req, res) => {
                   insights, risk_level, admin_flag_reason,
                   primary_concern, concern_tags,
                   ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
+                  student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
                   created_at, updated_at
       `,
       [entry.id, aiEnabled],
@@ -1240,6 +1513,7 @@ router.post("/message", asyncHandler(async (req, res) => {
                 insights, risk_level, admin_flag_reason,
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
+                student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
                 created_at, updated_at
     `,
     [entry.id, title, summary, JSON.stringify(insights), riskLevel, adminFlagReason, aiEnabled],

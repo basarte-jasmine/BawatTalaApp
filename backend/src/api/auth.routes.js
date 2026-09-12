@@ -62,7 +62,7 @@ function normalizeStudentGender(value) {
   const normalized = normalizeCompactSpaces(value).toLowerCase();
   if (normalized === "male") return "Male";
   if (normalized === "female") return "Female";
-  if (normalized === "prefer not to say") return "Prefer not to say";
+  if (normalized === "prefer not to say") return "Female";
   return "";
 }
 
@@ -906,7 +906,7 @@ router.post("/login", async (req, res) => {
   const { data, error } = await supabaseAdminClient
     .from("student_profiles")
     .select(
-      "student_number, full_name, email, password_hash, birthdate, is_email_verified, is_id_verified, profile_picture_url",
+      "student_number, full_name, email, password_hash, birthdate, is_email_verified, is_id_verified, profile_picture_url, deleted_at, scheduled_deletion_at",
     )
     .eq("student_number", studentNumber)
     .maybeSingle();
@@ -933,6 +933,30 @@ router.post("/login", async (req, res) => {
     return res.status(403).json({
       message: "Please verify your account before logging in.",
     });
+  }
+
+  if (data.scheduled_deletion_at && new Date(data.scheduled_deletion_at).getTime() <= Date.now()) {
+    return res.status(403).json({ message: "This student account was permanently deleted." });
+  }
+
+  if (data.deleted_at) {
+    const reactivate = Boolean(req.body.reactivate);
+    if (!reactivate) {
+      return res.status(200).json({
+        requiresReactivation: true,
+        message: "Your account is currently scheduled for deletion. Would you like to reactivate your account?",
+        scheduledDeletionAt: data.scheduled_deletion_at,
+      });
+    }
+
+    await query(
+      `
+        update public.student_profiles
+        set deleted_at = null, scheduled_deletion_at = null, updated_at = now()
+        where student_number = $1
+      `,
+      [studentNumber],
+    );
   }
 
   loginAttempts.delete(loginKey);
@@ -2976,6 +3000,50 @@ router.get("/activity", requireStudentOnlyAuth, async (req, res) => {
       message: error.message || "Unable to load activity.",
     });
   }
+});
+
+router.post("/account/schedule-deletion", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = normalizeStudentNumber(resolveStudentNumber(req));
+  const password = String(req.body?.password || "").trim();
+
+  if (!studentNumber) {
+    return res.status(401).json({ message: "Please sign in again." });
+  }
+  if (!password) {
+    return res.status(400).json({ message: "Password is required to confirm account deletion." });
+  }
+
+  const { data: student, error } = await supabaseAdminClient
+    .from("student_profiles")
+    .select("student_number, password_hash, full_name, email")
+    .eq("student_number", studentNumber)
+    .maybeSingle();
+
+  if (error || !student) {
+    return res.status(404).json({ message: "Student account not found." });
+  }
+
+  if (!verifyPassword(password, student.password_hash)) {
+    return res.status(400).json({ message: "Incorrect password. Please try again." });
+  }
+
+  const scheduledDeletionAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  await query(
+    `
+      update public.student_profiles
+      set deleted_at = now(), scheduled_deletion_at = $2, updated_at = now()
+      where student_number = $1
+    `,
+    [studentNumber, scheduledDeletionAt],
+  );
+
+  req.session = null;
+
+  return res.json({
+    message: "Your account has been deactivated and scheduled for deletion in 30 days. You can sign in anytime within 30 days to reactivate it.",
+    scheduledDeletionAt,
+  });
 });
 
 router.post("/logout", (req, res) => {

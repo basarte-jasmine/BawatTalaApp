@@ -244,6 +244,23 @@ export default function RoleAssignments({ onLogout, session }) {
         nextErrors[passwordMessage.toLowerCase().includes("confirm") || passwordMessage.toLowerCase().includes("match") ? "confirmPassword" : "password"] = passwordMessage;
       }
     }
+
+    const normalizedEmail = formState.email.trim().toLowerCase();
+    const duplicateEmailMember = members.find(
+      (m) => (!editingMember || m.id !== editingMember.id) && String(m.email || "").trim().toLowerCase() === normalizedEmail
+    );
+    if (duplicateEmailMember) {
+      nextErrors.email = `This email is already registered as ${duplicateEmailMember.roleLabel || "a team member"}. Strictly one account per email only.`;
+    }
+    if (isPeerRole) {
+      const normalizedStudentNumber = formState.studentNumber.trim().toLowerCase();
+      const duplicateStudentNumberMember = members.find(
+        (m) => (!editingMember || m.id !== editingMember.id) && String(m.studentNumber || "").trim().toLowerCase() === normalizedStudentNumber
+      );
+      if (duplicateStudentNumberMember) {
+        nextErrors.studentNumber = `This student number is already registered for ${duplicateStudentNumberMember.fullName}.`;
+      }
+    }
     if (Object.keys(nextErrors).length) {
       setFormErrors(nextErrors);
       return;
@@ -427,7 +444,7 @@ export default function RoleAssignments({ onLogout, session }) {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[980px] border-collapse text-left">
               <thead>
-                <tr className="border-b border-gray-200 bg-white text-xs uppercase tracking-wider text-gray-500">
+                <tr className="border-b border-slate-200 bg-slate-50 text-xs font-extrabold uppercase tracking-wider text-slate-700">
                   <th className="px-6 py-4 font-semibold">Counselor Name</th>
                   <th className="px-6 py-4 font-semibold">Role</th>
                   <th className="px-6 py-4 font-semibold">Gender</th>

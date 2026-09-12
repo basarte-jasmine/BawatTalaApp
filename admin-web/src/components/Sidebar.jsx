@@ -165,10 +165,12 @@ export default function Sidebar({ onLogout, session, isOpen, onClose }) {
       <ConfirmActionModal
         isOpen={isLogoutConfirmOpen}
         onClose={() => setIsLogoutConfirmOpen(false)}
-        onConfirm={() => {
+        onConfirm={async () => {
           setIsLogoutConfirmOpen(false);
           onClose?.();
-          onLogout?.();
+          if (onLogout) {
+            await onLogout();
+          }
         }}
         title="Log Out"
         description="Are you sure you want to log out of the admin panel?"

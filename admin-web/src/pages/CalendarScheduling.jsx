@@ -1379,17 +1379,6 @@ export default function CalendarScheduling({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setAppointmentsModalDate("");
-                    handleOpenModal();
-                  }}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#3DA35D] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#2f8c4d]"
-                >
-                  <Plus className="h-4 w-4" />
-                  Create
-                </button>
-                <button
-                  type="button"
                   onClick={() => setAppointmentsModalDate("")}
                   className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                   aria-label="Close appointments list"

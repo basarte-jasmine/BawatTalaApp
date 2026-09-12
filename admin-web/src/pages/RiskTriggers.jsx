@@ -38,13 +38,22 @@ function formatDateTime(value) {
   if (!value) return "Not available";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "Not available";
-  return parsed.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Manila",
     year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
     hour: "numeric",
     minute: "2-digit",
-  });
+    hour12: true,
+  }).formatToParts(parsed);
+  const mm = parts.find((p) => p.type === "month")?.value || "01";
+  const dd = parts.find((p) => p.type === "day")?.value || "01";
+  const yyyy = parts.find((p) => p.type === "year")?.value || "1970";
+  const hour = parts.find((p) => p.type === "hour")?.value || "12";
+  const minute = parts.find((p) => p.type === "minute")?.value || "00";
+  const dayPeriod = parts.find((p) => p.type === "dayPeriod")?.value || "AM";
+  return `${mm}-${dd}-${yyyy}, ${hour}:${minute} ${dayPeriod}`;
 }
 
 function getActorPayload(session) {
@@ -313,7 +322,7 @@ export default function RiskTriggers({ onLogout, session }) {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[780px] border-collapse text-left">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-white text-xs uppercase tracking-wider text-slate-500">
+                  <tr className="border-b border-slate-200 bg-slate-50 text-xs font-extrabold uppercase tracking-wider text-slate-700">
                     <th className="px-6 py-4 font-semibold">Trigger Phrase</th>
                     <th className="px-6 py-4 font-semibold">Risk Flag</th>
                     <th className="px-6 py-4 font-semibold">Status</th>

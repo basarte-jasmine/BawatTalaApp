@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { BrowserRouter as Router, Navigate, Route, Routes } from "react-router-dom";
 import { adminLogout, fetchAdminSession, setAdminUnauthorizedHandler } from "./lib/admin-api";
-import { AdminPreferencesProvider } from "./lib/admin-preferences";
+import { AdminPreferencesProvider, useAdminPreferences } from "./lib/admin-preferences";
 import { isHeadCounselor } from "./lib/admin-roles";
 import AnalyticsReports from "./pages/AnalyticsReports";
 import CalendarScheduling from "./pages/CalendarScheduling";
@@ -23,6 +23,63 @@ function rememberAdminSession(nextSession) {
 
 function forgetAdminSession() {
   window.localStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
+}
+
+
+function InactivityTimerWatcher({ session, onLogout }) {
+  const { preferences } = useAdminPreferences();
+  const idleTimeoutEnabled = Boolean(preferences?.privacy?.idleTimeoutEnabled);
+  const idleTimeoutMinutes = Number(preferences?.privacy?.idleTimeoutMinutes || 30);
+
+  useEffect(() => {
+    if (!session || !idleTimeoutEnabled) return undefined;
+
+    const timeoutMs = idleTimeoutMinutes * 60 * 1000;
+    const LAST_ACTIVITY_KEY = "bt_admin_last_activity_ts";
+    const updateActivity = () => {
+      try {
+        window.localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
+      } catch {}
+    };
+
+    updateActivity();
+
+    const events = ["mousemove", "mousedown", "keydown", "touchstart", "scroll", "click", "visibilitychange"];
+    let lastThrottledTime = Date.now();
+    const handleUserActivity = () => {
+      const now = Date.now();
+      if (now - lastThrottledTime > 2000) {
+        lastThrottledTime = now;
+        updateActivity();
+      }
+    };
+
+    events.forEach((evt) => window.addEventListener(evt, handleUserActivity, { passive: true }));
+
+    const checkInterval = window.setInterval(() => {
+      try {
+        const storedTs = Number(window.localStorage.getItem(LAST_ACTIVITY_KEY) || Date.now());
+        const elapsed = Date.now() - storedTs;
+        if (elapsed >= timeoutMs) {
+          window.clearInterval(checkInterval);
+          if (onLogout) {
+            void onLogout().finally(() => {
+              window.location.assign("/login?notice=idle-timeout");
+            });
+          } else {
+            window.location.assign("/login?notice=idle-timeout");
+          }
+        }
+      } catch {}
+    }, 5000);
+
+    return () => {
+      events.forEach((evt) => window.removeEventListener(evt, handleUserActivity));
+      window.clearInterval(checkInterval);
+    };
+  }, [session, idleTimeoutEnabled, idleTimeoutMinutes, onLogout]);
+
+  return null;
 }
 
 function ProtectedRoute({ session, children }) {
@@ -110,6 +167,7 @@ export default function App() {
   }
   return (
     <AdminPreferencesProvider session={session}>
+      <InactivityTimerWatcher session={session} onLogout={authActions.logout} />
       <Router>
       <Routes>
         <Route

@@ -35,6 +35,11 @@ import {
   suggestJournalTags } from "../lib/backend-api";
 import { EMOTIONS, getEmotionImageSource } from "../lib/emotions";
 import { getManilaTodayParts } from "../lib/manila-date";
+import {
+  hasResourceSupportAction,
+  isCrisisRisk,
+  needsFinishSupportPrompt,
+} from "../lib/risk-level";
 
 const NOTEBOOK_RINGS = Array.from({ length: 12 }, (_, index) => index);
 const PAPER_RULES = Array.from({ length: 24 }, (_, index) => index);
@@ -244,6 +249,8 @@ export default function WriteEntryScreen() {
   const [isAiRetryLocked, setIsAiRetryLocked] = useState(false);
   const [showRiskModal, setShowRiskModal] = useState(false);
   const [riskModalRedirectEntryId, setRiskModalRedirectEntryId] = useState<string | null>(null);
+  /** After first mid-chat crisis trio show/dismiss, suppress until Finish Journal. */
+  const [riskPromptSuppressedUntilFinish, setRiskPromptSuppressedUntilFinish] = useState(false);
   const [showExitModal, setShowExitModal] = useState(false);
   const [showTagReviewModal, setShowTagReviewModal] = useState(false);
   const [showRelationshipTagModal, setShowRelationshipTagModal] = useState(false);
@@ -501,7 +508,15 @@ export default function WriteEntryScreen() {
       !result.aiReply &&
         result.message === "Muni is temporarily unavailable. Please try again in a bit.",
     );
-    if (result.entry?.riskLevel === "HIGH") {
+    // Mid-chat: show crisis trio once; soft-dismiss suppresses until Finish Journal.
+    // DISMISSED is not a resource action - finish can still re-prompt via needsFinishSupportPrompt.
+    if (
+      result.entry &&
+      isCrisisRisk(result.entry.riskLevel) &&
+      !hasResourceSupportAction(result.entry) &&
+      !riskPromptSuppressedUntilFinish
+    ) {
+      setRiskPromptSuppressedUntilFinish(true);
       setShowRiskModal(true);
     }
   };
@@ -591,7 +606,7 @@ export default function WriteEntryScreen() {
   };
 
   const saveSupportDecision = useCallback(
-    async (response: "CONTACTED" | "DECLINED") => {
+    async (studentAction: "CLICKED_HOTLINE" | "SCHEDULED_COUNSELING" | "VIEWED_WELLNESS" | "DISMISSED") => {
       if (!user?.studentNumber || !entry?.id) {
         return true;
       }
@@ -599,7 +614,7 @@ export default function WriteEntryScreen() {
       setIsSavingSupportResponse(true);
       const result = await saveJournalSupportResponse({
         entryId: entry.id,
-        response,
+        studentAction,
         studentNumber: user.studentNumber });
       setIsSavingSupportResponse(false);
 
@@ -617,49 +632,13 @@ export default function WriteEntryScreen() {
     [entry?.id, user?.studentNumber],
   );
 
-  const finishRiskEntryWithSupport = useCallback(
-    async (response: "CONTACTED" | "DECLINED") => {
-      if (!user?.studentNumber || !entry?.id) {
-        return true;
-      }
-
-      setIsSavingSupportResponse(true);
-
-      const supportResult = await saveJournalSupportResponse({
-        entryId: entry.id,
-        response,
-        studentNumber: user.studentNumber });
-
-      if (!supportResult.ok) {
-        setIsSavingSupportResponse(false);
-        setErrorMessage(supportResult.message ?? "Unable to save your support response.");
-        return false;
-      }
-
-      let nextEntry = supportResult.entry ?? entry;
-
-      if (!nextEntry.isFinished) {
-        const fallbackTags = uniqueTags(nextEntry.concernTags?.length ? nextEntry.concernTags : ["Mental health"]);
-        const finishResult = await finishJournalEntry({
-          concernTags: fallbackTags,
-          entryId: nextEntry.id,
-          primaryConcern: fallbackTags[0] ?? "Mental health",
-          studentNumber: user.studentNumber });
-
-        if (!finishResult.ok) {
-          setIsSavingSupportResponse(false);
-          setErrorMessage(finishResult.message ?? "Unable to finish this journal entry.");
-          return false;
-        }
-
-        nextEntry = finishResult.entry ?? nextEntry;
-      }
-
-      setEntry(nextEntry);
-      setIsSavingSupportResponse(false);
-      return true;
+  // Mid-chat / finish support taps: save studentAction + open tools only.
+  // Do NOT auto-finish the journal - keep the draft open so the student can return.
+  const applySupportActionAndKeepDraft = useCallback(
+    async (studentAction: "CLICKED_HOTLINE" | "SCHEDULED_COUNSELING" | "VIEWED_WELLNESS") => {
+      return saveSupportDecision(studentAction);
     },
-    [entry, user?.studentNumber],
+    [saveSupportDecision],
   );
 
   const navigateToFinishedRiskEntry = useCallback(() => {
@@ -677,12 +656,15 @@ export default function WriteEntryScreen() {
       return;
     }
 
-    const saved = await saveSupportDecision("DECLINED");
+    // Soft-dismiss: keep writing; DISMISSED is not a resource choice for finish re-prompt.
+    setRiskPromptSuppressedUntilFinish(true);
+    const saved = await saveSupportDecision("DISMISSED");
     if (!saved) {
       return;
     }
 
     setShowRiskModal(false);
+    // Only leave chat when this modal was shown after Finish Journal (redirect id set).
     navigateToFinishedRiskEntry();
   }, [isSavingSupportResponse, navigateToFinishedRiskEntry, saveSupportDecision]);
 
@@ -691,7 +673,7 @@ export default function WriteEntryScreen() {
       return;
     }
 
-    const saved = await finishRiskEntryWithSupport("CONTACTED");
+    const saved = await applySupportActionAndKeepDraft("CLICKED_HOTLINE");
     if (!saved) {
       return;
     }
@@ -718,14 +700,14 @@ export default function WriteEntryScreen() {
       setShowRiskModal(false);
       navigateToFinishedRiskEntry();
     }
-  }, [finishRiskEntryWithSupport, isSavingSupportResponse, navigateToFinishedRiskEntry]);
+  }, [applySupportActionAndKeepDraft, isSavingSupportResponse, navigateToFinishedRiskEntry]);
 
   const handleOpenCounseling = useCallback(async () => {
     if (isSavingSupportResponse) {
       return;
     }
 
-    const saved = await finishRiskEntryWithSupport("CONTACTED");
+    const saved = await applySupportActionAndKeepDraft("SCHEDULED_COUNSELING");
     if (!saved) {
       return;
     }
@@ -733,14 +715,14 @@ export default function WriteEntryScreen() {
     setShowRiskModal(false);
     setRiskModalRedirectEntryId(null);
     router.push("/consult?track=professional&skipIntro=1");
-  }, [finishRiskEntryWithSupport, isSavingSupportResponse]);
+  }, [applySupportActionAndKeepDraft, isSavingSupportResponse]);
 
   const handleOpenWellnessTools = useCallback(async () => {
     if (isSavingSupportResponse) {
       return;
     }
 
-    const saved = await finishRiskEntryWithSupport("CONTACTED");
+    const saved = await applySupportActionAndKeepDraft("VIEWED_WELLNESS");
     if (!saved) {
       return;
     }
@@ -748,7 +730,7 @@ export default function WriteEntryScreen() {
     setShowRiskModal(false);
     setRiskModalRedirectEntryId(null);
     router.push("/wellness-tools");
-  }, [finishRiskEntryWithSupport, isSavingSupportResponse]);
+  }, [applySupportActionAndKeepDraft, isSavingSupportResponse]);
 
   const handleConfirmTagsAndFinish = async () => {
     if (!user?.studentNumber || !entry?.id || isFinishing || isSavingTags) {
@@ -782,7 +764,8 @@ export default function WriteEntryScreen() {
     if (result.messages) {
       setMessages(result.messages);
     }
-    if (result.entry?.riskLevel === "HIGH") {
+    // Finish Journal: re-prompt once if still crisis and no resource action (ignores DISMISSED).
+    if (needsFinishSupportPrompt(result.entry)) {
       setRiskModalRedirectEntryId(result.entry.id);
       setShowRiskModal(true);
       return;

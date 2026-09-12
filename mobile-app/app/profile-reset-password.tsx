@@ -90,10 +90,7 @@ export default function ProfileResetPasswordScreen() {
   const [isBusy, setIsBusy] = useState(false);
   const passwordStrength = getPasswordStrength(newPassword);
 
-  useEffect(() => {
-    setStudentId((current) => current || user?.studentNumber || "");
-    setEmail((current) => current || user?.email || "");
-  }, [user?.email, user?.studentNumber]);
+
 
   useEffect(() => {
     if (resendSeconds <= 0) return;

@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { needsSupportPrompt } from "./risk-level";
 import { Platform } from "react-native";
 
 export type AuthUser = {
@@ -74,7 +75,7 @@ export type JournalEntry = {
   isFinished: boolean;
   primaryConcern?: string | null;
   preview?: string;
-  riskLevel: "HIGH" | "LOW" | "NONE";
+  riskLevel: "CRITICAL" | "HIGH" | "LOW" | "NONE";
   dominantEmotion?: string | null;
   sentimentConfidence?: number | null;
   sentimentLabel?: "POSITIVE" | "NEUTRAL" | "NEGATIVE" | "MIXED" | null;
@@ -86,6 +87,11 @@ export type JournalEntry = {
   supportPromptShownAt?: string | null;
   supportResponse?: "CONTACTED" | "DECLINED" | null;
   supportResponseAt?: string | null;
+  studentAction?: "CLICKED_HOTLINE" | "SCHEDULED_COUNSELING" | "VIEWED_WELLNESS" | "DISMISSED" | null;
+  studentActionAt?: string | null;
+  counselorResolvedAt?: string | null;
+  counselorResolvedByEmail?: string | null;
+  counselorResolvedByName?: string | null;
   title: string;
   updatedAt: string;
 };
@@ -303,6 +309,8 @@ const LOCAL_JOURNAL_STORAGE_PREFIX = "bawattala.localJournal.";
 const LOCAL_MOOD_STORAGE_PREFIX = "bawattala.localMoods.";
 const LOCAL_CHECKIN_STORAGE_PREFIX = "bawattala.localCheckIns.";
 const LOCAL_PREFERENCES_STORAGE_PREFIX = "bawattala.localPreferences.";
+const LOCAL_SUPPORT_QUEUE_PREFIX = "bawattala.pendingSupportResponses.";
+const LOCAL_RISK_PROMPT_PREFIX = "bawattala.pendingRiskPrompts.";
 const DAILY_CHECKIN_REWARDS = [10, 20, 30, 50, 70, 100, 150];
 const DEFAULT_STUDENT_PREFERENCES: StudentPreferences = {
   hasJournalLockPin: false,
@@ -326,6 +334,79 @@ function getLocalCheckInStorageKey(studentNumber: string) {
 
 function getLocalPreferencesStorageKey(studentNumber: string) {
   return `${LOCAL_PREFERENCES_STORAGE_PREFIX}${studentNumber}`;
+}
+
+function getLocalSupportQueueKey(studentNumber: string) {
+  return `${LOCAL_SUPPORT_QUEUE_PREFIX}${studentNumber}`;
+}
+
+function getLocalRiskPromptKey(studentNumber: string) {
+  return `${LOCAL_RISK_PROMPT_PREFIX}${studentNumber}`;
+}
+
+type PendingSupportResponse = {
+  entryId: string;
+  queuedAt: string;
+  response?: "CONTACTED" | "DECLINED";
+  studentAction?: "CLICKED_HOTLINE" | "SCHEDULED_COUNSELING" | "VIEWED_WELLNESS" | "DISMISSED";
+};
+
+async function readPendingSupportResponses(studentNumber: string): Promise<PendingSupportResponse[]> {
+  const storedValue = await AsyncStorage.getItem(getLocalSupportQueueKey(studentNumber));
+  if (!storedValue) return [];
+  try {
+    const parsed = JSON.parse(storedValue);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writePendingSupportResponses(studentNumber: string, items: PendingSupportResponse[]) {
+  await AsyncStorage.setItem(getLocalSupportQueueKey(studentNumber), JSON.stringify(items));
+}
+
+async function enqueuePendingSupportResponse(studentNumber: string, item: PendingSupportResponse) {
+  const existing = await readPendingSupportResponses(studentNumber);
+  const next = existing.filter((row) => row.entryId !== item.entryId);
+  next.push(item);
+  await writePendingSupportResponses(studentNumber, next);
+}
+
+async function readPendingRiskPromptIds(studentNumber: string): Promise<string[]> {
+  const storedValue = await AsyncStorage.getItem(getLocalRiskPromptKey(studentNumber));
+  if (!storedValue) return [];
+  try {
+    const parsed = JSON.parse(storedValue);
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writePendingRiskPromptIds(studentNumber: string, entryIds: string[]) {
+  const unique = Array.from(new Set(entryIds.filter(Boolean)));
+  await AsyncStorage.setItem(getLocalRiskPromptKey(studentNumber), JSON.stringify(unique));
+}
+
+async function enqueuePendingRiskPrompt(studentNumber: string, entryId: string) {
+  if (!entryId || entryId.startsWith("local-")) return;
+  const existing = await readPendingRiskPromptIds(studentNumber);
+  if (existing.includes(entryId)) return;
+  existing.push(entryId);
+  await writePendingRiskPromptIds(studentNumber, existing);
+}
+
+export async function peekPendingRiskPromptEntryIds(studentNumber: string): Promise<string[]> {
+  return readPendingRiskPromptIds(studentNumber);
+}
+
+export async function consumePendingRiskPrompt(studentNumber: string, entryId: string): Promise<void> {
+  const existing = await readPendingRiskPromptIds(studentNumber);
+  await writePendingRiskPromptIds(
+    studentNumber,
+    existing.filter((id) => id !== entryId),
+  );
 }
 
 function looksLikePlaintextJournalPin(value: string) {
@@ -849,6 +930,9 @@ async function syncPendingJournalEntries(studentNumber: string) {
           messages: remoteMessages,
         };
         await writeLocalJournalData(studentNumber, data);
+        if (needsSupportPrompt(remoteEntry)) {
+          await enqueuePendingRiskPrompt(studentNumber, remoteEntry.id);
+        }
       } catch {
         await writeLocalJournalData(studentNumber, data);
         return;
@@ -1242,6 +1326,7 @@ export async function syncOfflineStudentData(studentNumber: string): Promise<Api
     ]);
     await syncPendingMoodEntries(studentNumber);
     await syncPendingJournalEntries(studentNumber);
+    await syncPendingSupportResponses(studentNumber);
 
     return {
       ok: preferencesSynced && checkInsSynced,
@@ -1336,11 +1421,13 @@ export async function sendOtp(email: string): Promise<ApiResult & { resendAfterS
 export async function loginWithStudentId(
   studentNumber: string,
   password: string,
-): Promise<ApiResult & { user?: AuthUser }> {
+  options?: { reactivate?: boolean },
+): Promise<ApiResult & { user?: AuthUser; requiresReactivation?: boolean; scheduledDeletionAt?: string }> {
   try {
     const { response, data } = await post("/api/auth/login", {
       studentNumber,
       password,
+      reactivate: options?.reactivate,
     });
     if (response.ok && data?.token) {
       setApiAuthToken(data.token);
@@ -1348,7 +1435,13 @@ export async function loginWithStudentId(
         data.user.token = data.token;
       }
     }
-    return { ok: response.ok, message: data?.message, user: data?.user };
+    return {
+      ok: response.ok,
+      message: data?.message,
+      user: data?.user,
+      requiresReactivation: Boolean(data?.requiresReactivation),
+      scheduledDeletionAt: data?.scheduledDeletionAt,
+    };
   } catch {
     return {
       ok: false,
@@ -2548,16 +2641,146 @@ export async function suggestJournalTags(payload: {
 
 export async function saveJournalSupportResponse(payload: {
   entryId: string;
-  response: "CONTACTED" | "DECLINED";
+  response?: "CONTACTED" | "DECLINED";
+  studentAction?: "CLICKED_HOTLINE" | "SCHEDULED_COUNSELING" | "VIEWED_WELLNESS" | "DISMISSED";
   studentNumber: string;
-}): Promise<ApiResult & { entry?: JournalEntry }> {
-  const { response, data } = await post("/api/journal/session/support-response", payload);
+}): Promise<ApiResult & { entry?: JournalEntry; queuedOffline?: boolean }> {
+  const studentAction =
+    payload.studentAction ||
+    (payload.response === "DECLINED"
+      ? "DISMISSED"
+      : payload.response === "CONTACTED"
+        ? "CLICKED_HOTLINE"
+        : undefined);
 
-  return {
-    ok: response.ok,
-    message: data?.message,
-    entry: data?.entry,
+  const applyLocalSupport = async (entryPatch?: Partial<JournalEntry> | null) => {
+    const local = await getLocalJournalRecord(payload.studentNumber, payload.entryId);
+    if (!local?.entry) {
+      return entryPatch as JournalEntry | undefined;
+    }
+    const nextEntry = {
+      ...local.entry,
+      ...(entryPatch || {}),
+      studentAction: studentAction ?? local.entry.studentAction ?? null,
+      studentActionAt: entryPatch?.studentActionAt || getNowIsoString(),
+      supportResponse:
+        payload.response ||
+        (studentAction === "DISMISSED" ? "DECLINED" : studentAction ? "CONTACTED" : local.entry.supportResponse),
+      supportResponseAt: entryPatch?.supportResponseAt || getNowIsoString(),
+    } as JournalEntry;
+    await upsertLocalJournalRecord(payload.studentNumber, nextEntry, local.messages, local.entry.syncStatus || "synced");
+    await consumePendingRiskPrompt(payload.studentNumber, payload.entryId);
+    return nextEntry;
   };
+
+  try {
+    if (payload.entryId.startsWith("local-")) {
+      await enqueuePendingSupportResponse(payload.studentNumber, {
+        entryId: payload.entryId,
+        queuedAt: getNowIsoString(),
+        response: payload.response,
+        studentAction,
+      });
+      const queuedEntry = await applyLocalSupport(null);
+      return {
+        ok: true,
+        queuedOffline: true,
+        message: "Support response saved offline. It will sync when you are back online.",
+        entry: queuedEntry,
+      };
+    }
+
+    const { response, data } = await post("/api/journal/session/support-response", {
+      entryId: payload.entryId,
+      studentNumber: payload.studentNumber,
+      studentAction,
+      response: payload.response,
+    });
+
+    if (response.ok) {
+      const entry = (data?.entry as JournalEntry | undefined) || (await applyLocalSupport(data?.entry));
+      if (data?.entry) {
+        await upsertLocalJournalRecord(payload.studentNumber, data.entry, [], "synced");
+        await consumePendingRiskPrompt(payload.studentNumber, payload.entryId);
+      }
+      return {
+        ok: true,
+        message: data?.message,
+        entry: entry || data?.entry,
+      };
+    }
+
+    await enqueuePendingSupportResponse(payload.studentNumber, {
+      entryId: payload.entryId,
+      queuedAt: getNowIsoString(),
+      response: payload.response,
+      studentAction,
+    });
+    const queuedEntry = await applyLocalSupport(null);
+    return {
+      ok: true,
+      queuedOffline: true,
+      message: "Support response saved offline. It will sync when you are back online.",
+      entry: queuedEntry,
+    };
+  } catch {
+    await enqueuePendingSupportResponse(payload.studentNumber, {
+      entryId: payload.entryId,
+      queuedAt: getNowIsoString(),
+      response: payload.response,
+      studentAction,
+    });
+    const queuedEntry = await applyLocalSupport(null);
+    return {
+      ok: true,
+      queuedOffline: true,
+      message: "Support response saved offline. It will sync when you are back online.",
+      entry: queuedEntry,
+    };
+  }
+}
+
+async function syncPendingSupportResponses(studentNumber: string) {
+  const pending = await readPendingSupportResponses(studentNumber);
+  if (!pending.length) return;
+
+  const remaining: PendingSupportResponse[] = [];
+  for (const item of pending) {
+    let entryId = item.entryId;
+    if (entryId.startsWith("local-")) {
+      const local = await getLocalJournalRecord(studentNumber, entryId);
+      // Wait until the journal itself remaps off local-* before posting support.
+      if (!local?.entry || local.entry.id.startsWith("local-") || local.entry.syncStatus === "pending") {
+        remaining.push(item);
+        continue;
+      }
+      entryId = local.entry.id;
+    }
+
+    try {
+      const { response, data } = await post("/api/journal/session/support-response", {
+        entryId,
+        studentNumber,
+        studentAction: item.studentAction,
+        response: item.response,
+      });
+      if (!response.ok) {
+        remaining.push({ ...item, entryId });
+        continue;
+      }
+      if (data?.entry) {
+        await upsertLocalJournalRecord(studentNumber, data.entry, [], "synced");
+      }
+      await consumePendingRiskPrompt(studentNumber, entryId);
+      if (entryId !== item.entryId) {
+        await consumePendingRiskPrompt(studentNumber, item.entryId);
+      }
+    } catch {
+      remaining.push({ ...item, entryId });
+      return;
+    }
+  }
+  await writePendingSupportResponses(studentNumber, remaining);
 }
 
 export async function saveJournalConcerns(payload: {
@@ -2839,6 +3062,78 @@ export async function rateJournalEntrySummary(payload: {
   };
 }
 
+export async function fetchRecentlyDeletedJournalEntries(
+  _studentNumber?: string,
+): Promise<ApiResult & { entries?: Array<{ id: string; title: string; entryDate: string; summary: string; deletedAt: string; createdAt: string; riskLevel: string; concernTags: string[] }> }> {
+  const { response, data } = await get("/api/journal/entries/recently-deleted");
+  return {
+    ok: response.ok,
+    message: data?.message,
+    entries: Array.isArray(data?.entries) ? data.entries : [],
+  };
+}
+
+export async function restoreJournalEntry(
+  _studentNumber: string,
+  entryId: string,
+): Promise<ApiResult> {
+  const { response, data } = await post(`/api/journal/entries/${entryId}/restore`, {});
+  return {
+    ok: response.ok,
+    message: data?.message,
+  };
+}
+
+export async function permanentlyDeleteJournalEntry(
+  _studentNumber: string,
+  entryId: string,
+): Promise<ApiResult> {
+  const { response, data } = await del(`/api/journal/entries/${entryId}/permanent`);
+  return {
+    ok: response.ok,
+    message: data?.message,
+  };
+}
+
+export async function restoreJournalEntriesBulk(
+  entryIds: string[],
+): Promise<ApiResult & { restoredCount?: number; restoredIds?: string[] }> {
+  const { response, data } = await post("/api/journal/entries/recently-deleted/restore", {
+    entryIds,
+  });
+  return {
+    ok: response.ok,
+    message: data?.message,
+    restoredCount: Number(data?.restoredCount || 0),
+    restoredIds: Array.isArray(data?.restoredIds) ? data.restoredIds : [],
+  };
+}
+
+export async function permanentlyDeleteJournalEntriesBulk(
+  entryIds: string[],
+): Promise<ApiResult & { deletedCount?: number; deletedIds?: string[] }> {
+  const { response, data } = await post("/api/journal/entries/recently-deleted/permanent", {
+    entryIds,
+  });
+  return {
+    ok: response.ok,
+    message: data?.message,
+    deletedCount: Number(data?.deletedCount || 0),
+    deletedIds: Array.isArray(data?.deletedIds) ? data.deletedIds : [],
+  };
+}
+
+export async function scheduleStudentAccountDeletion(
+  password: string,
+): Promise<ApiResult & { scheduledDeletionAt?: string }> {
+  const { response, data } = await post("/api/auth/account/schedule-deletion", { password });
+  return {
+    ok: response.ok,
+    message: data?.message,
+    scheduledDeletionAt: data?.scheduledDeletionAt,
+  };
+}
+
 export async function deleteJournalEntry(
   studentNumber: string,
   entryId: string,
@@ -2863,9 +3158,14 @@ export async function deleteJournalEntry(
 export async function fetchJournalEntriesByDate(
   studentNumber: string,
   date: string,
+  options?: { page?: number; pageSize?: number },
 ): Promise<
   ApiResult & {
     date?: string;
+    page?: number;
+    pageSize?: number;
+    totalCount?: number;
+    hasMore?: boolean;
     entries?: Array<{
       createdAt: string;
       entryDate: string;
@@ -2878,9 +3178,13 @@ export async function fetchJournalEntriesByDate(
     }>;
   }
 > {
+  const page = Math.max(1, Number(options?.page) || 1);
+  const pageSize = Math.min(50, Math.max(1, Number(options?.pageSize) || 10));
   const params = new URLSearchParams({
     studentNumber,
     date,
+    page: String(page),
+    pageSize: String(pageSize),
   });
   try {
     await syncPendingJournalEntries(studentNumber);
@@ -2890,11 +3194,17 @@ export async function fetchJournalEntriesByDate(
       const fallback = await fetchRecentJournalEntries(studentNumber, 366);
       const filteredEntries = (fallback.entries ?? []).filter((entry) => entry.entryDate === date);
 
+      const start = (page - 1) * pageSize;
+      const paged = filteredEntries.slice(start, start + pageSize);
       return {
         ok: fallback.ok,
         message: fallback.message,
         date,
-        entries: filteredEntries,
+        page,
+        pageSize,
+        totalCount: filteredEntries.length,
+        hasMore: start + paged.length < filteredEntries.length,
+        entries: paged,
       };
     }
 
@@ -2955,16 +3265,27 @@ export async function fetchJournalEntriesByDate(
       ok: response.ok,
       message: data?.message,
       date: data?.date,
+      page: Number(data?.page) || page,
+      pageSize: Number(data?.pageSize) || pageSize,
+      totalCount: Number(data?.totalCount ?? entries.length),
+      hasMore: Boolean(data?.hasMore),
       entries,
     };
   } catch {
+    const localAll = (await getLocalFinishedJournalEntries(studentNumber))
+      .filter((entry) => entry.entryDate === date)
+      .map((entry) => normalizeRecentJournalListEntry(entry));
+    const start = (page - 1) * pageSize;
+    const paged = localAll.slice(start, start + pageSize);
     return {
       ok: true,
       message: "Showing entries saved on this device.",
       date,
-      entries: (await getLocalFinishedJournalEntries(studentNumber))
-        .filter((entry) => entry.entryDate === date)
-        .map((entry) => normalizeRecentJournalListEntry(entry)),
+      page,
+      pageSize,
+      totalCount: localAll.length,
+      hasMore: start + paged.length < localAll.length,
+      entries: paged,
     };
   }
 }

@@ -106,6 +106,8 @@ async function request(path, options = {}) {
   if (!response.ok) {
     const error = new Error(data?.message || "Request failed.");
     error.status = response.status;
+    error.retryAfterSeconds = data?.retryAfterSeconds;
+    error.lockUntil = data?.lockUntil;
     throw error;
   }
   return data;
@@ -202,8 +204,28 @@ export async function fetchAdminAnalytics(params = {}) {
   return request(`/api/admin/analytics${suffix}`);
 }
 
-export async function fetchAdminRiskFlags() {
-  return request("/api/admin/dashboard/risk-flags");
+export async function fetchAdminRiskFlags(params = {}) {
+  const searchParams = new URLSearchParams();
+  if (params.search) {
+    searchParams.set("search", String(params.search).trim());
+  }
+  if (params.page) {
+    searchParams.set("page", String(params.page));
+  }
+  if (params.pageSize) {
+    searchParams.set("pageSize", String(params.pageSize));
+  }
+  if (params.dateRange) {
+    searchParams.set("dateRange", String(params.dateRange));
+  }
+  if (params.startDate) {
+    searchParams.set("startDate", String(params.startDate));
+  }
+  if (params.endDate) {
+    searchParams.set("endDate", String(params.endDate));
+  }
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
+  return request(`/api/admin/dashboard/risk-flags${suffix}`);
 }
 
 function normalizeAdminFeedbackItem(item) {
@@ -325,6 +347,10 @@ export async function openAdminStudentJournalEntry(studentNumber, entryId, pin) 
     method: "POST",
     body: JSON.stringify({ pin: String(pin || "") }),
   });
+}
+
+export async function fetchAdminStudentFollowUps(studentNumber) {
+  return request(`/api/admin/students/${encodeURIComponent(studentNumber)}/follow-ups`);
 }
 
 export async function sendAdminStudentNotification(studentNumber, payload) {

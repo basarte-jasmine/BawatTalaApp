@@ -56,7 +56,6 @@ const BARANGAY_OPTIONS = [
 const GENDER_OPTIONS = [
   "Male",
   "Female",
-  "Prefer not to say",
 ];
 
 module.exports = {

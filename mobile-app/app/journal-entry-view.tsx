@@ -5,10 +5,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Image, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
-import { fetchJournalEntryById, JournalEntry, JournalMessage, rateJournalEntrySummary } from "../lib/backend-api";
+import { consumePendingRiskPrompt, fetchJournalEntryById, JournalEntry, JournalMessage, rateJournalEntrySummary, saveJournalSupportResponse } from "../lib/backend-api";
 import { JournalLockGate } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
 import { useOfflineSync } from "../lib/offline-sync";
+import { isCrisisRisk, needsSupportPrompt } from "../lib/risk-level";
 
 const NOTEBOOK_RINGS = Array.from({ length: 12 }, (_, index) => index);
 const PAPER_RULES = Array.from({ length: 24 }, (_, index) => index);
@@ -122,7 +123,16 @@ function countWords(value: string) {
 export default function JournalEntryViewScreen() {
   const { user } = useAuthSession();
   const { isSyncing, refreshKey, syncNow } = useOfflineSync();
-  const { entryId } = useLocalSearchParams<{ entryId?: string }>();
+  const { entryId, fromCalendar, calendarDate, promptSupport } = useLocalSearchParams<{
+    entryId?: string;
+    fromCalendar?: string;
+    calendarDate?: string;
+    promptSupport?: string;
+  }>();
+  const fromCalendarFlag = Array.isArray(fromCalendar) ? fromCalendar[0] : fromCalendar;
+  const calendarDateValue = Array.isArray(calendarDate) ? calendarDate[0] : calendarDate;
+  void promptSupport; // deep-link hint; alert still gated by needsSupportPrompt
+  const promptedSupportRef = useRef(false);
   const { width } = useWindowDimensions();
   const [entry, setEntry] = useState<JournalEntry | null>(null);
   const [messages, setMessages] = useState<JournalMessage[]>([]);
@@ -137,7 +147,24 @@ export default function JournalEntryViewScreen() {
   const messagesRef = useRef<JournalMessage[]>([]);
   const handledRefreshKeyRef = useRef(refreshKey);
 
+  const recordSupportAction = useCallback(
+    async (studentAction: "CLICKED_HOTLINE" | "SCHEDULED_COUNSELING" | "VIEWED_WELLNESS" | "DISMISSED") => {
+      if (!user?.studentNumber || !entry?.id) return;
+      const result = await saveJournalSupportResponse({
+        entryId: entry.id,
+        studentAction,
+        studentNumber: user.studentNumber,
+      });
+      if (result.entry) {
+        setEntry(result.entry);
+      }
+      await consumePendingRiskPrompt(user.studentNumber, entry.id);
+    },
+    [entry?.id, user?.studentNumber],
+  );
+
   const handleCallHotline = async () => {
+    void recordSupportAction("CLICKED_HOTLINE");
     try {
       const canOpen = await Linking.canOpenURL(NCMH_HOTLINE_DIAL_URL);
       if (!canOpen) {
@@ -155,6 +182,22 @@ export default function JournalEntryViewScreen() {
       );
     }
   };
+
+  useEffect(() => {
+    if (!entry || promptedSupportRef.current) return;
+    // Prompt when crisis risk and no resource action yet (DISMISSED does not count).
+    const shouldPrompt = needsSupportPrompt(entry);
+    if (!shouldPrompt) return;
+    promptedSupportRef.current = true;
+    if (user?.studentNumber && entry.id) {
+      void consumePendingRiskPrompt(user.studentNumber, entry.id);
+    }
+    Alert.alert(
+      "Support is available",
+      "Muni flagged language that may point to self-harm or suicide. Support resources are on this page.",
+      [{ text: "OK" }],
+    );
+  }, [entry, user?.studentNumber]);
 
   useEffect(() => {
     entryRef.current = entry;
@@ -436,7 +479,27 @@ export default function JournalEntryViewScreen() {
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <View style={styles.topBar}>
-        <Pressable style={styles.topBarBackButton} onPress={() => router.replace("/journal-calendar")}>
+        <Pressable
+          style={styles.topBarBackButton}
+          onPress={() => {
+            if (
+              fromCalendarFlag === "1" &&
+              calendarDateValue &&
+              /^\d{4}-\d{2}-\d{2}$/.test(calendarDateValue)
+            ) {
+              router.dismissTo({
+                pathname: "/journal-calendar",
+                params: { reopenDate: calendarDateValue },
+              });
+              return;
+            }
+            if (router.canGoBack()) {
+              router.back();
+              return;
+            }
+            router.replace("/journal-entries");
+          }}
+        >
           <Ionicons name="chevron-back" size={28} color="#39434F" />
         </Pressable>
         <Text style={styles.topBarTitle}>Journal Entry</Text>
@@ -486,7 +549,7 @@ export default function JournalEntryViewScreen() {
           </View>
         </View>
 
-        {entry?.riskLevel === "HIGH" ? (
+        {isCrisisRisk(entry?.riskLevel) ? (
           <View style={[styles.crisisCard, compact && styles.crisisCardCompact]}>
             <View style={styles.crisisHeaderRow}>
               <View style={styles.crisisIconBadge}>
@@ -509,14 +572,20 @@ export default function JournalEntryViewScreen() {
               </Pressable>
               <Pressable
                 style={[styles.crisisButton, styles.crisisButtonCounseling]}
-                onPress={() => router.push("/consult?track=professional&skipIntro=1")}
+                onPress={() => {
+                  void recordSupportAction("SCHEDULED_COUNSELING");
+                  router.push("/consult?track=professional&skipIntro=1");
+                }}
               >
                 <Ionicons name="calendar-outline" size={15} color="#2F587D" />
                 <Text style={styles.crisisButtonCounselingText}>Consult</Text>
               </Pressable>
               <Pressable
                 style={[styles.crisisButton, styles.crisisButtonWellness]}
-                onPress={() => router.push("/wellness-tools")}
+                onPress={() => {
+                  void recordSupportAction("VIEWED_WELLNESS");
+                  router.push("/wellness-tools");
+                }}
               >
                 <Ionicons name="leaf-outline" size={15} color="#486D33" />
                 <Text style={styles.crisisButtonWellnessText}>Wellness</Text>
@@ -899,7 +968,6 @@ const styles = StyleSheet.create({
   pageWrap: {
     flex: 1,
     borderRadius: 24,
-    overflow: "hidden",
     shadowColor: "#5C6570",
     shadowOpacity: 0.12,
     shadowRadius: 10,

@@ -36,6 +36,11 @@ import {
   type JournalEntry,
   type JournalMessage } from "../lib/backend-api";
 import { useAuthSession } from "../lib/auth-session";
+import {
+  hasResourceSupportAction,
+  isCrisisRisk,
+  needsFinishSupportPrompt,
+} from "../lib/risk-level";
 import { JournalLockGate, useAppPreferences } from "../lib/app-preferences";
 
 type VoiceState =
@@ -181,6 +186,8 @@ export default function MuniVoiceScreen() {
   const [showRiskModal, setShowRiskModal] = useState(false);
   const [isSavingSupportResponse, setIsSavingSupportResponse] = useState(false);
   const [riskModalRedirectEntryId, setRiskModalRedirectEntryId] = useState<string | null>(null);
+  /** After first mid-chat crisis trio show/dismiss, suppress until Finish Journal. */
+  const [riskPromptSuppressedUntilFinish, setRiskPromptSuppressedUntilFinish] = useState(false);
   const [isAnalyzingTags, setIsAnalyzingTags] = useState(false);
   const [isSavingTags, setIsSavingTags] = useState(false);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
@@ -460,13 +467,20 @@ export default function MuniVoiceScreen() {
         reply || "Narinig kita. Handa akong makinig kapag handa ka na ulit magbahagi.";
       setMuniReply(finalMuniReply);
       setStatusMessage("");
-      if ((result.entry?.riskLevel || "NONE").toUpperCase() === "HIGH") {
+      // Mid-chat: show crisis trio once; soft-dismiss suppresses until Finish Journal.
+      if (
+        result.entry &&
+        isCrisisRisk(result.entry.riskLevel) &&
+        !hasResourceSupportAction(result.entry) &&
+        !riskPromptSuppressedUntilFinish
+      ) {
+        setRiskPromptSuppressedUntilFinish(true);
         setRiskModalRedirectEntryId(null);
         setShowRiskModal(true);
       }
       void speakReply(finalMuniReply, replyVoice);
     },
-    [appLockEnabled, isAppLocked, setActiveEntry, setConversationMessages, speakReply, user?.studentNumber],
+    [appLockEnabled, isAppLocked, riskPromptSuppressedUntilFinish, setActiveEntry, setConversationMessages, speakReply, user?.studentNumber],
   );
 
   const processAudioDataAndSend = useCallback(
@@ -891,14 +905,16 @@ export default function MuniVoiceScreen() {
   }, [riskModalRedirectEntryId]);
 
   const saveSupportDecision = useCallback(
-    async (response: "CONTACTED" | "DECLINED") => {
+    async (
+      studentAction: "CLICKED_HOTLINE" | "SCHEDULED_COUNSELING" | "VIEWED_WELLNESS" | "DISMISSED",
+    ) => {
       if (!user?.studentNumber || !entry?.id) {
         return true;
       }
       setIsSavingSupportResponse(true);
       const supportResult = await saveJournalSupportResponse({
         entryId: entry.id,
-        response,
+        studentAction,
         studentNumber: user.studentNumber });
       setIsSavingSupportResponse(false);
       if (!supportResult.ok) {
@@ -917,19 +933,23 @@ export default function MuniVoiceScreen() {
     if (isSavingSupportResponse) {
       return;
     }
-    const saved = await saveSupportDecision("DECLINED");
+    // Soft-dismiss: keep writing; DISMISSED is not a resource choice for finish re-prompt.
+    setRiskPromptSuppressedUntilFinish(true);
+    const saved = await saveSupportDecision("DISMISSED");
     if (!saved) {
       return;
     }
     setShowRiskModal(false);
+    // Only leave chat when this modal was shown after Finish Journal (redirect id set).
     navigateToFinishedRiskEntry();
   }, [isSavingSupportResponse, navigateToFinishedRiskEntry, saveSupportDecision]);
 
+  // Support taps: save studentAction + open tools only. Do NOT auto-finish the draft.
   const handleCallHotline = useCallback(async () => {
     if (isSavingSupportResponse) {
       return;
     }
-    const saved = await saveSupportDecision("CONTACTED");
+    const saved = await saveSupportDecision("CLICKED_HOTLINE");
     if (!saved) {
       return;
     }
@@ -960,7 +980,7 @@ export default function MuniVoiceScreen() {
     if (isSavingSupportResponse) {
       return;
     }
-    const saved = await saveSupportDecision("CONTACTED");
+    const saved = await saveSupportDecision("SCHEDULED_COUNSELING");
     if (!saved) {
       return;
     }
@@ -973,7 +993,7 @@ export default function MuniVoiceScreen() {
     if (isSavingSupportResponse) {
       return;
     }
-    const saved = await saveSupportDecision("CONTACTED");
+    const saved = await saveSupportDecision("VIEWED_WELLNESS");
     if (!saved) {
       return;
     }
@@ -1018,7 +1038,8 @@ export default function MuniVoiceScreen() {
         setConversationMessages(finishResult.messages);
       }
       setStatusMessage("Voice journal saved.");
-      if (finishResult.entry?.riskLevel === "HIGH") {
+      // Finish Journal: re-prompt once if still crisis and no resource action (ignores DISMISSED).
+      if (needsFinishSupportPrompt(finishResult.entry)) {
         setRiskModalRedirectEntryId(finishResult.entry.id);
         setShowRiskModal(true);
         return;

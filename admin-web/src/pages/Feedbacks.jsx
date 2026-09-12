@@ -1,6 +1,6 @@
 import Toast from "../components/Toast";
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Image, MessageSquare, RefreshCw, Search, Trash2 } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Image, MessageSquare, RefreshCw, Search, Sparkles, Trash2 } from "lucide-react";
 import ConfirmActionModal from "../components/ConfirmActionModal";
 import Layout from "../components/Layout";
 import Modal from "../components/Modal";
@@ -64,13 +64,22 @@ function formatDateTime(value) {
   if (!value) return "Not available";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "Not available";
-  return parsed.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Manila",
     year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
     hour: "numeric",
     minute: "2-digit",
-  });
+    hour12: true,
+  }).formatToParts(parsed);
+  const mm = parts.find((p) => p.type === "month")?.value || "01";
+  const dd = parts.find((p) => p.type === "day")?.value || "01";
+  const yyyy = parts.find((p) => p.type === "year")?.value || "1970";
+  const hour = parts.find((p) => p.type === "hour")?.value || "12";
+  const minute = parts.find((p) => p.type === "minute")?.value || "00";
+  const dayPeriod = parts.find((p) => p.type === "dayPeriod")?.value || "AM";
+  return `${mm}-${dd}-${yyyy}, ${hour}:${minute} ${dayPeriod}`;
 }
 
 function getStatusClasses(status) {
@@ -251,7 +260,7 @@ export default function Feedbacks({ onLogout, session }) {
       onLogout={onLogout}
       session={session}
     >
-      <div className="mx-auto max-w-[1180px] space-y-6 pb-12">
+      <div className="mx-auto max-w-[1280px] space-y-6 pb-12">
         {errorMessage ? (
           <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
             {errorMessage}
@@ -259,22 +268,45 @@ export default function Feedbacks({ onLogout, session }) {
         ) : null}
         <Toast message={successMessage} onClose={() => setSuccessMessage("")} />
 
-        <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
-          <div className="flex items-center justify-between rounded-xl border border-[#dce8d2] bg-white px-4 py-2.5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-admin-muted">Shown</p>
-            <p className="text-2xl font-bold text-admin-ink">{stats.total}</p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="flex flex-col justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">Total Requests</span>
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+                <MessageSquare className="h-4 w-4" />
+              </span>
+            </div>
+            <div className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{stats.total}</div>
           </div>
-          <div className="flex items-center justify-between rounded-xl border border-[#dce8d2] bg-white px-4 py-2.5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-admin-muted">New</p>
-            <p className="text-2xl font-bold text-emerald-700">{stats.newItems}</p>
+
+          <div className="flex flex-col justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">New / Unreviewed</span>
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/60">
+                <Sparkles className="h-4 w-4" />
+              </span>
+            </div>
+            <div className="text-2xl font-bold tracking-tight text-emerald-700 sm:text-3xl">{stats.newItems}</div>
           </div>
-          <div className="flex items-center justify-between rounded-xl border border-[#dce8d2] bg-white px-4 py-2.5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-admin-muted">With Images</p>
-            <p className="text-2xl font-bold text-admin-ink">{stats.withImages}</p>
+
+          <div className="flex flex-col justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">With Screenshots</span>
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-blue-600 ring-1 ring-blue-200/60">
+                <Image className="h-4 w-4" />
+              </span>
+            </div>
+            <div className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{stats.withImages}</div>
           </div>
-          <div className="flex items-center justify-between rounded-xl border border-[#dce8d2] bg-white px-4 py-2.5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-admin-muted">Resolved</p>
-            <p className="text-2xl font-bold text-admin-ink">{stats.resolved}</p>
+
+          <div className="flex flex-col justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">Resolved</span>
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200/60">
+                <CheckCircle2 className="h-4 w-4" />
+              </span>
+            </div>
+            <div className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{stats.resolved}</div>
           </div>
         </div>
 
