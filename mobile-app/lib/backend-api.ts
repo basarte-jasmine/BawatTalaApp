@@ -58,7 +58,11 @@ export type FeedbackAttachmentPayload = {
 export type JournalMessage = {
   createdAt: string;
   id: string;
+  /** Optional message metadata (e.g. safetyStatus/emotionalDistressSignal from mid-chat analysis). */
+  metadata?: Record<string, unknown> | null;
   role: "assistant" | "user";
+  safetyStatus?: "NOT_NEEDED" | "CLARIFICATION_NEEDED" | "CONFIRMED_CRITICAL" | "CLEARED" | null;
+  emotionalDistressSignal?: "NONE" | "DISTRESS" | "CRITICAL" | null;
   text: string;
 };
 
@@ -76,6 +80,10 @@ export type JournalEntry = {
   primaryConcern?: string | null;
   preview?: string;
   riskLevel: "CRITICAL" | "HIGH" | "LOW" | "NONE";
+  /** Two-phase safety status from journal AI (optional until API lands). */
+  safetyStatus?: "NOT_NEEDED" | "CLARIFICATION_NEEDED" | "CONFIRMED_CRITICAL" | "CLEARED" | null;
+  /** Emotional distress signal; DISTRESS maps to LOW display. */
+  emotionalDistressSignal?: "NONE" | "DISTRESS" | "CRITICAL" | null;
   dominantEmotion?: string | null;
   sentimentConfidence?: number | null;
   sentimentLabel?: "POSITIVE" | "NEUTRAL" | "NEGATIVE" | "MIXED" | null;
@@ -671,10 +679,37 @@ function normalizeJournalMessage(value: unknown): JournalMessage | null {
     .trim();
   if (!text) return null;
 
+  const metadata =
+    raw.metadata && typeof raw.metadata === "object"
+      ? (raw.metadata as Record<string, unknown>)
+      : null;
+  const safetyRaw = raw.safetyStatus ?? raw.safety_status ?? metadata?.safetyStatus ?? metadata?.safety_status;
+  const distressRaw =
+    raw.emotionalDistressSignal ??
+    raw.emotional_distress_signal ??
+    metadata?.emotionalDistressSignal ??
+    metadata?.emotional_distress_signal;
+  const safetyStatusText = safetyRaw == null ? "" : String(safetyRaw).trim().toUpperCase();
+  const distressText = distressRaw == null ? "" : String(distressRaw).trim().toUpperCase();
+  const safetyStatus =
+    safetyStatusText === "NOT_NEEDED" ||
+    safetyStatusText === "CLARIFICATION_NEEDED" ||
+    safetyStatusText === "CONFIRMED_CRITICAL" ||
+    safetyStatusText === "CLEARED"
+      ? (safetyStatusText as JournalMessage["safetyStatus"])
+      : null;
+  const emotionalDistressSignal =
+    distressText === "NONE" || distressText === "DISTRESS" || distressText === "CRITICAL"
+      ? (distressText as JournalMessage["emotionalDistressSignal"])
+      : null;
+
   return {
     createdAt: String(raw.createdAt || raw.created_at || getNowIsoString()),
     id: String(raw.id || `message-${Date.now()}-${Math.random().toString(36).slice(2)}`),
+    metadata,
     role,
+    safetyStatus,
+    emotionalDistressSignal,
     text,
   };
 }
@@ -683,6 +718,41 @@ function normalizeJournalMessages(values: unknown): JournalMessage[] {
   return Array.isArray(values)
     ? values.map(normalizeJournalMessage).filter((message): message is JournalMessage => Boolean(message))
     : [];
+}
+
+function normalizeJournalEntrySafety(entry?: JournalEntry | null): JournalEntry | null | undefined {
+  if (!entry || typeof entry !== "object") return entry;
+  const raw = entry as JournalEntry & Record<string, unknown>;
+  const safetyRaw = raw.safetyStatus ?? raw.safety_status;
+  const distressRaw = raw.emotionalDistressSignal ?? raw.emotional_distress_signal;
+  const safetyText = safetyRaw == null ? "" : String(safetyRaw).trim().toUpperCase();
+  const distressText = distressRaw == null ? "" : String(distressRaw).trim().toUpperCase();
+  const safetyStatus =
+    safetyText === "NOT_NEEDED" ||
+    safetyText === "CLARIFICATION_NEEDED" ||
+    safetyText === "CONFIRMED_CRITICAL" ||
+    safetyText === "CLEARED"
+      ? (safetyText as JournalEntry["safetyStatus"])
+      : raw.safetyStatus ?? null;
+  const emotionalDistressSignal =
+    distressText === "NONE" || distressText === "DISTRESS" || distressText === "CRITICAL"
+      ? (distressText as JournalEntry["emotionalDistressSignal"])
+      : raw.emotionalDistressSignal ?? null;
+
+  // Only attach when present so missing fields stay absent for legacy fallback gating.
+  const next: JournalEntry = { ...entry };
+  if (safetyText) {
+    next.safetyStatus = safetyStatus;
+  } else if ("safetyStatus" in raw || "safety_status" in raw) {
+    // Explicit null from API — keep key so UI can treat as "present but empty" via helpers.
+    next.safetyStatus = null;
+  }
+  if (distressText) {
+    next.emotionalDistressSignal = emotionalDistressSignal;
+  } else if ("emotionalDistressSignal" in raw || "emotional_distress_signal" in raw) {
+    next.emotionalDistressSignal = null;
+  }
+  return next;
 }
 
 function buildPreviewJournalMessages(entry?: {
@@ -2476,16 +2546,19 @@ export async function sendJournalMessage(payload: {
       studentNumber: payload.studentNumber,
     });
 
+    const normalizedEntry = normalizeJournalEntrySafety(data?.entry as JournalEntry | null | undefined) ?? null;
+    const normalizedMessages = normalizeJournalMessages(data?.messages ?? []);
+
     if (response.ok) {
-      await upsertLocalJournalRecord(payload.studentNumber, data?.entry ?? null, data?.messages ?? []);
+      await upsertLocalJournalRecord(payload.studentNumber, normalizedEntry, normalizedMessages);
     }
 
     return {
       ok: response.ok,
       aiReply: data?.aiReply ?? null,
-      entry: data?.entry,
+      entry: normalizedEntry ?? undefined,
       message: data?.message,
-      messages: data?.messages ?? [],
+      messages: normalizedMessages,
     };
   } catch {
     const data = await readLocalJournalData(payload.studentNumber);
@@ -2549,20 +2622,25 @@ export async function finishJournalEntry(payload: {
     }
     const { response, data } = await post("/api/journal/session/finish", payload);
 
+    const normalizedEntry = normalizeJournalEntrySafety(data?.entry as JournalEntry | null | undefined) ?? null;
+    const localRecord = await getLocalJournalRecord(payload.studentNumber, payload.entryId);
+    const normalizedMessages = data?.messages?.length
+      ? normalizeJournalMessages(data.messages)
+      : normalizeJournalMessages(localRecord?.messages ?? []);
+
     if (response.ok) {
-      const localRecord = await getLocalJournalRecord(payload.studentNumber, payload.entryId);
       await upsertLocalJournalRecord(
         payload.studentNumber,
-        data?.entry ?? null,
-        data?.messages?.length ? data.messages : localRecord?.messages ?? [],
+        normalizedEntry,
+        normalizedMessages,
       );
     }
 
     return {
       ok: response.ok,
       message: data?.message,
-      entry: data?.entry,
-      messages: data?.messages ?? [],
+      entry: normalizedEntry ?? undefined,
+      messages: data?.messages?.length ? normalizedMessages : normalizeJournalMessages(data?.messages ?? []),
     };
   } catch {
     const record = await getLocalJournalRecord(payload.studentNumber, payload.entryId);
@@ -3878,4 +3956,5 @@ export async function synthesizeVoiceSpeech(payload: {
     voice: data?.voice || "",
   };
 }
+
 

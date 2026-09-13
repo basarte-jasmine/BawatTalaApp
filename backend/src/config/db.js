@@ -798,6 +798,43 @@ async function ensureDatabaseSchema() {
 
   await pool.query(`
     alter table public.journal_entries
+    add column if not exists distress_signal text not null default 'NONE';
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    add column if not exists safety_status text not null default 'NOT_NEEDED';
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    drop constraint if exists journal_entries_distress_signal_check;
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    add constraint journal_entries_distress_signal_check
+    check (
+      distress_signal in ('NONE', 'DISTRESS', 'CRITICAL')
+    );
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    drop constraint if exists journal_entries_safety_status_check;
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    add constraint journal_entries_safety_status_check
+    check (
+      safety_status in ('NOT_NEEDED', 'CLARIFICATION_NEEDED', 'CONFIRMED_CRITICAL', 'CLEARED')
+    );
+  `);
+
+
+  await pool.query(`
+    alter table public.journal_entries
     drop constraint if exists journal_entries_student_action_check;
   `);
 

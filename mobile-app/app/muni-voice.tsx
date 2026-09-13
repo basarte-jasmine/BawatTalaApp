@@ -37,8 +37,7 @@ import {
   type JournalMessage } from "../lib/backend-api";
 import { useAuthSession } from "../lib/auth-session";
 import {
-  hasResourceSupportAction,
-  isCrisisRisk,
+  needsCrisisTrioPrompt,
   needsFinishSupportPrompt,
 } from "../lib/risk-level";
 import { JournalLockGate, useAppPreferences } from "../lib/app-preferences";
@@ -467,11 +466,11 @@ export default function MuniVoiceScreen() {
         reply || "Narinig kita. Handa akong makinig kapag handa ka na ulit magbahagi.";
       setMuniReply(finalMuniReply);
       setStatusMessage("");
-      // Mid-chat: show crisis trio once; soft-dismiss suppresses until Finish Journal.
+      // Mid-chat: crisis trio ONLY on CONFIRMED_CRITICAL.
+      // CLARIFICATION_NEEDED: keep drafting; Muni reply already in conversation — no trio.
       if (
         result.entry &&
-        isCrisisRisk(result.entry.riskLevel) &&
-        !hasResourceSupportAction(result.entry) &&
+        needsCrisisTrioPrompt(result.entry, result.messages) &&
         !riskPromptSuppressedUntilFinish
       ) {
         setRiskPromptSuppressedUntilFinish(true);
@@ -1038,8 +1037,8 @@ export default function MuniVoiceScreen() {
         setConversationMessages(finishResult.messages);
       }
       setStatusMessage("Voice journal saved.");
-      // Finish Journal: re-prompt once if still crisis and no resource action (ignores DISMISSED).
-      if (needsFinishSupportPrompt(finishResult.entry)) {
+      // Finish Journal: re-prompt once only if still CONFIRMED_CRITICAL and no resource action.
+      if (needsFinishSupportPrompt(finishResult.entry, finishResult.messages)) {
         setRiskModalRedirectEntryId(finishResult.entry.id);
         setShowRiskModal(true);
         return;

@@ -1,4 +1,4 @@
-const GEMINI_API_KEY = String(process.env.GEMINI_API_KEY || "").trim();
+﻿const GEMINI_API_KEY = String(process.env.GEMINI_API_KEY || "").trim();
 const GROQ_API_KEY = String(process.env.GROQ_API_KEY || "").trim();
 const OLLAMA_BASE_URL = normalizeBaseUrl(
   process.env.OLLAMA_BASE_URL || process.env.OLLAMA_URL || "",
@@ -24,6 +24,11 @@ const {
   normalizeRiskTriggerPhrase,
 } = require("../constants/risk-levels");
 const { query } = require("../config/db");
+const {
+  assessEmotionalDistress,
+  personaInstructions,
+} = require("./emotional-distress.service");
+
 
 function normalizeBaseUrl(value) {
   const compact = String(value || "")
@@ -332,19 +337,46 @@ function pickMirrorLanguageTemplate(latestUserMessage) {
   };
 }
 
-async function unavailableConversationAnalysis(latestUserMessage = "", history = []) {
+async function unavailableConversationAnalysis(
+  latestUserMessage = "",
+  history = [],
+  previousDistressSignal = "NONE",
+  previousSafetyStatus = "NOT_NEEDED",
+) {
   const studentText = getStudentJournalText(latestUserMessage, history);
   const heuristicRisk = calibrateRiskSignal(
     await riskFromSeverityWords(studentText),
     studentText,
   );
+  const distressAssessment = assessEmotionalDistress({
+    latestUserMessage,
+    history,
+    previousDistressSignal,
+    previousSafetyStatus,
+  });
+
+  let riskLevel = distressAssessment.risk_level;
+  let adminFlagReason =
+    distressAssessment.admin_flag_reason || heuristicRisk.admin_flag_reason;
+  if (
+    distressAssessment.distress_signal === "NONE" &&
+    normalizeRiskLevel(heuristicRisk.risk_level) === "LOW"
+  ) {
+    riskLevel = "LOW";
+    adminFlagReason = heuristicRisk.admin_flag_reason;
+  }
+  if (distressAssessment.safety_status === "CONFIRMED_CRITICAL") {
+    riskLevel = "HIGH";
+  }
 
   return {
-    pet_reply: null,
+    pet_reply: distressAssessment.force_pet_reply || null,
     summary: "",
     insights: [],
-    risk_level: heuristicRisk.risk_level,
-    admin_flag_reason: heuristicRisk.admin_flag_reason,
+    risk_level: riskLevel,
+    admin_flag_reason: adminFlagReason,
+    distress_signal: distressAssessment.distress_signal,
+    safety_status: distressAssessment.safety_status,
     unavailable_reason: "ai_temporarily_unavailable",
   };
 }
@@ -376,7 +408,12 @@ function getFallbackFinalSummary(studentText, sentimentAnalysis = {}) {
   return `This entry reflects${theme} through the thought: ${excerpt}`;
 }
 
-async function unavailableFinalAnalysis(latestUserMessage = "", history = []) {
+async function unavailableFinalAnalysis(
+  latestUserMessage = "",
+  history = [],
+  previousDistressSignal = "NONE",
+  previousSafetyStatus = "NOT_NEEDED",
+) {
   const studentText = getStudentJournalText(latestUserMessage, history);
   const heuristicRisk = calibrateRiskSignal(
     await riskFromSeverityWords(studentText),
@@ -384,14 +421,39 @@ async function unavailableFinalAnalysis(latestUserMessage = "", history = []) {
   );
   const fallbackTags = inferJournalTagsFromText(studentText);
   const fallbackSentiment = inferFallbackSentiment(studentText);
+  const distressAssessment = assessEmotionalDistress({
+    latestUserMessage,
+    history,
+    previousDistressSignal,
+    previousSafetyStatus,
+  });
+
+  let riskLevel = distressAssessment.risk_level;
+  let adminFlagReason =
+    distressAssessment.admin_flag_reason || heuristicRisk.admin_flag_reason;
+  if (distressAssessment.safety_status === "CLARIFICATION_NEEDED") {
+    riskLevel = "LOW";
+  }
+  if (
+    distressAssessment.distress_signal === "NONE" &&
+    normalizeRiskLevel(heuristicRisk.risk_level) === "LOW"
+  ) {
+    riskLevel = "LOW";
+    adminFlagReason = heuristicRisk.admin_flag_reason;
+  }
+  if (distressAssessment.safety_status === "CONFIRMED_CRITICAL") {
+    riskLevel = "HIGH";
+  }
 
   return {
     pet_reply: "",
     summary: getFallbackFinalSummary(studentText, fallbackSentiment),
     insights: [],
     ...fallbackSentiment,
-    risk_level: heuristicRisk.risk_level,
-    admin_flag_reason: heuristicRisk.admin_flag_reason,
+    risk_level: riskLevel,
+    admin_flag_reason: adminFlagReason,
+    distress_signal: distressAssessment.distress_signal,
+    safety_status: distressAssessment.safety_status,
     suggested_tags: fallbackTags,
     unavailable_reason: "ai_temporarily_unavailable",
   };
@@ -645,9 +707,11 @@ function mergeRiskSignals(
   const normalizedModel = normalizeRiskLevel(modelRiskLevel);
   const normalizedHeuristic = normalizeRiskLevel(heuristicRiskLevel);
 
+  // HIGH trigger phrases do not auto-confirm crisis here.
+  // Two-phase assessEmotionalDistress decides CLARIFICATION vs CONFIRMED.
   if (
     order[normalizedHeuristic] > order[normalizedModel] &&
-    normalizedHeuristic === "HIGH"
+    normalizedHeuristic === "LOW"
   ) {
     return {
       risk_level: normalizedHeuristic,
@@ -1137,6 +1201,8 @@ async function analyzeJournalConversation({
   firstName,
   latestUserMessage,
   history,
+  previousDistressSignal = "NONE",
+  previousSafetyStatus = "NOT_NEEDED",
 }) {
   const recentAssistantOpenings = getRecentAssistantOpenings(history);
   const recentAssistantFirstWords = getRecentAssistantFirstWords(history);
@@ -1144,9 +1210,18 @@ async function analyzeJournalConversation({
   const patterns = getRecentPatterns(history);
   const latestMessageIsShortAgreement = isShortAgreement(latestUserMessage);
   const latestMessageIsMuniFeedback = looksLikeMuniFeedback(latestUserMessage);
+  const distressAssessment = assessEmotionalDistress({
+    latestUserMessage,
+    history,
+    previousDistressSignal,
+    previousSafetyStatus,
+  });
   const systemInstruction = [
     "You are Muni, the Bawat Tala journaling companion for students.",
     "You have two distinct internal modes: 1. COMPANION MODE: Warm, casual, brief (2-3 sentences). This is for pet_reply. 2. ANALYST MODE: Objective, clinical, and precise. This is for risk_level and insights.",
+    personaInstructions(distressAssessment.persona),
+    "Use Emotional Distress Level labels only (NONE / DISTRESS / CRITICAL). Never diagnose depression or suicide.",
+    "Trigger phrases are attention flags, not automatic confirmed crisis. If safety clarification is needed, ask calmly whether statements are literal.",
     "You only help with journaling, emotional reflection, mood support, school-life stress, coping, and gentle self-check-ins.",
     "Do not answer unrelated general knowledge, coding, shopping, entertainment, trivia, or off-topic requests.",
     "If the user goes off-topic, gently redirect them back to their journal reflection instead of answering the unrelated request.",
@@ -1228,7 +1303,7 @@ async function analyzeJournalConversation({
     "Risk rules:",
     "- Assess risk from the overall context and content of the journal entry. The generated summary may support the risk decision when it reflects the entry content, but Muni companion replies, suggested_tags, concern/theme tags, and topic labels must not create a risk flag by themselves.",
     "- Concern/theme tags like Anxiety, Stress, Academic problems, or Mental health are topic metadata and must not make an entry LOW or HIGH by themselves.",
-    "- HIGH only if there are signs of self-harm, suicidal intent, danger, abuse, or severe crisis.",
+    "- HIGH (compat) only after confirmed critical emotional distress / clear immediate danger — never from a bare keyword or hyperbole alone.",
     "- LOW only when the student's own words show strong distress, inability to cope/function, persistent intense panic, or urgent need for human support without clear immediate danger.",
     "- NONE for ordinary, mild, situational, brief, or manageable anxiety/stress/sadness when the student's own words do not show danger, inability to cope/function, persistent intense panic, or urgent need for human support.",
     "- When unsure between NONE and LOW, choose NONE.",
@@ -1285,7 +1360,12 @@ async function analyzeJournalConversation({
           ollama: ollamaLastFailure?.reason || "unknown",
         },
       });
-      return await unavailableConversationAnalysis(latestUserMessage, history);
+      return await unavailableConversationAnalysis(
+        latestUserMessage,
+        history,
+        previousDistressSignal,
+        previousSafetyStatus,
+      );
     }
 
     const parsedAnalysis = providerResult.parsed || {};
@@ -1302,22 +1382,47 @@ async function analyzeJournalConversation({
       riskEvidenceText,
     );
 
+    // Two-phase: triggers need clarification before CONFIRMED CRITICAL / crisis modal.
+    let finalRisk = distressAssessment.risk_level;
+    let finalReason = distressAssessment.admin_flag_reason || mergedRisk.admin_flag_reason;
+    if (
+      distressAssessment.distress_signal === "NONE" &&
+      normalizeRiskLevel(mergedRisk.risk_level) === "LOW"
+    ) {
+      finalRisk = "LOW";
+      finalReason = mergedRisk.admin_flag_reason;
+    }
+    if (distressAssessment.safety_status === "CONFIRMED_CRITICAL") {
+      finalRisk = "HIGH";
+    }
+    let petReply = normalizePetReply(
+      String(parsedAnalysis?.pet_reply || "").trim(),
+      latestUserMessage,
+    );
+    if (distressAssessment.force_pet_reply) {
+      petReply = distressAssessment.force_pet_reply;
+    }
+
     return {
-      pet_reply: normalizePetReply(
-        String(parsedAnalysis?.pet_reply || "").trim(),
-        latestUserMessage,
-      ),
+      pet_reply: petReply,
       summary: "",
       insights: normalizeInsights(parsedAnalysis?.insights),
-      risk_level: mergedRisk.risk_level,
-      admin_flag_reason: mergedRisk.admin_flag_reason,
+      risk_level: finalRisk,
+      admin_flag_reason: finalReason,
+      distress_signal: distressAssessment.distress_signal,
+      safety_status: distressAssessment.safety_status,
     };
   } catch (error) {
     console.error("analyzeJournalConversation failed.", {
       error: error instanceof Error ? error.message : String(error),
       latestUserMessage,
     });
-    return await unavailableConversationAnalysis(latestUserMessage, history);
+    return await unavailableConversationAnalysis(
+        latestUserMessage,
+        history,
+        previousDistressSignal,
+        previousSafetyStatus,
+      );
   }
 }
 
@@ -1326,7 +1431,16 @@ async function analyzeJournalEntryFinal({
   latestUserMessage,
   history,
   summaryFeedbackGuidance = [],
+  previousDistressSignal = "NONE",
+  previousSafetyStatus = "NOT_NEEDED",
 }) {
+  const distressAssessment = assessEmotionalDistress({
+    latestUserMessage,
+    history,
+    previousDistressSignal,
+    previousSafetyStatus,
+  });
+
   const systemInstruction = [
     "You are Muni, the Bawat Tala journaling companion for students.",
     "You are reviewing a completed journal entry to extract supportive reflections and safety signals.",
@@ -1369,7 +1483,7 @@ async function analyzeJournalEntryFinal({
     "Risk rules:",
     "- Assess risk from the overall context and content of the journal entry. The generated summary may support the risk decision when it reflects the entry content, but Muni companion replies, suggested_tags, concern/theme tags, and topic labels must not create a risk flag by themselves.",
     "- Concern/theme tags like Anxiety, Stress, Academic problems, or Mental health are topic metadata and must not make an entry LOW or HIGH by themselves.",
-    "- HIGH only if there are signs of self-harm, suicidal intent, danger, abuse, or severe crisis.",
+    "- HIGH (compat) only after confirmed critical emotional distress / clear immediate danger — never from a bare keyword or hyperbole alone.",
     "- LOW only when the student's own words show strong distress, inability to cope/function, persistent intense panic, or urgent need for human support without clear immediate danger.",
     "- NONE for ordinary, mild, situational, brief, or manageable anxiety/stress/sadness when the student's own words do not show danger, inability to cope/function, persistent intense panic, or urgent need for human support.",
     "- When unsure between NONE and LOW, choose NONE.",
@@ -1434,7 +1548,12 @@ async function analyzeJournalEntryFinal({
           ollama: ollamaLastFailure?.reason || "unknown",
         },
       });
-      return await unavailableFinalAnalysis(latestUserMessage, history);
+      return await unavailableFinalAnalysis(
+        latestUserMessage,
+        history,
+        previousDistressSignal,
+        previousSafetyStatus,
+      );
     }
 
     const studentText = getStudentJournalText(latestUserMessage, history);
@@ -1456,21 +1575,48 @@ async function analyzeJournalEntryFinal({
       riskEvidenceText,
     );
 
+    // Two-phase finish refine: clarification stays LOW unless CONFIRMED_CRITICAL
+    // (assessor already confirms when literal phrases exist across the transcript).
+    let finalRisk = distressAssessment.risk_level;
+    let finalReason =
+      distressAssessment.admin_flag_reason || mergedRisk.admin_flag_reason;
+    if (distressAssessment.safety_status === "CLARIFICATION_NEEDED") {
+      // Prefer keeping LOW unless assessor confirmed literal intent.
+      finalRisk = "LOW";
+    }
+    if (
+      distressAssessment.distress_signal === "NONE" &&
+      normalizeRiskLevel(mergedRisk.risk_level) === "LOW"
+    ) {
+      finalRisk = "LOW";
+      finalReason = mergedRisk.admin_flag_reason;
+    }
+    if (distressAssessment.safety_status === "CONFIRMED_CRITICAL") {
+      finalRisk = "HIGH";
+    }
+
     return {
       pet_reply: "",
       summary: summaryText,
       insights: normalizeInsights(parsed?.insights),
       ...sentimentAnalysis,
       suggested_tags: suggestedTags.length ? suggestedTags : fallbackTags,
-      risk_level: mergedRisk.risk_level,
-      admin_flag_reason: mergedRisk.admin_flag_reason,
+      risk_level: finalRisk,
+      admin_flag_reason: finalReason,
+      distress_signal: distressAssessment.distress_signal,
+      safety_status: distressAssessment.safety_status,
     };
   } catch (error) {
     console.error("analyzeJournalEntryFinal failed.", {
       error: error instanceof Error ? error.message : String(error),
       latestUserMessage,
     });
-    return await unavailableFinalAnalysis(latestUserMessage, history);
+    return await unavailableFinalAnalysis(
+        latestUserMessage,
+        history,
+        previousDistressSignal,
+        previousSafetyStatus,
+      );
   }
 }
 

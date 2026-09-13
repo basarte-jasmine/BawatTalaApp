@@ -36,8 +36,7 @@ import {
 import { EMOTIONS, getEmotionImageSource } from "../lib/emotions";
 import { getManilaTodayParts } from "../lib/manila-date";
 import {
-  hasResourceSupportAction,
-  isCrisisRisk,
+  needsCrisisTrioPrompt,
   needsFinishSupportPrompt,
 } from "../lib/risk-level";
 
@@ -508,12 +507,12 @@ export default function WriteEntryScreen() {
       !result.aiReply &&
         result.message === "Muni is temporarily unavailable. Please try again in a bit.",
     );
-    // Mid-chat: show crisis trio once; soft-dismiss suppresses until Finish Journal.
-    // DISMISSED is not a resource action - finish can still re-prompt via needsFinishSupportPrompt.
+    // Mid-chat: crisis trio ONLY on CONFIRMED_CRITICAL.
+    // CLARIFICATION_NEEDED: keep drafting; Muni reply already in messages stream — no trio.
+    // Soft-dismiss suppresses until Finish Journal; DISMISSED is not a resource action.
     if (
       result.entry &&
-      isCrisisRisk(result.entry.riskLevel) &&
-      !hasResourceSupportAction(result.entry) &&
+      needsCrisisTrioPrompt(result.entry, result.messages) &&
       !riskPromptSuppressedUntilFinish
     ) {
       setRiskPromptSuppressedUntilFinish(true);
@@ -764,8 +763,8 @@ export default function WriteEntryScreen() {
     if (result.messages) {
       setMessages(result.messages);
     }
-    // Finish Journal: re-prompt once if still crisis and no resource action (ignores DISMISSED).
-    if (needsFinishSupportPrompt(result.entry)) {
+    // Finish Journal: re-prompt once only if still CONFIRMED_CRITICAL and no resource action.
+    if (needsFinishSupportPrompt(result.entry, result.messages)) {
       setRiskModalRedirectEntryId(result.entry.id);
       setShowRiskModal(true);
       return;

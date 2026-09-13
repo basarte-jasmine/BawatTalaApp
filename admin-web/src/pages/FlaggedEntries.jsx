@@ -32,6 +32,13 @@ import {
   fetchAdminStudentFollowUps,
 } from "../lib/admin-api";
 import { maskStudentNumber, useAdminPreferences } from "../lib/admin-preferences";
+import {
+  getSafetyStatusDetailLabel,
+  getSafetyStatusLabel,
+  isClarificationSafetyStatus,
+  isConfirmedCriticalSafetyStatus,
+  normalizeSignal,
+} from "../lib/risk-labels";
 import { PROGRAM_OPTIONS } from "../lib/register-data";
 
 const CRITICAL = "#EF4444";
@@ -105,8 +112,18 @@ function isResolved(entry) {
 
 function getEntryFlag(entry) {
   if (isResolved(entry)) return "Resolved";
-  if (isCritical(entry)) return "Critical Case";
-  if (isSupportNeeded(entry) || String(entry?.supportResponse || "").toUpperCase() === "DECLINED" || String(entry?.studentAction || "").toUpperCase() === "DISMISSED") {
+  // Two-phase: CONFIRMED_CRITICAL is Critical Case; CLARIFICATION_NEEDED is not fully confirmed crisis.
+  if (isConfirmedCriticalSafetyStatus(entry)) return "Critical Case";
+  if (isCritical(entry) || normalizeSignal(entry) === "CRITICAL") {
+    if (isClarificationSafetyStatus(entry)) return "Support Needed";
+    return "Critical Case";
+  }
+  if (
+    isSupportNeeded(entry) ||
+    normalizeSignal(entry) === "DISTRESS" ||
+    String(entry?.supportResponse || "").toUpperCase() === "DECLINED" ||
+    String(entry?.studentAction || "").toUpperCase() === "DISMISSED"
+  ) {
     return "Support Needed";
   }
   return "Balanced";
@@ -115,9 +132,9 @@ function getEntryFlag(entry) {
 function entryMatchesFlag(entry, flag) {
   if (flag === "All") return true;
   if (flag === "Resolved") return isResolved(entry);
-  if (flag === "Critical Case") return !isResolved(entry) && isCritical(entry);
+  if (flag === "Critical Case") return !isResolved(entry) && getEntryFlag(entry) === "Critical Case";
   if (flag === "Support Needed") {
-    return !isResolved(entry) && (isSupportNeeded(entry) || String(entry?.supportResponse || "").toUpperCase() === "DECLINED" || String(entry?.studentAction || "").toUpperCase() === "DISMISSED");
+    return !isResolved(entry) && getEntryFlag(entry) === "Support Needed";
   }
   return false;
 }
@@ -251,11 +268,10 @@ function isFlaggedEntry(entry) {
 }
 
 function getGroupFlag(entries) {
-  if (entries.some((entry) => !isResolved(entry) && isCritical(entry))) return "Critical Case";
-  if (entries.some((entry) => !isResolved(entry) && (isSupportNeeded(entry) || String(entry.supportResponse || "").toUpperCase() === "DECLINED" || String(entry.studentAction || "").toUpperCase() === "DISMISSED"))) {
-    return "Support Needed";
-  }
-  if (entries.some(isResolved)) return "Resolved";
+  const list = Array.isArray(entries) ? entries : [];
+  if (list.some((entry) => !isResolved(entry) && getEntryFlag(entry) === "Critical Case")) return "Critical Case";
+  if (list.some((entry) => !isResolved(entry) && getEntryFlag(entry) === "Support Needed")) return "Support Needed";
+  if (list.some(isResolved)) return "Resolved";
   return "Balanced";
 }
 
@@ -428,7 +444,7 @@ function FlaggedStudentRow({ student, onReview, maskStudentNumbers = false }) {
         <div className="text-base font-black text-slate-900">{student.entries.length}</div>
         {student.crisisFlagsLast14Days >= 2 ? (
           <div className="mt-1 inline-block rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-[10px] font-bold text-[#EF4444]">
-            {student.crisisFlagsLast14Days} crisis flags in 14d
+            {student.crisisFlagsLast14Days} elevated well-being risk flags in 14d
           </div>
         ) : null}
       </td>
@@ -478,6 +494,21 @@ function EntryCard({ entry, isSelected, onSelect }) {
               title="Mid-chat / not finished — not the official Flagged case yet"
             >
               In progress
+            </span>
+          ) : null}
+          {getSafetyStatusLabel(entry) ? (
+            <span
+              className={
+                "rounded-md px-2 py-0.5 text-xs font-bold " +
+                (isClarificationSafetyStatus(entry)
+                  ? "border border-violet-200 bg-violet-50 text-violet-700"
+                  : isConfirmedCriticalSafetyStatus(entry)
+                    ? "border border-rose-200 bg-rose-50 text-rose-700"
+                    : "border border-amber-200 bg-amber-50 text-amber-700")
+              }
+              title={isClarificationSafetyStatus(entry) ? "Needs clarification — not a fully confirmed well-being risk yet" : isConfirmedCriticalSafetyStatus(entry) ? "Confirmed risk (Critical Case)" : "Well-being safety status"}
+            >
+              {getSafetyStatusLabel(entry)}
             </span>
           ) : null}
           <span
@@ -795,6 +826,12 @@ function FlagDetails({ entry, isEditing, editState, saving, onChange, onEdit, on
           <div>
             <div className="text-xs font-semibold text-slate-400">Risk Flag</div>
             <div className="mt-1 font-bold text-slate-800">{flag}</div>
+          </div>
+          <div>
+            <div className="text-xs font-semibold text-slate-400">Well-being status</div>
+            <div className="mt-1 font-bold text-slate-800">
+              {getSafetyStatusDetailLabel(entry) || getSafetyStatusLabel(entry) || (isFinishedEntry(entry) ? "—" : "In progress")}
+            </div>
           </div>
           <div>
             <div className="text-xs font-semibold text-slate-400">Primary Concern</div>
@@ -1437,7 +1474,7 @@ export default function FlaggedEntries({ onLogout, session }) {
     const currentLevel = normalizeRiskLevel(selectedEntry?.riskLevel);
     const nextLevel = normalizeRiskLevel(editState.riskLevel);
     if (["HIGH", "CRITICAL"].includes(currentLevel) && nextLevel === "LOW") {
-      setReviewError("Support Needed cannot overwrite an existing HIGH crisis flag.");
+      setReviewError("Support Needed cannot overwrite an existing elevated well-being risk flag.");
       return;
     }
     try {
