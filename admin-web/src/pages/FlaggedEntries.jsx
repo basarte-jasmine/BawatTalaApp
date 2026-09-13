@@ -27,6 +27,7 @@ import StudentAvatar from "../components/StudentAvatar";
 import {
   fetchAdminRiskFlags,
   fetchAdminStudentProfile,
+  openAdminStudentJournalEntry,
   sendAdminStudentNotification,
   updateAdminJournalFlag,
   fetchAdminStudentFollowUps,
@@ -46,11 +47,11 @@ const SUPPORT = "#FBBF24";
 const MANILA_TIMEZONE = "Asia/Manila";
 const CRISIS_FREQUENCY_WINDOW_DAYS = 14;
 
-const TABS = ["All", "Critical Case", "Support Needed", "Resolved"];
+const TABS = ["All", "Urgent", "Emotional Distress", "Resolved"];
 const TAB_META = {
   All: { icon: null },
-  "Critical Case": { icon: AlertTriangle, color: CRITICAL },
-  "Support Needed": { icon: ShieldAlert, color: SUPPORT },
+  "Urgent": { icon: AlertTriangle, color: CRITICAL },
+  "Emotional Distress": { icon: ShieldAlert, color: SUPPORT },
   Resolved: { icon: CheckCircle2, color: "#3FA34D" },
 };
 const DATE_FILTERS = [
@@ -59,8 +60,8 @@ const DATE_FILTERS = [
   { label: "Last 30 Days", value: "30" },
 ];
 const FLAG_OPTIONS = [
-  { label: "Critical Case", value: "HIGH" },
-  { label: "Support Needed", value: "LOW" },
+  { label: "Urgent", value: "HIGH" },
+  { label: "Emotional Distress", value: "LOW" },
   { label: "None", value: "NONE" },
 ];
 
@@ -112,11 +113,11 @@ function isResolved(entry) {
 
 function getEntryFlag(entry) {
   if (isResolved(entry)) return "Resolved";
-  // Two-phase: CONFIRMED_CRITICAL is Critical Case; CLARIFICATION_NEEDED is not fully confirmed crisis.
-  if (isConfirmedCriticalSafetyStatus(entry)) return "Critical Case";
+  // Two-phase: CONFIRMED_CRITICAL is Urgent; CLARIFICATION_NEEDED is not fully confirmed crisis.
+  if (isConfirmedCriticalSafetyStatus(entry)) return "Urgent";
   if (isCritical(entry) || normalizeSignal(entry) === "CRITICAL") {
-    if (isClarificationSafetyStatus(entry)) return "Support Needed";
-    return "Critical Case";
+    if (isClarificationSafetyStatus(entry)) return "Emotional Distress";
+    return "Urgent";
   }
   if (
     isSupportNeeded(entry) ||
@@ -124,7 +125,7 @@ function getEntryFlag(entry) {
     String(entry?.supportResponse || "").toUpperCase() === "DECLINED" ||
     String(entry?.studentAction || "").toUpperCase() === "DISMISSED"
   ) {
-    return "Support Needed";
+    return "Emotional Distress";
   }
   return "Balanced";
 }
@@ -132,9 +133,9 @@ function getEntryFlag(entry) {
 function entryMatchesFlag(entry, flag) {
   if (flag === "All") return true;
   if (flag === "Resolved") return isResolved(entry);
-  if (flag === "Critical Case") return !isResolved(entry) && getEntryFlag(entry) === "Critical Case";
-  if (flag === "Support Needed") {
-    return !isResolved(entry) && getEntryFlag(entry) === "Support Needed";
+  if (flag === "Urgent") return !isResolved(entry) && getEntryFlag(entry) === "Urgent";
+  if (flag === "Emotional Distress") {
+    return !isResolved(entry) && getEntryFlag(entry) === "Emotional Distress";
   }
   return false;
 }
@@ -145,8 +146,8 @@ function studentMatchesFlag(student, flag) {
 }
 
 function flagColor(flag) {
-  if (flag === "Critical Case") return CRITICAL;
-  if (flag === "Support Needed") return SUPPORT;
+  if (flag === "Urgent") return CRITICAL;
+  if (flag === "Emotional Distress") return SUPPORT;
   if (flag === "Resolved") return "#3FA34D";
   return "#94A3B8";
 }
@@ -269,8 +270,8 @@ function isFlaggedEntry(entry) {
 
 function getGroupFlag(entries) {
   const list = Array.isArray(entries) ? entries : [];
-  if (list.some((entry) => !isResolved(entry) && getEntryFlag(entry) === "Critical Case")) return "Critical Case";
-  if (list.some((entry) => !isResolved(entry) && getEntryFlag(entry) === "Support Needed")) return "Support Needed";
+  if (list.some((entry) => !isResolved(entry) && getEntryFlag(entry) === "Urgent")) return "Urgent";
+  if (list.some((entry) => !isResolved(entry) && getEntryFlag(entry) === "Emotional Distress")) return "Emotional Distress";
   if (list.some(isResolved)) return "Resolved";
   return "Balanced";
 }
@@ -339,7 +340,7 @@ function groupEntriesByStudent(entries) {
 
 function FlagBadge({ flag }) {
   const color = flagColor(flag);
-  const Icon = flag === "Resolved" ? CheckCircle2 : flag === "Critical Case" ? AlertTriangle : ShieldAlert;
+  const Icon = flag === "Resolved" ? CheckCircle2 : flag === "Urgent" ? AlertTriangle : ShieldAlert;
 
   return (
     <span className="inline-flex items-center gap-1.5 text-sm font-bold" style={{ color }}>
@@ -350,11 +351,11 @@ function FlagBadge({ flag }) {
 }
 
 function FlagPill({ flag }) {
-  const Icon = flag === "Resolved" ? CheckCircle2 : flag === "Critical Case" ? AlertTriangle : ShieldAlert;
+  const Icon = flag === "Resolved" ? CheckCircle2 : flag === "Urgent" ? AlertTriangle : ShieldAlert;
   const className =
-    flag === "Critical Case"
+    flag === "Urgent"
       ? "bg-[#EF4444] text-white"
-      : flag === "Support Needed"
+      : flag === "Emotional Distress"
         ? "bg-[#FBBF24] text-white"
         : flag === "Resolved"
           ? "bg-[#3FA34D] text-white"
@@ -444,7 +445,7 @@ function FlaggedStudentRow({ student, onReview, maskStudentNumbers = false }) {
         <div className="text-base font-black text-slate-900">{student.entries.length}</div>
         {student.crisisFlagsLast14Days >= 2 ? (
           <div className="mt-1 inline-block rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-[10px] font-bold text-[#EF4444]">
-            {student.crisisFlagsLast14Days} elevated well-being risk flags in 14d
+            {student.crisisFlagsLast14Days} elevated urgent flags in 14d
           </div>
         ) : null}
       </td>
@@ -469,6 +470,9 @@ function FlaggedStudentRow({ student, onReview, maskStudentNumbers = false }) {
 function EntryCard({ entry, isSelected, onSelect }) {
   const flag = getEntryFlag(entry);
   const actionLabel = getStudentActionLabel(entry);
+  const isFinished = isFinishedEntry(entry);
+  const resolved = isResolved(entry);
+  const safetyLabel = getSafetyStatusLabel(entry);
 
   return (
     <button
@@ -488,38 +492,23 @@ function EntryCard({ entry, isSelected, onSelect }) {
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-1.5">
-          {!isFinishedEntry(entry) ? (
+          {!isFinished ? (
             <span
-              className="rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-bold text-sky-700"
+              className="rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700"
               title="Mid-chat / not finished — not the official Flagged case yet"
             >
               In progress
             </span>
           ) : null}
-          {getSafetyStatusLabel(entry) ? (
-            <span
-              className={
-                "rounded-md px-2 py-0.5 text-xs font-bold " +
-                (isClarificationSafetyStatus(entry)
-                  ? "border border-violet-200 bg-violet-50 text-violet-700"
-                  : isConfirmedCriticalSafetyStatus(entry)
-                    ? "border border-rose-200 bg-rose-50 text-rose-700"
-                    : "border border-amber-200 bg-amber-50 text-amber-700")
-              }
-              title={isClarificationSafetyStatus(entry) ? "Needs clarification — not a fully confirmed well-being risk yet" : isConfirmedCriticalSafetyStatus(entry) ? "Confirmed risk (Critical Case)" : "Well-being safety status"}
-            >
-              {getSafetyStatusLabel(entry)}
-            </span>
-          ) : null}
           <span
             className={
-              "rounded-md px-2 py-0.5 text-xs font-bold " +
-              (isResolved(entry)
+              "rounded-md px-2 py-0.5 text-[11px] font-bold " +
+              (resolved
                 ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
                 : "border border-amber-200 bg-amber-50 text-amber-700")
             }
           >
-            {isResolved(entry) ? "Resolved" : "Pending"}
+            {resolved ? "Resolved" : "Pending"}
           </span>
         </div>
       </div>
@@ -535,14 +524,19 @@ function EntryCard({ entry, isSelected, onSelect }) {
           Intervention: <span className="text-slate-800">{actionLabel}</span>
         </div>
       ) : null}
-      <div className="mt-3">
+      <div className="mt-3 flex items-center justify-between">
         <FlagPill flag={flag} />
+        {safetyLabel && safetyLabel !== flag ? (
+          <span className="text-[11px] font-medium text-slate-500">
+            {safetyLabel}
+          </span>
+        ) : null}
       </div>
     </button>
   );
 }
 
-function JournalEntryViewer({ entry }) {
+function JournalEntryViewer({ entry, onOpenJournal }) {
   const visibleMessages = Array.isArray(entry?.messages) ? entry.messages.filter((message) => message.text) : [];
 
   if (visibleMessages.length) {
@@ -583,11 +577,21 @@ function JournalEntryViewer({ entry }) {
 
   if (entry?.canOpenJournal) {
     return (
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800">
+      <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800">
         <div className="flex items-start gap-2">
-          <Lock className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>Journal Lock is on for this student. Conversation stays locked by default — summary and risk details only.</span>
+          <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <span>Journal Lock is on for this student. Conversation stays locked by default — summary and risk details remain available until the Journal Lock PIN is entered.</span>
         </div>
+        {onOpenJournal ? (
+          <button
+            type="button"
+            onClick={() => onOpenJournal(entry)}
+            className="inline-flex items-center gap-2 rounded-xl bg-[#229365] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1b7b54]"
+          >
+            <Lock className="h-4 w-4" />
+            Enter PIN to Unlock Journal
+          </button>
+        ) : null}
       </div>
     );
   }
@@ -672,8 +676,8 @@ function FlagHistory({ entry }) {
 
   function formatRiskName(level) {
     const norm = normalizeRiskLevel(level);
-    if (norm === "HIGH" || norm === "CRITICAL") return "Critical Case";
-    if (norm === "LOW" || norm === "MEDIUM" || norm === "MODERATE" || norm === "DISTRESSED") return "Support Needed";
+    if (norm === "HIGH" || norm === "CRITICAL") return "Urgent";
+    if (norm === "LOW" || norm === "MEDIUM" || norm === "MODERATE" || norm === "DISTRESSED") return "Emotional Distress";
     if (norm === "NONE") return "None";
     return norm;
   }
@@ -873,6 +877,7 @@ function ReviewModal({
   onViewProfile,
   onMarkResolved,
   onRemoveFlag,
+  onOpenJournal,
   maskStudentNumbers = false,
   followUpInfo = null,
 }) {
@@ -928,7 +933,7 @@ function ReviewModal({
               <>
                 <div>
                   <h3 className="text-sm font-bold text-slate-800 mb-2.5">Flagged Journal Entry</h3>
-                  <JournalEntryViewer entry={selectedEntry} />
+                  <JournalEntryViewer entry={selectedEntry} onOpenJournal={onOpenJournal} />
                 </div>
 
                 <SummaryNotes entry={selectedEntry} />
@@ -1231,6 +1236,10 @@ export default function FlaggedEntries({ onLogout, session }) {
   const [resolveAction, setResolveAction] = useState("");
   const [resolveNote, setResolveNote] = useState("");
   const [removeCandidate, setRemoveCandidate] = useState(null);
+  const [journalUnlockTarget, setJournalUnlockTarget] = useState(null);
+  const [journalUnlockPin, setJournalUnlockPin] = useState("");
+  const [journalUnlockError, setJournalUnlockError] = useState("");
+  const [journalUnlockSaving, setJournalUnlockSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -1261,7 +1270,7 @@ export default function FlaggedEntries({ onLogout, session }) {
   }, [entries]);
 
   const counts = useMemo(() => {
-    const base = { All: groupedStudents.length, "Critical Case": 0, "Support Needed": 0, Resolved: 0 };
+    const base = { All: groupedStudents.length, "Urgent": 0, "Emotional Distress": 0, Resolved: 0 };
     groupedStudents.forEach((student) => {
       TABS.filter((tab) => tab !== "All").forEach((tab) => {
         if (studentMatchesFlag(student, tab)) {
@@ -1273,7 +1282,7 @@ export default function FlaggedEntries({ onLogout, session }) {
   }, [groupedStudents]);
 
   const reviewCounts = useMemo(() => {
-    const base = { All: reviewEntries.length, "Critical Case": 0, "Support Needed": 0, Resolved: 0 };
+    const base = { All: reviewEntries.length, "Urgent": 0, "Emotional Distress": 0, Resolved: 0 };
     reviewEntries.forEach((entry) => {
       TABS.filter((tab) => tab !== "All").forEach((tab) => {
         if (entryMatchesFlag(entry, tab)) {
@@ -1474,7 +1483,7 @@ export default function FlaggedEntries({ onLogout, session }) {
     const currentLevel = normalizeRiskLevel(selectedEntry?.riskLevel);
     const nextLevel = normalizeRiskLevel(editState.riskLevel);
     if (["HIGH", "CRITICAL"].includes(currentLevel) && nextLevel === "LOW") {
-      setReviewError("Support Needed cannot overwrite an existing elevated well-being risk flag.");
+      setReviewError("Emotional Distress cannot overwrite an existing Urgent flag.");
       return;
     }
     try {
@@ -1556,6 +1565,34 @@ export default function FlaggedEntries({ onLogout, session }) {
     } finally {
       setSavingFlag(false);
       setRemoveCandidate(null);
+    }
+  }
+
+  async function handleOpenStudentJournal() {
+    const studentNumber = selectedStudent?.studentNumber || journalUnlockTarget?.studentNumber;
+    if (!journalUnlockTarget?.id || !studentNumber) return;
+    if (String(journalUnlockPin || "").length < 4) {
+      setJournalUnlockError("Enter the 4-digit Journal Lock PIN.");
+      return;
+    }
+    try {
+      setJournalUnlockSaving(true);
+      const data = await openAdminStudentJournalEntry(
+        studentNumber,
+        journalUnlockTarget.id,
+        journalUnlockPin,
+      );
+      if (data?.entry) {
+        reconcileUpdatedEntry(data.entry);
+      }
+      setJournalUnlockTarget(null);
+      setJournalUnlockPin("");
+      setJournalUnlockError("");
+      setSuccessMessage("Journal unlocked successfully.");
+    } catch (error) {
+      setJournalUnlockError(error instanceof Error ? error.message : "Failed to open journal.");
+    } finally {
+      setJournalUnlockSaving(false);
     }
   }
 
@@ -1726,8 +1763,35 @@ export default function FlaggedEntries({ onLogout, session }) {
           setResolveCandidate(selectedEntry);
         }}
         onRemoveFlag={() => setRemoveCandidate(selectedEntry)}
+        onOpenJournal={(targetEntry) => {
+          setJournalUnlockPin("");
+          setJournalUnlockError("");
+          setJournalUnlockTarget(targetEntry);
+        }}
         maskStudentNumbers={shouldMaskStudentNumbers}
         followUpInfo={selectedStudent ? followUpsByStudent[selectedStudent.studentNumber] : null}
+      />
+
+      <ConfirmActionModal
+        isOpen={Boolean(journalUnlockTarget)}
+        onClose={() => {
+          if (journalUnlockSaving) return;
+          setJournalUnlockTarget(null);
+          setJournalUnlockPin("");
+          setJournalUnlockError("");
+        }}
+        onConfirm={() => void handleOpenStudentJournal()}
+        title="Open Protected Journal"
+        description={journalUnlockError || "Enter the student's 4-digit Journal Lock PIN to view this protected journal conversation."}
+        confirmLabel={journalUnlockSaving ? "Opening..." : "Open Journal"}
+        inputLabel="Journal Lock PIN"
+        inputRequired
+        inputType="pin"
+        inputValue={journalUnlockPin}
+        onInputChange={(value) => {
+          setJournalUnlockError("");
+          setJournalUnlockPin(String(value || "").replace(/[^0-9]/g, "").slice(0, 4));
+        }}
       />
 
 

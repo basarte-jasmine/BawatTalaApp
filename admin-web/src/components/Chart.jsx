@@ -14,10 +14,10 @@ export default function Chart({ title, data = [] }) {
                   {item.value}
                 </span>
               </div>
-              <div className="w-full bg-neutral-200 rounded-full h-2 overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-primary-mint to-primary-lime transition-all duration-300"
-                  style={{ width: `${(item.value / maxValue) * 100}%` }}
+             <div className="w-full bg-neutral-200 rounded-full h-2 overflow-hidden">
+               <div
+                  className="h-full bg-gradient-to-r from-emerald-500 to-[#229365] rounded-full transition-all duration-300"
+                 style={{ width: `${(item.value / maxValue) * 100}%` }}
                 ></div>
               </div>
             </div>

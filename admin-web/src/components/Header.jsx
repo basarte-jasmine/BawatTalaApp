@@ -183,6 +183,16 @@ function getAdminNotificationTarget(item) {
     params.set("peer", peerCounselorId);
   }
 
+  const isAppointmentNotification =
+    Boolean(appointmentId || appointmentDate || String(item?.kind || "").toUpperCase().includes("APPOINTMENT") || route.includes("section=schedule"));
+
+  if (route.startsWith("/profile-settings") || isAppointmentNotification) {
+    if (supportType === "PEER" || peerCounselorId || String(item?.kind || "").toUpperCase().includes("PEER")) {
+      return params.toString() ? `/peer-counselors?${params.toString()}` : "/peer-counselors";
+    }
+    return params.toString() ? `/appointments?${params.toString()}` : "/appointments";
+  }
+
   if (route && route.startsWith("/")) {
     const separator = route.includes("?") ? "&" : "?";
     return params.toString() ? `${route}${separator}${params.toString()}` : route;
@@ -445,9 +455,9 @@ export default function Header({
       return undefined;
     }
 
+    setGlobalSearchLoading(true);
     const timeoutId = window.setTimeout(async () => {
       try {
-        setGlobalSearchLoading(true);
         const data = await fetchAdminGlobalSearch(query);
         setGlobalSearchResults({
           students: Array.isArray(data?.students) ? data.students : [],
@@ -462,7 +472,7 @@ export default function Header({
       } finally {
         setGlobalSearchLoading(false);
       }
-    }, 250);
+    }, 300);
 
     return () => window.clearTimeout(timeoutId);
   }, [globalSearchTerm, isSearchModalOpen]);

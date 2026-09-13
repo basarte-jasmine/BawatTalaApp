@@ -852,6 +852,7 @@ function journalEntryContentScore(entry: {
 
 function mergeJournalEntryLists<
   T extends {
+    createdAt?: string;
     entryDate: string;
     id: string;
     preview?: string;
@@ -867,7 +868,10 @@ function mergeJournalEntryLists<
       entriesById.set(entry.id, entry);
     }
   }
-  return Array.from(entriesById.values()).sort((a, b) => b.id.localeCompare(a.id));
+  // Sort newest first by actual creation time; UUID ids are not chronological.
+  return Array.from(entriesById.values()).sort(
+    (a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "") || b.id.localeCompare(a.id),
+  );
 }
 
 async function getLocalFinishedJournalEntries(studentNumber: string) {
@@ -1386,6 +1390,24 @@ export async function warmBackend(): Promise<void> {
   }
 
   await backendWarmupPromise;
+}
+
+// Quick reachability probe used to pick the default journaling mode offline.
+export async function isBackendReachable(timeoutMs = 2500): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const response = await fetch(`${API_BASE_URL}/health`, {
+      credentials: "include",
+      headers: buildHeaders(),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    // Any HTTP answer means the backend is reachable; only network failures fall through.
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function syncOfflineStudentData(studentNumber: string): Promise<ApiResult> {

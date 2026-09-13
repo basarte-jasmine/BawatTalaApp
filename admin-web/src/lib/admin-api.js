@@ -360,9 +360,10 @@ export async function sendAdminStudentNotification(studentNumber, payload) {
   });
 }
 
-export async function deleteAdminStudent(studentNumber) {
+export async function deleteAdminStudent(studentNumber, password = "") {
   return request(`/api/admin/students/${encodeURIComponent(studentNumber)}`, {
     method: "DELETE",
+    body: JSON.stringify({ password: String(password || "") }),
   });
 }
 

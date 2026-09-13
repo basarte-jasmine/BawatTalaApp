@@ -1,7 +1,8 @@
  import { useEffect, useMemo, useState } from "react";
  import { useSearchParams } from "react-router-dom";
- import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Edit2, Plus, RefreshCw, Trash2, UserPlus, Users, X } from "lucide-react";
- import ConfirmActionModal from "../components/ConfirmActionModal";
+import { CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Edit2, Filter, Lock, Plus, RefreshCw, Search, Trash2, UserPlus, Users, X } from "lucide-react";
+import ConfirmActionModal from "../components/ConfirmActionModal";
+import Modal from "../components/Modal";
 import Layout from "../components/Layout";
 import {
   buildAvailabilityMap,
@@ -125,12 +126,15 @@ export default function CalendarScheduling({
   const [pendingConfirmAppointmentId, setPendingConfirmAppointmentId] = useState("");
   const [pendingDeclineAppointmentId, setPendingDeclineAppointmentId] = useState("");
   const [dayAvailabilityAction, setDayAvailabilityAction] = useState(null);
+  const [availabilityMode, setAvailabilityMode] = useState("override");
   const [peerForm, setPeerForm] = useState(PEER_FORM_INITIAL_STATE);
   const [editingPeerCounselorId, setEditingPeerCounselorId] = useState("");
   const [peerFormError, setPeerFormError] = useState("");
   const [isSavingPeerCounselor, setIsSavingPeerCounselor] = useState(false);
   const [pendingDeletePeerCounselor, setPendingDeletePeerCounselor] = useState(null);
   const [isPeerFormModalOpen, setIsPeerFormModalOpen] = useState(false);
+  const [peerSearchQuery, setPeerSearchQuery] = useState("");
+  const [peerProgramFilter, setPeerProgramFilter] = useState("ALL");
 
   useEffect(() => {
     const monthFromDate = new Date(`${selectedDate}T12:00:00+08:00`);
@@ -198,6 +202,18 @@ export default function CalendarScheduling({
   const peerDirectory = isPeerSupport
     ? (Array.isArray(overview?.peerCounselors) && overview.peerCounselors.length ? overview.peerCounselors : counselors)
     : [];
+  const filteredPeerDirectory = useMemo(() => {
+    return peerDirectory.filter((peer) => {
+      if (peerProgramFilter !== "ALL" && peer.program !== peerProgramFilter) return false;
+      if (!peerSearchQuery.trim()) return true;
+      const q = peerSearchQuery.trim().toLowerCase();
+      const name = String(peer.fullName || "").toLowerCase();
+      const num = String(peer.studentNumber || "").toLowerCase();
+      const email = String(peer.email || "").toLowerCase();
+      const prog = String(peer.program || "").toLowerCase();
+      return name.includes(q) || num.includes(q) || email.includes(q) || prog.includes(q);
+    });
+  }, [peerDirectory, peerProgramFilter, peerSearchQuery]);
   const selectedCounselor = counselors.find((item) => item.id === selectedCounselorId) || counselors[0] || null;
   const availability = Array.isArray(overview?.availability) ? overview.availability : [];
   const availabilityOverrides = Array.isArray(overview?.availabilityOverrides) ? overview.availabilityOverrides : [];
@@ -373,6 +389,7 @@ export default function CalendarScheduling({
     const requestedDate = searchParams.get("date") || "";
     if (/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
       setSelectedDate(requestedDate);
+      setSelectedMonth(getManilaMonthDate(new Date(`${requestedDate}T12:00:00+08:00`)));
     }
   }, [searchParams]);
 
@@ -465,8 +482,10 @@ export default function CalendarScheduling({
         isEnabled: dayAvailabilityAction.nextEnabled,
         supportType: normalizedSupportType,
         targetDate: dayAvailabilityAction.targetDate,
+        mode: availabilityMode,
       });
       setDayAvailabilityAction(null);
+      setAvailabilityMode("override");
       await refreshOverview();
       setErrorMessage("");
     } catch (error) {
@@ -998,16 +1017,61 @@ export default function CalendarScheduling({
                       <p className="mt-1 text-sm text-slate-500">Peer counselors, invite status, and scheduling controls in one list.</p>
                     </div>
                   </div>
-                  {isHead ? (
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={handleOpenAddPeerCounselor}
-                      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#3DA35D] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#2f8c4d]"
+                      disabled={!isHead}
+                      onClick={isHead ? handleOpenAddPeerCounselor : undefined}
+                      title={!isHead ? "Only the Head Counselor can create, edit, or delete peer counselor accounts." : undefined}
+                      className={`inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold shadow-sm transition ${
+                        isHead
+                          ? "bg-[#3DA35D] text-white hover:bg-[#2f8c4d]"
+                          : "cursor-not-allowed bg-slate-100 text-slate-400"
+                      }`}
                     >
+                      {!isHead ? <Lock className="h-4 w-4" /> : null}
                       <UserPlus className="h-4 w-4" />
                       Add Peer Counselor
                     </button>
-                  ) : null}
+                  </div>
+                </div>
+
+                <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-2xl bg-slate-50/80 p-2.5 border border-slate-200/80">
+                  <div className="relative flex-1 min-w-[240px]">
+                    <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search by name, student no., or email..."
+                      value={peerSearchQuery}
+                      onChange={(e) => setPeerSearchQuery(e.target.value)}
+                      className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-9 text-xs sm:text-sm font-medium text-slate-800 placeholder:text-slate-400 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                    />
+                    {peerSearchQuery ? (
+                      <button
+                        type="button"
+                        onClick={() => setPeerSearchQuery("")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                        aria-label="Clear search"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="relative shrink-0 sm:w-64">
+                    <select
+                      value={peerProgramFilter}
+                      onChange={(e) => setPeerProgramFilter(e.target.value)}
+                      className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-3.5 pr-9 text-xs sm:text-sm font-semibold text-slate-700 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 cursor-pointer"
+                    >
+                      <option value="ALL">All Academic Programs</option>
+                      {PROGRAM_OPTIONS.map((program) => (
+                        <option key={program} value={program}>
+                          {program}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  </div>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -1023,8 +1087,8 @@ export default function CalendarScheduling({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {peerDirectory.length ? (
-                        peerDirectory.map((peer) => (
+                      {filteredPeerDirectory.length ? (
+                        filteredPeerDirectory.map((peer) => (
                           <tr key={peer.id} className="hover:bg-slate-50">
                             <td className="px-4 py-4">
                               <div className="flex items-center gap-3">
@@ -1071,6 +1135,7 @@ export default function CalendarScheduling({
                                       onClick={() => handleEditPeerCounselor(peer)}
                                       className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-emerald-700"
                                       aria-label={`Edit ${peer.fullName}`}
+                                      title="Edit peer counselor"
                                     >
                                       <Edit2 className="h-4 w-4" />
                                     </button>
@@ -1079,11 +1144,19 @@ export default function CalendarScheduling({
                                       onClick={() => setPendingDeletePeerCounselor(peer)}
                                       className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-red-600"
                                       aria-label={`Remove ${peer.fullName}`}
+                                      title="Remove peer counselor"
                                     >
                                       <Trash2 className="h-4 w-4" />
                                     </button>
                                   </>
-                                ) : null}
+                                ) : (
+                                  <span
+                                    className="cursor-help rounded-lg p-2 text-slate-300 transition"
+                                    title="Only Head Counselors have permission to edit or delete peer counselors."
+                                  >
+                                    <Lock className="h-4 w-4" />
+                                  </span>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -1091,7 +1164,7 @@ export default function CalendarScheduling({
                       ) : (
                         <tr>
                           <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-500">
-                            No peer counselors have been added yet.
+                            No peer counselors matched the current filter.
                           </td>
                         </tr>
                       )}
@@ -1982,18 +2055,84 @@ export default function CalendarScheduling({
         confirmTone="rose"
       />
 
-      <ConfirmActionModal
-        isOpen={Boolean(dayAvailabilityAction)}
-        onClose={() => setDayAvailabilityAction(null)}
-        onConfirm={() => void handleConfirmDayAvailabilityToggle()}
-        title={dayAvailabilityAction?.nextEnabled ? "Set Day Available" : "Mark Day Off"}
-        description={
-          dayAvailabilityAction?.nextEnabled
-            ? `Make ${dayAvailabilityAction?.dayLabel} available again for ${dayAvailabilityAction?.counselorName || "counselor"} on ${formatDisplayDate(dayAvailabilityAction?.targetDate || selectedDate)}?`
-            : `Mark ${dayAvailabilityAction?.dayLabel} off for ${dayAvailabilityAction?.counselorName || "counselor"} on ${formatDisplayDate(dayAvailabilityAction?.targetDate || selectedDate)}? All appointments on that specific date will be cancelled, and every hour for that date will become unavailable.`
-        }
-        confirmTone={dayAvailabilityAction?.nextEnabled ? "emerald" : "rose"}
-      />
+      {dayAvailabilityAction ? (
+        <Modal
+          isOpen={Boolean(dayAvailabilityAction)}
+          onClose={() => {
+            setDayAvailabilityAction(null);
+            setAvailabilityMode("override");
+          }}
+          title={dayAvailabilityAction.nextEnabled ? "Set Day Available" : "Mark Day Off"}
+          maxWidth="max-w-md"
+        >
+          <div className="space-y-4">
+            <p className="text-sm leading-6 text-slate-600">
+              {dayAvailabilityAction.nextEnabled
+                ? `Make ${dayAvailabilityAction.dayLabel} (${formatDisplayDate(dayAvailabilityAction.targetDate || selectedDate)}) available for ${dayAvailabilityAction.counselorName || "counselor"}?`
+                : `Mark ${dayAvailabilityAction.dayLabel} (${formatDisplayDate(dayAvailabilityAction.targetDate || selectedDate)}) off for ${dayAvailabilityAction.counselorName || "counselor"}?`}
+            </p>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">
+                Apply Availability Change To:
+              </label>
+              <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1">
+                <button
+                  type="button"
+                  onClick={() => setAvailabilityMode("override")}
+                  className={`rounded-lg py-2 text-xs font-bold transition ${
+                    availabilityMode === "override"
+                      ? "bg-white text-slate-900 shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  This Date Only (Override)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAvailabilityMode("recurring")}
+                  className={`rounded-lg py-2 text-xs font-bold transition ${
+                    availabilityMode === "recurring"
+                      ? "bg-white text-slate-900 shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Every Week (Recurring)
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                {availabilityMode === "override"
+                  ? `Applies only to ${formatDisplayDate(dayAvailabilityAction.targetDate || selectedDate)} as a specific date override.`
+                  : `Applies to every ${dayAvailabilityAction.dayLabel} across all upcoming weeks as a recurring weekly schedule.`}
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setDayAvailabilityAction(null);
+                  setAvailabilityMode("override");
+                }}
+                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleConfirmDayAvailabilityToggle()}
+                className={`rounded-xl px-5 py-2.5 text-sm font-bold text-white shadow-sm transition ${
+                  dayAvailabilityAction.nextEnabled
+                    ? "bg-emerald-600 hover:bg-emerald-700"
+                    : "bg-rose-600 hover:bg-rose-700"
+                }`}
+              >
+                {dayAvailabilityAction.nextEnabled ? "Set Available" : "Mark Off"}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
     </Layout>
   );
 }

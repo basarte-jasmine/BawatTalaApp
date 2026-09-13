@@ -3,7 +3,9 @@ import { useEffect } from "react";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
 import { StatusBar } from "expo-status-bar";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import {
+  LogBox,
   StyleSheet,
   Text,
   TextInput,
@@ -23,6 +25,7 @@ const APP_MAX_WIDTH = 412;
 const DESKTOP_FRAME_BREAKPOINT = 768;
 
 void SplashScreen.preventAutoHideAsync();
+LogBox.ignoreLogs(["expo-notifications: Android Push notifications"]);
 
 let textDefaultsApplied = false;
 type ComponentWithDefaults<Props> = {
@@ -97,7 +100,8 @@ export default function RootLayout() {
   const useDesktopFrame = width >= DESKTOP_FRAME_BREAKPOINT;
 
   return (
-    <View style={[styles.root, useDesktopFrame && styles.desktopRoot]}>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <View style={[styles.root, useDesktopFrame && styles.desktopRoot]}>
       <StatusBar style="dark" backgroundColor="#F7FAF4" />
       <View style={[styles.frame, useDesktopFrame && styles.desktopFrame]}>
         <AuthSessionProvider>
@@ -115,6 +119,7 @@ export default function RootLayout() {
         </AuthSessionProvider>
       </View>
     </View>
+    </GestureHandlerRootView>
   );
 }
 

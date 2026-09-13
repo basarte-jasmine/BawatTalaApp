@@ -1014,12 +1014,15 @@ export default function MuniVoiceScreen() {
     setStatusMessage("Analyzing and saving your voice journal...");
 
     try {
+      const prioritizedPrimaryConcern =
+        finalTags.find((tag) => CONCERN_TAG_OPTIONS.includes(tag) || INTERPERSONAL_RELATIONSHIP_TAGS.includes(tag)) ||
+        finalTags[0];
       const finishResult = await finishJournalEntry({
         concernTags: finalTags,
         entryId: entry.id,
         forceAnalyze: true,
         messages: messagesRef.current,
-        primaryConcern: finalTags[0],
+        primaryConcern: prioritizedPrimaryConcern,
         studentNumber: user.studentNumber });
 
       if (!finishResult.ok) {
@@ -1038,7 +1041,7 @@ export default function MuniVoiceScreen() {
       }
       setStatusMessage("Voice journal saved.");
       // Finish Journal: re-prompt once only if still CONFIRMED_CRITICAL and no resource action.
-      if (needsFinishSupportPrompt(finishResult.entry, finishResult.messages)) {
+      if (finishResult.entry && needsFinishSupportPrompt(finishResult.entry, finishResult.messages)) {
         setRiskModalRedirectEntryId(finishResult.entry.id);
         setShowRiskModal(true);
         return;

@@ -1428,6 +1428,7 @@ router.post("/message", asyncHandler(async (req, res) => {
                primary_concern, concern_tags,
                ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
+               distress_signal, safety_status,
                created_at, updated_at
         from public.journal_entries
         where id = $1 and student_number = $2
@@ -1472,6 +1473,7 @@ router.post("/message", asyncHandler(async (req, res) => {
                   primary_concern, concern_tags,
                   ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                   student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
+                  distress_signal, safety_status,
                   created_at, updated_at
       `,
       [entry.id, aiEnabled],

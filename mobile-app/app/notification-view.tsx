@@ -1,7 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useAuthSession } from "../lib/auth-session";
+import { fetchStudentNotifications } from "../lib/backend-api";
 import {
   getNotificationDetailTitle,
   getNotificationFallbackRoute,
@@ -10,35 +13,79 @@ import {
 const TALA_IMAGE = require("../assets/images/Tala_Star.png");
 
 export default function NotificationViewScreen() {
-  const { createdAt, kind, message, timeLabel, title } = useLocalSearchParams<{
+  const { id, createdAt, kind, message, timeLabel, title } = useLocalSearchParams<{
+    id?: string;
     createdAt?: string;
     kind?: string;
     message?: string;
     timeLabel?: string;
     title?: string;
   }>();
+  const { user } = useAuthSession();
+  const [loadedItem, setLoadedItem] = useState<{
+    createdAt?: string;
+    kind?: string;
+    message?: string;
+    timeLabel?: string;
+    title?: string;
+  } | null>(null);
+  const [loading, setLoading] = useState(!message && Boolean(id));
 
-  const detailTitle = getNotificationDetailTitle(kind);
+  useEffect(() => {
+    if (message || !id || !user?.studentNumber) return;
+    let isMounted = true;
+    async function loadNotification() {
+      try {
+        setLoading(true);
+        const res = await fetchStudentNotifications(user.studentNumber);
+        if (!isMounted) return;
+        if (res.ok && Array.isArray(res.notifications)) {
+          const found = res.notifications.find((n) => n.id === id);
+          if (found) {
+            setLoadedItem({
+              createdAt: found.createdAt,
+              kind: found.kind,
+              message: found.message,
+              timeLabel: found.timeLabel,
+              title: found.title,
+            });
+          }
+        }
+      } catch {} finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+    void loadNotification();
+    return () => { isMounted = false; };
+  }, [id, message, user?.studentNumber]);
+
+  const activeKind = loadedItem?.kind || kind;
+  const activeTitle = loadedItem?.title || title;
+  const activeMessage = loadedItem?.message || message;
+  const activeCreatedAt = loadedItem?.createdAt || createdAt;
+  const activeTimeLabel = loadedItem?.timeLabel || timeLabel;
+
+  const detailTitle = getNotificationDetailTitle(activeKind);
   const bodyLabel = detailTitle === "Message" ? "Message body" : "Update details";
-  const visual = getNotificationVisual(kind || "");
+  const visual = getNotificationVisual(activeKind || "");
 
   const handleBack = () => {
     if (router.canGoBack()) {
       router.back();
       return;
     }
-    router.replace(getNotificationFallbackRoute(kind));
+    router.replace(getNotificationFallbackRoute(activeKind));
   };
 
-  const formattedCreatedAt = createdAt
-    ? new Date(createdAt).toLocaleString("en-US", {
+  const formattedCreatedAt = activeCreatedAt
+    ? new Date(activeCreatedAt).toLocaleString("en-US", {
         month: "long",
         day: "numeric",
         year: "numeric",
         hour: "numeric",
         minute: "2-digit",
         hour12: true })
-    : timeLabel || "";
+    : activeTimeLabel || "";
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
@@ -51,6 +98,11 @@ export default function NotificationViewScreen() {
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {loading ? (
+          <View style={{ paddingVertical: 40, alignItems: "center" }}>
+            <ActivityIndicator size="small" color="#229365" />
+          </View>
+        ) : (
         <View style={styles.heroCard}>
           <View style={[styles.heroIconBubble, { backgroundColor: visual.chip }]}>
             {visual.usesTalaLogo ? (
@@ -64,14 +116,15 @@ export default function NotificationViewScreen() {
             <View style={[styles.kindChip, { backgroundColor: visual.chip }]}>
               <Text style={[styles.kindChipText, { color: visual.accent }]}>{visual.label}</Text>
             </View>
-            <Text style={styles.title}>{title || detailTitle}</Text>
+            <Text style={styles.title}>{activeTitle || detailTitle}</Text>
             <Text style={styles.meta}>{formattedCreatedAt}</Text>
           </View>
         </View>
+        )}
 
         <View style={styles.bodyCard}>
           <Text style={styles.bodyLabel}>{bodyLabel}</Text>
-          <Text style={styles.bodyText}>{message || "No details available."}</Text>
+          <Text style={styles.bodyText}>{activeMessage || (loading ? "Loading..." : "No details available.")}</Text>
         </View>
       </ScrollView>
     </SafeAreaView>

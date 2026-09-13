@@ -623,11 +623,14 @@ export default function RegisterScreen() {
                   <Pressable
                     style={styles.eyeButton}
                     onPress={() => setShowPassword((prev) => !prev)}
+                    accessibilityRole="button"
+                    accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+                    hitSlop={8}
                   >
                     <Ionicons
-                      name={showPassword ? "eye-off" : "eye"}
-                      size={18}
-                      color="#1D1D1D"
+                      name={showPassword ? "eye-off-outline" : "eye-outline"}
+                      size={20}
+                      color="#556677"
                     />
                   </Pressable>
                 }

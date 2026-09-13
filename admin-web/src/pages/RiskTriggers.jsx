@@ -29,8 +29,8 @@ const DEFAULT_FORM = {
 
 const FILTERS = [
   { id: "ALL", label: "All" },
-  { id: "HIGH", label: "Crisis / Critical Need" },
-  { id: "LOW", label: "Distressed / Needs Support" },
+  { id: "HIGH", label: "Urgent" },
+  { id: "LOW", label: "Emotional Distress" },
   { id: "DISABLED", label: "Disabled" },
 ];
 
@@ -241,14 +241,14 @@ export default function RiskTriggers({ onLogout, session }) {
             {
               icon: AlertTriangle,
               iconBg: "bg-emerald-50 text-emerald-800",
-              label: "Crisis / Critical Need",
+              label: "Urgent",
               value: stats.crisis,
               valueColor: "text-emerald-900",
             },
             {
               icon: CheckCircle2,
               iconBg: "bg-teal-50 text-teal-700",
-              label: "Distressed / Needs Support",
+              label: "Emotional Distress",
               value: stats.distressed,
               valueColor: "text-teal-800",
             },
@@ -419,8 +419,8 @@ export default function RiskTriggers({ onLogout, session }) {
                 onChange={(event) => setFormState((current) => ({ ...current, riskLevel: event.target.value }))}
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/20"
               >
-                <option value="HIGH">Crisis / Critical Need</option>
-                <option value="LOW">Distressed / Needs Support</option>
+                <option value="HIGH">Urgent</option>
+                <option value="LOW">Emotional Distress</option>
               </select>
             </div>
 

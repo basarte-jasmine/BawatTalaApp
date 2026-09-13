@@ -25,9 +25,9 @@ const REPORT_COLUMNS = [
   { key: "province", label: "Province" },
   { key: "entriesInRange", label: "Entries", align: "right" },
   { key: "flagsInRange", label: "Flags", align: "right" },
-  { key: "highRiskFlags", label: "Crisis / Critical Need", align: "right" },
-  // Distressed / Needs Support = LOW only (backend mediumRiskFlags / distressedFlags).
-  { key: "distressedFlags", label: "Distressed / Needs Support", align: "right" },
+  { key: "highRiskFlags", label: "Urgent", align: "right" },
+  // Emotional Distress = LOW only (backend mediumRiskFlags / distressedFlags).
+  { key: "distressedFlags", label: "Emotional Distress", align: "right" },
   { key: "declinedSupport", label: "Declined Support", align: "right" },
   { key: "contactedSupport", label: "Contacted", align: "right" },
   { key: "counselingSessions", label: "Sessions", align: "right" },
@@ -135,8 +135,8 @@ function formatLocation(row) {
 
 function getShortRiskLabel(value) {
   const risk = normalizeRiskLevel(value);
-  if (risk === "HIGH" || risk === "CRITICAL") return "Crisis";
-  if (risk === "LOW" || risk === "MEDIUM" || risk === "MODERATE") return "Distressed";
+  if (risk === "HIGH" || risk === "CRITICAL") return "Urgent";
+  if (risk === "LOW" || risk === "MEDIUM" || risk === "MODERATE") return "Emotional Distress";
   return "None";
 }
 
@@ -267,8 +267,8 @@ function createStudentReportPdf({ rows, filters, summary }) {
     { key: "location", label: "Location", width: 100, align: "left" },
     { key: "entriesInRange", label: "Entries", width: 40, align: "right" },
     { key: "flagsInRange", label: "Flags", width: 36, align: "right" },
-    { key: "highRiskFlags", label: "Crisis", width: 38, align: "right", accent: true },
-    { key: "distressedFlags", label: "Distress", width: 44, align: "right" },
+    { key: "highRiskFlags", label: "Urgent", width: 52, align: "right", accent: true },
+    { key: "distressedFlags", label: "Emotional Distress", width: 56, align: "right" },
     { key: "counselingSessions", label: "Sess.", width: 34, align: "right" },
     { key: "topConcern", label: "Top Concern", width: 85, align: "left" },
     { key: "latestRiskLevel", label: "Risk", width: 50, align: "left" },
@@ -341,7 +341,7 @@ function createStudentReportPdf({ rows, filters, summary }) {
     y -= cardH + 14;
     if (metrics.crisisFlags > 0) {
       addTextAt(
-        `Crisis / HIGH risk flag count in range: ${formatNumber(metrics.crisisFlags)}`,
+        `Urgent (HIGH) count in range: ${formatNumber(metrics.crisisFlags)}`,
         margin,
         y,
         8,
@@ -448,7 +448,7 @@ function createStudentReportPdf({ rows, filters, summary }) {
     if (isFirstPage) {
       drawKeyMetrics();
       addTextAt(
-        "Student users only. Journal text, messages, private notes, and counselor names are excluded. Risk policy: HIGH / LOW / NONE (Crisis = HIGH/CRITICAL; Distressed = LOW).",
+        "Student users only. Journal text, messages, private notes, and counselor names are excluded. Risk policy: HIGH / LOW / NONE (Urgent = HIGH/CRITICAL; Emotional Distress = LOW).",
         margin,
         y,
         7.5,
@@ -556,9 +556,9 @@ function StudentReportTable({
 }) {
   const RISK_LEVEL_OPTIONS = [
     { key: "all", label: "All Risk Levels" },
-    { key: "at_risk", label: "At-Risk (Crisis & Distressed)" },
-    { key: "crisis", label: "Crisis Only" },
-    { key: "distressed", label: "Distressed Only" },
+    { key: "at_risk", label: "At-Risk (Urgent & Emotional Distress)" },
+    { key: "crisis", label: "Urgent Only" },
+    { key: "distressed", label: "Emotional Distress Only" },
     { key: "none", label: "No Risk (None)" },
   ];
 
@@ -568,7 +568,7 @@ function StudentReportTable({
       <div className="border-b border-slate-200 px-6 py-5">
         <h3 className="text-xl font-bold text-slate-900">Student User Report</h3>
         <p className="mt-1 text-sm font-medium text-slate-500">
-          Displays student activity metrics (Low = Distressed, High = Crisis); excludes journal content, insights, and names
+          Displays student activity metrics (Low = Emotional Distress, High = Urgent); excludes journal content, insights, and names
         </p>
       </div>
 
@@ -683,10 +683,10 @@ function StudentReportTable({
                 Flags
               </th>
               <th scope="col" className="whitespace-nowrap border-b border-slate-200 px-4 py-3.5 text-right font-extrabold text-slate-700">
-                Crisis
+                Urgent
               </th>
               <th scope="col" className="whitespace-nowrap border-b border-slate-200 px-4 py-3.5 text-right font-extrabold text-slate-700">
-                Distressed
+                Emotional Distress
               </th>
               <th scope="col" className="whitespace-nowrap border-b border-slate-200 px-4 py-3.5 text-right font-extrabold text-slate-700">
                 Declined
@@ -1080,21 +1080,37 @@ export default function AnalyticsReports({ onLogout, session }) {
               <>
                 <input
                   type="date"
+                  aria-label="Start date"
                   value={customRange.startDate}
                   onChange={(event) => handleCustomDateChange("startDate", event.target.value)}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className={`rounded-xl border bg-white px-3 py-2 text-sm text-slate-700 ${
+                    customRange.startDate && customRange.endDate && customRange.startDate > customRange.endDate
+                      ? "border-rose-400 focus:border-rose-500 focus:ring-rose-200"
+                      : "border-slate-200"
+                  }`}
                 />
                 <input
                   type="date"
+                  aria-label="End date"
                   value={customRange.endDate}
                   min={customRange.startDate || undefined}
                   onChange={(event) => handleCustomDateChange("endDate", event.target.value)}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                  className={`rounded-xl border bg-white px-3 py-2 text-sm text-slate-700 ${
+                    customRange.startDate && customRange.endDate && customRange.startDate > customRange.endDate
+                      ? "border-rose-400 focus:border-rose-500 focus:ring-rose-200"
+                      : "border-slate-200"
+                  }`}
                 />
+                {customRange.startDate && customRange.endDate && customRange.startDate > customRange.endDate ? (
+                  <span className="text-xs font-bold text-rose-600">
+                    End date cannot be earlier than start date.
+                  </span>
+                ) : null}
                 <button
                   type="button"
                   onClick={handleCustomApply}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  disabled={Boolean(customRange.startDate && customRange.endDate && customRange.startDate > customRange.endDate)}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Apply
                 </button>

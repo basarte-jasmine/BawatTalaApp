@@ -207,6 +207,8 @@ export default function Feedbacks({ onLogout, session }) {
         adminNotes: draft.adminNotes || "",
         priority: draft.priority || feedback.priority || "NORMAL",
         status: draft.status || feedback.status || "NEW",
+        sendResolutionNoteToStudent: Boolean(draft.sendResolutionNoteToStudent),
+        resolutionNote: draft.resolutionNote || draft.adminNotes || "",
       });
       const updated = data?.feedback;
       if (updated) {
@@ -215,9 +217,15 @@ export default function Feedbacks({ onLogout, session }) {
           adminNotes: updated.adminNotes || "",
           priority: updated.priority || "NORMAL",
           status: updated.status || "NEW",
+          sendResolutionNoteToStudent: false,
+          resolutionNote: "",
         });
       }
-      setSuccessMessage(data?.message || "Feedback updated.");
+      setSuccessMessage(
+        draft.sendResolutionNoteToStudent
+          ? "Feedback updated and resolution note sent to student."
+          : (data?.message || "Feedback updated.")
+      );
       setErrorMessage("");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to update feedback.");
@@ -521,15 +529,39 @@ export default function Feedbacks({ onLogout, session }) {
               </label>
             </div>
             <label className="block">
-              <span className="mb-1 block text-xs font-bold uppercase tracking-[0.14em] text-admin-muted">Admin Notes</span>
+              <span className="mb-1 block text-xs font-bold uppercase tracking-[0.14em] text-admin-muted">Admin / Counselor Notes</span>
               <textarea
                 value={reviewDraft.adminNotes ?? reviewItem.adminNotes ?? ""}
                 onChange={(event) => updateDraft(reviewItem.id, { adminNotes: event.target.value })}
-                rows={5}
+                rows={4}
                 className="w-full resize-none rounded-xl border border-[#dce8d2] bg-white px-3 py-2 text-sm leading-5 text-admin-ink outline-none"
-                placeholder="Internal note for review or follow-up"
+                placeholder="Internal notes for review or follow-up"
               />
             </label>
+
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-3.5 space-y-2">
+              <label className="flex items-center gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={Boolean(reviewDraft.sendResolutionNoteToStudent)}
+                  onChange={(e) => updateDraft(reviewItem.id, { sendResolutionNoteToStudent: e.target.checked })}
+                  className="h-4 w-4 rounded text-emerald-600 focus:ring-emerald-500"
+                />
+                <span className="text-xs font-bold text-emerald-900">
+                  Send Resolution Note to Student via In-App Notification
+                </span>
+              </label>
+              {reviewDraft.sendResolutionNoteToStudent ? (
+                <textarea
+                  value={reviewDraft.resolutionNote ?? reviewDraft.adminNotes ?? reviewItem.adminNotes ?? ""}
+                  onChange={(e) => updateDraft(reviewItem.id, { resolutionNote: e.target.value })}
+                  rows={3}
+                  placeholder="Enter resolution message visible to the student in their mobile notification center..."
+                  className="w-full resize-none rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs leading-5 text-slate-800 outline-none"
+                />
+              ) : null}
+            </div>
+
             <div className="flex items-center justify-between gap-3 pt-2">
               <button
                 type="button"

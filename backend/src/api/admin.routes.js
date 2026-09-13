@@ -57,7 +57,7 @@ const STRONG_PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]
 const LOGIN_ATTEMPTS_LIMIT = 3;
 const LOGIN_LOCK_DURATION_MS = 5 * 60 * 1000;
 const OTP_COOLDOWN_MS = 60 * 1000;
-const OTP_VALIDITY_MS = 60 * 1000;
+const OTP_VALIDITY_MS = 10 * 60 * 1000;
 const RESET_SESSION_MS = 10 * 60 * 1000;
 const ADMIN_PROFILE_PICTURE_LIMIT_BYTES = 5 * 1024 * 1024;
 const CONSULTATION_CONCERN_CATEGORY_DEFS = [
@@ -486,21 +486,7 @@ function isIsoDateInInclusiveRange(value, startIsoDate, endIsoDate) {
 }
 
 function buildDelta(currentValue, previousValue) {
-  if (!previousValue) {
-    if (!currentValue) {
-      return { direction: "neutral", percentageText: "0%" };
-    }
-    return { direction: "up", percentageText: "100%" };
-  }
-
-  const rawDelta = ((currentValue - previousValue) / previousValue) * 100;
-  if (rawDelta > 0) {
-    return { direction: "up", percentageText: `${rawDelta.toFixed(rawDelta >= 10 ? 0 : 1)}%` };
-  }
-  if (rawDelta < 0) {
-    return { direction: "down", percentageText: `${Math.abs(rawDelta).toFixed(Math.abs(rawDelta) >= 10 ? 0 : 1)}%` };
-  }
-  return { direction: "neutral", percentageText: "0%" };
+  return { direction: "neutral", percentageText: "" };
 }
 
 function toCounselorRoleLabel(value) {
@@ -1584,7 +1570,7 @@ router.post("/forgot-password/send-code", async (req, res) => {
   );
   const admin = result.rows[0];
   if (!admin || !admin.is_active) {
-    return res.status(400).json({ message: "Invalid email or password. Please try again." });
+    return res.status(400).json({ message: "There is no active admin account associated with the email address provided." });
   }
 
   const sendResult = await sendAdminRecoveryCode(email, `admin forgot password [${email}]`);
@@ -1613,12 +1599,18 @@ router.post("/forgot-password/resend-code", async (req, res) => {
   }
 
   const session = getResetSession(email);
-  if (!session) {
-    return res.status(400).json({ message: "Please request a code first." });
-  }
-  if (Date.now() < session.resendAvailableAt) {
+  if (session && Date.now() < session.resendAvailableAt) {
     const remaining = Math.ceil((session.resendAvailableAt - Date.now()) / 1000);
     return res.status(429).json({ message: `Please wait ${remaining}s before resending.` });
+  }
+
+  const result = await query(
+    "select id, email, is_active from public.admin_accounts where email = $1 limit 1",
+    [email],
+  );
+  const admin = result.rows[0];
+  if (!admin || !admin.is_active) {
+    return res.status(400).json({ message: "There is no active admin account associated with the email address provided." });
   }
 
   const sendResult = await sendAdminRecoveryCode(email, `admin forgot password resend [${email}]`);
@@ -1628,9 +1620,10 @@ router.post("/forgot-password/resend-code", async (req, res) => {
 
   const now = Date.now();
   setResetSession(email, {
-    ...session,
+    email,
     otpExpiresAt: now + OTP_VALIDITY_MS,
     resendAvailableAt: now + OTP_COOLDOWN_MS,
+    verifiedAt: 0,
   });
 
   return res.json({
@@ -1648,11 +1641,10 @@ router.post("/forgot-password/verify-code", async (req, res) => {
 
   const session = getResetSession(email);
   if (!session) {
-    return res.status(400).json({ message: "Please request a code first." });
+    return res.status(400).json({ message: "The verification code has expired. Please request a new code." });
   }
   if (Date.now() > session.otpExpiresAt) {
-    clearResetSession(email);
-    return res.status(400).json({ message: "The code has expired or is invalid. Please try again." });
+    return res.status(400).json({ message: "The code has expired. Please click Resend Code." });
   }
 
   const { error } = await supabaseAuthClient.auth.verifyOtp({
@@ -1701,11 +1693,40 @@ router.post("/forgot-password/reset", async (req, res) => {
     return res.status(400).json({ message: "Reset session expired. Please request a new code." });
   }
 
+  const accountResult = await query(
+    `select id, password_hash, coalesce(settings, '{}'::jsonb) as settings from public.admin_accounts where email = $1 limit 1`,
+    [email],
+  );
+  const account = accountResult.rows[0];
+  if (!account) {
+    return res.status(400).json({ message: "Admin account not found." });
+  }
+
+  if (account.password_hash && verifyPassword(newPassword, account.password_hash)) {
+    return res.status(400).json({
+      message: "Choose a new password that is different from your current or previous password.",
+    });
+  }
+
+  const previousPasswordHash =
+    account.settings?.previousAccountPasswordHash ||
+    account.settings?.previousPasswordHash;
+  if (previousPasswordHash && verifyPassword(newPassword, previousPasswordHash)) {
+    return res.status(400).json({
+      message: "Choose a new password that is different from your current or previous password.",
+    });
+  }
+
+  const updatedSettings = {
+    ...(account.settings || {}),
+    previousAccountPasswordHash: account.password_hash,
+  };
+
   await query(
     `update public.admin_accounts
-     set password_hash = $1, updated_at = now()
-     where email = $2`,
-    [hashPassword(newPassword), email],
+     set password_hash = $1, settings = $2::jsonb, updated_at = now()
+     where email = $3`,
+    [hashPassword(newPassword), JSON.stringify(updatedSettings), email],
   );
 
   clearResetSession(email);
@@ -2586,6 +2607,42 @@ router.patch("/feedbacks/:feedbackId", async (req, res) => {
       `,
       [feedbackId],
     );
+
+    const sendResolutionNote = Boolean(req.body.sendResolutionNoteToStudent);
+    const resolutionNote = String(req.body.resolutionNote || adminNotes || "").trim();
+    const feedbackRow = refreshed.rows[0];
+
+    if (sendResolutionNote && feedbackRow?.student_number && resolutionNote) {
+      const isSupport = String(feedbackRow.submission_type || "").toUpperCase() === "SUPPORT";
+      const title = isSupport ? "Update on your Help & Support Request" : "Update on your Feedback";
+      try {
+        await query(
+          `
+            insert into public.student_notifications (
+              student_number,
+              kind,
+              title,
+              message,
+              metadata
+            )
+            values ($1, 'FEEDBACK_RESOLUTION', $2, $3, $4::jsonb)
+          `,
+          [
+            feedbackRow.student_number,
+            title,
+            resolutionNote,
+            JSON.stringify({
+              feedbackId: feedbackRow.id,
+              submissionType: feedbackRow.submission_type,
+              status,
+              actorName: req.admin?.fullName || actorEmail || "Guidance Office",
+            }),
+          ],
+        );
+      } catch (notifErr) {
+        console.warn("Failed to insert student notification for feedback resolution:", notifErr);
+      }
+    }
 
     return res.json({
       feedback: mapFeedbackRow(refreshed.rows[0]),
@@ -4146,14 +4203,14 @@ router.post("/account/change-password/verify-and-update", requireAdminAuth, asyn
     });
   }
   if (newPassword === currentPassword) {
-    return res.status(400).json({ message: "New password must be different from current password." });
+    return res.status(400).json({ message: "Choose a new password that is different from your current or previous password." });
   }
   if (!otp) {
     return res.status(400).json({ message: "Verification code is required." });
   }
 
   const accountResult = await query(
-    `select id, password_hash from public.admin_accounts where id = $1::uuid limit 1`,
+    `select id, password_hash, coalesce(settings, '{}'::jsonb) as settings from public.admin_accounts where id = $1::uuid limit 1`,
     [adminId],
   );
   const account = accountResult.rows[0];
@@ -4161,7 +4218,16 @@ router.post("/account/change-password/verify-and-update", requireAdminAuth, asyn
     return res.status(400).json({ message: "Current password is incorrect." });
   }
   if (verifyPassword(newPassword, account.password_hash)) {
-    return res.status(400).json({ message: "New password must be different from your current password." });
+    return res.status(400).json({ message: "Choose a new password that is different from your current or previous password." });
+  }
+
+  const previousPasswordHash =
+    account.settings?.previousAccountPasswordHash ||
+    account.settings?.previousPasswordHash;
+  if (previousPasswordHash && verifyPassword(newPassword, previousPasswordHash)) {
+    return res.status(400).json({
+      message: "Choose a new password that is different from your current or previous password.",
+    });
   }
 
   const { error: otpError } = await supabaseAdminClient.auth.verifyOtp({
@@ -4176,9 +4242,14 @@ router.post("/account/change-password/verify-and-update", requireAdminAuth, asyn
 
   clearChangePasswordSession(email);
 
+  const updatedSettings = {
+    ...(account.settings || {}),
+    previousAccountPasswordHash: account.password_hash,
+  };
+
   await query(
-    `update public.admin_accounts set password_hash = $1, updated_at = now() where id = $2::uuid`,
-    [hashPassword(newPassword), adminId],
+    `update public.admin_accounts set password_hash = $1, settings = $2::jsonb, updated_at = now() where id = $3::uuid`,
+    [hashPassword(newPassword), JSON.stringify(updatedSettings), adminId],
   );
 
   await writeAdminActivityLog({
@@ -4967,6 +5038,22 @@ router.get("/students/:studentNumber", async (req, res) => {
 
 router.delete("/students/:studentNumber", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
   try {
+    const adminPassword = String(req.body?.password || req.body?.counselorPassword || req.headers["x-counselor-password"] || "").trim();
+    if (!adminPassword) {
+      return res.status(400).json({ message: "Counselor password is required to permanently delete a student account." });
+    }
+
+    const adminId = String(req.admin?.id || "").trim();
+    const adminEmail = normalizeEmail(req.admin?.email || "");
+    const adminAccountResult = await query(
+      `select id, password_hash from public.admin_accounts where ${adminId ? "id = $1::uuid" : "email = $1"} limit 1`,
+      [adminId || adminEmail],
+    );
+    const adminAccount = adminAccountResult.rows[0];
+    if (!adminAccount || !verifyPassword(adminPassword, adminAccount.password_hash)) {
+      return res.status(401).json({ message: "Incorrect counselor password. Student account was not deleted." });
+    }
+
     const studentNumber = String(
       typeof normalizeStudentNumber === "function"
         ? normalizeStudentNumber(req.params.studentNumber)

@@ -196,6 +196,7 @@ export default function ConsultScreen() {
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [selectedTime, setSelectedTime] = useState("");
   const [studentNote, setStudentNote] = useState("");
+  const [counselorSlotCounts, setCounselorSlotCounts] = useState<Record<string, number | null>>({});
 
   useEffect(() => {
     let isMounted = true;
@@ -279,6 +280,38 @@ export default function ConsultScreen() {
     }
     return counselorPool;
   }, [activeCounselors, selectedGender]);
+
+  useEffect(() => {
+    if (step !== 3 || !filteredCounselors.length) return;
+    let isMounted = true;
+    const monthKey = toMonthKey(selectedMonthYear.year, selectedMonthYear.monthIndex);
+
+    async function checkAvailabilities() {
+      const updates: Record<string, number> = {};
+      for (const counselor of filteredCounselors) {
+        try {
+          const res = await fetchAppointmentAvailability(
+            counselor.id,
+            monthKey,
+            user?.studentNumber,
+            selectedTrack === "peer" ? "PEER" : "GUIDANCE",
+          );
+          if (res.ok && Array.isArray(res.days)) {
+            const count = res.days.reduce((acc, d) => acc + (d.availableSlots?.length || 0), 0);
+            updates[counselor.id] = count;
+          }
+        } catch {}
+      }
+      if (isMounted) {
+        setCounselorSlotCounts((prev) => ({ ...prev, ...updates }));
+      }
+    }
+    void checkAvailabilities();
+    return () => {
+      isMounted = false;
+    };
+  }, [filteredCounselors, selectedMonthYear.monthIndex, selectedMonthYear.year, selectedTrack, step, user?.studentNumber]);
+
   const peerConcerns = useMemo(
     () => peerConcernOptions.filter((item) => !PEER_EXCLUDED_CONCERNS.has(item)),
     [peerConcernOptions],
@@ -847,6 +880,30 @@ export default function ConsultScreen() {
                                     {[item.studentNumber, item.program].filter(Boolean).join(" · ")}
                                   </Text>
                                 ) : null}
+                                <View style={styles.availBadgeWrap}>
+                                  <View
+                                    style={[
+                                      styles.availBadgeDot,
+                                      counselorSlotCounts[item.id] === 0
+                                        ? styles.availBadgeDotEmpty
+                                        : styles.availBadgeDotOpen,
+                                    ]}
+                                  />
+                                  <Text
+                                    style={[
+                                      styles.availBadgeText,
+                                      counselorSlotCounts[item.id] === 0
+                                        ? styles.availBadgeTextEmpty
+                                        : styles.availBadgeTextOpen,
+                                    ]}
+                                  >
+                                    {counselorSlotCounts[item.id] === null || counselorSlotCounts[item.id] === undefined
+                                      ? "Checking schedule..."
+                                      : counselorSlotCounts[item.id]! > 0
+                                        ? `${counselorSlotCounts[item.id]} slot${counselorSlotCounts[item.id] === 1 ? "" : "s"} open this month`
+                                        : "No open slots this month"}
+                                  </Text>
+                                </View>
                               </View>
 
                               {selected ? <Ionicons name="checkmark-circle" size={24} color="#2E6F24" /> : null}
@@ -1045,7 +1102,7 @@ export default function ConsultScreen() {
         </View>
       </Modal>
 
-      <HomeBottomNav activeTab="profile" />
+      <HomeBottomNav activeTab="consult" />
     </SafeAreaView>
   );
 }
@@ -1652,6 +1709,26 @@ const styles = StyleSheet.create({
   selectedCounselorCard: {
     borderColor: "#6DC23C",
     backgroundColor: "#F3FAEE" },
+  availBadgeWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 6,
+    marginTop: 6 },
+  availBadgeDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 999 },
+  availBadgeDotOpen: {
+    backgroundColor: "#2E6F24" },
+  availBadgeDotEmpty: {
+    backgroundColor: "#94A3B8" },
+  availBadgeText: {
+    fontSize: 12,
+    fontFamily: "Outfit-SemiBold" },
+  availBadgeTextOpen: {
+    color: "#2E6F24" },
+  availBadgeTextEmpty: {
+    color: "#64748B" },
   counselorRow: {
     flexDirection: "row",
     alignItems: "center",

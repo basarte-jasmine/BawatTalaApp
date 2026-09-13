@@ -1,7 +1,7 @@
 ﻿const RISK_LEVEL_LABELS = {
   NONE: "None / Stable well-being",
   LOW: "Emotional Distress",
-  HIGH: "Critical Emotional Distress / Well-being Risk Indicator",
+  HIGH: "Urgent",
 };
 
 function normalizeRiskTriggerPhrase(value) {

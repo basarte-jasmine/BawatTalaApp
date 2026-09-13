@@ -1,4 +1,4 @@
-import type { ImageSourcePropType } from "react-native";
+import { Platform, type ImageSourcePropType } from "react-native";
 
 export type EmotionOption = {
   activeImage: ImageSourcePropType | null;
@@ -140,8 +140,12 @@ export function normalizeEmotionId(value: string) {
 
 export function getEmotionImageSource(emotion: EmotionOption | null | undefined, active = false) {
   if (!emotion) return null;
-  if (active && emotion.activeImage) return emotion.activeImage;
-  return emotion.inactiveImage ?? emotion.image;
+  // Animated GIFs can fail or blank out in Android release builds where native Fresco GIF is not linked.
+  // Use PNG images on Android to guarantee emoticons always display properly without disappearing.
+  if (active && emotion.activeImage && Platform.OS !== "android") {
+    return emotion.activeImage;
+  }
+  return emotion.inactiveImage ?? emotion.image ?? emotion.activeImage;
 }
 
 export const EMOTION_META = Object.fromEntries(

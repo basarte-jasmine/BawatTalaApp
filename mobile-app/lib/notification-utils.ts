@@ -294,6 +294,16 @@ export function isOutgoingAdminMessage(item: AppNotification) {
 export function getNotificationVisual(kind: string) {
   const normalized = String(kind || "").toLowerCase();
 
+  if (normalized.includes("feedback") || normalized.includes("resolution")) {
+    return {
+      accent: "#229365",
+      chip: "#EAF6EF",
+      icon: "chatbubble-ellipses-outline" as const,
+      label: "Support Resolution",
+      surface: "#F4FAF6",
+    };
+  }
+
   if (normalized.includes("admin_message") || normalized.includes("message")) {
     return {
       accent: "#4F7D63",
@@ -428,6 +438,9 @@ export function getNotificationRoute(item: AppNotification): string | { pathname
   const routeKey = route.toLowerCase();
   if (routeKey === "schedule" || routeKey.includes("section=schedule") || routeKey.includes("/profile-settings")) {
     return { pathname: "/profile-settings", params: { section: "schedule" } };
+  }
+  if (kind.includes("FEEDBACK") || routeKey.includes("help-support") || routeKey.includes("section=help-support")) {
+    return { pathname: "/profile-settings", params: { section: "help-support" } };
   }
   if (routeKey === "home" || routeKey === "/home") {
     return "/home";

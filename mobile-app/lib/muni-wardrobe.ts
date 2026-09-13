@@ -72,10 +72,7 @@ export const COLLECTION_SECTIONS: MuniCollectionSection[] = [
     label: "Outfit",
     options: [
       { id: "classic", label: "Classic Muni", price: 0, starter: true, source: require("../assets/images/Muni/Body.png") },
-      { id: "leaf-poncho", label: "Leaf Poncho", price: 130, source: require("../assets/images/Outfit/leaf-poncho.png") },
-      { id: "night-cape", label: "Night Cape", price: 150, source: require("../assets/images/Outfit/night-cape.png") },
       { id: "spooky-ghost", label: "Spooky Ghost", price: 0, starter: true, source: require("../assets/images/Outfit/Spooky_Ghost_Sheet.png") },
-      { id: "star-cloak", label: "Star Cloak", price: 160, source: require("../assets/images/Outfit/star-cloak.png") },
     ],
   },
   {
@@ -99,6 +96,7 @@ type WardrobeState = {
   hydrated: boolean;
   loadout: MuniLoadout;
   ownedItems: MuniOwnedItems;
+  pendingLoadout?: MuniLoadout | null;
   totalTala: number;
 };
 
@@ -139,13 +137,19 @@ async function readCachedWardrobe(studentNumber: string): Promise<WardrobeState 
     if (!raw) {
       return null;
     }
-    const parsed = JSON.parse(raw) as { loadout?: unknown; ownedItems?: unknown; totalTala?: unknown };
+    const parsed = JSON.parse(raw) as {
+      loadout?: unknown;
+      ownedItems?: unknown;
+      pendingLoadout?: unknown;
+      totalTala?: unknown;
+    };
     if (!isMuniLoadout(parsed.loadout) || !isMuniOwnedItems(parsed.ownedItems)) {
       return null;
     }
     return {
       hydrated: true,
       loadout: cloneLoadout(parsed.loadout),
+      pendingLoadout: isMuniLoadout(parsed.pendingLoadout) ? cloneLoadout(parsed.pendingLoadout) : null,
       ownedItems: cloneOwnedItems(parsed.ownedItems),
       totalTala: typeof parsed.totalTala === "number" && Number.isFinite(parsed.totalTala) ? Math.max(0, parsed.totalTala) : 0,
     };
@@ -163,6 +167,7 @@ async function persistWardrobe(studentNumber: string, state: WardrobeState) {
       wardrobeCacheKey(studentNumber),
       JSON.stringify({
         loadout: state.loadout,
+        pendingLoadout: state.pendingLoadout ?? null,
         ownedItems: state.ownedItems,
         totalTala: state.totalTala,
       }),
@@ -265,12 +270,17 @@ function applyRemoteWardrobe(payload: {
     });
   }
   if (payload.loadout) {
-    state.loadout = cloneLoadout({
-      background: payload.loadout.background !== undefined ? payload.loadout.background : state.loadout.background,
-      eye: payload.loadout.eye !== undefined ? payload.loadout.eye : state.loadout.eye,
-      head: payload.loadout.head !== undefined ? payload.loadout.head : state.loadout.head,
-      outfit: payload.loadout.outfit !== undefined ? payload.loadout.outfit : state.loadout.outfit,
-    });
+    if (state.pendingLoadout) {
+      // A look chosen offline is newer than the server copy; keep it until synced.
+      state.loadout = cloneLoadout(state.pendingLoadout);
+    } else {
+      state.loadout = cloneLoadout({
+        background: payload.loadout.background !== undefined ? payload.loadout.background : state.loadout.background,
+        eye: payload.loadout.eye !== undefined ? payload.loadout.eye : state.loadout.eye,
+        head: payload.loadout.head !== undefined ? payload.loadout.head : state.loadout.head,
+        outfit: payload.loadout.outfit !== undefined ? payload.loadout.outfit : state.loadout.outfit,
+      });
+    }
   }
   if (typeof payload.totalTala === "number" && Number.isFinite(payload.totalTala)) {
     state.totalTala = Math.max(0, payload.totalTala);
@@ -391,21 +401,39 @@ export async function hydrateMuniWardrobe(studentNumber: string) {
     hydratedStudentNumber = nextStudent;
     notifyAll(existing);
     // Refresh remotely in the background so wardrobe UI is not blocked on network.
-    void fetchMuniWardrobe(nextStudent).then((result) => {
+    void (async () => {
+      // Push a look chosen offline as soon as the connection returns.
+      if (existing.pendingLoadout) {
+        const saved = await saveMuniLoadoutRemote({
+          loadout: existing.pendingLoadout,
+          studentNumber: nextStudent,
+        });
+        if (saved.ok) {
+          existing.pendingLoadout = null;
+        }
+      }
+      const result = await fetchMuniWardrobe(nextStudent);
       if (!result.ok || activeStudentNumber !== nextStudent) {
         return;
       }
       applyRemoteWardrobe(result);
-    });
+    })();
     return existing;
   }
 
-  const result = await fetchMuniWardrobe(nextStudent);
-  if (!result.ok) {
-    hydratedStudentNumber = "";
-    return createUnhydratedState();
-  }
-  return applyRemoteWardrobe(result);
+  // Cold start: render a usable state immediately and hydrate remotely in the
+  // background so the wardrobe screen never waits on the network.
+  const initialState = createDefaultState();
+  wardrobeByStudent.set(nextStudent, initialState);
+  hydratedStudentNumber = nextStudent;
+  notifyAll(initialState);
+  void fetchMuniWardrobe(nextStudent).then((result) => {
+    if (!result.ok || activeStudentNumber !== nextStudent) {
+      return;
+    }
+    applyRemoteWardrobe(result);
+  });
+  return initialState;
 }
 
 export async function purchaseMuniItem(sectionId: MuniCollectionSectionId, optionId: string) {
@@ -444,16 +472,24 @@ export async function saveMuniLoadout(loadout: MuniLoadout) {
   state.loadout = nextLoadout;
   wardrobeByStudent.set(activeStudentNumber, state);
   notifyAll(state);
+  // Persist the chosen look locally first so offline changes survive reloads.
+  await persistWardrobe(activeStudentNumber, state);
 
   const result = await saveMuniLoadoutRemote({
     loadout: nextLoadout,
     studentNumber: activeStudentNumber,
   });
   if (!result.ok) {
-    state.loadout = previousLoadout;
+    // Offline: keep the locally saved look instead of reverting. It will be
+    // pushed to the server on the next successful wardrobe sync.
+    state.loadout = nextLoadout;
+    state.pendingLoadout = nextLoadout;
+    wardrobeByStudent.set(activeStudentNumber, state);
     notifyAll(state);
-    return false;
+    await persistWardrobe(activeStudentNumber, state);
+    return true;
   }
+  state.pendingLoadout = null;
   applyRemoteWardrobe(result);
   return true;
 }

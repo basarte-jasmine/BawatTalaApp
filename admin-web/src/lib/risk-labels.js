@@ -1,8 +1,8 @@
 export const RISK_LEVEL_LABELS = {
   NONE: "Balanced / Stable",
   LOW: "Emotional Distress",
-  HIGH: "Well-being Risk Indicator",
-  CRITICAL: "Well-being Risk Indicator",
+  HIGH: "Urgent",
+  CRITICAL: "Urgent",
   MEDIUM: "Emotional Distress",
   MODERATE: "Emotional Distress",
   DISTRESSED: "Emotional Distress",
@@ -107,7 +107,7 @@ export function getSafetyStatusLabel(entryOrValue) {
 export function getSafetyStatusDetailLabel(entryOrValue) {
   const status = normalizeSafetyStatus(entryOrValue);
   if (status === SAFETY_STATUS.CLARIFICATION_NEEDED) return "Needs clarification";
-  if (status === SAFETY_STATUS.CONFIRMED_CRITICAL) return "Confirmed risk (Critical Case)";
+  if (status === SAFETY_STATUS.CONFIRMED_CRITICAL) return "Confirmed risk";
   if (status === SAFETY_STATUS.CLEARED) {
     return normalizeSignal(entryOrValue) === RISK_SIGNAL.DISTRESS
       ? "Cleared — Emotional Distress"
@@ -119,7 +119,7 @@ export function getSafetyStatusDetailLabel(entryOrValue) {
 
 export function getSignalLabel(entryOrValue) {
   const signal = normalizeSignal(entryOrValue);
-  if (signal === RISK_SIGNAL.CRITICAL) return "Well-being Risk Indicator";
+  if (signal === RISK_SIGNAL.CRITICAL) return "Urgent";
   if (signal === RISK_SIGNAL.DISTRESS) return "Emotional Distress";
   return "";
 }

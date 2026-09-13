@@ -128,11 +128,6 @@ const NOTIFICATION_MATRIX_SECTIONS = [
     title: "Summaries & System",
     rows: [
       {
-        key: "activityDigest",
-        label: "Weekly / Daily Activity Digest",
-        description: "Periodic digest of counseling activity across your caseload.",
-      },
-      {
         key: "systemMaintenance",
         label: "System & Maintenance Updates",
         description: "Platform maintenance windows and system notices as needed.",
@@ -849,6 +844,51 @@ export default function Settings({ onLogout, session }) {
                     checked={Boolean(formState.privacy.requireCancelReason)}
                     onChange={(event) => updateNestedState("privacy", "requireCancelReason", event.target.checked)}
                   />
+
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start gap-3">
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                          <Clock className="h-5 w-5" />
+                        </span>
+                        <div>
+                          <div className="font-bold text-slate-800">Inactivity / Idle Auto-Logout</div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            Automatically prompt and sign out of the admin panel if no user activity is detected.
+                          </div>
+                        </div>
+                      </div>
+                      <SwitchToggle
+                        checked={Boolean(formState.privacy.idleTimeoutEnabled)}
+                        onChange={(checked) => updateNestedState("privacy", "idleTimeoutEnabled", checked)}
+                        ariaLabel="Inactivity / Idle Auto-Logout"
+                      />
+                    </div>
+
+                    {formState.privacy.idleTimeoutEnabled ? (
+                      <div className="border-t border-slate-100 pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <label className="text-xs font-bold uppercase tracking-wider text-slate-600 block">
+                            Idle Timeout Duration
+                          </label>
+                          <span className="text-xs text-slate-500">
+                            Lock session after this period of inactivity.
+                          </span>
+                        </div>
+                        <select
+                          value={formState.privacy.idleTimeoutMinutes || 30}
+                          onChange={(e) => updateNestedState("privacy", "idleTimeoutMinutes", Number(e.target.value))}
+                          className="h-10 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 shadow-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20"
+                        >
+                          <option value={5}>5 Minutes</option>
+                          <option value={10}>10 Minutes</option>
+                          <option value={15}>15 Minutes</option>
+                          <option value={30}>30 Minutes</option>
+                          <option value={60}>60 Minutes (1 Hour)</option>
+                        </select>
+                      </div>
+                    ) : null}
+                  </div>
 
                   <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-5 shadow-sm">
                     <div className="flex flex-wrap items-center justify-between gap-4">

@@ -73,78 +73,14 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
   const isGhostOutfit = activeLoadout.outfit === "spooky-ghost";
   const breath = useRef(new Animated.Value(0)).current;
   const wave = useRef(new Animated.Value(0)).current;
-  const handsOpacity = useRef(new Animated.Value(0)).current;
-  const faceOpacity = useRef(new Animated.Value(0)).current;
-  const accessoryOpacity = useRef(new Animated.Value(0)).current;
   const [avatarSize, setAvatarSize] = useState({ height: 96, width: 96 });
   const [blinkFrameIndex, setBlinkFrameIndex] = useState(0);
-  const [bodyReady, setBodyReady] = useState(false);
-  const [showHands, setShowHands] = useState(false);
-  const [showFace, setShowFace] = useState(false);
-  const [showAccessories, setShowAccessories] = useState(false);
 
   useEffect(() => {
     preloadCriticalBodyParts();
   }, []);
 
-  // Android release often never fires Image onLoad, and native-driver fades can stay at 0
-  // until a tap. Reveal the full avatar if the staggered fade has not finished.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setBodyReady(true);
-      setShowHands(true);
-      setShowFace(true);
-      setShowAccessories(true);
-      handsOpacity.setValue(1);
-      faceOpacity.setValue(1);
-      accessoryOpacity.setValue(1);
-    }, Platform.OS === "android" ? 350 : 1200);
-    return () => clearTimeout(timer);
-  }, [accessoryOpacity, faceOpacity, handsOpacity]);
 
-  useEffect(() => {
-    if (!bodyReady) return;
-    setShowHands(true);
-    Animated.timing(handsOpacity, {
-      toValue: 1,
-      duration: 160,
-      easing: Easing.out(Easing.quad),
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (!finished) return;
-      setShowFace(true);
-      Animated.timing(faceOpacity, {
-        toValue: 1,
-        duration: 140,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }).start(({ finished: faceDone }) => {
-        if (!faceDone) return;
-        setShowAccessories(true);
-        Animated.timing(accessoryOpacity, {
-          toValue: 1,
-          duration: 160,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
-        }).start();
-      });
-    });
-  }, [accessoryOpacity, bodyReady, faceOpacity, handsOpacity]);
-
-  useEffect(() => {
-    // Reset progressive layers when the equipped look changes so new sheets fade in.
-    setShowAccessories(false);
-    accessoryOpacity.setValue(0);
-    if (bodyReady) {
-      setShowAccessories(true);
-      Animated.timing(accessoryOpacity, {
-        toValue: 1,
-        duration: 140,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [accessoryOpacity, activeLoadout.eye, activeLoadout.head, activeLoadout.outfit, bodyReady]);
 
   useEffect(() => {
     if (!animated) {
@@ -174,7 +110,7 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
   }, [animated, breath]);
 
   useEffect(() => {
-    if (!animated || !showHands) {
+    if (!animated) {
       wave.setValue(0);
       return undefined;
     }
@@ -200,10 +136,10 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
 
     loop.start();
     return () => loop.stop();
-  }, [animated, showHands, wave]);
+  }, [animated, wave]);
 
   useEffect(() => {
-    if (!animated || !showFace) {
+    if (!animated) {
       setBlinkFrameIndex(0);
       return undefined;
     }
@@ -234,7 +170,7 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
         clearTimeout(timeoutId);
       }
     };
-  }, [animated, showFace]);
+  }, [animated]);
 
   const breathingStyle = useMemo(
     () => ({
@@ -305,57 +241,49 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
     >
       <View style={[styles.scaledShell, scaledShellStyle]}>
         <Animated.View style={[styles.avatarStack, breathingStyle]}>
-          {showHands ? (
-            <Animated.View style={[styles.layer, { opacity: handsOpacity }]}>
-              <Image source={MUNI_RIGHT_HAND} style={styles.layer} resizeMode="contain" />
-              <Animated.Image source={MUNI_LEFT_HAND} style={[styles.layer, leftHandWaveStyle]} resizeMode="contain" />
-            </Animated.View>
-          ) : null}
+          <View style={styles.layer}>
+            <Image source={MUNI_RIGHT_HAND} style={styles.layer} resizeMode="contain" />
+            <Animated.Image source={MUNI_LEFT_HAND} style={[styles.layer, leftHandWaveStyle]} resizeMode="contain" />
+          </View>
 
           <Image
             source={MUNI_BODY}
             style={styles.layer}
             resizeMode="contain"
-            onLoad={() => setBodyReady(true)}
-            onError={() => setBodyReady(true)}
           />
 
-          {showHands ? (
-            <Animated.Image
-              source={MUNI_FEET}
-              style={[styles.layer, styles.feetLayer, { opacity: handsOpacity }]}
-              resizeMode="contain"
-            />
-          ) : null}
+          <Image
+            source={MUNI_FEET}
+            style={[styles.layer, styles.feetLayer]}
+            resizeMode="contain"
+          />
 
-          {showFace ? (
-            <Animated.Image
-              source={BLINK_FRAMES[blinkFrameIndex]}
-              style={[styles.layer, styles.faceLayer, isGhostOutfit && styles.ghostFaceLayer, { opacity: faceOpacity }]}
-              resizeMode="contain"
-            />
-          ) : null}
+          <Image
+            source={BLINK_FRAMES[blinkFrameIndex]}
+            style={[styles.layer, styles.faceLayer, isGhostOutfit && styles.ghostFaceLayer]}
+            resizeMode="contain"
+          />
 
-          {showAccessories && equippedOutfitSource ? (
-            <Animated.Image
+          {equippedOutfitSource ? (
+            <Image
               source={equippedOutfitSource}
-              style={[styles.layer, { opacity: accessoryOpacity }]}
+              style={styles.layer}
               resizeMode="contain"
             />
           ) : null}
 
-          {showAccessories && equippedEyeSource ? (
-            <Animated.Image
+          {equippedEyeSource ? (
+            <Image
               source={equippedEyeSource}
-              style={[styles.layer, equippedEyeStyle, { opacity: accessoryOpacity }]}
+              style={[styles.layer, equippedEyeStyle]}
               resizeMode="contain"
             />
           ) : null}
 
-          {showAccessories && equippedHeadSource ? (
-            <Animated.Image
+          {equippedHeadSource ? (
+            <Image
               source={equippedHeadSource}
-              style={[styles.layer, equippedHeadStyle, { opacity: accessoryOpacity }]}
+              style={[styles.layer, equippedHeadStyle]}
               resizeMode="contain"
             />
           ) : null}
@@ -401,4 +329,4 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
   },
-});
+});

@@ -1310,6 +1310,13 @@ export default function ProfileSettingsScreen() {
     setShowBirthdatePicker(false);
   };
 
+  const closeEmailOtpModal = () => {
+    setProfileAwaitingEmailOtp(false);
+    setEmailChangeStage("idle");
+    setProfileOtpCode("");
+    setProfileError("");
+  };
+
   const clearProfileFieldError = (field: string) => {
     setProfileFieldErrors((current) => {
       if (!current[field]) return current;
@@ -1646,9 +1653,9 @@ return (
               {editingField === "email" && isChangingEmail ? (
                 <>
                   <TextInput
-                    autoFocus={!profileAwaitingEmailOtp}
+                    autoFocus={true}
                     value={draftEmail}
-                    editable={emailChangeStage === "idle"}
+                    editable={!profileSaving}
                     onChangeText={(value) => {
                       setDraftEmail(value);
                       setEmailChangeStage("idle");
@@ -1663,66 +1670,15 @@ return (
                     style={[styles.textInput, styles.profileInput]}
                   />
                   {!!profileFieldErrors.email && <Text style={styles.fieldError}>{profileFieldErrors.email}</Text>}
-                  {profileAwaitingEmailOtp ? (
-                    <>
-                      <Text style={styles.helperText}>
-                        {emailChangeStage === "new-email"
-                          ? "Enter the 8-digit code sent to your new email."
-                          : "Enter the 8-digit code sent to your current email."}
-                      </Text>
-                      <OtpCodeInput
-                        length={OTP_LENGTH}
-                        value={profileOtpCode}
-                        onChangeCode={(value) => {
-                          setProfileOtpCode(value);
-                          if (profileError) setProfileError("");
-                        }}
-                        boxStyle={{ width: 28, height: 36 }}
-                      />
-                      <Pressable
-                        style={[styles.fieldCancelButton, (profileOtpSeconds > 0 || profileSaving) && styles.disabledButton]}
-                        disabled={profileOtpSeconds > 0 || profileSaving}
-                        onPress={() => {
-                          void (async () => {
-                            setProfileSaving(true);
-                            setProfileError("");
-                            const result = await resendProfileEmailChangeCode();
-                            setProfileSaving(false);
-                            if (!result.ok) {
-                              setProfileError(result.message || "Unable to resend code.");
-                              return;
-                            }
-                            if (result.stage === "current-email" || result.stage === "new-email") {
-                              setEmailChangeStage(result.stage);
-                            }
-                            setProfileOtpSeconds(result.resendAfterSeconds ?? 60);
-                            setProfileSuccess(result.message || "Verification code resent.");
-                          })();
-                        }}
-                      >
-                        <Text style={styles.fieldCancelText}>
-                          {profileOtpSeconds > 0
-                            ? `Resend code in ${profileOtpSeconds}s`
-                            : profileSaving
-                              ? "Sending..."
-                              : "Resend code"}
-                        </Text>
-                      </Pressable>
-                    </>
-                  ) : null}
-                  {!!profileError && <Text style={styles.fieldError}>{profileError}</Text>}
+                  {!!profileError && !profileAwaitingEmailOtp && <Text style={styles.fieldError}>{profileError}</Text>}
                   <View style={styles.fieldActionsRow}>
-                    <Pressable style={[styles.fieldSaveButton, profileSaving && styles.disabledButton]} onPress={() => void handleSaveField("email")} disabled={profileSaving}>
+                    <Pressable
+                      style={[styles.fieldSaveButton, profileSaving && styles.disabledButton]}
+                      onPress={() => void handleSaveField("email")}
+                      disabled={profileSaving}
+                    >
                       <Text style={styles.fieldSaveText}>
-                        {profileSaving
-                          ? emailChangeStage === "idle"
-                            ? "Sending code..."
-                            : "Verifying..."
-                          : emailChangeStage === "idle"
-                            ? "Change Email"
-                            : emailChangeStage === "current-email"
-                              ? "Verify Current Email"
-                              : "Confirm New Email"}
+                        {profileSaving ? "Sending code..." : "Change Email"}
                       </Text>
                     </Pressable>
                     <Pressable style={styles.fieldCancelButton} onPress={cancelEditingProfile} disabled={profileSaving}>
@@ -2850,6 +2806,81 @@ return (
           </View>
         </View>
       </Modal>
+      <Modal
+        animationType="fade"
+        onRequestClose={closeEmailOtpModal}
+        transparent
+        visible={profileAwaitingEmailOtp}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Verify Email Address</Text>
+            <Text style={styles.modalBody}>
+              {emailChangeStage === "new-email"
+                ? "Enter the 8-digit code sent to your new email."
+                : "Enter the 8-digit code sent to your current email address."}
+            </Text>
+            <OtpCodeInput
+              length={OTP_LENGTH}
+              value={profileOtpCode}
+              onChangeCode={(value) => {
+                setProfileOtpCode(value);
+                if (profileError) setProfileError("");
+              }}
+              boxStyle={{ width: 28, height: 36 }}
+            />
+            {!!profileError && <Text style={styles.errorText}>{profileError}</Text>}
+            <Pressable
+              style={[styles.secondaryButton, (profileOtpSeconds > 0 || profileSaving) && styles.disabledButton]}
+              disabled={profileOtpSeconds > 0 || profileSaving}
+              onPress={() => {
+                void (async () => {
+                  setProfileSaving(true);
+                  setProfileError("");
+                  const result = await resendProfileEmailChangeCode();
+                  setProfileSaving(false);
+                  if (!result.ok) {
+                    setProfileError(result.message || "Unable to resend code.");
+                    return;
+                  }
+                  if (result.stage === "current-email" || result.stage === "new-email") {
+                    setEmailChangeStage(result.stage);
+                  }
+                  setProfileOtpSeconds(result.resendAfterSeconds ?? 60);
+                  setProfileSuccess(result.message || "Verification code resent.");
+                })();
+              }}
+            >
+              <Text style={styles.secondaryText}>
+                {profileOtpSeconds > 0
+                  ? `Resend code in ${profileOtpSeconds}s`
+                  : profileSaving
+                    ? "Sending..."
+                    : "Resend code"}
+              </Text>
+            </Pressable>
+            <View style={styles.modalActions}>
+              <Pressable style={styles.modalCancelButton} onPress={closeEmailOtpModal} disabled={profileSaving}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalPrimaryButton, (profileSaving || profileOtpCode.length !== OTP_LENGTH) && styles.modalButtonDisabled]}
+                onPress={() => void handleSaveField("email")}
+                disabled={profileSaving || profileOtpCode.length !== OTP_LENGTH}
+              >
+                <Text style={styles.modalPrimaryText}>
+                  {profileSaving
+                    ? "Verifying..."
+                    : emailChangeStage === "current-email"
+                      ? "Verify Current Email"
+                      : "Confirm New Email"}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <Modal
         visible={showDeleteAccountModal}
         transparent

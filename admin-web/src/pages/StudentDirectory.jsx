@@ -60,8 +60,8 @@ const ENTRY_DATE_FILTERS = [
 ];
 const PROFILE_ENTRY_FLAG_FILTERS = [
   { label: "Flag: All", value: "all" },
-  { label: "Critical Case", value: "critical" },
-  { label: "Needs Support", value: "support" },
+  { label: "Urgent", value: "critical" },
+  { label: "Emotional Distress", value: "support" },
   { label: "Normal", value: "normal" },
 ];
 
@@ -796,6 +796,8 @@ export default function StudentDirectory({ onLogout, session }) {
   const [entryDateRange, setEntryDateRange] = useState("all");
   const [entryConcern, setEntryConcern] = useState("");
   const [studentToDelete, setStudentToDelete] = useState(null);
+  const [deleteCounselorPassword, setDeleteCounselorPassword] = useState("");
+  const [deleteError, setDeleteError] = useState("");
   const [isDeletingStudent, setIsDeletingStudent] = useState(false);
   const summaryStats = useMemo(() => {
     const total = students.length;
@@ -918,13 +920,20 @@ export default function StudentDirectory({ onLogout, session }) {
   }
   async function handleConfirmDeleteStudent() {
     if (!studentToDelete?.studentNumber || isDeletingStudent) return;
+    if (!deleteCounselorPassword) {
+      setDeleteError("Please enter your counselor password to confirm deletion.");
+      return;
+    }
     const targetNum = studentToDelete.studentNumber;
     const targetName = studentToDelete.fullName || targetNum;
     try {
       setIsDeletingStudent(true);
       setErrorMessage("");
-      await deleteAdminStudent(targetNum);
+      setDeleteError("");
+      await deleteAdminStudent(targetNum, deleteCounselorPassword);
       setStudentToDelete(null);
+      setDeleteCounselorPassword("");
+      setDeleteError("");
       setSuccessMessage(`Student account ${targetName} (${targetNum}) has been successfully deleted.`);
       if (selectedStudentNumber === targetNum) {
         setSelectedStudentNumber("");
@@ -932,7 +941,7 @@ export default function StudentDirectory({ onLogout, session }) {
       }
       await loadStudents();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to delete student account.");
+      setDeleteError(error instanceof Error ? error.message : "Failed to delete student account.");
     } finally {
       setIsDeletingStudent(false);
     }
@@ -1454,14 +1463,26 @@ export default function StudentDirectory({ onLogout, session }) {
         <ConfirmActionModal
           isOpen={Boolean(studentToDelete)}
           onClose={() => {
-            if (!isDeletingStudent) setStudentToDelete(null);
+            if (!isDeletingStudent) {
+              setStudentToDelete(null);
+              setDeleteCounselorPassword("");
+              setDeleteError("");
+            }
           }}
           onConfirm={() => { if (!isDeletingStudent) void handleConfirmDeleteStudent(); }}
           title="Permanently Delete Student Account?"
-          description={`Are you sure you want to permanently delete student account ${studentToDelete?.fullName || ""} (${studentToDelete?.studentNumber || ""})? ALL data including journal entries, conversations, moods, appointments, support tickets, rewards, and login credentials will be permanently erased from the database. This action cannot be undone.`}
+          description={deleteError || `Are you sure you want to permanently delete student account ${studentToDelete?.fullName || ""} (${studentToDelete?.studentNumber || ""})? ALL data including journal entries, conversations, moods, appointments, support tickets, and rewards will be permanently erased. Enter your counselor password to confirm.`}
           cancelLabel="Cancel"
           confirmLabel={isDeletingStudent ? "Deleting..." : "Delete Permanently"}
           confirmTone="rose"
+          inputLabel="Counselor Account Password"
+          inputRequired
+          inputType="password"
+          inputValue={deleteCounselorPassword}
+          onInputChange={(value) => {
+            setDeleteError("");
+            setDeleteCounselorPassword(value);
+          }}
         />
       </div>
     </Layout>

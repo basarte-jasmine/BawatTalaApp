@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
+import { getManilaTodayParts } from "./manila-date";
 
 type MuniReminderPreference = {
   enabled: boolean;
@@ -52,6 +53,22 @@ function getReminderStorageKey(studentNumber: string) {
 function normalizeName(value?: string | null) {
   const name = String(value || "").trim().split(/\s+/)[0];
   return name || "friend";
+}
+
+// Compute the exact UTC instant of the next Manila wall-clock HH:MM.
+// expo-notifications calendar triggers fire in the device timezone, which can differ
+// from Asia/Manila, so reminders are scheduled as exact dates instead.
+function getNextManilaTriggerDate(hour: number, minute: number, now = new Date()): Date {
+  const manilaNowMs = now.getTime() + 8 * 60 * 60 * 1000;
+  const manilaNow = new Date(manilaNowMs);
+  const todayParts = getManilaTodayParts(now);
+  const [year, month, day] = todayParts.isoDate.split("-").map(Number);
+  const todayTargetMs = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
+  const nextMs =
+    todayTargetMs > manilaNowMs
+      ? todayTargetMs
+      : todayTargetMs + 24 * 60 * 60 * 1000;
+  return new Date(nextMs - 8 * 60 * 60 * 1000);
 }
 
 async function loadStoredPreference(studentNumber: string): Promise<MuniReminderPreference> {
@@ -135,6 +152,7 @@ export async function scheduleMuniReminders(studentNumber: string, firstName?: s
   await cancelReminderIds(existingPreference.notificationIds);
 
   const name = normalizeName(firstName);
+  const now = new Date();
   const notificationIds = await Promise.all(
     REMINDER_TEMPLATES.map((template) =>
       Notifications.scheduleNotificationAsync({
@@ -145,9 +163,7 @@ export async function scheduleMuniReminders(studentNumber: string, firstName?: s
         },
         trigger: {
           channelId: Platform.OS === "android" ? "muni-reminders" : undefined,
-          hour: template.hour,
-          minute: template.minute,
-          repeats: true,
+          date: getNextManilaTriggerDate(template.hour, template.minute, now),
         } as any,
       }),
     ),
@@ -160,6 +176,19 @@ export async function scheduleMuniReminders(studentNumber: string, firstName?: s
 export async function syncMuniReminderSchedule(studentNumber: string, firstName?: string | null) {
   const preference = await loadStoredPreference(studentNumber);
   if (!preference.enabled) return;
+
+  // Skip churn when the pending notifications already cover future Manila slots.
+  const Notifications = await getNotificationsModule();
+  if (Notifications) {
+    try {
+      const pending = await Notifications.getAllScheduledNotificationsAsync();
+      const pendingById = new Set(pending.map((item) => (item as { identifier?: string; id?: string }).identifier || (item as { identifier?: string; id?: string }).id || ""));
+      const stillCovered = preference.notificationIds.every((id) => pendingById.has(id));
+      if (stillCovered) return;
+    } catch {
+      // Fall through to a full reschedule.
+    }
+  }
 
   await scheduleMuniReminders(studentNumber, firstName);
 }

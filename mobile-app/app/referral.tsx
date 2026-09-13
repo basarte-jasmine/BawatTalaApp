@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   Share,
@@ -36,6 +37,8 @@ export default function ReferralScreen() {
   const [redeemError, setRedeemError] = useState("");
   const [redeemMessage, setRedeemMessage] = useState("");
   const [redeemSaving, setRedeemSaving] = useState(false);
+  const [showClaimSuccessModal, setShowClaimSuccessModal] = useState(false);
+  const [claimedRewardAmount, setClaimedRewardAmount] = useState(100);
   const [copied, setCopied] = useState(false);
 
   const shareMessage = useMemo(() => {
@@ -114,7 +117,10 @@ export default function ReferralScreen() {
 
     setReferral(result.referral);
     setRedeemCode("");
-    setRedeemMessage(result.message || `Success! You claimed ${result.rewardTala ?? 100} Tala.`);
+    const reward = result.rewardTala ?? 100;
+    setClaimedRewardAmount(reward);
+    setRedeemMessage(result.message || ("Success! You claimed " + reward + " Tala."));
+    setShowClaimSuccessModal(true);
   };
 
   const handleBack = () => {
@@ -233,6 +239,31 @@ export default function ReferralScreen() {
           </>
         )}
       </ScrollView>
+
+      <Modal
+        visible={showClaimSuccessModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowClaimSuccessModal(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalIconWrap}>
+              <Image source={TALA_IMAGE} style={styles.modalRewardIcon} resizeMode="contain" />
+            </View>
+            <Text style={styles.modalTitle}>Tala Received!</Text>
+            <Text style={styles.modalBody}>
+              {"You have successfully claimed +" + claimedRewardAmount + " Tala!"}
+            </Text>
+            <Pressable
+              style={styles.modalConfirmButton}
+              onPress={() => setShowClaimSuccessModal(false)}
+            >
+              <Text style={styles.modalConfirmText}>Awesome!</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -441,4 +472,69 @@ const styles = StyleSheet.create({
     paddingVertical: 12 },
   successCopy: { flex: 1 },
   successTitle: { color: "#345D2E", fontSize: 15, lineHeight: 20, fontFamily: "Outfit-Bold", marginBottom: 2 },
-  successText: { color: "#526A4F", fontSize: 13, lineHeight: 18 } });
+  successText: { color: "#526A4F", fontSize: 13, lineHeight: 18 },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 24,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 340,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 26,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
+  modalIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 999,
+    backgroundColor: "#F4FBEB",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#DCECCF",
+  },
+  modalRewardIcon: {
+    width: 48,
+    height: 48,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontFamily: "Outfit-Bold",
+    color: "#2C3E50",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  modalBody: {
+    fontSize: 15,
+    fontFamily: "Outfit-Medium",
+    color: "#5B6B79",
+    textAlign: "center",
+    lineHeight: 22,
+    marginBottom: 20,
+  },
+  modalConfirmButton: {
+    width: "100%",
+    backgroundColor: "#70C943",
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalConfirmText: {
+    fontSize: 16,
+    fontFamily: "Outfit-Bold",
+    color: "#FFFFFF",
+  },
+});

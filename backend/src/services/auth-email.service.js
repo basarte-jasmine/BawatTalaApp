@@ -24,7 +24,7 @@ function formatOtp(value) {
 async function sendAuthCodeEmail({
   to,
   code,
-  expiresInSeconds = 60,
+  expiresInSeconds = 600,
   context = "verification",
   subject = "Your verification code",
   heading = "Verify Your Request",
@@ -58,7 +58,10 @@ async function sendAuthCodeEmail({
     return { ok: false, skipped: true, reason: "invalid-sender" };
   }
 
-  const expiryText = `${expiresInSeconds} second${expiresInSeconds === 1 ? "" : "s"}`;
+  const expiryMinutes = Math.round(expiresInSeconds / 60);
+  const expiryText = expiresInSeconds >= 60
+    ? `${expiryMinutes} minute${expiryMinutes === 1 ? "" : "s"}`
+    : `${expiresInSeconds} second${expiresInSeconds === 1 ? "" : "s"}`;
   const text = [
     "Hi there,",
     "",
@@ -75,26 +78,29 @@ async function sendAuthCodeEmail({
   ].join("\n");
 
   const html = `
-    <div style="margin:0;padding:24px 12px;background:#f3f4f6;font-family:Arial,sans-serif;color:#111827;">
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;">
+    <div style="margin:0;padding:24px 12px;background:#eef6ea;font-family:Arial,sans-serif;color:#203126;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #d7e6d0;border-radius:18px;overflow:hidden;">
         <tr>
-          <td style="padding:28px 24px;background:#4a90e2;color:#ffffff;text-align:center;">
-            <div style="font-size:28px;line-height:1.25;font-weight:700;">${escapeHtml(heading)}</div>
+          <td style="padding:20px 24px;background:linear-gradient(135deg,#386641 0%,#6a994e 100%);color:#ffffff;">
+            <div style="font-size:12px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.88;">Bawat Tala Security</div>
+            <div style="margin-top:8px;font-size:24px;line-height:1.3;font-weight:700;">${escapeHtml(heading)}</div>
           </td>
         </tr>
         <tr>
-          <td style="padding:36px 38px 34px;">
-            <p style="margin:0 0 18px;font-size:16px;line-height:1.6;">Hi there,</p>
-            <p style="margin:0 0 26px;font-size:16px;line-height:1.6;">${escapeHtml(intro)}</p>
-            <div style="margin:0 auto 28px;max-width:320px;border:2px dashed #4a90e2;border-radius:10px;padding:22px 24px;text-align:center;">
-              <span style="font-size:42px;line-height:1;font-weight:700;letter-spacing:10px;color:#4a90e2;">${escapeHtml(otp)}</span>
+          <td style="padding:24px;">
+            <p style="margin:0 0 16px;font-size:16px;line-height:1.7;color:#2b3d31;">Hi there,</p>
+            <p style="margin:0 0 18px;font-size:16px;line-height:1.7;color:#2b3d31;">${escapeHtml(intro)}</p>
+            <div style="margin:20px auto;max-width:340px;border:2px dashed #6a994e;border-radius:14px;background:#f6fbf3;padding:20px 24px;text-align:center;">
+              <span style="font-size:40px;line-height:1;font-weight:700;letter-spacing:10px;color:#386641;font-family:monospace,Arial,sans-serif;">${escapeHtml(otp)}</span>
             </div>
-            <p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:#374151;">This code will expire in <strong>${escapeHtml(expiryText)}</strong>.</p>
-            <p style="margin:0;font-size:16px;line-height:1.6;color:#374151;">${escapeHtml(ignoreText)}</p>
+            <div style="margin:0 0 16px;padding:12px 16px;border-radius:12px;background:#f6fbf3;border:1px solid #dbead5;color:#2b3d31;font-size:14px;line-height:1.6;">
+              This code will expire in <strong style="color:#386641;">${escapeHtml(expiryText)}</strong>.
+            </div>
+            <p style="margin:0;font-size:14px;line-height:1.6;color:#5f7a5f;">${escapeHtml(ignoreText)}</p>
           </td>
         </tr>
         <tr>
-          <td style="padding:22px 24px;background:#eeeeee;text-align:center;color:#6b7280;font-size:14px;line-height:1.6;">
+          <td style="padding:18px 24px;background:#f4faea;border-top:1px solid #d7e6d0;text-align:center;color:#5f7a5f;font-size:13px;line-height:1.6;">
             <div>This is an automated security message.</div>
             <div>© 2026 Bawat Tala. All rights reserved.</div>
           </td>
@@ -134,7 +140,7 @@ async function sendAuthCodeEmail({
   }
 }
 
-async function sendPasswordResetCodeEmail({ to, code, expiresInSeconds = 60, context = "password reset" }) {
+async function sendPasswordResetCodeEmail({ to, code, expiresInSeconds = 600, context = "password reset" }) {
   return sendAuthCodeEmail({
     to,
     code,

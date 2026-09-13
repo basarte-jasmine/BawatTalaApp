@@ -4,19 +4,20 @@ import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type TabKey = "home" | "journal" | "muni" | "profile" | "none";
+type TabKeyClean = "home" | "journal" | "consult" | "muni" | "none";
 
 type NavItem = {
   iconActive: string;
   iconInactive: string;
   label: string;
-  key: TabKey;
-  route?: "/home" | "/journal" | "/profile" | "/consult" | "/muni-avatar";
+  key: TabKeyClean;
+  route?: "/home" | "/journal" | "/consult" | "/muni-avatar";
 };
 
 const NAV_ITEMS: NavItem[] = [
   { key: "home", iconActive: "home", iconInactive: "home-outline", label: "Home", route: "/home" },
   { key: "journal", iconActive: "book", iconInactive: "book-outline", label: "Journal", route: "/journal" },
-  { key: "profile", iconActive: "calendar-clear", iconInactive: "calendar-clear-outline", label: "Consult", route: "/consult" },
+  { key: "consult", iconActive: "calendar-clear", iconInactive: "calendar-clear-outline", label: "Consult", route: "/consult" },
   { key: "muni", iconActive: "chatbox-ellipses", iconInactive: "chatbox-ellipses-outline", label: "Muni", route: "/muni-avatar" },
 ];
 
@@ -25,7 +26,7 @@ const MUNI_NAV_ACTIVE_IMAGE = require("../../assets/images/MUNI_Active.png");
 const MUNI_NAV_INACTIVE_IMAGE = require("../../assets/images/MUNI_Outline.png");
 
 type HomeBottomNavProps = {
-  activeTab?: TabKey;
+  activeTab?: TabKeyClean | "profile";
   onBeforeLeave?: (nextRoute: string) => boolean;
   transparent?: boolean;
 };
@@ -33,16 +34,17 @@ type HomeBottomNavProps = {
 export function HomeBottomNav({ activeTab, onBeforeLeave, transparent = false }: HomeBottomNavProps) {
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
-  const derivedActiveTab: TabKey | undefined =
+  const normalizedActiveTab = activeTab === "profile" ? "consult" : activeTab;
+  const derivedActiveTab: TabKeyClean | undefined =
     activeTab === "none"
       ? undefined
-      : activeTab ??
+      : normalizedActiveTab ??
         (pathname.startsWith("/journal")
           ? "journal"
           : pathname.startsWith("/muni-avatar") || pathname.startsWith("/muni-voice")
             ? "muni"
           : pathname.startsWith("/consult")
-            ? "profile"
+            ? "consult"
           : pathname === "/home"
             ? "home"
             : undefined);
@@ -277,5 +279,4 @@ const styles = StyleSheet.create({
   centerMicImage: {
     width: 32,
     height: 32 } });
-
 

@@ -27,6 +27,7 @@ import {
   fetchDailyMood,
   fetchTodayJournalSession,
   finishJournalEntry,
+  isBackendReachable,
   JournalEntry,
   JournalMessage,
   saveJournalSupportResponse,
@@ -306,6 +307,21 @@ export default function WriteEntryScreen() {
     setStatusMessage("");
 
     if (mode === "new") {
+      // Offline users start with Solo Journaling by default (no Muni session).
+      const backendReachable = await isBackendReachable();
+      if (!backendReachable) {
+        const offlineResult = await createJournalSession({
+          aiEnabled: false,
+          forceNew: true,
+          studentNumber: user.studentNumber });
+        setEntry(offlineResult.entry ?? null);
+        setMessages(offlineResult.messages ?? []);
+        setAiEnabled(false);
+        setStatusMessage("You're offline. Solo journal is on and it will sync later.");
+        void loadJournalEmotion();
+        setIsLoading(false);
+        return;
+      }
       const createResult = await createJournalSession({
         aiEnabled: true,
         forceNew: true,
@@ -745,10 +761,13 @@ export default function WriteEntryScreen() {
     setIsFinishing(true);
     setErrorMessage("");
     setStatusMessage("");
+    const prioritizedPrimaryConcern =
+      finalTags.find((tag) => CONCERN_TAG_OPTIONS.includes(tag) || INTERPERSONAL_RELATIONSHIP_TAGS.includes(tag)) ||
+      finalTags[0];
     const result = await finishJournalEntry({
       concernTags: finalTags,
       entryId: entry.id,
-      primaryConcern: finalTags[0],
+      primaryConcern: prioritizedPrimaryConcern,
       studentNumber: user.studentNumber });
     setIsFinishing(false);
     setIsSavingTags(false);
@@ -764,7 +783,7 @@ export default function WriteEntryScreen() {
       setMessages(result.messages);
     }
     // Finish Journal: re-prompt once only if still CONFIRMED_CRITICAL and no resource action.
-    if (needsFinishSupportPrompt(result.entry, result.messages)) {
+    if (result.entry && needsFinishSupportPrompt(result.entry, result.messages)) {
       setRiskModalRedirectEntryId(result.entry.id);
       setShowRiskModal(true);
       return;

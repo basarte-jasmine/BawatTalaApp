@@ -26,8 +26,108 @@ const {
 const { query } = require("../config/db");
 const {
   assessEmotionalDistress,
-  personaInstructions,
 } = require("./emotional-distress.service");
+
+/** Mode overlays live with main Muni persona (not in emotional-distress assessor). */
+function personaInstructions(persona) {
+  switch (String(persona || "COMPANION").toUpperCase()) {
+    case "CRITICAL_CLARIFY":
+      return [
+        "PERSONA OBJECTIVE: Calm safety assessor (clarification phase — crisis modal is NOT shown yet).",
+        "Do NOT give productivity tips, thesis advice, or 'one small task' coaching.",
+        "Ask whether the concerning statement is literal right now OR an expression of overwhelm,",
+        "AND gently ask what is going on / what brought them to this point.",
+        "One warm, direct reply (2-3 sentences). Do not diagnose depression or suicidality.",
+        "Do not paste hotline scripts; keep the tone conversational.",
+      ].join(" ");
+    case "CRITICAL_SAFETY":
+      return [
+        "PERSONA OBJECTIVE: Calm safety supporter after the student confirmed a real safety concern.",
+        "Drop chit-chat and goal coaching. Acknowledge seriousness, urge human/emergency support, stay present.",
+        "Write a natural supportive reply — do not use a canned template. Do not diagnose. No productivity questions.",
+      ].join(" ");
+    case "DISTRESS_SUPPORT":
+      return [
+        "PERSONA OBJECTIVE: Empathic supporter for emotional distress / burnout (not crisis modal).",
+        "Validate overwhelm without diagnosing. No hotline spam unless they confirm danger.",
+        "Do not ask productivity or task-breakdown questions. Prefer short validating sentences.",
+        "If the student refuses questions, use zero question marks.",
+      ].join(" ");
+    default:
+      return "PERSONA OBJECTIVE: Warm journaling companion.";
+  }
+}
+
+
+const TASK_COACHING_RE =
+  /\b(one small (part|step)|sharing one part|one part of|small part of (the )?(system|project|work|thesis|assignment)|what part (of|feels)|feels (the )?(hardest|most pressing|most overwhelming|clearest|easier|doable|approachable)|most pressing|more approachable|approachable|manageable (first )?step|what feels clearer|what('s| is) one|tackle first|break it (all )?down|start with( one)?|where (do|to) (you )?start|which part|prioritiz|one thing (you can|to)|tiny step|next step|clearest to start|clearer to start|easiest to tackle|what('s| is) your plan|would sharing|is there a (small )?part|feel more (approachable|manageable|doable))\b/i;
+
+function studentRefusedQuestions(latestUserMessage) {
+  const text = String(latestUserMessage || "")
+    .toLowerCase()
+    .replace(/['']/g, "'");
+  return (
+    /\bdon'?t ask\b/.test(text) ||
+    /\bdont ask\b/.test(text) ||
+    /\bstop asking\b/.test(text) ||
+    /\bayoko magsalita\b/.test(text) ||
+    /\bayoko (nang |na )?sabihin\b/.test(text) ||
+    /\b(wag|huwag)\s+mo\s+(ako|ko|'ko|akong|kong)\s+tanungin\b/.test(text) ||
+    /\b(wag|huwag)\s+mo\s+akong?\s+tanungin\b/.test(text) ||
+    /\bi (don'?t|dont) want (to )?(answer|talk|questions?)\b/.test(text)
+  );
+}
+
+function looksLikeTaskCoachQuestion(text) {
+  const value = String(text || "");
+  if (!value.includes("?")) return TASK_COACHING_RE.test(value);
+  return (
+    TASK_COACHING_RE.test(value) ||
+    /\b(part|step|start|tackle|plan|approachable|manageable|priorit|clearer|clearest|doable)\b/i.test(value)
+  );
+}
+
+/**
+ * Strip task-manager / boundary-violating questions from Muni replies.
+ * No hardcoded replacement — keep the model's own non-coaching sentences.
+ */
+function sanitizeTaskCoachPetReply(rawReply, latestUserMessage) {
+  const original = String(rawReply || "").trim();
+  if (!original) return "";
+
+  const refused = studentRefusedQuestions(latestUserMessage);
+  const coachy = looksLikeTaskCoachQuestion(original);
+  if (!refused && !coachy) {
+    return original;
+  }
+
+  const sentences = original
+    .split(/(?<=[.!?]["']?)\s+|(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .filter((s) => {
+      if (refused && (s.includes("?") || /^(what|which|where|would|is there|can you|could you)\b/i.test(s))) {
+        return false;
+      }
+      if (looksLikeTaskCoachQuestion(s)) return false;
+      return true;
+    });
+
+  let text = sentences.slice(0, 3).join(" ").trim();
+  if (!text) {
+    // Refused + only questions: keep model words with '?' neutralized (no canned copy).
+    // Pure task-coaching slip with nothing left: drop it (empty) rather than keep the coach question.
+    if (refused) {
+      text = original.replace(/\?+/g, ".").replace(/\s+/g, " ").trim();
+    } else {
+      text = "";
+    }
+  }
+  return text;
+}
+
+
+
 
 
 function normalizeBaseUrl(value) {
@@ -370,7 +470,7 @@ async function unavailableConversationAnalysis(
   }
 
   return {
-    pet_reply: distressAssessment.force_pet_reply || null,
+    pet_reply: null,
     summary: "",
     insights: [],
     risk_level: riskLevel,
@@ -1220,6 +1320,10 @@ async function analyzeJournalConversation({
     "You are Muni, the Bawat Tala journaling companion for students.",
     "You have two distinct internal modes: 1. COMPANION MODE: Warm, casual, brief (2-3 sentences). This is for pet_reply. 2. ANALYST MODE: Objective, clinical, and precise. This is for risk_level and insights.",
     personaInstructions(distressAssessment.persona),
+    "GLOBAL RULE (all modes): You are a calm therapist plus supportive friend for emotional reflection — NOT a productivity coach, project manager, or homework planner.",
+    "GLOBAL RULE (all modes): Never ask task-breakdown / planning questions such as what part to start with, which task is easiest, manageable first step, clearest to start with, or what their finish plan is.",
+    "GLOBAL RULE (all modes): Reflect and validate feelings. Prefer presence over problem-solving.",
+    "BOUNDARY RULE (all modes): If the student says don't ask, stop asking, wag/huwag mo ko/ako/kong tanungin, ayoko magsalita, or otherwise refuses questions — ALWAYS write a short warm validation reply (2 sentences) with ZERO question marks. Never return an empty reply.",
     "Use Emotional Distress Level labels only (NONE / DISTRESS / CRITICAL). Never diagnose depression or suicide.",
     "Trigger phrases are attention flags, not automatic confirmed crisis. If safety clarification is needed, ask calmly whether statements are literal.",
     "You only help with journaling, emotional reflection, mood support, school-life stress, coping, and gentle self-check-ins.",
@@ -1231,7 +1335,9 @@ async function analyzeJournalConversation({
     "Do not repeat generic filler such as 'I'm here for you', 'Nandito lang ako', or 'It's okay to feel that way' unless a safety situation requires it.",
     "Use the latest user message as the main target, but keep continuity with recent conversation history so pronouns, follow-up questions, and topic shifts make sense.",
     "Reference at least one concrete detail from the latest user message whenever possible.",
-    "Most replies should help the reflection move forward. If the latest message is short, closed, or simply agrees, keep the conversation alive with a gentle follow-up or a concrete invitation to say more.",
+    studentRefusedQuestions(latestUserMessage) || distressAssessment.persona === "DISTRESS_SUPPORT"
+      ? "Do not push reflection with coaching questions. Validate only. If the student refused questions, reply with zero question marks."
+      : "Most replies should help the reflection move forward. If the latest message is short, closed, or simply agrees, keep the conversation alive with a gentle follow-up — but never a task-breakdown or productivity plan question.",
     "If a question would feel forced, you may respond with a brief natural reaction, but avoid ending several turns in a row with only observations.",
     "Vary your sentence openings and rhythm. Do not reuse the same opening phrase or same reflection structure from recent Muni replies.",
     "Do not fall into a single formulaic Taglish reflection pattern. Avoid using 'Parang' as the default opening, and never use it in consecutive Muni turns.",
@@ -1399,9 +1505,9 @@ async function analyzeJournalConversation({
       String(parsedAnalysis?.pet_reply || "").trim(),
       latestUserMessage,
     );
-    if (distressAssessment.force_pet_reply) {
-      petReply = distressAssessment.force_pet_reply;
-    }
+    const persona = String(distressAssessment.persona || "").toUpperCase();
+    // All modes: strip task-manager coaching; respect don't-ask boundaries. No canned replies.
+    petReply = sanitizeTaskCoachPetReply(petReply, latestUserMessage);
 
     return {
       pet_reply: petReply,

@@ -149,17 +149,24 @@ function MetricCard({ item, onSelect }) {
               <Icon className="h-4 w-4" />
             </div>
           ) : null}
-          <h3 className="truncate text-sm font-semibold text-slate-700" title={item.title}>
-            {item.title}
-          </h3>
-        </div>
-      </div>
-      <div className="flex items-end justify-between gap-2 pt-1">
+         <h3 className="truncate text-sm font-semibold text-slate-700" title={item.title}>
+           {item.title}
+         </h3>
+       </div>
+        {item.scopeLabel ? (
+          <span className="shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-slate-500 uppercase">
+            {item.scopeLabel}
+          </span>
+        ) : null}
+     </div>
+     <div className="flex items-end justify-between gap-2 pt-1">
         <div className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">{item.value}</div>
-        <div className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${chipClassName}`}>
-          {DeltaIcon ? <DeltaIcon className="h-3.5 w-3.5" /> : null}
-          <span>{item.delta}</span>
-        </div>
+        {item.delta && item.delta !== "--" ? (
+          <div className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${chipClassName}`}>
+            {DeltaIcon ? <DeltaIcon className="h-3.5 w-3.5" /> : null}
+            <span>{item.delta}</span>
+          </div>
+        ) : null}
       </div>
     </>
   );
@@ -449,11 +456,12 @@ function JournalEntriesGraph({ data, onSelect }) {
   const padLeft = 68;
   const padRight = 24;
   const padTop = 44;
-  const padBottom = 64;
+  const padBottom = 76;
   const max = Math.max(...data.map((item) => Number(item.value || 0)), 0);
   const { axisMax, guides } = buildJournalEntriesAxis(max);
-  const tickIndexes = new Set(getChartTickIndexes(data.length));
-  const valueLabelIndexes = getJournalValueLabelIndexes(data, 12);
+  const maxTicks = data.length > 20 ? 6 : data.length > 10 ? 7 : 8;
+  const tickIndexes = new Set(getChartTickIndexes(data.length, maxTicks));
+  const valueLabelIndexes = getJournalValueLabelIndexes(data, 10);
   const points = data.map((item, index) => {
     const x = padLeft + (index * (width - padLeft - padRight)) / Math.max(1, data.length - 1);
     const y = padTop + ((axisMax - item.value) * (height - padTop - padBottom)) / axisMax;
@@ -529,9 +537,10 @@ function JournalEntriesGraph({ data, onSelect }) {
               />
               <text
                 x={point.x}
-                y={height - padBottom + 24}
-                textAnchor={index === 0 ? "start" : index === points.length - 1 ? "end" : "middle"}
-                className="fill-[#334155] text-[12px] font-semibold"
+                y={height - padBottom + 20}
+                textAnchor="end"
+                transform={`rotate(-40 ${point.x} ${height - padBottom + 20})`}
+                className="fill-[#334155] text-[11px] sm:text-[12px] font-semibold"
               >
                 {point.label}
               </text>
@@ -551,12 +560,12 @@ function ActiveUsageGraph({ data, onSelect }) {
   const padLeft = 64;
   const padRight = 24;
   const padTop = 42;
-  const padBottom = 94;
+  const padBottom = 96;
   const { axisMax, guides } = buildChartAxis(max);
   const plotWidth = width - padLeft - padRight;
   const plotHeight = height - padTop - padBottom;
   const slotWidth = plotWidth / Math.max(1, sortedData.length);
-  const barWidth = Math.min(72, Math.max(36, slotWidth * 0.58));
+  const barWidth = Math.min(72, Math.max(16, slotWidth * 0.62));
 
   return (
     <div className="w-full">
@@ -625,16 +634,18 @@ function StudentDemographicsChart({ data, onSelect }) {
           key={item.label}
           type="button"
           onClick={onSelect ? () => onSelect(`Student Demographics: ${item.label}`) : undefined}
-          className="grid w-full grid-cols-[120px,1fr,72px] items-center gap-3 text-left"
+          className="grid w-full grid-cols-[minmax(100px,160px),1fr,56px] items-center gap-3 text-left transition-opacity hover:opacity-85"
         >
-          <span className="min-w-0 truncate text-sm font-medium text-gray-500">{item.label}</span>
-          <div className="h-4 overflow-hidden rounded-full bg-gray-100">
+          <span className="min-w-0 truncate text-xs sm:text-sm font-medium text-gray-600" title={item.label}>
+            {item.label}
+          </span>
+          <div className="h-3.5 sm:h-4 overflow-hidden rounded-full bg-gray-100">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-[#2E7D32] to-[#66BB6A]"
+              className="h-full rounded-full bg-gradient-to-r from-[#2E7D32] to-[#66BB6A] transition-all duration-300"
               style={{ width: `${Math.max(12, (item.value / max) * 100)}%` }}
             />
           </div>
-          <span className="text-right text-sm font-semibold text-gray-700">{item.value}</span>
+          <span className="text-right text-xs sm:text-sm font-semibold text-gray-700">{item.value}</span>
         </button>
       ))}
     </div>
@@ -978,19 +989,19 @@ function AtRiskTrendsPanel({ analytics, loading }) {
       <div className="mt-4 flex flex-wrap gap-5 text-xs text-slate-600">
         <div className="flex items-center gap-2">
           <span className="h-3 w-3 rounded-full bg-[#FF5D5D]" />
-          Crisis / Critical Need
+          Urgent
         </div>
         <div className="flex items-center gap-2">
           <span className="h-3 w-3 rounded-full bg-[#F59E0B]" />
-          Distressed / Needs Support
+          Emotional Distress
         </div>
       </div>
       <div className="mt-4 flex gap-2 overflow-x-auto pb-1 text-xs text-slate-600">
         {chartLabels.map((label, index) => (
           <div key={`summary-${index}`} className="min-w-[7.5rem] shrink-0 rounded-lg bg-slate-50 px-2 py-2 text-center">
             <div className="font-bold text-slate-700">{label}</div>
-            <div className="mt-1 text-red-500">Crisis: {formatMetricValue(crisisSeries[index] || 0)}</div>
-            <div className="text-amber-600">Distressed: {formatMetricValue(distressedSeries[index] || 0)}</div>
+            <div className="mt-1 text-red-500">Urgent: {formatMetricValue(crisisSeries[index] || 0)}</div>
+            <div className="text-amber-600">Emotional Distress: {formatMetricValue(distressedSeries[index] || 0)}</div>
           </div>
         ))}
       </div>
@@ -1971,43 +1982,53 @@ function drawMetricCards(context, cards, x, y, width) {
     context.font = "700 15px Arial, Helvetica, sans-serif";
     drawWrappedCanvasText(context, card.title, cardX + 66, cardY + 32, cardWidth - 84, 18, 2);
 
+    if (card.scopeLabel) {
+      context.font = "600 10px Arial, Helvetica, sans-serif";
+      context.fillStyle = "#64748b";
+      context.textAlign = "right";
+      context.fillText(card.scopeLabel.toUpperCase(), cardX + cardWidth - 14, cardY + 32);
+      context.textAlign = "left";
+    }
+
     context.fillStyle = "#0f172a";
     context.font = "800 32px Arial, Helvetica, sans-serif";
     context.fillText(String(card.value ?? "--"), cardX + 18, cardY + 104);
 
-    const deltaText = String(card.delta ?? "--");
-    context.font = "700 12px Arial, Helvetica, sans-serif";
-    const textWidth = context.measureText(deltaText).width;
-    const hasArrow = card.direction === "up" || card.direction === "down";
-    const pillWidth = textWidth + (hasArrow ? 26 : 18);
-    const pillHeight = 24;
-    const pillX = cardX + cardWidth - pillWidth - 18;
-    const pillY = cardY + 84;
+    if (card.delta && card.delta !== "--") {
+      const deltaText = String(card.delta);
+      context.font = "700 12px Arial, Helvetica, sans-serif";
+      const textWidth = context.measureText(deltaText).width;
+      const hasArrow = card.direction === "up" || card.direction === "down";
+      const pillWidth = textWidth + (hasArrow ? 26 : 18);
+      const pillHeight = 24;
+      const pillX = cardX + cardWidth - pillWidth - 18;
+      const pillY = cardY + 84;
 
-    fillRoundRect(context, pillX, pillY, pillWidth, pillHeight, 12, chipBg, chipBorder);
+      fillRoundRect(context, pillX, pillY, pillWidth, pillHeight, 12, chipBg, chipBorder);
 
-    let textStartX = pillX + 9;
-    if (hasArrow) {
-      context.fillStyle = chipText;
-      context.beginPath();
-      const arrowCx = pillX + 11;
-      const arrowCy = pillY + 12;
-      if (card.direction === "up") {
-        context.moveTo(arrowCx - 3.5, arrowCy + 3);
-        context.lineTo(arrowCx, arrowCy - 3.5);
-        context.lineTo(arrowCx + 3.5, arrowCy + 3);
-      } else {
-        context.moveTo(arrowCx - 3.5, arrowCy - 3);
-        context.lineTo(arrowCx, arrowCy + 3.5);
-        context.lineTo(arrowCx + 3.5, arrowCy - 3);
+      let textStartX = pillX + 9;
+      if (hasArrow) {
+        context.fillStyle = chipText;
+        context.beginPath();
+        const arrowCx = pillX + 11;
+        const arrowCy = pillY + 12;
+        if (card.direction === "up") {
+          context.moveTo(arrowCx - 3.5, arrowCy + 3);
+          context.lineTo(arrowCx, arrowCy - 3.5);
+          context.lineTo(arrowCx + 3.5, arrowCy + 3);
+        } else {
+          context.moveTo(arrowCx - 3.5, arrowCy - 3);
+          context.lineTo(arrowCx, arrowCy + 3.5);
+          context.lineTo(arrowCx + 3.5, arrowCy - 3);
+        }
+        context.fill();
+        textStartX = pillX + 18;
       }
-      context.fill();
-      textStartX = pillX + 18;
-    }
 
-    context.fillStyle = chipText;
-    context.font = "700 12px Arial, Helvetica, sans-serif";
-    context.fillText(deltaText, textStartX, pillY + 16);
+      context.fillStyle = chipText;
+      context.font = "700 12px Arial, Helvetica, sans-serif";
+      context.fillText(deltaText, textStartX, pillY + 16);
+    }
   });
 
   return y + Math.ceil(cards.length / columns) * cardHeight + (Math.ceil(cards.length / columns) - 1) * gap;
@@ -2160,11 +2181,12 @@ function drawJournalEntriesLineChart(context, data, x, y, width, height) {
   const padLeft = 60;
   const padRight = 24;
   const padTop = 38;
-  const padBottom = 60;
+  const padBottom = 76;
   const max = Math.max(...data.map((item) => Number(item.value || 0)), 0);
   const { axisMax, guides } = buildJournalEntriesAxis(max);
-  const tickIndexes = new Set(getChartTickIndexes(data.length));
-  const valueLabelIndexes = getJournalValueLabelIndexes(data, 12);
+  const maxTicks = data.length > 20 ? 6 : data.length > 10 ? 7 : 8;
+  const tickIndexes = new Set(getChartTickIndexes(data.length, maxTicks));
+  const valueLabelIndexes = getJournalValueLabelIndexes(data, 10);
   const plotWidth = width - padLeft - padRight;
   const plotHeight = height - padTop - padBottom;
 
@@ -2234,11 +2256,15 @@ function drawJournalEntriesLineChart(context, data, x, y, width, height) {
   });
 
   context.fillStyle = "#334155";
-  context.font = "700 12px Arial, Helvetica, sans-serif";
+  context.font = "700 11px Arial, Helvetica, sans-serif";
   points.forEach((point, index) => {
     if (!tickIndexes.has(index)) return;
-    context.textAlign = index === 0 ? "start" : index === points.length - 1 ? "end" : "center";
-    context.fillText(point.label, point.x, y + height - padBottom + 22);
+    context.save();
+    context.translate(point.x, y + height - padBottom + 16);
+    context.rotate(-0.55);
+    context.textAlign = "right";
+    context.fillText(point.label, 0, 0);
+    context.restore();
   });
   context.textAlign = "left";
 }
@@ -2259,7 +2285,7 @@ function drawProgramDistributionVerticalBars(context, data, x, y, width, height)
   const plotWidth = width - padLeft - padRight;
   const plotHeight = height - padTop - padBottom;
   const slotWidth = plotWidth / Math.max(1, sortedData.length);
-  const barWidth = Math.min(68, Math.max(34, slotWidth * 0.58));
+  const barWidth = Math.min(68, Math.max(16, slotWidth * 0.62));
   const palette = ["#38bdf8", "#34d399", "#818cf8", "#fbbf24", "#f472b6", "#a78bfa", "#4ade80"];
 
   guides.forEach((guide) => {
@@ -2374,6 +2400,57 @@ function drawCounselorWorkload(context, data, x, y, width, height) {
   context.fillText("Peer Counselors", x + 132, legendY + 4);
 }
 
+function drawResponseTargetBars(context, data, x, y, width, height) {
+  const items = Array.isArray(data) ? data : [];
+  if (!items.length) {
+    drawEmptyChartState(context, x, y, width, height);
+    return;
+  }
+
+  const rowHeight = 70;
+  items.forEach((item, index) => {
+    const rowY = y + index * rowHeight;
+    const value = Math.max(0, Math.min(100, Number(item.value || 0)));
+    const label = (item.label || '') + ' (' + (item.targetLabel || '') + ')';
+    const isAmber = item.color === 'amber' || String(item.color || '').indexOf('amber') !== -1;
+    const barColor = isAmber ? '#f59e0b' : '#20C08D';
+    const textColor = isAmber ? '#d97706' : '#059669';
+
+    context.fillStyle = '#334155';
+    context.font = '700 14px Arial, Helvetica, sans-serif';
+    context.fillText(label, x, rowY + 16);
+
+    context.fillStyle = textColor;
+    context.font = '800 14px Arial, Helvetica, sans-serif';
+    context.textAlign = 'right';
+    context.fillText(value + '%', x + width, rowY + 16);
+    context.textAlign = 'left';
+
+    // Background track
+    fillRoundRect(context, x, rowY + 28, width, 12, 6, '#f1f5f9');
+
+    // Bar fill
+    if (value > 0) {
+      const fillW = Math.max(8, (value / 100) * width);
+      fillRoundRect(context, x, rowY + 28, fillW, 12, 6, barColor);
+    }
+  });
+
+  const noteY = y + items.length * rowHeight + 12;
+  fillRoundRect(context, x, noteY, width, 48, 12, '#f8fafc', '#e2e8f0');
+  context.fillStyle = '#64748b';
+  context.font = '500 12px Arial, Helvetica, sans-serif';
+  drawWrappedCanvasText(
+    context,
+    'This is a monitoring metric for response speed. It is helpful for counselor follow-up, but it is not required for basic scheduling to work.',
+    x + 14,
+    noteY + 18,
+    width - 28,
+    16,
+    2
+  );
+}
+
 function drawRiskLineChart(context, trendData, x, y, width, height) {
   const labels = trendData?.labels || [];
   const series = trendData?.series || [];
@@ -2402,10 +2479,9 @@ function drawRiskLineChart(context, trendData, x, y, width, height) {
   const tickIndexes = new Set(getChartTickIndexes(pointCount));
   const padLeft = 54;
   const padRight = 24;
-  const padTop = 24;
-  const padBottom = 110;
+  const padTop = 20;
+  const plotHeight = 140;
   const plotWidth = width - padLeft - padRight;
-  const plotHeight = height - padTop - padBottom;
   const xForIndex = (index) => x + padLeft + (index * plotWidth) / Math.max(1, pointCount - 1);
   const yForValue = (value) => y + padTop + ((axisMax - Number(value || 0)) * plotHeight) / axisMax;
 
@@ -2454,21 +2530,23 @@ function drawRiskLineChart(context, trendData, x, y, width, height) {
   drawLine(distressedValues, RISK_COLORS.distressed);
   drawLine(crisisValues, RISK_COLORS.crisis);
 
+  // X-Axis Date Labels with space so they don't overlap legend
   context.fillStyle = "#64748b";
   context.font = "700 11px Arial, Helvetica, sans-serif";
   chartLabels.forEach((label, index) => {
     if (!tickIndexes.has(index)) return;
     const labelX = xForIndex(index);
-    const labelY = y + padTop + plotHeight + 22;
+    const labelY = y + padTop + plotHeight + 18;
     context.save();
     context.translate(labelX, labelY);
-    context.rotate(-Math.PI / 5);
+    context.rotate(-Math.PI / 6);
     context.textAlign = "right";
     context.fillText(shortenAtRiskAxisLabel(label), 0, 0);
     context.restore();
   });
 
-  const legendY = y + padTop + plotHeight + 46;
+  // Legend placed clearly below date labels
+  const legendY = y + padTop + plotHeight + 54;
   context.fillStyle = "#FF5D5D";
   context.beginPath();
   context.arc(x + padLeft + 10, legendY, 5, 0, Math.PI * 2);
@@ -2476,33 +2554,36 @@ function drawRiskLineChart(context, trendData, x, y, width, height) {
   context.fillStyle = "#475569";
   context.font = "700 12px Arial, Helvetica, sans-serif";
   context.textAlign = "left";
-  context.fillText("Crisis / Critical Need", x + padLeft + 22, legendY + 4);
+  context.fillText("Urgent", x + padLeft + 22, legendY + 4);
 
   context.fillStyle = "#F59E0B";
   context.beginPath();
-  context.arc(x + padLeft + 180, legendY, 5, 0, Math.PI * 2);
+  context.arc(x + padLeft + 130, legendY, 5, 0, Math.PI * 2);
   context.fill();
   context.fillStyle = "#475569";
-  context.fillText("Distressed / Needs Support", x + padLeft + 192, legendY + 4);
+  context.fillText("Emotional Distress", x + padLeft + 142, legendY + 4);
 
+  // Bottom Summary Cards matching the dashboard cards
   const cardGap = 8;
   const cardCount = Math.min(chartLabels.length, 8);
   const cardW = (plotWidth - cardGap * (cardCount - 1)) / cardCount;
-  const cardsY = legendY + 16;
+  const cardsY = legendY + 18;
 
   for (let i = 0; i < cardCount; i++) {
     const cardX = x + padLeft + i * (cardW + cardGap);
-    fillRoundRect(context, cardX, cardsY, cardW, 40, 8, "#f8fafc", "#e2e8f0");
+    fillRoundRect(context, cardX, cardsY, cardW, 58, 8, "#f8fafc", "#e2e8f0");
     context.fillStyle = "#334155";
     context.font = "700 11px Arial, Helvetica, sans-serif";
     context.textAlign = "center";
-    context.fillText(shortenAtRiskAxisLabel(chartLabels[i], 10), cardX + cardW / 2, cardsY + 14);
+    context.fillText(String(chartLabels[i] || "").slice(0, 14), cardX + cardW / 2, cardsY + 15);
 
+    context.fillStyle = "#ef4444";
     context.font = "700 10px Arial, Helvetica, sans-serif";
-    context.fillStyle = "#dc2626";
-    context.fillText("C: " + String(crisisValues[i] || 0), cardX + cardW * 0.3, cardsY + 28);
+    context.fillText("Urgent: " + formatMetricValue(crisisValues[i] || 0), cardX + cardW / 2, cardsY + 32);
+
     context.fillStyle = "#d97706";
-    context.fillText("D: " + String(distressedValues[i] || 0), cardX + cardW * 0.7, cardsY + 28);
+    context.font = "700 10px Arial, Helvetica, sans-serif";
+    context.fillText("Distress: " + formatMetricValue(distressedValues[i] || 0), cardX + cardW / 2, cardsY + 48);
   }
 
   context.textAlign = "left";
@@ -2574,15 +2655,17 @@ function createOverviewDashboardCanvas({
   context.fillText("Overview & Analytics", margin, 82);
   context.fillStyle = "#5f7a5f";
   context.font = "600 19px Arial, Helvetica, sans-serif";
-  context.fillText(`Bawat Tala Overview Dashboard - ${todayLabel}`, margin, 118);
+  context.fillText(`Bawat Tala Overview Dashboard | Date Exported: ${todayLabel} | Analytics range: ${rangeLabel || "selected range"}`, margin, 118);
 
   let y = 158;
   y = drawMetricCards(context, [...summaryCards, ...analyticsCards], margin, y, contentWidth) + 44;
 
   context.fillStyle = "#134611";
   context.font = "900 30px Arial, Helvetica, sans-serif";
-  context.fillText("Activity and Engagement Overview", margin, y);
-  fillRoundRect(context, margin + 430, y - 16, 70, 7, 8, "#b7e4c7");
+  const sectionTitle = "Activity and Engagement Overview";
+  context.fillText(sectionTitle, margin, y);
+  const sectionTitleWidth = context.measureText(sectionTitle).width;
+  fillRoundRect(context, margin + sectionTitleWidth + 16, y - 18, 50, 6, 8, "#b7e4c7");
   y += 28;
 
   drawPanel(context, {
@@ -2717,15 +2800,7 @@ function createOverviewDashboardCanvas({
     title: "Response Within Target Time",
     subtitle: "Counselor response speed for tagged risk cases",
   });
-  drawHorizontalBars(
-    context,
-    responseRateData.map((item) => ({ ...item, value: Number(item.value || 0), label: `${item.label} (${item.targetLabel})` })),
-    margin + panelHalfWidth + gap + 28,
-    y + 96,
-    panelHalfWidth - 56,
-    246,
-    { color: "#20c08d" },
-  );
+  drawResponseTargetBars(context, responseRateData, margin + panelHalfWidth + gap + 28, y + 96, panelHalfWidth - 56, 246);
   y += 390 + gap;
   pageBreaks.push(y * scale);
 
@@ -2733,13 +2808,13 @@ function createOverviewDashboardCanvas({
     x: margin,
     y,
     width: contentWidth,
-    height: 390,
+    height: 440,
     title: "At-Risk Student Trends",
-    subtitle: "Tracking of high and critical severity cases",
+    subtitle: "Tracking of Urgent and Emotional Distress cases",
   });
-  drawRiskLineChart(context, atRiskTrendData, margin + 28, y + 96, contentWidth - 56, 240);
+  drawRiskLineChart(context, atRiskTrendData, margin + 28, y + 96, contentWidth - 56, 310);
 
-  y += 390 + margin;
+  y += 440 + margin;
 
   const outputCanvas = document.createElement("canvas");
   const outputContext = outputCanvas.getContext("2d");
@@ -2940,15 +3015,6 @@ export default function Overview({ onLogout, session }) {
   const selectedRangeLabel = analyticsOverview?.filters
     ? `${formatToMMDDYYYY(analyticsOverview.filters.startDate)} to ${formatToMMDDYYYY(analyticsOverview.filters.endDate)}`
     : "Loading selected range...";
-  const hasScheduledInRange =
-    dashboardSummary?.cards?.scheduledInRange !== undefined && dashboardSummary?.cards?.scheduledInRange !== null;
-  const isTodayOnlyRange =
-    rangeKey === "today" ||
-    (rangeKey === "custom" && customRange.startDate === customRange.endDate && customRange.startDate === todayIso);
-  const scheduledCardSource =
-    !isTodayOnlyRange && hasScheduledInRange
-      ? dashboardSummary.cards.scheduledInRange
-      : dashboardSummary?.cards?.scheduledToday;
   const summaryCards = SUMMARY_CARD_DEFS.map((item) => {
     const isRangeMetric = item.key === "flagged" || item.key === "entries";
     const cardLoading = isRangeMetric ? analyticsLoading : summaryLoading;
@@ -2957,15 +3023,21 @@ export default function Overview({ onLogout, session }) {
           : item.key === "entries" ? (dashboardSummary?.cards?.totalEntries || { value: selectedRangeTotals.entries, direction: "neutral", percentageText: "Selected range" }) : item.key === "futureMessages"
               ? dashboardSummary?.cards?.futureSelfMessages
               : item.key === "scheduled"
-                ? scheduledCardSource
+                ? dashboardSummary?.cards?.scheduledToday
                 : dashboardSummary?.cards?.muniAccuracy;
     const direction = source?.direction || "neutral";
     const hasValue = source?.value !== undefined && source?.value !== null;
+    const scopeLabel =
+      item.key === "scheduled"
+        ? "Today"
+        : item.key === "students" || item.key === "futureMessages"
+          ? "All Time"
+          : "In Range";
 
     return {
       ...item,
-      title:
-        item.key === "scheduled" && !isTodayOnlyRange && hasScheduledInRange ? "Scheduled in Range" : item.title,
+      title: item.title,
+      scopeLabel,
       value: cardLoading
         ? "--"
         : hasValue
@@ -2973,7 +3045,7 @@ export default function Overview({ onLogout, session }) {
             ? `${formatMetricValue(source.value)}%`
             : formatMetricValue(source.value)
           : "--",
-      delta: cardLoading ? "--" : source?.percentageText || "--",
+      delta: item.key === "muniAccuracy" && !cardLoading ? source?.percentageText || "" : "",
       direction: cardLoading || !hasValue ? "neutral" : direction,
       tone: cardLoading || !hasValue ? "gray" : mapMetricTone(item.key, direction),
     };
@@ -2992,6 +3064,7 @@ export default function Overview({ onLogout, session }) {
     return {
       ...item,
       title: source?.label || item.title,
+      scopeLabel: "In Range",
       value: analyticsLoading
         ? "--"
         : hasValue
@@ -2999,13 +3072,7 @@ export default function Overview({ onLogout, session }) {
             ? formatMetricDecimal(source.value)
             : formatMetricValue(source.value)
           : "--",
-      delta: analyticsLoading
-        ? "--"
-        : hasValue
-          ? item.key === "averageEntriesPerStudent"
-            ? `${deltaValue >= 0 ? "+" : ""}${formatMetricDecimal(deltaValue)}`
-            : source?.percentageText || "--"
-          : "--",
+      delta: "",
       direction: analyticsLoading || !hasValue ? "neutral" : direction,
       tone: analyticsLoading || !hasValue ? "gray" : mapMetricTone(item.key, direction),
     };
@@ -3108,8 +3175,8 @@ export default function Overview({ onLogout, session }) {
       moodTrendData,
       primaryConcernsData,
       riskSignalCards: [
-        { title: "Crisis / Critical Need", value: riskFlagsError ? "--" : formatMetricValue(crisisSignalCount) },
-        { title: "Distressed / Needs Support", value: riskFlagsError ? "--" : formatMetricValue(distressedSignalCount) },
+        { title: "Urgent", value: riskFlagsError ? "--" : formatMetricValue(crisisSignalCount) },
+        { title: "Emotional Distress", value: riskFlagsError ? "--" : formatMetricValue(distressedSignalCount) },
         { title: "Contacted Support", value: riskFlagsError ? "--" : formatMetricValue(contactedSignalCount) },
       ],
       sentimentDistributionData,
@@ -3201,14 +3268,18 @@ export default function Overview({ onLogout, session }) {
           </div>
 
           {rangeKey === "custom" ? (
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
               <input
                 type="date"
                 aria-label="Analytics start date"
                 value={customRange.startDate}
                 max={todayIso}
                 onChange={(event) => handleCustomDateChange("startDate", event.target.value)}
-                className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm"
+                className={`h-11 rounded-xl border bg-white px-3 text-sm text-slate-700 shadow-sm ${
+                  customRange.startDate && customRange.endDate && customRange.startDate > customRange.endDate
+                    ? "border-rose-400 focus:border-rose-500 focus:ring-rose-200"
+                    : "border-slate-200"
+                }`}
               />
               <input
                 type="date"
@@ -3217,12 +3288,21 @@ export default function Overview({ onLogout, session }) {
                 min={customRange.startDate || undefined}
                 max={todayIso}
                 onChange={(event) => handleCustomDateChange("endDate", event.target.value)}
-                className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm"
+                className={`h-11 rounded-xl border bg-white px-3 text-sm text-slate-700 shadow-sm ${
+                  customRange.startDate && customRange.endDate && customRange.startDate > customRange.endDate
+                    ? "border-rose-400 focus:border-rose-500 focus:ring-rose-200"
+                    : "border-slate-200"
+                }`}
               />
+              {customRange.startDate && customRange.endDate && customRange.startDate > customRange.endDate ? (
+                <span className="text-xs font-bold text-rose-600">
+                  End date cannot be earlier than start date.
+                </span>
+              ) : null}
               <button
                 type="button"
                 onClick={handleCustomRangeApply}
-                disabled={analyticsLoading}
+                disabled={analyticsLoading || Boolean(customRange.startDate && customRange.endDate && customRange.startDate > customRange.endDate)}
                 className="h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"
               >
                 Apply
@@ -3400,7 +3480,7 @@ export default function Overview({ onLogout, session }) {
                 className="flex w-full items-center justify-between rounded-2xl border border-emerald-100 bg-emerald-50/80 px-4 py-4 text-left transition hover:border-emerald-200"
               >
                 <div>
-                  <div className="text-sm font-semibold text-emerald-900">Crisis / Critical Need</div>
+                  <div className="text-sm font-semibold text-emerald-900">Urgent</div>
                   <div className="mt-1 text-sm text-emerald-700/80">Live entries marked high or critical risk</div>
                 </div>
                 <div className="text-2xl font-bold text-emerald-900">
@@ -3413,7 +3493,7 @@ export default function Overview({ onLogout, session }) {
                 className="flex w-full items-center justify-between rounded-2xl border border-teal-100 bg-teal-50/70 px-4 py-4 text-left transition hover:border-teal-200"
               >
                 <div>
-                  <div className="text-sm font-semibold text-teal-800">Distressed / Needs Support</div>
+                  <div className="text-sm font-semibold text-teal-800">Emotional Distress</div>
                   <div className="mt-1 text-sm text-teal-700/80">Live entries marked as needing support</div>
                 </div>
                 <div className="text-2xl font-bold text-teal-800">
@@ -3451,7 +3531,7 @@ export default function Overview({ onLogout, session }) {
         </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <Card title="At-Risk Student Trends" subtitle="Tracking of high and critical severity cases">
+          <Card title="At-Risk Student Trends" subtitle="Tracking of Urgent and Emotional Distress cases">
             <AtRiskTrendsPanel analytics={analyticsOverview} loading={analyticsLoading} />
           </Card>
 

@@ -135,13 +135,38 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
         }
       })
       .catch(() => {
-        if (mounted) setMuniRemindersEnabledState(false);
-      });
+      if (mounted) setMuniRemindersEnabledState(false);
+    });
 
     return () => {
       mounted = false;
     };
   }, [isHydrated, resetPreferences, studentNumber, user?.firstName]);
+
+  // Exact-date Manila reminders only fire once, so reschedule whenever the app
+  // returns to the foreground to keep the next Manila-time reminder queued.
+  useEffect(() => {
+    if (!studentNumber || !muniRemindersEnabled) return undefined;
+
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      const previousState = appStateRef.current;
+      appStateRef.current = nextState;
+      if (nextState === "active" && previousState !== "active") {
+        void syncMuniReminderSchedule(studentNumber, user?.firstName);
+      }
+    });
+
+    const refreshTimer = setInterval(() => {
+      if (AppState.currentState === "active") {
+        void syncMuniReminderSchedule(studentNumber, user?.firstName);
+      }
+    }, 15 * 60 * 1000);
+
+    return () => {
+      subscription.remove();
+      clearInterval(refreshTimer);
+    };
+  }, [muniRemindersEnabled, studentNumber, user?.firstName]);
 
   const persistPreferences = useCallback(
     async (
@@ -419,10 +444,12 @@ export function JournalLockGate({ children }: PropsWithChildren) {
   };
 
   const handleLeave = () => {
-    if (router.canGoBack()) {
-      router.back();
-      return;
-    }
+    try {
+      if (router.canGoBack()) {
+        router.back();
+        return;
+      }
+    } catch {}
     router.replace("/home");
   };
 

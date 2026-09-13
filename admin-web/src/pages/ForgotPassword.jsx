@@ -88,6 +88,7 @@ export default function ForgotPassword() {
   async function handleResendCode() {
     setError("");
     setMessage("");
+    setOtp("");
     try {
       setPending(true);
       const result = await resendAdminResetCode({ email: email.trim() });

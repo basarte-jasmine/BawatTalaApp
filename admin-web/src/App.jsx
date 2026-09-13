@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BrowserRouter as Router, Navigate, Route, Routes } from "react-router-dom";
+import { Clock } from "lucide-react";
 import { adminLogout, fetchAdminSession, setAdminUnauthorizedHandler } from "./lib/admin-api";
 import { AdminPreferencesProvider, useAdminPreferences } from "./lib/admin-preferences";
 import { isHeadCounselor } from "./lib/admin-roles";
@@ -30,23 +31,50 @@ function InactivityTimerWatcher({ session, onLogout }) {
   const { preferences } = useAdminPreferences();
   const idleTimeoutEnabled = Boolean(preferences?.privacy?.idleTimeoutEnabled);
   const idleTimeoutMinutes = Number(preferences?.privacy?.idleTimeoutMinutes || 30);
+  const [warningSecondsLeft, setWarningSecondsLeft] = useState(null);
+  const warningActiveRef = useRef(false);
 
   useEffect(() => {
-    if (!session || !idleTimeoutEnabled) return undefined;
+    warningActiveRef.current = warningSecondsLeft !== null;
+  }, [warningSecondsLeft]);
+
+  useEffect(() => {
+    if (!session || !idleTimeoutEnabled || typeof window === "undefined") {
+      setWarningSecondsLeft(null);
+      return undefined;
+    }
+
+    // Don't run idle timeout watcher if currently on login or forgot-password
+    if (window.location.pathname.startsWith("/login") || window.location.pathname.startsWith("/forgot-password")) {
+      setWarningSecondsLeft(null);
+      return undefined;
+    }
 
     const timeoutMs = idleTimeoutMinutes * 60 * 1000;
+    const warningMs = Math.min(2 * 60 * 1000, Math.max(30 * 1000, timeoutMs * 0.2));
     const LAST_ACTIVITY_KEY = "bt_admin_last_activity_ts";
+
     const updateActivity = () => {
+      if (warningActiveRef.current) return;
       try {
         window.localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
+        setWarningSecondsLeft(null);
       } catch {}
     };
 
-    updateActivity();
+    try {
+      const currentVal = window.localStorage.getItem(LAST_ACTIVITY_KEY);
+      const currentNum = currentVal ? Number(currentVal) : 0;
+      if (!currentNum || Number.isNaN(currentNum) || Date.now() - currentNum > timeoutMs) {
+        // Reset to now on fresh session load so we don't instantly trigger a stale timeout
+        window.localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
+      }
+    } catch {}
 
-    const events = ["mousemove", "mousedown", "keydown", "touchstart", "scroll", "click", "visibilitychange"];
+    const events = ["mousedown", "keydown", "touchstart", "click"];
     let lastThrottledTime = Date.now();
     const handleUserActivity = () => {
+      if (warningActiveRef.current) return;
       const now = Date.now();
       if (now - lastThrottledTime > 2000) {
         lastThrottledTime = now;
@@ -56,30 +84,136 @@ function InactivityTimerWatcher({ session, onLogout }) {
 
     events.forEach((evt) => window.addEventListener(evt, handleUserActivity, { passive: true }));
 
-    const checkInterval = window.setInterval(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === LAST_ACTIVITY_KEY) {
+        const storedTs = Number(e.newValue || Date.now());
+        const elapsed = Date.now() - storedTs;
+        if (elapsed < timeoutMs - warningMs) {
+          setWarningSecondsLeft(null);
+        }
+      }
+    };
+    window.addEventListener("storage", handleStorageChange);
+
+    const checkInactivity = async () => {
       try {
-        const storedTs = Number(window.localStorage.getItem(LAST_ACTIVITY_KEY) || Date.now());
+        const raw = window.localStorage.getItem(LAST_ACTIVITY_KEY);
+        const storedTs = raw ? Number(raw) : Date.now();
+        if (Number.isNaN(storedTs) || storedTs <= 0) {
+          window.localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
+          return;
+        }
         const elapsed = Date.now() - storedTs;
         if (elapsed >= timeoutMs) {
-          window.clearInterval(checkInterval);
+          setWarningSecondsLeft(null);
+          try {
+            window.localStorage.removeItem(LAST_ACTIVITY_KEY);
+          } catch {}
           if (onLogout) {
-            void onLogout().finally(() => {
-              window.location.assign("/login?notice=idle-timeout");
-            });
-          } else {
+            await onLogout();
+          }
+          if (!window.location.pathname.startsWith("/login")) {
             window.location.assign("/login?notice=idle-timeout");
           }
+          return;
+        }
+
+        const remainingMs = timeoutMs - elapsed;
+        if (remainingMs <= warningMs) {
+          setWarningSecondsLeft(Math.max(1, Math.ceil(remainingMs / 1000)));
+        } else {
+          setWarningSecondsLeft(null);
         }
       } catch {}
-    }, 5000);
+    };
+
+    checkInactivity();
+    const checkInterval = window.setInterval(checkInactivity, 1000);
+
+    const handleVisibilityOrFocus = () => {
+      checkInactivity();
+    };
+
+    window.addEventListener("visibilitychange", handleVisibilityOrFocus);
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    window.addEventListener("pageshow", handleVisibilityOrFocus);
 
     return () => {
       events.forEach((evt) => window.removeEventListener(evt, handleUserActivity));
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+      window.removeEventListener("pageshow", handleVisibilityOrFocus);
       window.clearInterval(checkInterval);
     };
   }, [session, idleTimeoutEnabled, idleTimeoutMinutes, onLogout]);
 
-  return null;
+  if (warningSecondsLeft === null) {
+    return null;
+  }
+
+  const minutes = Math.floor(warningSecondsLeft / 60);
+  const seconds = warningSecondsLeft % 60;
+  const timeDisplay = minutes > 0
+    ? `${minutes} minute${minutes === 1 ? "" : "s"}${seconds > 0 ? ` and ${seconds} second${seconds === 1 ? "" : "s"}` : ""}`
+    : `${seconds} second${seconds === 1 ? "" : "s"}`;
+
+  const handleStaySignedIn = () => {
+    try {
+      window.localStorage.setItem("bt_admin_last_activity_ts", String(Date.now()));
+      setWarningSecondsLeft(null);
+    } catch {}
+  };
+
+  const handleSignOutNow = async () => {
+    setWarningSecondsLeft(null);
+    try {
+      window.localStorage.removeItem("bt_admin_last_activity_ts");
+    } catch {}
+    if (onLogout) {
+      await onLogout();
+    }
+    if (!window.location.pathname.startsWith("/login")) {
+      window.location.assign("/login?notice=idle-timeout");
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-2xl border border-amber-200 bg-white p-6 shadow-2xl">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+            <Clock className="h-6 w-6" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">Session Expiration Warning</h3>
+            <p className="text-xs font-medium text-slate-500">Inactivity Timeout Alert</p>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-xl bg-amber-50/80 border border-amber-200/60 p-4 text-sm leading-relaxed text-amber-900">
+          Your session will expire in <strong>{timeDisplay}</strong> due to inactivity. Would you like to stay signed in?
+        </div>
+
+        <div className="mt-6 flex items-center justify-end gap-3">
+          <button
+            type="button"
+            onClick={handleSignOutNow}
+            className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-100"
+          >
+            Sign Out Now
+          </button>
+          <button
+            type="button"
+            onClick={handleStaySignedIn}
+            className="rounded-xl bg-[#229365] px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-[#1b7b54]"
+          >
+            Stay Signed In
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ProtectedRoute({ session, children }) {

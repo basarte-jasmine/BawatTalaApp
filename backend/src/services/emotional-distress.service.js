@@ -8,10 +8,13 @@
  *   DISTRESS / CLEARED clarification → LOW
  *   CONFIRMED_CRITICAL → HIGH
  *   CLARIFICATION_NEEDED → LOW (no crisis modal yet; Muni asks safety check)
+ *
+ * Engine returns only: distress_signal, safety_status, risk_level,
+ * admin_flag_reason, persona. No forced reply text.
  */
 
 const LITERAL_CRITICAL_PHRASES = [
-  // Clear intent/plan language only — bare "suicide"/"suicidal"/"want to die" are AMBIGUOUS.
+  // Clear intent/plan language — first hit still needs clarification (never auto CONFIRMED).
   "kill myself",
   "killing myself",
   "end my life",
@@ -54,6 +57,7 @@ const AMBIGUOUS_CRITICAL_PHRASES = [
 ];
 
 const DISTRESS_PHRASES = [
+  // Emotional distress only — do NOT list thesis/homework/deadline (false-alarms admin Flagged).
   "overwhelmed",
   "burned out",
   "burnt out",
@@ -81,6 +85,10 @@ const CONFIRM_LITERAL = [
   "i actually want to die",
   "i don't want to be alive",
   "i dont want to be alive",
+  "i have a plan",
+  "i've got a plan",
+  "ive got a plan",
+  "i have a plan to",
 ];
 
 const DENY_HYPERBOLE = [
@@ -117,6 +125,21 @@ const DENY_HYPERBOLE = [
   "about suicide",
   "studying suicide",
   "research on suicide",
+  // Expression / venting denies — latest-message deny wins even if history has "kill myself"
+  "just an expression",
+  "its just an expression",
+  "it's just an expression",
+  "just an expression bro",
+  "expression bro",
+  "an expression",
+  "expression",
+  "just venting",
+  "only venting",
+  "just venting bro",
+  "im just venting",
+  "i'm just venting",
+  "it was just an expression",
+  "was just an expression",
 ];
 
 function normalizeText(value) {
@@ -179,7 +202,10 @@ function looksLikeDenyReply(text) {
     includesAny(value, DENY_HYPERBOLE) ||
     /\b(?:no+|nope|nah|hindi|joke|joking|kidding|exaggerat)\b/i.test(value) ||
     /\bnot\s+thinking\s+(?:of|about)\b/i.test(value) ||
-    /\bjust\s+(?:super\s+)?(?:stressed|exhausted|tired|frustrated|overwhelmed)\b/i.test(value)
+    /\bjust\s+(?:super\s+)?(?:stressed|exhausted|tired|frustrated|overwhelmed|venting)\b/i.test(
+      value,
+    ) ||
+    /\b(?:just\s+)?(?:an\s+)?expression\b/i.test(value)
   );
 }
 
@@ -215,20 +241,20 @@ function toCompatRiskLevel(signal, safetyStatus) {
   return "NONE";
 }
 
-function buildClarificationReply(langHint) {
-  const taglish = /[àáâãäåæçèéêë]|ako|ko|mo|yung|parang|hindi|gusto|pagod/i.test(langHint || "");
-  if (taglish) {
-    return "Gusto kong siguraduhin na naiintindihan kita ng tama. Kapag sinabi mong gusto mong tumigil o 'di na gusto mabuhay, literal ba 'yan ngayon, o pinapahayag mo lang kung gaano ka-overwhelm? Kung may plano kang saktan ang sarili mo ngayon, sabihin mo nang diretso para matulungan kita.";
-  }
-  return "I want to make sure I understand you correctly. When you talk about wanting to quit or not wanting to go on, do you mean that literally right now, or are you expressing how overwhelmed you feel? If you are thinking about hurting yourself or ending your life right now, please tell me clearly so I can help you get support.";
-}
-
-function buildConfirmedCriticalReply(langHint) {
-  const taglish = /[àáâãäåæçèéêë]|ako|ko|mo|yung|parang|hindi|gusto|pagod/i.test(langHint || "");
-  if (taglish) {
-    return "Salamat sa pagiging tapat. Ang safety mo ang pinakaimportante ngayon — hindi kita iiwan sa ganitong bigat. Kung nasa panganib ka ngayon, gumamit ng emergency/hotline support o kausapin agad ang guidance counselor. Nandito ako para suportahan ka, hindi para magbigay ng productivity advice.";
-  }
-  return "Thank you for telling me clearly. Your safety matters most right now — I will not push goals or productivity tips. If you are in danger right now, please use emergency or hotline support, or reach a guidance counselor. I am here to support you calmly and help you get human help.";
+function buildResult({
+  distress_signal,
+  safety_status,
+  risk_level,
+  admin_flag_reason,
+  persona,
+}) {
+  return {
+    distress_signal,
+    safety_status,
+    risk_level,
+    admin_flag_reason,
+    persona,
+  };
 }
 
 /**
@@ -249,48 +275,96 @@ function assessEmotionalDistress(input = {}) {
     .filter((item) => String(item.role || "").toLowerCase() === "user")
     .map((item) => normalizeText(item.text))
     .join(" ");
+  // History is for escalation context only — never re-force CONFIRMED from combined
+  // when the latest message is a deny/clarify reply.
   const combined = `${studentHistoryText} ${latest}`.trim();
 
-  // Phase 2: respond to an open clarification
-  if (priorSafety === "CLARIFICATION_NEEDED") {
-    // DENY / negation first — including "not … ending my life" and "No haha, just super stressed".
+  // Already confirmed: stay HIGH only if student keeps confirming; latest deny clears.
+  if (priorSafety === "CONFIRMED_CRITICAL") {
     if (looksLikeDenyReply(latest)) {
-      return {
+      return buildResult({
         distress_signal: "DISTRESS",
         safety_status: "CLEARED",
         risk_level: "LOW",
-        admin_flag_reason: "Critical-language trigger cleared after student clarified hyperbole/frustration.",
-        force_pet_reply: null,
+        admin_flag_reason:
+          "Previously confirmed concern cleared after student clarified hyperbole/frustration.",
         persona: "DISTRESS_SUPPORT",
-      };
+      });
+    }
+    if (
+      includesAnyUnnegated(latest, CONFIRM_LITERAL) ||
+      includesAnyUnnegated(latest, LITERAL_CRITICAL_PHRASES) ||
+      includesAnyUnnegated(latest, AMBIGUOUS_CRITICAL_PHRASES)
+    ) {
+      return buildResult({
+        distress_signal: "CRITICAL",
+        safety_status: "CONFIRMED_CRITICAL",
+        risk_level: "HIGH",
+        admin_flag_reason: "Student continued confirming literal safety concern.",
+        persona: "CRITICAL_SAFETY",
+      });
+    }
+    // Soft continuation without deny — keep confirmed safety stance.
+    return buildResult({
+      distress_signal: "CRITICAL",
+      safety_status: "CONFIRMED_CRITICAL",
+      risk_level: "HIGH",
+      admin_flag_reason: "Ongoing confirmed critical safety concern.",
+      persona: "CRITICAL_SAFETY",
+    });
+  }
+
+  // Phase 2: respond to an open clarification
+  if (priorSafety === "CLARIFICATION_NEEDED") {
+    // DENY first — latest-message deny wins even if history still contains "kill myself".
+    // Do NOT re-scan combined history to re-force CONFIRMED after a deny.
+    if (looksLikeDenyReply(latest)) {
+      return buildResult({
+        distress_signal: "DISTRESS",
+        safety_status: "CLEARED",
+        risk_level: "LOW",
+        admin_flag_reason:
+          "Critical-language trigger cleared after student clarified hyperbole/frustration.",
+        persona: "DISTRESS_SUPPORT",
+      });
     }
     if (
       includesAnyUnnegated(latest, CONFIRM_LITERAL) ||
       includesAnyUnnegated(latest, LITERAL_CRITICAL_PHRASES)
     ) {
-      return {
+      return buildResult({
         distress_signal: "CRITICAL",
         safety_status: "CONFIRMED_CRITICAL",
         risk_level: "HIGH",
         admin_flag_reason: "Student confirmed literal safety concern after clarification.",
-        force_pet_reply: buildConfirmedCriticalReply(latest),
         persona: "CRITICAL_SAFETY",
-      };
+      });
     }
     // Still ambiguous — stay in clarification
-    return {
+    return buildResult({
       distress_signal: "CRITICAL",
       safety_status: "CLARIFICATION_NEEDED",
       risk_level: "LOW",
       admin_flag_reason: "Awaiting safety clarification for critical-language signals.",
-      force_pet_reply: buildClarificationReply(latest),
       persona: "CRITICAL_CLARIFY",
-    };
+    });
   }
 
-  const literalHits =
-    countUnnegatedMatches(combined, LITERAL_CRITICAL_PHRASES) +
-    countUnnegatedMatches(latest, LITERAL_CRITICAL_PHRASES);
+  // Prefer latest-message deny over any history literal re-scan.
+  if (looksLikeDenyReply(latest)) {
+    return buildResult({
+      distress_signal: "DISTRESS",
+      safety_status: "CLEARED",
+      risk_level: "LOW",
+      admin_flag_reason:
+        "Critical-sounding language cleared by negation or hyperbole in the latest reply.",
+      persona: "DISTRESS_SUPPORT",
+    });
+  }
+
+  // Score critical language primarily from the LATEST message.
+  // History may support escalation into clarification, but never auto-CONFIRMED.
+  const literalHitsLatest = countUnnegatedMatches(latest, LITERAL_CRITICAL_PHRASES);
   const ambiguousHitsLatest = countMatches(latest, AMBIGUOUS_CRITICAL_PHRASES);
   const ambiguousHitsHistory = countMatches(studentHistoryText, AMBIGUOUS_CRITICAL_PHRASES);
   const distressHits = countMatches(combined, DISTRESS_PHRASES);
@@ -299,123 +373,37 @@ function assessEmotionalDistress(input = {}) {
     (ambiguousHitsLatest >= 1 && distressHits >= 1) ||
     (priorSignal === "DISTRESS" && ambiguousHitsLatest >= 1);
 
-  // Same-turn deny / negation wins over history escalate and bare literal substrings.
-  if (looksLikeDenyReply(latest)) {
-    return {
-      distress_signal: "DISTRESS",
-      safety_status: "CLEARED",
-      risk_level: "LOW",
-      admin_flag_reason: "Critical-sounding language cleared by negation or hyperbole in the latest reply.",
-      force_pet_reply: null,
-      persona: "DISTRESS_SUPPORT",
-    };
-  }
-
-  // Clear literal intent / plan language → confirmed without waiting.
-  // Negated phrases ("not thinking of ending my life") do not count.
-  const hyperboleContext =
-    includesAny(latest, DENY_HYPERBOLE) ||
-    /[\u{1F602}\u{1F923}\u{1F62D}]|jk\b|idk just|for (?:my )?thesis|essay|research/u.test(latest);
-  if (literalHits >= 1 && !hyperboleContext) {
-    return {
-      distress_signal: "CRITICAL",
-      safety_status: "CONFIRMED_CRITICAL",
-      risk_level: "HIGH",
-      admin_flag_reason: "Clear literal safety-concern language detected.",
-      force_pet_reply: buildConfirmedCriticalReply(latest),
-      persona: "CRITICAL_SAFETY",
-    };
-  }
-  if (literalHits >= 1 && hyperboleContext) {
-    return {
+  // First hit / ambiguous / literal-sounding without prior CLARIFICATION_NEEDED
+  // + clear confirm → ALWAYS CLARIFICATION_NEEDED + risk LOW. Never auto CONFIRMED.
+  if (literalHitsLatest >= 1 || ambiguousHitsLatest >= 1 || escalating) {
+    return buildResult({
       distress_signal: "CRITICAL",
       safety_status: "CLARIFICATION_NEEDED",
       risk_level: "LOW",
-      admin_flag_reason: "Literal-sounding phrase appeared with hyperbole/academic context — clarification required.",
-      force_pet_reply: buildClarificationReply(latest),
+      admin_flag_reason:
+        "Critical-language trigger requires safety clarification before confirmed crisis.",
       persona: "CRITICAL_CLARIFY",
-    };
-  }
-
-  // Ambiguous critical language or escalation → clarify first (no crisis modal yet)
-  if (ambiguousHitsLatest >= 1 || escalating) {
-    return {
-      distress_signal: "CRITICAL",
-      safety_status: "CLARIFICATION_NEEDED",
-      risk_level: "LOW",
-      admin_flag_reason: "Critical-language trigger requires safety clarification before confirmed crisis.",
-      force_pet_reply: buildClarificationReply(latest),
-      persona: "CRITICAL_CLARIFY",
-    };
-  }
-
-  // Ambiguous critical language or escalation → clarify first (no crisis modal yet)
-  if (ambiguousHitsLatest >= 1 || escalating) {
-    // Soften if message is clearly hyperbolic in the same turn
-    if (includesAny(latest, DENY_HYPERBOLE) && ambiguousHitsLatest <= 1 && !escalating) {
-      return {
-        distress_signal: "DISTRESS",
-        safety_status: "CLEARED",
-        risk_level: "LOW",
-        admin_flag_reason: "Critical-sounding phrase appeared with clear hyperbole/frustration markers.",
-        force_pet_reply: null,
-        persona: "DISTRESS_SUPPORT",
-      };
-    }
-    return {
-      distress_signal: "CRITICAL",
-      safety_status: "CLARIFICATION_NEEDED",
-      risk_level: "LOW",
-      admin_flag_reason: "Critical-language trigger requires safety clarification before confirmed crisis.",
-      force_pet_reply: buildClarificationReply(latest),
-      persona: "CRITICAL_CLARIFY",
-    };
+    });
   }
 
   if (distressHits >= 1 || priorSignal === "DISTRESS") {
-    return {
+    return buildResult({
       distress_signal: "DISTRESS",
       safety_status: priorSafety === "CLEARED" ? "CLEARED" : "NOT_NEEDED",
       risk_level: "LOW",
-      admin_flag_reason: distressHits >= 1 ? "Emotional distress language detected (not confirmed crisis)." : null,
-      force_pet_reply: null,
+      admin_flag_reason:
+        distressHits >= 1 ? "Emotional distress language detected (not confirmed crisis)." : null,
       persona: "DISTRESS_SUPPORT",
-    };
+    });
   }
 
-  return {
+  return buildResult({
     distress_signal: "NONE",
     safety_status: "NOT_NEEDED",
     risk_level: "NONE",
     admin_flag_reason: null,
-    force_pet_reply: null,
     persona: "COMPANION",
-  };
-}
-
-function personaInstructions(persona) {
-  switch (String(persona || "COMPANION").toUpperCase()) {
-    case "CRITICAL_CLARIFY":
-      return [
-        "PERSONA OBJECTIVE: Calm safety assessor.",
-        "Do NOT give productivity tips, thesis advice, or 'one small task' coaching.",
-        "Ask one clear safety-clarification question about whether concerning statements are literal or figurative.",
-        "Stay warm and direct. Do not diagnose depression or suicidality.",
-      ].join(" ");
-    case "CRITICAL_SAFETY":
-      return [
-        "PERSONA OBJECTIVE: Calm safety supporter after confirmed concern.",
-        "Drop chit-chat and goal coaching. Acknowledge the seriousness, urge human/emergency support, stay present.",
-        "Do not diagnose. Do not ask productivity questions.",
-      ].join(" ");
-    case "DISTRESS_SUPPORT":
-      return [
-        "PERSONA OBJECTIVE: Empathic supporter for emotional distress (not crisis modal).",
-        "Validate overwhelm without diagnosing. No hotline spam unless they confirm danger.",
-      ].join(" ");
-    default:
-      return "PERSONA OBJECTIVE: Warm journaling companion.";
-  }
+  });
 }
 
 module.exports = {
@@ -423,5 +411,4 @@ module.exports = {
   normalizeDistressSignal,
   normalizeSafetyStatus,
   toCompatRiskLevel,
-  personaInstructions,
 };

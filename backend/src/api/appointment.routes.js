@@ -440,7 +440,11 @@ function getRequestBaseUrl(req) {
 }
 
 function getAdminWebUrl() {
-  return String(process.env.ADMIN_WEB_URL || "https://bawattalapro.online/").trim();
+  const configured = String(process.env.ADMIN_WEB_URL || "").trim();
+  if (configured && !configured.includes("localhost") && !configured.includes("127.0.0.1")) {
+    return configured.replace(/\/+$/, "");
+  }
+  return "https://bawat-tala-app.vercel.app";
 }
 
 function hashPeerInviteToken(token) {
@@ -1686,7 +1690,7 @@ async function notifyCounselorAboutPendingAppointment({ appointment, student }) 
         appointment,
         ctaText: "Please review the request and choose to confirm, reschedule, or decline the session.",
         actionLabel: "View Request",
-        actionUrl: adminWebUrl,
+        actionUrl: `${adminWebUrl.replace(/\/+$/, "")}/appointments`,
         closingText: "Best regards,\nBawattala Pro Team",
         context: "admin peer pending request notification",
       });
@@ -1710,7 +1714,7 @@ async function notifyCounselorAboutPendingAppointment({ appointment, student }) 
     appointment,
     ctaText: "Please review the request and choose to confirm, reschedule, or decline the session.",
     actionLabel: "View Request",
-    actionUrl: adminWebUrl,
+    actionUrl: `${adminWebUrl.replace(/\/+$/, "")}/appointments`,
     closingText: "If you need any assistance, feel free to reach out.\n\nBest regards,\nBawattala Pro Team",
     context: "counselor pending request notification",
   });
@@ -4525,6 +4529,35 @@ router.post("/admin/availability/day", async (req, res) => {
     return res.status(400).json({ message: "Target date does not match the selected weekday." });
   }
 
+  const isRecurringMode = String(req.body.mode || "").toLowerCase() === "recurring" || Boolean(req.body.isRecurring);
+
+  if (isRecurringMode) {
+    const weeklyValues = [];
+    const weeklyParams = [];
+    let wIdx = 1;
+    for (const slotTime of DEFAULT_SLOT_TIMES) {
+      weeklyValues.push(`($${wIdx}, $${wIdx + 1}, $${wIdx + 2}, $${wIdx + 3}, now())`);
+      weeklyParams.push(counselorId, resolvedDayOfWeek, slotTime, isEnabled);
+      wIdx += 4;
+    }
+
+    await query(
+      `
+        insert into ${availabilityTableName} (
+          ${availabilityIdColumn},
+          day_of_week,
+          slot_time,
+          is_enabled,
+          updated_at
+        )
+        values ${weeklyValues.join(", ")}
+        on conflict (${availabilityIdColumn}, day_of_week, slot_time)
+        where override_date is null
+        do update set is_enabled = excluded.is_enabled, updated_at = now()
+      `,
+      weeklyParams,
+    );
+  } else {
   const values = [];
   const params = [];
   let paramIndex = 1;
@@ -4551,6 +4584,7 @@ router.post("/admin/availability/day", async (req, res) => {
     `,
     params,
   );
+  }
 
   let cancelledAppointmentsCount = 0;
 

@@ -23,7 +23,7 @@ const STREET_PATTERN = /^(?=.{2,120}$)[\p{L}\p{M}0-9][\p{L}\p{M}0-9 .,'#-]*$/u;
 const LOGIN_ATTEMPTS_LIMIT = 3;
 const LOGIN_LOCK_DURATION_MS = 10 * 60 * 1000;
 const OTP_COOLDOWN_MS = 60 * 1000;
-const OTP_VALIDITY_MS = 60 * 1000;
+const OTP_VALIDITY_MS = 10 * 60 * 1000;
 const RESET_SESSION_MS = 10 * 60 * 1000;
 const STUDENT_PROFILE_PICTURE_LIMIT_BYTES = 5 * 1024 * 1024;
 const STRONG_PASSWORD_PATTERN =
@@ -393,26 +393,57 @@ async function sendVerificationCodeEmail(email, context, copy) {
 
 
 async function sendNewEmailChangeCode(email, context, copy) {
-  // New addresses often have no Supabase auth user yet — prefer OTP that can create one.
-  const { error: otpError } = await supabaseAuthClient.auth.signInWithOtp({
+  let token = null;
+  let verifyType = "recovery";
+
+  const recoveryResult = await supabaseAdminClient.auth.admin.generateLink({
+    type: "recovery",
     email,
-    options: { shouldCreateUser: true },
   });
-  if (!otpError) {
-    return { ok: true, verifyType: "email" };
+
+  if (!recoveryResult.error && recoveryResult.data?.properties?.email_otp) {
+    token = recoveryResult.data.properties.email_otp;
+    verifyType = "recovery";
+  } else {
+    const signupResult = await supabaseAdminClient.auth.admin.generateLink({
+      type: "signup",
+      email,
+      password: "TempPassword" + Math.random().toString(36).slice(-8) + "!1Aa",
+    });
+    if (!signupResult.error && signupResult.data?.properties?.email_otp) {
+      token = signupResult.data.properties.email_otp;
+      verifyType = "signup";
+    }
   }
-  const fallback = await sendVerificationCodeEmail(email, context, copy);
-  if (!fallback.ok) {
-    return {
-      ok: false,
-      message: otpError.message || fallback.message || "Failed to send verification code.",
-    };
+
+  if (!token) {
+    return { ok: false, message: "Failed to generate verification code." };
   }
-  return { ok: true, verifyType: "recovery" };
+
+  const emailResult = await sendAuthCodeEmail({
+    to: email,
+    code: token,
+    expiresInSeconds: Math.ceil(OTP_VALIDITY_MS / 1000),
+    context,
+    subject: copy.subject,
+    heading: copy.heading,
+    intro: copy.intro,
+    ignoreText: copy.ignoreText,
+  });
+
+  if (!emailResult.ok) {
+    return { ok: false, message: "Failed to send verification code." };
+  }
+
+  return { ok: true, verifyType };
 }
 
 async function verifyEmailChangeOtp(email, token, preferredType) {
-  const order = preferredType === "recovery" ? ["recovery", "email"] : ["email", "recovery"];
+  const order = preferredType === "signup"
+    ? ["signup", "recovery", "email"]
+    : preferredType === "recovery"
+      ? ["recovery", "signup", "email"]
+      : ["email", "signup", "recovery"];
   let lastError = null;
   for (const type of order) {
     const { error } = await supabaseAuthClient.auth.verifyOtp({
@@ -2208,21 +2239,28 @@ router.post("/send-otp", async (req, res) => {
     });
   }
 
-  const { error } = await supabaseAuthClient.auth.signInWithOtp({
+  const signupResult = await supabaseAdminClient.auth.admin.generateLink({
+    type: "signup",
     email,
-    options: {
-      shouldCreateUser: true,
-    },
+    password: "TempPassword" + Math.random().toString(36).slice(-8) + "!1Aa",
   });
-  if (error) {
-    const msg = error.message || "Failed to send OTP email.";
-    if (msg.toLowerCase().includes("error sending confirmation email")) {
-      return res.status(502).json({
-        message:
-          "Supabase could not send the verification email. Check Supabase Auth email provider/SMTP settings in dashboard.",
-      });
-    }
-    return res.status(400).json({ message: msg });
+  const token = signupResult.data?.properties?.email_otp;
+  if (!token) {
+    return res.status(400).json({ message: signupResult.error?.message || "Failed to generate verification code." });
+  }
+
+  const emailResult = await sendAuthCodeEmail({
+    to: email,
+    code: token,
+    expiresInSeconds: Math.ceil(OTP_VALIDITY_MS / 1000),
+    context: `student registration OTP [${email}]`,
+    subject: "Verify your email",
+    heading: "Verify Your Email",
+    intro: "Welcome to Bawat Tala! Use the verification code below to confirm your student email address:",
+    ignoreText: "If you did not create a Bawat Tala account, you can safely ignore this email.",
+  });
+  if (!emailResult.ok) {
+    return res.status(400).json({ message: "Failed to send verification code." });
   }
 
   const now = Date.now();
@@ -2372,17 +2410,30 @@ router.post("/forgot-password/resend-code", async (req, res) => {
   }
 
   const session = getResetSession(studentNumber);
-  if (!session) {
-    return res
-      .status(400)
-      .json({ message: "Please confirm your account first." });
-  }
-  if (Date.now() < session.resendAvailableAt) {
+  if (session && Date.now() < session.resendAvailableAt) {
     const remaining = Math.ceil((session.resendAvailableAt - Date.now()) / 1000);
     return res.status(429).json({ message: `Please wait ${remaining}s before resending.` });
   }
 
-  const sendResult = await sendRecoveryCode(session.email, `student forgot password resend [${studentNumber}]`);
+  let targetEmail = session?.email;
+  if (!targetEmail) {
+    const { data: profile } = await supabaseAdminClient
+      .from("student_profiles")
+      .select("student_number, email, is_email_verified, is_id_verified")
+      .eq("student_number", studentNumber)
+      .maybeSingle();
+    if (profile && profile.is_email_verified && profile.is_id_verified) {
+      targetEmail = profile.email;
+    }
+  }
+
+  if (!targetEmail) {
+    return res
+      .status(400)
+      .json({ message: "Please confirm your account first." });
+  }
+
+  const sendResult = await sendRecoveryCode(targetEmail, `student forgot password resend [${studentNumber}]`);
   if (!sendResult.ok) {
     return res
       .status(400)
@@ -2391,9 +2442,11 @@ router.post("/forgot-password/resend-code", async (req, res) => {
 
   const now = Date.now();
   setResetSession(studentNumber, {
-    ...session,
+    studentNumber,
+    email: targetEmail,
     otpExpiresAt: now + OTP_VALIDITY_MS,
     resendAvailableAt: now + OTP_COOLDOWN_MS,
+    verifiedAt: 0,
   });
 
   return res.json({
@@ -2423,13 +2476,21 @@ router.post("/verify-otp", async (req, res) => {
     });
   }
 
-  const { error } = await supabaseAuthClient.auth.verifyOtp({
-    email,
-    token,
-    type: "email",
-  });
+  let verifyError = null;
+  for (const type of ["signup", "email"]) {
+    const { error } = await supabaseAuthClient.auth.verifyOtp({
+      email,
+      token,
+      type,
+    });
+    if (!error) {
+      verifyError = null;
+      break;
+    }
+    verifyError = error;
+  }
 
-  if (error) {
+  if (verifyError) {
     return res.status(400).json({
       message: "The code is invalid. Please check the latest email code and try again.",
     });
@@ -2623,7 +2684,7 @@ router.post("/forgot-password/reset", async (req, res) => {
 
   if (verifyPassword(newPassword, profile.password_hash)) {
     return res.status(400).json({
-      message: "Choose a new password that is different from your current password.",
+      message: "Choose a new password that is different from your current or previous password.",
     });
   }
 
@@ -2651,7 +2712,7 @@ router.post("/forgot-password/reset", async (req, res) => {
     verifyPassword(newPassword, previousAccountPasswordHash)
   ) {
     return res.status(400).json({
-      message: "Choose a new password that is different from your previous password.",
+      message: "Choose a new password that is different from your current or previous password.",
     });
   }
 
