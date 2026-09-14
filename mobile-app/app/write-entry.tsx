@@ -237,6 +237,9 @@ export default function WriteEntryScreen() {
   const [entry, setEntry] = useState<JournalEntry | null>(null);
   const [messages, setMessages] = useState<JournalMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
+  const sessionStartedRef = useRef(false);
+  const entryRef = useRef<JournalEntry | null>(null);
+  entryRef.current = entry;
   const [aiEnabled, setAiEnabled] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
@@ -302,6 +305,11 @@ export default function WriteEntryScreen() {
       return;
     }
 
+    if (sessionStartedRef.current && entryRef.current?.id) {
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     setErrorMessage("");
     setStatusMessage("");
@@ -318,6 +326,7 @@ export default function WriteEntryScreen() {
         setMessages(offlineResult.messages ?? []);
         setAiEnabled(false);
         setStatusMessage("You're offline. Solo journal is on and it will sync later.");
+        sessionStartedRef.current = true;
         void loadJournalEmotion();
         setIsLoading(false);
         return;
@@ -341,6 +350,7 @@ export default function WriteEntryScreen() {
       setEntry(createResult.entry ?? null);
       setMessages(createResult.messages ?? []);
       setAiEnabled(Boolean(createResult.entry?.aiEnabled) && !(createResult.entry?.id?.startsWith("local-")));
+      sessionStartedRef.current = true;
       void loadJournalEmotion();
       setIsLoading(false);
       return;
@@ -362,6 +372,7 @@ export default function WriteEntryScreen() {
     setEntry(result.entry ?? null);
     setMessages(result.messages ?? []);
     setAiEnabled(result.entry ? Boolean(result.entry.aiEnabled) : !/offline/i.test(result.message ?? ""));
+    sessionStartedRef.current = true;
     void loadJournalEmotion();
     setIsLoading(false);
   }, [appLockEnabled, isAppLocked, loadJournalEmotion, mode, user?.studentNumber]);
@@ -389,6 +400,7 @@ export default function WriteEntryScreen() {
     return () => {
       showSubscription.remove();
       hideSubscription.remove();
+      sessionStartedRef.current = false;
     };
   }, []);
 
@@ -476,6 +488,7 @@ export default function WriteEntryScreen() {
 
     setShowExitModal(false);
     setIsDiscarding(false);
+    sessionStartedRef.current = false;
     setInputValue("");
     setMessages([]);
     setEntry(null);
@@ -786,8 +799,10 @@ export default function WriteEntryScreen() {
     if (result.entry && needsFinishSupportPrompt(result.entry, result.messages)) {
       setRiskModalRedirectEntryId(result.entry.id);
       setShowRiskModal(true);
+      sessionStartedRef.current = false;
       return;
     }
+    sessionStartedRef.current = false;
     router.replace(`/journal-entry-view?entryId=${encodeURIComponent(result.entry?.id ?? entry.id)}`);
   };
 

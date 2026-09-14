@@ -27,6 +27,9 @@ const { query } = require("../config/db");
 const {
   assessEmotionalDistress,
 } = require("./emotional-distress.service");
+const {
+  getSafetyRiskIndicatorDictionary,
+} = require("./safety-risk-indicators.service");
 
 /** Mode overlays live with main Muni persona (not in emotional-distress assessor). */
 function personaInstructions(persona) {
@@ -37,24 +40,25 @@ function personaInstructions(persona) {
         "Do NOT give productivity tips, thesis advice, or 'one small task' coaching.",
         "Ask whether the concerning statement is literal right now OR an expression of overwhelm,",
         "AND gently ask what is going on / what brought them to this point.",
+        "For boundary, relationship pressure, or power-imbalance disclosures, validate feelings gently and ask whether they feel safe.",
         "One warm, direct reply (2-3 sentences). Do not diagnose depression or suicidality.",
         "Do not paste hotline scripts; keep the tone conversational.",
       ].join(" ");
     case "CRITICAL_SAFETY":
       return [
         "PERSONA OBJECTIVE: Calm safety supporter after the student confirmed a real safety concern.",
-        "Drop chit-chat and goal coaching. Acknowledge seriousness, urge human/emergency support, stay present.",
+        "Drop chit-chat and goal coaching. Acknowledge seriousness, urge human/emergency support, stay present. For exploitation, blackmail, or assault disclosures, reassure the student that they are not to blame and support seeking help immediately.",
         "Write a natural supportive reply — do not use a canned template. Do not diagnose. No productivity questions.",
       ].join(" ");
     case "DISTRESS_SUPPORT":
       return [
-        "PERSONA OBJECTIVE: Empathic supporter for emotional distress / burnout (not crisis modal).",
+        "PERSONA OBJECTIVE: Empathic supporter for emotional distress, heartbreak, or burnout (not crisis modal).",
         "Validate overwhelm without diagnosing. No hotline spam unless they confirm danger.",
         "Do not ask productivity or task-breakdown questions. Prefer short validating sentences.",
         "If the student refuses questions, use zero question marks.",
       ].join(" ");
     default:
-      return "PERSONA OBJECTIVE: Warm journaling companion.";
+      return "PERSONA OBJECTIVE: Warm journaling companion. Validates feelings, supports reflection on friendships, crushes, dating, and daily student life naturally.";
   }
 }
 
@@ -274,7 +278,7 @@ function normalizeScore(value, fallback = 0, min = -1, max = 1) {
 function inferFallbackSentiment(text) {
   const value = String(text || "").toLowerCase();
   const positiveMatches = (
-    value.match(/\b(happy|glad|grateful|thankful|hopeful|excited|proud|calm|relieved|okay|better|love|enjoy|appreciate|masaya|salamat|thank you)\b/g) || []
+    value.match(/\b(happy|glad|grateful|thankful|hopeful|excited|proud|calm|relieved|okay|better|love|enjoy|appreciate|masaya|salamat|thank you|kilig|crush|dating|in love|sweet|affection|blessed)\b/g) || []
   ).length;
   const negativeMatches = (
     value.match(/\b(sad|angry|tired|stressed|stress|anxious|anxiety|worried|scared|afraid|overwhelmed|hopeless|hurt|crying|pagod|takot|galit|malungkot|iyak)\b/g) || []
@@ -740,61 +744,31 @@ function looksLikeMuniFeedback(value) {
   return /\b(off[-\s]?topic|random|repetitive|paulit|ulit|huh|wtf|ano sinasabi|what are you saying|nakalimutan|forgot|bakit.*tanong|why.*question|changed? topic|iba.*usapan)\b/i.test(text);
 }
 
-async function loadEnabledRiskTriggerWords() {
-  try {
-    const result = await query(
-      `
-        select phrase, risk_level
-        from public.risk_trigger_words
-        where is_enabled = true
-        order by
-          case risk_level when 'HIGH' then 0 when 'LOW' then 1 else 2 end,
-          phrase asc
-      `,
-    );
-
-    return result.rows
-      .map((row) => ({
-        phrase: normalizeRiskTriggerPhrase(row.phrase),
-        riskLevel: normalizeRiskTriggerLevel(row.risk_level),
-      }))
-      .filter((trigger) => trigger.phrase && trigger.riskLevel);
-  } catch (error) {
-    console.warn("Configured risk triggers could not be loaded.", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return [];
-  }
-}
-
-function riskFromTriggerWords(text, triggers) {
+async function riskFromSeverityWords(text) {
+  const dict = await getSafetyRiskIndicatorDictionary();
   const value = String(text || "").toLowerCase();
-  const matchedTriggers = (Array.isArray(triggers) ? triggers : [])
-    .map((trigger) => ({
-      phrase: normalizeRiskTriggerPhrase(trigger.phrase),
-      riskLevel: normalizeRiskTriggerLevel(trigger.riskLevel || trigger.risk_level),
-    }))
-    .filter((trigger) => trigger.phrase && trigger.riskLevel && value.includes(trigger.phrase));
+  const criticalLiteral = Array.isArray(dict?.CRITICAL_LITERAL) ? dict.CRITICAL_LITERAL : [];
+  const criticalAmbiguous = Array.isArray(dict?.CRITICAL_AMBIGUOUS) ? dict.CRITICAL_AMBIGUOUS : [];
+  const distress = Array.isArray(dict?.DISTRESS) ? dict.DISTRESS : [];
 
-  const matched =
-    matchedTriggers.find((trigger) => trigger.riskLevel === "HIGH") ||
-    matchedTriggers.find((trigger) => trigger.riskLevel === "LOW");
-  if (matched) {
-    const riskLabel = getRiskLevelLabel(matched.riskLevel);
+  const matchedCritical = criticalLiteral.find((p) => value.includes(p)) || criticalAmbiguous.find((p) => value.includes(p));
+  if (matchedCritical) {
     return {
-      risk_level: matched.riskLevel,
-      admin_flag_reason: `${riskLabel} trigger phrase "${matched.phrase}" was detected.`,
+      risk_level: "LOW", // In two-phase, triggers start at LOW clarification until confirmed
+      admin_flag_reason: `Safety indicator "${matchedCritical}" was detected.`,
     };
   }
-
+  const matchedDistress = distress.find((p) => value.includes(p));
+  if (matchedDistress) {
+    return {
+      risk_level: "LOW",
+      admin_flag_reason: `Emotional distress indicator "${matchedDistress}" was detected.`,
+    };
+  }
   return {
     risk_level: "NONE",
     admin_flag_reason: null,
   };
-}
-
-async function riskFromSeverityWords(text) {
-  return riskFromTriggerWords(text, await loadEnabledRiskTriggerWords());
 }
 
 function mergeRiskSignals(
@@ -1329,6 +1303,9 @@ async function analyzeJournalConversation({
     "You only help with journaling, emotional reflection, mood support, school-life stress, coping, and gentle self-check-ins.",
     "Do not answer unrelated general knowledge, coding, shopping, entertainment, trivia, or off-topic requests.",
     "If the user goes off-topic, gently redirect them back to their journal reflection instead of answering the unrelated request.",
+    "RELATIONSHIPS AND ROMANCE: Discussions about dating, crushes, affection, romantic feelings, and consensual attraction are normal and healthy parts of student life. Do not classify romantic or attraction-related expressions as negative or distressing by default.",
+    "CHATBOT ROLE BOUNDARY: Never roleplay as a romantic partner, date, or spouse. If a student asks you to be their partner, girlfriend, or boyfriend ('Can you be my boyfriend?', 'I love you Muni'), respond warmly and kindly while clearly maintaining your boundary as a supportive journaling companion.",
+    "SAFETY EXCEPTION (EXPLOITATION, GROOMING & ABUSE): Disclosures of non-consensual sexual experiences, statutory or age-inappropriate relationships with authority figures (teachers, older adults), blackmail, sextortion, or coercion must be treated as critical safety concerns. Reassure the student that they are not to blame, avoid graphic/investigative questions, and encourage seeking guidance counselor or trusted adult support.",
     "Never hallucinate app features, policies, emergency resources, or facts you do not know.",
     "Your persona is a calm therapist plus a supportive friend.",
     "Sound warm, grounded, and natural, not robotic, preachy, or overly clinical.",
@@ -1584,11 +1561,13 @@ async function analyzeJournalEntryFinal({
     "Sentiment rules:",
     "- sentiment_label describes the overall emotional tone of the student's own writing.",
     "- sentiment_score must be between -1 and 1, where -1 is very negative, 0 is neutral or balanced, and 1 is very positive.",
+    "- Romantic, affectionate, or attraction-related expressions (e.g., crushes, dating happiness, gratitude for a partner) are positive or neutral, not negative.",
     "- dominant_emotion should be a short plain-language emotion or blended state, such as stress, anxiety, sadness, hope, gratitude, anger, mixed stress and relief, or neutral reflection.",
     "- sentiment_confidence must be between 0 and 1 and should be lower when the entry is vague, sarcastic, very short, or mixed.",
     "Risk rules:",
     "- Assess risk from the overall context and content of the journal entry. The generated summary may support the risk decision when it reflects the entry content, but Muni companion replies, suggested_tags, concern/theme tags, and topic labels must not create a risk flag by themselves.",
     "- Concern/theme tags like Anxiety, Stress, Academic problems, or Mental health are topic metadata and must not make an entry LOW or HIGH by themselves.",
+    "- Romantic discussions and crush feelings are NONE risk by default. Only escalate when there is severe despair/hopelessness linked to self-harm, or disclosures of sexual exploitation, coercion, blackmail, or abuse.",
     "- HIGH (compat) only after confirmed critical emotional distress / clear immediate danger — never from a bare keyword or hyperbole alone.",
     "- LOW only when the student's own words show strong distress, inability to cope/function, persistent intense panic, or urgent need for human support without clear immediate danger.",
     "- NONE for ordinary, mild, situational, brief, or manageable anxiety/stress/sadness when the student's own words do not show danger, inability to cope/function, persistent intense panic, or urgent need for human support.",

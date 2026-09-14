@@ -24,6 +24,20 @@ const {
   normalizeRiskTriggerLevel,
   normalizeRiskTriggerPhrase,
 } = require("../constants/risk-levels");
+const {
+  SAFETY_INDICATOR_CATEGORIES,
+  SAFETY_INDICATOR_CATEGORY_DESCRIPTIONS,
+  SAFETY_INDICATOR_CATEGORY_LABELS,
+  getIndicatorCategoryLabel,
+  normalizeIndicatorCategory,
+  normalizeIndicatorPhrase,
+  normalizeIndicatorSeverity,
+  normalizeVariantsList,
+  SAFETY_INDICATOR_SEVERITY_TIERS,
+} = require("../constants/safety-risk-indicators");
+const {
+  invalidateSafetyRiskIndicatorsCache,
+} = require("../services/safety-risk-indicators.service");
 
 
 const PRIMARY_CONCERN_BY_NORMALIZED = new Map(
@@ -768,15 +782,23 @@ function serializeAdminJournalMessage(message) {
   };
 }
 
-function parseRiskTriggerPayload(body, existing = {}) {
+function parseSafetyRiskIndicatorPayload(body, existing = {}) {
   const phrase =
     Object.prototype.hasOwnProperty.call(body, "phrase")
-      ? normalizeRiskTriggerPhrase(body.phrase)
-      : normalizeRiskTriggerPhrase(existing.phrase);
-  const riskLevel =
-    Object.prototype.hasOwnProperty.call(body, "riskLevel") || Object.prototype.hasOwnProperty.call(body, "risk_level")
-      ? normalizeRiskTriggerLevel(body.riskLevel || body.risk_level)
-      : normalizeRiskTriggerLevel(existing.risk_level || existing.riskLevel);
+      ? normalizeIndicatorPhrase(body.phrase)
+      : normalizeIndicatorPhrase(existing.phrase);
+  const category =
+    Object.prototype.hasOwnProperty.call(body, "category")
+      ? normalizeIndicatorCategory(body.category)
+      : normalizeIndicatorCategory(existing.category);
+  const description =
+    Object.prototype.hasOwnProperty.call(body, "description")
+      ? String(body.description || "").trim()
+      : String(existing.description || "").trim();
+  const variants =
+    Object.prototype.hasOwnProperty.call(body, "variants")
+      ? normalizeVariantsList(body.variants)
+      : normalizeVariantsList(existing.variants || []);
   const isEnabled =
     typeof body.isEnabled === "boolean"
       ? body.isEnabled
@@ -786,20 +808,32 @@ function parseRiskTriggerPayload(body, existing = {}) {
           ? true
           : Boolean(existing.is_enabled);
 
+  const severityTier = normalizeIndicatorSeverity(
+    body.severityTier ?? body.severity_tier ?? existing.severity_tier,
+    category
+  );
+
   return {
+    category,
+    severityTier,
+    description,
     isEnabled,
     phrase,
-    riskLevel,
+    variants,
   };
 }
 
-function serializeRiskTrigger(row) {
-  const riskLevel = normalizeRiskTriggerLevel(row.risk_level) || "LOW";
+function serializeSafetyRiskIndicator(row) {
+  const category = normalizeIndicatorCategory(row.category) || "CRITICAL_LITERAL";
+  const rawVariants = Array.isArray(row.variants) ? row.variants : (typeof row.variants === "string" ? JSON.parse(row.variants || "[]") : []);
   return {
     id: row.id,
     phrase: row.phrase,
-    riskLevel,
-    riskLabel: getRiskLevelLabel(riskLevel),
+    category,
+    categoryLabel: getIndicatorCategoryLabel(category),
+    severityTier: row.severity_tier || "CRITICAL",
+    description: row.description || "",
+    variants: Array.isArray(rawVariants) ? rawVariants : [],
     isEnabled: Boolean(row.is_enabled),
     createdByEmail: row.created_by_email || "",
     updatedByEmail: row.updated_by_email || "",
@@ -2938,218 +2972,334 @@ router.patch("/journal-entries/:entryId/flag", async (req, res) => {
   }
 });
 
-router.get("/risk-triggers", requireRoles("HEAD_COUNSELOR"), async (_req, res) => {
+router.get("/safety-risk-indicators", requireRoles("HEAD_COUNSELOR", "COUNSELOR"), async (req, res) => {
+  const search = normalizeIndicatorPhrase(req.query.search || "");
+  const category = normalizeIndicatorCategory(req.query.category || "");
+  const status = String(req.query.status || "ALL").toUpperCase();
+
+  const conditions = [];
+  const values = [];
+
+  if (search) {
+    values.push(`%${search}%`);
+    conditions.push(`(phrase ilike $${values.length} or coalesce(description, '') ilike $${values.length})`);
+  }
+  if (category) {
+    values.push(category);
+    conditions.push(`category = $${values.length}`);
+  }
+  if (status === "ENABLED") {
+    conditions.push("is_enabled = true");
+  } else if (status === "DISABLED") {
+    conditions.push("is_enabled = false");
+  }
+
+  const whereClause = conditions.length ? `where ${conditions.join(" and ")}` : "";
   const result = await query(
     `
       select
         id,
         phrase,
-        risk_level,
+        category,
+        coalesce(severity_tier, 'CRITICAL') as severity_tier,
+        variants,
+        description,
         is_enabled,
         created_by_email,
         updated_by_email,
         created_at,
         updated_at
-      from public.risk_trigger_words
+      from public.safety_risk_indicators
+      ${whereClause}
       order by
-        case risk_level when 'HIGH' then 0 when 'LOW' then 1 else 2 end,
+        case category
+          when 'CRITICAL_LITERAL' then 0
+          when 'CRITICAL_AMBIGUOUS' then 1
+          when 'DISTRESS' then 2
+          when 'DENY_HYPERBOLE' then 3
+          when 'CONFIRM_LITERAL' then 4
+          else 5
+        end,
         is_enabled desc,
         phrase asc
     `,
+    values,
   );
 
   return res.json({
-    riskLabels: RISK_LEVEL_LABELS,
-    triggers: result.rows.map(serializeRiskTrigger),
+    categories: SAFETY_INDICATOR_CATEGORY_LABELS,
+    categoryDescriptions: SAFETY_INDICATOR_CATEGORY_DESCRIPTIONS,
+    severityTiers: SAFETY_INDICATOR_SEVERITY_TIERS,
+    indicators: result.rows.map(serializeSafetyRiskIndicator),
   });
 });
 
-router.post("/risk-triggers", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
+router.post("/safety-risk-indicators", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
   const { actorEmail, actorName, actorRole } = getActorPayload(req.body);
-  const trigger = parseRiskTriggerPayload(req.body);
+  const indicator = parseSafetyRiskIndicatorPayload(req.body);
 
-  if (!trigger.phrase) {
-    return res.status(400).json({ message: "Trigger word or phrase is required." });
+  if (!indicator.phrase) {
+    return res.status(400).json({ message: "Risk indicator phrase is required." });
   }
-  if (trigger.phrase.length > 120) {
-    return res.status(400).json({ message: "Trigger phrase must be 120 characters or fewer." });
+  if (indicator.phrase.length > 150) {
+    return res.status(400).json({ message: "Risk indicator phrase must be 150 characters or fewer." });
   }
-  if (!trigger.riskLevel) {
-    return res.status(400).json({ message: "Risk flag must be Distressed or Crisis." });
+  if (!indicator.category) {
+    return res.status(400).json({ message: "A valid indicator category is required." });
   }
 
   try {
     const result = await query(
       `
-        insert into public.risk_trigger_words (
+        insert into public.safety_risk_indicators (
           phrase,
-          risk_level,
+          category,
+          severity_tier,
+          description,
+          variants,
           is_enabled,
           created_by_email,
           updated_by_email
         )
-        values ($1, $2, $3, $4, $4)
+        values ($1, $2, $3, $4, $5::jsonb, $6, $7, $7)
         returning
           id,
           phrase,
-          risk_level,
+          category,
+          description,
+          variants,
           is_enabled,
           created_by_email,
           updated_by_email,
           created_at,
           updated_at
       `,
-      [trigger.phrase, trigger.riskLevel, trigger.isEnabled, actorEmail || null],
+      [indicator.phrase, indicator.category, indicator.severityTier || "CRITICAL", indicator.description || null, JSON.stringify(indicator.variants), indicator.isEnabled, actorEmail || null],
     );
 
-    const created = serializeRiskTrigger(result.rows[0]);
+    invalidateSafetyRiskIndicatorsCache();
+    const created = serializeSafetyRiskIndicator(result.rows[0]);
     await writeAdminActivityLog({
-      actionType: "RISK_TRIGGER_CREATED",
+      actionType: "SAFETY_INDICATOR_CREATED",
       actorEmail,
       actorName,
       actorRole,
-      entityType: "RISK_TRIGGER",
-      title: `Risk trigger added: ${created.phrase}`,
-      description: `${created.phrase} was added as ${created.riskLabel}.`,
+      entityType: "SAFETY_RISK_INDICATOR",
+      title: `Safety indicator added: ${created.phrase}`,
+      description: `"${created.phrase}" was added under ${created.categoryLabel}.`,
       metadata: {
-        riskLevel: created.riskLevel,
-        triggerId: created.id,
+        category: created.category,
+        indicatorId: created.id,
       },
     });
 
     return res.status(201).json({
-      message: "Risk trigger added.",
-      trigger: created,
+      message: "Safety risk indicator added.",
+      indicator: created,
     });
   } catch (error) {
     if (error?.code === "23505") {
-      return res.status(409).json({ message: "That trigger phrase already exists." });
+      return res.status(409).json({ message: "That safety indicator phrase already exists." });
     }
     throw error;
   }
 });
 
-router.patch("/risk-triggers/:triggerId", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
-  const triggerId = String(req.params.triggerId || "").trim();
-  if (!isUuid(triggerId)) {
-    return res.status(400).json({ message: "Valid trigger id is required." });
+router.patch("/safety-risk-indicators/:indicatorId", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
+  const indicatorId = String(req.params.indicatorId || "").trim();
+  if (!isUuid(indicatorId)) {
+    return res.status(400).json({ message: "Valid indicator id is required." });
   }
 
   const existingResult = await query(
     `
-      select id, phrase, risk_level, is_enabled
-      from public.risk_trigger_words
+      select id, phrase, category, severity_tier, description, is_enabled, variants
+      from public.safety_risk_indicators
       where id = $1::uuid
       limit 1
     `,
-    [triggerId],
+    [indicatorId],
   );
   if (existingResult.rowCount === 0) {
-    return res.status(404).json({ message: "Risk trigger not found." });
+    return res.status(404).json({ message: "Safety risk indicator not found." });
   }
 
   const { actorEmail, actorName, actorRole } = getActorPayload(req.body);
-  const trigger = parseRiskTriggerPayload(req.body, existingResult.rows[0]);
+  const indicator = parseSafetyRiskIndicatorPayload(req.body, existingResult.rows[0]);
 
-  if (!trigger.phrase) {
-    return res.status(400).json({ message: "Trigger word or phrase is required." });
+  if (!indicator.phrase) {
+    return res.status(400).json({ message: "Risk indicator phrase is required." });
   }
-  if (trigger.phrase.length > 120) {
-    return res.status(400).json({ message: "Trigger phrase must be 120 characters or fewer." });
+  if (indicator.phrase.length > 150) {
+    return res.status(400).json({ message: "Risk indicator phrase must be 150 characters or fewer." });
   }
-  if (!trigger.riskLevel) {
-    return res.status(400).json({ message: "Risk flag must be Distressed or Crisis." });
+  if (!indicator.category) {
+    return res.status(400).json({ message: "A valid indicator category is required." });
   }
 
   try {
     const result = await query(
       `
-        update public.risk_trigger_words
+        update public.safety_risk_indicators
         set
           phrase = $2,
-          risk_level = $3,
-          is_enabled = $4,
-          updated_by_email = $5,
+          category = $3,
+          severity_tier = $4,
+          description = $5,
+          variants = $6::jsonb,
+          is_enabled = $7,
+          updated_by_email = $8,
           updated_at = now()
         where id = $1::uuid
         returning
           id,
           phrase,
-          risk_level,
+          category,
+          description,
+          variants,
           is_enabled,
           created_by_email,
           updated_by_email,
           created_at,
           updated_at
       `,
-      [triggerId, trigger.phrase, trigger.riskLevel, trigger.isEnabled, actorEmail || null],
+      [indicatorId, indicator.phrase, indicator.category, indicator.severityTier || "CRITICAL", indicator.description || null, JSON.stringify(indicator.variants), indicator.isEnabled, actorEmail || null],
     );
 
-    const updated = serializeRiskTrigger(result.rows[0]);
+    invalidateSafetyRiskIndicatorsCache();
+    const updated = serializeSafetyRiskIndicator(result.rows[0]);
+    const changes = {};
+    if (existingResult.rows[0].phrase !== updated.phrase) {
+      changes.fromPhrase = existingResult.rows[0].phrase;
+      changes.toPhrase = updated.phrase;
+    }
+    if (existingResult.rows[0].category !== updated.category) {
+      changes.fromCategory = existingResult.rows[0].category;
+      changes.toCategory = updated.category;
+    }
+    if (existingResult.rows[0].is_enabled !== updated.isEnabled) {
+      changes.fromIsEnabled = existingResult.rows[0].is_enabled;
+      changes.toIsEnabled = updated.isEnabled;
+    }
+      if ((existingResult.rows[0].description || "") !== (updated.description || "")) {
+        changes.fromDescription = existingResult.rows[0].description || "";
+        changes.toDescription = updated.description || "";
+      }
+      const oldVariantsStr = JSON.stringify(existingResult.rows[0].variants || []);
+      const newVariantsStr = JSON.stringify(updated.variants || []);
+      if (oldVariantsStr !== newVariantsStr) {
+        changes.fromVariants = existingResult.rows[0].variants || [];
+        changes.toVariants = updated.variants || [];
+      }
     await writeAdminActivityLog({
-      actionType: "RISK_TRIGGER_UPDATED",
+      actionType: "SAFETY_INDICATOR_UPDATED",
       actorEmail,
       actorName,
       actorRole,
-      entityType: "RISK_TRIGGER",
-      title: `Risk trigger updated: ${updated.phrase}`,
-      description: `${updated.phrase} is now ${updated.isEnabled ? "enabled" : "disabled"} as ${updated.riskLabel}.`,
+      entityType: "SAFETY_RISK_INDICATOR",
+      title: `Safety indicator updated: ${updated.phrase}`,
+      description: `${updated.phrase} is now ${updated.isEnabled ? "enabled" : "disabled"} under ${updated.categoryLabel}.`,
       metadata: {
+        category: updated.category,
+        indicatorId: updated.id,
         isEnabled: updated.isEnabled,
-        riskLevel: updated.riskLevel,
-        triggerId: updated.id,
+        phrase: updated.phrase,
+        changes,
       },
     });
 
     return res.json({
-      message: "Risk trigger updated.",
-      trigger: updated,
+      message: "Safety risk indicator updated.",
+      indicator: updated,
     });
   } catch (error) {
     if (error?.code === "23505") {
-      return res.status(409).json({ message: "That trigger phrase already exists." });
+      return res.status(409).json({ message: "That safety indicator phrase already exists." });
     }
     throw error;
   }
 });
 
-router.delete("/risk-triggers/:triggerId", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
-  const triggerId = String(req.params.triggerId || "").trim();
-  if (!isUuid(triggerId)) {
-    return res.status(400).json({ message: "Valid trigger id is required." });
+router.delete("/safety-risk-indicators/:indicatorId", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
+  const indicatorId = String(req.params.indicatorId || "").trim();
+  if (!isUuid(indicatorId)) {
+    return res.status(400).json({ message: "Valid indicator id is required." });
   }
 
   const existingResult = await query(
     `
-      delete from public.risk_trigger_words
+      delete from public.safety_risk_indicators
       where id = $1::uuid
-      returning id, phrase, risk_level, is_enabled
+      returning id, phrase, category, description, is_enabled, variants
     `,
-    [triggerId],
+    [indicatorId],
   );
   if (existingResult.rowCount === 0) {
-    return res.status(404).json({ message: "Risk trigger not found." });
+    return res.status(404).json({ message: "Safety risk indicator not found." });
   }
 
+  invalidateSafetyRiskIndicatorsCache();
   const { actorEmail, actorName, actorRole } = getActorPayload(req.body);
-  const deleted = serializeRiskTrigger(existingResult.rows[0]);
+  const deleted = serializeSafetyRiskIndicator(existingResult.rows[0]);
   await writeAdminActivityLog({
-    actionType: "RISK_TRIGGER_DELETED",
+    actionType: "SAFETY_INDICATOR_DELETED",
     actorEmail,
     actorName,
     actorRole,
-    entityType: "RISK_TRIGGER",
-    title: `Risk trigger deleted: ${deleted.phrase}`,
-    description: `${deleted.phrase} was removed from configurable risk triggers.`,
+    entityType: "SAFETY_RISK_INDICATOR",
+    title: `Safety indicator deleted: ${deleted.phrase}`,
+    description: `${deleted.phrase} was removed from safety risk indicators.`,
     metadata: {
-      riskLevel: deleted.riskLevel,
-      triggerId: deleted.id,
+      category: deleted.category,
+      indicatorId: deleted.id,
     },
   });
 
+    return res.json({
+      message: "Safety risk indicator deleted.",
+      indicator: deleted,
+    });
+  });
+
+router.get("/safety-risk-indicators/:indicatorId/history", requireRoles("HEAD_COUNSELOR", "COUNSELOR"), async (req, res) => {
+  const indicatorId = String(req.params.indicatorId || "").trim();
+  if (!isUuid(indicatorId)) {
+    return res.status(400).json({ message: "Valid indicator id is required." });
+  }
+
+  const logsResult = await query(
+    `
+      select
+        id,
+        actor_email,
+        actor_name,
+        actor_role,
+        action_type,
+        title,
+        description,
+        metadata,
+        created_at
+      from public.admin_activity_logs
+      where entity_type = 'SAFETY_RISK_INDICATOR'
+        and (metadata->>'indicatorId' = $1 or metadata->>'triggerId' = $1)
+      order by created_at desc
+      limit 50
+    `,
+    [indicatorId],
+  );
+
   return res.json({
-    message: "Risk trigger deleted.",
-    trigger: deleted,
+    history: logsResult.rows.map((row) => ({
+      id: row.id,
+      actorEmail: row.actor_email || "",
+      actorName: row.actor_name || "",
+      actorRole: row.actor_role || "",
+      actionType: row.action_type,
+      title: row.title,
+      description: row.description,
+      metadata: row.metadata || {},
+      createdAt: row.created_at,
+    })),
   });
 });
 
@@ -3493,16 +3643,18 @@ router.get("/search", async (req, res) => {
     ),
     query(
       `
-        select
-          id,
-          phrase,
-          risk_level,
-          is_enabled,
-          created_at
-        from public.risk_trigger_words
-        where
-          phrase ilike $1
-          or risk_level ilike $1
+      select
+        id,
+        phrase,
+        category,
+        variants,
+        is_enabled,
+        created_at
+      from public.safety_risk_indicators
+      where
+        phrase ilike $1
+        or category ilike $1
+        or coalesce(description, '') ilike $1
         order by phrase asc
         limit 12
       `,
@@ -3577,11 +3729,19 @@ router.get("/search", async (req, res) => {
         };
       }),
     ],
+    safetyIndicators: riskTriggersResult.rows.map((row) => ({
+      id: row.id,
+      phrase: row.phrase,
+      category: row.category,
+      categoryLabel: getIndicatorCategoryLabel(row.category),
+      isEnabled: Boolean(row.is_enabled),
+      createdAt: row.created_at,
+    })),
     riskTriggers: riskTriggersResult.rows.map((row) => ({
       id: row.id,
       phrase: row.phrase,
-      riskLevel: row.risk_level,
-      riskLabel: getRiskLevelLabel(row.risk_level),
+      category: row.category,
+      categoryLabel: getIndicatorCategoryLabel(row.category),
       isEnabled: Boolean(row.is_enabled),
       createdAt: row.created_at,
     })),

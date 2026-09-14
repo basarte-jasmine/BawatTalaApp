@@ -2,6 +2,7 @@ import Toast from "../components/Toast";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  Activity,
   AlertTriangle,
   CalendarDays,
   Check,
@@ -9,9 +10,11 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  ClipboardCheck,
   Edit3,
   ExternalLink,
   Eye,
+  FileText,
   Filter,
   Lock,
   MessageSquare,
@@ -34,8 +37,6 @@ import {
 } from "../lib/admin-api";
 import { maskStudentNumber, useAdminPreferences } from "../lib/admin-preferences";
 import {
-  getSafetyStatusDetailLabel,
-  getSafetyStatusLabel,
   isClarificationSafetyStatus,
   isConfirmedCriticalSafetyStatus,
   normalizeSignal,
@@ -47,12 +48,12 @@ const SUPPORT = "#FBBF24";
 const MANILA_TIMEZONE = "Asia/Manila";
 const CRISIS_FREQUENCY_WINDOW_DAYS = 14;
 
-const TABS = ["All", "Urgent", "Emotional Distress", "Resolved"];
+const TABS = ["Active Caseload", "Urgent", "Emotional Distress", "Resolved Cases"];
 const TAB_META = {
-  All: { icon: null },
+  "Active Caseload": { icon: Activity, color: "#0e5a3a" },
   "Urgent": { icon: AlertTriangle, color: CRITICAL },
   "Emotional Distress": { icon: ShieldAlert, color: SUPPORT },
-  Resolved: { icon: CheckCircle2, color: "#3FA34D" },
+  "Resolved Cases": { icon: CheckCircle2, color: "#3FA34D" },
 };
 const DATE_FILTERS = [
   { label: "All Dates", value: "all" },
@@ -131,8 +132,10 @@ function getEntryFlag(entry) {
 }
 
 function entryMatchesFlag(entry, flag) {
-  if (flag === "All") return true;
-  if (flag === "Resolved") return isResolved(entry);
+  if (flag === "Active Caseload" || flag === "All") {
+    return !isResolved(entry) && (getEntryFlag(entry) === "Urgent" || getEntryFlag(entry) === "Emotional Distress");
+  }
+  if (flag === "Resolved Cases" || flag === "Resolved") return isResolved(entry);
   if (flag === "Urgent") return !isResolved(entry) && getEntryFlag(entry) === "Urgent";
   if (flag === "Emotional Distress") {
     return !isResolved(entry) && getEntryFlag(entry) === "Emotional Distress";
@@ -141,14 +144,21 @@ function entryMatchesFlag(entry, flag) {
 }
 
 function studentMatchesFlag(student, flag) {
-  if (flag === "All") return true;
+  if (flag === "Active Caseload" || flag === "All") {
+    return student.entries.some(
+      (entry) => !isResolved(entry) && (getEntryFlag(entry) === "Urgent" || getEntryFlag(entry) === "Emotional Distress"),
+    );
+  }
+  if (flag === "Resolved Cases" || flag === "Resolved") {
+    return student.entries.some(isResolved);
+  }
   return student.entries.some((entry) => entryMatchesFlag(entry, flag));
 }
 
 function flagColor(flag) {
   if (flag === "Urgent") return CRITICAL;
   if (flag === "Emotional Distress") return SUPPORT;
-  if (flag === "Resolved") return "#3FA34D";
+  if (flag === "Resolved Cases" || flag === "Resolved") return "#3FA34D";
   return "#94A3B8";
 }
 
@@ -298,6 +308,17 @@ function getStudentActionLabel(entry) {
   return "";
 }
 
+function studentPriorityScore(student) {
+  let score = 0;
+  if (student.flag === "Urgent") {
+    score += 1000;
+  } else if (student.flag === "Emotional Distress") {
+    score += 500;
+  }
+  score += Math.min(student.crisisFlagsLast14Days || 0, 10) * 100;
+  return score;
+}
+
 function groupEntriesByStudent(entries) {
   const groups = new Map();
   entries.forEach((entry) => {
@@ -335,7 +356,11 @@ function groupEntriesByStudent(entries) {
         crisisFlagsLast14Days,
       };
     })
-    .sort((a, b) => new Date(b.latestEntry.createdAt || b.latestEntry.entryDate) - new Date(a.latestEntry.createdAt || a.latestEntry.entryDate));
+    .sort((a, b) => {
+      const scoreDiff = studentPriorityScore(b) - studentPriorityScore(a);
+      if (scoreDiff !== 0) return scoreDiff;
+      return new Date(b.latestEntry.createdAt || b.latestEntry.entryDate) - new Date(a.latestEntry.createdAt || a.latestEntry.entryDate);
+    });
 }
 
 function FlagBadge({ flag }) {
@@ -403,64 +428,81 @@ function FilterTabs({ activeTab, counts, onChange }) {
 }
 
 function FlaggedStudentRow({ student, onReview, maskStudentNumbers = false }) {
+  const visibleTags = student.activeTags && student.activeTags.length ? student.activeTags : student.concernTags || [];
+  const primaryConcern = student.latestEntry?.primaryConcern || visibleTags[0] || "General";
+  const secondaryTags = visibleTags.filter((tag) => tag !== primaryConcern).slice(0, 2);
+  const remainingCount = Math.max(0, visibleTags.length - (1 + secondaryTags.length));
+
   return (
     <tr className="border-b border-emerald-100/60 bg-white text-sm shadow-sm transition hover:shadow-md last:border-b-0">
-      <td className="rounded-l-2xl px-5 py-4">
+      <td className="rounded-l-2xl px-5 py-4 w-[34%] align-middle">
         <div className="flex items-center gap-3.5">
           <StudentAvatar
-            className="h-11 w-11 rounded-full text-base"
+            className="h-11 w-11 rounded-full text-base shrink-0"
             fullName={student.fullName}
             profilePictureUrl={student.profilePictureUrl}
           />
-          <div>
-            <div className="font-black text-slate-900 tracking-wide uppercase text-sm">{student.fullName}</div>
-            <div className="text-xs font-medium text-slate-500 mt-0.5">{maskStudentNumber(student.studentNumber, maskStudentNumbers)}</div>
+          <div className="min-w-0 flex-1">
+            <div className="font-black text-slate-900 tracking-wide uppercase text-sm truncate" title={student.fullName}>
+              {student.fullName}
+            </div>
+            {student.program && student.program !== "Unspecified" ? (
+              <div className="text-xs font-bold text-slate-600 uppercase mt-0.5 truncate">
+                {student.program}
+              </div>
+            ) : null}
+            <div className="text-xs font-semibold text-slate-500 mt-0.5">
+              {maskStudentNumber(student.studentNumber, maskStudentNumbers)}
+            </div>
+            {student.crisisFlagsLast14Days >= 2 ? (
+              <div className="mt-1.5 inline-block rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-[#EF4444]">
+                {student.crisisFlagsLast14Days} elevated urgent in 14d
+              </div>
+            ) : null}
           </div>
         </div>
       </td>
-      <td className="px-5 py-4">
-        <div className="flex max-w-sm flex-wrap gap-1.5">
-          {(student.activeTags || []).map((tag) => (
-            <span key={student.studentNumber + "-active-" + tag} className="rounded-full border border-amber-300 bg-amber-50/70 px-3 py-1 text-xs font-semibold text-amber-800">
+      <td className="px-5 py-4 w-[22%] align-middle">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-bold text-amber-900 shadow-xs">
+            {primaryConcern}
+          </span>
+          {secondaryTags.map((tag) => (
+            <span
+              key={student.studentNumber + "-sec-" + tag}
+              className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-600"
+            >
               {tag}
             </span>
           ))}
-          {(student.historicalTags || []).slice(0, 2).map((tag) => (
-            <span key={student.studentNumber + "-hist-" + tag} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-400">
-              {tag}
-            </span>
-          ))}
-          {(student.historicalTags || []).length > 2 ? (
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-400">
-              {/* + past */}
-              {"+" + ((student.historicalTags || []).length - 2) + " past"}
+          {remainingCount > 0 ? (
+            <span
+              className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-500"
+              title={visibleTags.slice(3).join(", ")}
+            >
+              +{remainingCount} more
             </span>
           ) : null}
         </div>
       </td>
-      <td className="px-5 py-4">
+      <td className="px-5 py-4 w-[14%] align-middle">
         <FlagBadge flag={student.flag} />
       </td>
-      <td className="px-5 py-4 text-center">
+      <td className="px-5 py-4 w-[14%] align-middle text-center">
         <div className="text-base font-black text-slate-900">{student.entries.length}</div>
-        {student.crisisFlagsLast14Days >= 2 ? (
-          <div className="mt-1 inline-block rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-[10px] font-bold text-[#EF4444]">
-            {student.crisisFlagsLast14Days} elevated urgent flags in 14d
-          </div>
-        ) : null}
       </td>
-      <td className="px-5 py-4 font-semibold text-slate-700 text-sm">
+      <td className="px-5 py-4 w-[10%] align-middle font-semibold text-slate-700 text-xs">
         {formatDate(student.latestEntry.createdAt || student.latestEntry.entryDate, { withTime: true })}
       </td>
-      <td className="rounded-r-2xl px-5 py-4 text-right">
+      <td className="rounded-r-2xl px-5 py-4 w-[5%] text-right align-middle">
         <button
           type="button"
           onClick={() => onReview(student)}
-          className="inline-flex items-center gap-2 rounded-xl bg-[#0e5a3a] px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#0b482e]"
+          className="inline-flex items-center gap-1.5 rounded-xl bg-[#0e5a3a] px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-[#0b482e]"
         >
-          <Eye className="h-4 w-4" />
+          <Eye className="h-3.5 w-3.5" />
           Review
-          <ChevronRight className="h-4 w-4" />
+          <ChevronRight className="h-3.5 w-3.5" />
         </button>
       </td>
     </tr>
@@ -472,7 +514,6 @@ function EntryCard({ entry, isSelected, onSelect }) {
   const actionLabel = getStudentActionLabel(entry);
   const isFinished = isFinishedEntry(entry);
   const resolved = isResolved(entry);
-  const safetyLabel = getSafetyStatusLabel(entry);
 
   return (
     <button
@@ -524,13 +565,8 @@ function EntryCard({ entry, isSelected, onSelect }) {
           Intervention: <span className="text-slate-800">{actionLabel}</span>
         </div>
       ) : null}
-      <div className="mt-3 flex items-center justify-between">
+      <div className="mt-3">
         <FlagPill flag={flag} />
-        {safetyLabel && safetyLabel !== flag ? (
-          <span className="text-[11px] font-medium text-slate-500">
-            {safetyLabel}
-          </span>
-        ) : null}
       </div>
     </button>
   );
@@ -832,12 +868,6 @@ function FlagDetails({ entry, isEditing, editState, saving, onChange, onEdit, on
             <div className="mt-1 font-bold text-slate-800">{flag}</div>
           </div>
           <div>
-            <div className="text-xs font-semibold text-slate-400">Well-being status</div>
-            <div className="mt-1 font-bold text-slate-800">
-              {getSafetyStatusDetailLabel(entry) || getSafetyStatusLabel(entry) || (isFinishedEntry(entry) ? "—" : "In progress")}
-            </div>
-          </div>
-          <div>
             <div className="text-xs font-semibold text-slate-400">Primary Concern</div>
             <div className="mt-1 font-bold text-slate-800">{entry?.primaryConcern || "Not set"}</div>
           </div>
@@ -881,6 +911,7 @@ function ReviewModal({
   maskStudentNumbers = false,
   followUpInfo = null,
 }) {
+  const [modalInspectTab, setModalInspectTab] = useState("incident");
   if (!student) return null;
 
   return (
@@ -931,30 +962,96 @@ function ReviewModal({
           <div className="h-full overflow-y-auto pr-2 space-y-6">
             {selectedEntry ? (
               <>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-800 mb-2.5">Flagged Journal Entry</h3>
-                  <JournalEntryViewer entry={selectedEntry} onOpenJournal={onOpenJournal} />
+                <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
+                  <button
+                    type="button"
+                    onClick={() => setModalInspectTab("incident")}
+                    className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition ${
+                      modalInspectTab === "incident"
+                        ? "bg-[#e7f1ed] text-[#134611] shadow-xs"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    <Eye className="h-4 w-4" />
+                    Incident Review
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModalInspectTab("action")}
+                    className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold transition ${
+                      modalInspectTab === "action"
+                        ? "bg-[#e7f1ed] text-[#134611] shadow-xs"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    <ClipboardCheck className="h-4 w-4" />
+                    Case Action & History
+                  </button>
                 </div>
 
-                <SummaryNotes entry={selectedEntry} />
+                {modalInspectTab === "incident" ? (
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-800 mb-2.5">Flagged Journal Entry</h3>
+                      <JournalEntryViewer entry={selectedEntry} onOpenJournal={onOpenJournal} />
+                    </div>
 
-                <div>
-                  <h3 className="text-sm font-bold text-slate-800 mb-2.5">Student Feedback</h3>
-                  <StudentSummaryFeedback entry={selectedEntry} />
-                </div>
+                    <SummaryNotes entry={selectedEntry} />
 
-                <FlagDetails
-                  entry={selectedEntry}
-                  isEditing={isEditing}
-                  editState={editState}
-                  saving={saving}
-                  onChange={onEditChange}
-                  onEdit={onEdit}
-                  onCancel={onCancelEdit}
-                  onSave={onSaveEdit}
-                />
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-800 mb-2.5">Student Feedback</h3>
+                      <StudentSummaryFeedback entry={selectedEntry} />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {/* Selected Entry's Specific Concerns & Tags (dynamically updates when clicking different entries!) */}
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                          Entry Concerns & Tags
+                        </div>
+                        <span className="text-[11px] font-semibold text-slate-400">
+                          {formatDate(getEntryDateValue(selectedEntry), { withTime: true })}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {getConcernTags(selectedEntry).length ? (
+                          getConcernTags(selectedEntry).map((tag, idx) => {
+                            const isPrimary = tag === selectedEntry.primaryConcern || idx === 0;
+                            return (
+                              <span
+                                key={selectedEntry.id + "-" + tag}
+                                className={`rounded-full px-3 py-1 text-xs font-bold ${
+                                  isPrimary
+                                    ? "border border-amber-300 bg-amber-50 text-amber-900 shadow-xs"
+                                    : "border border-slate-200 bg-white text-slate-700"
+                                }`}
+                              >
+                                {tag} {isPrimary ? "(Primary)" : ""}
+                              </span>
+                            );
+                          })
+                        ) : (
+                          <span className="text-xs text-slate-400">No concern tags recorded on this entry</span>
+                        )}
+                      </div>
+                    </div>
 
-                <FlagHistory entry={selectedEntry} />
+                    <FlagDetails
+                      entry={selectedEntry}
+                      isEditing={isEditing}
+                      editState={editState}
+                      saving={saving}
+                      onChange={onEditChange}
+                      onEdit={onEdit}
+                      onCancel={onCancelEdit}
+                      onSave={onSaveEdit}
+                    />
+
+                    <FlagHistory entry={selectedEntry} />
+                  </div>
+                )}
               </>
             ) : (
               <div className="rounded-xl border border-slate-200 p-4 text-sm text-slate-500">Select an entry to review.</div>
@@ -1210,7 +1307,7 @@ export default function FlaggedEntries({ onLogout, session }) {
   const navigate = useNavigate();
   const shouldMaskStudentNumbers = Boolean(preferences.privacy.maskStudentNumbers);
   const [entries, setEntries] = useState([]);
-  const [activeTab, setActiveTab] = useState("All");
+  const [activeTab, setActiveTab] = useState("Active Caseload");
   const [dateFilter, setDateFilter] = useState("all");
   const [concernFilter, setConcernFilter] = useState("all");
   const [programFilter, setProgramFilter] = useState("all");
@@ -1219,7 +1316,7 @@ export default function FlaggedEntries({ onLogout, session }) {
 
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [reviewEntries, setReviewEntries] = useState([]);
-  const [reviewFilter, setReviewFilter] = useState("All");
+  const [reviewFilter, setReviewFilter] = useState("Active Caseload");
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewError, setReviewError] = useState("");
@@ -1270,9 +1367,9 @@ export default function FlaggedEntries({ onLogout, session }) {
   }, [entries]);
 
   const counts = useMemo(() => {
-    const base = { All: groupedStudents.length, "Urgent": 0, "Emotional Distress": 0, Resolved: 0 };
+    const base = { "Active Caseload": 0, "Urgent": 0, "Emotional Distress": 0, "Resolved Cases": 0 };
     groupedStudents.forEach((student) => {
-      TABS.filter((tab) => tab !== "All").forEach((tab) => {
+      TABS.forEach((tab) => {
         if (studentMatchesFlag(student, tab)) {
           base[tab] += 1;
         }
@@ -1282,9 +1379,9 @@ export default function FlaggedEntries({ onLogout, session }) {
   }, [groupedStudents]);
 
   const reviewCounts = useMemo(() => {
-    const base = { All: reviewEntries.length, "Urgent": 0, "Emotional Distress": 0, Resolved: 0 };
+    const base = { "Active Caseload": 0, "Urgent": 0, "Emotional Distress": 0, "Resolved Cases": 0 };
     reviewEntries.forEach((entry) => {
-      TABS.filter((tab) => tab !== "All").forEach((tab) => {
+      TABS.forEach((tab) => {
         if (entryMatchesFlag(entry, tab)) {
           base[tab] += 1;
         }
@@ -1348,9 +1445,20 @@ export default function FlaggedEntries({ onLogout, session }) {
 
   async function handleReviewStudent(student) {
     setSelectedStudent(student);
+    const hasUnresolved = student.entries.some((e) => !isResolved(e));
+    const initialFilter =
+      activeTab === "Resolved Cases" || !hasUnresolved
+        ? "Resolved Cases"
+        : activeTab === "Urgent"
+          ? "Urgent"
+          : activeTab === "Emotional Distress"
+            ? "Emotional Distress"
+            : "Active Caseload";
     setReviewEntries(student.entries);
-    setReviewFilter("All");
-    const initialEntry = pickMostSevereUnresolvedEntry(student.entries) || student.entries[0] || null;
+    setReviewFilter(initialFilter);
+    const visibleEntries = student.entries.filter((e) => entryMatchesFlag(e, initialFilter));
+    const initialEntry =
+      pickMostSevereUnresolvedEntry(visibleEntries) || visibleEntries[0] || student.entries[0] || null;
     setSelectedEntry(initialEntry);
     resetEditState(initialEntry);
     setReviewError("");
@@ -1692,12 +1800,12 @@ export default function FlaggedEntries({ onLogout, session }) {
           <table className="w-full min-w-[980px] border-separate border-spacing-y-3.5 text-left">
             <thead>
               <tr className="text-xs font-extrabold uppercase tracking-wider text-slate-700">
-                <th className="px-5 py-2">Student Name</th>
-                <th className="px-5 py-2">Concern Type</th>
-                <th className="px-5 py-2">Risk Flag</th>
-                <th className="px-5 py-2 text-center">Total Flagged Entries</th>
-                <th className="px-5 py-2">Flagged On</th>
-                <th className="px-5 py-2 text-right">Action</th>
+                <th className="px-5 py-2 w-[34%]">Student</th>
+                <th className="px-5 py-2 w-[22%]">Concern Type</th>
+                <th className="px-5 py-2 w-[14%]">Risk Flag</th>
+                <th className="px-5 py-2 w-[14%] text-center">Flagged Pattern</th>
+                <th className="px-5 py-2 w-[10%]">Flagged On</th>
+                <th className="px-5 py-2 w-[6%] text-right">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -1741,7 +1849,7 @@ export default function FlaggedEntries({ onLogout, session }) {
           setSelectedStudent(null);
           setSelectedEntry(null);
           setReviewEntries([]);
-          setReviewFilter("All");
+          setReviewFilter("Active Caseload");
           setEditingFlag(false);
         }}
         onSelectEntry={handleSelectEntry}

@@ -12,7 +12,7 @@ import Feedbacks from "./pages/Feedbacks";
 import Login from "./pages/Login";
 import Overview from "./pages/Overview";
 import PeerCounselors from "./pages/PeerCounselors";
-import RiskTriggers from "./pages/RiskTriggers";
+import SafetyRiskIndicators from "./pages/SafetyRiskIndicators";
 import RoleAssignments from "./pages/RoleAssignments";
 import Settings from "./pages/Settings";
 import StudentDirectory from "./pages/StudentDirectory";
@@ -377,7 +377,15 @@ export default function App() {
           path="/risk-triggers"
           element={
             <HeadRoute session={session}>
-              <RiskTriggers session={session} onLogout={authActions.logout} />
+              <SafetyRiskIndicators session={session} onLogout={authActions.logout} />
+            </HeadRoute>
+          }
+        />
+        <Route
+          path="/safety-indicators"
+          element={
+            <HeadRoute session={session}>
+              <SafetyRiskIndicators session={session} onLogout={authActions.logout} />
             </HeadRoute>
           }
         />

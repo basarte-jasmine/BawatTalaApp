@@ -280,30 +280,44 @@ export async function updateAdminJournalFlag(entryId, payload) {
   });
 }
 
-export async function fetchRiskTriggers() {
-  return request("/api/admin/risk-triggers");
+export async function fetchSafetyRiskIndicators(params = {}) {
+  const searchParams = new URLSearchParams();
+  if (params.search) searchParams.set("search", params.search);
+  if (params.category && params.category !== "ALL") searchParams.set("category", params.category);
+  if (params.status && params.status !== "ALL") searchParams.set("status", params.status);
+  const query = searchParams.toString() ? ("?" + searchParams.toString()) : "";
+  return request("/api/admin/safety-risk-indicators" + query);
 }
 
-export async function createRiskTrigger(payload) {
-  return request("/api/admin/risk-triggers", {
+export async function createSafetyRiskIndicator(payload) {
+  return request("/api/admin/safety-risk-indicators", {
     method: "POST",
     body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
-export async function updateRiskTrigger(triggerId, payload) {
-  return request(`/api/admin/risk-triggers/${triggerId}`, {
+export async function updateSafetyRiskIndicator(indicatorId, payload) {
+  return request("/api/admin/safety-risk-indicators/" + indicatorId, {
     method: "PATCH",
     body: JSON.stringify(omitActorEmail(payload)),
   });
 }
 
-export async function deleteRiskTrigger(triggerId, payload = {}) {
-  return request(`/api/admin/risk-triggers/${triggerId}`, {
+export async function deleteSafetyRiskIndicator(indicatorId, payload = {}) {
+  return request("/api/admin/safety-risk-indicators/" + indicatorId, {
     method: "DELETE",
     body: JSON.stringify(omitActorEmail(payload)),
   });
 }
+
+export async function fetchSafetyRiskIndicatorHistory(indicatorId) {
+  return request("/api/admin/safety-risk-indicators/" + indicatorId + "/history");
+}
+
+export const fetchRiskTriggers = fetchSafetyRiskIndicators;
+export const createRiskTrigger = createSafetyRiskIndicator;
+export const updateRiskTrigger = updateSafetyRiskIndicator;
+export const deleteRiskTrigger = deleteSafetyRiskIndicator;
 
 export async function fetchAdminStudents(params = {}) {
   const searchParams = new URLSearchParams();

@@ -425,10 +425,6 @@ export function JournalLockGate({ children }: PropsWithChildren) {
     }
   }, [isAppLocked]);
 
-  if (!appLockEnabled || !isAppLocked) {
-    return <View style={styles.journalGateHost}>{children}</View>;
-  }
-
   const handleUnlock = async () => {
     setIsBusy(true);
     const unlocked = await unlockApp(pinInput);
@@ -458,7 +454,10 @@ export function JournalLockGate({ children }: PropsWithChildren) {
   };
 
   return (
-    <View style={styles.journalLockWrap}>
+    <View style={styles.journalGateHost}>
+      {children}
+      {appLockEnabled && isAppLocked ? (
+        <View style={styles.journalLockWrap}>
       <View style={styles.journalLockGlowLeft} />
       <View style={styles.journalLockGlowRight} />
 
@@ -513,6 +512,8 @@ export function JournalLockGate({ children }: PropsWithChildren) {
         </Pressable>
       </View>
     </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -524,12 +525,14 @@ const styles = StyleSheet.create({
   journalGateHost: {
     flex: 1 },
   journalLockWrap: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 22,
     backgroundColor: "#F5F9F2",
     overflow: "hidden",
+    zIndex: 9999,
+    elevation: 99,
   },
   journalLockGlowLeft: {
     position: "absolute",

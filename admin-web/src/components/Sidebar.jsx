@@ -30,7 +30,7 @@ const MAIN_MENU_ITEMS = [
 
 const SYSTEM_MENU_ITEMS = [
   { path: "/roles", label: "Role Assignments", icon: ShieldCheck },
-  { path: "/risk-triggers", label: "Risk Triggers", icon: Flag },
+  { path: "/safety-indicators", label: "Risk Indicators", icon: Flag },
   { path: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -40,7 +40,7 @@ export default function Sidebar({ onLogout, session, isOpen, onClose }) {
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [criticalEntriesCount, setCriticalEntriesCount] = useState(0);
   const head = isHeadCounselor(session);
-  const visibleSystemItems = SYSTEM_MENU_ITEMS.filter((item) => head || !["/roles", "/risk-triggers"].includes(item.path));
+  const visibleSystemItems = SYSTEM_MENU_ITEMS.filter((item) => head || !["/roles", "/safety-indicators", "/risk-triggers"].includes(item.path));
 
   useEffect(() => {
     let isMounted = true;

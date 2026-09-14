@@ -54,6 +54,7 @@ const EMPTY_GLOBAL_SEARCH_RESULTS = {
   appointments: [],
   team: [],
   riskTriggers: [],
+  safetyIndicators: [],
 };
 
 const GLOBAL_SEARCH_PAGES = [
@@ -65,7 +66,7 @@ const GLOBAL_SEARCH_PAGES = [
   { path: "/feedbacks", label: "Help & Support", group: "Page", icon: MessageSquare, keywords: ["feedbacks", "feedback", "comments", "support", "tickets", "requests", "help"] },
   { path: "/reports", label: "Reports", group: "Page", icon: BarChart3, keywords: ["reports", "export", "analytics"] },
   { path: "/roles", label: "Role Assignments", group: "System", icon: ShieldCheck, keywords: ["roles", "admins", "counselors", "permissions"] },
-  { path: "/risk-triggers", label: "Risk Triggers", group: "System", icon: Flag, keywords: ["triggers", "risk words", "keywords", "phrases"] },
+  { path: "/safety-indicators", label: "Risk Indicators", group: "System", icon: Flag, keywords: ["indicators", "safety", "risk indicators", "triggers", "keywords", "phrases"] },
   { path: "/settings", label: "Settings", group: "System", icon: Settings, keywords: ["settings", "profile", "account", "preferences"] },
 ];
 
@@ -234,7 +235,7 @@ function getPageSearchResults(query, session) {
   const head = isHeadCounselor(session);
 
   return GLOBAL_SEARCH_PAGES.filter((item) => {
-    if (!head && ["/roles", "/risk-triggers"].includes(item.path)) return false;
+    if (!head && ["/roles", "/safety-indicators", "/risk-triggers"].includes(item.path)) return false;
     const haystack = [item.label, item.group, ...item.keywords].join(" ").toLowerCase();
     return haystack.includes(normalized);
   });
@@ -718,7 +719,7 @@ export default function Header({
                 autoFocus
                 value={globalSearchTerm}
                 onChange={(event) => setGlobalSearchTerm(event.target.value)}
-                placeholder="Search pages, students, journal entries, appointments, team members, and risk triggers..."
+                placeholder="Search pages, students, journal entries, appointments, team members, and risk indicators..."
                 className="h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-12 pr-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-100"
               />
             </div>
@@ -736,7 +737,7 @@ export default function Header({
 
           {globalSearchTerm.trim().length < 2 ? (
             <div className="grid gap-4 py-4 md:grid-cols-3">
-              <GlobalSearchEmpty>Search navigation, student profiles, journal summaries, appointment records, counselor accounts, and risk trigger words.</GlobalSearchEmpty>
+              <GlobalSearchEmpty>Search navigation, student profiles, journal summaries, appointment records, counselor accounts, and safety risk indicators.</GlobalSearchEmpty>
               <GlobalSearchEmpty>Try names, student numbers, course names, concerns, appointment status, counselor names, or system page names.</GlobalSearchEmpty>
               <GlobalSearchEmpty>Results open the matching admin area so you can continue the workflow.</GlobalSearchEmpty>
             </div>
@@ -744,7 +745,7 @@ export default function Header({
             <div className="grid gap-4 py-4 md:grid-cols-3">
               <GlobalSearchEmpty>Searching admin pages...</GlobalSearchEmpty>
               <GlobalSearchEmpty>Searching student and journal records...</GlobalSearchEmpty>
-              <GlobalSearchEmpty>Searching appointments, team, and risk triggers...</GlobalSearchEmpty>
+              <GlobalSearchEmpty>Searching appointments, team, and risk indicators...</GlobalSearchEmpty>
             </div>
           ) : (
             <div className="grid gap-5 xl:grid-cols-[0.9fr,1.1fr]">
@@ -841,20 +842,20 @@ export default function Header({
                 </GlobalSearchSection>
 
                 {isHead ? (
-                <GlobalSearchSection title="Risk Triggers" count={globalSearchResults.riskTriggers.length}>
+                <GlobalSearchSection title="Safety Risk Indicators" count={globalSearchResults.riskTriggers.length}>
                   {globalSearchResults.riskTriggers.length ? (
                     globalSearchResults.riskTriggers.map((trigger) => (
                       <GlobalSearchResultButton
                         key={trigger.id}
                         icon={Flag}
                         title={trigger.phrase}
-                        meta={trigger.riskLabel || trigger.riskLevel}
+                        meta={trigger.categoryLabel || trigger.riskLabel || trigger.category || trigger.riskLevel}
                         badge={trigger.isEnabled ? "Enabled" : "Disabled"}
-                        onClick={() => openSearchPath("/risk-triggers")}
+                        onClick={() => openSearchPath("/safety-indicators")}
                       />
                     ))
                   ) : (
-                    <GlobalSearchEmpty>No risk triggers matched.</GlobalSearchEmpty>
+                    <GlobalSearchEmpty>No safety indicators matched.</GlobalSearchEmpty>
                   )}
                 </GlobalSearchSection>
                 ) : null}

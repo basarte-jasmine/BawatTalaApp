@@ -37,7 +37,7 @@ export default function NotificationViewScreen() {
     async function loadNotification() {
       try {
         setLoading(true);
-        const res = await fetchStudentNotifications(user.studentNumber);
+        const res = await fetchStudentNotifications(user?.studentNumber || "");
         if (!isMounted) return;
         if (res.ok && Array.isArray(res.notifications)) {
           const found = res.notifications.find((n) => n.id === id);

@@ -998,23 +998,53 @@ async function ensureDatabaseSchema() {
   `);
 
   await pool.query(`
-    create table if not exists public.risk_trigger_words (
+    create table if not exists public.safety_risk_indicators (
       id uuid primary key default gen_random_uuid(),
       phrase text not null unique,
-      risk_level text not null,
-      category text not null default 'Safety signal',
+      category text not null,
       is_enabled boolean not null default true,
+      variants jsonb not null default '[]'::jsonb,
+      description text,
       created_by_email text,
       updated_by_email text,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now(),
-      constraint risk_trigger_words_risk_level_check check (risk_level in ('LOW', 'HIGH'))
+      constraint safety_risk_indicators_category_check check (
+        category in ('SELF_HARM', 'ABUSE', 'GROOMING', 'COERCION_BLACKMAIL', 'BULLYING_HARASSMENT', 'THREAT_VIOLENCE', 'UNSAFE_ENVIRONMENT', 'SUBSTANCE', 'EMOTIONAL_DISTRESS', 'EXPRESSION_HYPERBOLE', 'CONFIRMATION_SIGNAL', 'OTHER', 'CRITICAL_LITERAL', 'CRITICAL_AMBIGUOUS', 'DISTRESS', 'DENY_HYPERBOLE', 'CONFIRM_LITERAL')
+      )
     );
   `);
 
   await pool.query(`
-    create index if not exists risk_trigger_words_enabled_level_idx
-      on public.risk_trigger_words (is_enabled, risk_level);
+    alter table public.safety_risk_indicators
+    add column if not exists variants jsonb not null default '[]'::jsonb;
+    alter table public.safety_risk_indicators add column if not exists severity_tier text not null default 'CRITICAL';
+  `);
+
+  await pool.query(`
+    alter table public.safety_risk_indicators
+    drop constraint if exists safety_risk_indicators_category_check;
+  `);
+
+  await pool.query(`
+    delete from public.safety_risk_indicators
+    where category not in ('SELF_HARM', 'ABUSE', 'GROOMING', 'COERCION_BLACKMAIL', 'BULLYING_HARASSMENT', 'THREAT_VIOLENCE', 'UNSAFE_ENVIRONMENT', 'SUBSTANCE', 'EMOTIONAL_DISTRESS', 'EXPRESSION_HYPERBOLE', 'CONFIRMATION_SIGNAL', 'OTHER', 'CRITICAL_LITERAL', 'CRITICAL_AMBIGUOUS', 'DISTRESS', 'DENY_HYPERBOLE', 'CONFIRM_LITERAL');
+  `);
+
+  await pool.query(`
+    alter table public.safety_risk_indicators
+    add constraint safety_risk_indicators_category_check check (
+      category in ('SELF_HARM', 'ABUSE', 'GROOMING', 'COERCION_BLACKMAIL', 'BULLYING_HARASSMENT', 'THREAT_VIOLENCE', 'UNSAFE_ENVIRONMENT', 'SUBSTANCE', 'EMOTIONAL_DISTRESS', 'EXPRESSION_HYPERBOLE', 'CONFIRMATION_SIGNAL', 'OTHER', 'CRITICAL_LITERAL', 'CRITICAL_AMBIGUOUS', 'DISTRESS', 'DENY_HYPERBOLE', 'CONFIRM_LITERAL')
+    );
+  `);
+
+  await pool.query(`
+    create index if not exists safety_risk_indicators_enabled_cat_idx
+      on public.safety_risk_indicators (is_enabled, category);
+  `);
+
+  await pool.query(`
+    drop table if exists public.risk_trigger_words cascade;
   `);
 
   await pool.query(`
@@ -1565,6 +1595,13 @@ async function ensureDatabaseSchema() {
       on public.future_self_messages (student_number, delivery_at asc)
       where deleted_at is null;
   `);
+
+  try {
+    const { ensureDefaultSafetyRiskIndicators } = require("../services/safety-risk-indicators.service");
+    await ensureDefaultSafetyRiskIndicators(pool);
+  } catch (error) {
+    console.warn("Could not seed default safety risk indicators:", error?.message || error);
+  }
 }
 
 async function query(text, params = [], retryCount = 1) {
