@@ -18,7 +18,7 @@ type MiniResetItem = {
   description: string;
   duration: string;
   icon: React.ComponentProps<typeof Ionicons>["name"];
-  id: "memory" | "pattern" | "recall" | "words";
+  id: "memory" | "pattern" | "recall" | "words" | "numbers";
   title: string;
 };
 
@@ -39,14 +39,6 @@ const WELLNESS_TOOLS: ToolItem[] = [
     title: "5-4-3-2-1 Sensory Grounding",
     icon: "eye-outline",
     description: "Follow the guided 5-4-3-2-1 video exercise to reconnect with your present surroundings using your senses." },
-  {
-    accentColor: "#5E7396",
-    available: false,
-    id: "restructuring",
-    label: "Coming soon",
-    title: "Cognitive Restructuring Log",
-    icon: "document-text-outline",
-    description: "Reflect on unhelpful thoughts and gently rewrite them into more balanced perspectives." },
 ];
 
 const MINI_RESETS: MiniResetItem[] = [
@@ -54,6 +46,7 @@ const MINI_RESETS: MiniResetItem[] = [
   { id: "pattern", title: "Notice the Pattern", description: "Watch a small sequence, then repeat it.", duration: "~30 sec", icon: "shapes-outline" },
   { id: "recall", title: "Visual Recall", description: "Take a breath and recreate a simple arrangement.", duration: "~30 sec", icon: "eye-outline" },
   { id: "words", title: "Unscramble a Word", description: "Put a calming word back in order.", duration: "~30 sec", icon: "text-outline" },
+  { id: "numbers", title: "Number Flow", description: "Notice a gentle number pattern.", duration: "~20 sec", icon: "analytics-outline" },
 ];
 
 export default function WellnessToolsScreen() {
@@ -61,10 +54,6 @@ export default function WellnessToolsScreen() {
   const compact = width < 390;
 
   const handleBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-      return;
-    }
     router.replace("/home");
   };
 
@@ -85,13 +74,14 @@ export default function WellnessToolsScreen() {
       >
         <View style={styles.contentFrame}>
           <View style={[styles.heroCard, compact && styles.heroCardCompact]}>
+            <View style={styles.heroOrb} />
             <View style={styles.heroBadge}>
               <Ionicons name="sparkles-outline" size={16} color="#4C7E32" />
-              <Text style={styles.heroBadgeText}>A quiet space</Text>
+              <Text style={styles.heroBadgeText}>Your reset space</Text>
             </View>
-            <Text style={[styles.sectionTitle, compact && styles.sectionTitleCompact]}>What would feel helpful right now?</Text>
+            <Text style={[styles.sectionTitle, compact && styles.sectionTitleCompact]}>A softer moment starts here.</Text>
             <Text style={[styles.sectionDesc, compact && styles.sectionDescCompact]}>
-              Pick one small practice. You can take it slowly, pause, or come back anytime.
+              Choose one small practice. There is no right pace—just what feels supportive now.
             </Text>
           </View>
 
@@ -208,7 +198,7 @@ const styles = StyleSheet.create({
   heroCard: {
     width: "100%",
     borderRadius: 28,
-    backgroundColor: "#D7F0B7",
+    backgroundColor: "#E2F2D7",
     borderWidth: 1,
     borderColor: "#C6E6A4",
     paddingHorizontal: 18,
@@ -220,6 +210,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: 14,
     paddingBottom: 16 },
+  heroOrb: {
+    position: "absolute",
+    width: 150,
+    height: 150,
+    borderRadius: 999,
+    right: -54,
+    top: -56,
+    backgroundColor: "rgba(255,255,255,0.42)",
+  },
   heroGlowOne: {
     position: "absolute",
     top: -28,
@@ -289,7 +288,7 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 18,
     shadowColor: "#66737E",
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.05,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
     elevation: 2 },
@@ -394,7 +393,7 @@ const styles = StyleSheet.create({
   miniResetSection: {
     width: "100%",
     borderRadius: 24,
-    backgroundColor: "#FCFBFF",
+    backgroundColor: "#F9F8FD",
     borderWidth: 1,
     borderColor: "#E6E2F2",
     paddingHorizontal: 14,

@@ -456,6 +456,26 @@ async function ensureDatabaseSchema() {
     );
   `);
 
+  await pool.query(`
+    create table if not exists public.student_wellness_game_rewards (
+      id uuid primary key default gen_random_uuid(),
+      student_number text not null,
+      round_key text not null,
+      activity_id text not null,
+      level integer not null default 1,
+      reward_tala integer not null default 1,
+      created_at timestamptz not null default now(),
+      constraint student_wellness_game_rewards_round_unique unique (student_number, round_key),
+      constraint student_wellness_game_rewards_level_check check (level > 0),
+      constraint student_wellness_game_rewards_reward_check check (reward_tala >= 0)
+    );
+  `);
+
+  await pool.query(`
+    create index if not exists student_wellness_game_rewards_student_created_idx
+      on public.student_wellness_game_rewards (student_number, created_at desc);
+  `);
+
 
   await pool.query(`
     create table if not exists public.student_muni_wardrobes (

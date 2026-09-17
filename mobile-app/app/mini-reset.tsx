@@ -3,8 +3,10 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useAuthSession } from "../lib/auth-session";
+import { claimMiniResetReward } from "../lib/backend-api";
 
-type ActivityId = "memory" | "pattern" | "recall" | "words";
+type ActivityId = "memory" | "pattern" | "recall" | "words" | "numbers";
 
 const PAIRS = ["🌿", "🌿", "☀️", "☀️", "🪷", "🪷"];
 const PATTERN = ["circle", "triangle", "square", "circle"] as const;
@@ -17,6 +19,7 @@ const ACTIVITY_COPY: Record<ActivityId, { eyebrow: string; title: string; instru
   pattern: { eyebrow: "Mini Reset · about 30 seconds", title: "Notice the Pattern", instruction: "Take a breath and notice the sequence before it fades." },
   recall: { eyebrow: "Mini Reset · about 30 seconds", title: "Visual Recall", instruction: "Notice the three soft tiles. They will hide after a moment." },
   words: { eyebrow: "Mini Reset · about 30 seconds", title: "Unscramble a Word", instruction: "Tap the letters to rebuild a small calming word." },
+  numbers: { eyebrow: "Mini Reset · about 20 seconds", title: "Number Flow", instruction: "Notice the flow, then choose the next gentle step." },
 };
 
 function shuffledCards() {
@@ -25,8 +28,13 @@ function shuffledCards() {
 
 export default function MiniResetScreen() {
   const { activity } = useLocalSearchParams<{ activity?: ActivityId }>();
-  const activityId: ActivityId = activity === "pattern" || activity === "recall" || activity === "words" ? activity : "memory";
+  const activityId: ActivityId = activity === "pattern" || activity === "recall" || activity === "words" || activity === "numbers" ? activity : "memory";
   const copy = ACTIVITY_COPY[activityId];
+  const { user } = useAuthSession();
+  const [level, setLevel] = useState(1);
+  const [focusPoints, setFocusPoints] = useState(0);
+  const [earnedTala, setEarnedTala] = useState(0);
+  const [isRewarding, setIsRewarding] = useState(false);
   const [complete, setComplete] = useState(false);
   const [cards, setCards] = useState(shuffledCards);
   const [flipped, setFlipped] = useState<number[]>([]);
@@ -36,7 +44,21 @@ export default function MiniResetScreen() {
   const [showRecall, setShowRecall] = useState(true);
   const [recallInput, setRecallInput] = useState<number[]>([]);
   const [wordInput, setWordInput] = useState<string[]>([]);
+  const [numberAnswer, setNumberAnswer] = useState<number | null>(null);
   const [feedback, setFeedback] = useState("Small challenge, calm pace.");
+
+  const completeRound = async (message: string) => {
+    if (complete || isRewarding) return;
+    setComplete(true);
+    setFocusPoints((current) => current + 10 + level * 2);
+    setFeedback(message);
+    if (!user?.studentNumber) return;
+    setIsRewarding(true);
+    const result = await claimMiniResetReward({ activityId, level, roundKey: `${activityId}-${level}-${Date.now()}`, studentNumber: user.studentNumber });
+    if (result.ok && result.rewardTala) setEarnedTala((current) => current + (result.rewardTala ?? 0));
+    if (result.message) setFeedback(result.message);
+    setIsRewarding(false);
+  };
 
   useEffect(() => {
     if (activityId !== "pattern") return;
@@ -53,15 +75,14 @@ export default function MiniResetScreen() {
   const allMatched = matched.length === cards.length;
   useEffect(() => {
     if (activityId === "memory" && allMatched) {
-      setComplete(true);
-      setFeedback("You found every pair. Nicely noticed.");
+      void completeRound("You found every pair. Nicely noticed.");
     }
   }, [activityId, allMatched]);
 
   const reset = () => {
-    setComplete(false); setFeedback("Small challenge, calm pace.");
+    setComplete(false); setFeedback("A fresh round, at your own pace."); setLevel((current) => current + 1);
     setCards(shuffledCards()); setFlipped([]); setMatched([]);
-    setShowPattern(true); setPatternInput([]); setShowRecall(true); setRecallInput([]); setWordInput([]);
+    setShowPattern(true); setPatternInput([]); setShowRecall(true); setRecallInput([]); setWordInput([]); setNumberAnswer(null);
   };
 
   useEffect(() => {
@@ -96,7 +117,7 @@ export default function MiniResetScreen() {
       setPatternInput([]); setFeedback("Almost. Notice it once more, at your own pace."); return;
     }
     setPatternInput(next);
-    if (next.length === PATTERN.length) { setComplete(true); setFeedback("You stayed with the pattern. Well done."); }
+    if (next.length === PATTERN.length) { void completeRound("You stayed with the pattern. Well done."); }
   };
 
   const tapRecall = (tile: number) => {
@@ -104,7 +125,7 @@ export default function MiniResetScreen() {
     const next = [...recallInput, tile].sort((a, b) => a - b);
     if (!RECALL_TILES.includes(tile)) { setRecallInput([]); setFeedback("That’s okay. Take another look when you’re ready."); return; }
     setRecallInput(next);
-    if (next.length === RECALL_TILES.length) { setComplete(true); setFeedback("You recalled the arrangement. Nicely focused."); }
+    if (next.length === RECALL_TILES.length) { void completeRound("You recalled the arrangement. Nicely focused."); }
   };
 
   const tapLetter = (letter: string, index: number) => {
@@ -113,7 +134,14 @@ export default function MiniResetScreen() {
     const attempt = next.map((entry) => entry[0]).join("");
     if (!WORD.startsWith(attempt)) { setWordInput([]); setFeedback("A fresh try can be helpful—there’s no pressure."); return; }
     setWordInput(next);
-    if (attempt === WORD) { setComplete(true); setFeedback("CALM. A small word for this moment."); }
+    if (attempt === WORD) { void completeRound("CALM. A small word for this moment."); }
+  };
+
+  const tapNumber = (value: number) => {
+    if (complete) return;
+    setNumberAnswer(value);
+    if (value === 8) { void completeRound("You found the next step. Nicely steady."); return; }
+    setFeedback("Not quite—and that is completely okay. Try another when you feel ready.");
   };
 
   const selectedLetters = useMemo(() => wordInput.map((entry) => entry[0]), [wordInput]);
@@ -127,15 +155,16 @@ export default function MiniResetScreen() {
         <Text style={styles.topTitle}>Mini Reset</Text><View style={styles.backButton} />
       </View>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.intro}><Text style={styles.eyebrow}>{copy.eyebrow}</Text><Text style={styles.heading}>{copy.title}</Text><Text style={styles.instruction}>{copy.instruction}</Text></View>
+        <View style={styles.intro}><View style={styles.progressRow}><Text style={styles.eyebrow}>{copy.eyebrow}</Text><Text style={styles.progressText}>Level {level} · {focusPoints} focus points</Text></View><Text style={styles.heading}>{copy.title}</Text><Text style={styles.instruction}>{copy.instruction}</Text>{earnedTala > 0 ? <Text style={styles.talaText}>✦ {earnedTala} Tala earned in this reset</Text> : null}</View>
         <View style={styles.gameCard}>
           {activityId === "memory" && <View style={styles.memoryGrid}>{cards.map((card, index) => { const open = flipped.includes(index) || matched.includes(index); return <Pressable key={`${card}-${index}`} onPress={() => tapCard(index)} style={[styles.memoryCard, open && styles.memoryCardOpen]} accessibilityLabel={open ? `Card ${card}` : "Turn over card"}><Text style={styles.memoryCardText}>{open ? card : "✦"}</Text></Pressable>; })}</View>}
           {activityId === "pattern" && <PatternGame show={showPattern} selected={patternInput} onTap={tapPattern} />}
           {activityId === "recall" && <RecallGame show={showRecall} selected={recallInput} onTap={tapRecall} />}
           {activityId === "words" && <View><View style={styles.wordSlots}>{Array.from({ length: WORD.length }).map((_, index) => <View key={index} style={styles.wordSlot}><Text style={styles.wordSlotText}>{selectedLetters[index] ?? ""}</Text></View>)}</View><Text style={styles.wordHint}>A word for a steady moment</Text><View style={styles.letterRow}>{SCRAMBLED_WORD.map((letter, index) => <Pressable key={`${letter}-${index}`} onPress={() => tapLetter(letter, index)} style={[styles.letterButton, wordInput.includes(`${letter}${index}`) && styles.letterButtonUsed]}><Text style={styles.letterText}>{letter}</Text></Pressable>)}</View></View>}
+          {activityId === "numbers" && <View><Text style={styles.gamePrompt}>2 · 4 · 6 · ?</Text><View style={styles.choiceRow}>{[7, 8, 9].map((value) => <Pressable key={value} onPress={() => tapNumber(value)} style={[styles.shapeChoice, numberAnswer === value && styles.numberChoiceSelected]}><Text style={styles.numberChoiceText}>{value}</Text></Pressable>)}</View></View>}
         </View>
         <View style={[styles.feedback, complete && styles.feedbackComplete]}><Ionicons name={complete ? "heart-outline" : "leaf-outline"} size={20} color={complete ? "#477A43" : "#626A86"} /><Text style={styles.feedbackText}>{feedback}</Text></View>
-        {complete && <View style={styles.completeCard}><Text style={styles.completeTitle}>A little reset, complete.</Text><Text style={styles.completeText}>You gave your attention a gentle place to land.</Text><Pressable style={styles.tryAnother} onPress={reset}><Text style={styles.tryAnotherText}>Try again</Text><Ionicons name="refresh-outline" size={18} color="#FFFFFF" /></Pressable><Pressable onPress={() => router.replace("/wellness-tools")} style={styles.returnButton}><Text style={styles.returnButtonText}>Choose another mini reset</Text></Pressable></View>}
+        {complete && <View style={styles.completeCard}><Text style={styles.completeTitle}>A little reset, complete.</Text><Text style={styles.completeText}>{isRewarding ? "Adding your Tala…" : "You gave your attention a gentle place to land. Ready for another soft round?"}</Text><Pressable style={styles.tryAnother} onPress={reset} disabled={isRewarding}><Text style={styles.tryAnotherText}>Continue to level {level + 1}</Text><Ionicons name="arrow-forward" size={18} color="#FFFFFF" /></Pressable><Pressable onPress={() => router.replace("/wellness-tools")} style={styles.returnButton}><Text style={styles.returnButtonText}>Choose another mini reset</Text></Pressable></View>}
       </ScrollView>
     </SafeAreaView>
   );
@@ -152,5 +181,5 @@ function RecallGame({ show, selected, onTap }: { show: boolean; selected: number
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#F7FAF6" }, topBar: { height: 52, backgroundColor: "#FFFFFF", borderBottomWidth: 1, borderBottomColor: "#E6ECF1", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 4 }, backButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center" }, topTitle: { color: "#33475C", fontSize: 18, fontFamily: "Outfit-Bold" }, content: { alignItems: "center", padding: 16, paddingBottom: 42 }, intro: { width: "100%", maxWidth: 420, backgroundColor: "#E8E6F6", borderRadius: 24, padding: 18, marginBottom: 14 }, eyebrow: { color: "#62618A", fontFamily: "Outfit-Bold", fontSize: 12, marginBottom: 8 }, heading: { color: "#384055", fontFamily: "Outfit-Bold", fontSize: 26, lineHeight: 32, marginBottom: 7 }, instruction: { color: "#5D6678", fontSize: 14, lineHeight: 20 }, gameCard: { width: "100%", maxWidth: 420, minHeight: 260, backgroundColor: "#FFFFFF", borderRadius: 24, borderWidth: 1, borderColor: "#E5E9E4", padding: 18, justifyContent: "center", shadowColor: "#66737E", shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2 }, memoryGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 12 }, memoryCard: { width: "29%", aspectRatio: 1, backgroundColor: "#E6EEF5", borderRadius: 18, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#D7E2EC" }, memoryCardOpen: { backgroundColor: "#FCF9EA", borderColor: "#EEE1A8" }, memoryCardText: { fontSize: 29, color: "#728BA0" }, gamePrompt: { color: "#536274", textAlign: "center", fontSize: 14, lineHeight: 20, marginBottom: 22, fontFamily: "Outfit-Bold" }, sequenceRow: { minHeight: 70, flexDirection: "row", justifyContent: "center", alignItems: "center", columnGap: 20 }, choiceRow: { flexDirection: "row", justifyContent: "center", columnGap: 14 }, shapeChoice: { width: 70, height: 70, borderRadius: 20, borderWidth: 1, borderColor: "#DCE7E7", backgroundColor: "#F6FAF9", alignItems: "center", justifyContent: "center" }, recallGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 12 }, recallTile: { width: "28%", aspectRatio: 1, borderRadius: 16, backgroundColor: "#EEF2F4", borderWidth: 1, borderColor: "#DDE5E8", alignItems: "center", justifyContent: "center" }, recallTileHighlighted: { backgroundColor: "#BFD8C2", borderColor: "#95BE9A" }, recallTileText: { color: "#49744C", fontSize: 24 }, wordSlots: { flexDirection: "row", justifyContent: "center", columnGap: 10, marginBottom: 12 }, wordSlot: { width: 42, height: 48, borderBottomWidth: 2, borderBottomColor: "#9AA6B0", alignItems: "center", justifyContent: "center" }, wordSlotText: { color: "#405065", fontSize: 24, fontFamily: "Outfit-Bold" }, wordHint: { color: "#738091", textAlign: "center", fontSize: 13, marginBottom: 22 }, letterRow: { flexDirection: "row", justifyContent: "center", columnGap: 9 }, letterButton: { width: 52, height: 52, borderRadius: 16, backgroundColor: "#E9E6F6", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#DAD5EC" }, letterButtonUsed: { opacity: 0.35 }, letterText: { color: "#4A496E", fontSize: 21, fontFamily: "Outfit-Bold" }, feedback: { width: "100%", maxWidth: 420, flexDirection: "row", alignItems: "center", columnGap: 10, borderRadius: 16, backgroundColor: "#F0F2F6", padding: 13, marginTop: 14 }, feedbackComplete: { backgroundColor: "#E7F3E4" }, feedbackText: { flex: 1, color: "#586474", fontSize: 13, lineHeight: 18 }, completeCard: { width: "100%", maxWidth: 420, borderRadius: 22, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E4ECE0", padding: 17, marginTop: 14, alignItems: "center" }, completeTitle: { color: "#3D5945", fontFamily: "Outfit-Bold", fontSize: 19, marginBottom: 5 }, completeText: { color: "#657568", fontSize: 13, textAlign: "center", lineHeight: 18, marginBottom: 15 }, tryAnother: { flexDirection: "row", alignItems: "center", columnGap: 7, backgroundColor: "#557E4C", paddingHorizontal: 17, paddingVertical: 11, borderRadius: 999 }, tryAnotherText: { color: "#FFFFFF", fontFamily: "Outfit-Bold", fontSize: 14 }, returnButton: { paddingTop: 15 }, returnButtonText: { color: "#596987", fontFamily: "Outfit-Bold", fontSize: 13 },
+  screen: { flex: 1, backgroundColor: "#F7FAF6" }, topBar: { height: 52, backgroundColor: "#FFFFFF", borderBottomWidth: 1, borderBottomColor: "#E6ECF1", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 4 }, backButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center" }, topTitle: { color: "#33475C", fontSize: 18, fontFamily: "Outfit-Bold" }, content: { alignItems: "center", padding: 16, paddingBottom: 42 }, intro: { width: "100%", maxWidth: 420, backgroundColor: "#E8E6F6", borderRadius: 24, padding: 18, marginBottom: 14 }, progressRow: { flexDirection: "row", justifyContent: "space-between", columnGap: 8 }, progressText: { color: "#62618A", fontFamily: "Outfit-Bold", fontSize: 12 }, talaText: { color: "#6D5C31", fontFamily: "Outfit-Bold", fontSize: 12, marginTop: 10 }, eyebrow: { color: "#62618A", fontFamily: "Outfit-Bold", fontSize: 12, marginBottom: 8 }, heading: { color: "#384055", fontFamily: "Outfit-Bold", fontSize: 26, lineHeight: 32, marginBottom: 7 }, instruction: { color: "#5D6678", fontSize: 14, lineHeight: 20 }, gameCard: { width: "100%", maxWidth: 420, minHeight: 260, backgroundColor: "#FFFFFF", borderRadius: 24, borderWidth: 1, borderColor: "#E5E9E4", padding: 18, justifyContent: "center", shadowColor: "#66737E", shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2 }, memoryGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 12 }, memoryCard: { width: "29%", aspectRatio: 1, backgroundColor: "#E6EEF5", borderRadius: 18, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#D7E2EC" }, memoryCardOpen: { backgroundColor: "#FCF9EA", borderColor: "#EEE1A8" }, memoryCardText: { fontSize: 29, color: "#728BA0" }, gamePrompt: { color: "#536274", textAlign: "center", fontSize: 14, lineHeight: 20, marginBottom: 22, fontFamily: "Outfit-Bold" }, sequenceRow: { minHeight: 70, flexDirection: "row", justifyContent: "center", alignItems: "center", columnGap: 20 }, choiceRow: { flexDirection: "row", justifyContent: "center", columnGap: 14 }, shapeChoice: { width: 70, height: 70, borderRadius: 20, borderWidth: 1, borderColor: "#DCE7E7", backgroundColor: "#F6FAF9", alignItems: "center", justifyContent: "center" }, numberChoiceSelected: { borderColor: "#91B08D", backgroundColor: "#EEF7E9" }, numberChoiceText: { color: "#4C6577", fontSize: 25, fontFamily: "Outfit-Bold" }, recallGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 12 }, recallTile: { width: "28%", aspectRatio: 1, borderRadius: 16, backgroundColor: "#EEF2F4", borderWidth: 1, borderColor: "#DDE5E8", alignItems: "center", justifyContent: "center" }, recallTileHighlighted: { backgroundColor: "#BFD8C2", borderColor: "#95BE9A" }, recallTileText: { color: "#49744C", fontSize: 24 }, wordSlots: { flexDirection: "row", justifyContent: "center", columnGap: 10, marginBottom: 12 }, wordSlot: { width: 42, height: 48, borderBottomWidth: 2, borderBottomColor: "#9AA6B0", alignItems: "center", justifyContent: "center" }, wordSlotText: { color: "#405065", fontSize: 24, fontFamily: "Outfit-Bold" }, wordHint: { color: "#738091", textAlign: "center", fontSize: 13, marginBottom: 22 }, letterRow: { flexDirection: "row", justifyContent: "center", columnGap: 9 }, letterButton: { width: 52, height: 52, borderRadius: 16, backgroundColor: "#E9E6F6", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#DAD5EC" }, letterButtonUsed: { opacity: 0.35 }, letterText: { color: "#4A496E", fontSize: 21, fontFamily: "Outfit-Bold" }, feedback: { width: "100%", maxWidth: 420, flexDirection: "row", alignItems: "center", columnGap: 10, borderRadius: 16, backgroundColor: "#F0F2F6", padding: 13, marginTop: 14 }, feedbackComplete: { backgroundColor: "#E7F3E4" }, feedbackText: { flex: 1, color: "#586474", fontSize: 13, lineHeight: 18 }, completeCard: { width: "100%", maxWidth: 420, borderRadius: 22, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E4ECE0", padding: 17, marginTop: 14, alignItems: "center" }, completeTitle: { color: "#3D5945", fontFamily: "Outfit-Bold", fontSize: 19, marginBottom: 5 }, completeText: { color: "#657568", fontSize: 13, textAlign: "center", lineHeight: 18, marginBottom: 15 }, tryAnother: { flexDirection: "row", alignItems: "center", columnGap: 7, backgroundColor: "#557E4C", paddingHorizontal: 17, paddingVertical: 11, borderRadius: 999 }, tryAnotherText: { color: "#FFFFFF", fontFamily: "Outfit-Bold", fontSize: 14 }, returnButton: { paddingTop: 15 }, returnButtonText: { color: "#596987", fontFamily: "Outfit-Bold", fontSize: 13 },
 });

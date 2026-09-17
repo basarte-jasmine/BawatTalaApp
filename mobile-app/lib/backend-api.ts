@@ -2200,6 +2200,17 @@ export async function saveLibraryBookProgress(payload: {
   };
 }
 
+export async function claimMiniResetReward(payload: {
+  activityId: string;
+  level: number;
+  roundKey: string;
+  studentNumber: string;
+}): Promise<ApiResult & { dailyCapReached?: boolean; rewardTala?: number; totalTala?: number }> {
+  const { studentNumber: _studentNumber, ...body } = payload;
+  const { response, data } = await post("/api/wellness/mini-reset-reward", body);
+  return { ok: response.ok, message: data?.message, dailyCapReached: data?.dailyCapReached, rewardTala: data?.rewardTala, totalTala: data?.totalTala };
+}
+
 export async function claimLibraryReadingReward(payload: {
   achievementKey?: string;
   bookId: string;

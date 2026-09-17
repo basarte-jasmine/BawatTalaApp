@@ -14,6 +14,7 @@ const muniRoutes = require("./api/muni.routes");
 const ocrRoutes = require("./api/ocr.routes");
 const voiceRoutes = require("./api/voice.routes");
 const affirmationRoutes = require("./api/affirmation.routes");
+const wellnessRoutes = require("./api/wellness.routes");
 
 const app = express();
 const corsOrigin = process.env.CORS_ORIGIN || "*";
@@ -111,6 +112,7 @@ app.use("/api/admin", adminRouter);
 app.use("/api/ocr", ocrRoutes);
 app.use("/api/voice", voiceRoutes);
 app.use("/api/affirmations", affirmationRoutes);
+app.use("/api/wellness", wellnessRoutes);
 
 app.use((err, _req, res, next) => {
   if (err?.type === "entity.too.large") {
