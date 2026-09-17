@@ -1,9 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import { useEffect, useState, type ComponentProps } from "react";
-import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Image, ImageSourcePropType, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StudentProfileAvatar } from "../components/profile/StudentProfileAvatar";
 import { useAppPreferences } from "../lib/app-preferences";
@@ -32,6 +33,16 @@ const APP_ROWS: SettingRow[] = [
 const APP_VERSION = "1.0.0";
 const PROFILE_PICTURE_LIMIT_BYTES = 5 * 1024 * 1024;
 const PROFILE_PICTURE_MAX_DIMENSION = 1024;
+const PROFILE_FRAME_KEY = "@bawat-tala/profile-frame";
+const PROFILE_FRAMES: { id: string; label: string; source: ImageSourcePropType }[] = [
+  { id: "aether", label: "Aether", source: require("../assets/images/Frames/Aether Frame.png") },
+  { id: "blossom", label: "Blossom", source: require("../assets/images/Frames/Blossom Frame.png") },
+  { id: "constellation", label: "Constellation", source: require("../assets/images/Frames/Constellation Frame.png") },
+  { id: "glimmer", label: "Glimmer", source: require("../assets/images/Frames/Glimmer Frame.png") },
+  { id: "sprout", label: "Sprout", source: require("../assets/images/Frames/Sprout Frame.png") },
+  { id: "tide", label: "Tide", source: require("../assets/images/Frames/Tide Frame.png") },
+];
+const BOTTLE_ACHIEVEMENT_IMAGE = require("../assets/images/Achievements/A Bottle for Tomorrow.jpg");
 
 function getImageMimeType(asset: ImagePicker.ImagePickerAsset) {
   const mimeType = String(asset.mimeType || "").toLowerCase();
@@ -63,10 +74,29 @@ export default function ProfileScreen() {
   const [showProfilePictureOptions, setShowProfilePictureOptions] = useState(false);
   const [profilePictureUrl, setProfilePictureUrl] = useState(user?.profilePictureUrl || "");
   const [isUploadingProfilePicture, setIsUploadingProfilePicture] = useState(false);
+  const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null);
+  const [hasBottleAchievement, setHasBottleAchievement] = useState(false);
+  const selectedFrame = PROFILE_FRAMES.find((frame) => frame.id === selectedFrameId)?.source ?? null;
 
   useEffect(() => {
     setProfilePictureUrl(user?.profilePictureUrl || "");
   }, [user?.profilePictureUrl]);
+
+  useEffect(() => {
+    if (!user?.studentNumber) return;
+    void Promise.all([
+      AsyncStorage.getItem(`${PROFILE_FRAME_KEY}:${user.studentNumber}`),
+      AsyncStorage.getItem(`@bawat-tala/future-bottle:${user.studentNumber}`),
+    ]).then(([frameId, bottles]) => {
+      setSelectedFrameId(PROFILE_FRAMES.some((frame) => frame.id === frameId) ? frameId : null);
+      setHasBottleAchievement(Boolean(bottles && bottles !== "[]"));
+    });
+  }, [user?.studentNumber]);
+
+  const selectProfileFrame = (frameId: string | null) => {
+    setSelectedFrameId(frameId);
+    if (user?.studentNumber) void AsyncStorage.setItem(`${PROFILE_FRAME_KEY}:${user.studentNumber}`, frameId ?? "");
+  };
 
   useEffect(() => {
     if (!user?.studentNumber) return;
@@ -271,6 +301,7 @@ export default function ProfileScreen() {
             <View style={styles.avatarStage}>
               <StudentProfileAvatar
                 imageUrl={profilePictureUrl}
+                frameSource={selectedFrame}
                 size={120}
                 style={styles.avatarCircle}
               />
@@ -297,6 +328,21 @@ export default function ProfileScreen() {
               </View>
             </View>
           </View>
+        </View>
+
+        <View style={styles.customizationCard}>
+          <Text style={styles.groupTitle}>Profile Customization</Text>
+          <Text style={styles.customizationSubtitle}>Choose a frame for your profile photo.</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.frameRow}>
+            <Pressable style={[styles.frameOption, !selectedFrameId && styles.frameOptionSelected]} onPress={() => selectProfileFrame(null)}><View style={styles.framePreview}><Ionicons name="ban-outline" size={23} color="#71808B" /></View><Text style={styles.frameLabel}>None</Text></Pressable>
+            {PROFILE_FRAMES.map((frame) => <Pressable key={frame.id} style={[styles.frameOption, selectedFrameId === frame.id && styles.frameOptionSelected]} onPress={() => selectProfileFrame(frame.id)}><StudentProfileAvatar imageUrl={profilePictureUrl} frameSource={frame.source} size={58} /><Text style={styles.frameLabel}>{frame.label}</Text></Pressable>)}
+          </ScrollView>
+        </View>
+
+        <View style={styles.achievementCard}>
+          <View style={styles.achievementImageWrap}><Image source={BOTTLE_ACHIEVEMENT_IMAGE} style={[styles.achievementImage, !hasBottleAchievement && styles.achievementImageLocked]} resizeMode="cover" /></View>
+          <View style={styles.achievementCopy}><Text style={styles.achievementEyebrow}>{hasBottleAchievement ? "Achievement unlocked" : "Achievement"}</Text><Text style={styles.achievementTitle}>A Bottle for Tomorrow</Text><Text style={styles.achievementDesc}>Write your first future bottle note.</Text></View>
+          <Ionicons name={hasBottleAchievement ? "ribbon" : "lock-closed-outline"} size={22} color={hasBottleAchievement ? "#A98735" : "#9AA4AC"} />
         </View>
 
         <Pressable style={styles.scheduleShortcut} onPress={() => void handleRowPress("schedule")}>
@@ -880,5 +926,21 @@ const styles = StyleSheet.create({
   modalPrimaryText: {
     color: "#FFFFFF",
     fontSize: 13,
-    fontFamily: "Outfit-Bold" } });
+    fontFamily: "Outfit-Bold" },
+  customizationCard: { marginHorizontal: 16, marginBottom: 12, borderRadius: 22, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E5EAE5", padding: 14 },
+  customizationSubtitle: { color: "#71808B", fontSize: 13, lineHeight: 18, marginTop: -2, marginBottom: 12 },
+  frameRow: { columnGap: 10, paddingRight: 8 },
+  frameOption: { width: 70, alignItems: "center", borderRadius: 14, paddingVertical: 5 },
+  frameOptionSelected: { backgroundColor: "#EDF6E9" },
+  framePreview: { width: 58, height: 58, borderRadius: 29, backgroundColor: "#F0F4F2", alignItems: "center", justifyContent: "center" },
+  frameLabel: { color: "#5E6B76", fontSize: 10, fontFamily: "Outfit-Bold", marginTop: 5 },
+  achievementCard: { marginHorizontal: 16, marginBottom: 12, borderRadius: 22, backgroundColor: "#FFFDF8", borderWidth: 1, borderColor: "#EEE4CF", padding: 13, flexDirection: "row", alignItems: "center", columnGap: 11 },
+  achievementImageWrap: { width: 58, height: 58, borderRadius: 16, overflow: "hidden", backgroundColor: "#ECEBE6" },
+  achievementImage: { width: "100%", height: "100%" },
+  achievementImageLocked: { opacity: 0.25 },
+  achievementCopy: { flex: 1 },
+  achievementEyebrow: { color: "#9B7E3F", fontSize: 10, fontFamily: "Outfit-Bold", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 2 },
+  achievementTitle: { color: "#414846", fontSize: 15, fontFamily: "Outfit-Bold", marginBottom: 2 },
+  achievementDesc: { color: "#717A76", fontSize: 12, lineHeight: 16 },
+});
 
