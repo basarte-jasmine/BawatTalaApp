@@ -27,6 +27,7 @@ export function StudentProfileAvatar({
         style,
       ]}
     >
+      <View style={[styles.photo, { borderRadius: radius, height: size, width: size }]}>
       {imageUrl ? (
         <Image
           accessibilityLabel="Student profile picture"
@@ -37,7 +38,8 @@ export function StudentProfileAvatar({
       ) : (
         <Ionicons name="person-outline" size={iconSize ?? size * 0.58} color={iconColor} />
       )}
-      {frameSource ? <Image source={frameSource} resizeMode="contain" style={[styles.frame, { height: size, width: size }]} /> : null}
+      </View>
+      {frameSource ? <Image source={frameSource} resizeMode="contain" style={[styles.frame, { height: size * 1.24, width: size * 1.24, left: size * -0.12, top: size * -0.12 }]} /> : null}
     </View>
   );
 }
@@ -45,7 +47,7 @@ export function StudentProfileAvatar({
 const styles = StyleSheet.create({
   container: {
     alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden" },
-  frame: { position: "absolute", top: 0, left: 0 },
+    justifyContent: "center" },
+  photo: { alignItems: "center", justifyContent: "center", overflow: "hidden", backgroundColor: "#EEF3EF" },
+  frame: { position: "absolute" },
 });

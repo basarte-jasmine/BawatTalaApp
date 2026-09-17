@@ -339,11 +339,11 @@ export default function ProfileScreen() {
           </ScrollView>
         </View>
 
-        <View style={styles.achievementCard}>
+        <Pressable style={styles.achievementCard} onPress={() => router.push("/achievements" as never)}>
           <View style={styles.achievementImageWrap}><Image source={BOTTLE_ACHIEVEMENT_IMAGE} style={[styles.achievementImage, !hasBottleAchievement && styles.achievementImageLocked]} resizeMode="cover" /></View>
           <View style={styles.achievementCopy}><Text style={styles.achievementEyebrow}>{hasBottleAchievement ? "Achievement unlocked" : "Achievement"}</Text><Text style={styles.achievementTitle}>A Bottle for Tomorrow</Text><Text style={styles.achievementDesc}>Write your first future bottle note.</Text></View>
-          <Ionicons name={hasBottleAchievement ? "ribbon" : "lock-closed-outline"} size={22} color={hasBottleAchievement ? "#A98735" : "#9AA4AC"} />
-        </View>
+          <View style={styles.achievementAction}><Text style={styles.achievementActionText}>View</Text><Ionicons name="chevron-forward" size={16} color="#8D7743" /></View>
+        </Pressable>
 
         <Pressable style={styles.scheduleShortcut} onPress={() => void handleRowPress("schedule")}>
           <View style={styles.scheduleShortcutIconWrap}>
@@ -942,5 +942,7 @@ const styles = StyleSheet.create({
   achievementEyebrow: { color: "#9B7E3F", fontSize: 10, fontFamily: "Outfit-Bold", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 2 },
   achievementTitle: { color: "#414846", fontSize: 15, fontFamily: "Outfit-Bold", marginBottom: 2 },
   achievementDesc: { color: "#717A76", fontSize: 12, lineHeight: 16 },
+  achievementAction: { alignItems: "center" },
+  achievementActionText: { color: "#8D7743", fontSize: 11, fontFamily: "Outfit-Bold" },
 });
 
