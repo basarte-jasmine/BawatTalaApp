@@ -389,7 +389,6 @@ export default function HomeScreen() {
   }>();
   const compact = height < 760;
   const tiny = height < 680;
-  const libraryCompact = width < 380;
   const frameWidth = Math.min(width, 412);
   const stickyHeaderTop = Math.max(insets.top + 8, 12);
   const headerHeight = tiny ? 72 : compact ? 78 : 84;
@@ -2094,111 +2093,21 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <View style={styles.wellnessCard}>
-          <View style={styles.surfaceGlow} />
-          <View style={styles.wellnessAuraOne} />
-          <View style={styles.wellnessAuraTwo} />
-          <View style={[styles.wellnessHeroRow, libraryCompact && styles.wellnessHeroRowStacked]}>
-            <View style={[styles.wellnessHeroTextWrap, libraryCompact && styles.wellnessHeroTextWrapStacked]}>
-              <Text style={styles.sectionEyebrow}>Reset Corner</Text>
-              <Text style={[styles.wellnessTitle, libraryCompact && styles.wellnessTitleCompact]}>
-                Step into a calmer space whenever your mind or body feels loud.
-              </Text>
-              <Text style={[styles.wellnessSubtitle, libraryCompact && styles.wellnessSubtitleCompact]}>
-                Breathing, grounding, and quieter tools that help you settle before the rest of the day asks more from you.
-              </Text>
-            </View>
+        <View style={styles.pauseCard}>
+          <Text style={styles.sectionEyebrow}>Take a pause</Text>
+          <Text style={styles.pauseTitle}>Choose one gentle next step.</Text>
+          <Text style={styles.pauseSubtitle}>There is no need to do everything at once.</Text>
 
-            <View style={[styles.wellnessOrbitScene, libraryCompact && styles.wellnessOrbitSceneStacked]}>
-              <View style={styles.wellnessOrbitOuter} />
-              <View style={styles.wellnessOrbitMiddle} />
-              <View style={styles.wellnessOrbitInner} />
-              <View style={styles.wellnessOrbitCore}>
-                <Ionicons name="leaf-outline" size={22} color="#4E7E2D" />
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.wellnessMetaRow}>
-            <View style={styles.wellnessMetaPill}>
-              <Ionicons name="sparkles-outline" size={15} color="#4E7E2D" />
-              <Text style={styles.wellnessMetaPillText}>Breathing, grounding, and guided resets</Text>
-            </View>
-          </View>
-
-          <View style={[styles.wellnessToolRow, libraryCompact && styles.wellnessToolRowStacked]}>
-            <View style={[styles.wellnessToolChip, libraryCompact && styles.wellnessToolChipStacked]}>
-              <Text style={styles.wellnessToolChipTitle}>Breathing Space</Text>
-              <Text style={styles.wellnessToolChipMeta}>Start and stop at your pace</Text>
-            </View>
-            <View style={[styles.wellnessToolChip, libraryCompact && styles.wellnessToolChipStacked]}>
-              <Text style={styles.wellnessToolChipTitle}>Grounding Room</Text>
-              <Text style={styles.wellnessToolChipMeta}>Calm vibes, audio, and guided steps</Text>
-            </View>
-          </View>
-
-          <Pressable style={styles.wellnessPrimaryButton} onPress={handleOpenWellnessTools}>
-            <Text style={styles.wellnessPrimaryButtonText}>Open Wellness Tools</Text>
-            <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+          <Pressable style={styles.pauseAction} onPress={handleOpenWellnessTools}>
+            <View style={[styles.pauseIcon, styles.pauseIconWellness]}><Ionicons name="leaf-outline" size={21} color="#4C7E32" /></View>
+            <View style={styles.pauseActionCopy}><Text style={styles.pauseActionTitle}>Wellness tools</Text><Text style={styles.pauseActionMeta}>Breathe, ground, or try a mini reset</Text></View>
+            <Ionicons name="chevron-forward" size={20} color="#71806E" />
           </Pressable>
-        </View>
 
-        <View style={styles.libraryCard}>
-          <View style={styles.surfaceGlow} />
-          <View style={styles.libraryAuraOne} />
-          <View style={styles.libraryAuraTwo} />
-          <View style={[styles.libraryHeroRow, libraryCompact && styles.libraryHeroRowStacked]}>
-            <View style={[styles.libraryHeroTextWrap, libraryCompact && styles.libraryHeroTextWrapStacked]}>
-              <Text style={styles.sectionEyebrow}>Reading Room</Text>
-              <Text style={[styles.libraryTitle, libraryCompact && styles.libraryTitleCompact]}>Slip into the library when you want something quieter.</Text>
-              <Text style={[styles.librarySubtitle, libraryCompact && styles.librarySubtitleCompact]}>
-                Short, calming reads with a page-by-page reader that feels closer to opening a real book.
-              </Text>
-            </View>
-
-            <View style={[styles.libraryShelfScene, libraryCompact && styles.libraryShelfSceneStacked]}>
-              <View style={styles.libraryShelfLine} />
-              <View style={[styles.librarySpine, styles.librarySpineTall, { backgroundColor: "#D9B983" }]} />
-              <View style={[styles.librarySpine, styles.librarySpineMid, { backgroundColor: "#A8C79F" }]} />
-              <View style={[styles.librarySpine, styles.librarySpineShort, { backgroundColor: "#D4A5A5" }]} />
-            </View>
-          </View>
-
-          <View style={styles.libraryMetaRow}>
-            <View style={styles.libraryMetaPill}>
-              <Ionicons name="book-outline" size={15} color="#4A7A33" />
-              <Text style={styles.libraryMetaPillText}>{libraryPreviewBooks.length ? "Books ready" : "Books loading"}</Text>
-            </View>
-          </View>
-
-          <View style={[styles.libraryShelfRow, libraryCompact && styles.libraryShelfRowStacked]}>
-            {libraryPreviewBooks.length ? (
-              libraryPreviewBooks.map((book) => (
-                <Pressable
-                  key={book.id}
-                  style={[styles.libraryBookChip, libraryCompact && styles.libraryBookChipStacked, { borderLeftColor: book.accentColor }]}
-                  onPress={handleOpenLibrary}
-                >
-                  <Text style={styles.libraryBookChipCategory}>{book.category}</Text>
-                  <Text style={styles.libraryBookChipTitle} numberOfLines={2}>{book.title}</Text>
-                  <Text style={styles.libraryBookChipMeta}>{`${book.estimatedMinutes} min read`}</Text>
-                </Pressable>
-              ))
-            ) : (
-              <Pressable
-                style={[styles.libraryBookChip, libraryCompact && styles.libraryBookChipStacked, { borderLeftColor: "#A8C79F" }]}
-                onPress={handleOpenLibrary}
-              >
-                <Text style={styles.libraryBookChipCategory}>Library Shelf</Text>
-                <Text style={styles.libraryBookChipTitle} numberOfLines={2}>Mental-health books from the library catalog</Text>
-                <Text style={styles.libraryBookChipMeta}>Open library</Text>
-              </Pressable>
-            )}
-          </View>
-
-          <Pressable style={styles.libraryPrimaryButton} onPress={handleOpenLibrary}>
-            <Text style={styles.libraryPrimaryButtonText}>Open Library</Text>
-            <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+          <Pressable style={styles.pauseAction} onPress={handleOpenLibrary}>
+            <View style={[styles.pauseIcon, styles.pauseIconLibrary]}><Ionicons name="book-outline" size={21} color="#816B48" /></View>
+            <View style={styles.pauseActionCopy}><Text style={styles.pauseActionTitle}>Library</Text><Text style={styles.pauseActionMeta}>{libraryPreviewBooks.length ? `${libraryPreviewBooks.length} calm reads waiting for you` : "Short reads at your own pace"}</Text></View>
+            <Ionicons name="chevron-forward" size={20} color="#71806E" />
           </Pressable>
         </View>
 
@@ -3750,6 +3659,54 @@ const styles = StyleSheet.create({
     fontSize: 18,
     lineHeight: 24,
     fontFamily: "Outfit-Bold" },
+  pauseCard: {
+    borderRadius: 22,
+    backgroundColor: "#FFFFFF",
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#E3ECE2",
+    shadowColor: "#66737E",
+    shadowOpacity: 0.06,
+    shadowRadius: 7,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  pauseTitle: {
+    color: "#304558",
+    fontSize: 19,
+    lineHeight: 24,
+    fontFamily: "Outfit-Bold",
+    marginTop: 2,
+    marginBottom: 3,
+  },
+  pauseSubtitle: {
+    color: "#687785",
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  pauseAction: {
+    minHeight: 68,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 11,
+    borderTopWidth: 1,
+    borderTopColor: "#EDF1EC",
+    paddingVertical: 10,
+  },
+  pauseIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pauseIconWellness: { backgroundColor: "#EAF5E4" },
+  pauseIconLibrary: { backgroundColor: "#F8F0E2" },
+  pauseActionCopy: { flex: 1 },
+  pauseActionTitle: { color: "#34495D", fontSize: 15, lineHeight: 20, fontFamily: "Outfit-Bold", marginBottom: 2 },
+  pauseActionMeta: { color: "#71808B", fontSize: 12, lineHeight: 17 },
   wellnessCard: {
     borderRadius: 24,
     backgroundColor: "#F5FBF2",

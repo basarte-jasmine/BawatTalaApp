@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 
@@ -56,12 +56,9 @@ const MINI_RESETS: MiniResetItem[] = [
   { id: "words", title: "Unscramble a Word", description: "Put a calming word back in order.", duration: "~30 sec", icon: "text-outline" },
 ];
 
-const CENTER_LOGO_IMAGE = require("../assets/images/guidancelogo_sample.png");
-
 export default function WellnessToolsScreen() {
   const { width } = useWindowDimensions();
   const compact = width < 390;
-  const narrow = width < 360;
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -88,22 +85,19 @@ export default function WellnessToolsScreen() {
       >
         <View style={styles.contentFrame}>
           <View style={[styles.heroCard, compact && styles.heroCardCompact]}>
-            <View style={styles.heroGlowOne} />
-            <View style={styles.heroGlowTwo} />
             <View style={styles.heroBadge}>
               <Ionicons name="sparkles-outline" size={16} color="#4C7E32" />
-              <Text style={styles.heroBadgeText}>Wellness Space</Text>
+              <Text style={styles.heroBadgeText}>A quiet space</Text>
             </View>
-            <Image source={CENTER_LOGO_IMAGE} style={[styles.centerLogo, compact && styles.centerLogoCompact]} resizeMode="contain" />
-            <Text style={[styles.sectionTitle, compact && styles.sectionTitleCompact]}>Our wellness tools are here for you.</Text>
+            <Text style={[styles.sectionTitle, compact && styles.sectionTitleCompact]}>What would feel helpful right now?</Text>
             <Text style={[styles.sectionDesc, compact && styles.sectionDescCompact]}>
-              Explore calming, self-guided exercises designed to help you reset, ground yourself, and return with a little more clarity.
+              Pick one small practice. You can take it slowly, pause, or come back anytime.
             </Text>
           </View>
 
           <View style={[styles.listSection, compact && styles.listSectionCompact]}>
-            <Text style={styles.listHeading}>Explore Wellness Interventions</Text>
-            <Text style={styles.listSubHeading}>Choose a tool that matches what you need right now.</Text>
+            <Text style={styles.listHeading}>Guided support</Text>
+            <Text style={styles.listSubHeading}>Simple practices for a steadier moment.</Text>
 
             <View style={styles.toolList}>
               {WELLNESS_TOOLS.map((item) => (
@@ -122,19 +116,13 @@ export default function WellnessToolsScreen() {
                     }
                   }}
                 >
-                  <View style={[styles.toolCardTopRow, compact && styles.toolCardTopRowCompact]}>
+                  <View style={styles.toolCardTopRow}>
                     <View style={[styles.toolIconWrap, { backgroundColor: `${item.accentColor}14`, borderColor: `${item.accentColor}24` }]}>
                       <Ionicons name={item.icon} size={20} color={item.accentColor} />
                     </View>
-                    <View style={[styles.toolTag, !item.available && styles.toolTagMuted]}>
-                      <Text style={[styles.toolTagText, !item.available && styles.toolTagTextMuted]}>{item.label}</Text>
-                    </View>
-                  </View>
-                  <Text style={[styles.toolTitle, compact && styles.toolTitleCompact]}>{item.title}</Text>
-                  <View style={[styles.toolRow, narrow && styles.toolRowStacked]}>
-                    <Text style={styles.toolDesc}>{item.description}</Text>
-                    <View style={[styles.toolArrowWrap, narrow && styles.toolArrowWrapStacked]}>
-                      <Ionicons name={item.available ? "arrow-forward" : "time-outline"} size={18} color="#4A5966" />
+                    <View style={styles.toolCopy}><Text style={[styles.toolTitle, compact && styles.toolTitleCompact]}>{item.title}</Text><Text style={styles.toolDesc} numberOfLines={2}>{item.description}</Text></View>
+                    <View style={[styles.toolArrowWrap, !item.available && styles.toolArrowMuted]}>
+                      <Ionicons name={item.available ? "chevron-forward" : "time-outline"} size={18} color="#4A5966" />
                     </View>
                   </View>
                 </Pressable>
@@ -146,7 +134,7 @@ export default function WellnessToolsScreen() {
             <View style={styles.miniResetHeadingRow}>
               <View>
                 <Text style={styles.listHeading}>Mini Reset</Text>
-                <Text style={styles.listSubHeading}>A small, calm challenge when you want a change of pace.</Text>
+                <Text style={styles.listSubHeading}>A small, calm challenge when you need a change of pace.</Text>
               </View>
               <View style={styles.miniResetSparkle}><Ionicons name="sparkles-outline" size={18} color="#6A6996" /></View>
             </View>
@@ -159,9 +147,8 @@ export default function WellnessToolsScreen() {
                   onPress={() => router.push({ pathname: "/mini-reset", params: { activity: item.id } } as never)}
                 >
                   <View style={styles.miniResetIcon}><Ionicons name={item.icon} size={19} color="#625D8F" /></View>
-                  <Text style={styles.miniResetTitle}>{item.title}</Text>
-                  <Text style={styles.miniResetDescription}>{item.description}</Text>
-                  <View style={styles.miniResetMeta}><Ionicons name="time-outline" size={13} color="#71758B" /><Text style={styles.miniResetMetaText}>{item.duration}</Text></View>
+                  <View style={styles.miniResetCopy}><Text style={styles.miniResetTitle}>{item.title}</Text><Text style={styles.miniResetDescription} numberOfLines={1}>{item.description}</Text></View>
+                  <View style={styles.miniResetMeta}><Text style={styles.miniResetMetaText}>{item.duration}</Text><Ionicons name="chevron-forward" size={16} color="#71758B" /></View>
                 </Pressable>
               ))}
             </View>
@@ -225,8 +212,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#C6E6A4",
     paddingHorizontal: 18,
-    paddingTop: 16,
-    paddingBottom: 18,
+    paddingTop: 15,
+    paddingBottom: 16,
     overflow: "hidden",
     marginBottom: 14 },
   heroCardCompact: {
@@ -331,8 +318,7 @@ const styles = StyleSheet.create({
     borderColor: "#DDE8D6",
     backgroundColor: "#F9FCF7",
     paddingHorizontal: 12,
-    paddingTop: 12,
-    paddingBottom: 12 },
+    paddingVertical: 12 },
   toolCardCompact: {
     paddingHorizontal: 11,
     paddingTop: 11,
@@ -342,11 +328,8 @@ const styles = StyleSheet.create({
   toolCardTopRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 10,
-    columnGap: 10,
-    rowGap: 8,
-    flexWrap: "wrap" },
+    columnGap: 11 },
+  toolCopy: { flex: 1 },
   toolCardTopRowCompact: {
     justifyContent: "flex-start" },
   toolIconWrap: {
@@ -403,7 +386,8 @@ const styles = StyleSheet.create({
     borderColor: "#E4EAEE",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 2 },
+    marginLeft: 2 },
+  toolArrowMuted: { opacity: 0.6 },
   toolArrowWrapStacked: {
     marginTop: 0,
     alignSelf: "flex-start" },
@@ -420,12 +404,13 @@ const styles = StyleSheet.create({
   },
   miniResetHeadingRow: { flexDirection: "row", justifyContent: "space-between", columnGap: 12, marginBottom: 14 },
   miniResetSparkle: { width: 38, height: 38, borderRadius: 14, backgroundColor: "#F0EDFA", alignItems: "center", justifyContent: "center" },
-  miniResetGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  miniResetCard: { width: "48%", flexGrow: 1, minWidth: 135, borderRadius: 18, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E7E4F0", padding: 12, minHeight: 164 },
+  miniResetGrid: { rowGap: 8 },
+  miniResetCard: { width: "100%", minHeight: 64, flexDirection: "row", alignItems: "center", columnGap: 10, borderRadius: 16, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E7E4F0", padding: 11 },
   miniResetCardPressed: { opacity: 0.78, transform: [{ scale: 0.985 }] },
-  miniResetIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: "#F0EDFA", alignItems: "center", justifyContent: "center", marginBottom: 9 },
-  miniResetTitle: { color: "#3E4159", fontFamily: "Outfit-Bold", fontSize: 15, lineHeight: 19, marginBottom: 4 },
-  miniResetDescription: { color: "#687084", fontSize: 12, lineHeight: 16, flex: 1 },
-  miniResetMeta: { flexDirection: "row", alignItems: "center", columnGap: 4, marginTop: 9 },
+  miniResetIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: "#F0EDFA", alignItems: "center", justifyContent: "center" },
+  miniResetCopy: { flex: 1 },
+  miniResetTitle: { color: "#3E4159", fontFamily: "Outfit-Bold", fontSize: 15, lineHeight: 19, marginBottom: 2 },
+  miniResetDescription: { color: "#687084", fontSize: 12, lineHeight: 16 },
+  miniResetMeta: { flexDirection: "row", alignItems: "center", columnGap: 2 },
   miniResetMetaText: { color: "#71758B", fontSize: 11, lineHeight: 14, fontFamily: "Outfit-Bold" },
 });
