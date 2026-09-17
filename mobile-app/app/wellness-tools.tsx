@@ -14,6 +14,14 @@ type ToolItem = {
   title: string;
 };
 
+type MiniResetItem = {
+  description: string;
+  duration: string;
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  id: "memory" | "pattern" | "recall" | "words";
+  title: string;
+};
+
 const WELLNESS_TOOLS: ToolItem[] = [
   {
     accentColor: "#4F8A38",
@@ -39,6 +47,13 @@ const WELLNESS_TOOLS: ToolItem[] = [
     title: "Cognitive Restructuring Log",
     icon: "document-text-outline",
     description: "Reflect on unhelpful thoughts and gently rewrite them into more balanced perspectives." },
+];
+
+const MINI_RESETS: MiniResetItem[] = [
+  { id: "memory", title: "Gentle Pairs", description: "Flip and find three calm matches.", duration: "~1 min", icon: "grid-outline" },
+  { id: "pattern", title: "Notice the Pattern", description: "Watch a small sequence, then repeat it.", duration: "~30 sec", icon: "shapes-outline" },
+  { id: "recall", title: "Visual Recall", description: "Take a breath and recreate a simple arrangement.", duration: "~30 sec", icon: "eye-outline" },
+  { id: "words", title: "Unscramble a Word", description: "Put a calming word back in order.", duration: "~30 sec", icon: "text-outline" },
 ];
 
 const CENTER_LOGO_IMAGE = require("../assets/images/guidancelogo_sample.png");
@@ -122,6 +137,31 @@ export default function WellnessToolsScreen() {
                       <Ionicons name={item.available ? "arrow-forward" : "time-outline"} size={18} color="#4A5966" />
                     </View>
                   </View>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
+          <View style={[styles.miniResetSection, compact && styles.listSectionCompact]}>
+            <View style={styles.miniResetHeadingRow}>
+              <View>
+                <Text style={styles.listHeading}>Mini Reset</Text>
+                <Text style={styles.listSubHeading}>A small, calm challenge when you want a change of pace.</Text>
+              </View>
+              <View style={styles.miniResetSparkle}><Ionicons name="sparkles-outline" size={18} color="#6A6996" /></View>
+            </View>
+            <View style={styles.miniResetGrid}>
+              {MINI_RESETS.map((item) => (
+                <Pressable
+                  key={item.id}
+                  style={({ pressed }) => [styles.miniResetCard, pressed && styles.miniResetCardPressed]}
+                  accessibilityLabel={`${item.title}, ${item.duration}`}
+                  onPress={() => router.push({ pathname: "/mini-reset", params: { activity: item.id } } as never)}
+                >
+                  <View style={styles.miniResetIcon}><Ionicons name={item.icon} size={19} color="#625D8F" /></View>
+                  <Text style={styles.miniResetTitle}>{item.title}</Text>
+                  <Text style={styles.miniResetDescription}>{item.description}</Text>
+                  <View style={styles.miniResetMeta}><Ionicons name="time-outline" size={13} color="#71758B" /><Text style={styles.miniResetMetaText}>{item.duration}</Text></View>
                 </Pressable>
               ))}
             </View>
@@ -366,4 +406,26 @@ const styles = StyleSheet.create({
     marginTop: 2 },
   toolArrowWrapStacked: {
     marginTop: 0,
-    alignSelf: "flex-start" } });
+    alignSelf: "flex-start" },
+  miniResetSection: {
+    width: "100%",
+    borderRadius: 24,
+    backgroundColor: "#FCFBFF",
+    borderWidth: 1,
+    borderColor: "#E6E2F2",
+    paddingHorizontal: 14,
+    paddingTop: 16,
+    paddingBottom: 16,
+    marginTop: 14,
+  },
+  miniResetHeadingRow: { flexDirection: "row", justifyContent: "space-between", columnGap: 12, marginBottom: 14 },
+  miniResetSparkle: { width: 38, height: 38, borderRadius: 14, backgroundColor: "#F0EDFA", alignItems: "center", justifyContent: "center" },
+  miniResetGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  miniResetCard: { width: "48%", flexGrow: 1, minWidth: 135, borderRadius: 18, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E7E4F0", padding: 12, minHeight: 164 },
+  miniResetCardPressed: { opacity: 0.78, transform: [{ scale: 0.985 }] },
+  miniResetIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: "#F0EDFA", alignItems: "center", justifyContent: "center", marginBottom: 9 },
+  miniResetTitle: { color: "#3E4159", fontFamily: "Outfit-Bold", fontSize: 15, lineHeight: 19, marginBottom: 4 },
+  miniResetDescription: { color: "#687084", fontSize: 12, lineHeight: 16, flex: 1 },
+  miniResetMeta: { flexDirection: "row", alignItems: "center", columnGap: 4, marginTop: 9 },
+  miniResetMetaText: { color: "#71758B", fontSize: 11, lineHeight: 14, fontFamily: "Outfit-Bold" },
+});
