@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { needsSupportPrompt } from "./risk-level";
 import { Platform } from "react-native";
+import { needsSupportPrompt } from "./risk-level";
 
 export type AuthUser = {
   email: string;
@@ -2214,6 +2214,17 @@ export async function claimMiniResetReward(payload: {
   const { studentNumber: _studentNumber, ...body } = payload;
   const { response, data } = await post("/api/wellness/mini-reset-reward", body);
   return { ok: response.ok, message: data?.message, dailyCapReached: data?.dailyCapReached, rewardTala: data?.rewardTala, totalTala: data?.totalTala };
+}
+
+export async function claimAchievementReward(achievementId: string): Promise<ApiResult & { rewardTala?: number; totalTala?: number; alreadyUnlocked?: boolean }> {
+  const { response, data } = await post("/api/wellness/achievement-reward", { achievementId });
+  return {
+    ok: response.ok,
+    message: data?.message,
+    rewardTala: data?.rewardTala,
+    totalTala: data?.totalTala,
+    alreadyUnlocked: data?.alreadyUnlocked,
+  };
 }
 
 export async function claimLibraryReadingReward(payload: {

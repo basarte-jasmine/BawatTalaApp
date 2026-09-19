@@ -1503,6 +1503,18 @@ async function ensureDatabaseSchema() {
   `);
 
   await pool.query(`
+    create table if not exists public.student_achievements (
+      id uuid primary key default gen_random_uuid(),
+      student_number text not null,
+      achievement_id text not null,
+      achievement_title text not null,
+      reward_tala integer not null default 0,
+      unlocked_at timestamptz not null default now(),
+      unique (student_number, achievement_id)
+    );
+  `);
+
+  await pool.query(`
     create table if not exists public.future_self_messages (
       id text primary key,
       student_number text not null,

@@ -5,7 +5,60 @@ const { requireStudentOnlyAuth, resolveStudentNumber } = require("../middleware/
 const router = express.Router();
 router.use(requireStudentOnlyAuth);
 const DAILY_TALA_CAP = 12;
-const ACTIVITY_IDS = new Set(["memory", "pattern", "recall", "words", "odd", "numbers", "match"]);
+const ACTIVITY_IDS = new Set(["memory", "pattern", "recall", "words", "odd", "numbers", "match", "count", "color"]);
+const ACHIEVEMENTS = new Map([
+  ["star-shopper", { title: "Star Shopper", rewardTala: 10, message: "Congratulations! You spent Tala in the Muni shop for the first time." }],
+  ["found-the-right-time", { title: "Found the Right Time", rewardTala: 10, message: "Congratulations! You found the right time for a support session." }],
+]);
+
+router.post("/achievement-reward", async (req, res) => {
+  const studentNumber = String(resolveStudentNumber(req) || "").trim();
+  const achievementId = String(req.body.achievementId || "").trim();
+  const achievement = ACHIEVEMENTS.get(achievementId);
+  if (!/^\d{2}-\d{4}$/.test(studentNumber) || !achievement) {
+    return res.status(400).json({ message: "A valid achievement is required." });
+  }
+
+  try {
+    const saved = await query(
+      `insert into public.student_achievements (student_number, achievement_id, achievement_title, reward_tala)
+       values ($1, $2, $3, $4)
+       on conflict (student_number, achievement_id) do nothing
+       returning reward_tala`,
+      [studentNumber, achievementId, achievement.title, achievement.rewardTala],
+    );
+    if (!saved.rowCount) {
+      return res.json({ alreadyUnlocked: true, rewardTala: 0, message: "Achievement already unlocked." });
+    }
+
+    const wallet = await query(
+      `insert into public.student_tala_wallets (student_number, total_tala, updated_at)
+       values ($1, $2, now())
+       on conflict (student_number) do update set total_tala = public.student_tala_wallets.total_tala + excluded.total_tala, updated_at = now()
+       returning total_tala`,
+      [studentNumber, achievement.rewardTala],
+    );
+    await query(
+      `insert into public.student_notifications (student_number, kind, title, message, metadata)
+       values ($1, 'ACHIEVEMENT_UNLOCKED', $2, $3, $4::jsonb)`,
+      [
+        studentNumber,
+        `${achievement.title} unlocked!`,
+        `${achievement.message} You earned +${achievement.rewardTala} Tala.`,
+        JSON.stringify({ achievementId, achievementTitle: achievement.title, rewardTala: achievement.rewardTala }),
+      ],
+    );
+    return res.json({
+      alreadyUnlocked: false,
+      achievementId,
+      rewardTala: achievement.rewardTala,
+      totalTala: Number(wallet.rows[0]?.total_tala || 0),
+      message: `${achievement.message} You earned +${achievement.rewardTala} Tala.`,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message || "Could not unlock this achievement." });
+  }
+});
 
 router.post("/mini-reset-reward", async (req, res) => {
   const studentNumber = String(resolveStudentNumber(req) || "").trim();
