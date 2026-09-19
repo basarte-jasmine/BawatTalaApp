@@ -59,15 +59,6 @@ const DAILY_CHECKIN_REWARDS: DailyCheckinReward[] = [
   { id: "r150", value: "+150", state: "locked" },
 ];
 
-type RecentEntryCard = {
-  createdAt: string;
-  id: string;
-  meta: string;
-  preview: string;
-};
-
-type HomeRecentFilter = "newest" | "oldest";
-
 type ScheduledBottleNote = {
   createdAt: string;
   deliveryAt: string;
@@ -415,10 +406,7 @@ export default function HomeScreen() {
   const [pendingMoodId, setPendingMoodId] = useState<string | null>(null);
   const [isSavingMood, setIsSavingMood] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [recentEntries, setRecentEntries] = useState<RecentEntryCard[]>([]);
   const [libraryPreviewBooks, setLibraryPreviewBooks] = useState<LibraryBookRecord[]>([]);
-  const [recentEntriesSort, setRecentEntriesSort] = useState<HomeRecentFilter>("newest");
-  const [showRecentEntriesFilterModal, setShowRecentEntriesFilterModal] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
   const [bottomNavTransparent, setBottomNavTransparent] = useState(false);
   const [shouldRenderFutureBottleScene, setShouldRenderFutureBottleScene] = useState(false);
@@ -1082,13 +1070,6 @@ export default function HomeScreen() {
       setScheduledBottleNotes([]);
     }
   }, [user?.studentNumber]);
-
-  const displayedRecentEntries =
-    recentEntriesSort === "newest" ? recentEntries : [...recentEntries].reverse();
-  const recentListHeight =
-    displayedRecentEntries.length === 0
-      ? 148
-      : Math.min(displayedRecentEntries.length * 104 + 20, compact ? 300 : 372);
   const latestMoodLabel = latestMoodId ? EMOTIONS.find((emotion) => emotion.id === latestMoodId)?.label ?? "" : "";
   const pendingMood = pendingMoodId ? EMOTIONS.find((emotion) => emotion.id === pendingMoodId) ?? null : null;
   const consultAppointmentStatus = String(upcomingAppointment?.status || "").toUpperCase();
@@ -2052,57 +2033,7 @@ export default function HomeScreen() {
           </Pressable>
         </View>
 
-        <View style={styles.recentCard}>
-          <View style={styles.recentHeader}>
-            <View style={styles.recentHeaderTextWrap}>
-              <Text style={styles.sectionEyebrow}>Journal</Text>
-              <Text style={styles.recentTitle}>Today&apos;s Entries</Text>
-              <Text style={styles.recentSubtitle}>Everything you wrote today appears here.</Text>
-            </View>
-            <Pressable style={styles.recentFilterButton} onPress={() => setShowRecentEntriesFilterModal(true)} accessibilityLabel="Sort today's entries">
-              <Ionicons name="funnel-outline" size={16} color="#3F4A56" />
-            </Pressable>
-          </View>
-
-          <View style={[styles.recentListWrap, { height: recentListHeight }]}>
-            <ScrollView
-              style={styles.recentList}
-              contentContainerStyle={styles.recentListContent}
-              showsVerticalScrollIndicator={false}
-              nestedScrollEnabled
-            >
-              {displayedRecentEntries.length > 0 ? (
-                displayedRecentEntries.map((entry) => (
-                  <Pressable key={entry.id} style={styles.entryItem} onPress={() => router.push(`/journal-entry-view?entryId=${entry.id}`)}>
-                    <View style={styles.entryIconWrap}>
-                      <Text style={styles.entryIcon}>{"\uD83D\uDCD6"}</Text>
-                    </View>
-
-                    <View style={styles.entryTextWrap}>
-                      <Text style={styles.entryMeta}>{entry.meta}</Text>
-                      <Text style={styles.entryPreview} numberOfLines={2}>
-                        {entry.preview}
-                      </Text>
-                    </View>
-                  </Pressable>
-                ))
-              ) : (
-                <View style={styles.entryItem}>
-                  <View style={styles.entryIconWrap}>
-                    <Text style={styles.entryIcon}>{"\uD83D\uDCD6"}</Text>
-                  </View>
-
-                  <View style={styles.entryTextWrap}>
-                    <Text style={styles.entryMeta}>No entries for today</Text>
-                    <Text style={styles.entryPreview} numberOfLines={2}>
-                      Today&apos;s journal entries will appear here.
-                    </Text>
-                  </View>
-                </View>
-              )}
-            </ScrollView>
-          </View>
-        </View>
+        
 
         <View style={styles.pauseCard}>
           <Text style={styles.sectionEyebrow}>Take a pause</Text>
@@ -2903,61 +2834,6 @@ export default function HomeScreen() {
             <View style={styles.modalActions}>
               <Pressable style={styles.modalPrimaryButtonSingle} onPress={() => setShowCheckInResultModal(false)}>
                 <Text style={styles.modalPrimaryText}>OK</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={showRecentEntriesFilterModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowRecentEntriesFilterModal(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalBody}>Sort today&apos;s entries</Text>
-
-            <View style={styles.filterModalList}>
-              <Pressable
-                style={[
-                  styles.filterModalOption,
-                  recentEntriesSort === "newest" && styles.filterModalOptionActive,
-                ]}
-                onPress={() => {
-                  setRecentEntriesSort("newest");
-                  setShowRecentEntriesFilterModal(false);
-                }}
-              >
-                <Text
-                  style={[
-                    styles.filterModalOptionText,
-                    recentEntriesSort === "newest" && styles.filterModalOptionTextActive,
-                  ]}
-                >
-                  Newest First
-                </Text>
-              </Pressable>
-
-              <Pressable
-                style={[
-                  styles.filterModalOption,
-                  recentEntriesSort === "oldest" && styles.filterModalOptionActive,
-                ]}
-                onPress={() => {
-                  setRecentEntriesSort("oldest");
-                  setShowRecentEntriesFilterModal(false);
-                }}
-              >
-                <Text
-                  style={[
-                    styles.filterModalOptionText,
-                    recentEntriesSort === "oldest" && styles.filterModalOptionTextActive,
-                  ]}
-                >
-                  Oldest First
-                </Text>
               </Pressable>
             </View>
           </View>
@@ -4059,67 +3935,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
     fontFamily: "Outfit-Bold" },
-  recentCard: {
-    borderRadius: 24,
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 12,
-    paddingTop: 12,
-    paddingBottom: 10,
-    shadowColor: "#66737E",
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "#E6EEE7" },
-  recentHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    marginBottom: 12,
-    paddingHorizontal: 2 },
-  recentHeaderTextWrap: {
-    flex: 1,
-    paddingRight: 12 },
-  recentTitle: {
-    color: "#324254",
-    fontSize: 37 / 2,
-    lineHeight: 24,
-    fontFamily: "Outfit-Bold" },
-  recentSubtitle: {
-    color: "#607181",
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 3 },
-  recentFilterButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    backgroundColor: "#F5F8FB",
-    borderWidth: 1,
-    borderColor: "#E0E7EE",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 2 },
-  recentListWrap: {
-    position: "relative",
-    height: 454 },
-  recentList: {
-    flex: 1 },
-  recentListContent: {
-    paddingBottom: 8,
-    rowGap: 10 },
-  entryItem: {
-    borderRadius: 14,
-    backgroundColor: "#F6FFF0",
-    flexDirection: "row",
-    alignItems: "flex-start",
-    paddingHorizontal: 12,
-    paddingVertical: 14,
-    columnGap: 12,
-    borderWidth: 1,
-    borderColor: "#E1EED9" },
   entryIconWrap: {
     width: 68,
     height: 68,
