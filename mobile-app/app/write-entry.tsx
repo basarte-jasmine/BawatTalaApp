@@ -317,7 +317,7 @@ export default function WriteEntryScreen() {
     setErrorMessage("");
     setStatusMessage("");
 
-    if (mode === "new") {
+    if (mode === "new" || mode === "new-muni" || mode === "new-solo") {
       // Offline users start with Solo Journaling by default (no Muni session).
       const backendReachable = await isBackendReachable();
       if (!backendReachable) {
@@ -335,7 +335,7 @@ export default function WriteEntryScreen() {
         return;
       }
       const createResult = await createJournalSession({
-        aiEnabled: true,
+          aiEnabled: mode === "new-solo" ? false : true,
         forceNew: true,
         studentNumber: user.studentNumber });
 

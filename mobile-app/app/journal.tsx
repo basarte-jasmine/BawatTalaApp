@@ -80,6 +80,7 @@ export default function JournalScreen() {
   );
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showFullInsightModal, setShowFullInsightModal] = useState(false);
+  const [selectedJournalMode, setSelectedJournalMode] = useState<"muni" | "solo">("muni");
 
   const selectedDay = useMemo(
     () => calendarDays.find((day) => day.isoDate === weekAnchorDate) ?? null,
@@ -238,30 +239,52 @@ export default function JournalScreen() {
                 {insightText}
               </Text>
             </Pressable>
-
-            <View style={[styles.reflectionFooterRow, compact && styles.reflectionFooterRowCompact]}>
-              <View style={[styles.companionWrap, compact && styles.companionWrapCompact]}>
-                <MuniAvatar style={[styles.companionImage, compact && styles.companionImageCompact]} />
-              </View>
-
-              <Text style={[styles.reflectionFootnote, compact && styles.reflectionFootnoteCompact]} numberOfLines={2}>
-                Summary by Muni, an AI companion. Muni is not a psychometrician or a substitute for professional care.
-              </Text>
-            </View>
+            
+            <Text style={[styles.reflectionFootnote, compact && styles.reflectionFootnoteCompact]} numberOfLines={2}>
+              Summary by Muni, an AI companion. Muni is not a psychometrician or a substitute for professional care.
+            </Text>
           </View>
         </View>
 
         <View style={[styles.bottomSection, compact && styles.bottomSectionCompact]}>
           <Text style={styles.cardEyebrow}>WRITE AGAIN</Text>
-          <View style={[styles.journalArtWrap, compact && styles.journalArtWrapCompact]}>
-            <Image source={BOOK_IMAGE} style={[styles.bookImage, compact && styles.bookImageCompact, veryCompact && styles.bookImageVeryCompact]} resizeMode="contain" />
+          
+          <View style={styles.carouselSection}>
+            <View style={styles.carouselContainer}>
+              <Pressable 
+                onPress={() => setSelectedJournalMode("muni")} 
+                style={styles.carouselArrow}
+                disabled={selectedJournalMode === "muni"}
+              >
+                <Ionicons name="chevron-back" size={26} color={selectedJournalMode === "solo" ? "#4D6558" : "transparent"} />
+              </Pressable>
+
+              <View style={[styles.journalArtWrap, compact && styles.journalArtWrapCompact]}>
+                <Image source={BOOK_IMAGE} style={[styles.bookImage, compact && styles.bookImageCompact, veryCompact && styles.bookImageVeryCompact]} resizeMode="contain" />
+              </View>
+
+              <Pressable 
+                onPress={() => setSelectedJournalMode("solo")} 
+                style={styles.carouselArrow}
+                disabled={selectedJournalMode === "solo"}
+              >
+                <Ionicons name="chevron-forward" size={26} color={selectedJournalMode === "muni" ? "#4D6558" : "transparent"} />
+              </Pressable>
+            </View>
+
+            <View style={styles.journalModeInfo}>
+              <Text style={styles.journalModeTitle}>{selectedJournalMode === "muni" ? "Guided Journal" : "Solo Journal"}</Text>
+              <Text style={styles.journalModeDesc}>{selectedJournalMode === "muni" ? "Reflect with Muni" : "Free write your thoughts"}</Text>
+            </View>
           </View>
 
           <Pressable
             style={[styles.addEntryButton, compact && styles.addEntryButtonCompact]}
-            onPress={() => router.push("/write-entry?mode=new")}
+            onPress={() => router.push(`/write-entry?mode=new-${selectedJournalMode}`)}
           >
-            <Text style={[styles.addEntryText, compact && styles.addEntryTextCompact]}>Add Entry</Text>
+            <Text style={[styles.addEntryText, compact && styles.addEntryTextCompact]}>
+              {selectedJournalMode === "muni" ? "Add Guided Entry" : "Add Solo Entry"}
+            </Text>
           </Pressable>
 
           <Pressable
@@ -281,20 +304,30 @@ export default function JournalScreen() {
         >
           <View style={styles.modalBackdrop}>
             <View style={styles.modalCard}>
-              <View style={styles.modalHeader}>
-                <View style={styles.modalHeaderCopy}>
-                  <Text style={styles.modalEyebrow}>MUNI SUMMARY</Text>
-                  <Text style={styles.modalTitle}>{formatLongDate(weekAnchorDate)}</Text>
-                </View>
-
-                <View style={styles.modalCompanionWrap}>
-                  <MuniAvatar style={styles.modalCompanionImage} />
-                </View>
+              
+              <View style={styles.modalHeaderRow}>
+                <Text style={styles.modalEyebrow}>MUNI SUMMARY</Text>
+                <Text style={styles.modalTitle}>{formatLongDate(weekAnchorDate)}</Text>
               </View>
 
-              <ScrollView style={styles.modalInsightScroll} contentContainerStyle={styles.modalInsightContent} showsVerticalScrollIndicator={false}>
-                <Text style={styles.modalInsightText}>{insightText}</Text>
-              </ScrollView>
+              <View style={styles.modalThoughtLayout}>
+                <View style={styles.modalThoughtBubble}>
+                  <ScrollView style={styles.modalInsightScroll} contentContainerStyle={styles.modalInsightContent} showsVerticalScrollIndicator={false}>
+                    <Text style={styles.modalInsightText}>{insightText}</Text>
+                  </ScrollView>
+                </View>
+
+                <View style={styles.modalThoughtFooter}>
+                  <View style={styles.thoughtDotsColumn}>
+                    <View style={styles.thoughtDotLarge} />
+                    <View style={styles.thoughtDotMedium} />
+                    <View style={styles.thoughtDotSmall} />
+                  </View>
+                  <View style={styles.modalCompanionWrap}>
+                    <MuniAvatar style={styles.modalCompanionImage} />
+                  </View>
+                </View>
+              </View>
 
               <Pressable style={styles.modalCloseButton} onPress={() => setShowFullInsightModal(false)}>
                 <Text style={styles.modalCloseButtonText}>Close</Text>
@@ -445,114 +478,131 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E4EFE0",
     paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 14,
+    paddingTop: 14,
+    paddingBottom: 12,
     shadowColor: "#5C6570",
     shadowOpacity: 0.1,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
     elevation: 3,
     marginBottom: 10,
-    height: 168,
     overflow: "hidden" },
   reflectionCardCompact: {
-    height: 150,
     paddingHorizontal: 14,
     paddingTop: 12,
     paddingBottom: 10,
     marginBottom: 8 },
-  reflectionFooterRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    columnGap: 10,
-    minHeight: 48,
-    marginTop: "auto" },
   reflectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 6 },
+    marginBottom: 10 },
   expandButton: {
     width: 28,
     height: 28,
     borderRadius: 999,
-    backgroundColor: "#F4F8F1",
+    backgroundColor: "#F2F7ED",
     alignItems: "center",
     justifyContent: "center" },
+  reflectionLayoutRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    columnGap: 12,
+    marginBottom: 10 },
+  reflectionContentWrap: {
+    flex: 1 },
+  bubbleWrap: {
+    backgroundColor: "#F5F9F1",
+    padding: 14,
+    borderRadius: 18,
+    borderTopLeftRadius: 4 },
+  bubbleWrapCompact: {
+    padding: 10 },
   reflectionSnippetWrap: {
     flex: 1,
     overflow: "hidden",
     marginBottom: 8 },
-  reflectionFooterRowCompact: {
-    columnGap: 8 },
   reflectionText: {
     color: "#33485B",
     fontSize: 15,
-    lineHeight: 21,
-    marginBottom: 0 },
+    lineHeight: 21 },
   reflectionTextCompact: {
     fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 8 },
+    lineHeight: 18 },
   reflectionFootnote: {
-    flex: 1,
-    flexShrink: 1,
-    color: "#7B858E",
+    color: "#8FA088",
     fontSize: 10,
     lineHeight: 13,
-    paddingTop: 2 },
+    fontFamily: "Outfit-Bold" },
   reflectionFootnoteCompact: {
     fontSize: 9,
-    lineHeight: 12,
-    paddingTop: 1 },
+    lineHeight: 12 },
   companionWrap: {
-    width: 54,
-    height: 54,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#EFF7E8",
     alignItems: "center",
     justifyContent: "center" },
   companionWrapCompact: {
-    width: 44,
-    height: 44 },
+    width: 40,
+    height: 40,
+    borderRadius: 20 },
   companionImage: {
-    width: 52,
-    height: 52 },
+    width: 40,
+    height: 40 },
   companionImageCompact: {
-    width: 42,
-    height: 42 },
+    width: 34,
+    height: 34 },
   bottomSection: {
     marginTop: 8 },
   bottomSectionCompact: {
     marginTop: 4 },
-  journalArtWrap: {
-    width: 222,
-    height: 222,
-    borderRadius: 40,
-    backgroundColor: "#F1F8EB",
-    borderWidth: 1,
-    borderColor: "#E3EFDA",
+  carouselSection: {
+    marginBottom: 16 },
+  carouselContainer: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    alignSelf: "center",
-    marginTop: 0,
-    marginBottom: 16,
-    shadowColor: "#5C6570",
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2 },
+    marginBottom: 4 },
+  carouselArrow: {
+    width: 50,
+    height: 100,
+    alignItems: "center",
+    justifyContent: "center" },
+  carouselCenter: {
+    alignItems: "center",
+    flex: 1 },
+  journalArtWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginHorizontal: 10 },
   journalArtWrapCompact: {
-    width: 206,
-    height: 206,
-    marginBottom: 10 },
+    marginBottom: 4 },
   bookImage: {
-    width: 184,
-    height: 244 },
+    width: 200,
+    height: 250,
+    shadowColor: "#5C6570",
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 } },
   bookImageCompact: {
-    width: 168,
-    height: 224 },
+    width: 160,
+    height: 210 },
   bookImageVeryCompact: {
-    width: 146,
-    height: 192 },
+    width: 130,
+    height: 170 },
+journalModeInfo: {
+    alignItems: "center" },
+  journalModeTitle: {
+    color: "#34475A",
+    fontSize: 16,
+    lineHeight: 20,
+    fontFamily: "Outfit-Bold",
+    marginBottom: 2 },
+  journalModeDesc: {
+    color: "#7B8D74",
+    fontSize: 13 },
   addEntryButton: {
     height: 46,
     borderRadius: 999,
@@ -603,75 +653,109 @@ const styles = StyleSheet.create({
     lineHeight: 19 },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(21, 27, 24, 0.34)",
+    backgroundColor: "rgba(12, 18, 15, 0.8)",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 22 },
   modalCard: {
     width: "100%",
     maxWidth: 340,
-    maxHeight: "76%",
+    maxHeight: "85%",
+    backgroundColor: "transparent",
+    paddingHorizontal: 0,
+    paddingTop: 0,
+    paddingBottom: 0 },
+  modalHeaderRow: {
+    marginBottom: 24,
+    alignItems: "center" },
+  modalEyebrow: {
+    color: "#C2D2B8",
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 2,
+    fontFamily: "Outfit-Bold",
+    marginBottom: 4,
+    textAlign: "center" },
+  modalTitle: {
+    color: "#FFFFFF",
+    fontSize: 22,
+    lineHeight: 28,
+    fontFamily: "Outfit-Bold",
+    textAlign: "center" },
+  modalThoughtLayout: {
+    alignItems: "flex-end",
+    marginBottom: 16 },
+  modalThoughtBubble: {
+    backgroundColor: "#F5F9F1",
+    padding: 18,
     borderRadius: 24,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E0ECD7",
-    paddingHorizontal: 18,
-    paddingTop: 18,
-    paddingBottom: 16,
-    shadowColor: "#525C67",
-    shadowOpacity: 0.16,
-    shadowRadius: 8,
+    width: "100%",
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
     elevation: 4 },
-  modalHeader: {
+  modalThoughtFooter: {
     flexDirection: "row",
+    alignItems: "flex-start",
+    marginTop: 6,
+    marginRight: 10 },
+  thoughtDotsColumn: {
     alignItems: "center",
-    columnGap: 12,
-    marginBottom: 12 },
-  modalHeaderCopy: {
-    flex: 1 },
-  modalEyebrow: {
-    color: "#7B8D74",
-    fontSize: 10,
-    lineHeight: 14,
-    letterSpacing: 1,
-    fontFamily: "Outfit-Bold",
-    marginBottom: 4 },
-  modalTitle: {
-    color: "#32465C",
-    fontSize: 18,
-    lineHeight: 24,
-    fontFamily: "Outfit-Bold" },
+    marginRight: 8,
+    marginTop: -4 },
+  thoughtDotLarge: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: "#F5F9F1",
+    marginBottom: 4,
+    marginLeft: -16 },
+  thoughtDotMedium: {
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    backgroundColor: "#F5F9F1",
+    marginBottom: 4,
+    marginLeft: -4 },
+  thoughtDotSmall: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: "#F5F9F1",
+    marginBottom: 4,
+    marginLeft: 8 },
   modalCompanionWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    backgroundColor: "#EFF7E8",
-    borderWidth: 1,
-    borderColor: "#D8E9CB",
+    width: 60,
+    height: 60,
     alignItems: "center",
     justifyContent: "center" },
   modalCompanionImage: {
-    width: 34,
-    height: 34 },
+    width: 60,
+    height: 60 },
   modalInsightScroll: {
-    maxHeight: 280 },
+    flex: 1,
+    maxHeight: 300 },
   modalInsightContent: {
     paddingBottom: 4 },
   modalInsightText: {
     color: "#33485B",
-    fontSize: 15,
-    lineHeight: 22 },
+    fontSize: 16,
+    lineHeight: 24 },
   modalCloseButton: {
-    marginTop: 14,
-    minHeight: 40,
+    marginTop: 8,
+    minHeight: 46,
     borderRadius: 999,
     backgroundColor: "#79C943",
     alignItems: "center",
-    justifyContent: "center" },
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4 },
   modalCloseButtonText: {
     color: "#FFFFFF",
-    fontSize: 14,
-    lineHeight: 18,
+    fontSize: 16,
+    lineHeight: 20,
     fontFamily: "Outfit-Bold" } });
-
