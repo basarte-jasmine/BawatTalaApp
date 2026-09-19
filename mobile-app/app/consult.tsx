@@ -18,6 +18,7 @@ import {
   fetchAppointmentAvailability,
   fetchAppointmentCounselors } from "../lib/backend-api";
 import { useAuthSession } from "../lib/auth-session";
+import { unlockAchievement } from "../lib/achievements";
 import { getManilaTodayParts } from "../lib/manila-date";
 
 type CounselorCard = {
@@ -519,6 +520,7 @@ export default function ConsultScreen() {
         return;
       }
 
+      await unlockAchievement("found-the-right-time", user.studentNumber);
       router.replace(`/home?consultConfirmed=1&appointmentId=${encodeURIComponent(result.appointment.id)}`);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to submit appointment request.");

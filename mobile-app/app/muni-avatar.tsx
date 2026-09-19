@@ -8,6 +8,7 @@ import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Tex
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { useAuthSession } from "../lib/auth-session";
+import { unlockAchievement } from "../lib/achievements";
 import {
   areMuniLoadoutsEqual,
   COLLECTION_SECTIONS,
@@ -150,9 +151,10 @@ export default function MuniAvatarScreen() {
         itemLabel: option.label ?? option.id,
         optionId: option.id,
         sectionId });
+      await unlockAchievement("star-shopper", user?.studentNumber);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
     },
-    [availableTala],
+    [availableTala, user?.studentNumber],
   );
 
   return (
@@ -464,7 +466,7 @@ export default function MuniAvatarScreen() {
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Unsaved look</Text>
             <Text style={styles.modalBody}>
-              You have unsaved changes to Muni's outfit. Do you want to leave without saving?
+              You have unsaved changes to Muni&apos;s outfit. Do you want to leave without saving?
             </Text>
 
             <View style={styles.modalActions}>

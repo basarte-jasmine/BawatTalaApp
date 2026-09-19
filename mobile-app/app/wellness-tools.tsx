@@ -18,7 +18,7 @@ type MiniResetItem = {
   description: string;
   duration: string;
   icon: React.ComponentProps<typeof Ionicons>["name"];
-  id: "memory" | "pattern" | "recall" | "words" | "numbers";
+  id: "memory" | "pattern" | "recall" | "words" | "numbers" | "count" | "color";
   title: string;
 };
 
@@ -47,6 +47,8 @@ const MINI_RESETS: MiniResetItem[] = [
   { id: "recall", title: "Visual Recall", description: "Take a breath and recreate a simple arrangement.", duration: "~30 sec", icon: "eye-outline" },
   { id: "words", title: "Unscramble a Word", description: "Put a calming word back in order.", duration: "~30 sec", icon: "text-outline" },
   { id: "numbers", title: "Number Flow", description: "Notice a gentle number pattern.", duration: "~20 sec", icon: "analytics-outline" },
+  { id: "count", title: "Calm Count", description: "Tap the numbers in a steady order.", duration: "~20 sec", icon: "list-outline" },
+  { id: "color", title: "Color Focus", description: "Find the one tile that matches.", duration: "~20 sec", icon: "color-palette-outline" },
 ];
 
 export default function WellnessToolsScreen() {
@@ -133,7 +135,6 @@ export default function WellnessToolsScreen() {
                 <Text style={styles.listHeading}>Mini Reset</Text>
                 <Text style={styles.listSubHeading}>Pick a small game to give your attention a softer place to land.</Text>
               </View>
-              <View style={styles.miniResetSparkle}><Ionicons name="sparkles-outline" size={18} color="#6A6996" /></View>
             </View>
             <View style={styles.miniResetGrid}>
               {MINI_RESETS.map((item) => (

@@ -53,6 +53,16 @@ const ACHIEVEMENTS = [
     id: "library-glow",
     title: "Library Glow",
     desc: "Read in the library for 1 hour.",
+  },
+  {
+    id: "star-shopper",
+    title: "Star Shopper",
+    desc: "Spend Tala in the Muni shop for the first time.",
+  },
+  {
+    id: "found-the-right-time",
+    title: "Found the Right Time",
+    desc: "Choose a counselor, date, and time for a support session.",
   }
 ];
 
