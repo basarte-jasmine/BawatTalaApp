@@ -151,6 +151,10 @@ export default function MoodOverviewScreen() {
         label: EMOTION_META[id].label })),
     [monthlyCounts],
   );
+  const rankedMoodStats = useMemo(
+    () => moodStats.filter((item) => item.count > 0).sort((a, b) => b.count - a.count).slice(0, 5),
+    [moodStats],
+  );
 
   const todayMonthKey = `${now.year}-${now.monthIndex}`;
   const viewedMonthKey = `${displayYear}-${displayMonthIndex}`;
@@ -318,6 +322,29 @@ export default function MoodOverviewScreen() {
           />
         }
       >
+        <View style={styles.pageIntro}>
+          <Text style={styles.pageIntroEyebrow}>YOUR EMOTIONAL RHYTHM</Text>
+          <Text style={styles.pageIntroTitle}>Notice what your days are holding.</Text>
+          <Text style={styles.pageIntroText}>Explore your check-ins gently. There is no right pattern to find.</Text>
+        </View>
+
+        <View style={styles.atAGlanceRow}>
+          <View style={styles.atAGlanceItem}>
+            <Text style={styles.atAGlanceValue}>{totalCheckIns}</Text>
+            <Text style={styles.atAGlanceLabel}>Check-ins</Text>
+          </View>
+          <View style={styles.atAGlanceDivider} />
+          <View style={styles.atAGlanceItem}>
+            <Text style={styles.atAGlanceValue}>{activeEmotionDays}</Text>
+            <Text style={styles.atAGlanceLabel}>Active days</Text>
+          </View>
+          <View style={styles.atAGlanceDivider} />
+          <View style={styles.atAGlanceItem}>
+            <Text style={styles.atAGlanceValue} numberOfLines={1}>{mostCommonMood?.label ?? "-"}</Text>
+            <Text style={styles.atAGlanceLabel}>Most common</Text>
+          </View>
+        </View>
+
         <View style={styles.dailyCard}>
           <View style={styles.dailyHeader}>
             <View style={styles.summaryHeaderCopy}>
@@ -406,11 +433,32 @@ export default function MoodOverviewScreen() {
             <Pressable onPress={goPreviousMonth} disabled={!canGoPrevious} style={styles.monthArrowButton}>
               <Ionicons name="chevron-back" size={20} color={canGoPrevious ? "#384A5D" : "#B4BCC5"} />
             </Pressable>
-            <Text style={styles.monthLabel}>{getMonthName(displayMonthIndex)}</Text>
-            <Pressable onPress={goNextMonth} style={styles.monthArrowButton}>
-              <Ionicons name="chevron-forward" size={20} color="#384A5D" />
-            </Pressable>
+            <View style={styles.monthLabelWrap}>
+              <Text style={styles.monthLabel}>{getMonthName(displayMonthIndex)}</Text>
+              <Text style={styles.monthYear}>{displayYear}</Text>
+            </View>
+            <View style={styles.monthActions}>
+              {viewedMonthKey !== todayMonthKey ? (
+                <Pressable
+                  onPress={() => {
+                    setDisplayYear(now.year);
+                    setDisplayMonthIndex(now.monthIndex);
+                    setSelectedDayNumber(now.day);
+                  }}
+                  style={styles.todayButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Go to current month"
+                >
+                  <Text style={styles.todayButtonText}>Today</Text>
+                </Pressable>
+              ) : null}
+              <Pressable onPress={goNextMonth} disabled={isFutureMonth} style={styles.monthArrowButton}>
+                <Ionicons name="chevron-forward" size={20} color={isFutureMonth ? "#B4BCC5" : "#384A5D"} />
+              </Pressable>
+            </View>
           </View>
+
+          <Text style={styles.calendarHint}>Tap a colored day to explore the emotions you logged.</Text>
 
           <View style={styles.weekHeaderRow}>
             {WEEKDAY_LABELS.map((day) => (
@@ -506,6 +554,25 @@ export default function MoodOverviewScreen() {
               <Text style={styles.commonMoodLabel}>{mostCommonMood?.label ?? "No emotion yet"}</Text>
             </View>
           </View>
+
+          {rankedMoodStats.length ? (
+            <View style={styles.moodBars}>
+              {rankedMoodStats.map((item) => (
+                <View key={item.id} style={styles.moodBarRow}>
+                  <View style={styles.moodBarLabelWrap}>
+                    <View style={[styles.moodBarDot, { backgroundColor: item.color }]} />
+                    <Text style={styles.moodBarLabel} numberOfLines={1}>{item.label}</Text>
+                  </View>
+                  <View style={styles.moodBarTrack}>
+                    <View style={[styles.moodBarFill, { width: `${Math.max(12, (item.count / Math.max(rankedMoodStats[0].count, 1)) * 100)}%`, backgroundColor: item.color }]} />
+                  </View>
+                  <Text style={styles.moodBarCount}>{item.count}</Text>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <View style={styles.noMonthlyData}><Text style={styles.noMonthlyDataText}>Your emotion pattern will appear here after your first check-in.</Text></View>
+          )}
 
           <View style={styles.statsRow}>
             {moodStats.map((item) => (
@@ -618,6 +685,56 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingTop: 12,
     paddingBottom: 118 },
+  pageIntro: {
+    paddingHorizontal: 5,
+    paddingTop: 2,
+    paddingBottom: 12 },
+  pageIntroEyebrow: {
+    color: "#7C8F77",
+    fontSize: 10,
+    lineHeight: 14,
+    letterSpacing: 1.1,
+    fontFamily: "Outfit-Bold" },
+  pageIntroTitle: {
+    color: "#31465A",
+    fontSize: 23,
+    lineHeight: 29,
+    fontFamily: "Outfit-Bold",
+    marginTop: 3 },
+  pageIntroText: {
+    color: "#6A7481",
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 3 },
+  atAGlanceRow: {
+    borderRadius: 18,
+    backgroundColor: "#EEF7E9",
+    borderWidth: 1,
+    borderColor: "#DCEBD4",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 11,
+    marginBottom: 14 },
+  atAGlanceItem: {
+    flex: 1,
+    alignItems: "center",
+    paddingHorizontal: 5 },
+  atAGlanceDivider: {
+    width: 1,
+    height: 30,
+    backgroundColor: "#D2E2CA" },
+  atAGlanceValue: {
+    color: "#31465A",
+    fontSize: 16,
+    lineHeight: 20,
+    fontFamily: "Outfit-Bold",
+    maxWidth: 100 },
+  atAGlanceLabel: {
+    color: "#71816D",
+    fontSize: 10,
+    lineHeight: 14,
+    marginTop: 2,
+    fontFamily: "Outfit-SemiBold" },
   summaryCard: {
     borderRadius: 22,
     backgroundColor: "#FFFFFF",
@@ -822,6 +939,57 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit-SemiBold",
     maxWidth: 84,
     textAlign: "center" },
+  moodBars: {
+    rowGap: 9,
+    marginBottom: 15,
+    paddingVertical: 2 },
+  moodBarRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 8 },
+  moodBarLabelWrap: {
+    width: 86,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 5 },
+  moodBarDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 999 },
+  moodBarLabel: {
+    flex: 1,
+    color: "#536271",
+    fontSize: 11,
+    lineHeight: 15,
+    fontFamily: "Outfit-SemiBold" },
+  moodBarTrack: {
+    flex: 1,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: "#EEF2EC",
+    overflow: "hidden" },
+  moodBarFill: {
+    height: "100%",
+    borderRadius: 999,
+    opacity: 0.86 },
+  moodBarCount: {
+    width: 20,
+    color: "#31465A",
+    fontSize: 11,
+    lineHeight: 15,
+    textAlign: "right",
+    fontFamily: "Outfit-Bold" },
+  noMonthlyData: {
+    borderRadius: 14,
+    backgroundColor: "#F7FAF5",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginBottom: 13 },
+  noMonthlyDataText: {
+    color: "#71816D",
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: "center" },
   statsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1024,6 +1192,37 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 10,
     paddingHorizontal: 4 },
+  monthLabelWrap: {
+    alignItems: "center",
+    flex: 1 },
+  monthYear: {
+    color: "#7A8792",
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 1,
+    fontFamily: "Outfit-SemiBold" },
+  monthActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 5 },
+  todayButton: {
+    minHeight: 32,
+    borderRadius: 12,
+    backgroundColor: "#EAF5E5",
+    justifyContent: "center",
+    paddingHorizontal: 9 },
+  todayButtonText: {
+    color: "#4E8A3A",
+    fontSize: 11,
+    lineHeight: 15,
+    fontFamily: "Outfit-Bold" },
+  calendarHint: {
+    color: "#7A8792",
+    fontSize: 11,
+    lineHeight: 15,
+    textAlign: "center",
+    marginTop: -3,
+    marginBottom: 10 },
   monthArrowButton: {
     width: 32,
     height: 32,
