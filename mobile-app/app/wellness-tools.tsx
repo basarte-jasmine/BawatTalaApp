@@ -115,6 +115,13 @@ export default function WellnessToolsScreen() {
                       <Ionicons name={item.available ? "chevron-forward" : "time-outline"} size={18} color="#4A5966" />
                     </View>
                   </View>
+                    <View style={styles.toolMetaRow}>
+                      <View style={styles.toolTag}>
+                        <Ionicons name="checkmark-circle-outline" size={13} color="#43702A" />
+                        <Text style={styles.toolTagText}>{item.available ? "Ready now" : "Coming soon"}</Text>
+                      </View>
+                      <Text style={styles.toolMetaText}>Self-guided · 2–5 min</Text>
+                    </View>
                 </Pressable>
               ))}
             </View>
@@ -124,7 +131,7 @@ export default function WellnessToolsScreen() {
             <View style={styles.miniResetHeadingRow}>
               <View>
                 <Text style={styles.listHeading}>Mini Reset</Text>
-                <Text style={styles.listSubHeading}>A small, calm challenge when you need a change of pace.</Text>
+                <Text style={styles.listSubHeading}>Pick a small game to give your attention a softer place to land.</Text>
               </View>
               <View style={styles.miniResetSparkle}><Ionicons name="sparkles-outline" size={18} color="#6A6996" /></View>
             </View>
@@ -329,6 +336,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     columnGap: 11 },
   toolCopy: { flex: 1 },
+  toolMetaRow: { flexDirection: "row", alignItems: "center", columnGap: 9, marginTop: 10, paddingLeft: 53 },
   toolCardTopRowCompact: {
     justifyContent: "flex-start" },
   toolIconWrap: {
@@ -339,6 +347,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center" },
   toolTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 4,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
@@ -355,6 +366,11 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit-Bold" },
   toolTagTextMuted: {
     color: "#6E7B87" },
+  toolMetaText: {
+    color: "#7A8791",
+    fontSize: 11,
+    lineHeight: 15,
+    fontFamily: "Outfit-SemiBold" },
   toolTitle: {
     color: "#33495D",
     fontSize: 17,
