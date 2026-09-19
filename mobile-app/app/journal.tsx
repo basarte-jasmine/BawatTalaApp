@@ -271,11 +271,6 @@ export default function JournalScreen() {
                 <Ionicons name="chevron-forward" size={26} color={selectedJournalMode === "muni" ? "#4D6558" : "transparent"} />
               </Pressable>
             </View>
-
-            <View style={styles.journalModeInfo}>
-              <Text style={styles.journalModeTitle}>{selectedJournalMode === "muni" ? "Guided Journal" : "Solo Journal"}</Text>
-              <Text style={styles.journalModeDesc}>{selectedJournalMode === "muni" ? "Reflect with Muni" : "Free write your thoughts"}</Text>
-            </View>
           </View>
 
           <Pressable
@@ -283,7 +278,7 @@ export default function JournalScreen() {
             onPress={() => router.push(`/write-entry?mode=new-${selectedJournalMode}`)}
           >
             <Text style={[styles.addEntryText, compact && styles.addEntryTextCompact]}>
-              {selectedJournalMode === "muni" ? "Add Guided Entry" : "Add Solo Entry"}
+              {selectedJournalMode === "muni" ? "Write with Muni" : "Write"}
             </Text>
           </Pressable>
 
@@ -592,17 +587,6 @@ const styles = StyleSheet.create({
   bookImageVeryCompact: {
     width: 130,
     height: 170 },
-journalModeInfo: {
-    alignItems: "center" },
-  journalModeTitle: {
-    color: "#34475A",
-    fontSize: 16,
-    lineHeight: 20,
-    fontFamily: "Outfit-Bold",
-    marginBottom: 2 },
-  journalModeDesc: {
-    color: "#7B8D74",
-    fontSize: 13 },
   addEntryButton: {
     height: 46,
     borderRadius: 999,
