@@ -1,28 +1,29 @@
-﻿import { HomeBottomNav } from "../components/home/HomeBottomNav";
-import { Ionicons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+﻿import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
+import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
-import { useAuthSession } from "../lib/auth-session";
 import { unlockAchievement } from "../lib/achievements";
+import { useAuthSession } from "../lib/auth-session";
 import {
-  areMuniLoadoutsEqual,
-  COLLECTION_SECTIONS,
-  getMuniCollectionSource,
-  getSavedMuniLoadout,
-  hydrateMuniWardrobe,
-  MuniCollectionOption,
-  MuniLoadout,
-  purchaseMuniItem,
-  saveMuniLoadout,
-  TALA_IMAGE,
-  useAvailableMuniTala,
-  useOwnedMuniItems,
-  useSavedMuniLoadout } from "../lib/muni-wardrobe";
+    areMuniLoadoutsEqual,
+    COLLECTION_SECTIONS,
+    getMuniCollectionSource,
+    getSavedMuniLoadout,
+    hydrateMuniWardrobe,
+    MuniCollectionOption,
+    MuniLoadout,
+    purchaseMuniItem,
+    saveMuniLoadout,
+    TALA_IMAGE,
+    useAvailableMuniTala,
+    useOwnedMuniItems,
+    useSavedMuniLoadout
+} from "../lib/muni-wardrobe";
 
 type AvatarMode = "wardrobe" | "shop";
 type PurchaseNotice = {

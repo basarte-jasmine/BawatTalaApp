@@ -2,23 +2,25 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
-  Image,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View } from "react-native";
+    ActivityIndicator,
+    Image,
+    Modal,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    View
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
-import {
-  bookCounselorAppointment,
-  fetchAppointmentAvailability,
-  fetchAppointmentCounselors } from "../lib/backend-api";
-import { useAuthSession } from "../lib/auth-session";
 import { unlockAchievement } from "../lib/achievements";
+import { useAuthSession } from "../lib/auth-session";
+import {
+    bookCounselorAppointment,
+    fetchAppointmentAvailability,
+    fetchAppointmentCounselors
+} from "../lib/backend-api";
 import { getManilaTodayParts } from "../lib/manila-date";
 
 type CounselorCard = {
