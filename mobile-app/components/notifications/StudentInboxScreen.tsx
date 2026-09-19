@@ -38,6 +38,7 @@ type PendingDelete =
   | { type: "thread"; key: string };
 
 const TALA_IMAGE = require("../../assets/images/Tala_Star.png");
+const ACHIEVEMENT_BADGE = require("../../assets/images/Notification Badge.png");
 const inboxCache = new Map<string, AppNotification[]>();
 const INBOX_STORAGE_PREFIX = "bawat_tala_inbox:";
 const NOTIFICATION_FILTERS: { key: StudentNotificationCategory; label: string }[] = [
@@ -443,13 +444,17 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
           onPress={() => void handleOpenNotification(item)}
         >
           <View style={styles.itemRow}>
-            <View style={[styles.itemIconWrap, { backgroundColor: visual.chip }]}>
-              {visual.usesTalaLogo ? (
-                <Image source={TALA_IMAGE} style={styles.itemTalaIcon} resizeMode="contain" />
-              ) : (
-                <Ionicons name={visual.icon} size={18} color={visual.accent} />
-              )}
-            </View>
+            {visual.isAchievement ? (
+              <Image source={ACHIEVEMENT_BADGE} style={styles.itemAchievementBadge} resizeMode="contain" />
+            ) : (
+              <View style={[styles.itemIconWrap, { backgroundColor: visual.chip }]}>
+                {visual.usesTalaLogo ? (
+                  <Image source={TALA_IMAGE} style={styles.itemTalaIcon} resizeMode="contain" />
+                ) : (
+                  <Ionicons name={visual.icon} size={18} color={visual.accent} />
+                )}
+              </View>
+            )}
 
             <View style={styles.itemTextWrap}>
               <View style={styles.itemTopRow}>
@@ -979,6 +984,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginTop: 1 },
+  itemAchievementBadge: {
+    width: 44,
+    height: 44,
+    marginTop: -2,
+    marginLeft: -2 },
   itemTalaIcon: {
     width: 25,
     height: 25 },
