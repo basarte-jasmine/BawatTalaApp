@@ -6,17 +6,37 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuthSession } from "../lib/auth-session";
 import { fetchStudentNotifications } from "../lib/backend-api";
 import {
-  getNotificationDetailTitle,
-  getNotificationFallbackRoute,
-  getNotificationVisual } from "../lib/notification-utils";
+    getNotificationDetailTitle,
+    getNotificationFallbackRoute,
+    getNotificationVisual
+} from "../lib/notification-utils";
 
 const TALA_IMAGE = require("../assets/images/Tala_Star.png");
-const ACHIEVEMENT_BADGE = require("../assets/images/Notification Badge.png");
 const MUNI_AVATAR = require("../assets/images/MUNI_default.png");
+const PROFILE_ACHIEVEMENT_ILLUSTRATION = require("../assets/images/Achievements/A Bottle for Tomorrow.jpg");
 
 const ACHIEVEMENT_ILLUSTRATIONS: Record<string, any> = {
-  "future-bottle": require("../assets/images/Achievements/A Bottle for Tomorrow.jpg"),
-  "a-bottle-for-tomorrow": require("../assets/images/Achievements/A Bottle for Tomorrow.jpg"),
+  "future-bottle": PROFILE_ACHIEVEMENT_ILLUSTRATION,
+  "a-bottle-for-tomorrow": PROFILE_ACHIEVEMENT_ILLUSTRATION,
+  "message-from-the-tide": PROFILE_ACHIEVEMENT_ILLUSTRATION,
+};
+
+const ACHIEVEMENT_DESCRIPTIONS: Record<string, string> = {
+  "future-bottle": "Write your first future bottle note.",
+  "seven-little-stars": "Complete a full 7-day daily check-in cycle.",
+  "a-sky-with-many-colors": "Log every emotion at least once.",
+  "dear-muni": "Send your first journal message to Muni.",
+  "ink-on-the-page": "Finish and save your first journal entry.",
+  "quiet-mode": "Save a journal entry with Muni turned off.",
+  "named-what-hurt": "Save a journal entry with at least one concern tag.",
+  "message-from-the-tide": "Open a drifting bottle note.",
+  "library-glow": "Read in the library for 1 hour.",
+  "star-shopper": "Spend Tala in the Muni shop for the first time.",
+  "found-the-right-time": "Choose a counselor, date, and time for a support session.",
+};
+
+const ACHIEVEMENT_STORIES: Record<string, string> = {
+  "message-from-the-tide": "Muni is always wondering about the things floating in the sea... Well, can you tell Muni what is inside?",
 };
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -90,16 +110,20 @@ export default function NotificationViewScreen() {
   const achievementId = parsedMetadata?.achievementId || parsedMetadata?.achievementKey || "";
   const illustration = parsedMetadata?.illustration || parsedMetadata?.imageUrl || parsedMetadata?.image;
   const localIllustration = achievementId ? ACHIEVEMENT_ILLUSTRATIONS[achievementId] : null;
-  const hasIllustration = Boolean(illustration || localIllustration);
+  const achievementTitle = String(parsedMetadata?.achievementTitle || activeTitle || detailTitle)
+    .replace(/\s+unlocked!?\s*$/i, "")
+    .trim();
+  const achievementDescription = ACHIEVEMENT_DESCRIPTIONS[achievementId] || "A small moment worth celebrating.";
+  const achievementStory = ACHIEVEMENT_STORIES[achievementId] || "Muni is always noticing little stories hidden around the island. This one is yours to keep.";
 
   const { mainBody, triviaText } = (() => {
     const raw = activeMessage || "";
     if (parsedMetadata?.trivia) {
       const triviaFromMeta = String(parsedMetadata.trivia).trim();
-      const cleaned = raw.replace(/Munis*trivia[:s]*/i, "").replace(triviaFromMeta, "").trim();
+      const cleaned = raw.replace(/Muni\s+trivia\s*:?\s*/i, "").replace(triviaFromMeta, "").trim();
       return { mainBody: cleaned || raw, triviaText: triviaFromMeta };
     }
-    const triviaMatch = raw.match(/Munis*trivia[:s]*([sS]+)/i);
+    const triviaMatch = raw.match(/Muni\s+trivia\s*:?\s*([\s\S]+)/i);
     if (triviaMatch) {
       const beforeTrivia = raw.slice(0, triviaMatch.index).trim();
       const trivia = triviaMatch[1].trim();
@@ -143,23 +167,24 @@ export default function NotificationViewScreen() {
           </View>
         ) : (
           <>
-            {isAchievement && hasIllustration ? (
-              <View style={styles.illustrationCard}>
-                <Image
-                  source={illustration ? { uri: illustration } : localIllustration}
-                  style={styles.illustrationImage}
-                  resizeMode="cover"
-                />
-                <View style={styles.illustrationOverlay}>
-                  <Image source={ACHIEVEMENT_BADGE} style={styles.illustrationBadgeOverlay} resizeMode="contain" />
+            {isAchievement ? (
+              <View style={styles.achievementCard}>
+                <View style={styles.achievementArtWrap}>
+                  <Image
+                    source={illustration ? { uri: illustration } : localIllustration || PROFILE_ACHIEVEMENT_ILLUSTRATION}
+                    style={styles.achievementArt}
+                    resizeMode={localIllustration || illustration ? "cover" : "contain"}
+                  />
+                </View>
+                <View style={styles.achievementCopy}>
+                  <Text style={styles.achievementTitle}>{achievementTitle}</Text>
+                  <Text style={styles.achievementDescription}>{achievementDescription}</Text>
                 </View>
               </View>
             ) : null}
 
-            <View style={[styles.headerCard, isAchievement && styles.headerCardAchievement]}>
-              {!hasIllustration && isAchievement ? (
-                <Image source={ACHIEVEMENT_BADGE} style={styles.headerBadge} resizeMode="contain" />
-              ) : !isAchievement ? (
+            {!isAchievement ? <View style={styles.headerCard}>
+              {!isAchievement ? (
                 <View style={[styles.headerIconBubble, { backgroundColor: visual.chip }]}>
                   {visual.usesTalaLogo ? (
                     <Image source={TALA_IMAGE} style={styles.headerTalaIcon} resizeMode="contain" />
@@ -176,15 +201,23 @@ export default function NotificationViewScreen() {
                 <Text style={styles.headerTitle}>{activeTitle || detailTitle}</Text>
                 <Text style={styles.headerMeta}>{formattedCreatedAt}</Text>
               </View>
-            </View>
+            </View> : null}
 
-            <View style={styles.bodyCard}>
-              <Text style={styles.bodyText}>{mainBody || (loading ? "Loading..." : "No details available.")}</Text>
-            </View>
+            {isAchievement ? (
+              <View style={styles.achievementStoryCard}>
+                <Text style={styles.achievementStoryText}>{achievementStory}</Text>
+              </View>
+            ) : null}
+
+            {!isAchievement ? (
+              <View style={[styles.bodyCard, isAchievement && styles.achievementRewardCard]}>
+                <Text style={styles.bodyText}>{mainBody || (loading ? "Loading..." : "No details available.")}</Text>
+              </View>
+            ) : null}
 
             {triviaText ? (
               <View style={styles.triviaCard}>
-                <View style={styles.triviaHeader}>
+                <View style={styles.triviaIdentity}>
                   <Image source={MUNI_AVATAR} style={styles.triviaAvatar} resizeMode="contain" />
                   <Text style={styles.triviaLabel}>Muni Trivia</Text>
                 </View>
@@ -235,7 +268,53 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 18,
     paddingBottom: 32,
-    rowGap: 14 },
+    rowGap: 16 },
+  achievementCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: "#E2D8F0",
+    backgroundColor: "#FDFBFF",
+    padding: 13,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 12 },
+  achievementArtWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 17,
+    overflow: "hidden",
+    backgroundColor: "#ECEBE6" },
+  achievementArt: {
+    width: "100%",
+    height: "100%" },
+  achievementCopy: {
+    flex: 1 },
+  achievementTitle: {
+    color: "#304558",
+    fontSize: 18,
+    lineHeight: 23,
+    fontFamily: "Outfit-Bold",
+    marginBottom: 4 },
+  achievementDescription: {
+    color: "#717A76",
+    fontSize: 13,
+    lineHeight: 18 },
+  achievementStoryCard: {
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "#E8E0D0",
+    backgroundColor: "#FFFDF8",
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    shadowColor: "#8D8065",
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 1 },
+  achievementStoryText: {
+    color: "#304D5B",
+    fontSize: 16,
+    lineHeight: 25 },
   illustrationCard: {
     borderRadius: 24,
     overflow: "hidden",
@@ -321,21 +400,27 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     borderWidth: 1,
     borderColor: "#E2E9E4" },
+  achievementRewardCard: {
+    backgroundColor: "#FFFDF8",
+    borderColor: "#E9E1CE",
+    paddingVertical: 16 },
   bodyText: {
     color: "#384A5E",
     fontSize: 16,
     lineHeight: 26 },
   triviaCard: {
-    paddingTop: 4 },
-  triviaHeader: {
+    paddingTop: 0,
+    paddingHorizontal: 2 },
+  triviaIdentity: {
     flexDirection: "row",
     alignItems: "center",
     columnGap: 8,
-    marginBottom: 8,
-    paddingHorizontal: 4 },
+    marginBottom: 7,
+    paddingLeft: 4 },
   triviaAvatar: {
-    width: 32,
-    height: 32 },
+    width: 38,
+    height: 38,
+    marginTop: 4 },
   triviaLabel: {
     color: "#5A7A6A",
     fontSize: 12,
@@ -344,13 +429,13 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
     textTransform: "uppercase" },
   triviaBubble: {
-    backgroundColor: "#F0F8F3",
-    borderRadius: 20,
-    borderTopLeftRadius: 6,
+    backgroundColor: "#EDF8F3",
+    borderRadius: 22,
+    borderTopLeftRadius: 8,
     paddingHorizontal: 18,
-    paddingVertical: 16,
+    paddingVertical: 17,
     borderWidth: 1,
-    borderColor: "#D8EDDF",
+    borderColor: "#D2EBDD",
     position: "relative" },
   triviaBubbleTail: {
     position: "absolute",
@@ -365,7 +450,7 @@ const styles = StyleSheet.create({
     borderRightColor: "transparent",
     borderBottomColor: "#D8EDDF" },
   triviaText: {
-    color: "#4A6858",
+    color: "#416556",
     fontSize: 14.5,
     lineHeight: 22,
     fontStyle: "italic" },

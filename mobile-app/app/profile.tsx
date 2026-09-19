@@ -380,12 +380,9 @@ export default function ProfileScreen() {
                   resizeMode="cover"
                 />
               </View>
-              <Ionicons name="chevron-forward" size={16} color="#8D7743" />
             </View>
-            <Text style={styles.gridAchievementEyebrow} numberOfLines={1}>
-              {hasBottleAchievement ? "Unlocked" : "Achievement"}
-            </Text>
             <Text style={styles.gridCardTitle} numberOfLines={1}>A Bottle for Tomorrow</Text>
+            <Text style={styles.gridCardSubtitle} numberOfLines={2}>Write your first future bottle note.</Text>
           </Pressable>
         </View>
 
