@@ -27,7 +27,6 @@ import {
     fetchDailyMood,
     fetchFutureSelfMessage,
     fetchFutureSelfMessages,
-    fetchJournalEntriesByDate,
     fetchLibraryBooks,
     fetchStudentAppointments,
     fetchStudentNotifications,
@@ -939,32 +938,6 @@ export default function HomeScreen() {
 
   useEffect(() => subscribeAvailableMuniTala(setTotalTala), []);
 
-  const loadRecentEntries = useCallback(async () => {
-    if (!user?.studentNumber) {
-      setRecentEntries([]);
-      return;
-    }
-
-    const result = await fetchJournalEntriesByDate(user.studentNumber, getManilaTodayParts().isoDate);
-    if (!result.ok) {
-      setRecentEntries([]);
-      return;
-    }
-
-    setRecentEntries(
-      (result.entries ?? []).map((entry) => ({
-        createdAt: entry.createdAt,
-        id: entry.id,
-        meta: new Date(entry.createdAt).toLocaleString("en-US", {
-          month: "long",
-          day: "numeric",
-          hour: "numeric",
-          minute: "2-digit",
-          hour12: true }),
-        preview: entry.preview || entry.summary || entry.title || "Journal entry" })),
-    );
-  }, [user?.studentNumber]);
-
   const loadUpcomingAppointment = useCallback(async () => {
     if (!user?.studentNumber) {
       setUpcomingAppointment(null);
@@ -1111,13 +1084,12 @@ export default function HomeScreen() {
     await Promise.all([
       loadTodayMood(),
       loadCheckInStatus(),
-      loadRecentEntries(),
       loadUpcomingAppointment(),
       loadLibraryPreview(),
       loadNotifications(),
       loadScheduledBottleNote(),
     ]);
-  }, [loadCheckInStatus, loadLibraryPreview, loadNotifications, loadRecentEntries, loadScheduledBottleNote, loadTodayMood, loadUpcomingAppointment]);
+  }, [loadCheckInStatus, loadLibraryPreview, loadNotifications, loadScheduledBottleNote, loadTodayMood, loadUpcomingAppointment]);
 
   useFocusEffect(
     useCallback(() => {
