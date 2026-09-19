@@ -7,8 +7,16 @@ router.use(requireStudentOnlyAuth);
 const DAILY_TALA_CAP = 12;
 const ACTIVITY_IDS = new Set(["memory", "pattern", "recall", "words", "odd", "numbers", "match", "count", "color"]);
 const ACHIEVEMENTS = new Map([
-  ["star-shopper", { title: "Star Shopper", rewardTala: 10, message: "Congratulations! You spent Tala in the Muni shop for the first time." }],
-  ["found-the-right-time", { title: "Found the Right Time", rewardTala: 10, message: "Congratulations! You found the right time for a support session." }],
+  ["future-bottle", { title: "A Bottle for Tomorrow", rewardTala: 10, message: "Congratulations! You sent a message toward your future.", trivia: "Muni says the island keeps every hopeful message until the right tide carries it onward." }],
+  ["seven-little-stars", { title: "Seven Little Stars", rewardTala: 15, message: "Congratulations! You completed seven daily check-ins.", trivia: "Muni remembers falling through the night sky by following seven small stars toward the island." }],
+  ["a-sky-with-many-colors", { title: "A Sky With Many Colors", rewardTala: 15, message: "Congratulations! You logged every emotion.", trivia: "Muni believes emotions are signals from the sky, not storms to be hidden." }],
+  ["dear-muni", { title: "Dear Muni", rewardTala: 10, message: "Congratulations! You shared your first journal message with Muni.", trivia: "Muni first learned the word 'dear' from a note it found near the island shore." }],
+  ["ink-on-the-page", { title: "Ink on the Page", rewardTala: 10, message: "Congratulations! You saved your first journal entry.", trivia: "Muni's asteroid shell looked hard, but it softened whenever someone wrote honestly nearby." }],
+  ["quiet-mode", { title: "Quiet Mode", rewardTala: 10, message: "Congratulations! You made space for your own voice.", trivia: "Before Muni learned to speak, it spent a long time listening to the island wind." }],
+  ["named-what-hurt", { title: "Named What Hurt", rewardTala: 10, message: "Congratulations! You named a concern with care.", trivia: "Muni says naming a heavy thing gives it a shape that can finally be held." }],
+  ["message-from-the-tide", { title: "Message From the Tide", rewardTala: 10, message: "Congratulations! You opened a drifting bottle note.", trivia: "The first islanders thought Muni arrived as an asteroid; Muni insists it was simply a very dramatic landing." }],
+  ["star-shopper", { title: "Star Shopper", rewardTala: 10, message: "Congratulations! You spent Tala in the Muni shop for the first time.", trivia: "Muni collects bright things because they remind it of the sky it crossed before reaching the island." }],
+  ["found-the-right-time", { title: "Found the Right Time", rewardTala: 10, message: "Congratulations! You found the right time for a support session.", trivia: "Muni says the island has many tides, and asking for help is one way to find the gentlest one." }],
 ]);
 
 router.post("/achievement-reward", async (req, res) => {
@@ -44,8 +52,8 @@ router.post("/achievement-reward", async (req, res) => {
       [
         studentNumber,
         `${achievement.title} unlocked!`,
-        `${achievement.message} You earned +${achievement.rewardTala} Tala.`,
-        JSON.stringify({ achievementId, achievementTitle: achievement.title, rewardTala: achievement.rewardTala }),
+        `${achievement.message} You earned +${achievement.rewardTala} Tala\n\nMuni trivia: ${achievement.trivia}`,
+        JSON.stringify({ achievementId, achievementTitle: achievement.title, rewardTala: achievement.rewardTala, trivia: achievement.trivia }),
       ],
     );
     return res.json({
@@ -53,7 +61,7 @@ router.post("/achievement-reward", async (req, res) => {
       achievementId,
       rewardTala: achievement.rewardTala,
       totalTala: Number(wallet.rows[0]?.total_tala || 0),
-      message: `${achievement.message} You earned +${achievement.rewardTala} Tala.`,
+      message: `${achievement.message} You earned +${achievement.rewardTala} Tala. ${achievement.trivia}`,
     });
   } catch (error) {
     return res.status(500).json({ message: error.message || "Could not unlock this achievement." });

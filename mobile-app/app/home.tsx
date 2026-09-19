@@ -4,42 +4,44 @@ import DateTimePicker, { DateTimePickerAndroid, type DateTimePickerEvent } from 
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Animated, Easing, Image, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { Animated, Easing, Image, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, Ellipse, LinearGradient, Path, Rect, Stop } from "react-native-svg";
+import { CounselorAvatar } from "../components/appointments/CounselorAvatar";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
-import { ConfirmationModal } from "../components/ui/ConfirmationModal";
-import { CounselorAvatar } from "../components/appointments/CounselorAvatar";
 import { StudentProfileAvatar } from "../components/profile/StudentProfileAvatar";
+import { ConfirmationModal } from "../components/ui/ConfirmationModal";
+import { recordEmotionForAchievement, unlockAchievement } from "../lib/achievements";
+import {
+    fetchAffirmationFromApi,
+    getStoredAffirmations,
+    storeAffirmation,
+} from "../lib/affirmations";
 import { useAuthSession } from "../lib/auth-session";
 import {
-  claimDailyCheckIn,
-  fetchFutureSelfMessage,
-  fetchFutureSelfMessages,
-  fetchCheckInStatus,
-  fetchDailyMood,
-  fetchJournalEntriesByDate,
-  deleteFutureSelfMessage,
-  fetchLibraryBooks,
-  fetchStudentAppointments,
-  fetchStudentNotifications,
-  peekPendingRiskPromptEntryIds,
-  consumePendingRiskPrompt,
-  saveDailyMood,
-  saveFutureSelfMessage,
-  updateFutureSelfMessage,
-  type LibraryBookRecord } from "../lib/backend-api";
+    claimDailyCheckIn,
+    consumePendingRiskPrompt,
+    deleteFutureSelfMessage,
+    fetchCheckInStatus,
+    fetchDailyMood,
+    fetchFutureSelfMessage,
+    fetchFutureSelfMessages,
+    fetchJournalEntriesByDate,
+    fetchLibraryBooks,
+    fetchStudentAppointments,
+    fetchStudentNotifications,
+    peekPendingRiskPromptEntryIds,
+    saveDailyMood,
+    saveFutureSelfMessage,
+    updateFutureSelfMessage,
+    type LibraryBookRecord
+} from "../lib/backend-api";
 import { EMOTIONS, getEmotionImageSource } from "../lib/emotions";
 import { getManilaNow, getManilaStartOfToday, getManilaTodayParts } from "../lib/manila-date";
+import { hydrateMuniWardrobe, subscribeAvailableMuniTala } from "../lib/muni-wardrobe";
 import { isAdminMessageNotification } from "../lib/notification-utils";
 import { useOfflineSync } from "../lib/offline-sync";
-import { hydrateMuniWardrobe, subscribeAvailableMuniTala } from "../lib/muni-wardrobe";
-import {
-  fetchAffirmationFromApi,
-  getStoredAffirmations,
-  storeAffirmation,
-} from "../lib/affirmations";
 
 type DailyCheckinReward = {
   id: string;
@@ -1174,6 +1176,7 @@ export default function HomeScreen() {
     setIsSavingMood(false);
 
     if (result.ok) {
+      await recordEmotionForAchievement(result.entry?.moodId ?? pendingMoodId, user.studentNumber);
       setLatestMoodId(result.entry?.moodId ?? pendingMoodId);
       setTodayMoodCheckInCount((current) => current + 1);
       setMoodSaveStatus("Saved. You can add another emotion anytime today.");
@@ -1334,6 +1337,7 @@ export default function HomeScreen() {
       setSkipDriftingBottleWarning(true);
     }
     setHasConfirmedDriftingBottleWarning(true);
+    await unlockAchievement("message-from-the-tide", user?.studentNumber);
   };
 
   const handleWriteAnotherBottleNote = () => {
@@ -1440,6 +1444,10 @@ export default function HomeScreen() {
           return;
         }
         savedId = result.futureSelfMessage?.id ?? "";
+      }
+
+      if (!editingBottleNoteId) {
+        await unlockAchievement("future-bottle", user.studentNumber);
       }
 
       const persistedNote: ScheduledBottleNote = {
@@ -1573,6 +1581,9 @@ export default function HomeScreen() {
       result.activeDay ?? 1,
       Boolean(result.todayCheckedIn),
     );
+    if ((result.completedDays ?? 0) >= 7) {
+      await unlockAchievement("seven-little-stars", user.studentNumber);
+    }
 
     const wardrobe = await hydrateMuniWardrobe(user.studentNumber);
     if (typeof wardrobe?.totalTala === "number" && Number.isFinite(wardrobe.totalTala)) {

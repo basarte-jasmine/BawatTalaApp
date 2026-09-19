@@ -1472,8 +1472,9 @@ async function grantReadingReward({ achievement, bookId, bookTitle, readingSecon
   await createStudentNotification({
     studentNumber,
     kind: READING_ACHIEVEMENT_NOTIFICATION_KIND,
-    title: "Reading achievement unlocked",
-    message: `${achievement.title}: +${achievement.rewardTala} Tala for reading ${formatReadingDuration(achievement.seconds)}.`,
+    title: `${achievement.title} unlocked!`,
+    message: `Congratulations! ${achievement.title}: +${achievement.rewardTala} Tala for reading ${formatReadingDuration(achievement.seconds)}. Muni trivia: Muni says every book is a small map back to the island.
+`,
     metadata: {
       achievementKey: achievement.key,
       achievementTitle: achievement.title,

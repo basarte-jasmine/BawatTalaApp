@@ -3,42 +3,45 @@ import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  Keyboard,
-  KeyboardAvoidingView,
-  Linking,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View } from "react-native";
+    ActivityIndicator,
+    Alert,
+    Image,
+    Keyboard,
+    KeyboardAvoidingView,
+    Linking,
+    Modal,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    View
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { recordEmotionForAchievement, unlockAchievement } from "../lib/achievements";
 import { JournalLockGate, useAppPreferences } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
 import {
-  createJournalSession,
-  discardEmptyJournalEntry,
-  discardJournalEntry,
-  fetchDailyMood,
-  fetchTodayJournalSession,
-  finishJournalEntry,
-  isBackendReachable,
-  JournalEntry,
-  JournalMessage,
-  saveJournalSupportResponse,
-  saveDailyMood,
-  sendJournalMessage,
-  suggestJournalTags } from "../lib/backend-api";
+    createJournalSession,
+    discardEmptyJournalEntry,
+    discardJournalEntry,
+    fetchDailyMood,
+    fetchTodayJournalSession,
+    finishJournalEntry,
+    isBackendReachable,
+    JournalEntry,
+    JournalMessage,
+    saveDailyMood,
+    saveJournalSupportResponse,
+    sendJournalMessage,
+    suggestJournalTags
+} from "../lib/backend-api";
 import { EMOTIONS, getEmotionImageSource } from "../lib/emotions";
 import { getManilaTodayParts } from "../lib/manila-date";
 import {
-  needsCrisisTrioPrompt,
-  needsFinishSupportPrompt,
+    needsCrisisTrioPrompt,
+    needsFinishSupportPrompt,
 } from "../lib/risk-level";
 
 const NOTEBOOK_RINGS = Array.from({ length: 12 }, (_, index) => index);
@@ -523,6 +526,8 @@ export default function WriteEntryScreen() {
       return;
     }
 
+    await unlockAchievement("dear-muni", user.studentNumber);
+
     const latestAssistantMessage = [...(result.messages ?? [])]
       .reverse()
       .find((item) => item.role === "assistant");
@@ -590,6 +595,7 @@ export default function WriteEntryScreen() {
     }
 
     if (result.entry?.moodId) {
+      await recordEmotionForAchievement(result.entry.moodId, user.studentNumber);
       setSelectedJournalEmotionId(result.entry.moodId);
       setActiveJournalEmotionId(result.entry.moodId);
     }
@@ -789,6 +795,10 @@ export default function WriteEntryScreen() {
       setErrorMessage(result.message ?? "Unable to finish this journal entry.");
       return;
     }
+
+    await unlockAchievement("ink-on-the-page", user.studentNumber);
+    if (!aiEnabled) await unlockAchievement("quiet-mode", user.studentNumber);
+    if (finalTags.length > 0) await unlockAchievement("named-what-hurt", user.studentNumber);
 
     setShowTagReviewModal(false);
     setEntry(result.entry ?? null);
