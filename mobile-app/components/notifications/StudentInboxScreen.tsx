@@ -375,14 +375,15 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
       return;
     }
 
-    router.push({
-      pathname: "/notification-view",
-      params: {
-        createdAt: item.createdAt,
-        kind: item.kind,
-        message: item.message,
-        timeLabel: item.timeLabel,
-        title: item.title } });
+   router.push({
+     pathname: "/notification-view",
+     params: {
+       createdAt: item.createdAt,
+       kind: item.kind,
+       message: item.message,
+       timeLabel: item.timeLabel,
+       title: item.title,
+       metadata: item.metadata ? JSON.stringify(item.metadata) : undefined } });
   };
 
   const handleConfirmDelete = async () => {

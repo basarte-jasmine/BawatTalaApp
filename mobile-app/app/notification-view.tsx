@@ -1,7 +1,7 @@
-import { Ionicons } from "@expo/vector-icons";
+﻿import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Dimensions, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuthSession } from "../lib/auth-session";
 import { fetchStudentNotifications } from "../lib/backend-api";
@@ -12,9 +12,17 @@ import {
 
 const TALA_IMAGE = require("../assets/images/Tala_Star.png");
 const ACHIEVEMENT_BADGE = require("../assets/images/Notification Badge.png");
+const MUNI_AVATAR = require("../assets/images/MUNI_default.png");
+
+const ACHIEVEMENT_ILLUSTRATIONS: Record<string, any> = {
+  "future-bottle": require("../assets/images/Achievements/A Bottle for Tomorrow.jpg"),
+  "a-bottle-for-tomorrow": require("../assets/images/Achievements/A Bottle for Tomorrow.jpg"),
+};
+
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function NotificationViewScreen() {
-  const { id, createdAt, kind, message, timeLabel, title } = useLocalSearchParams<{
+  const { id, createdAt, kind, message, timeLabel, title, metadata: metadataParam } = useLocalSearchParams<{
     id?: string;
     createdAt?: string;
     kind?: string;
@@ -43,7 +51,8 @@ export default function NotificationViewScreen() {
         const res = await fetchStudentNotifications(user?.studentNumber || "");
         if (!isMounted) return;
         if (res.ok && Array.isArray(res.notifications)) {
-          const found = res.notifications.find((n) => n.id === id);          if (found) {
+          const found = res.notifications.find((n) => n.id === id);
+          if (found) {
             setLoadedItem({
               createdAt: found.createdAt,
               kind: found.kind,
@@ -69,9 +78,35 @@ export default function NotificationViewScreen() {
   const activeTimeLabel = loadedItem?.timeLabel || timeLabel;
 
   const detailTitle = getNotificationDetailTitle(activeKind);
-  const bodyLabel = detailTitle === "Message" ? "Message body" : "Update details";
   const visual = getNotificationVisual(activeKind || "");
-  const illustration = loadedItem?.metadata?.illustration || loadedItem?.metadata?.imageUrl || loadedItem?.metadata?.image;
+
+  const parsedMetadata = (() => {
+    if (loadedItem?.metadata) return loadedItem.metadata;
+    if (!metadataParam) return {};
+    try { return JSON.parse(metadataParam as string); } catch { return {}; }
+  })();
+
+  const isAchievement = visual.isAchievement === true;
+  const achievementId = parsedMetadata?.achievementId || parsedMetadata?.achievementKey || "";
+  const illustration = parsedMetadata?.illustration || parsedMetadata?.imageUrl || parsedMetadata?.image;
+  const localIllustration = achievementId ? ACHIEVEMENT_ILLUSTRATIONS[achievementId] : null;
+  const hasIllustration = Boolean(illustration || localIllustration);
+
+  const { mainBody, triviaText } = (() => {
+    const raw = activeMessage || "";
+    if (parsedMetadata?.trivia) {
+      const triviaFromMeta = String(parsedMetadata.trivia).trim();
+      const cleaned = raw.replace(/Munis*trivia[:s]*/i, "").replace(triviaFromMeta, "").trim();
+      return { mainBody: cleaned || raw, triviaText: triviaFromMeta };
+    }
+    const triviaMatch = raw.match(/Munis*trivia[:s]*([sS]+)/i);
+    if (triviaMatch) {
+      const beforeTrivia = raw.slice(0, triviaMatch.index).trim();
+      const trivia = triviaMatch[1].trim();
+      return { mainBody: beforeTrivia, triviaText: trivia };
+    }
+    return { mainBody: raw, triviaText: "" };
+  })();
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -106,35 +141,61 @@ export default function NotificationViewScreen() {
           <View style={{ paddingVertical: 40, alignItems: "center" }}>
             <ActivityIndicator size="small" color="#229365" />
           </View>
-        ) : (        <View style={styles.heroCard}>
-          {illustration ? (
-            <Image source={{ uri: illustration }} style={styles.heroIllustration} resizeMode="contain" />
-          ) : visual.isAchievement ? (
-            <Image source={ACHIEVEMENT_BADGE} style={styles.heroIllustrationBadge} resizeMode="contain" />
-          ) : (
-            <View style={[styles.heroIconBubble, { backgroundColor: visual.chip }]}>
-              {visual.usesTalaLogo ? (
-                <Image source={TALA_IMAGE} style={styles.heroTalaIcon} resizeMode="contain" />
-              ) : (
-                <Ionicons name={visual.icon} size={20} color={visual.accent} />
-              )}
-            </View>
-          )}
+        ) : (
+          <>
+            {isAchievement && hasIllustration ? (
+              <View style={styles.illustrationCard}>
+                <Image
+                  source={illustration ? { uri: illustration } : localIllustration}
+                  style={styles.illustrationImage}
+                  resizeMode="cover"
+                />
+                <View style={styles.illustrationOverlay}>
+                  <Image source={ACHIEVEMENT_BADGE} style={styles.illustrationBadgeOverlay} resizeMode="contain" />
+                </View>
+              </View>
+            ) : null}
 
-          <View style={styles.heroTextWrap}>
-            <View style={[styles.kindChip, { backgroundColor: visual.chip }]}>
-              <Text style={[styles.kindChipText, { color: visual.accent }]}>{visual.label}</Text>
+            <View style={[styles.headerCard, isAchievement && styles.headerCardAchievement]}>
+              {!hasIllustration && isAchievement ? (
+                <Image source={ACHIEVEMENT_BADGE} style={styles.headerBadge} resizeMode="contain" />
+              ) : !isAchievement ? (
+                <View style={[styles.headerIconBubble, { backgroundColor: visual.chip }]}>
+                  {visual.usesTalaLogo ? (
+                    <Image source={TALA_IMAGE} style={styles.headerTalaIcon} resizeMode="contain" />
+                  ) : (
+                    <Ionicons name={visual.icon} size={22} color={visual.accent} />
+                  )}
+                </View>
+              ) : null}
+
+              <View style={styles.headerTextWrap}>
+                <View style={[styles.kindChip, { backgroundColor: visual.chip }]}>
+                  <Text style={[styles.kindChipText, { color: visual.accent }]}>{visual.label}</Text>
+                </View>
+                <Text style={styles.headerTitle}>{activeTitle || detailTitle}</Text>
+                <Text style={styles.headerMeta}>{formattedCreatedAt}</Text>
+              </View>
             </View>
-            <Text style={styles.title}>{activeTitle || detailTitle}</Text>
-            <Text style={styles.meta}>{formattedCreatedAt}</Text>
-          </View>
-        </View>
+
+            <View style={styles.bodyCard}>
+              <Text style={styles.bodyText}>{mainBody || (loading ? "Loading..." : "No details available.")}</Text>
+            </View>
+
+            {triviaText ? (
+              <View style={styles.triviaCard}>
+                <View style={styles.triviaHeader}>
+                  <Image source={MUNI_AVATAR} style={styles.triviaAvatar} resizeMode="contain" />
+                  <Text style={styles.triviaLabel}>Muni Trivia</Text>
+                </View>
+                <View style={styles.triviaBubble}>
+                  <View style={styles.triviaBubbleTail} />
+                  <Text style={styles.triviaText}>{triviaText}</Text>
+                </View>
+              </View>
+            ) : null}
+          </>
         )}
-
-        <View style={styles.bodyCard}>
-          <Text style={styles.bodyLabel}>{bodyLabel}</Text>
-          <Text style={styles.bodyText}>{activeMessage || (loading ? "Loading..." : "No details available.")}</Text>
-        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -171,45 +232,64 @@ const styles = StyleSheet.create({
   scroll: {
     flex: 1 },
   content: {
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingTop: 18,
-    paddingBottom: 28,
+    paddingBottom: 32,
     rowGap: 14 },
-  heroCard: {
+  illustrationCard: {
     borderRadius: 24,
+    overflow: "hidden",
+    position: "relative" },
+  illustrationImage: {
+    width: "100%",
+    height: SCREEN_WIDTH * 0.55,
+    borderRadius: 24 },
+  illustrationOverlay: {
+    position: "absolute",
+    bottom: 12,
+    right: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.9)",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3 },
+  illustrationBadgeOverlay: {
+    width: 30,
+    height: 30 },
+  headerCard: {
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: "#DDE9D8",
     backgroundColor: "#F8FCF7",
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
     flexDirection: "row",
     alignItems: "flex-start",
-    columnGap: 12 },
-  heroIllustration: {
-    width: 60,
-    height: 60,
-    borderRadius: 12,
+    columnGap: 14 },
+  headerCardAchievement: {
+    borderColor: "#E2D8F0",
+    backgroundColor: "#FDFBFF" },
+  headerBadge: {
+    width: 48,
+    height: 48,
     marginTop: 2 },
-  heroIconBubble: {
-    width: 44,
-    height: 44,
+  headerIconBubble: {
+    width: 46,
+    height: 46,
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
     marginTop: 2 },
-  heroAchievementIcon: {
-    width: 60,
-    height: 60,
-    marginTop: -8,
-    marginLeft: -4 },
-  heroIllustrationBadge: {
-    width: 50,
-    height: 50,
-    marginTop: -2 },
-  heroTalaIcon: {
+  headerTalaIcon: {
     width: 27,
     height: 27 },
-  heroTextWrap: {
+  headerTextWrap: {
     flex: 1,
     minWidth: 0 },
   kindChip: {
@@ -219,37 +299,74 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10 },
+    marginBottom: 8 },
   kindChipText: {
     fontSize: 11.5,
     lineHeight: 14,
     fontFamily: "Outfit-Bold" },
-  title: {
+  headerTitle: {
     color: "#33475B",
     fontSize: 22,
     lineHeight: 28,
     fontFamily: "Outfit-Bold" },
-  meta: {
+  headerMeta: {
     marginTop: 6,
     color: "#6B7783",
-    fontSize: 14,
-    lineHeight: 20 },
+    fontSize: 13,
+    lineHeight: 18 },
   bodyCard: {
-    borderRadius: 22,
+    borderRadius: 20,
     backgroundColor: "#FFFFFF",
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     paddingVertical: 18,
     borderWidth: 1,
     borderColor: "#E2E9E4" },
-  bodyLabel: {
-    color: "#6A875A",
-    fontSize: 11,
-    lineHeight: 15,
-    fontFamily: "Outfit-Bold",
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-    marginBottom: 8 },
   bodyText: {
     color: "#384A5E",
-    fontSize: 17,
-    lineHeight: 27 } });
+    fontSize: 16,
+    lineHeight: 26 },
+  triviaCard: {
+    paddingTop: 4 },
+  triviaHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 8,
+    marginBottom: 8,
+    paddingHorizontal: 4 },
+  triviaAvatar: {
+    width: 32,
+    height: 32 },
+  triviaLabel: {
+    color: "#5A7A6A",
+    fontSize: 12,
+    lineHeight: 16,
+    fontFamily: "Outfit-Bold",
+    letterSpacing: 0.4,
+    textTransform: "uppercase" },
+  triviaBubble: {
+    backgroundColor: "#F0F8F3",
+    borderRadius: 20,
+    borderTopLeftRadius: 6,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    borderWidth: 1,
+    borderColor: "#D8EDDF",
+    position: "relative" },
+  triviaBubbleTail: {
+    position: "absolute",
+    top: -7,
+    left: 18,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 7,
+    borderRightWidth: 7,
+    borderBottomWidth: 7,
+    borderLeftColor: "transparent",
+    borderRightColor: "transparent",
+    borderBottomColor: "#D8EDDF" },
+  triviaText: {
+    color: "#4A6858",
+    fontSize: 14.5,
+    lineHeight: 22,
+    fontStyle: "italic" },
+});
