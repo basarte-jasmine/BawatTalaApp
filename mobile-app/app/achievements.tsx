@@ -99,8 +99,7 @@ export default function AchievementsScreen() {
           }
         }
         setUnlockedIds(newUnlocked);
-      } catch (err) {
-        console.error(err);
+      } catch {
       }
     };
     checkAchievements();

@@ -1,7 +1,7 @@
 ﻿import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Dimensions, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuthSession } from "../lib/auth-session";
 import { fetchStudentNotifications } from "../lib/backend-api";
@@ -38,8 +38,6 @@ const ACHIEVEMENT_DESCRIPTIONS: Record<string, string> = {
 const ACHIEVEMENT_STORIES: Record<string, string> = {
   "message-from-the-tide": "Muni is always wondering about the things floating in the sea... Well, can you tell Muni what is inside?",
 };
-
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function NotificationViewScreen() {
   const { id, createdAt, kind, message, timeLabel, title, metadata: metadataParam } = useLocalSearchParams<{
@@ -315,32 +313,6 @@ const styles = StyleSheet.create({
     color: "#304D5B",
     fontSize: 16,
     lineHeight: 25 },
-  illustrationCard: {
-    borderRadius: 24,
-    overflow: "hidden",
-    position: "relative" },
-  illustrationImage: {
-    width: "100%",
-    height: SCREEN_WIDTH * 0.55,
-    borderRadius: 24 },
-  illustrationOverlay: {
-    position: "absolute",
-    bottom: 12,
-    right: 12,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.9)",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3 },
-  illustrationBadgeOverlay: {
-    width: 30,
-    height: 30 },
   headerCard: {
     borderRadius: 22,
     borderWidth: 1,
@@ -351,13 +323,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     columnGap: 14 },
-  headerCardAchievement: {
-    borderColor: "#E2D8F0",
-    backgroundColor: "#FDFBFF" },
-  headerBadge: {
-    width: 48,
-    height: 48,
-    marginTop: 2 },
   headerIconBubble: {
     width: 46,
     height: 46,
