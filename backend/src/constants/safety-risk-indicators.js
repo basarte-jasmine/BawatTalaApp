@@ -19,7 +19,11 @@ const SAFETY_INDICATOR_CATEGORIES = {
   "CRITICAL_AMBIGUOUS": "CRITICAL_AMBIGUOUS",
   "DISTRESS": "DISTRESS",
   "DENY_HYPERBOLE": "DENY_HYPERBOLE",
-  "CONFIRM_LITERAL": "CONFIRM_LITERAL"
+  "CONFIRM_LITERAL": "CONFIRM_LITERAL",
+  "POWER_IMBALANCE": "POWER_IMBALANCE",
+  "SECRECY": "SECRECY",
+  "BOUNDARY_CROSSING": "BOUNDARY_CROSSING",
+  "AI_ATTACHMENT": "AI_ATTACHMENT"
 };
 
 const SAFETY_INDICATOR_SEVERITY_TIERS = {
@@ -33,7 +37,7 @@ const SAFETY_INDICATOR_SEVERITY_TIERS = {
 const SAFETY_INDICATOR_CATEGORY_LABELS = {
   "SELF_HARM": "Self-Harm / Suicide Concern",
   "ABUSE": "Abuse / Domestic Harm",
-  "GROOMING": "Grooming & Child Exploitation",
+  "GROOMING": "Grooming & Interpersonal Exploitation",
   "COERCION_BLACKMAIL": "Coercion, Blackmail & Extortion",
   "BULLYING_HARASSMENT": "Bullying & Harassment",
   "THREAT_VIOLENCE": "Threats & Violence",
@@ -47,13 +51,17 @@ const SAFETY_INDICATOR_CATEGORY_LABELS = {
   "CRITICAL_AMBIGUOUS": "Ambiguous Concern",
   "DISTRESS": "Emotional Distress",
   "DENY_HYPERBOLE": "Hyperbole & Expression Filter",
-  "CONFIRM_LITERAL": "Confirmation Signal"
+  "CONFIRM_LITERAL": "Confirmation Signal",
+  "POWER_IMBALANCE": "Power Imbalance / Authority Gap",
+  "SECRECY": "Secrecy Demands",
+  "BOUNDARY_CROSSING": "Boundary Crossing",
+  "AI_ATTACHMENT": "AI Attachment / Parasocial"
 };
 
 const SAFETY_INDICATOR_CATEGORY_DESCRIPTIONS = {
   "SELF_HARM": "Direct or ambiguous statements indicating thoughts of self-harm or suicide. Evaluated via Two-Phase clarification.",
   "ABUSE": "Statements describing physical, emotional, or domestic abuse at home, school, or relationships.",
-  "GROOMING": "Suspicious adult-student boundaries, secrecy demands (keep our chat secret), inappropriate gifts, or requests to meet alone.",
+  "GROOMING": "Suspicious adult-student boundaries, inappropriate gifts, private messaging, or requests to meet alone.",
   "COERCION_BLACKMAIL": "Extortion, blackmail, coercion (threatening to leak photos, forcing payments/favors).",
   "BULLYING_HARASSMENT": "Repeated humiliation, malicious exclusion, targeted online harassment, or severe peer pressure.",
   "THREAT_VIOLENCE": "Direct threats of violence or harm from or toward another individual.",
@@ -67,7 +75,11 @@ const SAFETY_INDICATOR_CATEGORY_DESCRIPTIONS = {
   "CRITICAL_AMBIGUOUS": "Passive ideation or ambiguous expressions of despair.",
   "DISTRESS": "Language indicating severe emotional overwhelm, stress, or burnout.",
   "DENY_HYPERBOLE": "Idiomatic expressions or humor that clear critical flags.",
-  "CONFIRM_LITERAL": "Phrases indicating the student statement was literal."
+  "CONFIRM_LITERAL": "Phrases indicating the student statement was literal.",
+  "POWER_IMBALANCE": "Authority-student or power-gap romantic/sexual dynamics (counselor-configured).",
+  "SECRECY": "Pressure to keep relationships or contact secret (counselor-configured).",
+  "BOUNDARY_CROSSING": "Inappropriate boundary crossing by an authority figure (counselor-configured).",
+  "AI_ATTACHMENT": "Romantic/parasocial attachment toward the AI companion (counselor-configured)."
 };
 
 const DEFAULT_INDICATORS_BY_CATEGORY = {
@@ -133,12 +145,6 @@ const DEFAULT_INDICATORS_BY_CATEGORY = {
   "GROOMING": [
     "teacher asks me to meet alone",
     "teacher wants to meet alone",
-    "keep our messages secret",
-    "keep our chat secret",
-    "don't tell anyone about us",
-    "dont tell anyone about us",
-    "huwag sabihin sa magulang",
-    "huwag ipagsabi",
     "he gives me special gifts",
     "asks for private photos",
     "teacher messages me privately late at night",
@@ -487,8 +493,35 @@ function getIndicatorCategoryLabel(value) {
   return SAFETY_INDICATOR_CATEGORY_LABELS[cat] || "Indicator";
 }
 
+
+/** 8 top-level CMS display domains → sub-indicator categories (phrases stay per category in DB). */
+const SAFEGUARDING_DOMAINS = Object.freeze({
+  SELF_HARM_CRISIS: ["SELF_HARM", "CRITICAL_LITERAL", "CRITICAL_AMBIGUOUS", "CONFIRMATION_SIGNAL"],
+  ABUSE: ["ABUSE"],
+  /** Display: "Grooming, Power Imbalance & Boundary Concerns" — sub-indicators stay distinct in assessor. */
+  GROOMING_POWER_BOUNDARY: ["GROOMING", "POWER_IMBALANCE", "SECRECY", "BOUNDARY_CROSSING"],
+  COERCION: ["COERCION_BLACKMAIL"],
+  BULLYING_HARASSMENT: ["BULLYING_HARASSMENT"],
+  THREAT_VIOLENCE: ["THREAT_VIOLENCE"],
+  UNSAFE_ENVIRONMENT: ["UNSAFE_ENVIRONMENT", "SUBSTANCE"],
+  AI_ATTACHMENT: ["AI_ATTACHMENT"],
+});
+
+const SAFEGUARDING_DOMAIN_LABELS = Object.freeze({
+  SELF_HARM_CRISIS: "Self-Harm & Crisis",
+  ABUSE: "Abuse",
+  GROOMING_POWER_BOUNDARY: "Grooming, Power Imbalance & Boundary Concerns",
+  COERCION: "Coercion & Blackmail",
+  BULLYING_HARASSMENT: "Bullying & Harassment",
+  THREAT_VIOLENCE: "Threat & Violence",
+  UNSAFE_ENVIRONMENT: "Unsafe Environment & Substance",
+  AI_ATTACHMENT: "AI Attachment / Parasocial",
+});
+
 module.exports = {
   DEFAULT_INDICATORS_BY_CATEGORY,
+  SAFEGUARDING_DOMAINS,
+  SAFEGUARDING_DOMAIN_LABELS,
   SAFETY_INDICATOR_CATEGORIES,
   SAFETY_INDICATOR_CATEGORY_DESCRIPTIONS,
   SAFETY_INDICATOR_CATEGORY_LABELS,

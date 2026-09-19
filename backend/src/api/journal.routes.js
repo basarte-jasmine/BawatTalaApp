@@ -4,6 +4,10 @@ const { requireStudentOnlyAuth, resolveStudentNumber } = require("../middleware/
 const { supabaseAdminClient } = require("../config/supabase");
 const { analyzeJournalConversation, analyzeJournalEntryFinal } = require("../services/journal-ai.service");
 const {
+  assessSafeguarding,
+} = require("../services/safeguarding-assessor.service");
+
+const {
   JOURNAL_TAG_OPTIONS,
   inferJournalTagsFromText,
   normalizeJournalTag,
@@ -161,7 +165,7 @@ async function getOpenEntryByStudentAndDate(studentNumber, entryDate) {
              primary_concern, concern_tags,
              ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
              student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
-             distress_signal, safety_status,
+             distress_signal, safety_status, safeguarding_status, safeguarding_families,
              created_at, updated_at
       from public.journal_entries
       where student_number = $1 and entry_date = $2 and is_finished = false and deleted_by_student_at is null
@@ -185,7 +189,7 @@ async function createEntry(studentNumber, entryDate, aiEnabled) {
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
-                distress_signal, safety_status,
+                distress_signal, safety_status, safeguarding_status, safeguarding_families,
                 created_at, updated_at
     `,
     [studentNumber, entryDate, aiEnabled],
@@ -244,7 +248,7 @@ async function getEntryById(studentNumber, entryId) {
              primary_concern, concern_tags,
              ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
              student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
-             distress_signal, safety_status,
+             distress_signal, safety_status, safeguarding_status, safeguarding_families,
              created_at, updated_at
       from public.journal_entries
       where id = $1 and student_number = $2 and deleted_by_student_at is null
@@ -285,6 +289,8 @@ function mapEntryRow(row) {
     studentActionAt: row.student_action_at || null,
     emotionalDistressSignal: String(row.distress_signal || "NONE"),
     safetyStatus: String(row.safety_status || "NOT_NEEDED"),
+    safeguardingStatus: String(row.safeguarding_status || "NONE").toUpperCase(),
+    safeguardingFamilies: Array.isArray(row.safeguarding_families) ? row.safeguarding_families : [],
     counselorResolvedAt: row.counselor_resolved_at || null,
     counselorResolvedByEmail: row.counselor_resolved_by_email || null,
     counselorResolvedByName: row.counselor_resolved_by_name || null,
@@ -912,7 +918,7 @@ router.post("/entries/:entryId/summary-rating", asyncHandler(async (req, res) =>
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
-                distress_signal, safety_status,
+                distress_signal, safety_status, safeguarding_status, safeguarding_families,
                 created_at, updated_at
     `,
     [entryId, studentNumber, summaryRating, summaryRating === "NEEDS_WORK" ? feedbackReason : null],
@@ -975,7 +981,7 @@ router.post("/session/create", asyncHandler(async (req, res) => {
   });
 }));
 
-async function analyzeFinalEntry({ entryId, studentNumber, existingMessages, previousDistressSignal = "NONE", previousSafetyStatus = "NOT_NEEDED" }) {
+async function analyzeFinalEntry({ entryId, studentNumber, existingMessages, previousDistressSignal = "NONE", previousSafetyStatus = "NOT_NEEDED", previousSafeguardingStatus = "NONE" }) {
   const userMessages = existingMessages.filter((item) => item.role === "user" && String(item.text || "").trim());
   const profile = await getStudentProfile(studentNumber);
   const feedbackResult = await query(
@@ -1011,6 +1017,20 @@ async function analyzeFinalEntry({ entryId, studentNumber, existingMessages, pre
   const fallbackText = userMessages.map((item) => item.text).join("\n");
   const suggestedTags = normalizeConcernTags(analysis.suggested_tags);
 
+  let safeguardingStatus = previousSafeguardingStatus || "NONE";
+  let safeguardingFamiliesFinish = [];
+  try {
+    const sg = await assessSafeguarding({
+      messages: existingMessages,
+      latestUserText: latestUserMessage,
+      priorStatus: previousSafeguardingStatus,
+    });
+    safeguardingStatus = sg.status || "NONE";
+    safeguardingFamiliesFinish = Array.isArray(sg.familiesHit) ? sg.familiesHit : [];
+  } catch (sgErr) {
+    console.warn("safeguarding assess (finish) failed", sgErr instanceof Error ? sgErr.message : String(sgErr));
+  }
+
   await query(
     `
       update public.journal_entries
@@ -1025,6 +1045,8 @@ async function analyzeFinalEntry({ entryId, studentNumber, existingMessages, pre
         sentiment_confidence = $9,
         distress_signal = $10,
         safety_status = $11,
+        safeguarding_status = $12,
+        safeguarding_families = $13::jsonb,
         updated_at = now()
       where id = $1
     `,
@@ -1040,11 +1062,15 @@ async function analyzeFinalEntry({ entryId, studentNumber, existingMessages, pre
       analysis.sentiment_confidence,
       analysis.distress_signal || "NONE",
       analysis.safety_status || "NOT_NEEDED",
+      safeguardingStatus,
+      JSON.stringify(safeguardingFamiliesFinish || []),
     ],
   );
 
   return {
     ...analysis,
+    safeguarding_status: safeguardingStatus,
+    safeguarding_families: safeguardingFamiliesFinish || [],
     suggested_tags: suggestedTags.length ? suggestedTags : inferJournalTagsFromText(fallbackText),
   };
 }
@@ -1085,6 +1111,7 @@ router.post("/session/tag-suggestions", asyncHandler(async (req, res) => {
     studentNumber,
     previousDistressSignal: entry.distress_signal || "NONE",
     previousSafetyStatus: entry.safety_status || "NOT_NEEDED",
+    previousSafeguardingStatus: entry.safeguarding_status || "NONE",
   });
 
   const result = await query(
@@ -1095,7 +1122,7 @@ router.post("/session/tag-suggestions", asyncHandler(async (req, res) => {
              primary_concern, concern_tags,
              ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
              student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
-             distress_signal, safety_status,
+             distress_signal, safety_status, safeguarding_status, safeguarding_families,
              created_at, updated_at
       from public.journal_entries
       where id = $1 and student_number = $2
@@ -1161,6 +1188,7 @@ router.post("/session/finish", asyncHandler(async (req, res) => {
     studentNumber,
     previousDistressSignal: entry.distress_signal || "NONE",
     previousSafetyStatus: entry.safety_status || "NOT_NEEDED",
+    previousSafeguardingStatus: entry.safeguarding_status || "NONE",
   });
   if (forceAnalyze || finalTags.length === 0) {
     finalTags = normalizeConcernTags(analysis.suggested_tags);
@@ -1190,7 +1218,7 @@ router.post("/session/finish", asyncHandler(async (req, res) => {
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
-                distress_signal, safety_status,
+                distress_signal, safety_status, safeguarding_status, safeguarding_families,
                 created_at, updated_at
     `,
     [entryId, studentNumber, primaryConcern, JSON.stringify(finalTags)],
@@ -1283,7 +1311,7 @@ router.post("/session/concerns", asyncHandler(async (req, res) => {
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
-                distress_signal, safety_status,
+                distress_signal, safety_status, safeguarding_status, safeguarding_families,
                 created_at, updated_at
     `,
     [entryId, studentNumber, primaryConcern, JSON.stringify(normalizedTags)],
@@ -1348,7 +1376,7 @@ router.post("/session/support-response", asyncHandler(async (req, res) => {
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
-                distress_signal, safety_status,
+                distress_signal, safety_status, safeguarding_status, safeguarding_families,
                 created_at, updated_at
     `,
     [entryId, studentNumber, studentAction],
@@ -1428,7 +1456,7 @@ router.post("/message", asyncHandler(async (req, res) => {
                primary_concern, concern_tags,
                ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
-               distress_signal, safety_status,
+               distress_signal, safety_status, safeguarding_status, safeguarding_families,
                created_at, updated_at
         from public.journal_entries
         where id = $1 and student_number = $2
@@ -1473,7 +1501,7 @@ router.post("/message", asyncHandler(async (req, res) => {
                   primary_concern, concern_tags,
                   ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                   student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
-                  distress_signal, safety_status,
+                  distress_signal, safety_status, safeguarding_status, safeguarding_families,
                   created_at, updated_at
       `,
       [entry.id, aiEnabled],
@@ -1498,6 +1526,8 @@ router.post("/message", asyncHandler(async (req, res) => {
   let adminFlagReason = entry.admin_flag_reason || null;
   let distressSignal = String(entry.distress_signal || "NONE");
   let safetyStatus = String(entry.safety_status || "NOT_NEEDED");
+  let safeguardingStatus = String(entry.safeguarding_status || "NONE");
+  let safeguardingFamilies = Array.isArray(entry.safeguarding_families) ? entry.safeguarding_families : [];
 
   if (aiEnabled) {
     const analysis = await analyzeJournalConversation({
@@ -1531,6 +1561,18 @@ router.post("/message", asyncHandler(async (req, res) => {
     }
   }
 
+  try {
+    const sg = await assessSafeguarding({
+      messages: currentMessages,
+      latestUserText: message,
+      priorStatus: entry.safeguarding_status,
+    });
+    safeguardingStatus = sg.status || "NONE";
+    safeguardingFamilies = Array.isArray(sg.familiesHit) ? sg.familiesHit : [];
+  } catch (sgErr) {
+    console.warn("safeguarding assess failed", sgErr instanceof Error ? sgErr.message : String(sgErr));
+  }
+
   const title = entry.title || buildEntryTitle(message);
   const updatedEntryResult = await query(
     `
@@ -1544,6 +1586,8 @@ router.post("/message", asyncHandler(async (req, res) => {
         ai_enabled = $7,
         distress_signal = $8,
         safety_status = $9,
+        safeguarding_status = $10,
+        safeguarding_families = $11::jsonb,
         updated_at = now()
       where id = $1
       returning id, student_number, entry_date, title, summary, summary_rating, summary_feedback_reason, summary_rated_at,
@@ -1552,10 +1596,10 @@ router.post("/message", asyncHandler(async (req, res) => {
                 primary_concern, concern_tags,
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
-                distress_signal, safety_status,
+                distress_signal, safety_status, safeguarding_status, safeguarding_families,
                 created_at, updated_at
     `,
-    [entry.id, title, summary, JSON.stringify(insights), riskLevel, adminFlagReason, aiEnabled, distressSignal, safetyStatus],
+    [entry.id, title, summary, JSON.stringify(insights), riskLevel, adminFlagReason, aiEnabled, distressSignal, safetyStatus, safeguardingStatus, JSON.stringify(safeguardingFamilies || [])],
   );
 
   const updatedEntry = updatedEntryResult.rows[0];

@@ -6,17 +6,48 @@ const { requireStudentOnlyAuth, resolveStudentNumber } = require("../middleware/
 
 const router = express.Router();
 const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
-const DEFAULT_BOOK_QUERY = "psychology mental health";
+const DEFAULT_BOOK_QUERY = 'subject:self-help OR subject:"personal development" OR subject:"self improvement"';
 const OPEN_LIBRARY_SEARCH_ENDPOINT = "https://openlibrary.org/search.json";
 const ARCHIVE_METADATA_ENDPOINT = "https://archive.org/metadata";
 const OPEN_LIBRARY_USER_AGENT = "BawattalaApp/1.0 (basartejasmine@gmail.com)";
 const OPEN_LIBRARY_DEFAULT_LANGUAGE = "eng";
-const OPEN_LIBRARY_DOWNLOAD_PROBE_TIMEOUT_MS = 5000;
-const OPEN_LIBRARY_DOWNLOAD_STREAM_TIMEOUT_MS = 30000;
+const OPEN_LIBRARY_DOWNLOAD_PROBE_TIMEOUT_MS = 8000;
+const OPEN_LIBRARY_DOWNLOAD_STREAM_TIMEOUT_MS = 45000;
 const OPEN_LIBRARY_DOWNLOAD_CACHE_TTL_MS = 15 * 60 * 1000;
-const MAX_BOOK_RESULTS = 24;
-const WELLBEING_BOOK_PATTERN = /\b(self[ -]?help|personal development|personal growth|clinical psychology|counseling psychology|positive psychology|mental health|emotional health|emotional intelligence|well[ -]?being|mindfulness|meditation|stress management|anxiety|depression|trauma|grief|resilience|self[ -]?esteem|self[ -]?compassion|coping|burnout|habit|motivation|happiness|therapy|counseling|relationships?)\b/i;
+const MAX_BOOK_RESULTS = 36;
+/** Self-help / modern personal-growth only (stem + plural aware). */
+const WELLBEING_BOOK_PATTERN = /\b(self[ -]?help|self[ -]?improvement|personal development|personal growth|self[ -]?actualization|personal success|success|habits?|habit|clinical psychology|counseling psychology|positive psychology|mental health|emotional health|emotional intelligence|well[ -]?being|mindfulness|meditation|stress management|anxiety|depression|trauma|grief|resilience|self[ -]?esteem|self[ -]?compassion|coping|burnout|motivation|happiness|therapy|counseling|relationships?|productivity|mindset|confidence|leadership)\b/i;
 const NON_WELLBEING_BOOK_PATTERN = /\b(fiction|novel|novels|stories|literature|fantasy|magic|witchcraft|wizards|romance fiction|erotic fiction|detective and mystery|murder|thriller|suspense|juvenile fiction|young adult fiction|children's stories|drama|poetry|comics|comic books|graphic novels)\b/i;
+/** Famous modern self-help titles that must not be filtered out by narrow subjects. */
+const CURATED_SELF_HELP_TITLE_PATTERN = /\b(7 habits|seven habits|highly effective people|atomic habits|power of now|courage to be disliked|mountain is you|how to win friends|subtle art of not giving|think and grow rich|rich dad poor dad|cant hurt me|can't hurt me|untamed|daring greatly|gifts of imperfection|man'?s search for meaning)\b/i;
+const CURATED_SELF_HELP_QUERIES = [
+  "title:\"The 7 Habits of Highly Effective People\" OR title:\"Seven Habits of Highly Effective People\"",
+  "title:\"Atomic Habits\" author:Clear",
+  "title:\"The Power of Now\" author:Tolle",
+  "title:\"The Courage to Be Disliked\"",
+  "title:\"The Mountain Is You\"",
+];
+
+/** Prefer modern self-help; keep curated titles even if first_publish_year is old/missing. */
+
+function hasReadableBookTitle(title) {
+  const value = String(title || "").trim();
+  if (!value) return false;
+  const letters = (value.match(/[A-Za-z\u00C0-\u024F]/g) || []).length;
+  const replacement = (value.match(/[\uFFFD?]/g) || []).length;
+  if (letters < 2) return false;
+  if (replacement >= Math.max(3, Math.floor(value.length * 0.5))) return false;
+  return true;
+}
+
+function isModernOrCuratedSelfHelpBook(book) {
+  const title = normalizeCompactSpaces(book?.title);
+  if (CURATED_SELF_HELP_TITLE_PATTERN.test(title)) return true;
+  const year = Number(book?.first_publish_year || book?.firstPublishYear || 0);
+  if (!year) return true; // unknown year: keep (subject filter already applied)
+  return year >= 1980;
+}
+
 const READING_ACHIEVEMENT_NOTIFICATION_KIND = "READING_ACHIEVEMENT_REWARD";
 const READING_ACHIEVEMENTS = [
   {
@@ -48,7 +79,7 @@ const READING_ACHIEVEMENTS = [
     description: "Read for 1 hour",
   },
 ];
-const ACCENT_COLORS = ["#D7F0B7", "#CFE6F8", "#E8D7F2", "#F8E8BE", "#D7EBE5", "#F1D4D4"];
+const ACCENT_COLORS = ["#70C943", "#A8E08A", "#D7F0B7", "#E8F6DF", "#C5E8B0", "#9FD67A"];
 const openLibraryDownloadUrlCache = new Map();
 
 function normalizeCompactSpaces(value) {
@@ -598,7 +629,15 @@ function getOpenLibraryCoverUrl(book, sourceId) {
 
 function getOpenLibraryCategory(book) {
   const subjects = Array.isArray(book.subject) ? book.subject : [];
-  return subjects.find((subject) => /psychology|mental|health|wellbeing|stress|anxiety|mind/i.test(subject)) || subjects[0] || "Open Library";
+  return (
+    subjects.find((subject) =>
+      /self[ -]?help|personal development|self[ -]?improvement|habit|success|mindfulness|wellbeing|psychology|mental|health|stress|anxiety|mind/i.test(
+        subject,
+      ),
+    ) ||
+    subjects[0] ||
+    "Self-help"
+  );
 }
 
 function isWellbeingLibraryBook(book) {
@@ -610,8 +649,12 @@ function isWellbeingLibraryBook(book) {
     .filter(Boolean)
     .join(" ");
 
-  if (NON_WELLBEING_BOOK_PATTERN.test(searchableText)) {
+  if (NON_WELLBEING_BOOK_PATTERN.test(searchableText) && !CURATED_SELF_HELP_TITLE_PATTERN.test(normalizedTitle)) {
     return false;
+  }
+
+  if (CURATED_SELF_HELP_TITLE_PATTERN.test(normalizedTitle)) {
+    return true;
   }
 
   return WELLBEING_BOOK_PATTERN.test(searchableText);
@@ -676,23 +719,161 @@ async function resolveOpenLibraryDisplayItem(item) {
   return { ...item, access, sourceId };
 }
 
-async function getOpenLibraryDisplayItems(items, maxResults) {
-  const displayItems = [];
-  const batchSize = clampInteger(Number(process.env.OPEN_LIBRARY_DOWNLOADABLE_CHECK_BATCH_SIZE), 1, 6, 3);
+function scoreOpenLibraryDisplayItem(item) {
+  if (!hasReadableBookTitle(item && item.title)) return -9999;
 
-  for (let index = 0; index < items.length && displayItems.length < maxResults; index += batchSize) {
+  if (!item) return -1;
+  let score = 0;
+  if (item.downloadUrl) score += 100;
+  const accessType = String(item.access?.accessType || "");
+  if (accessType === "full") score += 80;
+  if (accessType === "borrow") score += 60;
+  if (accessType === "preview") score += 10;
+  if (CURATED_SELF_HELP_TITLE_PATTERN.test(normalizeCompactSpaces(item.title))) score += 25;
+  const year = Number(item.firstPublishYear || item.first_publish_year || 0);
+  if (year > 0 && year < 1980) {
+    const curated = CURATED_SELF_HELP_TITLE_PATTERN.test(normalizeCompactSpaces(item.title));
+    if (!curated) score -= 80;
+  } else if (year >= 1980) {
+    score += 15;
+  }
+  return score;
+
+}
+
+async function getOpenLibraryDisplayItems(items, maxResults) {
+  const resolved = [];
+  const batchSize = clampInteger(Number(process.env.OPEN_LIBRARY_DOWNLOADABLE_CHECK_BATCH_SIZE), 1, 6, 3);
+  // Probe enough candidates so borrowable EPUBs can bubble to the top.
+  const probeLimit = Math.min(items.length, Math.max(maxResults * 3, maxResults));
+
+  for (let index = 0; index < probeLimit; index += batchSize) {
     const batch = items.slice(index, index + batchSize);
     const results = await Promise.all(batch.map(resolveOpenLibraryDisplayItem));
-
     for (const item of results) {
-      if (!item) continue;
-      displayItems.push(item);
-      if (displayItems.length >= maxResults) break;
+      if (item) resolved.push(item);
     }
   }
 
-  return displayItems;
+  resolved.sort((left, right) => scoreOpenLibraryDisplayItem(right) - scoreOpenLibraryDisplayItem(left));
+  return resolved.slice(0, maxResults);
 }
+
+
+/** Mobile-facing borrowability (Debugger contract).
+ * downloadableEpub = free IA EPUB only (in-app reader).
+ * borrowable = downloadableEpub OR Open Library lendable/borrowable edition.
+ * previewOnly when neither. Do NOT require EPUB for borrowable.
+ */
+function isOpenLibraryLendable(book) {
+  if (!book || typeof book !== "object") return false;
+
+  const nestedAccessType = String((book.access && book.access.accessType) || "").toLowerCase();
+  const accessType = String(book.accessType || nestedAccessType || "").toLowerCase();
+  if (accessType === "borrow" || accessType === "full") return true;
+
+  const ebookAccess = String(book.ebookAccess || book.ebook_access || "").toLowerCase();
+  if (ebookAccess === "borrowable" || ebookAccess === "public") return true;
+
+  const availability = book.availability || (book.access && book.access.availability) || {};
+  if (availability && typeof availability === "object") {
+    if (availability.is_lendable === true || availability.available_to_borrow === true) return true;
+    const status = String(availability.status || "").toLowerCase();
+    if (
+      status.includes("borrow") ||
+      status === "lendable" ||
+      status === "available" ||
+      status === "open"
+    ) {
+      return true;
+    }
+  }
+
+  const statusLabel = String(book.statusLabel || book.shelfLabel || "").toLowerCase();
+  if (statusLabel.includes("borrow") || statusLabel.includes("lend")) return true;
+
+  return false;
+}
+
+function hasFreeEpubDownload(book) {
+  if (!book || typeof book !== "object") return false;
+  const downloadUrl = String(book.downloadUrl || "").trim();
+  if (!downloadUrl) return false;
+  if (book.downloadableEpub === true) return true;
+  return /\.epub(\?\|$)/i.test(downloadUrl) || /\/epub\b/i.test(downloadUrl);
+}
+
+function decorateBookBorrowability(book) {
+  if (!book || typeof book !== "object") return book;
+
+  const downloadUrl = String(book.downloadUrl || "").trim();
+  const nestedAccessType = String((book.access && book.access.accessType) || "").toLowerCase();
+  const accessType = String(book.accessType || nestedAccessType || "").toLowerCase();
+
+  const downloadableEpub = hasFreeEpubDownload(book);
+  const openLibraryBorrow = !downloadableEpub && isOpenLibraryLendable(book);
+  const borrowable = Boolean(downloadableEpub || openLibraryBorrow);
+
+  let borrowStatus = "unavailable";
+  if (downloadableEpub) {
+    borrowStatus = "downloadable";
+  } else if (openLibraryBorrow) {
+    borrowStatus = "open_library_borrow";
+  } else if (
+    accessType === "preview" ||
+    Boolean(book.previewLink) ||
+    Boolean(book.externalReaderLink) ||
+    Boolean(book.readerLink)
+  ) {
+    borrowStatus = "preview_only";
+  }
+
+  const previewOnly = !borrowable && borrowStatus === "preview_only";
+
+  const borrowStatusLabel =
+    borrowStatus === "downloadable"
+      ? "Available to download"
+      : borrowStatus === "open_library_borrow"
+        ? "Borrow on Open Library"
+        : borrowStatus === "preview_only"
+          ? "Preview only — not borrowable"
+          : "Not available to borrow";
+
+  const actionLabel =
+    borrowStatus === "downloadable"
+      ? "Download EPUB"
+      : borrowStatus === "open_library_borrow"
+        ? "Borrow on Open Library"
+        : borrowStatus === "preview_only"
+          ? "Preview only"
+          : "Not borrowable";
+
+  const resolvedAccessType =
+    book.accessType ||
+    (borrowStatus === "downloadable"
+      ? accessType === "full"
+        ? "full"
+        : "borrow"
+      : borrowStatus === "open_library_borrow"
+        ? "borrow"
+        : borrowStatus === "preview_only"
+          ? "preview"
+          : "catalog");
+
+  return Object.assign({}, book, {
+    borrowable: borrowable,
+    previewOnly: previewOnly,
+    borrowStatus: borrowStatus,
+    borrowStatusLabel: borrowStatusLabel,
+    downloadableEpub: downloadableEpub,
+    openLibraryBorrow: openLibraryBorrow,
+    accessType: resolvedAccessType,
+    accessLabel: book.accessLabel || borrowStatusLabel,
+    actionLabel: actionLabel,
+  });
+}
+
+
 
 function mapOpenLibraryBook(book, index, progressByBookId, downloadsByBookId) {
   const sourceId = book.sourceId || getOpenLibraryIaIdentifier(book);
@@ -1316,24 +1497,55 @@ router.get("/books", requireStudentOnlyAuth, async (req, res) => {
     }
     throw error;
   }
-  const maxResults = clampInteger(Number(req.query.maxResults || MAX_BOOK_RESULTS), 1, 40, MAX_BOOK_RESULTS);
-  const searchLimit = Math.min(40, Math.max(maxResults, maxResults * 2));
+  const maxResults = clampInteger(Number(req.query.maxResults || MAX_BOOK_RESULTS), 1, 48, MAX_BOOK_RESULTS);
+  const searchLimit = Math.min(60, Math.max(maxResults, maxResults * 2));
   const searchQuery = normalizeCompactSpaces(req.query.q || DEFAULT_BOOK_QUERY);
+  const page = clampInteger(Number(req.query.page || 1), 1, 100, 1);
+  const isDefaultBrowse = !normalizeCompactSpaces(req.query.q);
 
   try {
-    const params = new URLSearchParams({
-      fields: "key,title,author_name,cover_i,first_publish_year,subject,ia,lending_identifier_s,lending_edition_s,has_fulltext,public_scan_b,ebook_access,availability",
-      lang: "en",
-      limit: String(searchLimit),
-      page: String(clampInteger(Number(req.query.page || 1), 1, 100, 1)),
-      q: searchQuery.replace(/^subject:/i, ""),
-    });
+    async function fetchOpenLibraryDocs(queryText, limit, pageNumber) {
+      const params = new URLSearchParams({
+        fields:
+          "key,title,author_name,cover_i,first_publish_year,subject,ia,lending_identifier_s,lending_edition_s,has_fulltext,public_scan_b,ebook_access,availability",
+        lang: "en",
+        limit: String(limit),
+        page: String(pageNumber),
+        // Keep subject: operators — Open Library search understands them in q.
+        q: queryText,
+      });
+      const data = await fetchJson(`${OPEN_LIBRARY_SEARCH_ENDPOINT}?${params.toString()}`, {
+        headers: getOpenLibraryHeaders(),
+        serviceName: "Open Library",
+      });
+      return Array.isArray(data.docs) ? data.docs : [];
+    }
 
-    const data = await fetchJson(`${OPEN_LIBRARY_SEARCH_ENDPOINT}?${params.toString()}`, {
-      headers: getOpenLibraryHeaders(),
-      serviceName: "Open Library",
-    });
-    const relevantItems = (Array.isArray(data.docs) ? data.docs : []).filter(isWellbeingLibraryBook);
+    const primaryDocs = await fetchOpenLibraryDocs(searchQuery, searchLimit, page);
+    let mergedDocs = [...primaryDocs];
+
+    // On default browse (and first page), seed famous modern self-help titles.
+    if (isDefaultBrowse && page === 1) {
+      const curatedBatches = await Promise.all(
+        CURATED_SELF_HELP_QUERIES.map((queryText) =>
+          fetchOpenLibraryDocs(queryText, 5, 1).catch(() => []),
+        ),
+      );
+      for (const batch of curatedBatches) {
+        mergedDocs.push(...batch);
+      }
+    }
+
+    const seenKeys = new Set();
+    const dedupedDocs = [];
+    for (const doc of mergedDocs) {
+      const key = String(doc?.key || doc?.lending_identifier_s || doc?.title || "").toLowerCase();
+      if (!key || seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      dedupedDocs.push(doc);
+    }
+
+    const relevantItems = dedupedDocs.filter(isWellbeingLibraryBook).filter(isModernOrCuratedSelfHelpBook);
     const selectedItems = await getOpenLibraryDisplayItems(relevantItems, maxResults);
     const bookIds = selectedItems
       .map((item, index) => getOpenLibraryBookId(item, item.sourceId, index))
@@ -1345,7 +1557,7 @@ router.get("/books", requireStudentOnlyAuth, async (req, res) => {
       ...Array.from(downloadsByBookId.values()).map((download) => download?.bookId).filter(Boolean),
     ];
     const progressByBookId = await getStudentProgress(studentNumber, [...new Set(progressBookIds)]);
-    const books = selectedItems.map((item, index) => mapOpenLibraryBook(item, index, progressByBookId, downloadsByBookId));
+    const books = selectedItems.map((item, index) => decorateBookBorrowability(mapOpenLibraryBook(item, index, progressByBookId, downloadsByBookId)));
 
     return res.json({
       books,

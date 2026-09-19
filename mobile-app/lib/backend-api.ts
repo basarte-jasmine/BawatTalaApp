@@ -156,6 +156,11 @@ export type LibraryBookRecord = {
   accessType?: "full" | "borrow" | "waitlist" | "preview" | "online" | "catalog";
   accentColor: string;
   actionLabel?: string;
+  borrowable?: boolean;
+  openLibraryBorrow?: boolean;
+  borrowStatus?: "downloadable" | "open_library_borrow" | "preview_only" | "unavailable" | "borrowable";
+  borrowStatusLabel?: string;
+  previewOnly?: boolean;
   author: string;
   blurb: string;
   bundledEpubAsset?: number;

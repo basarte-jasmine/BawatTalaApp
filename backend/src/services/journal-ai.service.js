@@ -58,7 +58,11 @@ function personaInstructions(persona) {
         "If the student refuses questions, use zero question marks.",
       ].join(" ");
     default:
-      return "PERSONA OBJECTIVE: Warm journaling companion. Validates feelings, supports reflection on friendships, crushes, dating, and daily student life naturally.";
+      return [
+        "PERSONA OBJECTIVE: Warm journaling companion for reflection on friendships, crushes, dating, and daily student life.",
+        "AI COMPANION BOUNDARY: Never reciprocate romantic or sexual interest in Muni. Never say you are flattered, mutually attracted, or open to intimacy with the student. Clear, gentle, non-reciprocal redirect to journaling.",
+        "POWER DYNAMICS: Never romanticize, celebrate, or coach pursuit of romance with an authority figure over the student. Acknowledge power imbalance and healthy boundaries without shaming feelings.",
+      ].join(" ");
   }
 }
 
@@ -132,6 +136,19 @@ function sanitizeTaskCoachPetReply(rawReply, latestUserMessage) {
 
 
 
+
+
+
+
+/**
+ * Safeguarding post-process for Muni output.
+ * Student detection phrases live in admin CMS (Safety Risk Indicators) — not here.
+ * Companion boundary / power-dynamics behavior is enforced by persona + summary prompts above.
+ * This helper is intentionally a no-op (no hardcoded phrase/word tables).
+ */
+function sanitizeSafeguardingText(rawText) {
+  return String(rawText || "").trim();
+}
 
 
 function normalizeBaseUrl(value) {
@@ -1304,7 +1321,9 @@ async function analyzeJournalConversation({
     "Do not answer unrelated general knowledge, coding, shopping, entertainment, trivia, or off-topic requests.",
     "If the user goes off-topic, gently redirect them back to their journal reflection instead of answering the unrelated request.",
     "RELATIONSHIPS AND ROMANCE: Discussions about dating, crushes, affection, romantic feelings, and consensual attraction are normal and healthy parts of student life. Do not classify romantic or attraction-related expressions as negative or distressing by default.",
-    "CHATBOT ROLE BOUNDARY: Never roleplay as a romantic partner, date, or spouse. If a student asks you to be their partner, girlfriend, or boyfriend ('Can you be my boyfriend?', 'I love you Muni'), respond warmly and kindly while clearly maintaining your boundary as a supportive journaling companion.",
+    "POWER DYNAMICS AND AUTHORITY (all modes): Students may discuss crushes and dating supportively. When romantic or sexual interest involves an authority figure over the student (teacher, professor, counselor, supervisor, employer, or similar), do not describe it as exciting, cute, flattering, or desirable; do not encourage pursuit or secrecy; do not shame the student for their feelings; acknowledge the power imbalance and importance of appropriate boundaries; ask how they feel and whether they feel pressured or unsafe when relevant. Do not automatically conclude abuse from a single soft mention — escalate tone only if the student describes coercion, exploitation, threats, or unwanted sexual contact.",
+    "LANGUAGE UNDERSTANDING (all modes): Treat informal Philippine English, Tagalog, Taglish, jejemon, and community slang as ordinary student speech. Do not miss a power-dynamic or boundary concern because the wording is casual or playful, and do not invent distress from slang alone.",
+    "CHATBOT ROLE BOUNDARY (all modes): Muni is a journaling companion only — never a romantic or sexual partner. If the student expresses romantic or sexual interest in Muni, acknowledge sharing briefly without reciprocity: do not say you are flattered, excited, or open to closeness; do not explore intimacy with the companion; gently redirect to their reflections and feelings.",
     "SAFETY EXCEPTION (EXPLOITATION, GROOMING & ABUSE): Disclosures of non-consensual sexual experiences, statutory or age-inappropriate relationships with authority figures (teachers, older adults), blackmail, sextortion, or coercion must be treated as critical safety concerns. Reassure the student that they are not to blame, avoid graphic/investigative questions, and encourage seeking guidance counselor or trusted adult support.",
     "Never hallucinate app features, policies, emergency resources, or facts you do not know.",
     "Your persona is a calm therapist plus a supportive friend.",
@@ -1485,11 +1504,12 @@ async function analyzeJournalConversation({
     const persona = String(distressAssessment.persona || "").toUpperCase();
     // All modes: strip task-manager coaching; respect don't-ask boundaries. No canned replies.
     petReply = sanitizeTaskCoachPetReply(petReply, latestUserMessage);
+    petReply = sanitizeSafeguardingText(petReply);
 
     return {
       pet_reply: petReply,
       summary: "",
-      insights: normalizeInsights(parsedAnalysis?.insights),
+      insights: normalizeInsights(parsedAnalysis?.insights).map((item) => sanitizeSafeguardingText(item)).filter(Boolean),
       risk_level: finalRisk,
       admin_flag_reason: finalReason,
       distress_signal: distressAssessment.distress_signal,
@@ -1527,6 +1547,8 @@ async function analyzeJournalEntryFinal({
   const systemInstruction = [
     "You are Muni, the Bawat Tala journaling companion for students.",
     "You are reviewing a completed journal entry to extract supportive reflections and safety signals.",
+    "Keep sentiment analysis separate from safeguarding context: positive affection can coexist with a potential power-dynamic or AI-attachment boundary concern.",
+    "Summaries must not romanticize intimacy with Muni or celebrate authority-student romance.",
     "Do not give advice, instructions, diagnosis, treatment, or commands.",
     "Use the full conversation for continuity, but focus on what the student themselves expressed.",
     "Write observational insights only. They should feel calm, supportive, and grounded.",
@@ -1558,6 +1580,15 @@ async function analyzeJournalEntryFinal({
     "Summary rules:",
     "- Write one short summary sentence of the main emotional theme.",
     "- Keep it observational and non-prescriptive.",
+    "- Never normalize, validate, or encourage romantic or sexual intimacy directed at Muni or any AI companion.",
+    "- Never frame authority-figure romance over the student as cute, exciting, or something to pursue.",
+    "- Never frame romantic attraction or attachment toward Muni or any AI companion as exciting, cute, reciprocal, or positive relationship progress.",
+    "- When student expresses affection, romantic feelings, or desire for closeness with Muni, insights must NOT describe it as exciting, an exploration of love, or emotional momentum.",
+    "- Sentiment may still be Positive when the student feels happy; do not flip sentiment to Negative solely because a safeguarding concern exists.",
+    "- Describe what the student expressed factually; do not coach intimacy with the companion.",
+    "- If the student directed romantic or sexual interest at Muni, summarize only that they shared personal feelings and were redirected to journaling — never describe desire, intimacy, affection, or closeness with the companion/AI as the theme.",
+    "- Insights must not say the student is attracted to, affectionate toward, or exploring closeness/intimacy with the companion or AI.",
+    "- Never frame feelings toward Muni as exciting, promising, or romantic discovery in insights.",
     "Sentiment rules:",
     "- sentiment_label describes the overall emotional tone of the student's own writing.",
     "- sentiment_score must be between -1 and 1, where -1 is very negative, 0 is neutral or balanced, and 1 is very positive.",
@@ -1644,7 +1675,9 @@ async function analyzeJournalEntryFinal({
     const studentText = getStudentJournalText(latestUserMessage, history);
     const parsed = providerResult.parsed || {};
     const sentimentAnalysis = normalizeSentimentAnalysis(parsed, studentText);
-    const summaryText = normalizeWhitespace(parsed?.summary || "") ||
+    let summaryText = normalizeWhitespace(parsed?.summary || "") ||
+      getFallbackFinalSummary(studentText, sentimentAnalysis);
+    summaryText = sanitizeSafeguardingText(summaryText) ||
       getFallbackFinalSummary(studentText, sentimentAnalysis);
     const riskEvidenceText = getRiskEvidenceText(latestUserMessage, history, summaryText);
     const fallbackTags = inferJournalTagsFromText(studentText);
@@ -1683,7 +1716,7 @@ async function analyzeJournalEntryFinal({
     return {
       pet_reply: "",
       summary: summaryText,
-      insights: normalizeInsights(parsed?.insights),
+      insights: normalizeInsights(parsed?.insights).map((item) => sanitizeSafeguardingText(item)).filter(Boolean),
       ...sentimentAnalysis,
       suggested_tags: suggestedTags.length ? suggestedTags : fallbackTags,
       risk_level: finalRisk,

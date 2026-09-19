@@ -64,7 +64,7 @@ export const LIBRARY_BOOKS: LibraryBook[] = [
     estimatedMinutes: 7,
     rewardLabel: "4 stars",
     shelfLabel: "Steady shelf",
-    accentColor: "#CFE6F8",
+    accentColor: "#A8E08A",
     coverImage: BOOK_COVER_IMAGE,
     blurb: "A reminder that progress still counts when it looks quiet from the outside.",
     chapters: [
@@ -98,7 +98,7 @@ export const LIBRARY_BOOKS: LibraryBook[] = [
     estimatedMinutes: 8,
     rewardLabel: "6 stars",
     shelfLabel: "Reflective shelf",
-    accentColor: "#E8D7F2",
+    accentColor: "#C5E8B0",
     coverImage: BOOK_COVER_IMAGE,
     blurb: "A grounding read for moments when your mind keeps looping in every direction.",
     chapters: [
@@ -132,7 +132,7 @@ export const LIBRARY_BOOKS: LibraryBook[] = [
     estimatedMinutes: 5,
     rewardLabel: "3 stars",
     shelfLabel: "New on shelf",
-    accentColor: "#F8E8BE",
+    accentColor: "#9FD67A",
     coverImage: BOOK_COVER_IMAGE,
     blurb: "A short permission slip for resting without treating it like failure.",
     chapters: [

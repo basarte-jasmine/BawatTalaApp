@@ -1,3 +1,4 @@
+export { LIBRARY_MATCHA, matchaAccentFor, titleInitial } from "./library-theme";
 import * as FileSystem from "expo-file-system/legacy";
 import { Asset } from "expo-asset";
 import JSZip from "jszip";

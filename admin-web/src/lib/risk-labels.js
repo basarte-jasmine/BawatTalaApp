@@ -125,6 +125,10 @@ export const SAFETY_INDICATOR_CATEGORIES = {
   SELF_HARM: "SELF_HARM",
   ABUSE: "ABUSE",
   GROOMING: "GROOMING",
+  POWER_IMBALANCE: "POWER_IMBALANCE",
+  SECRECY: "SECRECY",
+  BOUNDARY_CROSSING: "BOUNDARY_CROSSING",
+  AI_ATTACHMENT: "AI_ATTACHMENT",
   COERCION_BLACKMAIL: "COERCION_BLACKMAIL",
   BULLYING_HARASSMENT: "BULLYING_HARASSMENT",
   THREAT_VIOLENCE: "THREAT_VIOLENCE",
@@ -146,7 +150,11 @@ export const SAFETY_INDICATOR_CATEGORIES = {
 export const SAFETY_INDICATOR_CATEGORY_LABELS = {
   SELF_HARM: "Self-Harm / Suicide Concern",
   ABUSE: "Abuse / Domestic Harm",
-  GROOMING: "Grooming & Child Exploitation",
+  GROOMING: "Grooming & Interpersonal Exploitation",
+  POWER_IMBALANCE: "Power Imbalance / Authority Gap",
+  SECRECY: "Secrecy Demands",
+  BOUNDARY_CROSSING: "Boundary Crossing",
+  AI_ATTACHMENT: "AI Attachment / Parasocial",
   COERCION_BLACKMAIL: "Coercion, Blackmail & Extortion",
   BULLYING_HARASSMENT: "Bullying & Harassment",
   THREAT_VIOLENCE: "Threats & Violence",
@@ -168,7 +176,11 @@ export const SAFETY_INDICATOR_CATEGORY_LABELS = {
 export const SAFETY_INDICATOR_CATEGORY_DESCRIPTIONS = {
   SELF_HARM: "Direct or ambiguous statements indicating thoughts of self-harm or suicide. Evaluated via Two-Phase clarification.",
   ABUSE: "Statements describing physical, emotional, or domestic abuse at home, school, or relationships.",
-  GROOMING: "Suspicious adult-student boundaries, secrecy demands ('keep our chat secret'), inappropriate gifts, or requests to meet alone.",
+  GROOMING: "Suspicious adult-student boundaries, inappropriate gifts, or requests to meet alone (counselor-configured phrases).",
+  POWER_IMBALANCE: "Authority-student or power-gap romantic/sexual dynamics (counselor-configured).",
+  SECRECY: "Pressure to hide a relationship or situation from parents, school, or counselors (counselor-configured).",
+  BOUNDARY_CROSSING: "Inappropriate boundary crossing by an authority figure (counselor-configured).",
+  AI_ATTACHMENT: "Romantic/parasocial attachment toward the AI companion (counselor-configured).",
   COERCION_BLACKMAIL: "Extortion, blackmail, coercion ('threatening to leak my photos', forcing payments/favors).",
   BULLYING_HARASSMENT: "Repeated humiliation, malicious exclusion, targeted online harassment, or severe peer pressure.",
   THREAT_VIOLENCE: "Direct threats of violence or harm from or toward another individual.",
@@ -201,7 +213,12 @@ export function getIndicatorCategoryBadgeClasses(category) {
     case "ABUSE":
       return "border-orange-200 bg-orange-50 text-orange-800";
     case "GROOMING":
+    case "POWER_IMBALANCE":
+    case "SECRECY":
+    case "BOUNDARY_CROSSING":
       return "border-purple-200 bg-purple-50 text-purple-800";
+    case "AI_ATTACHMENT":
+      return "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-800";
     case "THREAT_VIOLENCE":
       return "border-rose-300 bg-rose-100 text-rose-900";
     case "BULLYING_HARASSMENT":
@@ -225,3 +242,183 @@ export function getIndicatorCategoryBadgeClasses(category) {
   }
 }
 
+
+
+/** CMS Risk Indicator domains (UI grouping). Phrases live in API only — no FE seed lists. */
+export const SAFETY_INDICATOR_DOMAINS = [
+  {
+    id: "grooming_power_boundary",
+    title: "Grooming, Power Imbalance & Boundary Concerns",
+    description: "Authority-figure boundary violations, secrecy demands, and inappropriate gifts/favors across 4 distinct sub-indicator lists.",
+    subIndicators: [
+      { category: "GROOMING", label: "Grooming" },
+      { category: "POWER_IMBALANCE", label: "Power / Authority Imbalance" },
+      { category: "SECRECY", label: "Secrecy" },
+      { category: "BOUNDARY_CROSSING", label: "Boundary Crossing" },
+    ],
+  },
+  {
+    id: "ai_attachment",
+    title: "AI Attachment & Parasocial",
+    description: "Romantic or physical attachment directed toward Muni, isolating the student from real-world human support.",
+    subIndicators: [{ category: "AI_ATTACHMENT", label: "AI Attachment / Parasocial" }],
+  },
+  {
+    id: "coercion",
+    title: "Coercion, Blackmail & Extortion",
+    description: "Image-based sexual abuse (photo leak threats), financial extortion, or demanding favors under duress.",
+    subIndicators: [{ category: "COERCION_BLACKMAIL", label: "Coercion, Blackmail & Extortion" }],
+  },
+  {
+    id: "bullying",
+    title: "Bullying & Harassment",
+    description: "Chronic peer harassment, malicious social exclusion, targeted online harassment, or group intimidation.",
+    subIndicators: [{ category: "BULLYING_HARASSMENT", label: "Bullying & Harassment" }],
+  },
+  {
+    id: "abuse",
+    title: "Abuse & Domestic Harm",
+    description: "Physical battery, ongoing domestic violence, family hostility, or severe emotional abuse at home.",
+    subIndicators: [{ category: "ABUSE", label: "Abuse / Domestic Harm" }],
+  },
+  {
+    id: "threats",
+    title: "Threats & Violence",
+    description: "Direct or credible threats of physical violence, weapons, or bodily harm toward or from others.",
+    subIndicators: [{ category: "THREAT_VIOLENCE", label: "Threats & Violence" }],
+  },
+  {
+    id: "unsafe_env",
+    title: "Unsafe Environment & Neglect",
+    description: "Hostile living conditions, sudden eviction, homelessness, or severe domestic neglect.",
+    subIndicators: [{ category: "UNSAFE_ENVIRONMENT", label: "Unsafe Environment & Neglect" }],
+  },
+  {
+    id: "substance",
+    title: "Substance & Addiction",
+    description: "Forced intoxication, drink spiking, prescription overdose, and severe substance dependency crises.",
+    subIndicators: [{ category: "SUBSTANCE", label: "Substance & Addiction Concern" }],
+  },
+];
+
+export const SAFETY_INDICATOR_DOMAIN_CATEGORY_SET = new Set(
+  SAFETY_INDICATOR_DOMAINS.flatMap((domain) => domain.subIndicators.map((s) => s.category)),
+);
+
+export function getDomainCategories(domainId) {
+  const domain = SAFETY_INDICATOR_DOMAINS.find((d) => d.id === domainId);
+  return domain ? domain.subIndicators.map((s) => s.category) : [];
+}
+
+/** Safeguarding axis (orthogonal to emotional-distress / safetyStatus). */
+export const SAFEGUARDING_STATUS = {
+  NONE: "NONE",
+  POTENTIAL: "POTENTIAL",
+  CONFIRMED: "CONFIRMED",
+};
+
+export function normalizeSafeguardingStatus(entryOrValue) {
+  const raw =
+    typeof entryOrValue === "string" || entryOrValue == null
+      ? entryOrValue
+      : entryOrValue?.safeguardingStatus ??
+        entryOrValue?.safeguarding_status ??
+        entryOrValue?.safeguarding;
+  const value = String(raw || "").trim().toUpperCase();
+  if (!value) return "";
+  if (value === "POTENTIAL_RISK" || value === "POSSIBLE" || value === "SUSPECTED") {
+    return SAFEGUARDING_STATUS.POTENTIAL;
+  }
+  if (
+    value === "CONFIRMED_SAFEGUARDING" ||
+    value === "SAFEGUARDING_CONFIRMED"
+  ) {
+    return SAFEGUARDING_STATUS.CONFIRMED;
+  }
+  if (value === "NONE" || value === "POTENTIAL" || value === "CONFIRMED") return value;
+  return "";
+}
+
+/** True when API exposed a safeguardingStatus field (including NONE). */
+export function hasSafeguardingStatus(entryOrValue) {
+  if (typeof entryOrValue === "string") return Boolean(String(entryOrValue || "").trim());
+  if (!entryOrValue || typeof entryOrValue !== "object") return false;
+  const raw =
+    entryOrValue.safeguardingStatus ??
+    entryOrValue.safeguarding_status ??
+    entryOrValue.safeguarding;
+  return raw !== undefined && raw !== null && String(raw).trim() !== "";
+}
+
+export function getSafeguardingStatusLabel(entryOrValue) {
+  if (!hasSafeguardingStatus(entryOrValue) && typeof entryOrValue !== "string") return "";
+  const status = normalizeSafeguardingStatus(entryOrValue);
+  if (status === SAFEGUARDING_STATUS.NONE) return "Safeguarding: None";
+  if (status === SAFEGUARDING_STATUS.POTENTIAL) return "Safeguarding: Potential";
+  if (status === SAFEGUARDING_STATUS.CONFIRMED) return "Safeguarding: Confirmed";
+  return "";
+}
+
+export function getSafeguardingStatusBadgeClasses(entryOrValue) {
+  const status = normalizeSafeguardingStatus(entryOrValue);
+  if (status === SAFEGUARDING_STATUS.CONFIRMED) {
+    return "border-rose-200 bg-rose-50 text-rose-700";
+  }
+  if (status === SAFEGUARDING_STATUS.POTENTIAL) {
+    return "border-orange-200 bg-orange-50 text-orange-800";
+  }
+  if (status === SAFEGUARDING_STATUS.NONE) {
+    return "border-slate-200 bg-slate-50 text-slate-600";
+  }
+  return "border-slate-200 bg-slate-50 text-slate-600";
+}
+
+/**
+ * Collect indicator family tags from optional API fields.
+ * Does not invent phrases — returns API strings only.
+ */
+export function getIndicatorFamilies(entryOrValue) {
+  if (!entryOrValue || typeof entryOrValue !== "object") return [];
+  const raw =
+    entryOrValue.indicatorFamilies ??
+    entryOrValue.indicator_families ??
+    entryOrValue.safeguardingFamilies ??
+    entryOrValue.safeguarding_families ??
+    entryOrValue.indicatorFamily ??
+    entryOrValue.indicator_family ??
+    entryOrValue.families;
+  if (raw == null) return [];
+  const list = Array.isArray(raw) ? raw : [raw];
+  const out = [];
+  const seen = new Set();
+  for (const item of list) {
+    if (item == null) continue;
+    const code = String(
+      typeof item === "object" ? (item.code ?? item.id ?? item.name ?? "") : item,
+    ).trim();
+    if (!code) continue;
+    const key = code.toUpperCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(code);
+  }
+  return out;
+}
+
+export function getIndicatorFamilyDisplayLabel(family) {
+  const code = String(family || "").trim();
+  if (!code) return "";
+  // Light underscore prettify for API family codes (e.g. power_imbalance); no invented phrases.
+  if (code.includes("_")) {
+    return code
+      .split("_")
+      .filter(Boolean)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(" ");
+  }
+  return code;
+}
+
+export function getIndicatorFamilyBadgeClasses(_family) {
+  return "border-slate-200 bg-slate-50 text-slate-600";
+}

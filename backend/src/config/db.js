@@ -852,6 +852,31 @@ async function ensureDatabaseSchema() {
     );
   `);
 
+  await pool.query(`
+    alter table public.journal_entries
+    add column if not exists safeguarding_status text not null default 'NONE';
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    drop constraint if exists journal_entries_safeguarding_status_check;
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    add constraint journal_entries_safeguarding_status_check
+    check (
+      safeguarding_status in ('NONE', 'POTENTIAL', 'CONFIRMED')
+    );
+  `);
+
+  await pool.query(`
+    alter table public.journal_entries
+    add column if not exists safeguarding_families jsonb not null default '[]'::jsonb;
+  `);
+
+
+
 
   await pool.query(`
     alter table public.journal_entries
@@ -1030,7 +1055,7 @@ async function ensureDatabaseSchema() {
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now(),
       constraint safety_risk_indicators_category_check check (
-        category in ('SELF_HARM', 'ABUSE', 'GROOMING', 'COERCION_BLACKMAIL', 'BULLYING_HARASSMENT', 'THREAT_VIOLENCE', 'UNSAFE_ENVIRONMENT', 'SUBSTANCE', 'EMOTIONAL_DISTRESS', 'EXPRESSION_HYPERBOLE', 'CONFIRMATION_SIGNAL', 'OTHER', 'CRITICAL_LITERAL', 'CRITICAL_AMBIGUOUS', 'DISTRESS', 'DENY_HYPERBOLE', 'CONFIRM_LITERAL')
+        category in ('SELF_HARM', 'ABUSE', 'GROOMING', 'COERCION_BLACKMAIL', 'BULLYING_HARASSMENT', 'THREAT_VIOLENCE', 'UNSAFE_ENVIRONMENT', 'SUBSTANCE', 'EMOTIONAL_DISTRESS', 'EXPRESSION_HYPERBOLE', 'CONFIRMATION_SIGNAL', 'OTHER', 'POWER_IMBALANCE', 'SECRECY', 'BOUNDARY_CROSSING', 'AI_ATTACHMENT', 'CRITICAL_LITERAL', 'CRITICAL_AMBIGUOUS', 'DISTRESS', 'DENY_HYPERBOLE', 'CONFIRM_LITERAL')
       )
     );
   `);
@@ -1048,13 +1073,13 @@ async function ensureDatabaseSchema() {
 
   await pool.query(`
     delete from public.safety_risk_indicators
-    where category not in ('SELF_HARM', 'ABUSE', 'GROOMING', 'COERCION_BLACKMAIL', 'BULLYING_HARASSMENT', 'THREAT_VIOLENCE', 'UNSAFE_ENVIRONMENT', 'SUBSTANCE', 'EMOTIONAL_DISTRESS', 'EXPRESSION_HYPERBOLE', 'CONFIRMATION_SIGNAL', 'OTHER', 'CRITICAL_LITERAL', 'CRITICAL_AMBIGUOUS', 'DISTRESS', 'DENY_HYPERBOLE', 'CONFIRM_LITERAL');
+    where category not in ('SELF_HARM', 'ABUSE', 'GROOMING', 'COERCION_BLACKMAIL', 'BULLYING_HARASSMENT', 'THREAT_VIOLENCE', 'UNSAFE_ENVIRONMENT', 'SUBSTANCE', 'EMOTIONAL_DISTRESS', 'EXPRESSION_HYPERBOLE', 'CONFIRMATION_SIGNAL', 'OTHER', 'POWER_IMBALANCE', 'SECRECY', 'BOUNDARY_CROSSING', 'AI_ATTACHMENT', 'CRITICAL_LITERAL', 'CRITICAL_AMBIGUOUS', 'DISTRESS', 'DENY_HYPERBOLE', 'CONFIRM_LITERAL');
   `);
 
   await pool.query(`
     alter table public.safety_risk_indicators
     add constraint safety_risk_indicators_category_check check (
-      category in ('SELF_HARM', 'ABUSE', 'GROOMING', 'COERCION_BLACKMAIL', 'BULLYING_HARASSMENT', 'THREAT_VIOLENCE', 'UNSAFE_ENVIRONMENT', 'SUBSTANCE', 'EMOTIONAL_DISTRESS', 'EXPRESSION_HYPERBOLE', 'CONFIRMATION_SIGNAL', 'OTHER', 'CRITICAL_LITERAL', 'CRITICAL_AMBIGUOUS', 'DISTRESS', 'DENY_HYPERBOLE', 'CONFIRM_LITERAL')
+      category in ('SELF_HARM', 'ABUSE', 'GROOMING', 'COERCION_BLACKMAIL', 'BULLYING_HARASSMENT', 'THREAT_VIOLENCE', 'UNSAFE_ENVIRONMENT', 'SUBSTANCE', 'EMOTIONAL_DISTRESS', 'EXPRESSION_HYPERBOLE', 'CONFIRMATION_SIGNAL', 'OTHER', 'POWER_IMBALANCE', 'SECRECY', 'BOUNDARY_CROSSING', 'AI_ATTACHMENT', 'CRITICAL_LITERAL', 'CRITICAL_AMBIGUOUS', 'DISTRESS', 'DENY_HYPERBOLE', 'CONFIRM_LITERAL')
     );
   `);
 

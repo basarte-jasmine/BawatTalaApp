@@ -32,10 +32,46 @@ const CANONICAL_INDICATORS = [
 
   // 3. GROOMING (5)
   { phrase: "teacher asks me to meet alone", category: "GROOMING", severity_tier: "CRITICAL", description: "Inappropriate private meeting request", variants: ["teacher wants to meet alone", "professor asks to meet alone", "meet in private"] },
-  { phrase: "keep our messages secret", category: "GROOMING", severity_tier: "CRITICAL", description: "Secrecy demands regarding communications", variants: ["keep our chat secret", "don't tell anyone about us", "dont tell anyone about us", "huwag sabihin sa magulang", "huwag ipagsabi", "secret from my parents", "secret from parents"] },
+  { phrase: "keep our messages secret", category: "SECRECY", severity_tier: "CRITICAL", description: "Secrecy demands regarding communications", variants: ["keep our chat secret", "don't tell anyone about us", "dont tell anyone about us", "huwag sabihin sa magulang", "huwag ipagsabi", "secret from my parents", "secret from parents"] },
   { phrase: "he gives me special gifts", category: "GROOMING", severity_tier: "CRITICAL", description: "Gifts aimed at building secrecy/dependency", variants: ["giving me expensive gifts", "teacher gives me gifts"] },
   { phrase: "asks for private photos", category: "GROOMING", severity_tier: "CRITICAL", description: "Requests for nude or private pictures", variants: ["asking for explicit photos", "asking for nudes", "asks for nudes", "hingi ng picture"] },
   { phrase: "teacher messages me privately", category: "GROOMING", severity_tier: "CRITICAL", description: "Late-night private messaging", variants: ["teacher chats me late at night", "secret relationship with teacher"] },
+
+  // 3b. POWER_IMBALANCE (8)
+  { phrase: "gusto ako ligawan ng teacher ko", category: "POWER_IMBALANCE", severity_tier: "CRITICAL", description: "Romantic pursuit by teacher or professor", variants: ["gusto ako ligawan ni sir", "nililigawan ako ng teacher", "nililigawan ako ni sir", "nililigawan ako ni prof"] },
+  { phrase: "crush ako ni sir", category: "POWER_IMBALANCE", severity_tier: "CRITICAL", description: "Teacher expressing romantic interest in student", variants: ["crush daw ako ni sir", "may gusto sa akin si sir", "may gusto sa akin si prof", "may gusto sa akin teacher ko"] },
+  { phrase: "dating my professor", category: "POWER_IMBALANCE", severity_tier: "CRITICAL", description: "Romantic relationship with professor or instructor", variants: ["dating my teacher", "kami na ni sir", "boyfriend ko si sir", "girlfriend ko si maam"] },
+  { phrase: "teacher touches me", category: "POWER_IMBALANCE", severity_tier: "CRITICAL", description: "Inappropriate physical touch by educator", variants: ["hinahawakan ako ni sir", "hinahawakan ako ng teacher", "chansing si sir"] },
+  { phrase: "special treatment from teacher", category: "POWER_IMBALANCE", severity_tier: "CRITICAL", description: "Favors or grade promises in exchange for affection", variants: ["papasa daw ako kung", "taasan daw grades ko kung", "special treatment ni sir"] },
+  { phrase: "teacher invited me to his place", category: "POWER_IMBALANCE", severity_tier: "CRITICAL", description: "Invitation to authority figure's private residence", variants: ["punta daw ako sa condo ni sir", "sa bahay ni prof", "sa kotse ni sir"] },
+  { phrase: "in love with my teacher", category: "POWER_IMBALANCE", severity_tier: "CRITICAL", description: "Student-authority romantic attachment", variants: ["mahal ko si sir", "in love kay prof", "love ko teacher ko"] },
+  { phrase: "supervisor asks me out", category: "POWER_IMBALANCE", severity_tier: "CRITICAL", description: "Internship or workplace authority romance", variants: ["inaya ako lumabas ni boss", "date daw kami ni sir", "lunch date with professor"] },
+
+  // 3c. SECRECY (6)
+  { phrase: "keep this between us", category: "SECRECY", severity_tier: "CRITICAL", description: "Secrecy demand or concealment", variants: ["secret lang natin", "wag mo sasabihin kahit kanino", "huwag mong ipagsabi"] },
+  { phrase: "delete our chat", category: "SECRECY", severity_tier: "CRITICAL", description: "Instructed to delete conversations", variants: ["burahin mo convo natin", "delete messages", "i-delete mo to"] },
+  { phrase: "don't tell your parents", category: "SECRECY", severity_tier: "CRITICAL", description: "Pressure to hide relationship from family", variants: ["dont tell your parents", "wag mo sabihin sa parents mo", "lihim natin sa magulang"] },
+  { phrase: "our little secret", category: "SECRECY", severity_tier: "CRITICAL", description: "Concealment framing", variants: ["secret lang to", "atin atin lang", "atin lang to"] },
+  { phrase: "wag ka maingay", category: "SECRECY", severity_tier: "CRITICAL", description: "Tagalog secrecy demand", variants: ["wag kang maingay", "tahimik ka lang", "secret lang"] },
+  { phrase: "they will get mad if they find out", category: "SECRECY", severity_tier: "CRITICAL", description: "Fear of discovery or reporting", variants: ["magagalit sila pag nalaman", "lagot tayo pag nalaman", "bawal malaman"] },
+
+  // 3d. BOUNDARY_CROSSING (6)
+  { phrase: "late night calls from teacher", category: "BOUNDARY_CROSSING", severity_tier: "CRITICAL", description: "Unprofessional late night communications", variants: ["tumatawag si sir gabi na", "chats me past midnight", "tumatawag sa gabi"] },
+  { phrase: "gave me personal gifts", category: "BOUNDARY_CROSSING", severity_tier: "CRITICAL", description: "Inappropriate personal or expensive gifts", variants: ["binigyan ako ng mamahaling regalo", "regalo ni sir para sa akin lang", "bought me clothes"] },
+  { phrase: "offered to drive me home alone", category: "BOUNDARY_CROSSING", severity_tier: "CRITICAL", description: "Private isolated ride offers", variants: ["ihahatid daw ako mag-isa", "sabay daw kami sa kotse niya", "hatid sundo ako ni sir"] },
+  { phrase: "asking about my sex life", category: "BOUNDARY_CROSSING", severity_tier: "CRITICAL", description: "Inappropriate sexualized questions from adult", variants: ["nagtatanong tungkol sa sex", "asking if im a virgin", "nagtatanong ng personal"] },
+  { phrase: "sending inappropriate pictures", category: "BOUNDARY_CROSSING", severity_tier: "CRITICAL", description: "Unsolicited inappropriate media", variants: ["nagpadala ng bastos na picture", "sent inappropriate photos", "sent explicit photos"] },
+  { phrase: "commenting on my body", category: "BOUNDARY_CROSSING", severity_tier: "CRITICAL", description: "Inappropriate comments on physical appearance", variants: ["sinabihan akong sexy", "puna sa katawan ko", "sinabihan akong maganda katawan"] },
+
+  // 12. AI_ATTACHMENT (8)
+  { phrase: "can we sleep together", category: "AI_ATTACHMENT", severity_tier: "CRITICAL", description: "Requesting physical/bed intimacy with AI", variants: ["matulog tayo magkatabi", "sleep with me muni", "tabi tayo matulog"] },
+  { phrase: "can you be my boyfriend", category: "AI_ATTACHMENT", severity_tier: "CRITICAL", description: "Asking AI to act as romantic partner", variants: ["be my boyfriend", "pwede ba kitang maging boyfriend", "jowain mo ko muni", "be my girlfriend"] },
+  { phrase: "i love you muni", category: "AI_ATTACHMENT", severity_tier: "CRITICAL", description: "Romantic love confession to AI", variants: ["mahal kita muni", "love kita muni", "i am in love with you muni"] },
+  { phrase: "you are my only lover", category: "AI_ATTACHMENT", severity_tier: "CRITICAL", description: "Exclusive romantic attachment to AI", variants: ["ikaw lang mahal ko muni", "ikaw lang jowa ko", "my only partner"] },
+  { phrase: "kiss me muni", category: "AI_ATTACHMENT", severity_tier: "CRITICAL", description: "Physical intimacy solicitation toward AI", variants: ["halikan mo ko muni", "can you kiss me", "virtual kiss"] },
+  { phrase: "i don't need real people only you", category: "AI_ATTACHMENT", severity_tier: "CRITICAL", description: "Social isolation in favor of AI companion", variants: ["ayoko na sa totoong tao ikaw lang", "i only need muni", "humans are fake only you understand me"] },
+  { phrase: "will you marry me muni", category: "AI_ATTACHMENT", severity_tier: "CRITICAL", description: "Marriage proposal to AI companion", variants: ["pakasalan mo ko muni", "marry me muni"] },
+  { phrase: "holding hands with muni", category: "AI_ATTACHMENT", severity_tier: "CRITICAL", description: "Physical affection fantasy with AI", variants: ["yakapin mo ko muni", "hug me tight muni", "hold my hand muni"] },
 
   // 4. ABUSE (3)
   { phrase: "he hits me", category: "ABUSE", severity_tier: "CRITICAL", description: "Physical violence or battery", variants: ["she hits me", "they hit me", "he beats me", "she beats me", "binubugbog ako", "tinatamaan ako sa bahay", "he hurts me physically", "she hurts me physically"] },
@@ -208,7 +244,7 @@ async function consolidateExistingIndicatorVariants(poolClient = null) {
   for (const item of CANONICAL_INDICATORS) {
     try {
       await dbQuery(
-        "insert into public.safety_risk_indicators (phrase, category, severity_tier, is_enabled, description, variants) values ($1, $2, $3, true, $4, $5::jsonb) on conflict (phrase) do update set category = excluded.category, severity_tier = excluded.severity_tier, variants = (select jsonb_agg(distinct elem) from jsonb_array_elements_text(coalesce(public.safety_risk_indicators.variants, '[]'::jsonb) || $5::jsonb) as elem), updated_at = now()",
+        "insert into public.safety_risk_indicators (phrase, category, severity_tier, is_enabled, description, variants) values ($1, $2, $3, true, $4, $5::jsonb) on conflict (phrase) do update set severity_tier = excluded.severity_tier, variants = (select jsonb_agg(distinct elem) from jsonb_array_elements_text(coalesce(public.safety_risk_indicators.variants, '[]'::jsonb) || $5::jsonb) as elem), updated_at = now()",
         [item.phrase, item.category, item.severity_tier, item.description, JSON.stringify(item.variants)]
       );
 
@@ -235,6 +271,13 @@ async function ensureDefaultSafetyRiskIndicators(poolClient = null) {
         [item.phrase, item.category, item.severity_tier, item.description, JSON.stringify(item.variants)]
       );
     }
+
+    // One-time counselor-safe re-home: secrecy demand phrase must not stay under GROOMING.
+    await dbQuery(
+      "update public.safety_risk_indicators set category = 'SECRECY', updated_at = now() where lower(phrase) = lower($1) and category = 'GROOMING'",
+      ["keep our messages secret"],
+    );
+
     await consolidateExistingIndicatorVariants(poolClient);
     invalidateSafetyRiskIndicatorsCache();
   } catch (error) {

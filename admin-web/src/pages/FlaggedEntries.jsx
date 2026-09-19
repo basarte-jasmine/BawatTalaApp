@@ -40,6 +40,11 @@ import {
   isClarificationSafetyStatus,
   isConfirmedCriticalSafetyStatus,
   normalizeSignal,
+  getSafeguardingStatusLabel,
+  getSafeguardingStatusBadgeClasses,
+  getIndicatorFamilies,
+  getIndicatorFamilyDisplayLabel,
+  getIndicatorFamilyBadgeClasses,
 } from "../lib/risk-labels";
 import { PROGRAM_OPTIONS } from "../lib/register-data";
 
@@ -568,6 +573,33 @@ function EntryCard({ entry, isSelected, onSelect }) {
       <div className="mt-3">
         <FlagPill flag={flag} />
       </div>
+      {getSafeguardingStatusLabel(entry) || getIndicatorFamilies(entry).length ? (
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
+          {getSafeguardingStatusLabel(entry) ? (
+            <span
+              className={
+                "rounded-md px-2 py-0.5 text-[11px] font-bold " +
+                getSafeguardingStatusBadgeClasses(entry)
+              }
+              title="Safeguarding status"
+            >
+              {getSafeguardingStatusLabel(entry)}
+            </span>
+          ) : null}
+          {getIndicatorFamilies(entry).map((family) => (
+            <span
+              key={String(entry?.id || "entry") + "-fam-" + family}
+              className={
+                "rounded-md border px-2 py-0.5 text-[10px] font-semibold " +
+                getIndicatorFamilyBadgeClasses(family)
+              }
+              title="Indicator family"
+            >
+              {getIndicatorFamilyDisplayLabel(family)}
+            </span>
+          ))}
+        </div>
+      ) : null}
     </button>
   );
 }
@@ -879,6 +911,39 @@ function FlagDetails({ entry, isEditing, editState, saving, onChange, onEdit, on
             <div className="text-xs font-semibold text-slate-400">Reason</div>
             <div className="mt-1 font-bold text-slate-800">{getFlagReason(entry)}</div>
           </div>
+          {getSafeguardingStatusLabel(entry) ? (
+            <div>
+              <div className="text-xs font-semibold text-slate-400">Safeguarding</div>
+              <div className="mt-1">
+                <span
+                  className={
+                    "inline-flex rounded-md px-2 py-0.5 text-xs font-bold " +
+                    getSafeguardingStatusBadgeClasses(entry)
+                  }
+                >
+                  {getSafeguardingStatusLabel(entry)}
+                </span>
+              </div>
+            </div>
+          ) : null}
+          {getIndicatorFamilies(entry).length ? (
+            <div className="col-span-2">
+              <div className="text-xs font-semibold text-slate-400">Indicator families</div>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {getIndicatorFamilies(entry).map((family) => (
+                  <span
+                    key={String(entry?.id || "entry") + "-detail-fam-" + family}
+                    className={
+                      "rounded-md border px-2 py-0.5 text-[10px] font-semibold " +
+                      getIndicatorFamilyBadgeClasses(family)
+                    }
+                  >
+                    {getIndicatorFamilyDisplayLabel(family)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
     </div>

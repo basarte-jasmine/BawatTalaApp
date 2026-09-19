@@ -21,6 +21,8 @@ import {
   type LibraryBookRecord,
   type ReadingAchievementReward } from "../lib/backend-api";
 import { BUILT_IN_LIBRARY_BOOK_IDS, BUILT_IN_LIBRARY_BOOKS } from "../lib/builtin-library-books";
+import { filterAndSortLibraryBooks, getPaginationPageNumbers, paginateBooks, type LibraryFilterSource, type LibrarySortOption } from "../lib/library-filter";
+import { LIBRARY_MATCHA, matchaAccentFor, titleInitial } from "../lib/library-theme";
 import {
   deleteCachedEpubFile,
   downloadEpubToLibrary,
@@ -30,12 +32,11 @@ import {
   resolveBundledEpubUri,
   type EpubReaderPage as ReaderPage } from "../lib/epub-reader";
 
-const BOOK_COVER_IMAGE = require("../assets/images/book_sample.png");
 const TALA_IMAGE = require("../assets/images/Tala_Star.png");
 const STAR_VALUES = [1, 2, 3, 4, 5];
-const READING_REWARD_RING_RADIUS = 25;
-const READING_REWARD_RING_SIZE = 64;
-const READING_REWARD_RING_STROKE = 5;
+const READING_REWARD_RING_RADIUS = 16;
+const READING_REWARD_RING_SIZE = 42;
+const READING_REWARD_RING_STROKE = 3;
 const READING_REWARD_RING_CIRCUMFERENCE = 2 * Math.PI * READING_REWARD_RING_RADIUS;
 const READING_ACHIEVEMENT_FALLBACKS: ReadingAchievementReward[] = [
   {
@@ -132,12 +133,106 @@ function getExternalReaderUrl(book: LibraryBookRecord) {
   return book.externalReaderLink || book.sourceReaderLink || book.previewLink || book.infoLink || "";
 }
 
+/** Prefer FS catalog keys. borrowable != downloadableEpub; openLibraryBorrow = OL lendable. */
+function isFsPreviewOnly(book: LibraryBookRecord) {
+  if (book.previewOnly === true) return true;
+  if (book.borrowStatus === "preview_only") return true;
+  if (book.actionLabel === "Preview only") return true;
+  return book.accessType === "preview" || book.accessType === "catalog";
+}
+
+/** In-app free EPUB download (FS borrowStatus downloadable / downloadableEpub). */
+function canDownloadEpubInApp(book: LibraryBookRecord) {
+  if (isBookReadyInApp(book) || isBuiltInBook(book)) return false;
+  if (book.borrowStatus === "downloadable") return true;
+  if (book.borrowStatus === "open_library_borrow" || book.borrowStatus === "preview_only" || book.borrowStatus === "unavailable") {
+    return false;
+  }
+  if (book.actionLabel === "Download EPUB") return true;
+  if (book.actionLabel === "Borrow on Open Library" || book.actionLabel === "Preview only" || book.actionLabel === "Not borrowable") {
+    return false;
+  }
+  if (typeof book.downloadableEpub === "boolean") return book.downloadableEpub;
+  return Boolean(book.supportsInAppReader && book.downloadableEpub !== false);
+}
+
+/** Open Library lendable borrow (e.g. 7 Habits) — opens OL, not in-app EPUB. */
+function isOpenLibraryBorrow(book: LibraryBookRecord) {
+  if (isBookReadyInApp(book) || isBuiltInBook(book) || canDownloadEpubInApp(book)) return false;
+  if (book.openLibraryBorrow === true) return true;
+  if (book.borrowStatus === "open_library_borrow") return true;
+  if (book.actionLabel === "Borrow on Open Library") return Boolean(getExternalReaderUrl(book));
+  if (book.actionLabel === "Download EPUB" || book.actionLabel === "Preview only" || book.actionLabel === "Not borrowable") {
+    return false;
+  }
+  if (isFsPreviewOnly(book) || book.borrowStatus === "unavailable") return false;
+  return false;
+}
+
+/** Broad borrowable flag from FS (in-app EPUB OR OL lendable). */
+function isFsBorrowable(book: LibraryBookRecord) {
+  if (isBookReadyInApp(book) || isBuiltInBook(book)) return true;
+  if (canDownloadEpubInApp(book) || isOpenLibraryBorrow(book)) return true;
+  if (typeof book.borrowable === "boolean") return book.borrowable;
+  if (book.borrowStatus === "downloadable" || book.borrowStatus === "open_library_borrow" || book.borrowStatus === "borrowable") {
+    return true;
+  }
+  if (book.borrowStatus === "preview_only" || book.borrowStatus === "unavailable") return false;
+  if (book.actionLabel === "Download EPUB" || book.actionLabel === "Borrow on Open Library") return true;
+  if (book.actionLabel === "Preview only" || book.actionLabel === "Not borrowable") return false;
+  return false;
+}
+
 function getBookActionLabel(book: LibraryBookRecord) {
-  if (book.actionLabel) return book.actionLabel;
-  if (book.accessType === "borrow") return "Borrow";
-  if (book.accessType === "waitlist") return "Join waitlist";
-  if (book.accessType === "preview") return "Preview";
-  return "Open Library";
+  if (isBookReadyInApp(book) || isBuiltInBook(book)) return "Read";
+  const fsLabel = String(book.actionLabel || "").trim();
+  if (
+    fsLabel === "Download EPUB" ||
+    fsLabel === "Borrow on Open Library" ||
+    fsLabel === "Preview only" ||
+    fsLabel === "Not borrowable"
+  ) {
+    return fsLabel;
+  }
+  if (book.borrowStatus === "downloadable" || canDownloadEpubInApp(book)) return "Download EPUB";
+  if (book.borrowStatus === "open_library_borrow" || isOpenLibraryBorrow(book)) return "Borrow on Open Library";
+  if (book.borrowStatus === "preview_only" || isFsPreviewOnly(book)) return "Preview only";
+  if (book.borrowStatus === "unavailable") return "Not borrowable";
+  if (book.borrowStatusLabel) return book.borrowStatusLabel;
+  if (!isFsBorrowable(book)) return "Preview only";
+  return getExternalReaderUrl(book) ? "Borrow on Open Library" : "Preview only";
+}
+
+function isPreviewOrCatalogOnly(book: LibraryBookRecord) {
+  return isFsPreviewOnly(book) || getBookActionLabel(book) === "Preview only";
+}
+
+function isNotBorrowable(book: LibraryBookRecord) {
+  if (isBookReadyInApp(book) || isBuiltInBook(book)) return false;
+  if (canDownloadEpubInApp(book) || isOpenLibraryBorrow(book)) return false;
+  if (book.actionLabel === "Not borrowable" || book.borrowStatus === "unavailable") return true;
+  return !isFsBorrowable(book);
+}
+
+function getAccessHelperText(book: LibraryBookRecord) {
+  if (isBookReadyInApp(book)) return "";
+  if (canDownloadEpubInApp(book) || book.actionLabel === "Download EPUB" || book.borrowStatus === "downloadable") {
+    return "Free EPUB - save it to read offline in Bawat Tala.";
+  }
+  if (isOpenLibraryBorrow(book) || book.actionLabel === "Borrow on Open Library" || book.borrowStatus === "open_library_borrow") {
+    return "";
+  }
+  if (book.borrowStatusLabel && isFsPreviewOnly(book)) {
+    return `${book.borrowStatusLabel} - preview/catalog only, not downloadable in-app.`;
+  }
+  if (isFsPreviewOnly(book) || book.actionLabel === "Preview only") {
+    return "Catalog preview only - this title is not downloadable in Bawat Tala.";
+  }
+  if (book.borrowStatus === "unavailable" || book.actionLabel === "Not borrowable") {
+    return "Not borrowable - no in-app EPUB or Open Library borrow is available.";
+  }
+  if (getExternalReaderUrl(book)) return "Opens on Open Library in your browser.";
+  return "This title cannot be borrowed or downloaded right now.";
 }
 
 function getProgressRewardLabel(book: LibraryBookRecord, progress: LibraryBookProgress | null | undefined) {
@@ -267,6 +362,10 @@ export default function LibraryScreen() {
   const [readingRewardMessage, setReadingRewardMessage] = useState("");
   const [bookPendingRemoval, setBookPendingRemoval] = useState<LibraryBookRecord | null>(null);
   const [isRemovingBook, setIsRemovingBook] = useState(false);
+  const [sourceFilter, setSourceFilter] = useState<LibraryFilterSource>("all");
+  const [sortBy, setSortBy] = useState<LibrarySortOption>("recent");
+  const [showShelfFilterModal, setShowShelfFilterModal] = useState(false);
+  const [featuredPage, setFeaturedPage] = useState(1);
   const [searchDraft, setSearchDraft] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
   const [activeDownloadBookId, setActiveDownloadBookId] = useState<string | null>(null);
@@ -281,10 +380,17 @@ export default function LibraryScreen() {
     [allKnownBooks, selectedBookId],
   );
   const featuredBooks = useMemo(() => dedupeLibraryBooks(books), [books]);
-  const displayedBooks = useMemo(
-    () => activeShelf === "my" ? filterBooksByQuery(myShelfBooks, submittedQuery) : featuredBooks,
-    [activeShelf, featuredBooks, myShelfBooks, submittedQuery],
-  );
+  const paginatedFeatured = useMemo(() => {
+    return paginateBooks(featuredBooks, featuredPage, 10);
+  }, [featuredBooks, featuredPage]);
+
+  const displayedBooks = useMemo(() => {
+    if (activeShelf === "my") {
+      const searched = filterBooksByQuery(myShelfBooks, submittedQuery);
+      return filterAndSortLibraryBooks(searched, { source: sourceFilter, sort: sortBy });
+    }
+    return paginatedFeatured.items;
+  }, [activeShelf, featuredBooks, myShelfBooks, submittedQuery, sourceFilter, sortBy, paginatedFeatured.items]);
   const displayedIsLoading = activeShelf === "my" ? isMyShelfLoading : isLoading;
   const displayedErrorMessage = activeShelf === "my" ? (myShelfBooks.length ? "" : myShelfErrorMessage) : errorMessage;
   const downloadedCount = myShelfBooks.length;
@@ -524,6 +630,7 @@ export default function LibraryScreen() {
   const handleSearchSubmit = () => {
     const nextQuery = searchDraft.trim();
     setSubmittedQuery(nextQuery);
+    setFeaturedPage(1);
     if (activeShelf === "featured") {
       void loadBooks(nextQuery);
     }
@@ -532,6 +639,7 @@ export default function LibraryScreen() {
   const handleClearSearch = () => {
     setSearchDraft("");
     setSubmittedQuery("");
+    setFeaturedPage(1);
     if (activeShelf === "featured" && submittedQuery) {
       void loadBooks("");
     }
@@ -539,6 +647,8 @@ export default function LibraryScreen() {
 
   const handleShelfTabChange = (nextShelf: ShelfTab) => {
     setActiveShelf(nextShelf);
+    setShowShelfFilterModal(false);
+    setFeaturedPage(1);
     setSearchDraft("");
     setSubmittedQuery("");
     setLibraryActionMessage("");
@@ -637,11 +747,32 @@ export default function LibraryScreen() {
       await handleOpenBook(book.id);
       return;
     }
-    if (isEpubBook(book)) {
+    // In-app EPUB download only when FS marks downloadableEpub / Download EPUB
+    if (canDownloadEpubInApp(book) || book.actionLabel === "Download EPUB") {
       await handleDownloadBook(book);
       return;
     }
-    await handleOpenExternalBook(book);
+    // Borrow on Open Library = external active CTA (borrowable ≠ downloadableEpub)
+    if (isOpenLibraryBorrow(book) || book.actionLabel === "Borrow on Open Library") {
+      if (getExternalReaderUrl(book)) {
+        await handleOpenExternalBook(book);
+        return;
+      }
+      setLibraryActionTone("error");
+      setLibraryActionMessage(getAccessHelperText(book));
+      return;
+    }
+    if (isPreviewOrCatalogOnly(book) || isNotBorrowable(book)) {
+      setLibraryActionTone("error");
+      setLibraryActionMessage(getAccessHelperText(book));
+      return;
+    }
+    if (getExternalReaderUrl(book)) {
+      await handleOpenExternalBook(book);
+      return;
+    }
+    setLibraryActionTone("error");
+    setLibraryActionMessage(getAccessHelperText(book));
   };
 
   const handleOpenBook = async (bookId: string) => {
@@ -879,7 +1010,6 @@ export default function LibraryScreen() {
   }, [claimReadingReward, isClaimingReadingReward, readingRewardSeconds, readingRewardTargetSeconds]);
 
   const renderBookCard = (book: LibraryBookRecord) => {
-    const isFinished = book.progress?.status === "FINISHED";
     const progressPercent = book.progress?.percent ?? 0;
     const supportsInAppReader = isEpubBook(book);
     const isDownloaded = isBookReadyInApp(book);
@@ -900,15 +1030,10 @@ export default function LibraryScreen() {
 
     return (
       <Pressable key={book.id} style={[styles.bookCard, compact && styles.bookCardCompact]} onPress={() => void handlePrimaryBookAction(book)}>
-        <View style={[styles.bookSpine, { backgroundColor: book.accentColor }]} />
-
         <View style={styles.bookCardTopRow}>
           <View style={styles.bookTag}>
             <Text style={styles.bookTagText}>{book.shelfLabel}</Text>
           </View>
-          <Text style={[styles.bookStatusText, isFinished && styles.bookStatusTextDone, (!isDownloaded || !supportsInAppReader) && styles.bookStatusTextLocked]}>
-            {isFinished ? "Finished" : isDownloaded ? "Ready to read" : book.statusLabel || (supportsInAppReader ? "Download EPUB" : "Open Library")}
-          </Text>
         </View>
 
         <View style={[styles.bookCardBody, compact && styles.bookCardBodyStacked]}>
@@ -917,14 +1042,21 @@ export default function LibraryScreen() {
               styles.bookCoverWrap,
               compact && styles.bookCoverWrapCompact,
               compact && styles.bookCoverWrapStacked,
-              { backgroundColor: book.accentColor },
+              { backgroundColor: matchaAccentFor(book.id || book.title, 0) },
             ]}
           >
-            <Image
-              source={book.coverImageUrl ? { uri: book.coverImageUrl } : BOOK_COVER_IMAGE}
-              style={styles.bookCoverImage}
-              resizeMode="contain"
-            />
+            {book.coverImageUrl ? (
+              <Image
+                source={{ uri: book.coverImageUrl }}
+                style={styles.bookCoverImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.bookCoverPlaceholder}>
+                <Text style={styles.bookCoverInitial}>{titleInitial(book.title)}</Text>
+                <Text style={styles.bookCoverPlaceholderLabel} numberOfLines={2}>{book.title}</Text>
+              </View>
+            )}
           </View>
 
           <View style={styles.bookInfoWrap}>
@@ -935,31 +1067,35 @@ export default function LibraryScreen() {
 
             <View style={styles.bookMetaRow}>
               <View style={styles.bookMetaPill}>
-                <Ionicons name="time-outline" size={14} color="#6D675A" />
+                <Ionicons name="time-outline" size={14} color="#5C655B" />
                 <Text style={styles.bookMetaText}>{`${book.estimatedMinutes} min read`}</Text>
               </View>
               <View style={styles.bookMetaPill}>
-                <Ionicons name="star-outline" size={14} color="#6D675A" />
+                <Ionicons name="star-outline" size={14} color="#5C655B" />
                 <Text style={styles.bookMetaText}>{book.rewardLabel}</Text>
               </View>
               <View style={styles.bookMetaPill}>
-                <Ionicons name={accessIconName} size={14} color="#6D675A" />
-                <Text style={styles.bookMetaText}>{book.provider === "builtin" ? "Built in" : isDownloaded ? "Saved in app" : supportsInAppReader ? "Free EPUB" : book.accessLabel || "Open Library"}</Text>
+                <Ionicons name={accessIconName} size={14} color="#5C655B" />
+                <Text style={styles.bookMetaText}>{book.provider === "builtin" ? "Built in" : isDownloaded ? "Saved in app" : canDownloadEpubInApp(book) || actionLabel === "Download EPUB" ? "Free EPUB" : isOpenLibraryBorrow(book) || actionLabel === "Borrow on Open Library" ? "Open Library" : isPreviewOrCatalogOnly(book) ? "Preview only" : book.accessLabel || actionLabel || "Open online"}</Text>
               </View>
               {isDownloaded || progressPercent > 0 ? (
                 <View style={styles.bookMetaPill}>
-                  <Ionicons name="bookmark-outline" size={14} color="#6D675A" />
+                  <Ionicons name="bookmark-outline" size={14} color="#5C655B" />
                   <Text style={styles.bookMetaText}>{`${progressPercent}%`}</Text>
                 </View>
               ) : null}
             </View>
+
+            {getAccessHelperText(book) ? (
+              <Text style={styles.bookAccessHelper}>{getAccessHelperText(book)}</Text>
+            ) : null}
 
             <View style={styles.bookActionRow}>
               {isDownloaded ? (
                 <>
                   {activeShelf === "my" && !isBuiltInBook(book) ? (
                     <Pressable style={styles.bookRemoveButton} onPress={() => setBookPendingRemoval(book)}>
-                      <Ionicons name="trash-outline" size={15} color="#8B4C43" />
+                      <Ionicons name="trash-outline" size={15} color={LIBRARY_MATCHA.danger} />
                       <Text style={styles.bookRemoveButtonText}>Remove</Text>
                     </Pressable>
                   ) : null}
@@ -968,31 +1104,45 @@ export default function LibraryScreen() {
                     <Text style={styles.bookReadButtonText}>Read</Text>
                   </Pressable>
                 </>
-              ) : supportsInAppReader ? (
+              ) : canDownloadEpubInApp(book) || actionLabel === "Download EPUB" ? (
                 <Pressable
                   style={[styles.bookDownloadButton, isDownloading && styles.bookActionButtonDisabled]}
                   disabled={isDownloading}
                   onPress={() => void handleDownloadBook(book)}
                 >
                   {isDownloading ? (
-                    <ActivityIndicator size="small" color="#4D6243" />
+                    <ActivityIndicator size="small" color={LIBRARY_MATCHA.primaryDark} />
                   ) : (
-                    <Ionicons name="download-outline" size={15} color="#4D6243" />
+                    <Ionicons name="download-outline" size={15} color={LIBRARY_MATCHA.primaryDark} />
                   )}
                   <Text style={styles.bookDownloadButtonText}>
                     {isDownloading ? "Downloading" : "Download EPUB"}
                   </Text>
                 </Pressable>
+              ) : isOpenLibraryBorrow(book) || actionLabel === "Borrow on Open Library" ? (
+                <Pressable style={styles.bookExternalButton} onPress={() => void handleOpenExternalBook(book)}>
+                  <Ionicons name="open-outline" size={15} color="#FFFFFF" />
+                  <Text style={styles.bookExternalButtonText}>{actionLabel || "Borrow on Open Library"}</Text>
+                </Pressable>
+              ) : isPreviewOrCatalogOnly(book) || isNotBorrowable(book) ? (
+                <View style={styles.bookDisabledCta}>
+                  <Ionicons
+                    name={isPreviewOrCatalogOnly(book) ? "eye-outline" : "close-circle-outline"}
+                    size={15}
+                    color={LIBRARY_MATCHA.textSoft}
+                  />
+                  <Text style={styles.bookDisabledCtaText}>{actionLabel}</Text>
+                </View>
               ) : externalReaderUrl ? (
                 <Pressable style={styles.bookExternalButton} onPress={() => void handleOpenExternalBook(book)}>
                   <Ionicons name="open-outline" size={15} color="#FFFFFF" />
-                  <Text style={styles.bookExternalButtonText}>{actionLabel}</Text>
+                  <Text style={styles.bookExternalButtonText}>{actionLabel || "Borrow on Open Library"}</Text>
                 </Pressable>
               ) : (
-                <Pressable style={[styles.bookDownloadButton, styles.bookActionButtonDisabled]} disabled>
-                  <Ionicons name="alert-circle-outline" size={15} color="#4D6243" />
-                  <Text style={styles.bookDownloadButtonText}>Unavailable</Text>
-                </Pressable>
+                <View style={styles.bookDisabledCta}>
+                  <Ionicons name="alert-circle-outline" size={15} color={LIBRARY_MATCHA.textSoft} />
+                  <Text style={styles.bookDisabledCtaText}>{actionLabel || "Preview only"}</Text>
+                </View>
               )}
             </View>
           </View>
@@ -1024,7 +1174,7 @@ export default function LibraryScreen() {
             <View style={[styles.heroHeaderRow, compact && styles.heroHeaderRowStacked]}>
               <View style={styles.heroTextWrap}>
                 <Text style={styles.heroBadge}>Reading Room</Text>
-                <Text style={[styles.heroTitle, compact && styles.heroTitleCompact]}>A warmer shelf for slow, comforting reading.</Text>
+                <Text style={[styles.heroTitle, compact && styles.heroTitleCompact]}>A calm matcha shelf for slow, comforting reading.</Text>
                 <Text style={[styles.heroBody, compact && styles.heroBodyCompact]}>
                   Search Open Library books, read free EPUBs inside Bawat Tala, or open borrow and preview titles with your account.
                 </Text>
@@ -1053,13 +1203,7 @@ export default function LibraryScreen() {
             </View>
           </View>
 
-          <View style={[styles.introCard, compact && styles.introCardCompact]}>
-            <Text style={styles.introEyebrow}>Settle In</Text>
-            <Text style={styles.introTitle}>Browse the shelf, then step into reader mode.</Text>
-            <Text style={styles.introBody}>
-              Free EPUB downloads stay in the app library. Borrow, waitlist, and preview books open through Open Library.
-            </Text>
-          </View>
+
 
           <View style={styles.shelfTabs}>
             <Pressable
@@ -1082,19 +1226,19 @@ export default function LibraryScreen() {
 
           <View style={[styles.searchCard, compact && styles.searchCardCompact]}>
             <View style={styles.searchInputWrap}>
-              <Ionicons name="search-outline" size={18} color="#746B5E" />
+              <Ionicons name="search-outline" size={18} color="#5C655B" />
               <TextInput
                 value={searchDraft}
                 onChangeText={setSearchDraft}
                 onSubmitEditing={handleSearchSubmit}
                 placeholder={activeShelf === "my" ? "Search your shelf" : "Search title, author, ISBN"}
-                placeholderTextColor="#9A9184"
+                placeholderTextColor="#6F845C"
                 returnKeyType="search"
                 style={styles.searchInput}
               />
               {searchDraft.length ? (
                 <Pressable style={styles.searchIconButton} accessibilityLabel="Clear search" onPress={handleClearSearch}>
-                  <Ionicons name="close" size={17} color="#746B5E" />
+                  <Ionicons name="close" size={17} color="#5C655B" />
                 </Pressable>
               ) : null}
             </View>
@@ -1102,7 +1246,27 @@ export default function LibraryScreen() {
               <Ionicons name="search" size={15} color="#FFFFFF" />
               <Text style={styles.searchButtonText}>Search</Text>
             </Pressable>
+            {activeShelf === "my" ? (
+              <Pressable
+                style={[
+                  styles.filterIconButton,
+                  (sourceFilter !== "all" || sortBy !== "recent") && styles.filterIconButtonActive,
+                ]}
+                accessibilityLabel="Filter and sort shelf"
+                onPress={() => setShowShelfFilterModal(true)}
+              >
+                <Ionicons
+                  name="options-outline"
+                  size={19}
+                  color={sourceFilter !== "all" || sortBy !== "recent" ? "#FFFFFF" : "#5C655B"}
+                />
+                {sourceFilter !== "all" || sortBy !== "recent" ? (
+                  <View style={styles.filterActiveDot} />
+                ) : null}
+              </Pressable>
+            ) : null}
           </View>
+
 
           {!!libraryActionMessage && (
             <Text style={[styles.libraryActionMessage, libraryActionTone === "error" && styles.libraryActionMessageError]}>
@@ -1130,8 +1294,9 @@ export default function LibraryScreen() {
             </View>
           ) : displayedErrorMessage ? (
             <View style={styles.emptyCard}>
+              <Ionicons name="cloud-offline-outline" size={28} color={LIBRARY_MATCHA.primaryDark} style={{ marginBottom: 8 }} />
               <Text style={styles.emptyTitle}>Library is unavailable</Text>
-              <Text style={styles.emptyText}>{displayedErrorMessage}</Text>
+              <Text style={styles.emptyText}>{displayedErrorMessage || "We could not reach the catalog. Check your connection and try again."}</Text>
               <Pressable style={styles.retryButton} onPress={() => activeShelf === "my" ? void loadMyShelf() : void loadBooks()}>
                 <Text style={styles.retryButtonText}>Try Again</Text>
               </Pressable>
@@ -1140,20 +1305,195 @@ export default function LibraryScreen() {
             displayedBooks.length ? (
               <View style={styles.bookList}>
                 {displayedBooks.map(renderBookCard)}
+
+                {activeShelf === "featured" && paginatedFeatured.totalPages > 1 ? (
+                  <View style={styles.paginationRow}>
+                    <Pressable
+                      style={[styles.paginationArrowButton, featuredPage <= 1 && styles.paginationArrowButtonDisabled]}
+                      disabled={featuredPage <= 1}
+                      accessibilityLabel="Previous page"
+                      onPress={() => setFeaturedPage((prev) => Math.max(1, prev - 1))}
+                    >
+                      <Ionicons
+                        name="chevron-back"
+                        size={16}
+                        color={featuredPage <= 1 ? "#A8C49A" : "#35485B"}
+                      />
+                    </Pressable>
+
+                    <View style={styles.paginationNumbersRow}>
+                      {getPaginationPageNumbers(paginatedFeatured.currentPage, paginatedFeatured.totalPages).map((item, idx) => {
+                        if (item === "...") {
+                          return (
+                            <View key={`dots-${idx}`} style={styles.paginationDotsWrap}>
+                              <Text style={styles.paginationDotsText}>...</Text>
+                            </View>
+                          );
+                        }
+
+                        const isCurrent = item === paginatedFeatured.currentPage;
+                        return (
+                          <Pressable
+                            key={item}
+                            style={[styles.paginationNumberBox, isCurrent && styles.paginationNumberBoxActive]}
+                            onPress={() => setFeaturedPage(item)}
+                          >
+                            <Text style={[styles.paginationNumberText, isCurrent && styles.paginationNumberTextActive]}>
+                              {item}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+
+                    <Pressable
+                      style={[styles.paginationArrowButton, featuredPage >= paginatedFeatured.totalPages && styles.paginationArrowButtonDisabled]}
+                      disabled={featuredPage >= paginatedFeatured.totalPages}
+                      accessibilityLabel="Next page"
+                      onPress={() => setFeaturedPage((prev) => Math.min(paginatedFeatured.totalPages, prev + 1))}
+                    >
+                      <Ionicons
+                        name="chevron-forward"
+                        size={16}
+                        color={featuredPage >= paginatedFeatured.totalPages ? "#A8C49A" : "#35485B"}
+                      />
+                    </Pressable>
+                  </View>
+                ) : null}
               </View>
             ) : (
               <View style={styles.emptyCard}>
-                <Text style={styles.emptyTitle}>No books found</Text>
+                <Ionicons name="search-outline" size={28} color={LIBRARY_MATCHA.primaryDark} style={{ marginBottom: 8 }} />
+                <Text style={styles.emptyTitle}>{submittedQuery ? "No matches" : "Shelf is empty"}</Text>
                 <Text style={styles.emptyText}>
                   {activeShelf === "my"
-                    ? "Your shelf will show built-in books and Open Library EPUBs after you save them."
-                    : "Try another title, author, or ISBN. Open Library may not have an online reader for every result."}
+                    ? (submittedQuery
+                        ? `Nothing on your shelf matches “${submittedQuery}”. Clear search or download a free EPUB from Featured.`
+                        : "Your shelf shows built-in books and Open Library EPUBs you save. Grab a free EPUB from Featured to get started.")
+                    : (submittedQuery
+                        ? `No results for “${submittedQuery}”. Try a simpler title, author, or ISBN.`
+                        : "The featured shelf has no books right now. Tap Try Again in a moment, or search by title.")}
                 </Text>
               </View>
             )
           )}
         </View>
       </ScrollView>
+
+      <Modal
+        visible={showShelfFilterModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowShelfFilterModal(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setShowShelfFilterModal(false)}>
+          <Pressable style={styles.filterModalCard} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.filterModalHeader}>
+              <View style={{ flexDirection: "row", alignItems: "center", columnGap: 8 }}>
+                <View style={styles.filterModalIconWrap}>
+                  <Ionicons name="options-outline" size={18} color="#70C943" />
+                </View>
+                <Text style={styles.filterModalTitle}>Filter & Sort Shelf</Text>
+              </View>
+              <Pressable
+                style={styles.filterModalCloseButton}
+                accessibilityLabel="Close filters"
+                onPress={() => setShowShelfFilterModal(false)}
+              >
+                <Ionicons name="close" size={20} color="#5C655B" />
+              </Pressable>
+            </View>
+
+            {/* Source Section */}
+            <View style={styles.filterModalSection}>
+              <Text style={styles.filterModalSectionTitle}>Source</Text>
+              <View style={styles.filterModalOptionsRow}>
+                {(
+                  [
+                    { key: "all", label: "All" },
+                    { key: "builtin", label: "Built-in" },
+                    { key: "downloaded", label: "Downloaded" },
+                  ] as const
+                ).map((opt) => (
+                  <Pressable
+                    key={opt.key}
+                    style={[
+                      styles.filterModalOptionPill,
+                      sourceFilter === opt.key && styles.filterModalOptionPillActive,
+                    ]}
+                    onPress={() => setSourceFilter(opt.key)}
+                  >
+                    <Text
+                      style={[
+                        styles.filterModalOptionText,
+                        sourceFilter === opt.key && styles.filterModalOptionTextActive,
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            {/* Sort Section */}
+            <View style={styles.filterModalSection}>
+              <Text style={styles.filterModalSectionTitle}>Sort By</Text>
+              <View style={styles.filterModalOptionsRow}>
+                {(
+                  [
+                    { key: "recent", label: "Recent", icon: "time-outline" as const },
+                    { key: "title", label: "Title", icon: "text-outline" as const },
+                    { key: "author", label: "Author", icon: "person-outline" as const },
+                  ] as const
+                ).map((opt) => (
+                  <Pressable
+                    key={opt.key}
+                    style={[
+                      styles.filterModalOptionPill,
+                      sortBy === opt.key && styles.filterModalOptionPillActive,
+                    ]}
+                    onPress={() => setSortBy(opt.key)}
+                  >
+                    <Ionicons
+                      name={opt.icon}
+                      size={14}
+                      color={sortBy === opt.key ? "#FFFFFF" : "#5C655B"}
+                      style={{ marginRight: 4 }}
+                    />
+                    <Text
+                      style={[
+                        styles.filterModalOptionText,
+                        sortBy === opt.key && styles.filterModalOptionTextActive,
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.filterModalActions}>
+              <Pressable
+                style={styles.filterModalResetButton}
+                onPress={() => {
+                  setSourceFilter("all");
+                  setSortBy("recent");
+                }}
+              >
+                <Text style={styles.filterModalResetText}>Reset</Text>
+              </Pressable>
+              <Pressable
+                style={styles.filterModalDoneButton}
+                onPress={() => setShowShelfFilterModal(false)}
+              >
+                <Text style={styles.filterModalDoneText}>Done</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal visible={Boolean(selectedBook)} animationType="slide" onRequestClose={handleCloseBook}>
         <SafeAreaView style={styles.readerScreen}>
@@ -1163,7 +1503,7 @@ export default function LibraryScreen() {
           <View style={styles.readerFrame}>
             <View style={[styles.readerTopBar, compact && styles.readerTopBarCompact, narrow && styles.readerTopBarStacked]}>
               <Pressable style={styles.readerTopButton} accessibilityLabel="Close reader" onPress={handleCloseBook}>
-                <Ionicons name="chevron-back" size={22} color="#534D43" />
+                <Ionicons name="chevron-back" size={22} color="#35485B" />
               </Pressable>
 
               <View style={[styles.readerTopTextWrap, compact && styles.readerTopTextWrapCompact]}>
@@ -1216,9 +1556,9 @@ export default function LibraryScreen() {
                         cx={READING_REWARD_RING_SIZE / 2}
                         cy={READING_REWARD_RING_SIZE / 2}
                         r={READING_REWARD_RING_RADIUS}
-                        stroke="rgba(222, 205, 183, 0.86)"
+                        stroke="rgba(197, 232, 176, 0.7)"
                         strokeWidth={READING_REWARD_RING_STROKE}
-                        fill="rgba(255, 253, 248, 0.94)"
+                        fill="rgba(247, 250, 246, 0.92)"
                       />
                       <Circle
                         cx={READING_REWARD_RING_SIZE / 2}
@@ -1259,7 +1599,7 @@ export default function LibraryScreen() {
                       <Ionicons
                         name={star <= selectedBookRating ? "star" : "star-outline"}
                         size={20}
-                        color={star <= selectedBookRating ? "#D7A52F" : "#A79D8B"}
+                        color={star <= selectedBookRating ? "#D7A52F" : "#6F845C"}
                       />
                     </Pressable>
                   ))}
@@ -1274,7 +1614,7 @@ export default function LibraryScreen() {
                 disabled={!canGoPreviousPage || isReaderLoading}
                 onPress={() => handleReaderPageChange(readerPageIndex - 1)}
               >
-                <Ionicons name="arrow-back" size={16} color={canGoPreviousPage && !isReaderLoading ? "#524B42" : "#B1A796"} />
+                <Ionicons name="arrow-back" size={16} color={canGoPreviousPage && !isReaderLoading ? "#35485B" : "#A8C49A"} />
                 <Text style={[styles.readerNavButtonText, (!canGoPreviousPage || isReaderLoading) && styles.readerNavButtonTextDisabled]}>Previous</Text>
               </Pressable>
 
@@ -1402,17 +1742,17 @@ export default function LibraryScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F7F1E8" },
+    backgroundColor: "#F7FAF6" },
   topBar: {
     height: 52,
     borderBottomWidth: 1,
-    borderBottomColor: "#E7DDD0",
-    backgroundColor: "#FFFDF8",
+    borderBottomColor: "#D5E8CB",
+    backgroundColor: "#FFFFFF",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 4,
-    shadowColor: "#8C8272",
+    shadowColor: "#6F845C",
     shadowOpacity: 0.08,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 1 },
@@ -1446,9 +1786,9 @@ const styles = StyleSheet.create({
   heroCard: {
     width: "100%",
     borderRadius: 30,
-    backgroundColor: "#EFE2CB",
+    backgroundColor: "#E8F6DF",
     borderWidth: 1,
-    borderColor: "#E2D1B7",
+    borderColor: "#D5E8CB",
     paddingHorizontal: 18,
     paddingTop: 18,
     paddingBottom: 18,
@@ -1505,18 +1845,18 @@ const styles = StyleSheet.create({
   heroBookSpineOne: {
     left: 8,
     height: 66,
-    backgroundColor: "#D8B07C" },
+    backgroundColor: LIBRARY_MATCHA.primary },
   heroBookSpineTwo: {
     left: 30,
     height: 56,
-    backgroundColor: "#9EBE95" },
+    backgroundColor: LIBRARY_MATCHA.surfaceMint },
   heroBookSpineThree: {
     left: 52,
     height: 46,
-    backgroundColor: "#D9A6A0" },
+    backgroundColor: LIBRARY_MATCHA.surfaceTint },
   heroBadge: {
     alignSelf: "flex-start",
-    color: "#6F624F",
+    color: "#5C8A4A",
     fontSize: 11,
     lineHeight: 14,
     fontFamily: "Outfit-Bold",
@@ -1535,7 +1875,7 @@ const styles = StyleSheet.create({
     lineHeight: 30,
     maxWidth: "100%" },
   heroBody: {
-    color: "#665F54",
+    color: "#5C655B",
     fontSize: 14,
     lineHeight: 20,
     maxWidth: 286 },
@@ -1553,9 +1893,9 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 92,
     borderRadius: 18,
-    backgroundColor: "rgba(255,249,242,0.76)",
+    backgroundColor: "rgba(255,255,255,0.78)",
     borderWidth: 1,
-    borderColor: "rgba(228, 214, 195, 0.88)",
+    borderColor: "rgba(213, 232, 203, 0.9)",
     paddingHorizontal: 10,
     paddingVertical: 10 },
   heroStatPillCompact: {
@@ -1567,20 +1907,20 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit-Bold",
     marginBottom: 2 },
   heroStatLabel: {
-    color: "#776D61",
+    color: "#5C655B",
     fontSize: 11,
     lineHeight: 14 },
   introCard: {
     width: "100%",
     borderRadius: 24,
-    backgroundColor: "#FFFDF8",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#E7DDD0",
+    borderColor: "#D5E8CB",
     paddingHorizontal: 15,
     paddingTop: 14,
     paddingBottom: 14,
     marginBottom: 14,
-    shadowColor: "#8A7E6F",
+    shadowColor: "#6F845C",
     shadowOpacity: 0.06,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
@@ -1590,7 +1930,7 @@ const styles = StyleSheet.create({
     paddingTop: 13,
     paddingBottom: 13 },
   introEyebrow: {
-    color: "#7D715F",
+    color: "#5C8A4A",
     fontSize: 11,
     lineHeight: 14,
     fontFamily: "Outfit-Bold",
@@ -1604,16 +1944,16 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit-Bold",
     marginBottom: 6 },
   introBody: {
-    color: "#6A645A",
+    color: "#5C655B",
     fontSize: 13,
     lineHeight: 19 },
   shelfTabs: {
     width: "100%",
     minHeight: 52,
     borderRadius: 18,
-    backgroundColor: "#F3EFE8",
+    backgroundColor: "#E8F6DF",
     borderWidth: 1,
-    borderColor: "#E4DBCF",
+    borderColor: "#D5E8CB",
     flexDirection: "row",
     alignItems: "center",
     padding: 5,
@@ -1626,10 +1966,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 8 },
   shelfTabButtonActive: {
-    backgroundColor: "#FFFDF8",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#E7DDD0",
-    shadowColor: "#8A7E6F",
+    borderColor: "#D5E8CB",
+    shadowColor: "#6F845C",
     shadowOpacity: 0.08,
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
@@ -1646,9 +1986,9 @@ const styles = StyleSheet.create({
   searchCard: {
     width: "100%",
     borderRadius: 22,
-    backgroundColor: "#FFFDF8",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#E7DDD0",
+    borderColor: "#D5E8CB",
     padding: 10,
     marginBottom: 12,
     flexDirection: "row",
@@ -1662,9 +2002,9 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 44,
     borderRadius: 16,
-    backgroundColor: "#F7F2E8",
+    backgroundColor: "#F7FAF6",
     borderWidth: 1,
-    borderColor: "#E9DED0",
+    borderColor: "#D5E8CB",
     flexDirection: "row",
     alignItems: "center",
     columnGap: 8,
@@ -1673,7 +2013,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     minWidth: 0,
-    color: "#4B453C",
+    color: "#35485B",
     fontSize: 14,
     lineHeight: 19,
     paddingVertical: 8 },
@@ -1706,6 +2046,152 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4 },
   libraryActionMessageError: {
     color: "#9B4B3D" },
+  filterIconButton: {
+    width: 44,
+    minHeight: 44,
+    borderRadius: 16,
+    backgroundColor: "#F7FAF6",
+    borderWidth: 1,
+    borderColor: "#D5E8CB",
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+  },
+  filterIconButtonActive: {
+    backgroundColor: "#70C943",
+    borderColor: "#70C943",
+  },
+  filterActiveDot: {
+    position: "absolute",
+    top: 7,
+    right: 7,
+    width: 7,
+    height: 7,
+    borderRadius: 999,
+    backgroundColor: "#E8F6DF",
+    borderWidth: 1,
+    borderColor: "#70C943",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(12, 35, 65, 0.4)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  filterModalCard: {
+    width: "100%",
+    maxWidth: 340,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "#D5E8CB",
+    padding: 20,
+    shadowColor: "#6F845C",
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
+  },
+  filterModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
+  },
+  filterModalIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: "#E8F6DF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterModalTitle: {
+    color: "#35485B",
+    fontSize: 17,
+    lineHeight: 22,
+    fontFamily: "Outfit-Bold",
+  },
+  filterModalCloseButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F7FAF6",
+  },
+  filterModalSection: {
+    marginBottom: 16,
+  },
+  filterModalSectionTitle: {
+    color: "#5C655B",
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: "Outfit-Bold",
+    marginBottom: 8,
+  },
+  filterModalOptionsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  filterModalOptionPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 13,
+    paddingVertical: 8,
+    borderRadius: 14,
+    backgroundColor: "#F7FAF6",
+    borderWidth: 1,
+    borderColor: "#D5E8CB",
+  },
+  filterModalOptionPillActive: {
+    backgroundColor: "#70C943",
+    borderColor: "#70C943",
+  },
+  filterModalOptionText: {
+    color: "#5C655B",
+    fontSize: 13,
+    lineHeight: 17,
+    fontFamily: "Outfit-SemiBold",
+  },
+  filterModalOptionTextActive: {
+    color: "#FFFFFF",
+    fontFamily: "Outfit-Bold",
+  },
+  filterModalActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 6,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: "#F0F5ED",
+  },
+  filterModalResetButton: {
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+  },
+  filterModalResetText: {
+    color: "#7E8B7B",
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: "Outfit-SemiBold",
+  },
+  filterModalDoneButton: {
+    backgroundColor: "#70C943",
+    paddingVertical: 9,
+    paddingHorizontal: 22,
+    borderRadius: 14,
+  },
+  filterModalDoneText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: "Outfit-Bold",
+  },
   sectionHeader: {
     width: "100%",
     marginBottom: 10,
@@ -1717,33 +2203,102 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit-Bold",
     marginBottom: 2 },
   sectionSubTitle: {
-    color: "#726A5E",
+    color: "#5C655B",
     fontSize: 13,
     lineHeight: 18 },
   bookList: {
     width: "100%",
     rowGap: 12 },
+  paginationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 8,
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: "#F7FAF6",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#D5E8CB",
+  },
+  paginationArrowButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#D5E8CB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  paginationArrowButtonDisabled: {
+    backgroundColor: "transparent",
+    borderColor: "transparent",
+  },
+  paginationNumbersRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 6,
+  },
+  paginationNumberBox: {
+    minWidth: 32,
+    height: 32,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#D5E8CB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  paginationNumberBoxActive: {
+    backgroundColor: "#70C943",
+    borderColor: "#70C943",
+  },
+  paginationNumberText: {
+    color: "#35485B",
+    fontSize: 13,
+    lineHeight: 17,
+    fontFamily: "Outfit-Bold",
+  },
+  paginationNumberTextActive: {
+    color: "#FFFFFF",
+  },
+  paginationDotsWrap: {
+    width: 20,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  paginationDotsText: {
+    color: "#7E8B7B",
+    fontSize: 13,
+    lineHeight: 16,
+    fontFamily: "Outfit-Bold",
+    letterSpacing: 1,
+  },
   loadingCard: {
     width: "100%",
     borderRadius: 20,
-    backgroundColor: "#FFFDF8",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#E7DDD0",
+    borderColor: "#D5E8CB",
     paddingHorizontal: 18,
     paddingVertical: 24,
     alignItems: "center",
     rowGap: 10 },
   loadingText: {
-    color: "#6A645A",
+    color: "#5C655B",
     fontSize: 13,
     lineHeight: 18,
     fontFamily: "Outfit-SemiBold" },
   emptyCard: {
     width: "100%",
     borderRadius: 20,
-    backgroundColor: "#FFFDF8",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#E7DDD0",
+    borderColor: "#D5E8CB",
     paddingHorizontal: 18,
     paddingVertical: 22,
     alignItems: "center" },
@@ -1755,7 +2310,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     textAlign: "center" },
   emptyText: {
-    color: "#665F54",
+    color: "#5C655B",
     fontSize: 13,
     lineHeight: 19,
     textAlign: "center" },
@@ -1775,14 +2330,14 @@ const styles = StyleSheet.create({
   bookCard: {
     width: "100%",
     borderRadius: 24,
-    backgroundColor: "#FFFDF8",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#E7DDD0",
+    borderColor: "#D5E8CB",
     paddingHorizontal: 14,
     paddingTop: 14,
     paddingBottom: 14,
     overflow: "hidden",
-    shadowColor: "#8A7E6F",
+    shadowColor: "#6F845C",
     shadowOpacity: 0.06,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
@@ -1791,14 +2346,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 13,
     paddingBottom: 13 },
-  bookSpine: {
-    position: "absolute",
-    top: 14,
-    bottom: 14,
-    left: 0,
-    width: 10,
-    borderTopRightRadius: 8,
-    borderBottomRightRadius: 8 },
   bookCardTopRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1806,29 +2353,19 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     columnGap: 8,
     rowGap: 6,
-    marginBottom: 12,
-    marginLeft: 4 },
+    marginBottom: 12 },
   bookTag: {
     borderRadius: 999,
-    backgroundColor: "#F7F2E8",
+    backgroundColor: "#F7FAF6",
     borderWidth: 1,
-    borderColor: "#E9DED0",
+    borderColor: "#D5E8CB",
     paddingHorizontal: 10,
     paddingVertical: 6 },
   bookTagText: {
-    color: "#746B5E",
-    fontSize: 11,
-    lineHeight: 14,
-    fontFamily: "Outfit-Bold" },
-  bookStatusText: {
     color: "#5C655B",
     fontSize: 11,
     lineHeight: 14,
     fontFamily: "Outfit-Bold" },
-  bookStatusTextDone: {
-    color: "#5C8A4A" },
-  bookStatusTextLocked: {
-    color: "#9A6B42" },
   bookCardBody: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -1853,6 +2390,24 @@ const styles = StyleSheet.create({
   bookCoverImage: {
     width: 64,
     height: 82 },
+  bookCoverPlaceholder: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4 },
+  bookCoverInitial: {
+    color: LIBRARY_MATCHA.text,
+    fontSize: 26,
+    lineHeight: 32,
+    fontFamily: "Outfit-Bold",
+    marginBottom: 2 },
+  bookCoverPlaceholderLabel: {
+    color: LIBRARY_MATCHA.textMuted,
+    fontSize: 10,
+    lineHeight: 12,
+    fontFamily: "Outfit-SemiBold",
+    textAlign: "center" },
   bookInfoWrap: {
     flex: 1,
     minWidth: 0,
@@ -1893,16 +2448,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     columnGap: 5,
     borderRadius: 999,
-    backgroundColor: "#F7F2E8",
+    backgroundColor: "#F7FAF6",
     borderWidth: 1,
-    borderColor: "#E9DED0",
+    borderColor: "#D5E8CB",
     paddingHorizontal: 9,
     paddingVertical: 6 },
   bookMetaText: {
-    color: "#6D675A",
+    color: "#5C655B",
     fontSize: 11,
     lineHeight: 14,
     fontFamily: "Outfit-SemiBold" },
+  bookAccessHelper: {
+    color: LIBRARY_MATCHA.textSoft,
+    fontSize: 11,
+    lineHeight: 15,
+    fontFamily: "Outfit-Regular",
+    marginTop: 8 },
   bookActionRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1970,6 +2531,23 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 13,
     lineHeight: 18,
+    fontFamily: "Outfit-Bold" },
+  bookDisabledCta: {
+    minHeight: 38,
+    borderRadius: 999,
+    backgroundColor: "#EBF3E8",
+    borderWidth: 1,
+    borderColor: "#D5E8CB",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 6,
+    paddingHorizontal: 13,
+    opacity: 0.85 },
+  bookDisabledCtaText: {
+    color: LIBRARY_MATCHA.textSoft,
+    fontSize: 12,
+    lineHeight: 16,
     fontFamily: "Outfit-Bold" },
   readerScreen: {
     flex: 1,
@@ -2112,7 +2690,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     rowGap: 10 },
   readerLoadingText: {
-    color: "#6A645A",
+    color: "#5C655B",
     fontSize: 13,
     lineHeight: 18,
     fontFamily: "Outfit-Bold" },
@@ -2160,12 +2738,13 @@ const styles = StyleSheet.create({
     marginTop: 8 },
   readerRewardBubble: {
     position: "absolute",
-    right: 12,
-    bottom: 12,
+    right: 8,
+    bottom: 8,
     width: READING_REWARD_RING_SIZE,
-    height: READING_REWARD_RING_SIZE + 20,
+    height: READING_REWARD_RING_SIZE + 14,
     alignItems: "center",
-    justifyContent: "flex-start" },
+    justifyContent: "flex-start",
+    opacity: 0.82 },
   readerRewardRing: {
     position: "absolute",
     left: 0,
@@ -2175,7 +2754,7 @@ const styles = StyleSheet.create({
     height: 42,
     borderRadius: 999,
     marginTop: 11,
-    backgroundColor: "#FFFDF8",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: "#E6D8BE",
     alignItems: "center",
@@ -2242,7 +2821,7 @@ const styles = StyleSheet.create({
     columnGap: 6,
     paddingHorizontal: 12 },
   openReaderText: {
-    color: "#524B42",
+    color: "#35485B",
     fontSize: 12,
     lineHeight: 16,
     fontFamily: "Outfit-Bold" },
@@ -2277,12 +2856,12 @@ const styles = StyleSheet.create({
   readerNavButtonDisabled: {
     backgroundColor: "rgba(247, 239, 227, 0.6)" },
   readerNavButtonText: {
-    color: "#524B42",
+    color: "#35485B",
     fontSize: 14,
     lineHeight: 18,
     fontFamily: "Outfit-Bold" },
   readerNavButtonTextDisabled: {
-    color: "#B1A796" },
+    color: "#A8C49A" },
   readerPrimaryButton: {
     flex: 1,
     minHeight: 46,
@@ -2310,9 +2889,9 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 342,
     borderRadius: 26,
-    backgroundColor: "#FFFDF8",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#E7DDD0",
+    borderColor: "#D5E8CB",
     paddingHorizontal: 20,
     paddingTop: 22,
     paddingBottom: 18,
@@ -2339,7 +2918,7 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30 },
   confirmModalTitle: {
-    color: "#33485B",
+    color: LIBRARY_MATCHA.text,
     fontSize: 22,
     lineHeight: 28,
     fontFamily: "Outfit-Bold",
@@ -2359,7 +2938,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 44,
     borderRadius: 999,
-    backgroundColor: "#F7F2E8",
+    backgroundColor: "#F7FAF6",
     borderWidth: 1,
     borderColor: "#E6D9C8",
     alignItems: "center",
@@ -2397,9 +2976,9 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 340,
     borderRadius: 28,
-    backgroundColor: "#FFFDF8",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#E7DDD0",
+    borderColor: "#D5E8CB",
     paddingHorizontal: 22,
     paddingTop: 24,
     paddingBottom: 20,
@@ -2443,7 +3022,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     marginBottom: 5 },
   rewardModalTitle: {
-    color: "#33485B",
+    color: LIBRARY_MATCHA.text,
     fontSize: 28,
     lineHeight: 34,
     fontFamily: "Outfit-Bold",

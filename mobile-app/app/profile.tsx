@@ -72,7 +72,12 @@ export default function ProfileScreen() {
   const { clearPreferences } = useAppPreferences();
   const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [showProfilePictureOptions, setShowProfilePictureOptions] = useState(false);
+  const [showFrameModal, setShowFrameModal] = useState(false);
+  const [tempFrameId, setTempFrameId] = useState<string | null>(null);
+  const [showFrameConfirmModal, setShowFrameConfirmModal] = useState(false);
+  const [showRemovePhotoConfirmModal, setShowRemovePhotoConfirmModal] = useState(false);
   const [profilePictureUrl, setProfilePictureUrl] = useState(user?.profilePictureUrl || "");
+  const [program, setProgram] = useState("");
   const [isUploadingProfilePicture, setIsUploadingProfilePicture] = useState(false);
   const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null);
   const [hasBottleAchievement, setHasBottleAchievement] = useState(false);
@@ -93,9 +98,28 @@ export default function ProfileScreen() {
     });
   }, [user?.studentNumber]);
 
-  const selectProfileFrame = (frameId: string | null) => {
-    setSelectedFrameId(frameId);
-    if (user?.studentNumber) void AsyncStorage.setItem(`${PROFILE_FRAME_KEY}:${user.studentNumber}`, frameId ?? "");
+  const openFramePicker = () => {
+    setShowProfilePictureOptions(false);
+    setTempFrameId(selectedFrameId);
+    setShowFrameModal(true);
+  };
+
+  const handleApplyFramePress = () => {
+    if (tempFrameId === selectedFrameId) {
+      setShowFrameModal(false);
+      return;
+    }
+    setShowFrameConfirmModal(true);
+  };
+
+  const handleConfirmSaveFrame = () => {
+    setSelectedFrameId(tempFrameId);
+    if (user?.studentNumber) {
+      void AsyncStorage.setItem(`${PROFILE_FRAME_KEY}:${user.studentNumber}`, tempFrameId ?? "");
+    }
+    setShowFrameConfirmModal(false);
+    setShowFrameModal(false);
+    showAppAlert("Profile Frame Saved", "Your profile frame has been updated successfully.");
   };
 
   useEffect(() => {
@@ -106,6 +130,7 @@ export default function ProfileScreen() {
       if (!mounted || !result.ok || !result.profile) return;
       const nextProfilePictureUrl = result.profile.profilePictureUrl || "";
       setProfilePictureUrl(nextProfilePictureUrl);
+      setProgram(String(result.profile.program || "").trim());
       if (nextProfilePictureUrl !== (user.profilePictureUrl || "")) {
         setUser({ ...user, profilePictureUrl: nextProfilePictureUrl });
       }
@@ -303,7 +328,7 @@ export default function ProfileScreen() {
                 imageUrl={profilePictureUrl}
                 frameSource={selectedFrame}
                 size={120}
-                style={styles.avatarCircle}
+                style={selectedFrame ? undefined : styles.avatarCircle}
               />
               {isUploadingProfilePicture ? (
                 <View style={styles.avatarLoadingOverlay}>
@@ -320,7 +345,7 @@ export default function ProfileScreen() {
               </Pressable>
             </View>
             <Text style={styles.name}>{user?.fullName || "User"}</Text>
-            <Text style={styles.email}>{user?.email || "Your Bawat Tala space is ready."}</Text>
+            <Text style={styles.email}>{program || "Student"}</Text>
             <View style={styles.identityRow}>
               <View style={styles.identityChip}>
                 <Ionicons name="card-outline" size={14} color="#5E7D58" />
@@ -330,31 +355,39 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        <View style={styles.customizationCard}>
-          <Text style={styles.groupTitle}>Profile Customization</Text>
-          <Text style={styles.customizationSubtitle}>Choose a frame for your profile photo.</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.frameRow}>
-            <Pressable style={[styles.frameOption, !selectedFrameId && styles.frameOptionSelected]} onPress={() => selectProfileFrame(null)}><View style={styles.framePreview}><Ionicons name="ban-outline" size={23} color="#71808B" /></View><Text style={styles.frameLabel}>None</Text></Pressable>
-            {PROFILE_FRAMES.map((frame) => <Pressable key={frame.id} style={[styles.frameOption, selectedFrameId === frame.id && styles.frameOptionSelected]} onPress={() => selectProfileFrame(frame.id)}><StudentProfileAvatar imageUrl={profilePictureUrl} frameSource={frame.source} size={58} /><Text style={styles.frameLabel}>{frame.label}</Text></Pressable>)}
-          </ScrollView>
+
+
+        <View style={styles.cardsRow}>
+          {/* Left Column: Schedule */}
+          <Pressable style={styles.gridCardSchedule} onPress={() => void handleRowPress("schedule")}>
+            <View style={styles.gridCardTopRow}>
+              <View style={styles.gridScheduleIconWrap}>
+                <Ionicons name="calendar-clear-outline" size={20} color="#5A8A36" />
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#7E8490" />
+            </View>
+            <Text style={styles.gridCardTitle}>My Schedule</Text>
+            <Text style={styles.gridCardSubtitle} numberOfLines={2}>Consultations & booked dates</Text>
+          </Pressable>
+
+          {/* Right Column: Achievements */}
+          <Pressable style={styles.gridCardAchievement} onPress={() => router.push("/achievements" as never)}>
+            <View style={styles.gridCardTopRow}>
+              <View style={styles.gridAchievementImageWrap}>
+                <Image
+                  source={BOTTLE_ACHIEVEMENT_IMAGE}
+                  style={[styles.achievementImage, !hasBottleAchievement && styles.achievementImageLocked]}
+                  resizeMode="cover"
+                />
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#8D7743" />
+            </View>
+            <Text style={styles.gridAchievementEyebrow} numberOfLines={1}>
+              {hasBottleAchievement ? "Unlocked" : "Achievement"}
+            </Text>
+            <Text style={styles.gridCardTitle} numberOfLines={1}>A Bottle for Tomorrow</Text>
+          </Pressable>
         </View>
-
-        <Pressable style={styles.achievementCard} onPress={() => router.push("/achievements" as never)}>
-          <View style={styles.achievementImageWrap}><Image source={BOTTLE_ACHIEVEMENT_IMAGE} style={[styles.achievementImage, !hasBottleAchievement && styles.achievementImageLocked]} resizeMode="cover" /></View>
-          <View style={styles.achievementCopy}><Text style={styles.achievementEyebrow}>{hasBottleAchievement ? "Achievement unlocked" : "Achievement"}</Text><Text style={styles.achievementTitle}>A Bottle for Tomorrow</Text><Text style={styles.achievementDesc}>Write your first future bottle note.</Text></View>
-          <View style={styles.achievementAction}><Text style={styles.achievementActionText}>View</Text><Ionicons name="chevron-forward" size={16} color="#8D7743" /></View>
-        </Pressable>
-
-        <Pressable style={styles.scheduleShortcut} onPress={() => void handleRowPress("schedule")}>
-          <View style={styles.scheduleShortcutIconWrap}>
-            <Ionicons name="calendar-clear-outline" size={20} color="#5A8A36" />
-          </View>
-          <View style={styles.scheduleShortcutContent}>
-            <Text style={styles.scheduleShortcutText}>View My Schedule</Text>
-            <Text style={styles.scheduleShortcutMeta}>See your consultations and upcoming booked dates.</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color="#7E8490" />
-        </Pressable>
 
         <View style={styles.groupCard}>
           <Text style={styles.groupTitle}>Account Settings</Text>
@@ -450,10 +483,28 @@ export default function ProfileScreen() {
               <Ionicons name="chevron-forward" size={18} color="#87929D" />
             </Pressable>
 
+            <Pressable
+              accessibilityRole="menuitem"
+              onPress={openFramePicker}
+              style={({ pressed }) => [styles.photoOptionButton, pressed && styles.photoOptionButtonPressed]}
+            >
+              <View style={styles.photoOptionIcon}>
+                <Ionicons name="color-palette-outline" size={22} color="#558B3A" />
+              </View>
+              <View style={styles.photoOptionCopy}>
+                <Text style={styles.photoOptionTitle}>Profile Customization</Text>
+                <Text style={styles.photoOptionDescription}>Choose and save a frame for your photo.</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#87929D" />
+            </Pressable>
+
             {profilePictureUrl ? (
               <Pressable
                 accessibilityRole="menuitem"
-                onPress={() => void removeProfilePicture()}
+                onPress={() => {
+                  setShowProfilePictureOptions(false);
+                  setShowRemovePhotoConfirmModal(true);
+                }}
                 style={({ pressed }) => [styles.photoOptionButton, pressed && styles.photoOptionButtonPressed]}
               >
                 <View style={styles.photoOptionIcon}>
@@ -475,6 +526,142 @@ export default function ProfileScreen() {
             </Pressable>
           </Pressable>
         </Pressable>
+      </Modal>
+
+      {/* Profile Frame Picker Modal */}
+      <Modal
+        visible={showFrameModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowFrameModal(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setShowFrameModal(false)}>
+          <Pressable style={styles.frameModalCard} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.frameModalHeader}>
+              <View>
+                <Text style={styles.frameModalTitle}>Profile Customization</Text>
+                <Text style={styles.frameModalSubtitle}>Choose a frame for your profile photo.</Text>
+              </View>
+              <Pressable
+                accessibilityLabel="Close"
+                onPress={() => setShowFrameModal(false)}
+                style={styles.photoOptionsClose}
+              >
+                <Ionicons name="close" size={20} color="#607080" />
+              </Pressable>
+            </View>
+
+            {/* Frame Live Preview */}
+            <View style={styles.frameLivePreviewWrap}>
+              <StudentProfileAvatar
+                imageUrl={profilePictureUrl}
+                frameSource={PROFILE_FRAMES.find((f) => f.id === tempFrameId)?.source ?? null}
+                size={110}
+              />
+              <Text style={styles.frameLivePreviewLabel}>
+                {PROFILE_FRAMES.find((f) => f.id === tempFrameId)?.label ?? "No Frame"}
+              </Text>
+            </View>
+
+            {/* Frame Options */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.frameModalRow}>
+              <Pressable
+                style={[styles.frameModalOption, !tempFrameId && styles.frameModalOptionSelected]}
+                onPress={() => setTempFrameId(null)}
+              >
+                <View style={styles.framePreview}>
+                  <Ionicons name="ban-outline" size={23} color="#71808B" />
+                </View>
+                <Text style={styles.frameLabel}>None</Text>
+              </Pressable>
+              {PROFILE_FRAMES.map((frame) => (
+                <Pressable
+                  key={frame.id}
+                  style={[styles.frameModalOption, tempFrameId === frame.id && styles.frameModalOptionSelected]}
+                  onPress={() => setTempFrameId(frame.id)}
+                >
+                  <StudentProfileAvatar imageUrl={profilePictureUrl} frameSource={frame.source} size={56} />
+                  <Text style={styles.frameLabel}>{frame.label}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+
+            <View style={styles.frameModalActions}>
+              <Pressable style={styles.frameModalCancelButton} onPress={() => setShowFrameModal(false)}>
+                <Text style={styles.frameModalCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable style={styles.frameModalSaveButton} onPress={handleApplyFramePress}>
+                <Text style={styles.frameModalSaveText}>Save Frame</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Frame Save Confirmation Modal */}
+      <Modal
+        visible={showFrameConfirmModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowFrameConfirmModal(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.confirmIconWrap}>
+              <Ionicons name="checkmark-circle-outline" size={32} color="#5A8A36" />
+            </View>
+            <Text style={styles.modalTitle}>Save Profile Frame?</Text>
+            <Text style={styles.modalBody}>
+              {tempFrameId
+                ? `Apply the "${PROFILE_FRAMES.find((f) => f.id === tempFrameId)?.label}" frame to your profile picture?`
+                : "Remove the frame from your profile picture?"}
+            </Text>
+
+            <View style={styles.modalActions}>
+              <Pressable style={styles.modalSecondaryButton} onPress={() => setShowFrameConfirmModal(false)}>
+                <Text style={styles.modalSecondaryText}>Cancel</Text>
+              </Pressable>
+              <Pressable style={styles.modalPrimaryButton} onPress={handleConfirmSaveFrame}>
+                <Text style={styles.modalPrimaryText}>Yes, Save</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Remove Photo Confirmation Modal */}
+      <Modal
+        visible={showRemovePhotoConfirmModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowRemovePhotoConfirmModal(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={[styles.confirmIconWrap, { backgroundColor: "#FDF0F0" }]}>
+              <Ionicons name="trash-outline" size={30} color="#C45C5C" />
+            </View>
+            <Text style={styles.modalTitle}>Remove Profile Photo?</Text>
+            <Text style={styles.modalBody}>
+              Are you sure you want to remove your profile photo and reset back to the default avatar?
+            </Text>
+
+            <View style={styles.modalActions}>
+              <Pressable style={styles.modalSecondaryButton} onPress={() => setShowRemovePhotoConfirmModal(false)}>
+                <Text style={styles.modalSecondaryText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalPrimaryButton, { backgroundColor: "#C45C5C" }]}
+                onPress={() => {
+                  setShowRemovePhotoConfirmModal(false);
+                  void removeProfilePicture();
+                }}
+              >
+                <Text style={styles.modalPrimaryText}>Remove</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
       </Modal>
 
       <Modal
@@ -591,17 +778,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 20 },
   avatarStage: {
-    height: 128,
-    width: 128,
-    marginBottom: 8 },
+    height: 172,
+    width: 172,
+    marginBottom: 8,
+    alignItems: "center",
+    justifyContent: "center" },
   avatarCircle: {
     backgroundColor: "#89E1D4",
     borderWidth: 4,
     borderColor: "#F2FFFA" },
   avatarLoadingOverlay: {
     position: "absolute",
-    left: 0,
-    top: 0,
+    left: "50%",
+    top: "50%",
+    marginLeft: -60,
+    marginTop: -60,
     width: 120,
     height: 120,
     borderRadius: 999,
@@ -610,8 +801,8 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(33, 55, 47, 0.52)" },
   cameraButton: {
     position: "absolute",
-    right: 2,
-    bottom: 2,
+    right: 8,
+    bottom: 8,
     width: 38,
     height: 38,
     borderRadius: 999,
@@ -675,6 +866,83 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
     elevation: 2 },
+  cardsRow: {
+    flexDirection: "row",
+    columnGap: 10,
+    marginBottom: 12,
+  },
+  gridCardSchedule: {
+    flex: 1,
+    minHeight: 112,
+    borderRadius: 20,
+    backgroundColor: "#F5F1FF",
+    borderWidth: 1,
+    borderColor: "#E8E0FF",
+    padding: 13,
+    justifyContent: "space-between",
+    shadowColor: "#777777",
+    shadowOpacity: 0.06,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  gridCardAchievement: {
+    flex: 1,
+    minHeight: 112,
+    borderRadius: 20,
+    backgroundColor: "#FFFDF8",
+    borderWidth: 1,
+    borderColor: "#EEE4CF",
+    padding: 13,
+    justifyContent: "space-between",
+    shadowColor: "#777777",
+    shadowOpacity: 0.06,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  gridCardTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  gridScheduleIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#E0EAD2",
+  },
+  gridAchievementImageWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    overflow: "hidden",
+    backgroundColor: "#ECEBE6",
+  },
+  gridCardTitle: {
+    color: "#33475C",
+    fontSize: 15,
+    lineHeight: 19,
+    fontFamily: "Outfit-Bold",
+    marginBottom: 2,
+  },
+  gridCardSubtitle: {
+    color: "#6B7685",
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  gridAchievementEyebrow: {
+    color: "#9B7E3F",
+    fontSize: 10,
+    fontFamily: "Outfit-Bold",
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+  },
   scheduleShortcut: {
     minHeight: 74,
     borderRadius: 20,
@@ -927,7 +1195,122 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 13,
     fontFamily: "Outfit-Bold" },
-  customizationCard: { marginHorizontal: 16, marginBottom: 12, borderRadius: 22, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E5EAE5", padding: 14 },
+  frameModalCard: {
+    width: "100%",
+    maxWidth: 390,
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+    padding: 20,
+    shadowColor: "#405047",
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
+  },
+  frameModalHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  frameModalTitle: {
+    color: "#304558",
+    fontSize: 19,
+    lineHeight: 25,
+    fontFamily: "Outfit-Bold",
+  },
+  frameModalSubtitle: {
+    color: "#6A7885",
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 2,
+  },
+  frameLivePreviewWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    marginBottom: 12,
+    backgroundColor: "#F8FCF5",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#E3EBE0",
+  },
+  frameLivePreviewLabel: {
+    color: "#465848",
+    fontSize: 13,
+    fontFamily: "Outfit-Bold",
+    marginTop: 8,
+  },
+  frameModalRow: {
+    columnGap: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 2,
+  },
+  frameModalOption: {
+    width: 68,
+    alignItems: "center",
+    borderRadius: 14,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  frameModalOptionSelected: {
+    backgroundColor: "#EDF6E9",
+    borderColor: "#70C943",
+  },
+  frameModalActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    columnGap: 10,
+    marginTop: 16,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: "#EEF3ED",
+  },
+  frameModalCancelButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 14,
+    backgroundColor: "#F3F6F8",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  frameModalCancelText: {
+    color: "#5E6E7D",
+    fontSize: 14,
+    fontFamily: "Outfit-SemiBold",
+  },
+  frameModalSaveButton: {
+    flex: 1.2,
+    minHeight: 44,
+    borderRadius: 14,
+    backgroundColor: "#558B3A",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  frameModalSaveText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontFamily: "Outfit-Bold",
+  },
+  confirmIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "#EDF6E9",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  modalTitle: {
+    color: "#2C3E50",
+    fontSize: 18,
+    fontFamily: "Outfit-Bold",
+    marginBottom: 6,
+    textAlign: "center",
+  },
   customizationSubtitle: { color: "#71808B", fontSize: 13, lineHeight: 18, marginTop: -2, marginBottom: 12 },
   frameRow: { columnGap: 10, paddingRight: 8 },
   frameOption: { width: 70, alignItems: "center", borderRadius: 14, paddingVertical: 5 },

@@ -26,16 +26,18 @@ import {
  fetchSafetyRiskIndicatorHistory,
   updateSafetyRiskIndicator,
 } from "../lib/admin-api";
- import {
-   SAFETY_INDICATOR_CATEGORIES,
-   SAFETY_INDICATOR_CATEGORY_DESCRIPTIONS,
-   SAFETY_INDICATOR_CATEGORY_LABELS,
-   getIndicatorCategoryBadgeClasses,
-   getIndicatorCategoryLabel,
- } from "../lib/risk-labels";
+import {
+  SAFETY_INDICATOR_CATEGORIES,
+  SAFETY_INDICATOR_CATEGORY_DESCRIPTIONS,
+  SAFETY_INDICATOR_CATEGORY_LABELS,
+  SAFETY_INDICATOR_DOMAINS,
+  SAFETY_INDICATOR_DOMAIN_CATEGORY_SET,
+  getIndicatorCategoryBadgeClasses,
+  getIndicatorCategoryLabel,
+} from "../lib/risk-labels";
  
 const DEFAULT_FORM = {
-  category: "SELF_HARM",
+  category: "GROOMING",
   severityTier: "CRITICAL",
   description: "",
   isEnabled: true,
@@ -43,19 +45,7 @@ const DEFAULT_FORM = {
   variantsInput: "",
 };
  
-const CATEGORY_TABS = [
-  { id: "ALL", label: "All Indicators" },
-  { id: "SELF_HARM", label: "Self-Harm / Suicide" },
-  { id: "COERCION_BLACKMAIL", label: "Coercion & Blackmail" },
-  { id: "GROOMING", label: "Grooming & Protection" },
-  { id: "ABUSE", label: "Abuse & Domestic Harm" },
-  { id: "BULLYING_HARASSMENT", label: "Bullying & Harassment" },
-  { id: "THREAT_VIOLENCE", label: "Threats & Violence" },
-  { id: "EMOTIONAL_DISTRESS", label: "Emotional Distress" },
-  { id: "EXPRESSION_HYPERBOLE", label: "Expression & Hyperbole" },
-  { id: "CONFIRMATION_SIGNAL", label: "Confirmation Signals" },
-  { id: "DISABLED", label: "Disabled" },
-];
+
  
  function formatDateTime(value) {
    if (!value) return "Not available";
@@ -89,8 +79,7 @@ const CATEGORY_TABS = [
  export default function SafetyRiskIndicators({ onLogout, session }) {
    const [indicators, setIndicators] = useState([]);
    const [query, setQuery] = useState("");
-   const [activeTab, setActiveTab] = useState("ALL");
-   const [isLoading, setIsLoading] = useState(true);
+   const [activeTab, setActiveTab] = useState("ALL");   const [isLoading, setIsLoading] = useState(true);
    const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -136,25 +125,31 @@ const CATEGORY_TABS = [
   }, [indicators]);
  
    const filteredIndicators = useMemo(() => {
-     const needle = query.trim().toLowerCase();
-     return indicators.filter((item) => {
-       const matchesFilter =
-         activeTab === "ALL" ||
-         (activeTab === "DISABLED" ? !item.isEnabled : item.category === activeTab);
-       const haystack = [item.phrase, item.categoryLabel, item.description]
-         .filter(Boolean)
-         .join(" ")
-         .toLowerCase();
-       return matchesFilter && (needle ? haystack.includes(needle) : true);
-     });
-   }, [activeTab, query, indicators]);
- 
+    const needle = query.trim().toLowerCase();
+    return indicators.filter((item) => {
+      if (activeTab === "DISABLED" && item.isEnabled) return false;
+      if (activeTab === "DISABLED") {
+        // show disabled only; still apply search
+      } else if (activeTab === "LEGACY") {
+        if (SAFETY_INDICATOR_DOMAIN_CATEGORY_SET.has(item.category)) return false;
+      } else if (activeTab !== "ALL") {
+        const domain = SAFETY_INDICATOR_DOMAINS.find((d) => d.id === activeTab);
+        const cats = domain ? domain.subIndicators.map((s) => s.category) : [];
+        if (!cats.includes(item.category)) return false;
+      }
+      const haystack = [item.phrase, item.categoryLabel, item.description, ...(Array.isArray(item.variants) ? item.variants : [])]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return needle ? haystack.includes(needle) : true;
+    });
+  }, [activeTab, query, indicators]); 
   function openCreateModal() {
     setEditingIndicator(null);
     setIsEditingVariants(true);
     setFormState({
       ...DEFAULT_FORM,
-      category: activeTab !== "ALL" && activeTab !== "DISABLED" ? activeTab : "SELF_HARM",
+      category: "GROOMING",
       severityTier: "CRITICAL",
     });
     setIsFormOpen(true);
@@ -352,7 +347,7 @@ const CATEGORY_TABS = [
            })}
          </div>
  
-        {/* Main Table Container */}
+        {/* Domain cards */}
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 bg-slate-50 p-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -375,11 +370,14 @@ const CATEGORY_TABS = [
                     className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/20 shadow-sm cursor-pointer"
                     aria-label="Filter by Clinical Category"
                   >
-                    {CATEGORY_TABS.map((tab) => (
-                      <option key={tab.id} value={tab.id}>
-                        {tab.id === "ALL" ? "Filter: All Indicators" : tab.label}
+                    <option value="ALL">Filter: All Indicators</option>
+                    {SAFETY_INDICATOR_DOMAINS.map((domain) => (
+                      <option key={domain.id} value={domain.id}>
+                        {domain.title}
                       </option>
                     ))}
+                    <option value="LEGACY">Other / Legacy Indicators</option>
+                    <option value="DISABLED">Disabled Indicators</option>
                   </select>
                 </div>
               </div>
@@ -405,54 +403,55 @@ const CATEGORY_TABS = [
                 </button>
               </div>
             </div>
+            
           </div>
- 
-           {isLoading ? (
-             <div className="px-6 py-10 text-sm text-slate-500">Loading safety risk indicators...</div>
-           ) : (
-             <div className="overflow-x-auto">
-               <table className="w-full min-w-[850px] border-collapse text-left">
-                 <thead>
-                   <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-extrabold uppercase tracking-wider text-slate-600">
-                     <th className="px-6 py-3.5 font-semibold">Indicator Phrase</th>
-                     <th className="px-6 py-3.5 font-semibold">Clinical Category</th>
-                     <th className="px-6 py-3.5 font-semibold">Counselor Note / Context</th>
-                     <th className="px-6 py-3.5 font-semibold">Status</th>
-                     <th className="px-6 py-3.5 font-semibold">Updated</th>
-                     <th className="px-6 py-3.5 text-right font-semibold">Actions</th>
-                   </tr>
-                 </thead>
-                 <tbody className="divide-y divide-slate-100 text-sm">
+
+          {isLoading ? (
+            <div className="px-6 py-10 text-sm text-slate-500">Loading safety risk indicators...</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[850px] border-collapse text-left">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-extrabold uppercase tracking-wider text-slate-600">
+                    <th className="px-6 py-3.5 font-semibold">Indicator Phrase</th>
+                    <th className="px-6 py-3.5 font-semibold">Clinical Category</th>
+                    <th className="px-6 py-3.5 font-semibold">Counselor Note / Context</th>
+                    <th className="px-6 py-3.5 font-semibold">Status</th>
+                    <th className="px-6 py-3.5 font-semibold">Updated</th>
+                    <th className="px-6 py-3.5 text-right font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-sm">
                   {filteredIndicators.length ? (
                     filteredIndicators.map((item) => (
-                     <tr key={item.id} className="hover:bg-slate-50/80 transition">
+                      <tr key={item.id} className="hover:bg-slate-50/80 transition">
                         <td className="px-6 py-4 font-semibold text-slate-900">
                           &quot;{item.phrase}&quot;
                         </td>
                         <td className="px-6 py-4">
-                           <span className={"inline-flex rounded-full border px-3 py-0.5 text-xs font-semibold " + getIndicatorCategoryBadgeClasses(item.category)}>
-                             {item.categoryLabel || getIndicatorCategoryLabel(item.category)}
-                           </span>
-                         </td>
-                         <td className="px-6 py-4 text-xs text-slate-500 max-w-xs truncate">
-                           {item.description || "—"}
-                         </td>
-                         <td className="px-6 py-4">
-                           <button
-                             type="button"
-                             onClick={() => void handleToggle(item)}
-                             className={"rounded-full border px-3 py-0.5 text-xs font-semibold transition " + (
-                               item.isEnabled
-                                 ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                 : "border-slate-200 bg-slate-100 text-slate-500"
-                             )}
-                           >
-                             {item.isEnabled ? "Enabled" : "Disabled"}
-                           </button>
-                         </td>
-                         <td className="px-6 py-4 text-xs text-slate-500">
-                           {formatDateTime(item.updatedAt || item.createdAt)}
-                         </td>
+                          <span className={"inline-flex rounded-full border px-3 py-0.5 text-xs font-semibold " + getIndicatorCategoryBadgeClasses(item.category)}>
+                            {item.categoryLabel || getIndicatorCategoryLabel(item.category)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-xs text-slate-500 max-w-xs truncate">
+                          {item.description || "—"}
+                        </td>
+                        <td className="px-6 py-4">
+                          <button
+                            type="button"
+                            onClick={() => void handleToggle(item)}
+                            className={"rounded-full border px-3 py-0.5 text-xs font-semibold transition " + (
+                              item.isEnabled
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                : "border-slate-200 bg-slate-100 text-slate-500"
+                            )}
+                          >
+                            {item.isEnabled ? "Enabled" : "Disabled"}
+                          </button>
+                        </td>
+                        <td className="px-6 py-4 text-xs text-slate-500">
+                          {formatDateTime(item.updatedAt || item.createdAt)}
+                        </td>
                         <td className="px-6 py-4">
                           <div className="flex justify-end gap-1.5">
                             <button
@@ -467,37 +466,37 @@ const CATEGORY_TABS = [
                             <button
                               type="button"
                               onClick={() => openEditModal(item)}
-                               className="rounded-lg p-1.5 text-slate-400 hover:bg-emerald-50 hover:text-emerald-700 transition"
-                               aria-label={"Edit " + item.phrase}
-                             >
-                               <Edit2 className="h-4 w-4" />
-                             </button>
-                             <button
-                               type="button"
-                               onClick={() => setDeleteTarget(item)}
-                               className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition"
-                               aria-label={"Delete " + item.phrase}
-                             >
-                               <Trash2 className="h-4 w-4" />
-                             </button>
-                           </div>
-                         </td>
-                       </tr>
-                     ))
-                   ) : (
-                     <tr>
-                       <td colSpan={6} className="px-6 py-10 text-center text-sm text-slate-500">
-                         No safety risk indicators matched the current filter.
-                       </td>
-                     </tr>
-                   )}
-                 </tbody>
-               </table>
-             </div>
-           )}
-         </div>
- 
-         {/* Add / Edit Indicator Modal */}
+                              className="rounded-lg p-1.5 text-slate-400 hover:bg-emerald-50 hover:text-emerald-700 transition"
+                              aria-label={"Edit " + item.phrase}
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDeleteTarget(item)}
+                              className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition"
+                              aria-label={"Delete " + item.phrase}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-10 text-center text-sm text-slate-500">
+                        No safety risk indicators matched the current filter.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Add / Edit Indicator Modal */}
          <Modal
            isOpen={isFormOpen}
            onClose={() => {
@@ -822,37 +821,57 @@ const CATEGORY_TABS = [
                 <span className="text-[10px] font-medium text-slate-400 capitalize">Incident Categorization</span>
               </div>
               <p className="text-slate-600 text-[11px] leading-relaxed">
-                Counselors can track specific student incident types across these specialized categories:
+                Phrases are organized into 8 domain cards. Domain 1 stays one card with four separate sub-indicator editors (not four top-level cards). Counselors add wording in CMS — nothing is hardcoded in the app.
               </p>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <div className="p-2.5 rounded-lg border border-red-100 bg-red-50/40 space-y-0.5">
-                  <span className="font-bold text-red-800 text-[11px]">Coercion, Blackmail &amp; Extortion</span>
-                  <p className="text-slate-600 text-[10px]">Image-based sexual abuse, media extortion, or demanding money/favors under threat.</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                <div className="p-3 rounded-xl border border-purple-100 bg-purple-50/40 space-y-1 md:col-span-2">
+                  <span className="font-bold text-purple-800 text-[11px]">1. Grooming, Power Imbalance &amp; Boundary Concerns</span>
+                  <p className="text-slate-600 text-[11px] leading-relaxed">
+                    Authority-figure boundary violations, demands for secrecy (&quot;keep our chat secret&quot;), inappropriate gifts or special favors, and private meetup pressure across 4 dedicated sub-indicator lists.
+                  </p>
                 </div>
-                <div className="p-2.5 rounded-lg border border-purple-100 bg-purple-50/40 space-y-0.5">
-                  <span className="font-bold text-purple-800 text-[11px]">Grooming &amp; Child Protection</span>
-                  <p className="text-slate-600 text-[10px]">Suspicious adult-student boundary violations, requests for private meetups, or secrecy demands.</p>
+                <div className="p-3 rounded-xl border border-fuchsia-100 bg-fuchsia-50/40 space-y-1">
+                  <span className="font-bold text-fuchsia-800 text-[11px]">2. AI Attachment &amp; Parasocial</span>
+                  <p className="text-slate-600 text-[11px] leading-relaxed">
+                    Romantic or physical attachment directed toward Muni (e.g. asking to date, be partners, or sleep together), isolating the student from real-world human support.
+                  </p>
                 </div>
-                <div className="p-2.5 rounded-lg border border-orange-100 bg-orange-50/40 space-y-0.5">
-                  <span className="font-bold text-orange-800 text-[11px]">Abuse &amp; Domestic Harm</span>
-                  <p className="text-slate-600 text-[10px]">Physical battery, family hostility, or domestic violence at home.</p>
+                <div className="p-3 rounded-xl border border-red-100 bg-red-50/40 space-y-1">
+                  <span className="font-bold text-red-800 text-[11px]">3. Coercion, Blackmail &amp; Extortion</span>
+                  <p className="text-slate-600 text-[11px] leading-relaxed">
+                    Image-based sexual abuse (threats to leak photos or chats), financial extortion, or demanding favors under duress, fear, or manipulation.
+                  </p>
                 </div>
-                <div className="p-2.5 rounded-lg border border-indigo-100 bg-indigo-50/40 space-y-0.5">
-                  <span className="font-bold text-indigo-800 text-[11px]">Bullying &amp; Harassment</span>
-                  <p className="text-slate-600 text-[10px]">Chronic peer harassment, malicious exclusion, or cyberbullying groups.</p>
+                <div className="p-3 rounded-xl border border-indigo-100 bg-indigo-50/40 space-y-1">
+                  <span className="font-bold text-indigo-800 text-[11px]">4. Bullying &amp; Harassment</span>
+                  <p className="text-slate-600 text-[11px] leading-relaxed">
+                    Chronic peer harassment, malicious social exclusion, targeted cyberbullying, public humiliation, or group intimidation.
+                  </p>
                 </div>
-                <div className="p-2.5 rounded-lg border border-rose-100 bg-rose-50/40 space-y-0.5">
-                  <span className="font-bold text-rose-900 text-[11px]">Threats &amp; Violence</span>
-                  <p className="text-slate-600 text-[10px]">Direct threats of physical violence from or toward another individual.</p>
+                <div className="p-3 rounded-xl border border-orange-100 bg-orange-50/40 space-y-1">
+                  <span className="font-bold text-orange-800 text-[11px]">5. Abuse &amp; Domestic Harm</span>
+                  <p className="text-slate-600 text-[11px] leading-relaxed">
+                    Physical battery, ongoing domestic violence, hostile family environments, or severe emotional/verbal abuse in home or relationship settings.
+                  </p>
                 </div>
-                <div className="p-2.5 rounded-lg border border-amber-100 bg-amber-50/40 space-y-0.5">
-                  <span className="font-bold text-amber-800 text-[11px]">Unsafe Environment &amp; Neglect</span>
-                  <p className="text-slate-600 text-[10px]">Hostile living conditions, homelessness, eviction, or severe domestic neglect.</p>
+                <div className="p-3 rounded-xl border border-rose-100 bg-rose-50/40 space-y-1">
+                  <span className="font-bold text-rose-900 text-[11px]">6. Threats &amp; Violence</span>
+                  <p className="text-slate-600 text-[11px] leading-relaxed">
+                    Direct or credible threats of physical violence, weapons, or bodily harm directed from or toward another individual.
+                  </p>
                 </div>
-                <div className="p-2.5 rounded-lg border border-yellow-100 bg-yellow-50/40 space-y-0.5 col-span-1 md:col-span-2">
-                  <span className="font-bold text-yellow-800 text-[11px]">Substance &amp; Addiction</span>
-                  <p className="text-slate-600 text-[10px]">Forced intoxication, drink spiking, pill overdose, or severe substance misuse.</p>
+                <div className="p-3 rounded-xl border border-amber-100 bg-amber-50/40 space-y-1">
+                  <span className="font-bold text-amber-800 text-[11px]">7. Unsafe Environment &amp; Neglect</span>
+                  <p className="text-slate-600 text-[11px] leading-relaxed">
+                    Hostile living conditions, sudden eviction, homelessness, lack of shelter/safety, or severe physical/care neglect.
+                  </p>
+                </div>
+                <div className="p-3 rounded-xl border border-yellow-100 bg-yellow-50/40 space-y-1">
+                  <span className="font-bold text-yellow-800 text-[11px]">8. Substance &amp; Addiction</span>
+                  <p className="text-slate-600 text-[11px] leading-relaxed">
+                    Forced intoxication, drink spiking, accidental or intentional prescription overdose, and severe substance dependency crises.
+                  </p>
                 </div>
               </div>
             </div>

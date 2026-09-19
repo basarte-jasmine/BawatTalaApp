@@ -20,6 +20,7 @@ import { configureMuniNotificationBehavior } from "../lib/muni-reminders";
 import { OfflineSyncProvider } from "../lib/offline-sync";
 import { AppointmentStatusWatcher } from "../components/appointments/AppointmentStatusWatcher";
 import { installSafeOutfitTypography } from "../lib/typography";
+import { getNavigationAnimationConfig } from "../lib/navigation-config";
 
 const APP_MAX_WIDTH = 412;
 const DESKTOP_FRAME_BREAKPOINT = 768;
@@ -111,9 +112,15 @@ export default function RootLayout() {
               <Stack
                 screenOptions={{
                   headerShown: false,
-                  animation: "fade_from_bottom",
-                  animationDuration: 160 }}
-              />
+                  ...getNavigationAnimationConfig("default"),
+                }}
+              >
+                <Stack.Screen name="home" options={getNavigationAnimationConfig("home")} />
+                <Stack.Screen name="journal" options={getNavigationAnimationConfig("journal")} />
+                <Stack.Screen name="consult" options={getNavigationAnimationConfig("consult")} />
+                <Stack.Screen name="muni-avatar" options={getNavigationAnimationConfig("muni-avatar")} />
+                <Stack.Screen name="muni-voice" options={getNavigationAnimationConfig("muni-voice")} />
+              </Stack>
             </OfflineSyncProvider>
           </AppPreferencesProvider>
         </AuthSessionProvider>
