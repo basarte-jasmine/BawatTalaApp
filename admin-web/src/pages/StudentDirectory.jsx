@@ -268,6 +268,73 @@ function ProfileInfoTile({ label, value, className = "" }) {
     </div>
   );
 }
+
+const EMOTION_CHART_COLORS = {
+  excitement: "#f97316", joy: "#eab308", contentment: "#10b981", relief: "#14b8a6", embarrassment: "#ec4899",
+  guilt: "#8b5cf6", disappointment: "#64748b", sadness: "#3b82f6", anxiety: "#f43f5e", anger: "#dc2626",
+};
+const EMOTION_CHART_LABELS = {
+  excitement: "Excitement", joy: "Joy", contentment: "Contentment", relief: "Relief", embarrassment: "Embarrassment",
+  guilt: "Guilt", disappointment: "Disappointment", sadness: "Sadness", anxiety: "Anxiety", anger: "Anger",
+};
+function getEmotionChartDate(value) {
+  const parsed = new Date(`${String(value || "").slice(0, 10)}T12:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+function EmotionHistoryChart({ moods }) {
+  const [range, setRange] = useState("day");
+  const now = new Date();
+  const rangeConfig = { day: { count: 14, unit: "day", label: "Day" }, week: { count: 12, unit: "week", label: "Week" }, month: { count: 6, unit: "month", label: "Month" } }[range];
+  const points = useMemo(() => {
+    const start = new Date(now);
+    if (rangeConfig.unit === "day") start.setDate(start.getDate() - rangeConfig.count + 1);
+    if (rangeConfig.unit === "week") start.setDate(start.getDate() - (rangeConfig.count * 7) + 1);
+    if (rangeConfig.unit === "month") start.setMonth(start.getMonth() - rangeConfig.count + 1, 1);
+    start.setHours(0, 0, 0, 0);
+    return Array.from({ length: rangeConfig.count }, (_, index) => {
+      const bucketStart = new Date(start);
+      if (rangeConfig.unit === "day") bucketStart.setDate(start.getDate() + index);
+      if (rangeConfig.unit === "week") bucketStart.setDate(start.getDate() + index * 7);
+      if (rangeConfig.unit === "month") bucketStart.setMonth(start.getMonth() + index);
+      const bucketEnd = new Date(bucketStart);
+      if (rangeConfig.unit === "day") bucketEnd.setDate(bucketStart.getDate() + 1);
+      if (rangeConfig.unit === "week") bucketEnd.setDate(bucketStart.getDate() + 7);
+      if (rangeConfig.unit === "month") bucketEnd.setMonth(bucketStart.getMonth() + 1);
+      const counts = {};
+      moods.forEach((mood) => {
+        const date = getEmotionChartDate(mood.moodDate || mood.createdAt);
+        if (date && date >= bucketStart && date < bucketEnd) counts[mood.moodId] = (counts[mood.moodId] || 0) + 1;
+      });
+      return { label: rangeConfig.unit === "month" ? bucketStart.toLocaleDateString("en-US", { month: "short" }) : rangeConfig.unit === "week" ? `W${index + 1}` : bucketStart.toLocaleDateString("en-US", { month: "short", day: "numeric" }), counts };
+    });
+  }, [moods, range, rangeConfig.count, rangeConfig.unit]);
+  const emotionIds = Object.keys(EMOTION_CHART_LABELS).filter((id) => points.some((point) => point.counts[id]));
+  const maxValue = Math.max(1, ...points.map((point) => Object.values(point.counts).reduce((sum, count) => sum + count, 0)));
+  const chartWidth = 720;
+  const chartTop = 18;
+  const chartBottom = 176;
+  const xFor = (index) => (points.length === 1 ? chartWidth / 2 : 24 + (index * (chartWidth - 48)) / (points.length - 1));
+  const yFor = (value) => chartBottom - (value / maxValue) * (chartBottom - chartTop);
+  const paths = emotionIds.map((emotionId) => ({ emotionId, path: points.map((point, index) => `L ${xFor(index)} ${yFor(point.counts[emotionId] || 0)}`).join(" ").replace(/^L/, "M") }));
+  return (
+    <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div><div className="flex items-center gap-2 text-sm font-semibold text-slate-900"><Sparkles className="h-4 w-4 text-emerald-600" />Emotion History</div><p className="mt-1 text-xs text-slate-500">Mood check-ins recorded by the student over time.</p></div>
+        <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1" role="group" aria-label="Emotion history range">
+          {Object.entries({ day: "Day", week: "Week", month: "Month" }).map(([id, label]) => <button key={id} type="button" onClick={() => setRange(id)} className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${range === id ? "bg-white text-emerald-800 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>{label}</button>)}
+        </div>
+      </div>
+      {moods.length === 0 ? <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">No emotion check-ins recorded yet.</div> : <>
+        <div className="mt-5 overflow-x-auto"><svg viewBox="0 0 720 220" className="h-56 min-w-[640px] w-full" role="img" aria-label={`Emotion history by ${rangeConfig.label.toLowerCase()}`}>
+          {[0, 0.5, 1].map((ratio) => <line key={ratio} x1="24" x2="696" y1={yFor(maxValue * ratio)} y2={yFor(maxValue * ratio)} stroke="#e2e8f0" strokeDasharray="4 6" />)}
+          {paths.map(({ emotionId, path }) => <path key={emotionId} d={path} fill="none" stroke={EMOTION_CHART_COLORS[emotionId]} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />)}
+          {points.map((point, index) => <text key={`${point.label}-${index}`} x={xFor(index)} y="204" textAnchor="middle" fontSize="10" fill="#64748b">{point.label}</text>)}
+        </svg></div>
+        {emotionIds.length ? <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">{emotionIds.map((emotionId) => <span key={emotionId} className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: EMOTION_CHART_COLORS[emotionId] }} />{EMOTION_CHART_LABELS[emotionId]}</span>)}</div> : <p className="mt-3 text-sm text-slate-500">No check-ins in this time range.</p>}
+      </>}
+    </div>
+  );
+}
 function DirectoryRow({ student, onMessage, onViewProfile, onDelete, canDelete = false, maskStudentNumbers = false }) {
   const isDeleted = student.status === "Deleted by student" || Boolean(student.deletedAt) || Boolean(student.isScheduledForDeletion);
   const isFlagged = student.status === "Flagged" || student.flaggedEntries > 0;
@@ -1135,6 +1202,7 @@ export default function StudentDirectory({ onLogout, session }) {
                   {[
                     { id: "overview", label: "Overview" },
                     { id: "journals", label: "Journals" },
+                    { id: "flagged", label: "Flagged", count: studentProfile.profile.flaggedEntries },
                   ].map((tab) => (
                     <button
                       key={tab.id}
@@ -1146,7 +1214,7 @@ export default function StudentDirectory({ onLogout, session }) {
                           : "text-slate-500 hover:text-slate-800"
                       }`}
                     >
-                      {tab.label}
+                      {tab.label}{tab.count ? ` (${tab.count})` : ""}
                     </button>
                   ))}
                 </div>
@@ -1176,6 +1244,7 @@ export default function StudentDirectory({ onLogout, session }) {
                         tone="emerald"
                       />
                     </div>
+                    <EmotionHistoryChart moods={Array.isArray(studentProfile.moods) ? studentProfile.moods : []} />
                     <div className="rounded-[24px] border border-slate-200 bg-[linear-gradient(145deg,#fff7fb_0%,#ffffff_40%,#f9fdf9_100%)] p-5 shadow-sm">
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
@@ -1231,7 +1300,7 @@ export default function StudentDirectory({ onLogout, session }) {
                       </div>
                     ) : null}
                   </div>
-                ) : (
+                ) : profileTab === "journals" ? (
                   <div className="space-y-4 px-5 py-5 sm:px-6">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div>
@@ -1407,6 +1476,26 @@ export default function StudentDirectory({ onLogout, session }) {
                         </div>
                       )}
                     </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4 px-5 py-5 sm:px-6">
+                    <div>
+                      <div className="flex items-center gap-2 text-lg font-semibold text-slate-900"><ShieldAlert className="h-5 w-5 text-rose-600" />Flagged Entries</div>
+                      <div className="mt-1 text-sm text-slate-500">Review journal entries that need counselor attention or follow-up.</div>
+                    </div>
+                    {profileEntries.filter(isDirectoryEntryFlagged).length ? profileEntries.filter(isDirectoryEntryFlagged).map((entry) => (
+                      <div key={entry.id} className="rounded-[22px] border border-rose-200 bg-rose-50/50 p-4 shadow-sm">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <div className="text-base font-bold text-slate-900">{entry.title || "Untitled journal entry"}</div>
+                            <div className="mt-1 text-sm text-slate-500">{formatDate(entry.entryDate)}{entry.primaryConcern ? ` · ${entry.primaryConcern}` : ""}</div>
+                          </div>
+                          <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-semibold ${getRiskBadgeClasses(entry.riskLevel)}`}>{getRiskLevelLabel(entry.riskLevel)}</span>
+                        </div>
+                        <p className="mt-3 text-sm leading-6 text-slate-700">{entry.summary || entry.adminFlagReason || "This entry was marked for review."}</p>
+                        {entry.adminFlagReason ? <div className="mt-3 rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs text-rose-700">{entry.adminFlagReason}</div> : null}
+                      </div>
+                    )) : <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">No flagged entries for this student.</div>}
                   </div>
                 )}
               </div>

@@ -5159,6 +5159,27 @@ router.get("/students/:studentNumber", async (req, res) => {
     };
   });
 
+  const moodResult = await query(
+    `
+      select id, mood_id, mood_label, to_char(mood_date, 'YYYY-MM-DD') as mood_date, mood_source, created_at
+      from public.student_moods
+      where student_number = $1
+      order by mood_date asc, created_at asc
+    `,
+    [studentNumber],
+  );
+  const moods = moodResult.rows.map((row) => {
+    const moodId = normalizeEmotionId(row.mood_id);
+    return {
+      id: row.id,
+      moodId,
+      moodLabel: EMOTION_OPTIONS.find((emotion) => emotion.id === moodId)?.label || row.mood_label || moodId,
+      moodDate: row.mood_date,
+      moodSource: row.mood_source || null,
+      createdAt: row.created_at,
+    };
+  });
+
   const profile = profileResult.rows[0];
   const flaggedEntryCount = entries.filter((entry) => {
     const riskLevel = String(entry.riskLevel || "").toUpperCase();
@@ -5193,6 +5214,7 @@ router.get("/students/:studentNumber", async (req, res) => {
       }),
     },
     entries,
+    moods,
   });
 });
 
