@@ -11,6 +11,7 @@ import {
   getNotificationVisual } from "../lib/notification-utils";
 
 const TALA_IMAGE = require("../assets/images/Tala_Star.png");
+const ACHIEVEMENT_BADGE = require("../assets/images/Notification Badge.png");
 
 export default function NotificationViewScreen() {
   const { id, createdAt, kind, message, timeLabel, title } = useLocalSearchParams<{
@@ -20,6 +21,7 @@ export default function NotificationViewScreen() {
     message?: string;
     timeLabel?: string;
     title?: string;
+    metadata?: any;
   }>();
   const { user } = useAuthSession();
   const [loadedItem, setLoadedItem] = useState<{
@@ -28,6 +30,7 @@ export default function NotificationViewScreen() {
     message?: string;
     timeLabel?: string;
     title?: string;
+    metadata?: any;
   } | null>(null);
   const [loading, setLoading] = useState(!message && Boolean(id));
 
@@ -40,14 +43,14 @@ export default function NotificationViewScreen() {
         const res = await fetchStudentNotifications(user?.studentNumber || "");
         if (!isMounted) return;
         if (res.ok && Array.isArray(res.notifications)) {
-          const found = res.notifications.find((n) => n.id === id);
-          if (found) {
+          const found = res.notifications.find((n) => n.id === id);          if (found) {
             setLoadedItem({
               createdAt: found.createdAt,
               kind: found.kind,
               message: found.message,
               timeLabel: found.timeLabel,
               title: found.title,
+              metadata: found.metadata,
             });
           }
         }
@@ -68,6 +71,7 @@ export default function NotificationViewScreen() {
   const detailTitle = getNotificationDetailTitle(activeKind);
   const bodyLabel = detailTitle === "Message" ? "Message body" : "Update details";
   const visual = getNotificationVisual(activeKind || "");
+  const illustration = loadedItem?.metadata?.illustration || loadedItem?.metadata?.imageUrl || loadedItem?.metadata?.image;
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -102,15 +106,20 @@ export default function NotificationViewScreen() {
           <View style={{ paddingVertical: 40, alignItems: "center" }}>
             <ActivityIndicator size="small" color="#229365" />
           </View>
-        ) : (
-        <View style={styles.heroCard}>
-          <View style={[styles.heroIconBubble, { backgroundColor: visual.chip }]}>
-            {visual.usesTalaLogo ? (
-              <Image source={TALA_IMAGE} style={styles.heroTalaIcon} resizeMode="contain" />
-            ) : (
-              <Ionicons name={visual.icon} size={20} color={visual.accent} />
-            )}
-          </View>
+        ) : (        <View style={styles.heroCard}>
+          {illustration ? (
+            <Image source={{ uri: illustration }} style={styles.heroIllustration} resizeMode="contain" />
+          ) : visual.isAchievement ? (
+            <Image source={ACHIEVEMENT_BADGE} style={styles.heroIllustrationBadge} resizeMode="contain" />
+          ) : (
+            <View style={[styles.heroIconBubble, { backgroundColor: visual.chip }]}>
+              {visual.usesTalaLogo ? (
+                <Image source={TALA_IMAGE} style={styles.heroTalaIcon} resizeMode="contain" />
+              ) : (
+                <Ionicons name={visual.icon} size={20} color={visual.accent} />
+              )}
+            </View>
+          )}
 
           <View style={styles.heroTextWrap}>
             <View style={[styles.kindChip, { backgroundColor: visual.chip }]}>
@@ -176,6 +185,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     columnGap: 12 },
+  heroIllustration: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+    marginTop: 2 },
   heroIconBubble: {
     width: 44,
     height: 44,
@@ -183,6 +197,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginTop: 2 },
+  heroAchievementIcon: {
+    width: 60,
+    height: 60,
+    marginTop: -8,
+    marginLeft: -4 },
+  heroIllustrationBadge: {
+    width: 50,
+    height: 50,
+    marginTop: -2 },
   heroTalaIcon: {
     width: 27,
     height: 27 },

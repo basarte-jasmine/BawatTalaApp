@@ -365,6 +365,18 @@ export function getNotificationVisual(kind: string) {
     };
   }
 
+  
+  if (normalized.includes("achievement") || normalized.includes("unlocked") || normalized.includes("badge") || normalized.includes("shopper")) {
+    return {
+      accent: "#7659B6",
+      chip: "#F0EBFE",
+      icon: "trophy-outline" as const,
+      label: "Achievement",
+      surface: "#FAF8FF",
+      usesTalaLogo: true,
+    };
+  }
+
   return {
     accent: "#7D89D8",
     chip: "#F0EEFF",
