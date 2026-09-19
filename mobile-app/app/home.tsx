@@ -84,6 +84,14 @@ type DriftingBottleNote = {
   top: number;
 };
 
+type SeaDiscovery = "meteorite" | "starfish";
+
+const SEA_OBJECTS = [
+  { id: "meteorite", source: require("../assets/images/Sea/Meteorite Piece.png"), left: 22, top: 172, size: 58, scale: 0.92, drift: 18, duration: 5200 },
+  { id: "stingray", source: require("../assets/images/Sea/Stingray.png"), left: 214, top: 246, size: 112, scale: 0.9, drift: 30, duration: 6800 },
+  { id: "starfish", source: require("../assets/images/Sea/Starfish.png"), left: 302, top: 382, size: 52, scale: 0.86, drift: 14, duration: 4600 },
+] as const;
+
 const FUTURE_BOTTLE_STORAGE_PREFIX = "@bawat-tala/future-bottle";
 const FUTURE_BOTTLE_INTRO_STORAGE_PREFIX = "@bawat-tala/future-bottle-intro";
 const DRIFTING_BOTTLE_WARNING_STORAGE_PREFIX = "@bawat-tala/drifting-bottle-warning";
@@ -94,8 +102,9 @@ const BOTTLE_CLOCK_MINUTES = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 const FUTURE_BOTTLE_PRELOAD_DISTANCE = 420;
 
 const TALA_IMAGE = require("../assets/images/Tala_Star.png");
-const ISLAND_IMAGE = require("../assets/images/island_sample.png");
-const BOTTLE_IMAGE = require("../assets/images/bottle_sample.png");
+const ISLAND_IMAGE = require("../assets/images/Sea/Island.png");
+const BOTTLE_IMAGE = require("../assets/images/Sea/Bottle.png");
+const FLOORBED_IMAGE = require("../assets/images/Sea/Floorbed.png");
 
 function getFutureBottleStorageKey(studentNumber: string) {
   return `${FUTURE_BOTTLE_STORAGE_PREFIX}:${studentNumber}`;
@@ -417,6 +426,8 @@ export default function HomeScreen() {
   const [showBottleShelfModal, setShowBottleShelfModal] = useState(false);
   const [hasSeenFutureBottleIntro, setHasSeenFutureBottleIntro] = useState(false);
   const [selectedDriftingBottle, setSelectedDriftingBottle] = useState<DriftingBottleNote | null>(null);
+  const [seaDiscovery, setSeaDiscovery] = useState<SeaDiscovery | null>(null);
+  const [collectedSeaStars, setCollectedSeaStars] = useState(0);
   const [hasConfirmedDriftingBottleWarning, setHasConfirmedDriftingBottleWarning] = useState(false);
   const [skipDriftingBottleWarning, setSkipDriftingBottleWarning] = useState(false);
   const [rememberDriftingBottleWarningChoice, setRememberDriftingBottleWarningChoice] = useState(false);
@@ -445,6 +456,15 @@ export default function HomeScreen() {
   const pressScales = useRef(EMOTIONS.map(() => new Animated.Value(1))).current;
   const quoteWaveDrift = useRef(new Animated.Value(0)).current;
   const futureBottleDrift = useRef(new Animated.Value(0)).current;
+  const seaObjects = useMemo(
+    () => SEA_OBJECTS.map((object) => ({
+      ...object,
+      left: Math.round(8 + Math.random() * 76),
+      top: object.top + Math.round(-24 + Math.random() * 48),
+    })),
+    [],
+  );
+  const seaObjectMotion = useRef(seaObjects.map(() => new Animated.Value(0))).current;
   const welcomeOpacity = useRef(new Animated.Value(0)).current;
   const welcomeScale = useRef(new Animated.Value(0.92)).current;
   const welcomeTranslateY = useRef(new Animated.Value(22)).current;
@@ -618,6 +638,35 @@ export default function HomeScreen() {
       loops.forEach((loop) => loop.stop());
     };
   }, [driftingBottleProgress, futureBottleSceneActive]);
+
+  useEffect(() => {
+    if (!futureBottleSceneActive) {
+      seaObjectMotion.forEach((value) => value.setValue(0));
+      return;
+    }
+
+    const loops = seaObjectMotion.map((value, index) => {
+      const object = seaObjects[index];
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(value, {
+            toValue: 1,
+            duration: object.duration,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true }),
+          Animated.timing(value, {
+            toValue: 0,
+            duration: object.duration,
+            easing: Easing.inOut(Easing.sin),
+            useNativeDriver: true }),
+        ]),
+      );
+      loop.start();
+      return loop;
+    });
+
+    return () => loops.forEach((loop) => loop.stop());
+  }, [futureBottleSceneActive, seaObjectMotion, seaObjects]);
 
   useEffect(() => {
     const driftLoop = Animated.loop(
@@ -1282,6 +1331,17 @@ export default function HomeScreen() {
     setSelectedDriftingBottle(null);
     setHasConfirmedDriftingBottleWarning(false);
     setRememberDriftingBottleWarningChoice(skipDriftingBottleWarning);
+  };
+
+  const openSeaDiscovery = (discovery: SeaDiscovery) => {
+    if (discovery === "starfish") {
+      setCollectedSeaStars((current) => current + 1);
+    }
+    setSeaDiscovery(discovery);
+  };
+
+  const closeSeaDiscovery = () => {
+    setSeaDiscovery(null);
   };
 
   const handleOpenDriftingBottle = async () => {
@@ -2127,6 +2187,49 @@ export default function HomeScreen() {
                 </Svg>
               </Animated.View>
 
+              <View style={styles.seaFloorbed} pointerEvents="none">
+                <Image source={FLOORBED_IMAGE} style={styles.seaFloorbedImage} resizeMode="stretch" />
+              </View>
+
+              {seaObjects.map((object, index) => {
+                const motion = seaObjectMotion[index];
+                const isInteractive = object.id === "meteorite" || object.id === "starfish";
+                const objectContent = (
+                  <Animated.View
+                    style={[
+                      styles.seaObject,
+                      {
+                        left: `${object.left}%`,
+                        top: object.top,
+                        width: object.size,
+                        height: object.size,
+                        transform: [
+                          { translateX: motion.interpolate({ inputRange: [0, 1], outputRange: [-object.drift, object.drift] }) },
+                          { translateY: motion.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, -10, 0] }) },
+                          { rotate: motion.interpolate({ inputRange: [0, 0.5, 1], outputRange: ["-5deg", "5deg", "-5deg"] }) },
+                          { scale: object.scale },
+                        ],
+                      },
+                    ]}
+                  >
+                    <Image source={object.source} style={styles.seaObjectImage} resizeMode="contain" />
+                  </Animated.View>
+                );
+
+                return isInteractive ? (
+                  <Pressable
+                    key={object.id}
+                    onPress={() => openSeaDiscovery(object.id as SeaDiscovery)}
+                    style={styles.seaObjectButton}
+                    accessibilityLabel={object.id === "meteorite" ? "Discover a meteorite piece" : "Collect a starfish star"}
+                  >
+                    {objectContent}
+                  </Pressable>
+                ) : (
+                  <View key={object.id} pointerEvents="none">{objectContent}</View>
+                );
+              })}
+
               {DRIFTING_BOTTLE_NOTES.map((note, index) => (
                 <Animated.View
                   key={note.id}
@@ -2245,6 +2348,43 @@ export default function HomeScreen() {
                 </Pressable>
               </View>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={Boolean(seaDiscovery)}
+        transparent
+        animationType="fade"
+        onRequestClose={closeSeaDiscovery}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.seaDiscoveryModalCard}>
+            <View style={styles.driftingBottleModalHeader}>
+              <View style={styles.driftingBottleModalTitleWrap}>
+                <Text style={styles.driftingBottleModalEyebrow}>
+                  {seaDiscovery === "starfish" ? "A little tide gift" : "A piece of Muni's story"}
+                </Text>
+                <Text style={styles.driftingBottleModalTitle}>
+                  {seaDiscovery === "starfish" ? "A star for you" : "Meteorite memory"}
+                </Text>
+              </View>
+              <Pressable style={styles.bottleModalCloseButton} onPress={closeSeaDiscovery} accessibilityLabel="Close sea discovery">
+                <Ionicons name="close" size={18} color="#52606C" />
+              </Pressable>
+            </View>
+            <View style={styles.seaDiscoveryBody}>
+              <Image
+                source={seaDiscovery === "starfish" ? require("../assets/images/Sea/Starfish.png") : require("../assets/images/Sea/Meteorite Piece.png")}
+                style={styles.seaDiscoveryImage}
+                resizeMode="contain"
+              />
+              <Text style={styles.driftingBottleModalMessage}>
+                {seaDiscovery === "starfish"
+                  ? `The starfish left you a bright little reminder. You have collected ${collectedSeaStars} ${collectedSeaStars === 1 ? "star" : "stars"} from the sea.`
+                  : "Muni says this meteorite piece is a tiny reminder of where it came from: a long journey through the dark, guided by a sky full of possibilities."}
+              </Text>
+            </View>
           </View>
         </View>
       </Modal>
@@ -4081,6 +4221,31 @@ const styles = StyleSheet.create({
     right: -40,
     top: 46,
     height: 90 },
+  seaFloorbed: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: "100%",
+    height: 184,
+    zIndex: 2 },
+  seaFloorbedImage: {
+    width: "100%",
+    height: "100%" },
+  seaObjectButton: {
+    position: "absolute",
+    zIndex: 4,
+    minWidth: 52,
+    minHeight: 52,
+    alignItems: "center",
+    justifyContent: "center" },
+  seaObject: {
+    position: "absolute",
+    alignItems: "center",
+    justifyContent: "center" },
+  seaObjectImage: {
+    width: "100%",
+    height: "100%" },
   driftingBottleWrap: {
     position: "absolute",
     left: -78,
@@ -4142,6 +4307,31 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 23,
     textAlign: "center" },
+  seaDiscoveryModalCard: {
+    width: "100%",
+    maxWidth: 340,
+    borderRadius: 24,
+    backgroundColor: "#FFFDF6",
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 16,
+    shadowColor: "#4F5963",
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6 },
+  seaDiscoveryBody: {
+    borderRadius: 20,
+    backgroundColor: "#FBFCF8",
+    borderWidth: 1,
+    borderColor: "#E7ECE2",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    alignItems: "center" },
+  seaDiscoveryImage: {
+    width: 92,
+    height: 92,
+    marginBottom: 10 },
   driftingBottleWarningCard: {
     borderRadius: 20,
     backgroundColor: "#FBFCF8",
