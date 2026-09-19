@@ -8,11 +8,6 @@ import { claimMiniResetReward } from "../lib/backend-api";
 
 type ActivityId = "memory" | "pattern" | "recall" | "words" | "numbers";
 
-const PAIRS = ["🌿", "🌿", "☀️", "☀️", "🪷", "🪷"];
-const PATTERN = ["circle", "triangle", "square", "circle"] as const;
-const RECALL_TILES = [1, 3, 5];
-const WORD = "CALM";
-const SCRAMBLED_WORD = ["L", "A", "M", "C"];
 
 const ACTIVITY_COPY: Record<ActivityId, { eyebrow: string; title: string; instruction: string }> = {
   memory: { eyebrow: "Mini Reset · about 1 minute", title: "Gentle Pairs", instruction: "Turn over two cards at a time. There is no rush." },
@@ -21,6 +16,53 @@ const ACTIVITY_COPY: Record<ActivityId, { eyebrow: string; title: string; instru
   words: { eyebrow: "Mini Reset · about 30 seconds", title: "Unscramble a Word", instruction: "Tap the letters to rebuild a small calming word." },
   numbers: { eyebrow: "Mini Reset · about 20 seconds", title: "Number Flow", instruction: "Notice the flow, then choose the next gentle step." },
 };
+
+const EMOJI_POOL = ["🌱", "☀️", "🪷", "☁️", "🐚", "🐦", "💧", "🌙"];
+function generateMemoryCards(level: number) {
+  const numPairs = Math.min(3 + Math.floor((level - 1) / 2), 6);
+  const shuffledPool = [...EMOJI_POOL].sort(() => Math.random() - 0.5);
+  const selected = shuffledPool.slice(0, numPairs);
+  const pairs = [...selected, ...selected];
+  return pairs.sort(() => Math.random() - 0.5);
+}
+
+const SHAPES = ["circle", "triangle", "square"];
+function generatePattern(level: number) {
+  const length = Math.min(3 + Math.floor(level / 2), 7);
+  const seq: string[] = [];
+  for (let i = 0; i < length; i++) {
+    seq.push(SHAPES[Math.floor(Math.random() * SHAPES.length)]);
+  }
+  return seq;
+}
+
+function generateRecall(level: number) {
+  const total = level > 3 ? 9 : 6;
+  const numToRecall = Math.min(3 + Math.floor(level / 3), total - 2);
+  const tiles = Array.from({ length: total }).map((_, i) => i + 1).sort(() => Math.random() - 0.5);
+  return { total, recallTiles: tiles.slice(0, numToRecall) };
+}
+
+const WORDS_POOL = ["CALM", "REST", "SOFT", "EASE", "SLOW", "PEACE", "QUIET", "STILL", "GENTLE", "BREATHE"];
+function generateWord(level: number) {
+  let pool = WORDS_POOL;
+  if (level < 3) pool = WORDS_POOL.filter(w => w.length <= 4);
+  else if (level < 5) pool = WORDS_POOL.filter(w => w.length <= 5);
+  const word = pool[Math.floor(Math.random() * pool.length)] || "CALM";
+  const scrambled = word.split("").sort(() => Math.random() - 0.5);
+  return { word, scrambled };
+}
+
+function generateNumbers(level: number) {
+  const step = Math.floor(Math.random() * 3) + 1 + Math.floor(level / 3);
+  const start = Math.floor(Math.random() * 10) + 1;
+  const prompt = `${start} � ${start + step} � ${start + step * 2} � ?`;
+  const answer = start + step * 3;
+  let possible = [answer - 1, answer + 1, answer + 2, answer - 2, answer + step];
+  possible = [...new Set(possible)].filter(x => x !== answer).sort(() => Math.random() - 0.5);
+  const choices = [answer, possible[0], possible[1]].sort(() => Math.random() - 0.5);
+  return { prompt, answer, choices };
+}
 
 function shuffledCards() {
   return [...PAIRS].sort(() => Math.random() - 0.5);
@@ -36,7 +78,12 @@ export default function MiniResetScreen() {
   const [earnedTala, setEarnedTala] = useState(0);
   const [isRewarding, setIsRewarding] = useState(false);
   const [complete, setComplete] = useState(false);
-  const [cards, setCards] = useState(shuffledCards);
+  const [memoryCards, setMemoryCards] = useState(() => generateMemoryCards(1));
+  const [patternSeq, setPatternSeq] = useState(() => generatePattern(1));
+  const [recallData, setRecallData] = useState(() => generateRecall(1));
+  const [wordData, setWordData] = useState(() => generateWord(1));
+  const [numbersData, setNumbersData] = useState(() => generateNumbers(1));
+  const [cards, setCards] = useState(memoryCards);
   const [flipped, setFlipped] = useState<number[]>([]);
   const [matched, setMatched] = useState<number[]>([]);
   const [showPattern, setShowPattern] = useState(true);
@@ -79,9 +126,20 @@ export default function MiniResetScreen() {
     }
   }, [activityId, allMatched]);
 
+  const setupLevel = (nextLevel: number) => {
+    if (activityId === "memory") { const c = generateMemoryCards(nextLevel); setMemoryCards(c); setCards(c); }
+    if (activityId === "pattern") setPatternSeq(generatePattern(nextLevel));
+    if (activityId === "recall") setRecallData(generateRecall(nextLevel));
+    if (activityId === "words") setWordData(generateWord(nextLevel));
+    if (activityId === "numbers") setNumbersData(generateNumbers(nextLevel));
+  };
+
   const reset = () => {
-    setComplete(false); setFeedback("A fresh round, at your own pace."); setLevel((current) => current + 1);
-    setCards(shuffledCards()); setFlipped([]); setMatched([]);
+    setComplete(false); setFeedback("A fresh round, at your own pace."); 
+    const nextLevel = level + 1;
+    setLevel(nextLevel);
+    setupLevel(nextLevel);
+    setFlipped([]); setMatched([]);
     setShowPattern(true); setPatternInput([]); setShowRecall(true); setRecallInput([]); setWordInput([]); setNumberAnswer(null);
   };
 
@@ -113,34 +171,34 @@ export default function MiniResetScreen() {
   const tapPattern = (shape: string) => {
     if (showPattern || complete) return;
     const next = [...patternInput, shape];
-    if (shape !== PATTERN[next.length - 1]) {
+    if (shape !== patternSeq[next.length - 1]) {
       setPatternInput([]); setFeedback("Almost. Notice it once more, at your own pace."); return;
     }
     setPatternInput(next);
-    if (next.length === PATTERN.length) { void completeRound("You stayed with the pattern. Well done."); }
+    if (next.length === patternSeq.length) { void completeRound("You stayed with the pattern. Well done."); }
   };
 
   const tapRecall = (tile: number) => {
     if (showRecall || complete || recallInput.includes(tile)) return;
     const next = [...recallInput, tile].sort((a, b) => a - b);
-    if (!RECALL_TILES.includes(tile)) { setRecallInput([]); setFeedback("That’s okay. Take another look when you’re ready."); return; }
+    if (!recallData.recallTiles.includes(tile)) { setRecallInput([]); setFeedback("That’s okay. Take another look when you’re ready."); return; }
     setRecallInput(next);
-    if (next.length === RECALL_TILES.length) { void completeRound("You recalled the arrangement. Nicely focused."); }
+    if (next.length === recallData.recallTiles.length) { void completeRound("You recalled the arrangement. Nicely focused."); }
   };
 
   const tapLetter = (letter: string, index: number) => {
     if (complete || wordInput.includes(`${letter}${index}`)) return;
     const next = [...wordInput, `${letter}${index}`];
     const attempt = next.map((entry) => entry[0]).join("");
-    if (!WORD.startsWith(attempt)) { setWordInput([]); setFeedback("A fresh try can be helpful—there’s no pressure."); return; }
+    if (!wordData.word.startsWith(attempt)) { setWordInput([]); setFeedback("A fresh try can be helpful—there’s no pressure."); return; }
     setWordInput(next);
-    if (attempt === WORD) { void completeRound("CALM. A small word for this moment."); }
+    if (attempt === wordData.word) { void completeRound(`${wordData.word}. A small word for this moment.`); }
   };
 
   const tapNumber = (value: number) => {
     if (complete) return;
     setNumberAnswer(value);
-    if (value === 8) { void completeRound("You found the next step. Nicely steady."); return; }
+    if (value === numbersData.answer) { void completeRound("You found the next step. Nicely steady."); return; }
     setFeedback("Not quite—and that is completely okay. Try another when you feel ready.");
   };
 
@@ -158,10 +216,10 @@ export default function MiniResetScreen() {
         <View style={styles.intro}><View style={styles.progressRow}><Text style={styles.eyebrow}>{copy.eyebrow}</Text><Text style={styles.progressText}>Level {level} · {focusPoints} focus points</Text></View><Text style={styles.heading}>{copy.title}</Text><Text style={styles.instruction}>{copy.instruction}</Text>{earnedTala > 0 ? <Text style={styles.talaText}>✦ {earnedTala} Tala earned in this reset</Text> : null}</View>
         <View style={styles.gameCard}>
           {activityId === "memory" && <View style={styles.memoryGrid}>{cards.map((card, index) => { const open = flipped.includes(index) || matched.includes(index); return <Pressable key={`${card}-${index}`} onPress={() => tapCard(index)} style={[styles.memoryCard, open && styles.memoryCardOpen]} accessibilityLabel={open ? `Card ${card}` : "Turn over card"}><Text style={styles.memoryCardText}>{open ? card : "✦"}</Text></Pressable>; })}</View>}
-          {activityId === "pattern" && <PatternGame show={showPattern} selected={patternInput} onTap={tapPattern} />}
-          {activityId === "recall" && <RecallGame show={showRecall} selected={recallInput} onTap={tapRecall} />}
-          {activityId === "words" && <View><View style={styles.wordSlots}>{Array.from({ length: WORD.length }).map((_, index) => <View key={index} style={styles.wordSlot}><Text style={styles.wordSlotText}>{selectedLetters[index] ?? ""}</Text></View>)}</View><Text style={styles.wordHint}>A word for a steady moment</Text><View style={styles.letterRow}>{SCRAMBLED_WORD.map((letter, index) => <Pressable key={`${letter}-${index}`} onPress={() => tapLetter(letter, index)} style={[styles.letterButton, wordInput.includes(`${letter}${index}`) && styles.letterButtonUsed]}><Text style={styles.letterText}>{letter}</Text></Pressable>)}</View></View>}
-          {activityId === "numbers" && <View><Text style={styles.gamePrompt}>2 · 4 · 6 · ?</Text><View style={styles.choiceRow}>{[7, 8, 9].map((value) => <Pressable key={value} onPress={() => tapNumber(value)} style={[styles.shapeChoice, numberAnswer === value && styles.numberChoiceSelected]}><Text style={styles.numberChoiceText}>{value}</Text></Pressable>)}</View></View>}
+          {activityId === "pattern" && <PatternGame show={showPattern} selected={patternInput} onTap={tapPattern} pattern={patternSeq} />}
+          {activityId === "recall" && <RecallGame show={showRecall} selected={recallInput} onTap={tapRecall} recallTiles={recallData.recallTiles} total={recallData.total} />}
+          {activityId === "words" && <View><View style={styles.wordSlots}>{Array.from({ length: wordData.word.length }).map((_, index) => <View key={index} style={styles.wordSlot}><Text style={styles.wordSlotText}>{selectedLetters[index] ?? ""}</Text></View>)}</View><Text style={styles.wordHint}>A word for a steady moment</Text><View style={styles.letterRow}>{wordData.scrambled.map((letter, index) => <Pressable key={`${letter}-${index}`} onPress={() => tapLetter(letter, index)} style={[styles.letterButton, wordInput.includes(`${letter}${index}`) && styles.letterButtonUsed]}><Text style={styles.letterText}>{letter}</Text></Pressable>)}</View></View>}
+          {activityId === "numbers" && <View><Text style={styles.gamePrompt}>2 · 4 · 6 · ?</Text><View style={styles.choiceRow}>{numbersData.choices.map((value) => <Pressable key={value} onPress={() => tapNumber(value)} style={[styles.shapeChoice, numberAnswer === value && styles.numberChoiceSelected]}><Text style={styles.numberChoiceText}>{value}</Text></Pressable>)}</View></View>}
         </View>
         <View style={[styles.feedback, complete && styles.feedbackComplete]}><Ionicons name={complete ? "heart-outline" : "leaf-outline"} size={20} color={complete ? "#477A43" : "#626A86"} /><Text style={styles.feedbackText}>{feedback}</Text></View>
         {complete && <View style={styles.completeCard}><Text style={styles.completeTitle}>A little reset, complete.</Text><Text style={styles.completeText}>{isRewarding ? "Adding your Tala…" : "You gave your attention a gentle place to land. Ready for another soft round?"}</Text><Pressable style={styles.tryAnother} onPress={reset} disabled={isRewarding}><Text style={styles.tryAnotherText}>Continue to level {level + 1}</Text><Ionicons name="arrow-forward" size={18} color="#FFFFFF" /></Pressable><Pressable onPress={() => router.replace("/wellness-tools")} style={styles.returnButton}><Text style={styles.returnButtonText}>Choose another mini reset</Text></Pressable></View>}
@@ -170,14 +228,14 @@ export default function MiniResetScreen() {
   );
 }
 
-function PatternGame({ show, selected, onTap }: { show: boolean; selected: string[]; onTap: (shape: string) => void }) {
+function PatternGame({ show, selected, onTap, pattern }: { show: boolean; selected: string[]; onTap: (shape: string) => void; pattern: string[] }) {
   const icons: Record<string, "ellipse" | "triangle" | "square"> = { circle: "ellipse", triangle: "triangle", square: "square" };
   const choices = ["circle", "triangle", "square"];
-  return <View><Text style={styles.gamePrompt}>{show ? "Notice the pattern" : `Repeat it · ${selected.length} of ${PATTERN.length}`}</Text>{show ? <View style={styles.sequenceRow}>{PATTERN.map((shape, index) => <Ionicons key={index} name={icons[shape]} size={35} color={["#7DA4C6", "#C88B81", "#87A982"][index % 3]} />)}</View> : <View style={styles.choiceRow}>{choices.map((shape) => <Pressable key={shape} onPress={() => onTap(shape)} style={styles.shapeChoice}><Ionicons name={icons[shape]} size={36} color="#617C90" /></Pressable>)}</View>}</View>;
+  return <View><Text style={styles.gamePrompt}>{show ? "Notice the pattern" : `Repeat it · ${selected.length} of ${pattern.length}`}</Text>{show ? <View style={styles.sequenceRow}>{pattern.map((shape, index) => <Ionicons key={index} name={icons[shape]} size={35} color={["#7DA4C6", "#C88B81", "#87A982"][index % 3]} />)}</View> : <View style={styles.choiceRow}>{choices.map((shape) => <Pressable key={shape} onPress={() => onTap(shape)} style={styles.shapeChoice}><Ionicons name={icons[shape]} size={36} color="#617C90" /></Pressable>)}</View>}</View>;
 }
 
-function RecallGame({ show, selected, onTap }: { show: boolean; selected: number[]; onTap: (tile: number) => void }) {
-  return <View><Text style={styles.gamePrompt}>{show ? "Notice the highlighted tiles" : `Tap the three you remember · ${selected.length} found`}</Text><View style={styles.recallGrid}>{Array.from({ length: 6 }).map((_, index) => { const tile = index + 1; const highlighted = show ? RECALL_TILES.includes(tile) : selected.includes(tile); return <Pressable key={tile} onPress={() => onTap(tile)} style={[styles.recallTile, highlighted && styles.recallTileHighlighted]}><Text style={styles.recallTileText}>{show ? (highlighted ? "✦" : "") : ""}</Text></Pressable>; })}</View></View>;
+function RecallGame({ show, selected, onTap, recallTiles, total }: { show: boolean; selected: number[]; onTap: (tile: number) => void; recallTiles: number[]; total: number }) {
+  return <View><Text style={styles.gamePrompt}>{show ? "Notice the highlighted tiles" : `Tap the three you remember · ${selected.length} found`}</Text><View style={styles.recallGrid}>{Array.from({ length: total }).map((_, index) => { const tile = index + 1; const highlighted = show ? recallTiles.includes(tile) : selected.includes(tile); return <Pressable key={tile} onPress={() => onTap(tile)} style={[styles.recallTile, highlighted && styles.recallTileHighlighted]}><Text style={styles.recallTileText}>{show ? (highlighted ? "✦" : "") : ""}</Text></Pressable>; })}</View></View>;
 }
 
 const styles = StyleSheet.create({
