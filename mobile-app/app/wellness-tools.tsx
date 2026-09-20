@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 
@@ -18,7 +18,16 @@ type MiniResetItem = {
   description: string;
   duration: string;
   icon: React.ComponentProps<typeof Ionicons>["name"];
-  id: "memory" | "pattern" | "recall" | "words" | "numbers" | "count" | "color" | "fruit-catcher" | "image-puzzle";
+  id: "memory" | "pattern" | "recall" | "words" | "numbers" | "count" | "color";
+  title: string;
+};
+
+type FeaturedGame = {
+  description: string;
+  duration: string;
+  id: "fruit-catcher" | "image-puzzle";
+  image: number;
+  label: string;
   title: string;
 };
 
@@ -49,8 +58,25 @@ const MINI_RESETS: MiniResetItem[] = [
   { id: "numbers", title: "Number Flow", description: "Notice a gentle number pattern.", duration: "~20 sec", icon: "analytics-outline" },
   { id: "count", title: "Calm Count", description: "Tap the numbers in a steady order.", duration: "~20 sec", icon: "list-outline" },
   { id: "color", title: "Color Focus", description: "Find the one tile that matches.", duration: "~20 sec", icon: "color-palette-outline" },
-  { id: "fruit-catcher", title: "Fruit Catcher", description: "Catch falling fruits, avoid shells.", duration: "Endless", icon: "basket-outline" },
-  { id: "image-puzzle", title: "Image Puzzle", description: "Reconstruct the picture.", duration: "Endless", icon: "image-outline" },
+];
+
+const FEATURED_GAMES: FeaturedGame[] = [
+  {
+    id: "image-puzzle",
+    title: "Muni's Picture Puzzle",
+    label: "Slow focus",
+    description: "Rebuild a bright little scene, one piece at a time.",
+    duration: "2-5 min",
+    image: require("../assets/images/Mini Reset/Puzzle/Muni Puzzle Cover.webp"),
+  },
+  {
+    id: "fruit-catcher",
+    title: "Fruit Catcher",
+    label: "Playful focus",
+    description: "Catch the good things and keep an eye out for shells.",
+    duration: "Endless",
+    image: require("../assets/images/Mini Reset/Fruit Catcher/Fruit Catcher Cover.jpg"),
+  },
 ];
 
 export default function WellnessToolsScreen() {
@@ -87,6 +113,38 @@ export default function WellnessToolsScreen() {
             <Text style={[styles.sectionDesc, compact && styles.sectionDescCompact]}>
               Choose one small practice. There is no right pace—just what feels supportive now.
             </Text>
+          </View>
+
+          <View style={[styles.featuredSection, compact && styles.featuredSectionCompact]}>
+            <View style={styles.sectionHeadingCopy}>
+              <View style={styles.sectionKickerRow}>
+                <Ionicons name="game-controller-outline" size={15} color="#4F8A38" />
+                <Text style={[styles.sectionKicker, styles.featuredKicker]}>FEATURED GAMES</Text>
+              </View>
+              <Text style={styles.listHeading}>Meet Muni in motion</Text>
+              <Text style={styles.listSubHeading}>Two bigger ways to reset, play, and stay curious.</Text>
+            </View>
+            <View style={styles.featuredGameGrid}>
+              {FEATURED_GAMES.map((game) => (
+                <Pressable
+                  key={game.id}
+                  style={({ pressed }) => [styles.featuredGameCard, pressed && styles.miniResetCardPressed]}
+                  accessibilityLabel={`${game.title}, ${game.duration}`}
+                  onPress={() => router.push(game.id === "fruit-catcher" ? "/fruit-catcher" : "/image-puzzle")}
+                >
+                  <Image source={game.image} style={[styles.featuredGameImage, compact && styles.featuredGameImageCompact]} resizeMode="cover" />
+                  <View style={styles.featuredGameBody}>
+                    <Text style={styles.featuredGameLabel}>{game.label}</Text>
+                    <Text style={styles.featuredGameTitle}>{game.title}</Text>
+                    <Text style={styles.featuredGameDescription} numberOfLines={2}>{game.description}</Text>
+                    <View style={styles.featuredGameMeta}>
+                      <Text style={styles.miniResetMetaText}>{game.duration}</Text>
+                      <View style={styles.featuredGameArrow}><Ionicons name="arrow-forward" size={15} color="#FFFFFF" /></View>
+                    </View>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
           </View>
 
           <View style={[styles.listSection, compact && styles.listSectionCompact]}>
@@ -133,30 +191,32 @@ export default function WellnessToolsScreen() {
 
           <View style={[styles.miniResetSection, compact && styles.listSectionCompact]}>
             <View style={styles.miniResetHeadingRow}>
-              <View>
-                <Text style={styles.listHeading}>Mini Reset</Text>
-                <Text style={styles.listSubHeading}>Pick a small game to give your attention a softer place to land.</Text>
+              <View style={styles.sectionHeadingCopy}>
+                <View style={styles.sectionKickerRow}>
+                  <Ionicons name="sparkles-outline" size={15} color="#625D8F" />
+                  <Text style={styles.sectionKicker}>QUICK RESET</Text>
+                </View>
+                <Text style={styles.listHeading}>More mini resets</Text>
+                <Text style={styles.listSubHeading}>Short activities to explore when you want something quieter.</Text>
               </View>
             </View>
             <View style={styles.miniResetGrid}>
               {MINI_RESETS.map((item) => (
                 <Pressable
                   key={item.id}
-                  style={({ pressed }) => [styles.miniResetCard, pressed && styles.miniResetCardPressed]}
+                  style={({ pressed }) => [styles.miniResetTile, compact && styles.miniResetTileCompact, pressed && styles.miniResetCardPressed]}
                   accessibilityLabel={`${item.title}, ${item.duration}`}
                   onPress={() => {
-                    if (item.id === "fruit-catcher") {
-                      router.push("/fruit-catcher");
-                    } else if (item.id === "image-puzzle") {
-                      router.push("/image-puzzle");
-                    } else {
-                      router.push({ pathname: "/mini-reset", params: { activity: item.id } } as never);
-                    }
+                    router.push({ pathname: "/mini-reset", params: { activity: item.id } } as never);
                   }}
                 >
-                  <View style={styles.miniResetIcon}><Ionicons name={item.icon} size={19} color="#625D8F" /></View>
-                  <View style={styles.miniResetCopy}><Text style={styles.miniResetTitle}>{item.title}</Text><Text style={styles.miniResetDescription} numberOfLines={1}>{item.description}</Text></View>
-                  <View style={styles.miniResetMeta}><Text style={styles.miniResetMetaText}>{item.duration}</Text><Ionicons name="chevron-forward" size={16} color="#71758B" /></View>
+                  <View style={styles.miniResetTileTopRow}>
+                    <View style={styles.miniResetIcon}><Ionicons name={item.icon} size={19} color="#625D8F" /></View>
+                    <Ionicons name="arrow-up-right" size={16} color="#8A86A9" />
+                  </View>
+                  <Text style={styles.miniResetTitle}>{item.title}</Text>
+                  <Text style={styles.miniResetDescription} numberOfLines={2}>{item.description}</Text>
+                  <Text style={styles.miniResetMetaText}>{item.duration}</Text>
                 </Pressable>
               ))}
             </View>
@@ -296,6 +356,20 @@ const styles = StyleSheet.create({
   sectionDescCompact: {
     fontSize: 13,
     lineHeight: 19 },
+  featuredSection: {
+    width: "100%",
+    borderRadius: 24,
+    backgroundColor: "#F1F8EC",
+    borderWidth: 1,
+    borderColor: "#D7EBCB",
+    paddingHorizontal: 14,
+    paddingTop: 16,
+    paddingBottom: 16,
+    marginBottom: 14 },
+  featuredSectionCompact: {
+    paddingHorizontal: 12,
+    paddingTop: 14,
+    paddingBottom: 14 },
   listSection: {
     width: "100%",
     borderRadius: 24,
@@ -429,8 +503,15 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   miniResetHeadingRow: { flexDirection: "row", justifyContent: "space-between", columnGap: 12, marginBottom: 14 },
+  sectionHeadingCopy: { flex: 1 },
+  sectionKickerRow: { flexDirection: "row", alignItems: "center", columnGap: 6, marginBottom: 6 },
+  sectionKicker: { color: "#625D8F", fontSize: 10, lineHeight: 13, letterSpacing: 0.8, fontFamily: "Outfit-Bold" },
+  featuredKicker: { color: "#4F8A38" },
   miniResetSparkle: { width: 38, height: 38, borderRadius: 14, backgroundColor: "#F0EDFA", alignItems: "center", justifyContent: "center" },
-  miniResetGrid: { rowGap: 8 },
+  miniResetGrid: { flexDirection: "row", flexWrap: "wrap", gap: 9 },
+  miniResetTile: { width: "48.5%", minHeight: 142, borderRadius: 18, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E7E4F0", padding: 12 },
+  miniResetTileCompact: { width: "48%", padding: 10 },
+  miniResetTileTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
   miniResetCard: { width: "100%", minHeight: 64, flexDirection: "row", alignItems: "center", columnGap: 10, borderRadius: 16, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E7E4F0", padding: 11 },
   miniResetCardPressed: { opacity: 0.78, transform: [{ scale: 0.985 }] },
   miniResetIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: "#F0EDFA", alignItems: "center", justifyContent: "center" },
@@ -439,4 +520,15 @@ const styles = StyleSheet.create({
   miniResetDescription: { color: "#687084", fontSize: 12, lineHeight: 16 },
   miniResetMeta: { flexDirection: "row", alignItems: "center", columnGap: 2 },
   miniResetMetaText: { color: "#71758B", fontSize: 11, lineHeight: 14, fontFamily: "Outfit-Bold" },
+  featuredHeadingRow: { marginTop: 24, marginBottom: 14 },
+  featuredGameGrid: { flexDirection: "row", gap: 10 },
+  featuredGameCard: { flex: 1, overflow: "hidden", borderRadius: 18, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#DDE8D6" },
+  featuredGameImage: { width: "100%", height: 156, backgroundColor: "#DFF1F5" },
+  featuredGameImageCompact: { height: 128 },
+  featuredGameBody: { padding: 11 },
+  featuredGameLabel: { color: "#4F8A38", fontSize: 10, lineHeight: 13, textTransform: "uppercase", letterSpacing: 0.5, fontFamily: "Outfit-Bold", marginBottom: 4 },
+  featuredGameTitle: { color: "#33495D", fontSize: 15, lineHeight: 19, fontFamily: "Outfit-Bold", marginBottom: 4 },
+  featuredGameDescription: { color: "#687084", fontSize: 11, lineHeight: 15, minHeight: 30, marginBottom: 9 },
+  featuredGameMeta: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  featuredGameArrow: { width: 26, height: 26, borderRadius: 13, backgroundColor: "#5A8D44", alignItems: "center", justifyContent: "center" },
 });
