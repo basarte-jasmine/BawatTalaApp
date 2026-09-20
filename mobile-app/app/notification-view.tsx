@@ -41,7 +41,29 @@ const ACHIEVEMENT_DESCRIPTIONS: Record<string, string> = {
 };
 
 const ACHIEVEMENT_STORIES: Record<string, string> = {
-  "message-from-the-tide": "Muni is always wondering about the things floating in the sea... Well, can you tell Muni what is inside?",
+  "a-gentler-first-step": "Muni knows that reaching out takes real courage. You took the first step toward healing, and this island just got a little warmer because of you.",
+  "a-sky-with-many-colors": "Muni has always believed that every feeling paints the sky a different color. You’ve felt them all—and that means you’re truly alive.",
+  "a-softer-minute": "Muni noticed you stopped to breathe. In a world that never stops rushing, you chose to be still—and that’s something worth celebrating.",
+  "asked-for-support": "Asking for help isn’t weakness—it’s wisdom. Muni is proud of you for trusting someone with your story.",
+  "dear-muni": "Muni read your very first message and kept it safe among the stars. Every word you share matters more than you know.",
+  "library-glow": "The library’s lanterns always glow brighter when someone reads for a whole hour. Muni saw the light from across the island!",
+  "message-from-the-tide": "Muni is always wondering about the things floating in the sea… Well, can you tell Muni what is inside?",
+  "small-good-thing": "Muni believes that noticing the good—even the smallest kind—is one of the bravest things a person can do.",
+  "star-shopper": "Muni’s shop is full of surprises! You just unlocked your first treasure, and the island is sparkling a little more.",
+  "voice-beneath-the-stars": "Your voice echoed across the island tonight. Muni listened to every word and kept it among the constellations.",
+};
+
+const ACHIEVEMENT_TRIVIA: Record<string, string> = {
+  "a-gentler-first-step": "Muni once heard that the bravest explorers are the ones who ask for a guide.",
+  "a-sky-with-many-colors": "Muni believes emotions are signals from the sky, not storms to be hidden.",
+  "a-softer-minute": "Muni once timed a cloud drifting by—it took exactly four breaths. Try it!",
+  "asked-for-support": "On Muni’s island, asking for directions is how every great adventure begins.",
+  "dear-muni": "Muni keeps every letter in a special shell—the ocean carries the words, but the feeling stays.",
+  "library-glow": "Muni has read 347 books—but only counts the ones that made the lanterns flicker.",
+  "message-from-the-tide": "Muni says the tide delivers only the messages the sea thinks you need to hear.",
+  "small-good-thing": "Muni collects small good things in a jar by the lighthouse. The jar is almost full!",
+  "star-shopper": "Muni’s favorite item in the shop is the one that hasn’t been discovered yet.",
+  "voice-beneath-the-stars": "Muni’s favorite sound on the island is someone finally saying what they feel.",
 };
 
 export default function NotificationViewScreen() {
@@ -135,6 +157,8 @@ export default function NotificationViewScreen() {
     return { mainBody: raw, triviaText: "" };
   })();
 
+  const finalTriviaText = triviaText || (isAchievement ? ACHIEVEMENT_TRIVIA[achievementId] : "") || "";
+
   const handleBack = () => {
     if (router.canGoBack()) {
       router.back();
@@ -212,13 +236,22 @@ export default function NotificationViewScreen() {
               </View>
             ) : null}
 
+            {isAchievement && parsedMetadata?.rewardTala ? (
+              <View style={[styles.bodyCard, styles.achievementRewardCard, { flexDirection: "row", alignItems: "center", columnGap: 12 }]}>
+                <Image source={TALA_IMAGE} style={{ width: 28, height: 28 }} resizeMode="contain" />
+                <Text style={[styles.bodyText, { flex: 1, fontFamily: "Outfit-Bold", color: "#9B7E3F" }]}>
+                  You earned {parsedMetadata.rewardTala} Tala!
+                </Text>
+              </View>
+            ) : null}
+
             {!isAchievement ? (
               <View style={[styles.bodyCard, isAchievement && styles.achievementRewardCard]}>
                 <Text style={styles.bodyText}>{mainBody || (loading ? "Loading..." : "No details available.")}</Text>
               </View>
             ) : null}
 
-            {triviaText ? (
+            {finalTriviaText ? (
               <View style={styles.triviaCard}>
                 <View style={styles.triviaIdentity}>
                   <Image source={MUNI_AVATAR} style={styles.triviaAvatar} resizeMode="contain" />
@@ -226,7 +259,7 @@ export default function NotificationViewScreen() {
                 </View>
                 <View style={styles.triviaBubble}>
                   <View style={styles.triviaBubbleTail} />
-                  <Text style={styles.triviaText}>{triviaText}</Text>
+                  <Text style={styles.triviaText}>{finalTriviaText}</Text>
                 </View>
               </View>
             ) : null}
@@ -305,21 +338,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18 },
   achievementStoryCard: {
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: "#E8E0D0",
-    backgroundColor: "#FFFDF8",
     paddingHorizontal: 18,
-    paddingVertical: 18,
-    shadowColor: "#8D8065",
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 1 },
+    paddingVertical: 10,
+  },
   achievementStoryText: {
-    color: "#304D5B",
+    color: "#465866",
     fontSize: 16,
-    lineHeight: 25 },
+    lineHeight: 25,
+    textAlign: "center",
+    fontFamily: "Outfit-Medium",
+  },
   headerCard: {
     borderRadius: 22,
     borderWidth: 1,

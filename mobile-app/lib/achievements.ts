@@ -21,10 +21,20 @@ export async function unlockAchievement(achievementId: string, studentNumber?: s
     try {
       await AsyncStorage.setItem(`@bawat-tala/achievement:${achievementId}:${studentNumber}`, "true");
       if (result.ok && !result.alreadyUnlocked) {
+        const title = "Achievement Unlocked!";
+        const body = result.message || "You earned a new achievement.";
+        const metadata = JSON.stringify({ achievementId, trivia: (result as any).trivia || "", rewardTala: result.rewardTala, totalTala: result.totalTala });
+        const params = new URLSearchParams({
+          kind: "ACHIEVEMENT",
+          title,
+          message: body,
+          metadata,
+        });
         await Notifications.scheduleNotificationAsync({
           content: {
-            title: "Achievement Unlocked!",
-            body: result.message || "You earned a new achievement.",
+            title,
+            body,
+            data: { route: `/notification-view?${params.toString()}` },
           },
           trigger: null,
         });

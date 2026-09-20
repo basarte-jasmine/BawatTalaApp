@@ -22,6 +22,7 @@ function getCycleState(startedAt: number) {
 }
 
 export default function WellnessBreathingScreen() {
+  const { user } = useAuthSession();
   const { width } = useWindowDimensions();
   const frame = Math.min(width, 412);
   const ringSize = Math.max(224, Math.min(frame - 54, 286));
