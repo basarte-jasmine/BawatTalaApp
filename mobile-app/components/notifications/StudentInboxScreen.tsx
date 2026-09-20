@@ -688,7 +688,7 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
           style={styles.scroll}
           contentContainerStyle={styles.threadScrollContent}
           showsVerticalScrollIndicator={false}
-          onContentSizeChange={() =
+          onContentSizeChange={() => threadScrollRef.current?.scrollToEnd({ animated: false })}
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing}
@@ -697,7 +697,6 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
               tintColor="#73CD44"
             />
           }
-        > threadScrollRef.current?.scrollToEnd({ animated: false })}
         >
           {threadMessages.map((item, index) => {
             const outgoing = isOutgoingAdminMessage(item);
