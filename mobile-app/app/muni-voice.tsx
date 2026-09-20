@@ -37,6 +37,7 @@ import {
   type JournalEntry,
   type JournalMessage } from "../lib/backend-api";
 import { useAuthSession } from "../lib/auth-session";
+import { unlockAchievement } from "../lib/achievements";
 import {
   needsCrisisTrioPrompt,
   needsFinishSupportPrompt,
@@ -1058,6 +1059,8 @@ export default function MuniVoiceScreen() {
         setConversationMessages(finishResult.messages);
       }
       setStatusMessage("Voice journal saved.");
+        await unlockAchievement("voice-beneath-the-stars", user.studentNumber);
+        if (finalTags.some((t: string) => POSITIVE_TAG_OPTIONS.includes(t))) await unlockAchievement("small-good-thing", user.studentNumber);
       // Finish Journal: re-prompt once only if still CONFIRMED_CRITICAL and no resource action.
       if (finishResult.entry && needsFinishSupportPrompt(finishResult.entry, finishResult.messages)) {
         setRiskModalRedirectEntryId(finishResult.entry.id);

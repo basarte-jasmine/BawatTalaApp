@@ -12,6 +12,8 @@ import {
     View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useAuthSession } from "../lib/auth-session";
+import { unlockAchievement } from "../lib/achievements";
 
 const BASKET_WIDTH = 100;
 const BASKET_HEIGHT = 80;
@@ -38,6 +40,7 @@ const FRUITS = [
 ];
 
 export default function FruitCatcherScreen() {
+  const { user } = useAuthSession();
   const [gameState, setGameState] = useState<'start' | 'playing' | 'gameover'>('start');
   const [score, setScore] = useState(0);
   const [level, setLevel] = useState(1);
@@ -205,6 +208,7 @@ export default function FruitCatcherScreen() {
       setHearts(currentHearts);
       if (currentHearts <= 0) {
         setGameState("gameover");
+        if (user?.studentNumber) unlockAchievement("a-softer-minute", user.studentNumber);
         return;
       }
     }

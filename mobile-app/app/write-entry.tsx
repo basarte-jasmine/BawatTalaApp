@@ -798,9 +798,9 @@ export default function WriteEntryScreen() {
       return;
     }
 
-    await unlockAchievement("ink-on-the-page", user.studentNumber);
-    if (!aiEnabled) await unlockAchievement("quiet-mode", user.studentNumber);
-    if (finalTags.length > 0) await unlockAchievement("named-what-hurt", user.studentNumber);
+    
+    
+    if (finalTags.some(t => POSITIVE_TAG_OPTIONS.includes(t))) await unlockAchievement("small-good-thing", user.studentNumber);
 
     setShowTagReviewModal(false);
     setEntry(result.entry ?? null);

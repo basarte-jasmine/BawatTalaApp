@@ -606,7 +606,11 @@ export default function ConsultScreen() {
         return;
       }
 
-      await unlockAchievement("found-the-right-time", user.studentNumber);
+      if (selectedTrack === "peer") {
+        await unlockAchievement("a-gentler-first-step", user.studentNumber);
+      } else {
+        await unlockAchievement("asked-for-support", user.studentNumber);
+      }
       router.replace(`/home?consultConfirmed=1&appointmentId=${encodeURIComponent(result.appointment.id)}`);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to submit appointment request.");

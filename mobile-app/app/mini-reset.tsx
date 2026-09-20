@@ -5,6 +5,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuthSession } from "../lib/auth-session";
 import { claimMiniResetReward } from "../lib/backend-api";
+import { unlockAchievement } from "../lib/achievements";
 
 type ActivityId = "memory" | "pattern" | "recall" | "words" | "numbers" | "count" | "color";
 
@@ -118,7 +119,8 @@ export default function MiniResetScreen() {
     const result = await claimMiniResetReward({ activityId, level, roundKey: `${activityId}-${level}-${Date.now()}`, studentNumber: user.studentNumber });
     if (result.ok && result.rewardTala) setEarnedTala((current) => current + (result.rewardTala ?? 0));
     if (result.message) setFeedback(result.message);
-    setIsRewarding(false);
+    await unlockAchievement("a-softer-minute", user.studentNumber);
+      setIsRewarding(false);
   }, [activityId, complete, isRewarding, level, user?.studentNumber]);
 
   useEffect(() => {

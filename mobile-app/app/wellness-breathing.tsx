@@ -1,4 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useAuthSession } from "../lib/auth-session";
+import { unlockAchievement } from "../lib/achievements";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -121,6 +123,7 @@ export default function WellnessBreathingScreen() {
   };
 
   const handleStopSession = () => {
+    if (user?.studentNumber) unlockAchievement("a-softer-minute", user.studentNumber);
     sessionStartedAtRef.current = null;
     setIsSessionActive(false);
   };

@@ -12,6 +12,8 @@ import {
   View,
   useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useAuthSession } from "../lib/auth-session";
+import { unlockAchievement } from "../lib/achievements";
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
 
@@ -65,6 +67,8 @@ const MEDITATION_CUES = [
 ];
 
 export default function WellnessGroundingScreen() {
+  const { user } = useAuthSession();
+  useEffect(() => { const timer = setTimeout(() => { if (user?.studentNumber) unlockAchievement("a-softer-minute", user.studentNumber); }, 5000); return () => clearTimeout(timer); }, [user?.studentNumber]);
   const { width } = useWindowDimensions();
   const compact = width < 390;
   const narrow = width < 350;

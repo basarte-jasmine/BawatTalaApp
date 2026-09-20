@@ -1,4 +1,4 @@
-﻿import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -13,26 +13,31 @@ import {
 
 const TALA_IMAGE = require("../assets/images/Tala_Star.png");
 const MUNI_AVATAR = require("../assets/images/MUNI_default.png");
-const PROFILE_ACHIEVEMENT_ILLUSTRATION = require("../assets/images/Achievements/A Bottle for Tomorrow.jpg");
 
 const ACHIEVEMENT_ILLUSTRATIONS: Record<string, any> = {
-  "future-bottle": PROFILE_ACHIEVEMENT_ILLUSTRATION,
-  "a-bottle-for-tomorrow": PROFILE_ACHIEVEMENT_ILLUSTRATION,
-  "message-from-the-tide": PROFILE_ACHIEVEMENT_ILLUSTRATION,
+  "a-gentler-first-step": require("../assets/images/Achievements/A gentler first step.webp"),
+  "a-sky-with-many-colors": require("../assets/images/Achievements/A sky with many colors.webp"),
+  "a-softer-minute": require("../assets/images/Achievements/A softer minute_.webp"),
+  "asked-for-support": require("../assets/images/Achievements/Asked for support_.webp"),
+  "dear-muni": require("../assets/images/Achievements/Dear Muni.webp"),
+  "library-glow": require("../assets/images/Achievements/Library glow.webp"),
+  "message-from-the-tide": require("../assets/images/Achievements/Message from the tide.webp"),
+  "small-good-thing": require("../assets/images/Achievements/Small good thing.webp"),
+  "star-shopper": require("../assets/images/Achievements/Star shopper.webp"),
+  "voice-beneath-the-stars": require("../assets/images/Achievements/Voice beneath the stars.webp"),
 };
 
 const ACHIEVEMENT_DESCRIPTIONS: Record<string, string> = {
-  "future-bottle": "Write your first future bottle note.",
-  "seven-little-stars": "Complete a full 7-day daily check-in cycle.",
+  "a-gentler-first-step": "Book your first peer counselor appointment.",
   "a-sky-with-many-colors": "Log every emotion at least once.",
+  "a-softer-minute": "Complete one wellness exercise session.",
+  "asked-for-support": "Book your first guidance counselor appointment.",
   "dear-muni": "Send your first journal message to Muni.",
-  "ink-on-the-page": "Finish and save your first journal entry.",
-  "quiet-mode": "Save a journal entry with Muni turned off.",
-  "named-what-hurt": "Save a journal entry with at least one concern tag.",
-  "message-from-the-tide": "Open a drifting bottle note.",
   "library-glow": "Read in the library for 1 hour.",
+  "message-from-the-tide": "Open a drifting bottle note.",
+  "small-good-thing": "Save a journal entry with a positive tag.",
   "star-shopper": "Spend Tala in the Muni shop for the first time.",
-  "found-the-right-time": "Choose a counselor, date, and time for a support session.",
+  "voice-beneath-the-stars": "Complete your first Muni voice journal.",
 };
 
 const ACHIEVEMENT_STORIES: Record<string, string> = {
@@ -169,7 +174,7 @@ export default function NotificationViewScreen() {
               <View style={styles.achievementCard}>
                 <View style={styles.achievementArtWrap}>
                   <Image
-                    source={illustration ? { uri: illustration } : localIllustration || PROFILE_ACHIEVEMENT_ILLUSTRATION}
+                    source={illustration ? { uri: illustration } : localIllustration || TALA_IMAGE}
                     style={styles.achievementArt}
                     resizeMode={localIllustration || illustration ? "cover" : "contain"}
                   />
@@ -277,10 +282,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     columnGap: 12 },
   achievementArtWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: 17,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     overflow: "hidden",
+    borderWidth: 2,
+    borderColor: "#EAE5D9",
     backgroundColor: "#ECEBE6" },
   achievementArt: {
     width: "100%",
