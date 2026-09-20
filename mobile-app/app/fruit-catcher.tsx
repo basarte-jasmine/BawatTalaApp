@@ -18,15 +18,15 @@ const BASKET_HEIGHT = 80;
 const ITEM_SIZE = 50;
 
 const ASSETS = {
-  basket: require("../assets/images/Mini Game/Basket.png"),
-  banana: require("../assets/images/Mini Game/Banana.png"),
-  pear: require("../assets/images/Mini Game/Pear.png"),
-  orange: require("../assets/images/Mini Game/Orange.png"),
-  coconut: require("../assets/images/Mini Game/Coconut.png"),
-  coconutTwo: require("../assets/images/Mini Game/Coconut_two.png"),
-  shell: require("../assets/images/Mini Game/Shell.png"),
-  heart: require("../assets/images/Mini Game/Heart.png"),
-  beach: require("../assets/images/Mini Game/Beach.jpg"),
+  basket: require("../assets/images/Mini Reset/Fruit Catcher/Basket.png"),
+  banana: require("../assets/images/Mini Reset/Fruit Catcher/Banana.png"),
+  pear: require("../assets/images/Mini Reset/Fruit Catcher/Pear.png"),
+  orange: require("../assets/images/Mini Reset/Fruit Catcher/Orange.png"),
+  coconut: require("../assets/images/Mini Reset/Fruit Catcher/Coconut.png"),
+  coconutTwo: require("../assets/images/Mini Reset/Fruit Catcher/Coconut_two.png"),
+  shell: require("../assets/images/Mini Reset/Fruit Catcher/Shell.png"),
+  heart: require("../assets/images/Mini Reset/Fruit Catcher/Heart.png"),
+  beach: require("../assets/images/Mini Reset/Fruit Catcher/Beach.jpg"),
 };
 
 const FRUITS = [
