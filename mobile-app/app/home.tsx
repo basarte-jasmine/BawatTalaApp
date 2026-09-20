@@ -1412,8 +1412,8 @@ export default function HomeScreen() {
     const trimmedMessage = bottleDraft.trim();
     const deliveryAt = getBottleDeliveryDraftDate();
 
-    if (!trimmedMessage) {
-      setBottleFormMessage("Write a message first.");
+    if (trimmedMessage.length < 5) {
+      setBottleFormMessage("Write at least 5 characters.");
       return;
     }
 
@@ -1687,7 +1687,7 @@ export default function HomeScreen() {
           : "";
   const bottleDeliveryDraftDate = getBottleDeliveryDraftDate();
   const bottleDraftLength = bottleDraft.trim().length;
-  const isBottleDraftReady = bottleDraftLength > 0;
+  const isBottleDraftReady = bottleDraftLength >= 5;
   const bottleCalendarDays = useMemo(() => buildBottleCalendarDays(bottlePickerMonth), [bottlePickerMonth]);
   const bottlePickerMonthLabel = bottlePickerMonth.toLocaleDateString("en-US", {
     month: "long",

@@ -24,7 +24,8 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.POST_NOTIFICATIONS"
-      ]
+      ],
+      "allowBackup": false
     },
     "web": {
       "output": "static",
@@ -54,7 +55,8 @@
           "photosPermission": "Allow Bawat Tala to choose a profile picture from your photos.",
           "cameraPermission": "Allow Bawat Tala to take a profile picture."
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true

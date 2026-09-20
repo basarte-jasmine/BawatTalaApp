@@ -1225,24 +1225,6 @@ async function getScheduledEventCounts() {
   );
 }
 
-function getOAuthClient(req) {
-  const clientId = process.env.GOOGLE_CLIENT_ID || "";
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET || "";
-  const localApiBaseUrl = `http://localhost:${process.env.PORT || 4002}`;
-  const redirectUri =
-    process.env.GOOGLE_REDIRECT_URI || `${localApiBaseUrl}/api/admin/appointments/google/callback`;
-
-  if (!clientId || !clientSecret) return null;
-
-  const client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
-  const refreshToken =
-    req.session?.googleRefreshToken || process.env.GOOGLE_CALENDAR_REFRESH_TOKEN || "";
-  if (refreshToken) {
-    client.setCredentials({ refresh_token: refreshToken });
-  }
-  return client;
-}
-
 function getGoogleLoginClient() {
   const clientId = process.env.GOOGLE_CLIENT_ID || "";
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET || "";
@@ -1768,26 +1750,6 @@ router.post("/forgot-password/reset", async (req, res) => {
 });
 
 router.use(requireAdminAuth);
-
-router.get("/appointments/google/callback", async (req, res) => {
-  const client = getOAuthClient(req);
-  if (!client) {
-    return res.status(400).send("Google OAuth is not configured.");
-  }
-
-  const code = String(req.query.code || "");
-  if (!code) {
-    return res.status(400).send("Missing authorization code.");
-  }
-
-  const { tokens } = await client.getToken(code);
-  if (!tokens.refresh_token) {
-    return res.status(400).send("Missing refresh token. Reconnect and grant consent.");
-  }
-
-  req.session.googleRefreshToken = tokens.refresh_token;
-  return res.send("Google Calendar connected. You can close this tab.");
-});
 
 
 router.get("/notifications", async (req, res) => {
@@ -5901,65 +5863,6 @@ router.delete("/roles/:memberId", requireRoles("HEAD_COUNSELOR"), async (req, re
   return res.json({ message: "Member removed from active team." });
 });
 
-router.get("/appointments/google/auth-url", (req, res) => {
-  const client = getOAuthClient(req);
-  if (!client) {
-    return res.status(400).json({
-      message: "Google OAuth is not configured.",
-    });
-  }
-
-  const authUrl = client.generateAuthUrl({
-    access_type: "offline",
-    scope: ["https://www.googleapis.com/auth/calendar.readonly"],
-    prompt: "consent",
-  });
-
-  return res.json({ authUrl });
-});
-
-
-router.get("/appointments/events", async (req, res) => {
-  const client = getOAuthClient(req);
-  if (!client) {
-    return res.json({
-      events: [],
-      message: "Google Calendar is not configured yet.",
-    });
-  }
-
-  const calendarId = process.env.GOOGLE_CALENDAR_ID || "primary";
-  const calendar = google.calendar({ version: "v3", auth: client });
-  const timeMin = new Date().toISOString();
-  const timeMax = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString();
-
-  try {
-    const { data } = await calendar.events.list({
-      calendarId,
-      timeMin,
-      timeMax,
-      singleEvents: true,
-      orderBy: "startTime",
-      maxResults: 50,
-    });
-
-    const events = (data.items || []).map((item) => ({
-      id: item.id,
-      title: item.summary || "(No title)",
-      description: item.description || "",
-      start: item.start?.dateTime || item.start?.date || "",
-      end: item.end?.dateTime || item.end?.date || "",
-      location: item.location || "",
-    }));
-
-    return res.json({ events });
-  } catch (error) {
-    return res.status(400).json({
-      message: error?.message || "Unable to load Google Calendar events.",
-      events: [],
-    });
-  }
-});
 
 module.exports = {
   adminRouter: router,

@@ -1,6 +1,6 @@
 import * as Notifications from "expo-notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { claimAchievementReward } from "./backend-api";
+import { claimAchievementReward, enqueuePendingAchievement } from "./backend-api";
 
 const EMOTION_PROGRESS_KEY = "@bawat-tala/achievement-emotions";
 
@@ -10,25 +10,42 @@ export async function unlockAchievement(achievementId: string, studentNumber?: s
   try {
     result = await claimAchievementReward(achievementId);
   } catch {
+    await enqueuePendingAchievement(studentNumber, achievementId);
     return null;
   }
-    if (result.ok || result.alreadyUnlocked) {
-      try {
-        await AsyncStorage.setItem(`@bawat-tala/achievement:${achievementId}:${studentNumber}`, "true");
-        if (result.ok && !result.alreadyUnlocked) {
-           await Notifications.scheduleNotificationAsync({
-             content: {
-               title: "Achievement Unlocked!",
-               body: result.message || "You earned a new achievement.",
-             },
-             trigger: null,
-           });
-        }
-      } catch {
-        // The server remains the source of truth if local storage is unavailable.
+  if (!result || (!(result.ok || result.alreadyUnlocked) && looksLikeNetworkFailure(result))) {
+    await enqueuePendingAchievement(studentNumber, achievementId);
+    return result ?? null;
+  }
+  if (result.ok || result.alreadyUnlocked) {
+    try {
+      await AsyncStorage.setItem(`@bawat-tala/achievement:${achievementId}:${studentNumber}`, "true");
+      if (result.ok && !result.alreadyUnlocked) {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Achievement Unlocked!",
+            body: result.message || "You earned a new achievement.",
+          },
+          trigger: null,
+        });
       }
+    } catch {
+      // The server remains the source of truth if local storage is unavailable.
     }
+  }
   return result;
+}
+
+function looksLikeNetworkFailure(result: { ok?: boolean; message?: string } | null | undefined) {
+  if (!result || result.ok) return false;
+  const message = String(result.message || "").toLowerCase();
+  return (
+    message.includes("network") ||
+    message.includes("timeout") ||
+    message.includes("failed to fetch") ||
+    message.includes("connection") ||
+    message.includes("offline")
+  );
 }
 
 export async function recordEmotionForAchievement(emotionId: string, studentNumber?: string | null) {

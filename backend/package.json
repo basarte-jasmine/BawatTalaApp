@@ -15,7 +15,9 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
+    "express-rate-limit": "^8.7.0",
     "googleapis": "^144.0.0",
+    "helmet": "^8.3.0",
     "node-edge-tts": "^1.2.10",
     "pg": "^8.13.3"
   }

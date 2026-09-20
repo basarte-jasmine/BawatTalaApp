@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { decryptLocalPayload, encryptLocalPayload, looksLikeEncryptedPayload } from "./local-encrypted-storage";
 import { Platform } from "react-native";
 import { needsSupportPrompt } from "./risk-level";
 
@@ -410,6 +411,58 @@ async function enqueuePendingRiskPrompt(studentNumber: string, entryId: string) 
   await writePendingRiskPromptIds(studentNumber, existing);
 }
 
+/** Student-scoped AsyncStorage keys wiped on logout (Debugger prefixes + home bottle keys + related). */
+export async function clearAllStudentData(studentNumber: string): Promise<void> {
+  const sn = String(studentNumber || "").trim();
+  if (!sn) return;
+
+  const knownKeys = [
+    `bawattala.localJournal.${sn}`,
+    `bawattala.localMoods.${sn}`,
+    `bawattala.localCheckIns.${sn}`,
+    `bawattala.localPreferences.${sn}`,
+    `bawattala.pendingSupportResponses.${sn}`,
+    `bawattala.pendingRiskPrompts.${sn}`,
+    `@bawat-tala/future-bottle:${sn}`,
+    `@bawat-tala/future-bottle-intro:${sn}`,
+    `@bawat-tala/drifting-bottle-warning:${sn}`,
+    `@bawat-tala/profile-frame:${sn}`,
+    `@bawat-tala/achievement-emotions:${sn}`,
+    `@bawat-tala/pending-achievements:${sn}`,
+    `bawat-tala.muni-wardrobe.${sn}`,
+    `bawat_tala_library_epubs:${sn}`,
+    `bawat_tala_inbox:${sn}`,
+  ];
+
+  let discovered: string[] = [];
+  try {
+    const allKeys = await AsyncStorage.getAllKeys();
+    discovered = allKeys.filter((key) => {
+      if (!key) return false;
+      if (knownKeys.includes(key)) return true;
+      if (key.startsWith("@bawat-tala/achievement:") && key.endsWith(`:${sn}`)) return true;
+      if (key.endsWith(`.${sn}`) && (key.startsWith("bawattala.") || key.startsWith("bawat-tala."))) {
+        return true;
+      }
+      if (key.endsWith(`:${sn}`) && (key.startsWith("@bawat-tala/") || key.startsWith("bawat_tala_"))) {
+        return true;
+      }
+      return false;
+    });
+  } catch {
+    discovered = [];
+  }
+
+  const toRemove = Array.from(new Set([...knownKeys, ...discovered]));
+  if (toRemove.length === 0) return;
+  try {
+    await AsyncStorage.multiRemove(toRemove);
+  } catch {
+    await Promise.all(toRemove.map((key) => AsyncStorage.removeItem(key).catch(() => undefined)));
+  }
+}
+
+
 export async function peekPendingRiskPromptEntryIds(studentNumber: string): Promise<string[]> {
   return readPendingRiskPromptIds(studentNumber);
 }
@@ -781,24 +834,33 @@ function buildPreviewJournalMessages(entry?: {
 }
 
 async function readLocalJournalData(studentNumber: string): Promise<StoredJournalData> {
-  const storedValue = await AsyncStorage.getItem(getLocalJournalStorageKey(studentNumber));
+  const key = getLocalJournalStorageKey(studentNumber);
+  const storedValue = await AsyncStorage.getItem(key);
   if (!storedValue) return { entries: {} };
 
   try {
-    const parsed = JSON.parse(storedValue);
-    return {
+    const plaintext = await decryptLocalPayload(storedValue);
+    const parsed = JSON.parse(plaintext);
+    const data: StoredJournalData = {
       entries:
         parsed?.entries && typeof parsed.entries === "object"
           ? parsed.entries
           : {},
     };
+    // Migrate legacy plaintext blobs to encrypted at rest.
+    if (!looksLikeEncryptedPayload(storedValue)) {
+      await writeLocalJournalData(studentNumber, data);
+    }
+    return data;
   } catch {
     return { entries: {} };
   }
 }
 
 async function writeLocalJournalData(studentNumber: string, data: StoredJournalData) {
-  await AsyncStorage.setItem(getLocalJournalStorageKey(studentNumber), JSON.stringify(data));
+  const plaintext = JSON.stringify(data);
+  const encrypted = await encryptLocalPayload(plaintext);
+  await AsyncStorage.setItem(getLocalJournalStorageKey(studentNumber), encrypted);
 }
 
 async function upsertLocalJournalRecord(
@@ -1027,24 +1089,32 @@ async function syncPendingJournalEntries(studentNumber: string) {
 }
 
 async function readLocalMoodData(studentNumber: string): Promise<StoredMoodData> {
-  const storedValue = await AsyncStorage.getItem(getLocalMoodStorageKey(studentNumber));
+  const key = getLocalMoodStorageKey(studentNumber);
+  const storedValue = await AsyncStorage.getItem(key);
   if (!storedValue) return { entries: {} };
 
   try {
-    const parsed = JSON.parse(storedValue);
-    return {
+    const plaintext = await decryptLocalPayload(storedValue);
+    const parsed = JSON.parse(plaintext);
+    const data: StoredMoodData = {
       entries:
         parsed?.entries && typeof parsed.entries === "object"
           ? parsed.entries
           : {},
     };
+    if (!looksLikeEncryptedPayload(storedValue)) {
+      await writeLocalMoodData(studentNumber, data);
+    }
+    return data;
   } catch {
     return { entries: {} };
   }
 }
 
 async function writeLocalMoodData(studentNumber: string, data: StoredMoodData) {
-  await AsyncStorage.setItem(getLocalMoodStorageKey(studentNumber), JSON.stringify(data));
+  const plaintext = JSON.stringify(data);
+  const encrypted = await encryptLocalPayload(plaintext);
+  await AsyncStorage.setItem(getLocalMoodStorageKey(studentNumber), encrypted);
 }
 
 async function upsertLocalMoodEntry(
@@ -1424,6 +1494,7 @@ export async function syncOfflineStudentData(studentNumber: string): Promise<Api
     await syncPendingMoodEntries(studentNumber);
     await syncPendingJournalEntries(studentNumber);
     await syncPendingSupportResponses(studentNumber);
+    await syncPendingAchievements(studentNumber);
 
     return {
       ok: preferencesSynced && checkInsSynced,
@@ -1441,13 +1512,24 @@ export async function syncOfflineStudentData(studentNumber: string): Promise<Api
 }
 
 let activeAuthToken: string | null = null;
+const FETCH_TIMEOUT_MS = 15000;
+let sessionExpiredHandler: (() => void) | null = null;
+let sessionExpiredNotified = false;
 
 export function setApiAuthToken(token: string | null) {
   activeAuthToken = token;
+  if (token) {
+    sessionExpiredNotified = false;
+  }
 }
 
 export function getApiAuthToken() {
   return activeAuthToken;
+}
+
+/** Register logout + redirect when an authenticated request returns 401. */
+export function setSessionExpiredHandler(handler: (() => void) | null) {
+  sessionExpiredHandler = handler;
 }
 
 function buildHeaders(customHeaders: Record<string, string> = {}) {
@@ -1458,45 +1540,92 @@ function buildHeaders(customHeaders: Record<string, string> = {}) {
   return headers;
 }
 
+function shouldIgnoreUnauthorized(path: string) {
+  const bare = path.split("?")[0];
+  return (
+    bare === "/api/auth/login" ||
+    bare === "/api/auth/send-otp" ||
+    bare === "/api/auth/verify-otp" ||
+    bare === "/api/auth/register-profile" ||
+    bare === "/api/auth/profile-password/send-code" ||
+    bare.startsWith("/api/auth/forgot-password/")
+  );
+}
+
+function notifySessionExpiredIfNeeded(path: string, status: number) {
+  if (status !== 401) return;
+  if (shouldIgnoreUnauthorized(path)) return;
+  if (!activeAuthToken) return;
+  activeAuthToken = null;
+  if (sessionExpiredNotified) return;
+  sessionExpiredNotified = true;
+  try {
+    sessionExpiredHandler?.();
+  } catch {
+    // Caller may already be tearing down navigation.
+  }
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit = {}) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    const name = error instanceof Error ? error.name : "";
+    if (name === "AbortError") {
+      throw new Error("Request timed out. Check your connection and try again.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function get(path: string) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetchWithTimeout(`${API_BASE_URL}${path}`, {
     credentials: "include",
     headers: buildHeaders(),
   });
+  notifySessionExpiredIfNeeded(path, response.status);
   const data = await response.json().catch(() => ({}));
   return { response, data };
 }
 
 async function del(path: string) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetchWithTimeout(`${API_BASE_URL}${path}`, {
     method: "DELETE",
     credentials: "include",
     headers: buildHeaders(),
   });
+  notifySessionExpiredIfNeeded(path, response.status);
   const data = await response.json().catch(() => ({}));
   return { response, data };
 }
 
 async function post(path: string, payload: Record<string, unknown>) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetchWithTimeout(`${API_BASE_URL}${path}`, {
     method: "POST",
     credentials: "include",
     headers: buildHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
   });
-
+  notifySessionExpiredIfNeeded(path, response.status);
   const data = await response.json().catch(() => ({}));
   return { response, data };
 }
 
 async function patch(path: string, payload: Record<string, unknown>) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetchWithTimeout(`${API_BASE_URL}${path}`, {
     method: "PATCH",
     credentials: "include",
     headers: buildHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
   });
-
+  notifySessionExpiredIfNeeded(path, response.status);
   const data = await response.json().catch(() => ({}));
   return { response, data };
 }
@@ -1887,6 +2016,7 @@ export async function registerProfile(payload: {
   email: string;
   birthdate: string;
   password: string;
+  idPicture?: string;
 }): Promise<ApiResult & { token?: string; user?: AuthUser }> {
   const { response, data } = await post(
     "/api/auth/register-profile",
@@ -2214,6 +2344,70 @@ export async function claimMiniResetReward(payload: {
   const { studentNumber: _studentNumber, ...body } = payload;
   const { response, data } = await post("/api/wellness/mini-reset-reward", body);
   return { ok: response.ok, message: data?.message, dailyCapReached: data?.dailyCapReached, rewardTala: data?.rewardTala, totalTala: data?.totalTala };
+}
+
+const PENDING_ACHIEVEMENTS_PREFIX = "@bawat-tala/pending-achievements";
+
+function getPendingAchievementsKey(studentNumber: string) {
+  return `${PENDING_ACHIEVEMENTS_PREFIX}:${studentNumber}`;
+}
+
+export async function enqueuePendingAchievement(
+  studentNumber: string,
+  achievementId: string,
+): Promise<void> {
+  const sn = String(studentNumber || "").trim();
+  const id = String(achievementId || "").trim();
+  if (!sn || !id) return;
+  const key = getPendingAchievementsKey(sn);
+  try {
+    const stored = await AsyncStorage.getItem(key);
+    const list: string[] = stored ? (JSON.parse(stored) as string[]) : [];
+    if (!Array.isArray(list)) {
+      await AsyncStorage.setItem(key, JSON.stringify([id]));
+      return;
+    }
+    if (!list.includes(id)) {
+      list.push(id);
+      await AsyncStorage.setItem(key, JSON.stringify(list));
+    }
+  } catch {
+    // Queue write failures should not block the unlock attempt path.
+  }
+}
+
+export async function syncPendingAchievements(studentNumber: string): Promise<boolean> {
+  const sn = String(studentNumber || "").trim();
+  if (!sn) return true;
+  const key = getPendingAchievementsKey(sn);
+  try {
+    const stored = await AsyncStorage.getItem(key);
+    if (!stored) return true;
+    const list = JSON.parse(stored) as string[];
+    if (!Array.isArray(list) || list.length === 0) {
+      await AsyncStorage.removeItem(key);
+      return true;
+    }
+    const remaining: string[] = [];
+    for (const achievementId of list) {
+      try {
+        const result = await claimAchievementReward(achievementId);
+        if (!(result.ok || result.alreadyUnlocked)) {
+          remaining.push(achievementId);
+        }
+      } catch {
+        remaining.push(achievementId);
+      }
+    }
+    if (remaining.length === 0) {
+      await AsyncStorage.removeItem(key);
+      return true;
+    }
+    await AsyncStorage.setItem(key, JSON.stringify(remaining));
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 export async function claimAchievementReward(achievementId: string): Promise<ApiResult & { rewardTala?: number; totalTala?: number; alreadyUnlocked?: boolean }> {

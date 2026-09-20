@@ -1,6 +1,24 @@
 ﻿const crypto = require("crypto");
 
-const TOKEN_SECRET = process.env.COOKIE_SESSION_SECRET || "dev-cookie-secret";
+function requireCookieSessionSecret() {
+  const value = String(process.env.COOKIE_SESSION_SECRET || "").trim();
+  const placeholders = new Set([
+    "",
+    "change-this-session-secret",
+    "dev-cookie-secret",
+    "changeme",
+    "secret",
+    "replace-with-a-long-random-secret",
+  ]);
+  if (placeholders.has(value) || value.length < 32) {
+    throw new Error(
+      "COOKIE_SESSION_SECRET must be set to a strong random value (min 32 chars). No public/dev fallback is allowed.",
+    );
+  }
+  return value;
+}
+
+const TOKEN_SECRET = requireCookieSessionSecret();
 const TOKEN_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 function createStudentToken(studentNumber) {

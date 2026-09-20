@@ -25,9 +25,18 @@ export function OtpCodeInput({
   const handleDigitChange = (index: number, rawValue: string) => {
     const numeric = rawValue.replace(/\D/g, "");
     const current = Array.from({ length }, (_v, i) => value[i] ?? "");
+    const hadDigit = Boolean(current[index]);
 
     if (!numeric) {
       current[index] = "";
+      // Android often skips onKeyPress when the box is already empty — treat
+      // an empty change on an empty box as backspace into the previous digit.
+      if (!hadDigit && index > 0) {
+        current[index - 1] = "";
+        onChangeCode(current.join(""));
+        inputRefs.current[index - 1]?.focus();
+        return;
+      }
       onChangeCode(current.join(""));
       return;
     }
@@ -53,6 +62,9 @@ export function OtpCodeInput({
     if (key !== "Backspace") return;
     const currentDigit = value[index] ?? "";
     if (!currentDigit && index > 0) {
+      const current = Array.from({ length }, (_v, i) => value[i] ?? "");
+      current[index - 1] = "";
+      onChangeCode(current.join(""));
       inputRefs.current[index - 1]?.focus();
     }
   };
@@ -70,7 +82,8 @@ export function OtpCodeInput({
           onKeyPress={({ nativeEvent }) => handleKeyPress(index, nativeEvent.key)}
           keyboardType="number-pad"
           textContentType="oneTimeCode"
-          maxLength={length}
+          // Empty box accepts a paste of the full code; filled box is 1 digit.
+          maxLength={digit ? 1 : length}
           style={[styles.box, boxStyle]}
         />
       ))}

@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import { useState } from "react";
-import { Alert, Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { FormTextInput } from "../components/forms/FormTextInput";
 import { PasswordField } from "../components/forms/PasswordField";
 import { AuthCardLayout } from "../components/layout/AuthCardLayout";
@@ -121,6 +121,9 @@ export default function LoginScreen() {
         placeholder="(e.g. 23-2903)"
         placeholderTextColor="#8D8D8D"
         autoCapitalize="none"
+        autoCorrect={false}
+        keyboardType="numbers-and-punctuation"
+        maxLength={10}
         editable={!isBusy}
         labelStyle={styles.label}
         inputStyle={styles.input}

@@ -1,9 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
+import { showAppNotice } from "../lib/app-notice";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Linking,
   Modal,
@@ -14,7 +14,8 @@ import {
   Switch,
   Text,
   TextInput,
-  View } from "react-native";
+  View
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { OtpCodeInput } from "../components/forms/OtpCodeInput";
 import { ConfirmationModal } from "../components/ui/ConfirmationModal";
@@ -102,18 +103,6 @@ const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 function isSection(value: string | undefined): value is SettingsSection {
   return Boolean(value && value in SCREEN_COPY);
-}
-
-function showAppAlert(title: string, message: string, onOk?: () => void) {
-  if (Platform.OS === "web") {
-    const browserAlert = (globalThis as { alert?: (value: string) => void }).alert;
-    if (typeof browserAlert === "function") {
-      browserAlert(`${title}\n\n${message}`);
-      if (onOk) onOk();
-      return;
-    }
-  }
-  Alert.alert(title, message, onOk ? [{ text: "OK", onPress: onOk }] : undefined);
 }
 
 function resolveSettingsSection(value: string | undefined): SettingsSection {
@@ -479,6 +468,14 @@ function birthdateToPickerDate(value: string) {
   return new Date(parsed.year, parsed.monthIndex, parsed.day);
 }
 
+const PROFILE_FULL_NAME_MAX_LENGTH = 80;
+const PROFILE_EMAIL_MAX_LENGTH = 254;
+const PROFILE_STREET_MAX_LENGTH = 120;
+const PROFILE_PLACE_MAX_LENGTH = 80;
+const FEEDBACK_SUBJECT_MAX_LENGTH = 120;
+const FEEDBACK_MESSAGE_MAX_LENGTH = 2000;
+const DELETE_PASSWORD_MAX_LENGTH = 128;
+
 export default function ProfileSettingsScreen() {
   const { resetPin, section, view } = useLocalSearchParams<{ resetPin?: string; section?: string; view?: string }>();
   const activeSection: SettingsSection = resolveSettingsSection(section);
@@ -585,13 +582,13 @@ export default function ProfileSettingsScreen() {
     const result = await restoreJournalEntriesBulk(selectedDeletedIds);
     setDeletedActionBusy(false);
     if (!result.ok) {
-      showAppAlert("Restore Failed", result.message || "Could not restore selected entries.");
+      showAppNotice("Restore Failed", result.message || "Could not restore selected entries.");
       return;
     }
     const restored = new Set(result.restoredIds?.length ? result.restoredIds : selectedDeletedIds);
     setDeletedEntries((prev) => prev.filter((entry) => !restored.has(entry.id)));
     clearDeletedSelection();
-    showAppAlert(
+    showAppNotice(
       "Restored",
       result.restoredCount && result.restoredCount > 1
         ? `${result.restoredCount} journal entries were restored.`
@@ -606,7 +603,7 @@ export default function ProfileSettingsScreen() {
     setDeletedActionBusy(false);
     setPendingPermanentDelete(false);
     if (!result.ok) {
-      showAppAlert("Delete Failed", result.message || "Could not permanently delete selected entries.");
+      showAppNotice("Delete Failed", result.message || "Could not permanently delete selected entries.");
       return;
     }
     const deleted = new Set(result.deletedIds?.length ? result.deletedIds : selectedDeletedIds);
@@ -629,7 +626,7 @@ export default function ProfileSettingsScreen() {
     }
     setShowDeleteAccountModal(false);
     clearPreferences();
-    clearUser();
+    await clearUser();
     router.replace("/login");
   };
 
@@ -935,7 +932,7 @@ export default function ProfileSettingsScreen() {
       setFeedbackErrors(errors);
       const firstErrorMessage = errors.subject || errors.message || errors.category || errors.type || "Please fill in all required fields.";
       setFeedbackErrorBanner(firstErrorMessage);
-      showAppAlert("Incomplete Information", firstErrorMessage);
+      showAppNotice("Incomplete Information", firstErrorMessage);
       return;
     }
 
@@ -943,7 +940,7 @@ export default function ProfileSettingsScreen() {
     setFeedbackErrorBanner("");
 
     if (!user?.studentNumber) {
-      showAppAlert("Sign in needed", isSupport ? "Please sign in again before submitting a request." : "Please sign in again before sending feedback.");
+      showAppNotice("Sign in needed", isSupport ? "Please sign in again before submitting a request." : "Please sign in again before sending feedback.");
       return;
     }
 
@@ -963,7 +960,7 @@ export default function ProfileSettingsScreen() {
 
       if (!result.ok) {
         setFeedbackErrorBanner(result.message || "Unable to send request.");
-        showAppAlert(isSupport ? "Request not sent" : "Feedback not sent", result.message || "Please try again in a bit.");
+        showAppNotice(isSupport ? "Request not sent" : "Feedback not sent", result.message || "Please try again in a bit.");
         return;
       }
 
@@ -975,7 +972,7 @@ export default function ProfileSettingsScreen() {
       setFeedbackSuccessMessage(
         result.message || (isSupport ? "Success! Your support request was sent." : "Success! Your feedback was sent."),
       );
-      showAppAlert(
+      showAppNotice(
         isSupport ? "Request submitted" : "Feedback sent",
         result.message || (isSupport ? "Thank you. We'll look into your request." : "Thank you for helping improve Bawat Tala."),
         () => {
@@ -984,7 +981,7 @@ export default function ProfileSettingsScreen() {
       );
     } catch {
       setFeedbackErrorBanner("Please check your connection and try again.");
-      showAppAlert(isSupport ? "Request not sent" : "Feedback not sent", "Please check your connection and try again.");
+      showAppNotice(isSupport ? "Request not sent" : "Feedback not sent", "Please check your connection and try again.");
     } finally {
       setFeedbackSending(false);
     }
@@ -995,7 +992,7 @@ export default function ProfileSettingsScreen() {
       const ImagePicker = await import("expo-image-picker");
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert("Photo permission needed", "Allow photo access to attach an image to your feedback.");
+        showAppNotice("Photo permission needed", "Allow photo access to attach an image to your feedback.");
         return;
       }
 
@@ -1008,19 +1005,19 @@ export default function ProfileSettingsScreen() {
       if (result.canceled || !result.assets[0]) return;
       const asset = result.assets[0];
       if (!asset.base64) {
-        Alert.alert("Image not attached", "Could not read the selected image.");
+        showAppNotice("Image not attached", "Could not read the selected image.");
         return;
       }
 
       const contentType = asset.mimeType || "image/jpeg";
       if (!["image/jpeg", "image/jpg", "image/png", "image/webp"].includes(contentType)) {
-        Alert.alert("Unsupported image", "Please attach a JPG, PNG, or WEBP image.");
+        showAppNotice("Unsupported image", "Please attach a JPG, PNG, or WEBP image.");
         return;
       }
 
       const estimatedBytes = Math.ceil((asset.base64.length * 3) / 4);
       if ((asset.fileSize || estimatedBytes) > FEEDBACK_ATTACHMENT_MAX_BYTES) {
-        Alert.alert("Image too large", "Please choose an image that is 5 MB or smaller.");
+        showAppNotice("Image too large", "Please choose an image that is 5 MB or smaller.");
         return;
       }
 
@@ -1030,7 +1027,7 @@ export default function ProfileSettingsScreen() {
         fileName: asset.fileName || "feedback-image.jpg",
         uri: asset.uri });
     } catch {
-      Alert.alert("Image not attached", "Please try choosing the image again.");
+      showAppNotice("Image not attached", "Please try choosing the image again.");
     }
   };
 
@@ -1124,7 +1121,7 @@ export default function ProfileSettingsScreen() {
       setAppLockAutoLock(draftAutoLock);
     }
     closePinEditor();
-    Alert.alert("Journal Lock Updated", "Your journal is now protected and will lock right away.");
+    showAppNotice("Journal Lock Updated", "Your journal is now protected and will lock right away.");
   };
 
   const handleTurnOnExistingLock = async () => {
@@ -1149,18 +1146,18 @@ export default function ProfileSettingsScreen() {
 
     setCurrentPin("");
     setPinConfirmAction(null);
-    Alert.alert("Journal Lock On", "Your existing PIN is active again.");
+    showAppNotice("Journal Lock On", "Your existing PIN is active again.");
   };
 
   const handleMuniRemindersToggle = async (nextValue: boolean) => {
     const result = await setMuniRemindersEnabled(nextValue);
     if (!result.ok) {
-      Alert.alert("Muni reminders", result.message || "Unable to update reminders right now.");
+      showAppNotice("Muni reminders", result.message || "Unable to update reminders right now.");
       return;
     }
 
     if (nextValue) {
-      Alert.alert("Muni reminders are on", "Muni will gently check in with you during the day.");
+      showAppNotice("Muni reminders are on", "Muni will gently check in with you during the day.");
     }
   };
 
@@ -1215,7 +1212,7 @@ export default function ProfileSettingsScreen() {
     setPinConfirm("");
     setShowPinEditor(false);
     closePinReset();
-    Alert.alert("Journal Lock Updated", "Your Journal Lock PIN was reset. Use the new PIN from now on.");
+    showAppNotice("Journal Lock Updated", "Your Journal Lock PIN was reset. Use the new PIN from now on.");
   };
 
   const handleTurnOffJournalLock = async () => {
@@ -1617,8 +1614,10 @@ return (
                     onChangeText={setUpperDraft("fullName", setDraftFullName)}
                     placeholder="Full name"
                     placeholderTextColor="#97A1AA"
+                    maxLength={PROFILE_FULL_NAME_MAX_LENGTH}
                     style={[styles.textInput, styles.profileInput]}
                   />
+                  <Text style={styles.charCount}>{draftFullName.length}/{PROFILE_FULL_NAME_MAX_LENGTH}</Text>
                   {!!profileFieldErrors.fullName && <Text style={styles.fieldError}>{profileFieldErrors.fullName}</Text>}
                   <View style={styles.fieldActionsRow}>
                     <Pressable style={[styles.fieldSaveButton, profileSaving && styles.disabledButton]} onPress={() => void handleSaveField("fullName")} disabled={profileSaving}>
@@ -1667,8 +1666,10 @@ return (
                     keyboardType="email-address"
                     placeholder="name@example.com"
                     placeholderTextColor="#97A1AA"
+                    maxLength={PROFILE_EMAIL_MAX_LENGTH}
                     style={[styles.textInput, styles.profileInput]}
                   />
+                  <Text style={styles.charCount}>{draftEmail.length}/{PROFILE_EMAIL_MAX_LENGTH}</Text>
                   {!!profileFieldErrors.email && <Text style={styles.fieldError}>{profileFieldErrors.email}</Text>}
                   {!!profileError && !profileAwaitingEmailOtp && <Text style={styles.fieldError}>{profileError}</Text>}
                   <View style={styles.fieldActionsRow}>
@@ -1825,8 +1826,10 @@ return (
                     onChangeText={setUpperDraft("street", setDraftStreet)}
                     placeholder="Street"
                     placeholderTextColor="#97A1AA"
+                    maxLength={PROFILE_STREET_MAX_LENGTH}
                     style={[styles.textInput, styles.profileInput]}
                   />
+                  <Text style={styles.charCount}>{draftStreet.length}/{PROFILE_STREET_MAX_LENGTH}</Text>
                   {!!profileFieldErrors.street && <Text style={styles.fieldError}>{profileFieldErrors.street}</Text>}
                   <View style={styles.fieldActionsRow}>
                     <Pressable style={[styles.fieldSaveButton, profileSaving && styles.disabledButton]} onPress={() => void handleSaveField("street")} disabled={profileSaving}>
@@ -1902,8 +1905,10 @@ return (
                     onChangeText={setUpperDraft("city", setDraftCity)}
                     placeholder="City"
                     placeholderTextColor="#97A1AA"
+                    maxLength={PROFILE_PLACE_MAX_LENGTH}
                     style={[styles.textInput, styles.profileInput]}
                   />
+                  <Text style={styles.charCount}>{draftCity.length}/{PROFILE_PLACE_MAX_LENGTH}</Text>
                   {!!profileFieldErrors.city && <Text style={styles.fieldError}>{profileFieldErrors.city}</Text>}
                   <View style={styles.fieldActionsRow}>
                     <Pressable style={[styles.fieldSaveButton, profileSaving && styles.disabledButton]} onPress={() => void handleSaveField("city")} disabled={profileSaving}>
@@ -1939,8 +1944,10 @@ return (
                     onChangeText={setUpperDraft("province", setDraftProvince)}
                     placeholder="Province"
                     placeholderTextColor="#97A1AA"
+                    maxLength={PROFILE_PLACE_MAX_LENGTH}
                     style={[styles.textInput, styles.profileInput]}
                   />
+                  <Text style={styles.charCount}>{draftProvince.length}/{PROFILE_PLACE_MAX_LENGTH}</Text>
                   {!!profileFieldErrors.province && <Text style={styles.fieldError}>{profileFieldErrors.province}</Text>}
                   <View style={styles.fieldActionsRow}>
                     <Pressable style={[styles.fieldSaveButton, profileSaving && styles.disabledButton]} onPress={() => void handleSaveField("province")} disabled={profileSaving}>
@@ -1976,8 +1983,10 @@ return (
                     onChangeText={setUpperDraft("region", setDraftRegion)}
                     placeholder="Region"
                     placeholderTextColor="#97A1AA"
+                    maxLength={PROFILE_PLACE_MAX_LENGTH}
                     style={[styles.textInput, styles.profileInput]}
                   />
+                  <Text style={styles.charCount}>{draftRegion.length}/{PROFILE_PLACE_MAX_LENGTH}</Text>
                   {!!profileFieldErrors.region && <Text style={styles.fieldError}>{profileFieldErrors.region}</Text>}
                   <View style={styles.fieldActionsRow}>
                     <Pressable style={[styles.fieldSaveButton, profileSaving && styles.disabledButton]} onPress={() => void handleSaveField("region")} disabled={profileSaving}>
@@ -2417,8 +2426,10 @@ return (
                   }}
                   placeholder="What is this regarding?"
                   placeholderTextColor="#97A1AA"
+                  maxLength={FEEDBACK_SUBJECT_MAX_LENGTH}
                   style={[styles.textInput, feedbackErrors.subject && styles.inputError]}
                 />
+                  <Text style={styles.charCount}>{feedbackSubject.length}/{FEEDBACK_SUBJECT_MAX_LENGTH}</Text>
                 {feedbackErrors.subject ? (
                   <Text style={styles.fieldError}>{feedbackErrors.subject}</Text>
                 ) : null}
@@ -2443,8 +2454,10 @@ return (
                   placeholderTextColor="#97A1AA"
                   multiline
                   textAlignVertical="top"
+                  maxLength={FEEDBACK_MESSAGE_MAX_LENGTH}
                   style={[styles.feedbackInput, feedbackErrors.message && styles.inputError]}
                 />
+                  <Text style={styles.charCount}>{feedbackMessage.length}/{FEEDBACK_MESSAGE_MAX_LENGTH}</Text>
                 {feedbackErrors.message ? (
                   <Text style={styles.fieldError}>{feedbackErrors.message}</Text>
                 ) : null}
@@ -2909,7 +2922,10 @@ return (
               placeholder="Enter password"
               placeholderTextColor="#97A1AA"
               style={styles.deleteModalInput}
-            />
+            
+                    maxLength={DELETE_PASSWORD_MAX_LENGTH}
+                  />
+                  <Text style={styles.charCount}>{deleteAccountPassword.length}/{DELETE_PASSWORD_MAX_LENGTH}</Text>
             {deleteAccountError ? <Text style={styles.deleteModalError}>{deleteAccountError}</Text> : null}
             <View style={styles.modalActions}>
               <Pressable
@@ -3678,6 +3694,14 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit-SemiBold",
     marginTop: 8,
     marginBottom: 2 },
+  charCount: {
+    alignSelf: "flex-end",
+    color: "#91A0AB",
+    fontSize: 11,
+    lineHeight: 14,
+    marginTop: 6,
+    marginBottom: 2,
+  },
   textInput: {
     minHeight: 46,
     borderRadius: 14,

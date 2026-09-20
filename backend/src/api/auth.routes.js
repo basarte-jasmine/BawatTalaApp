@@ -2544,6 +2544,20 @@ router.post("/forgot-password/verify-code", async (req, res) => {
 
 router.post("/register-profile", async (req, res) => {
   const password = normalizeCompactSpaces(req.body.password || "");
+  const rawIdPicture = req.body.idPicture || req.body.id_picture;
+  let compressedIdPicture = null;
+  if (typeof rawIdPicture === "string" && rawIdPicture.trim()) {
+    const trimmed = rawIdPicture.trim();
+    // Enforce 500KB cap so uncompressed images do not consume large database storage
+    if (trimmed.length <= 500 * 1024) {
+      if (trimmed.startsWith("data:image/")) {
+        compressedIdPicture = trimmed;
+      } else if (/^[A-Za-z0-9+/=]+$/.test(trimmed)) {
+        compressedIdPicture = `data:image/jpeg;base64,${trimmed}`;
+      }
+    }
+  }
+
   const payload = {
     full_name: normalizeUpperText(req.body.fullName || ""),
     student_number: normalizeStudentNumber(req.body.studentNumber || ""),
@@ -2559,6 +2573,7 @@ router.post("/register-profile", async (req, res) => {
     password_hash: password ? hashPassword(password) : "",
     is_email_verified: true,
     is_id_verified: true,
+    id_picture: compressedIdPicture || null,
   };
 
   if (

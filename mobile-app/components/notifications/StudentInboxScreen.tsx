@@ -3,7 +3,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, ScrollView,
+  RefreshControl, StyleSheet, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ConfirmationModal } from "../ui/ConfirmationModal";
@@ -120,6 +121,7 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
   const [loading, setLoading] = useState(() => !cachedItems);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [activeThreadKey, setActiveThreadKey] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [remoteThreadMessages, setRemoteThreadMessages] = useState<AppNotification[] | null>(null);
   const [remoteThreadPhoto, setRemoteThreadPhoto] = useState("");
   const threadScrollRef = useRef<ScrollView>(null);
@@ -269,6 +271,43 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
       setLoading(false);
     }
   }, [cacheKey, persistInboxItems, requestCategory, user?.studentNumber]);
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await loadNotifications();
+      if (showingThread && activeThread) {
+        const threadId =
+          activeThread.counselorId ||
+          (activeThread.key.startsWith("id:") ? activeThread.key.slice(3) : "") ||
+          (activeThread.latest?.metadata?.thread ? String(activeThread.latest.id) : "");
+        if (threadId) {
+          const result = await fetchStudentMessageThread(threadId);
+          if (result.ok && result.thread?.messages?.length) {
+            const mapped = result.thread.messages.map((entry) => ({
+              createdAt: entry.createdAt,
+              id: entry.id,
+              isRead: entry.isRead ?? true,
+              kind: "ADMIN_MESSAGE" as const,
+              message: entry.body,
+              metadata: {
+                counselorId: result.thread?.counselorId || threadId,
+                counselorName: result.thread?.counselorName || activeThread.displayName,
+                from: entry.from,
+                pictureUrl: result.thread?.pictureUrl || result.thread?.photoUrl,
+              },
+              timeLabel: "",
+              title: result.thread?.counselorName || activeThread.displayName,
+            }));
+            mapped.sort((a, b) => (Date.parse(a.createdAt) || 0) - (Date.parse(b.createdAt) || 0));
+            setRemoteThreadMessages(mapped);
+          }
+        }
+      }
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [activeThread, loadNotifications, showingThread]);
 
   useFocusEffect(
     useCallback(() => {
@@ -649,7 +688,16 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
           style={styles.scroll}
           contentContainerStyle={styles.threadScrollContent}
           showsVerticalScrollIndicator={false}
-          onContentSizeChange={() => threadScrollRef.current?.scrollToEnd({ animated: false })}
+          onContentSizeChange={() =
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              colors={["#73CD44"]}
+              tintColor="#73CD44"
+            />
+          }
+        > threadScrollRef.current?.scrollToEnd({ animated: false })}
         >
           {threadMessages.map((item, index) => {
             const outgoing = isOutgoingAdminMessage(item);
@@ -696,7 +744,19 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
           })}
         </ScrollView>
       ) : (
-        <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              colors={["#73CD44"]}
+              tintColor="#73CD44"
+            />
+          }
+        >
           {isMessageInbox ? (
             messageThreads.length ? (
               messageThreads.map((thread) => renderThreadCard(thread))

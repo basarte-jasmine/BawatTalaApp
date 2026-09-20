@@ -3,7 +3,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { ActivityIndicator, Image, Linking, Modal, Pressable, ScrollView,
+  RefreshControl, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Circle } from "react-native-svg";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
@@ -334,6 +335,8 @@ function buildFallbackReaderPages(book: LibraryBookRecord): ReaderPage[] {
   ];
 }
 
+const LIBRARY_SEARCH_MAX_LENGTH = 120;
+
 export default function LibraryScreen() {
   const { user } = useAuthSession();
   const { width } = useWindowDimensions();
@@ -344,6 +347,7 @@ export default function LibraryScreen() {
   const [builtInCoverUrls, setBuiltInCoverUrls] = useState<Record<string, string>>({});
   const [activeShelf, setActiveShelf] = useState<ShelfTab>("featured");
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isMyShelfLoading, setIsMyShelfLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [myShelfErrorMessage, setMyShelfErrorMessage] = useState("");
@@ -614,6 +618,20 @@ export default function LibraryScreen() {
       setNextReadingAchievement((current) => current ?? FIRST_READING_ACHIEVEMENT);
     }
   }, [user?.studentNumber]);
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      if (activeShelf === "featured") {
+        await loadBooks(submittedQuery);
+      }
+      await loadMyShelf();
+      await loadReadingRewardStatus();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [activeShelf, loadBooks, loadMyShelf, loadReadingRewardStatus, submittedQuery]);
+
 
   useEffect(() => {
     void loadReadingRewardStatus();
@@ -1165,6 +1183,14 @@ export default function LibraryScreen() {
         style={styles.scroll}
         contentContainerStyle={[styles.scrollContent, compact && styles.scrollContentCompact]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            colors={["#73CD44"]}
+            tintColor="#73CD44"
+          />
+        }
       >
         <View style={styles.contentFrame}>
           <View style={[styles.heroCard, compact && styles.heroCardCompact]}>
@@ -1174,9 +1200,9 @@ export default function LibraryScreen() {
             <View style={[styles.heroHeaderRow, compact && styles.heroHeaderRowStacked]}>
               <View style={styles.heroTextWrap}>
                 <Text style={styles.heroBadge}>Reading Room</Text>
-                <Text style={[styles.heroTitle, compact && styles.heroTitleCompact]}>A calm matcha shelf for slow, comforting reading.</Text>
+                <Text style={[styles.heroTitle, compact && styles.heroTitleCompact]}>A little space to slow down and read.</Text>
                 <Text style={[styles.heroBody, compact && styles.heroBodyCompact]}>
-                  Search Open Library books, read free EPUBs inside Bawat Tala, or open borrow and preview titles with your account.
+                  Browse the library, read books available in Bawat Tala, or check out titles you can read online.
                 </Text>
               </View>
 
@@ -1234,6 +1260,7 @@ export default function LibraryScreen() {
                 placeholder={activeShelf === "my" ? "Search your shelf" : "Search title, author, ISBN"}
                 placeholderTextColor="#6F845C"
                 returnKeyType="search"
+                maxLength={LIBRARY_SEARCH_MAX_LENGTH}
                 style={styles.searchInput}
               />
               {searchDraft.length ? (
@@ -1242,6 +1269,9 @@ export default function LibraryScreen() {
                 </Pressable>
               ) : null}
             </View>
+            <Text style={styles.searchCharCount}>
+              {searchDraft.length}/{LIBRARY_SEARCH_MAX_LENGTH}
+            </Text>
             <Pressable style={styles.searchButton} onPress={handleSearchSubmit}>
               <Ionicons name="search" size={15} color="#FFFFFF" />
               <Text style={styles.searchButtonText}>Search</Text>
@@ -2010,6 +2040,14 @@ const styles = StyleSheet.create({
     columnGap: 8,
     paddingLeft: 12,
     paddingRight: 6 },
+  searchCharCount: {
+    alignSelf: "flex-end",
+    color: "#91A0AB",
+    fontSize: 11,
+    lineHeight: 14,
+    marginTop: 4,
+    marginBottom: 2,
+  },
   searchInput: {
     flex: 1,
     minWidth: 0,

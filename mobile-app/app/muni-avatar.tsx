@@ -3,7 +3,8 @@ import { useFocusEffect } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, Modal, Pressable, ScrollView,
+  RefreshControl, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
@@ -51,6 +52,7 @@ export default function MuniAvatarScreen() {
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [isSavingLoadout, setIsSavingLoadout] = useState(false);
   const [isWardrobeLoading, setIsWardrobeLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const loadWardrobe = useCallback(async () => {
     if (!user?.studentNumber) {
@@ -71,6 +73,15 @@ export default function MuniAvatarScreen() {
       void loadWardrobe();
     }, [loadWardrobe]),
   );
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await loadWardrobe();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [loadWardrobe]);
 
   const leaveScreen = () => {
     if (router.canGoBack()) {
@@ -168,7 +179,19 @@ export default function MuniAvatarScreen() {
         <View style={styles.topBarSpacer} />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            colors={["#73CD44"]}
+            tintColor="#73CD44"
+          />
+        }
+      >
         <View style={styles.previewSection}>
           <View style={styles.heroCard}>
             {equippedBackgroundSource ? (

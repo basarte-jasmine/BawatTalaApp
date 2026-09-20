@@ -1,10 +1,11 @@
-﻿import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuthSession } from "../lib/auth-session";
+import { syncPendingAchievements } from "../lib/backend-api";
 
 const BOTTLE_ART = require("../assets/images/Achievements/A Bottle for Tomorrow.jpg");
 
@@ -80,33 +81,162 @@ const ACHIEVEMENTS = [
 export default function AchievementsScreen() {
   const { user } = useAuthSession();
   const [unlockedIds, setUnlockedIds] = useState<Set<string>>(new Set());
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  useEffect(() => {
+  const loadUnlocked = useCallback(async () => {
     if (!user?.studentNumber) return;
-    const checkAchievements = async () => {
-      try {
-        const bottleValue = await AsyncStorage.getItem(`@bawat-tala/future-bottle:${user.studentNumber}`);
-        const newUnlocked = new Set<string>();
-        if (bottleValue && bottleValue !== "[]") {
-          newUnlocked.add("future-bottle");
-        }
-        for (const ach of ACHIEVEMENTS) {
-          if (ach.id !== "future-bottle") {
-            const val = await AsyncStorage.getItem(`@bawat-tala/achievement:${ach.id}:${user.studentNumber}`);
-            if (val === "true") {
-               newUnlocked.add(ach.id);
-            }
+    try {
+      const bottleValue = await AsyncStorage.getItem(`@bawat-tala/future-bottle:${user.studentNumber}`);
+      const newUnlocked = new Set<string>();
+      if (bottleValue && bottleValue !== "[]") {
+        newUnlocked.add("future-bottle");
+      }
+      for (const ach of ACHIEVEMENTS) {
+        if (ach.id !== "future-bottle") {
+          const val = await AsyncStorage.getItem(`@bawat-tala/achievement:${ach.id}:${user.studentNumber}`);
+          if (val === "true") {
+            newUnlocked.add(ach.id);
           }
         }
-        setUnlockedIds(newUnlocked);
-      } catch {
       }
-    };
-    checkAchievements();
+      setUnlockedIds(newUnlocked);
+    } catch {
+      // Keep prior unlocked set on read failure.
+    }
   }, [user?.studentNumber]);
+
+  useEffect(() => {
+    void loadUnlocked();
+  }, [loadUnlocked]);
+
+  const handleRefresh = useCallback(async () => {
+    if (!user?.studentNumber) return;
+    setIsRefreshing(true);
+    try {
+      await syncPendingAchievements(user.studentNumber);
+      await loadUnlocked();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [loadUnlocked, user?.studentNumber]);
 
   const unlockedCount = unlockedIds.size;
 
-  return <SafeAreaView style={styles.screen} edges={["top"]}><View style={styles.topBar}><Pressable style={styles.back} onPress={() => router.back()}><Ionicons name="chevron-back" size={28} color="#37424F" /></Pressable><Text style={styles.topTitle}>Achievements</Text><View style={styles.back} /></View><ScrollView contentContainerStyle={styles.content}><View style={styles.summary}><View style={styles.medal}><Ionicons name="ribbon" size={26} color="#F5C447" /></View><View><Text style={styles.summaryTitle}>{unlockedCount > 0 ? `${unlockedCount} achievement${unlockedCount === 1 ? "" : "s"} unlocked` : "Your achievements"}</Text><Text style={styles.summaryText}>{unlockedCount > 0 ? "Small moments of care count." : "Your milestones will appear here."}</Text></View></View><View style={styles.cardList}>{ACHIEVEMENTS.map((ach) => { const isUnlocked = unlockedIds.has(ach.id); return (<View key={ach.id} style={[styles.card, !isUnlocked && styles.cardLocked]}><Image source={BOTTLE_ART} style={styles.art} resizeMode="cover" /><View style={styles.copy}><Text style={styles.title}>{ach.title}</Text><Text style={styles.desc}>{ach.desc}</Text></View><Ionicons name={isUnlocked ? "ribbon" : "lock-closed-outline"} size={23} color={isUnlocked ? "#B08A35" : "#9AA4AC"} /></View>); })}</View></ScrollView></SafeAreaView>;
+  return (
+    <SafeAreaView style={styles.screen} edges={["top"]}>
+      <View style={styles.topBar}>
+        <Pressable style={styles.back} onPress={() => router.back()}>
+          <Ionicons name="chevron-back" size={28} color="#37424F" />
+        </Pressable>
+        <Text style={styles.topTitle}>Achievements</Text>
+        <View style={styles.back} />
+      </View>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            colors={["#73CD44"]}
+            tintColor="#73CD44"
+          />
+        }
+      >
+        <View style={styles.summary}>
+          <View style={styles.medal}>
+            <Ionicons name="ribbon" size={26} color="#F5C447" />
+          </View>
+          <View>
+            <Text style={styles.summaryTitle}>
+              {unlockedCount > 0
+                ? `${unlockedCount} achievement${unlockedCount === 1 ? "" : "s"} unlocked`
+                : "Your achievements"}
+            </Text>
+            <Text style={styles.summaryText}>
+              {unlockedCount > 0 ? "Small moments of care count." : "Your milestones will appear here."}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.cardList}>
+          {ACHIEVEMENTS.map((ach) => {
+            const isUnlocked = unlockedIds.has(ach.id);
+            return (
+              <View key={ach.id} style={[styles.card, !isUnlocked && styles.cardLocked]}>
+                <Image source={BOTTLE_ART} style={styles.art} resizeMode="cover" />
+                <View style={styles.copy}>
+                  <Text style={styles.title}>{ach.title}</Text>
+                  <Text style={styles.desc}>{ach.desc}</Text>
+                </View>
+                <Ionicons
+                  name={isUnlocked ? "ribbon" : "lock-closed-outline"}
+                  size={23}
+                  color={isUnlocked ? "#B08A35" : "#9AA4AC"}
+                />
+              </View>
+            );
+          })}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
 }
-const styles = StyleSheet.create({ screen:{flex:1,backgroundColor:"#F7FAF6"},topBar:{height:52,backgroundColor:"#FFF",borderBottomWidth:1,borderBottomColor:"#E6ECF1",flexDirection:"row",alignItems:"center",justifyContent:"space-between",paddingHorizontal:4},back:{width:42,height:42,alignItems:"center",justifyContent:"center"},topTitle:{color:"#33475C",fontSize:18,fontFamily:"Outfit-Bold"},content:{padding:16},summary:{borderRadius:22,backgroundColor:"#303B4B",padding:18,flexDirection:"row",alignItems:"center",columnGap:13,marginBottom:14},medal:{width:48,height:48,borderRadius:16,backgroundColor:"#46566A",alignItems:"center",justifyContent:"center"},summaryTitle:{color:"#FFF",fontFamily:"Outfit-Bold",fontSize:17,marginBottom:3},summaryText:{color:"#D5DEE6",fontSize:13},card:{borderRadius:22,backgroundColor:"#FFFDF8",borderWidth:1,borderColor:"#EDE1C7",padding:13,flexDirection:"row",alignItems:"center",columnGap:12},cardLocked:{opacity:.68},art:{width:72,height:72,borderRadius:17},copy:{flex:1},kicker:{color:"#A88743",fontSize:10,fontFamily:"Outfit-Bold",letterSpacing:.6,marginBottom:3},title:{color:"#414846",fontSize:17,fontFamily:"Outfit-Bold",marginBottom:4},desc:{color:"#717A76",fontSize:13,lineHeight:18},reward:{color:"#9C7832",fontSize:11,lineHeight:15,fontFamily:"Outfit-Bold",marginTop:5}, cardList: { display: "flex", flexDirection: "column", gap: 14 } });
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: "#F7FAF6" },
+  topBar: {
+    height: 52,
+    backgroundColor: "#FFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E6ECF1",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 4,
+  },
+  back: { width: 42, height: 42, alignItems: "center", justifyContent: "center" },
+  topTitle: { color: "#33475C", fontSize: 18, fontFamily: "Outfit-Bold" },
+  content: { padding: 16 },
+  summary: {
+    borderRadius: 22,
+    backgroundColor: "#303B4B",
+    padding: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 13,
+    marginBottom: 14,
+  },
+  medal: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: "#46566A",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  summaryTitle: { color: "#FFF", fontFamily: "Outfit-Bold", fontSize: 17, marginBottom: 3 },
+  summaryText: { color: "#D5DEE6", fontSize: 13 },
+  card: {
+    borderRadius: 22,
+    backgroundColor: "#FFFDF8",
+    borderWidth: 1,
+    borderColor: "#EDE1C7",
+    padding: 13,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 12,
+  },
+  cardLocked: { opacity: 0.68 },
+  art: { width: 72, height: 72, borderRadius: 17 },
+  copy: { flex: 1 },
+  kicker: {
+    color: "#A88743",
+    fontSize: 10,
+    fontFamily: "Outfit-Bold",
+    letterSpacing: 0.6,
+    marginBottom: 3,
+  },
+  title: { color: "#414846", fontSize: 17, fontFamily: "Outfit-Bold", marginBottom: 4 },
+  desc: { color: "#717A76", fontSize: 13, lineHeight: 18 },
+  reward: { color: "#9C7832", fontSize: 11, lineHeight: 15, fontFamily: "Outfit-Bold", marginTop: 5 },
+  cardList: { display: "flex", flexDirection: "column", gap: 14 },
+});

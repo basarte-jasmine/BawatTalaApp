@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { isValidEmail, isStrongPassword } from "../lib/auth-validation";
 import { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 import { Image } from "expo-image";
 import { router } from "expo-router";
@@ -148,6 +149,7 @@ export default function RegisterScreen() {
   const [scanPreviewUri, setScanPreviewUri] = useState("");
   const [scanMessage, setScanMessage] = useState("");
   const [hasValidIdScan, setHasValidIdScan] = useState(false);
+  const [compressedIdPicture, setCompressedIdPicture] = useState("");
   const [hasAcceptedScanTerms, setHasAcceptedScanTerms] = useState(false);
   const [policyModalVisible, setPolicyModalVisible] = useState(false);
   const [policyModalTitle, setPolicyModalTitle] = useState("");
@@ -180,7 +182,9 @@ export default function RegisterScreen() {
 
   const canProceedStepFour = useMemo(() => {
     return (
-      email.includes("@") && isValidBirthdate(birthdate) && Boolean(password)
+      isValidEmail(email) &&
+      isValidBirthdate(birthdate) &&
+      isStrongPassword(password)
     );
   }, [email, birthdate, password]);
 
@@ -226,6 +230,7 @@ export default function RegisterScreen() {
     setScanPreviewUri(asset.uri);
     setScanMessage("Scanning...");
     setHasValidIdScan(false);
+    setCompressedIdPicture("");
     setIsBusy(true);
 
     if (!asset.base64) {
@@ -260,6 +265,38 @@ export default function RegisterScreen() {
       if (parsed.studentNumber)
         setStudentNumber(normalizeStudentNumber(parsed.studentNumber));
       if (parsed.program) setProgram(parsed.program);
+
+      let compressedPhoto = "";
+      try {
+        const ImageManipulator = await import("expo-image-manipulator");
+        const longestSide = Math.max(asset.width || 0, asset.height || 0);
+        const actions: any[] = [];
+        const MAX_ID_DIMENSION = 800;
+        if (longestSide > MAX_ID_DIMENSION) {
+          if ((asset.width || 0) >= (asset.height || 0)) {
+            actions.push({ resize: { width: MAX_ID_DIMENSION } });
+          } else {
+            actions.push({ resize: { height: MAX_ID_DIMENSION } });
+          }
+        }
+        const manipResult = await ImageManipulator.manipulateAsync(
+          asset.uri,
+          actions,
+          {
+            base64: true,
+            compress: 0.5,
+            format: ImageManipulator.SaveFormat.JPEG,
+          },
+        );
+        if (manipResult.base64) {
+          compressedPhoto = `data:image/jpeg;base64,${manipResult.base64}`;
+        }
+      } catch {
+        if (asset.base64) {
+          compressedPhoto = `data:image/jpeg;base64,${asset.base64}`;
+        }
+      }
+      setCompressedIdPicture(compressedPhoto);
       setScanMessage("ID scanned successfully. Proceed to continue.");
       setHasValidIdScan(true);
     } catch {
@@ -273,6 +310,20 @@ export default function RegisterScreen() {
 
   const handleSendOtp = async () => {
     setErrorMessage("");
+    if (!isValidEmail(email)) {
+      setErrorMessage("Enter a valid email like name@email.com.");
+      return;
+    }
+    if (!isValidBirthdate(birthdate)) {
+      setErrorMessage("Please enter a valid birthdate.");
+      return;
+    }
+    if (!isStrongPassword(password)) {
+      setErrorMessage(
+        "Choose a stronger password (8+ chars with upper, lower, number, and symbol).",
+      );
+      return;
+    }
     if (!canProceedStepFour) {
       setErrorMessage(
         "Please complete all required fields before sending OTP.",
@@ -329,7 +380,8 @@ export default function RegisterScreen() {
       street: street.trim(),
       email: email.trim().toLowerCase(),
       birthdate: birthdate,
-      password: password.trim() });
+      password: password.trim(),
+      idPicture: hasValidIdScan && compressedIdPicture ? compressedIdPicture : undefined });
     setIsBusy(false);
 
     if (!saveResult.ok) {

@@ -1,15 +1,28 @@
 import { Ionicons } from "@expo/vector-icons";
+import { showAppNotice } from "../lib/app-notice";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
-import { useEffect, useState, type ComponentProps } from "react";
-import { ActivityIndicator, Alert, Image, ImageSourcePropType, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useState, type ComponentProps } from "react";
+import {
+  ActivityIndicator,
+  Image,
+  ImageSourcePropType,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StudentProfileAvatar } from "../components/profile/StudentProfileAvatar";
 import { useAppPreferences } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
 import { clearStudentProfilePicture, fetchStudentProfile, updateStudentProfilePicture } from "../lib/backend-api";
+import { hydrateMuniWardrobe } from "../lib/muni-wardrobe";
 
 type SettingRow = {
   id: string;
@@ -55,17 +68,6 @@ function getImageMimeType(asset: ImagePicker.ImagePickerAsset) {
   return "";
 }
 
-function showAppAlert(title: string, message: string) {
-  if (Platform.OS === "web") {
-    const browserAlert = (globalThis as { alert?: (value: string) => void }).alert;
-    if (typeof browserAlert === "function") {
-      browserAlert(`${title}\n\n${message}`);
-      return;
-    }
-  }
-
-  Alert.alert(title, message);
-}
 
 export default function ProfileScreen() {
   const { clearUser, setUser, user } = useAuthSession();
@@ -81,6 +83,7 @@ export default function ProfileScreen() {
   const [isUploadingProfilePicture, setIsUploadingProfilePicture] = useState(false);
   const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null);
   const [hasBottleAchievement, setHasBottleAchievement] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const selectedFrame = PROFILE_FRAMES.find((frame) => frame.id === selectedFrameId)?.source ?? null;
 
   useEffect(() => {
@@ -119,7 +122,7 @@ export default function ProfileScreen() {
     }
     setShowFrameConfirmModal(false);
     setShowFrameModal(false);
-    showAppAlert("Profile Frame Saved", "Your profile frame has been updated successfully.");
+    showAppNotice("Profile Frame Saved", "Your profile frame has been updated successfully.");
   };
 
   useEffect(() => {
@@ -140,6 +143,31 @@ export default function ProfileScreen() {
       mounted = false;
     };
   }, [setUser, user]);
+  const handleRefresh = useCallback(async () => {
+    if (!user?.studentNumber) return;
+    setIsRefreshing(true);
+    try {
+      const [frameId, bottles, profileResult] = await Promise.all([
+        AsyncStorage.getItem(`${PROFILE_FRAME_KEY}:${user.studentNumber}`),
+        AsyncStorage.getItem(`@bawat-tala/future-bottle:${user.studentNumber}`),
+        fetchStudentProfile(user.studentNumber),
+      ]);
+      await hydrateMuniWardrobe(user.studentNumber).catch(() => undefined);
+      setSelectedFrameId(PROFILE_FRAMES.some((frame) => frame.id === frameId) ? frameId : null);
+      setHasBottleAchievement(Boolean(bottles && bottles !== "[]"));
+      if (profileResult && profileResult.ok && profileResult.profile) {
+        const nextProfilePictureUrl = profileResult.profile.profilePictureUrl || "";
+        setProfilePictureUrl(nextProfilePictureUrl);
+        setProgram(String(profileResult.profile.program || "").trim());
+        if (nextProfilePictureUrl !== (user.profilePictureUrl || "")) {
+          setUser({ ...user, profilePictureUrl: nextProfilePictureUrl });
+        }
+      }
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [setUser, user]);
+
   const handleBack = () => {
     if (router.canGoBack()) {
       router.back();
@@ -148,26 +176,26 @@ export default function ProfileScreen() {
     router.replace("/home");
   };
 
-  const handleConfirmSignOut = () => {
+  const handleConfirmSignOut = async () => {
     setShowSignOutModal(false);
     clearPreferences();
-    clearUser();
+    await clearUser();
     router.replace("/login");
   };
 
   const saveSelectedProfilePicture = async (asset: ImagePicker.ImagePickerAsset) => {
     if (!user?.studentNumber) {
-      showAppAlert("Sign in needed", "Please sign in again before updating your profile picture.");
+      showAppNotice("Sign in needed", "Please sign in again before updating your profile picture.");
       return;
     }
 
     const mimeType = getImageMimeType(asset);
     if (!["image/jpeg", "image/png"].includes(mimeType)) {
-      showAppAlert("Unsupported image", "Please choose a PNG or JPEG image only.");
+      showAppNotice("Unsupported image", "Please choose a PNG or JPEG image only.");
       return;
     }
     if (asset.fileSize && asset.fileSize > PROFILE_PICTURE_LIMIT_BYTES) {
-      showAppAlert("Image too large", "Profile pictures must be 5 MB or smaller.");
+      showAppNotice("Image too large", "Profile pictures must be 5 MB or smaller.");
       return;
     }
 
@@ -193,7 +221,7 @@ export default function ProfileScreen() {
 
       const compressedBytes = Math.ceil((compressed.base64.length * 3) / 4);
       if (compressedBytes > PROFILE_PICTURE_LIMIT_BYTES) {
-        showAppAlert("Image too large", "Please choose a smaller image and try again.");
+        showAppNotice("Image too large", "Please choose a smaller image and try again.");
         return;
       }
 
@@ -202,15 +230,15 @@ export default function ProfileScreen() {
         dataUrl: `data:image/jpeg;base64,${compressed.base64}`,
         fileName: `${user.studentNumber}-profile` });
       if (!result.ok || !result.profilePictureUrl) {
-        showAppAlert("Upload failed", result.message || "Please try again in a moment.");
+        showAppNotice("Upload failed", result.message || "Please try again in a moment.");
         return;
       }
 
       setProfilePictureUrl(result.profilePictureUrl);
       setUser({ ...user, profilePictureUrl: result.profilePictureUrl });
-      showAppAlert("Profile picture updated", "Your new picture will now appear across Bawat Tala.");
+      showAppNotice("Profile picture updated", "Your new picture will now appear across Bawat Tala.");
     } catch (error) {
-      showAppAlert(
+      showAppNotice(
         "Upload failed",
         error instanceof Error ? error.message : "Please try choosing the image again.",
       );
@@ -224,13 +252,13 @@ export default function ProfileScreen() {
       if (source === "camera" && Platform.OS !== "web") {
         const permission = await ImagePicker.requestCameraPermissionsAsync();
         if (!permission.granted) {
-          showAppAlert("Camera permission needed", "Allow camera access to take a profile picture.");
+          showAppNotice("Camera permission needed", "Allow camera access to take a profile picture.");
           return;
         }
       } else if (Platform.OS !== "web") {
         const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (!permission.granted) {
-          showAppAlert("Photo permission needed", "Allow photo access to choose a profile picture.");
+          showAppNotice("Photo permission needed", "Allow photo access to choose a profile picture.");
           return;
         }
       }
@@ -251,7 +279,7 @@ export default function ProfileScreen() {
         await saveSelectedProfilePicture(result.assets[0]);
       }
     } catch {
-      showAppAlert("Photo unavailable", "Please try opening the camera or photo library again.");
+      showAppNotice("Photo unavailable", "Please try opening the camera or photo library again.");
     }
   };
 
@@ -272,13 +300,13 @@ export default function ProfileScreen() {
     try {
       const result = await clearStudentProfilePicture();
       if (!result.ok) {
-        showAppAlert("Photo not removed", result.message || "Please try again.");
+        showAppNotice("Photo not removed", result.message || "Please try again.");
         return;
       }
       setProfilePictureUrl("");
       setUser({ ...user, profilePictureUrl: "" });
     } catch {
-      showAppAlert("Photo not removed", "Please try again.");
+      showAppNotice("Photo not removed", "Please try again.");
     } finally {
       setIsUploadingProfilePicture(false);
     }
@@ -299,7 +327,7 @@ export default function ProfileScreen() {
         router.push("/referral" as never);
         return;
       default:
-        showAppAlert("Not Ready Yet", "This setting is not available right now.");
+        showAppNotice("Not Ready Yet", "This setting is not available right now.");
     }
   };
 
@@ -318,6 +346,14 @@ export default function ProfileScreen() {
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            colors={["#73CD44"]}
+            tintColor="#73CD44"
+          />
+        }
       >
         <View style={styles.profileHero}>
           <View style={styles.heroGlowLeft} />

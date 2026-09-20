@@ -192,7 +192,57 @@ async function fetchEpubArrayBuffer(downloadUrl: string) {
   if (!arrayBuffer.byteLength) {
     throw new Error("The EPUB file was empty. Try Download EPUB again.");
   }
+  assertEpubCompressedSize(arrayBuffer.byteLength);
   return arrayBuffer;
+}
+
+const MAX_EPUB_COMPRESSED_BYTES = 40 * 1024 * 1024; // 40 MB compressed
+const MAX_EPUB_UNCOMPRESSED_BYTES = 50 * 1024 * 1024; // 50 MB uncompressed
+const MAX_EPUB_ENTRIES = 5000;
+const MAX_EPUB_SINGLE_ENTRY_BYTES = 15 * 1024 * 1024; // 15 MB per entry
+
+function assertEpubCompressedSize(byteLength: number) {
+  if (byteLength <= 0) {
+    throw new Error("The EPUB file was empty. Try Download EPUB again.");
+  }
+  if (byteLength > MAX_EPUB_COMPRESSED_BYTES) {
+    throw new Error("This EPUB is too large to open safely on this device.");
+  }
+}
+
+async function assertEpubZipSafe(zip: JSZip) {
+  let totalUncompressed = 0;
+  let fileCount = 0;
+  for (const entry of Object.values(zip.files)) {
+    if (!entry || entry.dir) continue;
+    fileCount += 1;
+    if (fileCount > MAX_EPUB_ENTRIES) {
+      throw new Error("This EPUB has too many files to open safely.");
+    }
+    const uncompressed = Number((entry as { _data?: { uncompressedSize?: number } })._data?.uncompressedSize || 0);
+    if (uncompressed > MAX_EPUB_SINGLE_ENTRY_BYTES) {
+      throw new Error("This EPUB contains a file that is too large to open safely.");
+    }
+    totalUncompressed += uncompressed;
+    if (totalUncompressed > MAX_EPUB_UNCOMPRESSED_BYTES) {
+      throw new Error("This EPUB expands to more memory than this device can safely use.");
+    }
+  }
+}
+
+async function loadEpubZipSafely(
+  data: ArrayBuffer | string,
+  options?: { base64?: boolean },
+): Promise<JSZip> {
+  if (typeof data === "string") {
+    // base64 expands ~3/4; reject oversized encoded payloads early
+    assertEpubCompressedSize(Math.floor(data.length * 0.75));
+  } else {
+    assertEpubCompressedSize(data.byteLength);
+  }
+  const zip = await JSZip.loadAsync(data, options);
+  await assertEpubZipSafe(zip);
+  return zip;
 }
 
 async function loadEpubZip(fileUri: string) {
@@ -200,15 +250,19 @@ async function loadEpubZip(fileUri: string) {
     const cachedEpub = webEpubCache.get(fileUri);
     const arrayBuffer = cachedEpub ?? await fetchEpubArrayBuffer(getWebEpubDownloadUrl(fileUri));
     webEpubCache.set(fileUri, arrayBuffer);
-    return JSZip.loadAsync(arrayBuffer);
+    return loadEpubZipSafely(arrayBuffer);
   }
 
   if (isRemoteEpubUri(fileUri) || Platform.OS === "web") {
-    return JSZip.loadAsync(await fetchEpubArrayBuffer(fileUri));
+    return loadEpubZipSafely(await fetchEpubArrayBuffer(fileUri));
   }
 
+  const fileInfo = await FileSystem.getInfoAsync(fileUri);
+  if (fileInfo.exists && "size" in fileInfo && typeof fileInfo.size === "number") {
+    assertEpubCompressedSize(fileInfo.size);
+  }
   const base64 = await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.Base64 });
-  return JSZip.loadAsync(base64, { base64: true });
+  return loadEpubZipSafely(base64, { base64: true });
 }
 
 export async function ensureLibraryEpubDirectory() {
@@ -225,8 +279,11 @@ export async function downloadEpubToLibrary(bookId: string, downloadUrl: string)
     const webEpubUri = createWebEpubUri(downloadUrl);
     const arrayBuffer = await fetchEpubArrayBuffer(downloadUrl);
     try {
-      await JSZip.loadAsync(arrayBuffer);
-    } catch {
+      await loadEpubZipSafely(arrayBuffer);
+    } catch (error) {
+      if (error instanceof Error && /too large|too many|expands to more/i.test(error.message)) {
+        throw error;
+      }
       throw new Error("The EPUB mirror returned a file that the reader could not open. Try another EPUB result.");
     }
     webEpubCache.set(webEpubUri, arrayBuffer);
@@ -251,10 +308,17 @@ export async function downloadEpubToLibrary(bookId: string, downloadUrl: string)
   }
 
   try {
+    const downloadedInfo = await FileSystem.getInfoAsync(result.uri);
+    if (downloadedInfo.exists && "size" in downloadedInfo && typeof downloadedInfo.size === "number") {
+      assertEpubCompressedSize(downloadedInfo.size);
+    }
     const base64 = await FileSystem.readAsStringAsync(result.uri, { encoding: FileSystem.EncodingType.Base64 });
-    await JSZip.loadAsync(base64, { base64: true });
-  } catch {
+    await loadEpubZipSafely(base64, { base64: true });
+  } catch (error) {
     await FileSystem.deleteAsync(result.uri, { idempotent: true });
+    if (error instanceof Error && /too large|too many|expands to more/i.test(error.message)) {
+      throw error;
+    }
     throw new Error("The EPUB mirror returned a file that the reader could not open. Try another EPUB result.");
   }
 

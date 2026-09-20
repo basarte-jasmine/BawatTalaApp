@@ -1,8 +1,21 @@
 import { Ionicons } from "@expo/vector-icons";
+import { showAppNotice } from "../lib/app-notice";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Image, Linking, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import {
+  Image,
+  Linking,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { consumePendingRiskPrompt, fetchJournalEntryById, JournalEntry, JournalMessage, rateJournalEntrySummary, saveJournalSupportResponse } from "../lib/backend-api";
@@ -168,7 +181,7 @@ export default function JournalEntryViewScreen() {
     try {
       const canOpen = await Linking.canOpenURL(NCMH_HOTLINE_DIAL_URL);
       if (!canOpen) {
-        Alert.alert(
+        showAppNotice(
           "Call NCMH Hotline",
           `Please call ${NCMH_HOTLINE_LANDLINE} or ${NCMH_HOTLINE_DISPLAY} for immediate support.`,
         );
@@ -176,7 +189,7 @@ export default function JournalEntryViewScreen() {
       }
       await Linking.openURL(NCMH_HOTLINE_DIAL_URL);
     } catch {
-      Alert.alert(
+      showAppNotice(
         "Call NCMH Hotline",
         `Please call ${NCMH_HOTLINE_LANDLINE} or ${NCMH_HOTLINE_DISPLAY} for immediate support.`,
       );
@@ -192,10 +205,9 @@ export default function JournalEntryViewScreen() {
     if (user?.studentNumber && entry.id) {
       void consumePendingRiskPrompt(user.studentNumber, entry.id);
     }
-    Alert.alert(
+    showAppNotice(
       "Support is available",
       "Muni flagged language that may point to self-harm or suicide. Support resources are on this page.",
-      [{ text: "OK" }],
     );
   }, [entry, user?.studentNumber]);
 

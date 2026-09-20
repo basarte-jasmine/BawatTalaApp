@@ -1,17 +1,17 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
     ActivityIndicator,
     Image,
     Modal,
     Pressable,
     ScrollView,
+  RefreshControl,
     StyleSheet,
     Text,
     TextInput,
-    View
-} from "react-native";
+    View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { unlockAchievement } from "../lib/achievements";
@@ -59,6 +59,9 @@ const INTERPERSONAL_RELATIONSHIP_SUBCONCERNS = [
   "Family relationship",
   "Romantic relationship",
 ];
+const OTHER_CONCERN_MAX_LENGTH = 120;
+const STUDENT_NOTE_MAX_LENGTH = 600;
+
 const DEFAULT_CONCERNS = [
   "Personal problems",
   "Mental health",
@@ -200,6 +203,7 @@ export default function ConsultScreen() {
   const [selectedTime, setSelectedTime] = useState("");
   const [studentNote, setStudentNote] = useState("");
   const [counselorSlotCounts, setCounselorSlotCounts] = useState<Record<string, number | null>>({});
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -406,6 +410,86 @@ export default function ConsultScreen() {
     };
   }, [selectedCounselor, selectedMonthYear, selectedTrack, user?.studentNumber]);
 
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      try {
+        setLoadingCounselors(true);
+        const result = await fetchAppointmentCounselors();
+        if (!result.ok) {
+          setErrorMessage(result.message || "Failed to load counselors.");
+        } else {
+          const fetchedCounselors = Array.isArray(result.counselors) ? result.counselors : [];
+          setCounselors(fetchedCounselors);
+          if (Array.isArray(result.concernOptions) && result.concernOptions.length > 0) {
+            setConcerns(result.concernOptions);
+            setSelectedConcern((current) =>
+              result.concernOptions!.includes(current) ? current : result.concernOptions![0],
+            );
+          }
+          if (Array.isArray(result.peerConcernOptions) && result.peerConcernOptions.length > 0) {
+            setPeerConcernOptions(result.peerConcernOptions);
+          }
+          if (result.concernSubcategories && Object.keys(result.concernSubcategories).length > 0) {
+            setConcernSubcategories(result.concernSubcategories);
+          }
+          setSelectedCounselor((current) => current || fetchedCounselors[0]?.id || "");
+          setErrorMessage("");
+        }
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : "Failed to load counselors.");
+      } finally {
+        setLoadingCounselors(false);
+      }
+
+      const counselorId = selectedCounselor;
+      if (counselorId) {
+        try {
+          setLoadingAvailability(true);
+          const result = await fetchAppointmentAvailability(
+            counselorId,
+            toMonthKey(selectedMonthYear.year, selectedMonthYear.monthIndex),
+            user?.studentNumber,
+            selectedTrack === "peer" ? "PEER" : "GUIDANCE",
+          );
+          if (!result.ok) {
+            setErrorMessage(result.message || "Failed to load availability.");
+            setAvailableDays([]);
+          } else {
+            const days = Array.isArray(result.days) ? result.days : [];
+            setAvailableDays(days);
+            const nextAvailableDay = days.find((item) => item.availableSlots.length > 0);
+            let resolvedSelectedDay: number | null = null;
+            setSelectedDay((current) => {
+              const nextDay =
+                current && days.some((item) => item.dayNumber === current && item.availableSlots.length > 0)
+                  ? current
+                  : nextAvailableDay?.dayNumber || null;
+              resolvedSelectedDay = nextDay;
+              return nextDay;
+            });
+            setSelectedTime((current) => {
+              if (!current) return "";
+              const selectedDayData = days.find((item) => item.dayNumber === resolvedSelectedDay);
+              if (!selectedDayData?.availableSlots.some((slot) => slot.time === current)) {
+                return "";
+              }
+              return current;
+            });
+            setErrorMessage("");
+          }
+        } catch (error) {
+          setErrorMessage(error instanceof Error ? error.message : "Failed to load availability.");
+          setAvailableDays([]);
+        } finally {
+          setLoadingAvailability(false);
+        }
+      }
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [selectedCounselor, selectedMonthYear, selectedTrack, user?.studentNumber]);
+
   const selectedDayAvailability = useMemo(
     () => getDayFromAvailability(availableDays, selectedDay),
     [availableDays, selectedDay],
@@ -549,7 +633,19 @@ export default function ConsultScreen() {
         <View style={styles.topBarSpacer} />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            colors={["#73CD44"]}
+            tintColor="#73CD44"
+          />
+        }
+      >
         {showChooser ? (
           <>
             <View style={styles.welcomeHeroCard}>
@@ -746,13 +842,21 @@ export default function ConsultScreen() {
                   </View>
 
                   {selectedConcern === "Others" ? (
-                    <TextInput
-                      style={styles.otherInput}
-                      value={otherConcern}
-                      onChangeText={setOtherConcern}
-                      placeholder="Please specify your concern"
-                      placeholderTextColor="#596878"
-                    />
+                    <View>
+                      <TextInput
+                        style={styles.otherInput}
+                        value={otherConcern}
+                        onChangeText={(value) =>
+                          setOtherConcern(value.slice(0, OTHER_CONCERN_MAX_LENGTH))
+                        }
+                        placeholder="Please specify your concern"
+                        placeholderTextColor="#596878"
+                        maxLength={OTHER_CONCERN_MAX_LENGTH}
+                      />
+                      <Text style={styles.fieldCounter}>
+                        {otherConcern.length}/{OTHER_CONCERN_MAX_LENGTH}
+                      </Text>
+                    </View>
                   ) : null}
 
                   {selectedConcern === INTERPERSONAL_RELATIONSHIP_CONCERN ? (
@@ -1042,14 +1146,22 @@ export default function ConsultScreen() {
                         )}
                       </View>
 
-                      <TextInput
-                        style={styles.noteInput}
-                        value={studentNote}
-                        onChangeText={setStudentNote}
-                        placeholder="Optional note for the counselor"
-                        placeholderTextColor="#73808B"
-                        multiline
-                      />
+                      <View>
+                        <TextInput
+                          style={styles.noteInput}
+                          value={studentNote}
+                          onChangeText={(value) =>
+                            setStudentNote(value.slice(0, STUDENT_NOTE_MAX_LENGTH))
+                          }
+                          placeholder="Optional note for the counselor"
+                          placeholderTextColor="#73808B"
+                          multiline
+                          maxLength={STUDENT_NOTE_MAX_LENGTH}
+                        />
+                        <Text style={styles.fieldCounter}>
+                          {studentNote.length}/{STUDENT_NOTE_MAX_LENGTH}
+                        </Text>
+                      </View>
                     </>
                   )}
                 </>
@@ -1571,6 +1683,12 @@ const styles = StyleSheet.create({
   concernChipTextActive: {
     color: "#2E6F24",
     fontFamily: "Outfit-Bold" },
+  fieldCounter: {
+    marginTop: 4,
+    alignSelf: "flex-end",
+    color: "#73808B",
+    fontSize: 11,
+  },
   otherInput: {
     minHeight: 42,
     borderRadius: 14,

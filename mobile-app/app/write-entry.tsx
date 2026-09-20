@@ -1,22 +1,22 @@
 import { Ionicons } from "@expo/vector-icons";
+import { showAppNotice } from "../lib/app-notice";
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Image,
-    Keyboard,
-    KeyboardAvoidingView,
-    Linking,
-    Modal,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View
+  ActivityIndicator,
+  Image,
+  Keyboard,
+  KeyboardAvoidingView,
+  Linking,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { recordEmotionForAchievement, unlockAchievement } from "../lib/achievements";
@@ -232,6 +232,8 @@ function TypewrittenUserEntry({ isSending, text }: { isSending: boolean; text: s
     </View>
   );
 }
+
+const JOURNAL_MESSAGE_MAX_LENGTH = 1800;
 
 export default function WriteEntryScreen() {
   const { user } = useAuthSession();
@@ -715,7 +717,7 @@ export default function WriteEntryScreen() {
     try {
       const canOpen = await Linking.canOpenURL(NCMH_HOTLINE_DIAL_URL);
       if (!canOpen) {
-        Alert.alert(
+        showAppNotice(
           "Call NCMH Hotline",
           `Please call ${NCMH_HOTLINE_LANDLINE} or ${NCMH_HOTLINE_DISPLAY} for immediate support.`,
         );
@@ -727,7 +729,7 @@ export default function WriteEntryScreen() {
       setShowRiskModal(false);
       await Linking.openURL(NCMH_HOTLINE_DIAL_URL);
     } catch {
-      Alert.alert(
+      showAppNotice(
         "Call NCMH Hotline",
         `Please call ${NCMH_HOTLINE_LANDLINE} or ${NCMH_HOTLINE_DISPLAY} for immediate support.`,
       );
@@ -1097,9 +1099,13 @@ export default function WriteEntryScreen() {
             placeholder="Write what happened today..."
             placeholderTextColor="#7B8893"
             multiline
+            maxLength={JOURNAL_MESSAGE_MAX_LENGTH}
             style={styles.input}
             editable={canWrite}
           />
+          <Text style={styles.inputCharCount}>
+            {inputValue.length}/{JOURNAL_MESSAGE_MAX_LENGTH}
+          </Text>
 
           <Pressable
             style={[
@@ -1837,6 +1843,14 @@ const styles = StyleSheet.create({
     marginBottom: 8 },
   inputCardKeyboardVisible: {
     marginBottom: 0 },
+  inputCharCount: {
+    alignSelf: "flex-end",
+    color: "#91A0AB",
+    fontSize: 11,
+    lineHeight: 14,
+    marginTop: 6,
+    marginBottom: 4,
+  },
   input: {
     flex: 1,
     minHeight: 50,

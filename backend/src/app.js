@@ -1,6 +1,8 @@
 const express = require("express");
 const cors = require("cors");
 const cookieSession = require("cookie-session");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 const authRoutes = require("./api/auth.routes");
 const appointmentRoutes = require("./api/appointment.routes");
 const { adminRouter } = require("./api/admin.routes");
@@ -17,11 +19,81 @@ const affirmationRoutes = require("./api/affirmation.routes");
 const wellnessRoutes = require("./api/wellness.routes");
 
 const app = express();
+
+// API-first helmet: keep CORS-friendly CORP; CSP off (JSON API, not HTML).
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  }),
+);
 const corsOrigin = process.env.CORS_ORIGIN || "*";
 const allowCredentials = true;
 const isProduction = String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
 const adminSessionDays = Number(process.env.ADMIN_SESSION_DAYS || 30);
 const localAdminOrigins = ["http://localhost:5173", "http://127.0.0.1:5173"];
+
+
+function requireCookieSessionSecret() {
+  const value = String(process.env.COOKIE_SESSION_SECRET || "").trim();
+  const placeholders = new Set([
+    "",
+    "change-this-session-secret",
+    "dev-cookie-secret",
+    "changeme",
+    "secret",
+    "replace-with-a-long-random-secret",
+  ]);
+  if (placeholders.has(value) || value.length < 32) {
+    throw new Error(
+      "COOKIE_SESSION_SECRET must be set to a strong random value (min 32 chars). No public/dev fallback is allowed.",
+    );
+  }
+  return value;
+}
+
+const cookieSessionSecret = requireCookieSessionSecret();
+
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many auth requests. Please try again later." },
+});
+
+const authLoginRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many login attempts. Please try again in 15 minutes." },
+});
+
+const authOtpSendRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many verification emails requested. Please try again later." },
+});
+
+const authOtpVerifyRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many verification attempts. Please try again later." },
+});
+
+const adminLoginRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many admin login attempts. Please try again in 15 minutes." },
+});
+
 
 const parsedCorsOrigin =
   corsOrigin === "*"
@@ -64,7 +136,7 @@ app.use(
 app.use(
   cookieSession({
     name: "bt_admin_session",
-    keys: [process.env.COOKIE_SESSION_SECRET || "dev-cookie-secret"],
+    keys: [cookieSessionSecret],
     maxAge: adminSessionDays * 24 * 60 * 60 * 1000,
     httpOnly: true,
     sameSite: "lax",
@@ -89,7 +161,21 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
 
-app.use("/api/auth", authRoutes);
+app.use("/api/auth/login", authLoginRateLimiter);
+app.use("/api/auth/register-profile", authLoginRateLimiter);
+app.use("/api/auth/send-otp", authOtpSendRateLimiter);
+app.use("/api/auth/forgot-password/send-code", authOtpSendRateLimiter);
+app.use("/api/auth/forgot-password/resend-code", authOtpSendRateLimiter);
+app.use("/api/auth/profile-password/send-code", authOtpSendRateLimiter);
+app.use("/api/auth/verify-otp", authOtpVerifyRateLimiter);
+app.use("/api/auth/forgot-password/verify-code", authOtpVerifyRateLimiter);
+app.use("/api/auth/forgot-password/reset", authLoginRateLimiter);
+app.use("/api/auth", authRateLimiter, authRoutes);
+app.use("/api/admin/login", adminLoginRateLimiter);
+app.use("/api/admin/forgot-password/send-code", authOtpSendRateLimiter);
+app.use("/api/admin/forgot-password/resend-code", authOtpSendRateLimiter);
+app.use("/api/admin/forgot-password/verify-code", authOtpVerifyRateLimiter);
+app.use("/api/admin/forgot-password/reset", authLoginRateLimiter);
 app.use("/api/appointments", appointmentRoutes);
 app.use("/api/inbox", (req, res, next) => {
   const raw = String(req.url || "/");

@@ -417,15 +417,42 @@ export function JournalLockGate({ children }: PropsWithChildren) {
   const [pinInput, setPinInput] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isBusy, setIsBusy] = useState(false);
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [cooldownUntil, setCooldownUntil] = useState(0);
+  const [cooldownRemainingMs, setCooldownRemainingMs] = useState(0);
 
   useEffect(() => {
     if (!isAppLocked) {
       setPinInput("");
       setErrorMessage("");
+      setFailedAttempts(0);
+      setCooldownUntil(0);
     }
   }, [isAppLocked]);
 
+  useEffect(() => {
+    if (cooldownUntil <= Date.now()) {
+      setCooldownRemainingMs(0);
+      return;
+    }
+    const tick = () => {
+      setCooldownRemainingMs(Math.max(0, cooldownUntil - Date.now()));
+    };
+    tick();
+    const id = setInterval(tick, 250);
+    return () => clearInterval(id);
+  }, [cooldownUntil]);
+
+  const isInCooldown = cooldownRemainingMs > 0;
+
   const handleUnlock = async () => {
+    if (isInCooldown) {
+      setErrorMessage(
+        `Too many attempts. Wait ${Math.ceil(cooldownRemainingMs / 1000)}s.`,
+      );
+      return;
+    }
+
     setIsBusy(true);
     const unlocked = await unlockApp(pinInput);
     setIsBusy(false);
@@ -433,6 +460,21 @@ export function JournalLockGate({ children }: PropsWithChildren) {
     if (unlocked) {
       setPinInput("");
       setErrorMessage("");
+      setFailedAttempts(0);
+      setCooldownUntil(0);
+      return;
+    }
+
+    const nextFails = failedAttempts + 1;
+    setFailedAttempts(nextFails);
+    setPinInput("");
+
+    if (nextFails >= 5) {
+      const delayMs = 30000 * Math.pow(2, nextFails - 5);
+      setCooldownUntil(Date.now() + delayMs);
+      setErrorMessage(
+        `Too many attempts. Try again in ${Math.ceil(delayMs / 1000)}s.`,
+      );
       return;
     }
 
@@ -453,10 +495,11 @@ export function JournalLockGate({ children }: PropsWithChildren) {
     router.replace("/profile-settings?section=app-lock&resetPin=1");
   };
 
+  const showLock = appLockEnabled && isAppLocked;
+
   return (
     <View style={styles.journalGateHost}>
-      {children}
-      {appLockEnabled && isAppLocked ? (
+      {showLock ? (
         <View style={styles.journalLockWrap}>
       <View style={styles.journalLockGlowLeft} />
       <View style={styles.journalLockGlowRight} />
@@ -498,12 +541,18 @@ export function JournalLockGate({ children }: PropsWithChildren) {
           <Pressable
             style={[
               styles.button,
-              (isBusy || pinInput.length < 4) && styles.buttonDisabled,
+              (isBusy || pinInput.length < 4 || isInCooldown) && styles.buttonDisabled,
             ]}
             onPress={handleUnlock}
-            disabled={isBusy || pinInput.length < 4}
+            disabled={isBusy || pinInput.length < 4 || isInCooldown}
           >
-            <Text style={styles.buttonText}>{isBusy ? "Checking..." : "Unlock"}</Text>
+            <Text style={styles.buttonText}>
+              {isBusy
+                ? "Checking..."
+                : isInCooldown
+                  ? `Wait ${Math.ceil(cooldownRemainingMs / 1000)}s`
+                  : "Unlock"}
+            </Text>
           </Pressable>
         </View>
 
@@ -512,7 +561,9 @@ export function JournalLockGate({ children }: PropsWithChildren) {
         </Pressable>
       </View>
     </View>
-      ) : null}
+      ) : (
+        children
+      )}
     </View>
   );
 }

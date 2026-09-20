@@ -466,10 +466,6 @@ export async function deleteAdminRoleMember(memberId) {
   });
 }
 
-export async function fetchGoogleCalendarAuthUrl() {
-  return request("/api/admin/appointments/google/auth-url");
-}
-
 export async function fetchAdminGoogleOAuthUrl() {
   return request("/api/admin/oauth/google/start");
 }

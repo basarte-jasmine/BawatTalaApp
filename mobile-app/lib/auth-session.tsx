@@ -1,7 +1,17 @@
-import { setApiAuthToken } from "./backend-api";
+import { clearAllStudentData, setApiAuthToken, setSessionExpiredHandler } from "./backend-api";
+import { router } from "expo-router";
 import { hydrateMuniWardrobe, resetMuniWardrobe } from "./muni-wardrobe";
+import {
+  AUTH_SESSION_STORAGE_KEY,
+  clearAuthSessionProfile,
+  deleteAuthToken,
+  migrateAuthTokenFromAsyncStorageOnce,
+  setAuthRefreshToken,
+  setAuthToken,
+  writeAuthSessionProfile,
+} from "./auth-storage";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 export type AuthUser = {
   email: string;
@@ -10,27 +20,54 @@ export type AuthUser = {
   profilePictureUrl?: string;
   studentNumber: string;
   token?: string;
+  refreshToken?: string;
 };
 
 type AuthSessionContextValue = {
-  clearUser: () => void;
+  clearUser: () => Promise<void>;
   isHydrated: boolean;
   setUser: (user: AuthUser | null) => void;
   user: AuthUser | null;
 };
 
 const AuthSessionContext = createContext<AuthSessionContextValue | null>(null);
-const AUTH_SESSION_STORAGE_KEY = "bawat-tala.auth-user";
 
 export function AuthSessionProvider({ children }: PropsWithChildren) {
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [user, setUserState] = useState<AuthUser | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
+
+  const userRef = useRef(user);
+  userRef.current = user;
+
+  useEffect(() => {
+    setSessionExpiredHandler(() => {
+      void (async () => {
+        const current = userRef.current;
+        const studentNumber = current?.studentNumber;
+        setApiAuthToken(null);
+        resetMuniWardrobe();
+        setUserState(null);
+        await deleteAuthToken();
+        await clearAuthSessionProfile();
+        if (studentNumber) {
+          await clearAllStudentData(studentNumber);
+        }
+        try {
+          router.replace("/login");
+        } catch {
+          // Navigation may already be unmounted.
+        }
+      })();
+    });
+    return () => setSessionExpiredHandler(null);
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
 
     const restoreUser = async () => {
       try {
+        const { token: migratedToken } = await migrateAuthTokenFromAsyncStorageOnce();
         const storedValue = await AsyncStorage.getItem(AUTH_SESSION_STORAGE_KEY);
         if (!storedValue || !isMounted) {
           return;
@@ -44,20 +81,29 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
           typeof parsedUser.fullName === "string" &&
           typeof parsedUser.studentNumber === "string"
         ) {
-          if (typeof parsedUser.token !== "string" || !parsedUser.token) {
-            await AsyncStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+          const token =
+            migratedToken ||
+            (typeof parsedUser.token === "string" && parsedUser.token.trim()
+              ? parsedUser.token.trim()
+              : null);
+
+          if (!token) {
+            await clearAuthSessionProfile();
+            await deleteAuthToken();
             return;
           }
-          setApiAuthToken(parsedUser.token);
-          setUser({
+
+          setApiAuthToken(token);
+          setUserState({
             ...parsedUser,
+            token,
             profilePictureUrl:
               typeof parsedUser.profilePictureUrl === "string" ? parsedUser.profilePictureUrl : "",
           });
         }
       } catch {
         if (isMounted) {
-          setUser(null);
+          setUserState(null);
         }
       } finally {
         if (isMounted) {
@@ -75,25 +121,37 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
 
   const value = useMemo(
     () => ({
-      clearUser: () => {
+      clearUser: async () => {
+        const studentNumber = user?.studentNumber;
         setApiAuthToken(null);
         resetMuniWardrobe();
-        setUser(null);
-        void AsyncStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+        setUserState(null);
+        await deleteAuthToken();
+        await clearAuthSessionProfile();
+        if (studentNumber) {
+          await clearAllStudentData(studentNumber);
+        }
       },
       isHydrated,
       setUser: (nextUser: AuthUser | null) => {
         setApiAuthToken(nextUser?.token ?? null);
-        setUser(nextUser);
+        setUserState(nextUser);
 
         if (nextUser) {
-          void AsyncStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(nextUser));
-          void hydrateMuniWardrobe(nextUser.studentNumber);
+          void (async () => {
+            await setAuthToken(nextUser.token ?? null);
+            await setAuthRefreshToken(nextUser.refreshToken ?? null);
+            await writeAuthSessionProfile({ ...nextUser });
+            await hydrateMuniWardrobe(nextUser.studentNumber);
+          })();
           return;
         }
-        resetMuniWardrobe();
 
-        void AsyncStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+        resetMuniWardrobe();
+        void (async () => {
+          await deleteAuthToken();
+          await clearAuthSessionProfile();
+        })();
       },
       user,
     }),

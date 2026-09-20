@@ -1,9 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
+import { showAppNotice } from "../lib/app-notice";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Linking,
   Modal,
@@ -12,7 +12,8 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  View } from "react-native";
+  View
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   createAudioPlayer,
@@ -806,9 +807,17 @@ export default function MuniVoiceScreen() {
         }
 
         const file = new File(uri);
-        const arrayBuffer = await file.arrayBuffer();
-        const base64 = arrayBufferToBase64(arrayBuffer);
-        await processAudioDataAndSend(base64, "audio/m4a", "recording.m4a");
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const base64 = arrayBufferToBase64(arrayBuffer);
+          await processAudioDataAndSend(base64, "audio/m4a", "recording.m4a");
+        } finally {
+          try {
+            if (file.exists) {
+              file.delete();
+            }
+          } catch {}
+        }
       } catch (err: any) {
         setVoiceState("error");
         setStatusMessage(err?.message || "Failed to process mobile audio.");
@@ -826,6 +835,15 @@ export default function MuniVoiceScreen() {
     } else {
       try {
         await nativeRecorder.stop();
+        const cancelUri = nativeRecorder.uri;
+        if (cancelUri) {
+          try {
+            const cancelFile = new File(cancelUri);
+            if (cancelFile.exists) {
+              cancelFile.delete();
+            }
+          } catch {}
+        }
       } catch {}
     }
     setVoiceState("idle");
@@ -955,7 +973,7 @@ export default function MuniVoiceScreen() {
     try {
       const canOpen = await Linking.canOpenURL(NCMH_HOTLINE_DIAL_URL);
       if (!canOpen) {
-        Alert.alert(
+        showAppNotice(
           "Call NCMH Hotline",
           `Please call ${NCMH_HOTLINE_LANDLINE} or ${NCMH_HOTLINE_DISPLAY} for immediate support.`,
         );
@@ -966,7 +984,7 @@ export default function MuniVoiceScreen() {
       setShowRiskModal(false);
       await Linking.openURL(NCMH_HOTLINE_DIAL_URL);
     } catch {
-      Alert.alert(
+      showAppNotice(
         "Call NCMH Hotline",
         `Please call ${NCMH_HOTLINE_LANDLINE} or ${NCMH_HOTLINE_DISPLAY} for immediate support.`,
       );
@@ -1079,7 +1097,7 @@ export default function MuniVoiceScreen() {
             ? "Muni is speaking"
             : voiceState === "unsupported"
               ? "Microphone not supported"
-              : "Voice session idle";
+              : "Ready when you are";
 
   return (
     <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
@@ -1107,7 +1125,7 @@ export default function MuniVoiceScreen() {
           </View>
           <Text style={styles.heading}>Muni Voice</Text>
           <Text style={styles.subheading}>
-            Powered by Whisper AI speech recognition and natural Filipino and English neural voices.
+            Need to talk? Just use your voice. Speak in Filipino or English, and Muni will listen and reply.
           </Text>
         </View>
 
@@ -1123,7 +1141,7 @@ export default function MuniVoiceScreen() {
           <Text style={styles.connectionMessage}>
             {statusMessage ||
               transcript ||
-              "Tap Start Recording, speak naturally in Filipino or English, and Muni will respond with voice."}
+              "Tap Start Recording whenever you're ready. Talk naturally, and Muni will respond with voice."}
           </Text>
 
           {muniReply ? (

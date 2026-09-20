@@ -14,3 +14,18 @@ export function normalizeStudentIdInput(value: string) {
 export function isValidStudentId(value: string) {
   return STUDENT_ID_PATTERN.test(normalizeStudentIdInput(value));
 }
+
+
+/** Practical email check: local@domain.tld (rejects trailing "@" etc.). */
+export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function isValidEmail(value: string) {
+  return EMAIL_PATTERN.test(String(value || "").trim());
+}
+
+export const STRONG_PASSWORD_PATTERN =
+  /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
+
+export function isStrongPassword(value: string) {
+  return STRONG_PASSWORD_PATTERN.test(String(value || ""));
+}

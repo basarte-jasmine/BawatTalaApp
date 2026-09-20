@@ -13,6 +13,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import Card from "../components/Card";
 import Layout from "../components/Layout";
+import Toast from "../components/Toast";
 import {
   fetchAdminAnalytics,
   fetchAdminDashboardSummary,
@@ -2890,6 +2891,8 @@ export default function Overview({ onLogout, session }) {
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
   const [analyticsError, setAnalyticsError] = useState("");
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
+  const [toastType, setToastType] = useState("info");
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -3159,7 +3162,8 @@ export default function Overview({ onLogout, session }) {
   const handleExportPdf = async () => {
     if (!overviewExportRef.current || isExportingPdf) return;
     if (summaryLoading || analyticsLoading) {
-      window.alert("Please wait for the dashboard charts to finish loading before exporting the PDF.");
+      setToastType("info");
+      setToastMessage("Please wait for the dashboard charts to finish loading before exporting the PDF.");
       return;
     }
 
@@ -3218,13 +3222,16 @@ export default function Overview({ onLogout, session }) {
       downloadBlob(pdfBlob, `overview-dashboard-${reportStartDate}-to-${reportEndDate}.pdf`);
     } catch (error) {
       console.error("Overview dashboard PDF export failed:", error);
-      window.alert(error instanceof Error ? error.message : "Failed to export overview dashboard PDF.");
+      setToastType("error");
+      setToastMessage(error instanceof Error ? error.message : "Failed to export overview dashboard PDF.");
     } finally {
       setIsExportingPdf(false);
     }
   };
 
   return (
+    <>
+    <Toast message={toastMessage} type={toastType} onClose={() => setToastMessage("")} />
     <Layout
       title="Overview & Analytics"
       subtitle="Monitor daily engagement, demographics, and student support signals."
@@ -3545,5 +3552,6 @@ export default function Overview({ onLogout, session }) {
 
       </div>
     </Layout>
+    </>
   );
 }

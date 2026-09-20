@@ -14,6 +14,8 @@ import {
   type TextInputProps,
   type TextProps } from "react-native";
 import { AuthSessionProvider } from "../lib/auth-session";
+import { AppNoticeProvider } from "../lib/app-notice";
+import { AppErrorBoundary } from "../components/ui/AppErrorBoundary";
 import { AppPreferencesProvider } from "../lib/app-preferences";
 import { warmBackend } from "../lib/backend-api";
 import { configureMuniNotificationBehavior } from "../lib/muni-reminders";
@@ -107,6 +109,8 @@ export default function RootLayout() {
       <View style={[styles.frame, useDesktopFrame && styles.desktopFrame]}>
         <AuthSessionProvider>
           <AppPreferencesProvider>
+            <AppNoticeProvider>
+            <AppErrorBoundary>
             <OfflineSyncProvider>
               <AppointmentStatusWatcher />
               <Stack
@@ -122,6 +126,8 @@ export default function RootLayout() {
                 <Stack.Screen name="muni-voice" options={getNavigationAnimationConfig("muni-voice")} />
               </Stack>
             </OfflineSyncProvider>
+            </AppErrorBoundary>
+            </AppNoticeProvider>
           </AppPreferencesProvider>
         </AuthSessionProvider>
       </View>

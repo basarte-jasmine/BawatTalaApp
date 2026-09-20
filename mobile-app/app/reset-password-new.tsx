@@ -1,4 +1,4 @@
-import { router, useLocalSearchParams } from "expo-router";
+﻿import { router, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { PasswordField } from "../components/forms/PasswordField";
@@ -7,7 +7,7 @@ import { AppPrimaryButton } from "../components/ui/AppPrimaryButton";
 import { forgotPasswordReset } from "../lib/backend-api";
 import { useAuthSession } from "../lib/auth-session";
 
-const STRONG_PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8 }$/;
+const STRONG_PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
 
 function getPasswordStrength(value: string) {
   const checks = [

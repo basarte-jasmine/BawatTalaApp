@@ -1,14 +1,15 @@
 import { Ionicons } from "@expo/vector-icons";
+import { showAppNotice } from "../lib/app-notice";
 import * as Clipboard from "expo-clipboard";
 import { router } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Modal,
   Pressable,
   ScrollView,
+  RefreshControl,
   Share,
   StyleSheet,
   Text,
@@ -40,37 +41,44 @@ export default function ReferralScreen() {
   const [showClaimSuccessModal, setShowClaimSuccessModal] = useState(false);
   const [claimedRewardAmount, setClaimedRewardAmount] = useState(100);
   const [copied, setCopied] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const shareMessage = useMemo(() => {
     const code = referral?.referralCode || "YOUR_CODE";
     return `Hey! Start your wellness journey with Bawat Tala. Use my referral code ${code} when you sign up to get 100 Tala instantly!\n\nSign up here : ${SIGNUP_URL}`;
   }, [referral?.referralCode]);
 
-  useEffect(() => {
+  const loadReferral = useCallback(async (opts?: { silent?: boolean }) => {
     if (!user?.studentNumber) {
       setLoading(false);
       return;
     }
-
-    let mounted = true;
-    setLoading(true);
-    void fetchStudentReferral(user.studentNumber)
-      .then((result) => {
-        if (!mounted) return;
-        if (!result.ok || !result.referral) {
-          Alert.alert("Referral Unavailable", result.message || "Unable to load your referral code.");
-          return;
-        }
-        setReferral(result.referral);
-      })
-      .finally(() => {
-        if (mounted) setLoading(false);
-      });
-
-    return () => {
-      mounted = false;
-    };
+    const silent = Boolean(opts?.silent);
+    if (!silent) setLoading(true);
+    try {
+      const result = await fetchStudentReferral(user.studentNumber);
+      if (!result.ok || !result.referral) {
+        showAppNotice("Referral Unavailable", result.message || "Unable to load your referral code.");
+        return;
+      }
+      setReferral(result.referral);
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, [user?.studentNumber]);
+
+  useEffect(() => {
+    void loadReferral();
+  }, [loadReferral]);
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await loadReferral({ silent: true });
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [loadReferral]);
 
   const handleCopyCode = async () => {
     if (!referral?.referralCode) return;
@@ -143,7 +151,19 @@ export default function ReferralScreen() {
         <View style={styles.topBarSpacer} />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            colors={["#73CD44"]}
+            tintColor="#73CD44"
+          />
+        }
+      >
         <View style={styles.hero}>
           <View style={styles.heroIconWrap}>
             <Image source={TALA_IMAGE} style={styles.heroIcon} resizeMode="contain" />
