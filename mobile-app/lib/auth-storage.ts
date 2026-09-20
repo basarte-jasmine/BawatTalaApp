@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
+import { Platform } from "react-native";
 
 /** Legacy AsyncStorage session blob (may still contain a token until migrated). */
 export const AUTH_SESSION_STORAGE_KEY = "bawat-tala.auth-user";
@@ -18,6 +19,7 @@ type SessionLike = {
 
 async function secureGet(key: string): Promise<string | null> {
   try {
+    if (Platform.OS === 'web') return await AsyncStorage.getItem(key);
     return await SecureStore.getItemAsync(key);
   } catch {
     return null;
@@ -25,11 +27,19 @@ async function secureGet(key: string): Promise<string | null> {
 }
 
 async function secureSet(key: string, value: string): Promise<void> {
+  if (Platform.OS === 'web') {
+    await AsyncStorage.setItem(key, value);
+    return;
+  }
   await SecureStore.setItemAsync(key, value);
 }
 
 async function secureDelete(key: string): Promise<void> {
   try {
+    if (Platform.OS === 'web') {
+      await AsyncStorage.removeItem(key);
+      return;
+    }
     await SecureStore.deleteItemAsync(key);
   } catch {
     // Already missing or unavailable on this platform.

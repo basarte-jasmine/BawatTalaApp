@@ -18,7 +18,7 @@ type MiniResetItem = {
   description: string;
   duration: string;
   icon: React.ComponentProps<typeof Ionicons>["name"];
-  id: "memory" | "pattern" | "recall" | "words" | "numbers" | "count" | "color";
+  id: "memory" | "pattern" | "recall" | "words" | "numbers" | "count" | "color" | "fruit-catcher";
   title: string;
 };
 
@@ -49,6 +49,7 @@ const MINI_RESETS: MiniResetItem[] = [
   { id: "numbers", title: "Number Flow", description: "Notice a gentle number pattern.", duration: "~20 sec", icon: "analytics-outline" },
   { id: "count", title: "Calm Count", description: "Tap the numbers in a steady order.", duration: "~20 sec", icon: "list-outline" },
   { id: "color", title: "Color Focus", description: "Find the one tile that matches.", duration: "~20 sec", icon: "color-palette-outline" },
+  { id: "fruit-catcher", title: "Fruit Catcher", description: "Catch falling fruits, avoid shells.", duration: "Endless", icon: "basket-outline" },
 ];
 
 export default function WellnessToolsScreen() {
@@ -142,7 +143,13 @@ export default function WellnessToolsScreen() {
                   key={item.id}
                   style={({ pressed }) => [styles.miniResetCard, pressed && styles.miniResetCardPressed]}
                   accessibilityLabel={`${item.title}, ${item.duration}`}
-                  onPress={() => router.push({ pathname: "/mini-reset", params: { activity: item.id } } as never)}
+                  onPress={() => {
+                    if (item.id === "fruit-catcher") {
+                      router.push("/fruit-catcher");
+                    } else {
+                      router.push({ pathname: "/mini-reset", params: { activity: item.id } } as never);
+                    }
+                  }}
                 >
                   <View style={styles.miniResetIcon}><Ionicons name={item.icon} size={19} color="#625D8F" /></View>
                   <View style={styles.miniResetCopy}><Text style={styles.miniResetTitle}>{item.title}</Text><Text style={styles.miniResetDescription} numberOfLines={1}>{item.description}</Text></View>
