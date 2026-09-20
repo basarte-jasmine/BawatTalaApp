@@ -18,7 +18,7 @@ type MiniResetItem = {
   description: string;
   duration: string;
   icon: React.ComponentProps<typeof Ionicons>["name"];
-  id: "memory" | "pattern" | "recall" | "words" | "numbers" | "count" | "color" | "fruit-catcher";
+  id: "memory" | "pattern" | "recall" | "words" | "numbers" | "count" | "color" | "fruit-catcher" | "image-puzzle";
   title: string;
 };
 
@@ -50,6 +50,7 @@ const MINI_RESETS: MiniResetItem[] = [
   { id: "count", title: "Calm Count", description: "Tap the numbers in a steady order.", duration: "~20 sec", icon: "list-outline" },
   { id: "color", title: "Color Focus", description: "Find the one tile that matches.", duration: "~20 sec", icon: "color-palette-outline" },
   { id: "fruit-catcher", title: "Fruit Catcher", description: "Catch falling fruits, avoid shells.", duration: "Endless", icon: "basket-outline" },
+  { id: "image-puzzle", title: "Image Puzzle", description: "Reconstruct the picture.", duration: "Endless", icon: "image-outline" },
 ];
 
 export default function WellnessToolsScreen() {
@@ -146,6 +147,8 @@ export default function WellnessToolsScreen() {
                   onPress={() => {
                     if (item.id === "fruit-catcher") {
                       router.push("/fruit-catcher");
+                    } else if (item.id === "image-puzzle") {
+                      router.push("/image-puzzle");
                     } else {
                       router.push({ pathname: "/mini-reset", params: { activity: item.id } } as never);
                     }
