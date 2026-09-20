@@ -55,7 +55,6 @@ const PROFILE_FRAMES: { id: string; label: string; source: ImageSourcePropType }
   { id: "sprout", label: "Sprout", source: require("../assets/images/Frames/Sprout Frame.png") },
   { id: "tide", label: "Tide", source: require("../assets/images/Frames/Tide Frame.png") },
 ];
-const BOTTLE_ACHIEVEMENT_IMAGE = require("../assets/images/Achievements/A Bottle for Tomorrow.jpg");
 
 function getImageMimeType(asset: ImagePicker.ImagePickerAsset) {
   const mimeType = String(asset.mimeType || "").toLowerCase();
@@ -82,7 +81,7 @@ export default function ProfileScreen() {
   const [program, setProgram] = useState("");
   const [isUploadingProfilePicture, setIsUploadingProfilePicture] = useState(false);
   const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null);
-  const [hasBottleAchievement, setHasBottleAchievement] = useState(false);
+  const [achievementCount, setAchievementCount] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const selectedFrame = PROFILE_FRAMES.find((frame) => frame.id === selectedFrameId)?.source ?? null;
 
@@ -92,13 +91,14 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     if (!user?.studentNumber) return;
-    void Promise.all([
-      AsyncStorage.getItem(`${PROFILE_FRAME_KEY}:${user.studentNumber}`),
-      AsyncStorage.getItem(`@bawat-tala/future-bottle:${user.studentNumber}`),
-    ]).then(([frameId, bottles]) => {
+    void AsyncStorage.getItem(`${PROFILE_FRAME_KEY}:${user.studentNumber}`).then((frameId) => {
       setSelectedFrameId(PROFILE_FRAMES.some((frame) => frame.id === frameId) ? frameId : null);
-      setHasBottleAchievement(Boolean(bottles && bottles !== "[]"));
     });
+    void AsyncStorage.getAllKeys().then((keys) => {
+      const prefix = `@bawat-tala/achievement:`;
+      const suffix = `:${user.studentNumber}`;
+      setAchievementCount(keys.filter((k) => k.startsWith(prefix) && k.endsWith(suffix)).length);
+    }).catch(() => undefined);
   }, [user?.studentNumber]);
 
   const openFramePicker = () => {
@@ -147,14 +147,17 @@ export default function ProfileScreen() {
     if (!user?.studentNumber) return;
     setIsRefreshing(true);
     try {
-      const [frameId, bottles, profileResult] = await Promise.all([
+      const [frameId, profileResult] = await Promise.all([
         AsyncStorage.getItem(`${PROFILE_FRAME_KEY}:${user.studentNumber}`),
-        AsyncStorage.getItem(`@bawat-tala/future-bottle:${user.studentNumber}`),
         fetchStudentProfile(user.studentNumber),
       ]);
       await hydrateMuniWardrobe(user.studentNumber).catch(() => undefined);
       setSelectedFrameId(PROFILE_FRAMES.some((frame) => frame.id === frameId) ? frameId : null);
-      setHasBottleAchievement(Boolean(bottles && bottles !== "[]"));
+      void AsyncStorage.getAllKeys().then((keys) => {
+        const prefix = `@bawat-tala/achievement:`;
+        const suffix = `:${user.studentNumber}`;
+        setAchievementCount(keys.filter((k) => k.startsWith(prefix) && k.endsWith(suffix)).length);
+      }).catch(() => undefined);
       if (profileResult && profileResult.ok && profileResult.profile) {
         const nextProfilePictureUrl = profileResult.profile.profilePictureUrl || "";
         setProfilePictureUrl(nextProfilePictureUrl);
@@ -409,17 +412,17 @@ export default function ProfileScreen() {
           {/* Right Column: Achievements */}
           <Pressable style={styles.gridCardAchievement} onPress={() => router.push("/achievements" as never)}>
             <View style={styles.gridCardTopRow}>
-              <View style={styles.gridAchievementImageWrap}>
-                <Image
-                  source={BOTTLE_ACHIEVEMENT_IMAGE}
-                  style={[styles.achievementImage, !hasBottleAchievement && styles.achievementImageLocked]}
-                  resizeMode="cover"
-                />
+              <View style={styles.gridAchievementIconWrap}>
+                <Ionicons name="trophy-outline" size={20} color="#9B7E3F" />
               </View>
+              <Ionicons name="chevron-forward" size={16} color="#7E8490" />
             </View>
-            <Text style={styles.gridCardTitle} numberOfLines={1}>A Bottle for Tomorrow</Text>
-            <Text style={styles.gridCardSubtitle} numberOfLines={2}>Write your first future bottle note.</Text>
+            <Text style={styles.gridCardTitle} numberOfLines={1}>Achievements</Text>
+            <Text style={styles.gridCardSubtitle} numberOfLines={2}>
+              {achievementCount > 0 ? `${achievementCount} badge${achievementCount === 1 ? "" : "s"} earned` : "Badges & milestones"}
+            </Text>
           </Pressable>
+
         </View>
 
         <View style={styles.groupCard}>
@@ -934,6 +937,16 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
+  gridAchievementIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#EEE4CF",
+  },
   gridCardTopRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -950,13 +963,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E0EAD2",
   },
-  gridAchievementImageWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    overflow: "hidden",
-    backgroundColor: "#ECEBE6",
-  },
   gridCardTitle: {
     color: "#33475C",
     fontSize: 15,
@@ -968,13 +974,6 @@ const styles = StyleSheet.create({
     color: "#6B7685",
     fontSize: 12,
     lineHeight: 16,
-  },
-  gridAchievementEyebrow: {
-    color: "#9B7E3F",
-    fontSize: 10,
-    fontFamily: "Outfit-Bold",
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
   },
   scheduleShortcut: {
     minHeight: 74,
@@ -1350,15 +1349,5 @@ const styles = StyleSheet.create({
   frameOptionSelected: { backgroundColor: "#EDF6E9" },
   framePreview: { width: 58, height: 58, borderRadius: 29, backgroundColor: "#F0F4F2", alignItems: "center", justifyContent: "center" },
   frameLabel: { color: "#5E6B76", fontSize: 10, fontFamily: "Outfit-Bold", marginTop: 5 },
-  achievementCard: { marginHorizontal: 16, marginBottom: 12, borderRadius: 22, backgroundColor: "#FFFDF8", borderWidth: 1, borderColor: "#EEE4CF", padding: 13, flexDirection: "row", alignItems: "center", columnGap: 11 },
-  achievementImageWrap: { width: 58, height: 58, borderRadius: 16, overflow: "hidden", backgroundColor: "#ECEBE6" },
-  achievementImage: { width: "100%", height: "100%" },
-  achievementImageLocked: { opacity: 0.25 },
-  achievementCopy: { flex: 1 },
-  achievementEyebrow: { color: "#9B7E3F", fontSize: 10, fontFamily: "Outfit-Bold", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 2 },
-  achievementTitle: { color: "#414846", fontSize: 15, fontFamily: "Outfit-Bold", marginBottom: 2 },
-  achievementDesc: { color: "#717A76", fontSize: 12, lineHeight: 16 },
-  achievementAction: { alignItems: "center" },
-  achievementActionText: { color: "#8D7743", fontSize: 11, fontFamily: "Outfit-Bold" },
 });
 
