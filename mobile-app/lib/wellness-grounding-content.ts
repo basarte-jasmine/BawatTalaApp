@@ -47,7 +47,7 @@ export const GROUNDING_VIBES: GroundingVibe[] = [
     edge: "#8FD8DF",
     overlay: "rgba(26, 53, 69, 0.34)",
     animation: "rain",
-    backgroundImage: require("../assets/images/Background/Hill.png"),
+    backgroundImage: require("../assets/images/Background/Hill.webp"),
   },
   {
     id: "ocean-dusk",
@@ -59,7 +59,7 @@ export const GROUNDING_VIBES: GroundingVibe[] = [
     edge: "#9BC7FF",
     overlay: "rgba(16, 55, 102, 0.28)",
     animation: "wave",
-    backgroundImage: require("../assets/images/Background/Beach.png"),
+    backgroundImage: require("../assets/images/Background/Beach.webp"),
   },
   {
     id: "garden-light",
@@ -71,7 +71,7 @@ export const GROUNDING_VIBES: GroundingVibe[] = [
     edge: "#B4DC8E",
     overlay: "rgba(31, 72, 39, 0.24)",
     animation: "float",
-    backgroundImage: require("../assets/images/Background/Garden.png"),
+    backgroundImage: require("../assets/images/Background/Garden.webp"),
   },
   {
     id: "night-lantern",
@@ -83,7 +83,7 @@ export const GROUNDING_VIBES: GroundingVibe[] = [
     edge: "#CCBEFF",
     overlay: "rgba(28, 27, 56, 0.42)",
     animation: "twinkle",
-    backgroundImage: require("../assets/images/Background/Museum.png"),
+    backgroundImage: require("../assets/images/Background/Museum.webp"),
   },
 ];
 

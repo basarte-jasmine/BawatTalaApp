@@ -87,9 +87,9 @@ type DriftingBottleNote = {
 type SeaDiscovery = "meteorite" | "starfish";
 
 const SEA_OBJECTS = [
-  { id: "meteorite", source: require("../assets/images/Sea/Meteorite Piece.png"), left: 22, top: 172, size: 58, scale: 0.92, drift: 18, duration: 5200 },
-  { id: "stingray", source: require("../assets/images/Sea/Stingray.png"), left: 214, top: 246, size: 112, scale: 0.9, drift: 30, duration: 6800 },
-  { id: "starfish", source: require("../assets/images/Sea/Starfish.png"), left: 302, top: 382, size: 52, scale: 0.86, drift: 14, duration: 4600 },
+  { id: "meteorite", source: require("../assets/images/Sea/Meteorite Piece.webp"), left: 22, top: 172, size: 58, scale: 0.92, drift: 18, duration: 5200 },
+  { id: "stingray", source: require("../assets/images/Sea/Stingray.webp"), left: 214, top: 246, size: 112, scale: 0.9, drift: 30, duration: 6800 },
+  { id: "starfish", source: require("../assets/images/Sea/Starfish.webp"), left: 302, top: 382, size: 52, scale: 0.86, drift: 14, duration: 4600 },
 ] as const;
 
 const FUTURE_BOTTLE_STORAGE_PREFIX = "@bawat-tala/future-bottle";
@@ -102,9 +102,9 @@ const BOTTLE_CLOCK_MINUTES = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 const FUTURE_BOTTLE_PRELOAD_DISTANCE = 420;
 
 const TALA_IMAGE = require("../assets/images/Tala_Star.png");
-const ISLAND_IMAGE = require("../assets/images/Sea/Island.png");
-const BOTTLE_IMAGE = require("../assets/images/Sea/Bottle.png");
-const FLOORBED_IMAGE = require("../assets/images/Sea/Floorbed.png");
+const ISLAND_IMAGE = require("../assets/images/Sea/Island.webp");
+const BOTTLE_IMAGE = require("../assets/images/Sea/Bottle.webp");
+const FLOORBED_IMAGE = require("../assets/images/Sea/Floorbed.webp");
 
 function getFutureBottleStorageKey(studentNumber: string) {
   return `${FUTURE_BOTTLE_STORAGE_PREFIX}:${studentNumber}`;
@@ -2375,7 +2375,7 @@ export default function HomeScreen() {
             </View>
             <View style={styles.seaDiscoveryBody}>
               <Image
-                source={seaDiscovery === "starfish" ? require("../assets/images/Sea/Starfish.png") : require("../assets/images/Sea/Meteorite Piece.png")}
+                source={seaDiscovery === "starfish" ? require("../assets/images/Sea/Starfish.webp") : require("../assets/images/Sea/Meteorite Piece.webp")}
                 style={styles.seaDiscoveryImage}
                 resizeMode="contain"
               />
