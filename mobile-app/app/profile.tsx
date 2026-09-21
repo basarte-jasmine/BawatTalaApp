@@ -1,24 +1,24 @@
 import { Ionicons } from "@expo/vector-icons";
-import { showAppNotice } from "../lib/app-notice";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import { useCallback, useEffect, useState, type ComponentProps } from "react";
 import {
-  ActivityIndicator,
-  Image,
-  ImageSourcePropType,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  View } from "react-native";
+    ActivityIndicator,
+    ImageSourcePropType,
+    Modal,
+    Platform,
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StudentProfileAvatar } from "../components/profile/StudentProfileAvatar";
+import { showAppNotice } from "../lib/app-notice";
 import { useAppPreferences } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
 import { clearStudentProfilePicture, fetchStudentProfile, updateStudentProfilePicture } from "../lib/backend-api";

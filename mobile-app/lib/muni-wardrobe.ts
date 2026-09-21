@@ -2,9 +2,9 @@
 import { useEffect, useState } from "react";
 import { ImageSourcePropType } from "react-native";
 import {
-  fetchMuniWardrobe,
-  purchaseMuniWardrobeItem,
-  saveMuniLoadoutRemote,
+    fetchMuniWardrobe,
+    purchaseMuniWardrobeItem,
+    saveMuniLoadoutRemote,
 } from "./backend-api";
 
 export type MuniCollectionOption = {
