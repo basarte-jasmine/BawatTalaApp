@@ -43,7 +43,7 @@ const APP_ROWS: SettingRow[] = [
   { id: "recently-deleted", icon: "trash-bin-outline", label: "Recently Deleted", showChevron: true },
   { id: "help-support", icon: "help-buoy-outline", label: "Help & Support", showChevron: true },
 ];
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.7";
 const PROFILE_PICTURE_LIMIT_BYTES = 5 * 1024 * 1024;
 const PROFILE_PICTURE_MAX_DIMENSION = 1024;
 const PROFILE_FRAME_KEY = "@bawat-tala/profile-frame";
