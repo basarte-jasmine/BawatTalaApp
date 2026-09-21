@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { getGameScore, saveGameScore } from "../lib/game-scores";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
     Animated,
@@ -14,6 +13,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
+import { claimMiniResetReward } from "../lib/backend-api";
+import { getGameScore, saveGameScore } from "../lib/game-scores";
 
 const RAFT_W = 70;
 const RAFT_H = 90;
@@ -46,6 +47,8 @@ export default function MunisArrivalScreen() {
   const [distance, setDistance] = useState(0);
   const [leaves, setLeaves] = useState(0);
   const [health, setHealth] = useState(3);
+  const [rewardTala, setRewardTala] = useState(0);
+  const rewardClaimedRef = useRef(false);
   
   const bestDriftRef = useRef(0);
   const [, forceUpdate] = useState(0); // Ensure score updates after load
@@ -179,6 +182,8 @@ export default function MunisArrivalScreen() {
     setDistance(0);
     setLeaves(0);
     setHealth(3);
+    setRewardTala(0);
+    rewardClaimedRef.current = false;
     itemsRef.current = [];
     raftX.current = gameWidth.current / 2;
     targetRaftX.current = gameWidth.current / 2;
@@ -250,7 +255,15 @@ export default function MunisArrivalScreen() {
           } else {
             setHealth((h) => {
               const newH = h - 1;
-              if (newH <= 0) setGameState("GAMEOVER");
+              if (newH <= 0) {
+                setGameState("GAMEOVER");
+                if (!rewardClaimedRef.current) {
+                  rewardClaimedRef.current = true;
+                  claimMiniResetReward({ activityId: "munis-arrival", distance, leaves, level: 1, roundKey: `munis-arrival-${Date.now()}` })
+                    .then((reward) => setRewardTala(reward.rewardTala))
+                    .catch(() => undefined);
+                }
+              }
 saveGameScore("munis-arrival", { bestDrift: bestDriftRef.current });
               return newH;
             });
@@ -415,6 +428,7 @@ saveGameScore("munis-arrival", { bestDrift: bestDriftRef.current });
               <View style={styles.statRow}><Text style={styles.statLabel}>Distance</Text><Text style={styles.statValue}>{distance}m</Text></View>
               <View style={styles.statRow}><Text style={styles.statLabel}>Glow Leaves</Text><Text style={styles.statValue}>{leaves}</Text></View>
               <View style={styles.statRow}><Text style={styles.statLabel}>Best Drift</Text><Text style={styles.statValue}>{bestDriftRef.current}m</Text></View>
+              <View style={styles.statRow}><Text style={styles.statLabel}>Tala Earned</Text><Text style={styles.statValue}>{rewardTala}</Text></View>
             </View>
 
             <Pressable style={styles.btnPrimary} onPress={startGame}><Text style={styles.btnPrimaryText}>Drift Again</Text></Pressable>

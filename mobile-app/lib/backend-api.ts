@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { decryptLocalPayload, encryptLocalPayload, looksLikeEncryptedPayload } from "./local-encrypted-storage";
 import { Platform } from "react-native";
+import { decryptLocalPayload, encryptLocalPayload, looksLikeEncryptedPayload } from "./local-encrypted-storage";
 import { needsSupportPrompt } from "./risk-level";
 
 export type AuthUser = {
@@ -2337,9 +2337,13 @@ export async function saveLibraryBookProgress(payload: {
 
 export async function claimMiniResetReward(payload: {
   activityId: string;
-  level: number;
+  distance?: number;
+  leaves?: number;
+  level?: number;
   roundKey: string;
-  studentNumber: string;
+  rounds?: number;
+  score?: number;
+  studentNumber?: string;
 }): Promise<ApiResult & { dailyCapReached?: boolean; rewardTala?: number; totalTala?: number }> {
   const { studentNumber: _studentNumber, ...body } = payload;
   const { response, data } = await post("/api/wellness/mini-reset-reward", body);

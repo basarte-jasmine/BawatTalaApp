@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { unlockAchievement } from "../lib/achievements";
 import { useAuthSession } from "../lib/auth-session";
-import { getGameScore, saveGameScore } from "../lib/game-scores";
+import { claimMiniResetReward } from "../lib/backend-api";
 
 const ASSETS = [
   require("../assets/images/Mini Reset/Puzzle/Muni_Flower_Thief.webp"),
@@ -54,6 +54,8 @@ export default function ImagePuzzleScreen() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [gridSize, setGridSize] = useState(2);
   const [showExitPrompt, setShowExitPrompt] = useState(false);
+  const [rewardTala, setRewardTala] = useState(0);
+  const rewardClaimedRef = useRef(false);
   
   const stateRef = useRef({
     gameState: 'intro',
@@ -98,6 +100,12 @@ export default function ImagePuzzleScreen() {
     
     if (newHearts <= 0) {
       setGameState('gameover');
+      if (!rewardClaimedRef.current) {
+        rewardClaimedRef.current = true;
+        claimMiniResetReward({ activityId: "image-puzzle", level: currentLevel, roundKey: `image-puzzle-${Date.now()}`, score: currentScore })
+          .then((reward) => setRewardTala(reward.rewardTala))
+          .catch(() => undefined);
+      }
     } else {
       setTimeout(() => {
         startPuzzle(currentLevel, newHearts, currentScore, 0);
@@ -110,6 +118,8 @@ export default function ImagePuzzleScreen() {
     setLevel(1);
     setHearts(3);
     setCombo(0);
+    setRewardTala(0);
+    rewardClaimedRef.current = false;
     startPuzzle(1, 3, 0, 0);
   };
 
@@ -333,6 +343,7 @@ export default function ImagePuzzleScreen() {
           <Text style={styles.introTitle}>GAME OVER</Text>
           <Text style={styles.introDesc}>Final Score: {score}</Text>
           <Text style={styles.introDesc}>Level Reached: {level}</Text>
+          <Text style={styles.introDesc}>Tala Earned: {rewardTala}</Text>
           
           <Pressable style={[styles.startButton, { backgroundColor: '#6B8E65', marginTop: 30 }]} onPress={startGame}>
             <Text style={styles.startButtonText}>PLAY AGAIN</Text>

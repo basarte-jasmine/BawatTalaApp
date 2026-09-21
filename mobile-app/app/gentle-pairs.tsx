@@ -1,7 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { getGameScore, saveGameScore } from "../lib/game-scores";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
     Image,
     Pressable,
@@ -11,6 +10,8 @@ import {
     useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { claimMiniResetReward } from "../lib/backend-api";
+import { getGameScore, saveGameScore } from "../lib/game-scores";
 
 const ASSETS = [
   require("../assets/images/Mini Reset/Gentle Pairs/Muni_Dizzy.webp"),
@@ -50,6 +51,8 @@ export default function GentlePairsScreen() {
   const [isLocked, setIsLocked] = useState(false);
   
   const [showExitPrompt, setShowExitPrompt] = useState(false);
+  const [rewardTala, setRewardTala] = useState(0);
+  const rewardClaimedRef = useRef(false);
   
   const bestScoreRef = useRef(0);
   const bestRoundRef = useRef(0);
@@ -91,6 +94,8 @@ export default function GentlePairsScreen() {
     setRound(1);
     setMoves(0);
     setTimeLeft(ROUND_TIME);
+    setRewardTala(0);
+    rewardClaimedRef.current = false;
     generateDeck(1);
   };
 
@@ -101,6 +106,12 @@ export default function GentlePairsScreen() {
       setTimeLeft((current) => {
         if (current <= 1) {
           setGameState("GAMEOVER");
+          if (!rewardClaimedRef.current) {
+            rewardClaimedRef.current = true;
+            claimMiniResetReward({ activityId: "gentle-pairs", level, roundKey: `gentle-pairs-${Date.now()}`, rounds: Math.max(0, round - 1), score })
+              .then((reward) => setRewardTala(reward.rewardTala))
+              .catch(() => undefined);
+          }
           if (score > bestScoreRef.current) bestScoreRef.current = score;
           if (round > bestRoundRef.current) bestRoundRef.current = round;
           saveGameScore("gentle-pairs", { bestScore: bestScoreRef.current, bestRound: bestRoundRef.current });
@@ -276,6 +287,7 @@ export default function GentlePairsScreen() {
               <View style={styles.statsBox}>
                 <View style={styles.statRow}><Text style={styles.statLabel}>Score (Best: {bestScoreRef.current})</Text><Text style={styles.statValue}>{score}</Text></View>
                 <View style={styles.statRow}><Text style={styles.statLabel}>Rounds (Best: {Math.max(0, bestRoundRef.current - 1)})</Text><Text style={styles.statValue}>{Math.max(0, round - 1)}</Text></View>
+                <View style={styles.statRow}><Text style={styles.statLabel}>Tala Earned</Text><Text style={styles.statValue}>{rewardTala}</Text></View>
               </View>
               <Pressable style={styles.btnPrimary} onPress={startGame}><Text style={styles.btnPrimaryText}>Start Again</Text></Pressable>
             </View>

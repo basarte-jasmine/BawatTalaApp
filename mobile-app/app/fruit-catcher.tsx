@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { unlockAchievement } from "../lib/achievements";
 import { useAuthSession } from "../lib/auth-session";
+import { claimMiniResetReward } from "../lib/backend-api";
 import { getGameScore, saveGameScore } from "../lib/game-scores";
 
 const BASKET_WIDTH = 100;
@@ -50,6 +51,8 @@ export default function FruitCatcherScreen() {
   
   const [fruitsCaught, setFruitsCaught] = useState(0);
   const [longestCombo, setLongestCombo] = useState(0);
+  const [rewardTala, setRewardTala] = useState(0);
+  const rewardClaimedRef = useRef(false);
   
   const [popups, setPopups] = useState<any[]>([]);
   
@@ -224,6 +227,12 @@ export default function FruitCatcherScreen() {
         setGameState('gameover');
       const curScore = stateRef.current?.score || score;
       const curLevel = stateRef.current?.level || level;
+      if (!rewardClaimedRef.current) {
+        rewardClaimedRef.current = true;
+        claimMiniResetReward({ activityId: "fruit-catcher", level: curLevel, roundKey: `fruit-catcher-${Date.now()}`, score: curScore })
+          .then((reward) => setRewardTala(reward.rewardTala))
+          .catch(() => undefined);
+      }
       let newBest = bestScore;
       let newHigh = highestLevel;
       if (curScore > bestScore) { newBest = curScore; setBestScore(curScore); }
@@ -265,6 +274,8 @@ export default function FruitCatcherScreen() {
     setCombo(0);
     setFruitsCaught(0);
     setLongestCombo(0);
+    setRewardTala(0);
+    rewardClaimedRef.current = false;
     itemsRef.current = [];
     setPopups([]);
     const centeredX = Math.max(0, (gameWidth.current - BASKET_WIDTH) / 2);
@@ -358,6 +369,7 @@ export default function FruitCatcherScreen() {
             <Text style={styles.panelText}>Highest Level: {level} (Best: {highestLevel})</Text>
             <Text style={styles.panelText}>Fruits Caught: {fruitsCaught}</Text>
             <Text style={styles.panelText}>Longest Combo: {longestCombo}</Text>
+            <Text style={styles.panelText}>Tala Earned: {rewardTala}</Text>
             <Pressable style={styles.button} onPress={startGame}>
               <Text style={styles.buttonText}>RESTART</Text>
             </Pressable>

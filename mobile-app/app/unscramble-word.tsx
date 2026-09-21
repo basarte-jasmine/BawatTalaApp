@@ -1,17 +1,18 @@
-import React, { useEffect, useRef, useState } from "react";
-import {
-  Animated,
-  Image,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-  useWindowDimensions,
-  Vibration
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import React, { useEffect, useRef, useState } from "react";
+import {
+    Animated,
+    Image,
+    Pressable,
+    StyleSheet,
+    Text,
+    useWindowDimensions,
+    Vibration,
+    View
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { claimMiniResetReward } from "../lib/backend-api";
 import { getGameScore, saveGameScore } from "../lib/game-scores";
 
 const COVER = require("../assets/images/Mini Reset/Unscramble Word/Unscramble Word Cover.webp"); 
@@ -69,6 +70,8 @@ export default function UnscrambleWordScreen() {
   
   const [isError, setIsError] = useState(false);
   const [showExitPrompt, setShowExitPrompt] = useState(false);
+  const [rewardTala, setRewardTala] = useState(0);
+  const rewardClaimedRef = useRef(false);
   
   const shakeAnim = useRef(new Animated.Value(0)).current;
   
@@ -125,6 +128,8 @@ export default function UnscrambleWordScreen() {
     setLevel(1);
     setCombo(0);
     setTimeLeft(INITIAL_TIME);
+    setRewardTala(0);
+    rewardClaimedRef.current = false;
     setupNextWord(1);
   };
 
@@ -134,6 +139,12 @@ export default function UnscrambleWordScreen() {
         setTimeLeft((prev) => {
           if (prev <= 1) {
             setGameState("GAMEOVER");
+            if (!rewardClaimedRef.current) {
+              rewardClaimedRef.current = true;
+              claimMiniResetReward({ activityId: "unscramble-word", level, roundKey: `unscramble-word-${Date.now()}`, score })
+                .then((reward) => setRewardTala(reward.rewardTala))
+                .catch(() => undefined);
+            }
             if (score > bestScoreRef.current) { bestScoreRef.current = score; }
             if (level > bestLevelRef.current) { bestLevelRef.current = level; }
             saveGameScore("unscramble-word", { bestScore: bestScoreRef.current, bestLevel: bestLevelRef.current });
@@ -294,12 +305,13 @@ export default function UnscrambleWordScreen() {
           <View style={styles.centerContainer}>
             <View style={styles.gameOverCard}>
               <Ionicons name="time-outline" size={48} color="#E76F51" style={{marginBottom: 12}} />
-              <Text style={styles.goTitle}>Time's Up!</Text>
+              <Text style={styles.goTitle}>Time&apos;s Up!</Text>
               <Text style={styles.goSub}>Your focus brought calm.</Text>
               
               <View style={styles.statsBox}>
                 <View style={styles.statRow}><Text style={styles.statLabel}>Score (Best: {bestScoreRef.current})</Text><Text style={styles.statValue}>{score}</Text></View>
                 <View style={styles.statRow}><Text style={styles.statLabel}>Words Rebuilt (Best: {bestLevelRef.current - 1})</Text><Text style={styles.statValue}>{level - 1}</Text></View>
+                <View style={styles.statRow}><Text style={styles.statLabel}>Tala Earned</Text><Text style={styles.statValue}>{rewardTala}</Text></View>
               </View>
 
               <Pressable style={styles.btnPrimary} onPress={startGame}>
