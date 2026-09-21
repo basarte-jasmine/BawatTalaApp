@@ -25,7 +25,7 @@ type MiniResetItem = {
 type FeaturedGame = {
   description: string;
   duration: string;
-  id: "fruit-catcher" | "image-puzzle" | "munis-arrival";
+  id: "fruit-catcher" | "image-puzzle" | "munis-arrival" | "gentle-pairs";
   image: number;
   label: string;
   title: string;
@@ -51,7 +51,7 @@ const WELLNESS_TOOLS: ToolItem[] = [
 ];
 
 const MINI_RESETS: MiniResetItem[] = [
-  { id: "memory", title: "Gentle Pairs", description: "Flip and find three calm matches.", duration: "~1 min", icon: "grid-outline" },
+  
   { id: "pattern", title: "Notice the Pattern", description: "Watch a small sequence, then repeat it.", duration: "~30 sec", icon: "shapes-outline" },
   { id: "recall", title: "Visual Recall", description: "Take a breath and recreate a simple arrangement.", duration: "~30 sec", icon: "eye-outline" },
   { id: "words", title: "Unscramble a Word", description: "Put a calming word back in order.", duration: "~30 sec", icon: "text-outline" },
@@ -61,6 +61,14 @@ const MINI_RESETS: MiniResetItem[] = [
 ];
 
 const FEATURED_GAMES: FeaturedGame[] = [
+  {
+    id: "gentle-pairs",
+    title: "Gentle Pairs",
+    label: "Memory Focus",
+    description: "Flip the cards and find the matching Muni moments.",
+    duration: "Endless",
+    image: require("../assets/images/Mini Reset/Gentle Pairs/Gentle Pairs Cover.webp"),
+  },
   {
     id: "image-puzzle",
     title: "Muni's Picture Puzzle",
@@ -132,7 +140,7 @@ export default function WellnessToolsScreen() {
               <Text style={styles.listHeading}>Meet Muni in motion</Text>
               <Text style={styles.listSubHeading}>Two bigger ways to reset, play, and stay curious.</Text>
             </View>
-            <View style={styles.featuredGameGrid}>{FEATURED_GAMES.map((game) => (<Pressable key={game.id} style={({ pressed }) => [styles.featuredGameCard, pressed && styles.miniResetCardPressed]} accessibilityLabel={game.title + ", " + game.duration} onPress={() => router.push(game.id === "munis-arrival" ? "/munis-arrival" : game.id === "fruit-catcher" ? "/fruit-catcher" : "/image-puzzle")}>
+            <View style={styles.featuredGameGrid}>{FEATURED_GAMES.map((game) => (<Pressable key={game.id} style={({ pressed }) => [styles.featuredGameCard, pressed && styles.miniResetCardPressed]} accessibilityLabel={game.title + ", " + game.duration} onPress={() => router.push("/" + game.id as any)}>
                   <Image source={game.image} style={[styles.featuredGameImage, compact && styles.featuredGameImageCompact]} resizeMode="cover" />
                   <View style={styles.featuredGameBody}>
                     <Text style={styles.featuredGameLabel}>{game.label}</Text>
