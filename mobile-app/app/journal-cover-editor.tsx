@@ -1,5 +1,5 @@
 ﻿import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
     Pressable,
@@ -21,7 +21,18 @@ import { loadJournalCover, persistJournalCoverPreview, saveJournalCover, type Jo
 type CoverElement = JournalCoverElement;
 type StickerName = JournalCoverSticker;
 
+
+const FONTS = [
+  { name: "Bold", value: "Outfit-Bold" },
+  { name: "Regular", value: "Outfit" },
+  { name: "Classic", value: "serif" },
+  { name: "Type", value: "monospace" },
+];
+
+const TEXT_COLORS = ["#FFF8E8", "#1A1A1A", "#A85D5D", "#4D6558", "#B6CDE0"];
+
 const COLORS = [
+
   { name: "Sage", value: "#AFC4B1" },
   { name: "Blush", value: "#E9BFC1" },
   { name: "Sky", value: "#B6CDE0" },
@@ -111,7 +122,7 @@ const DraggableElement = ({
           accessibilityLabel={element.type === "text" ? element.content : `${element.icon} sticker`}
         >
           {element.type === "text" ? (
-            <Text style={[styles.textElement, { color: element.color }]}>{element.content}</Text>
+            <Text style={[styles.textElement, { color: element.color, fontFamily: element.fontFamily || "Outfit-Bold" }]}>{element.content}</Text>
           ) : (
             <Ionicons name={element.icon} size={42} color="#FFF8E8" />
           )}
@@ -122,15 +133,21 @@ const DraggableElement = ({
 };
 
 export default function JournalCoverEditorScreen() {
+  const { mode = "solo" } = useLocalSearchParams<{ mode: "muni" | "solo" }>();
   const { user } = useAuthSession();
   const { width } = useWindowDimensions();
   const [coverColor, setCoverColor] = useState(COLORS[0].value);
   const [elements, setElements] = useState<CoverElement[]>([]);
   const [activeElementId, setActiveElementId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [showToolbar, setShowToolbar] = useState(true);
   const coverShotRef = useRef<ViewShotRef>(null);
 
-  const bookWidth = Math.min(width - 48, 300);
+  const { height } = useWindowDimensions();
+  // Make the book take up as much vertical space as possible, but cap the width
+  const maxAvailableHeight = height - (showToolbar ? 420 : 180); 
+  const calculatedWidth = maxAvailableHeight / 1.4;
+  const bookWidth = Math.min(width - 48, Math.max(300, calculatedWidth));
   const bookHeight = bookWidth * 1.4;
   const activeElement = elements.find((element) => element.id === activeElementId);
 
@@ -138,7 +155,7 @@ export default function JournalCoverEditorScreen() {
     if (!user?.studentNumber) return;
 
     let mounted = true;
-    void loadJournalCover(user.studentNumber).then((design) => {
+    void loadJournalCover(user.studentNumber, mode).then((design) => {
       if (!mounted || !design) return;
       setCoverColor(design.color);
       setElements(design.elements);
@@ -147,7 +164,7 @@ export default function JournalCoverEditorScreen() {
     return () => {
       mounted = false;
     };
-  }, [user?.studentNumber]);
+  }, [user?.studentNumber, mode]);
 
   const addText = () => {
     const id = Math.random().toString();
@@ -179,7 +196,21 @@ export default function JournalCoverEditorScreen() {
     )));
   };
 
+  
+  const updateActiveTextFont = (fontFamily: string) => {
+    setElements((current) => current.map((element) => (
+      element.id === activeElementId ? { ...element, fontFamily } : element
+    )));
+  };
+
+  const updateActiveTextColor = (color: string) => {
+    setElements((current) => current.map((element) => (
+      element.id === activeElementId ? { ...element, color } : element
+    )));
+  };
+
   const removeActiveElement = () => {
+
     if (!activeElementId) return;
     setElements((current) => current.filter((element) => element.id !== activeElementId));
     setActiveElementId(null);
@@ -206,12 +237,12 @@ export default function JournalCoverEditorScreen() {
              previewUri = await captureRef(coverShotRef.current, { format: 'webp', quality: 0.88, result: 'data-uri' });
           } else {
              const temporaryPreviewUri = await captureRef(coverShotRef.current, { format: 'webp', quality: 0.88, result: 'tmpfile' });
-             previewUri = await persistJournalCoverPreview(user.studentNumber, temporaryPreviewUri);
+             previewUri = await persistJournalCoverPreview(user.studentNumber, mode, temporaryPreviewUri);
           }
         }
       } catch {
       }
-      await saveJournalCover(user.studentNumber, {
+      await saveJournalCover(user.studentNumber, mode, {
         version: 1,
         color: coverColor,
         elements,
@@ -240,7 +271,6 @@ export default function JournalCoverEditorScreen() {
       </View>
 
       <View style={styles.previewArea}>
-        <Text style={styles.previewHint}>Drag, pinch, or rotate your pieces</Text>
         <ViewShot ref={coverShotRef} options={{ format: "webp", quality: 0.88 }} style={[styles.notebookBase, { backgroundColor: coverColor, width: bookWidth, height: bookHeight }]}>
           <View style={styles.coverHighlight} />
           <View style={styles.spine} />
@@ -259,79 +289,120 @@ export default function JournalCoverEditorScreen() {
             {elements.length === 0 && (
               <View pointerEvents="none" style={styles.emptyCoverMessage}>
                 <Ionicons name="add-circle-outline" size={30} color="rgba(255,248,232,0.7)" />
-                <Text style={styles.emptyCoverText}>Start with a title or a little detail</Text>
+                <Text style={styles.emptyCoverText}>Start with a title or a little detail
+
+Drag, pinch, or rotate your pieces</Text>
               </View>
             )}
           </View>
         </ViewShot>
       </View>
 
-      <ScrollView style={styles.toolbarContainer} contentContainerStyle={styles.toolbarContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.toolbarHeader}>
-          <View>
-            <Text style={styles.toolTitle}>Make it yours</Text>
-            <Text style={styles.toolSubtitle}>Choose a mood, then add your pieces.</Text>
-          </View>
-          <Pressable onPress={resetDesign} style={styles.resetButton} accessibilityLabel="Reset cover design">
-            <Ionicons name="refresh-outline" size={16} color="#4D6558" />
-            <Text style={styles.resetText}>Reset</Text>
-          </Pressable>
-        </View>
-
-        <Text style={styles.sectionLabel}>Cover color</Text>
-        <View style={styles.colorRow}>
-          {COLORS.map((color) => (
-            <Pressable
-              key={color.value}
-              onPress={() => setCoverColor(color.value)}
-              style={[styles.colorButton, { backgroundColor: color.value }, coverColor === color.value && styles.colorButtonActive]}
-              accessibilityLabel={`Choose ${color.name} cover`}
-              accessibilityRole="button"
-            />
-          ))}
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionLabel}>Add to cover</Text>
-          <Pressable onPress={addText} style={styles.textToolButton} accessibilityLabel="Add title text">
-            <Ionicons name="text-outline" size={18} color="#FFF8E8" />
-            <Text style={styles.textToolLabel}>Title</Text>
-          </Pressable>
-        </View>
-        <View style={styles.stickerRow}>
-          {STICKERS.map((sticker) => (
-            <Pressable key={sticker.icon} onPress={() => addSticker(sticker.icon)} style={styles.stickerButton} accessibilityLabel={`Add ${sticker.label} sticker`}>
-              <Ionicons name={sticker.icon} size={23} color="#4D6558" />
-            </Pressable>
-          ))}
-        </View>
-
-        {activeElement?.type === "text" && (
-          <View style={styles.editPanel}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionLabel}>Edit title</Text>
-              <Pressable onPress={removeActiveElement} accessibilityLabel="Delete selected element" hitSlop={8}>
-                <Ionicons name="trash-outline" size={20} color="#A85D5D" />
+      
+      {showToolbar ? (
+        <ScrollView style={styles.toolbarContainer} contentContainerStyle={styles.toolbarContent} showsVerticalScrollIndicator={false}>
+          <View style={styles.toolbarHeader}>
+            <View>
+              <Text style={styles.toolTitle}>Make it yours</Text>
+              <Text style={styles.toolSubtitle}>Choose a mood, then add your pieces.</Text>
+            </View>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <Pressable onPress={resetDesign} style={styles.iconOnlyButton} accessibilityLabel="Reset cover design">
+                <Ionicons name="refresh-outline" size={20} color="#4D6558" />
+              </Pressable>
+              <Pressable onPress={() => setShowToolbar(false)} style={styles.iconOnlyButton} accessibilityLabel="Hide tools">
+                <Ionicons name="chevron-down-outline" size={22} color="#4D6558" />
               </Pressable>
             </View>
-            <TextInput
-              value={activeElement.content}
-              onChangeText={updateActiveText}
-              maxLength={28}
-              style={styles.titleInput}
-              placeholder="Type a title"
-              placeholderTextColor="#9BA89F"
-              accessibilityLabel="Cover title"
-            />
           </View>
-        )}
-        {activeElement?.type === "sticker" && (
-          <Pressable onPress={removeActiveElement} style={styles.deleteButton} accessibilityLabel="Delete selected sticker">
-            <Ionicons name="trash-outline" size={18} color="#A85D5D" />
-            <Text style={styles.deleteText}>Remove selected sticker</Text>
+
+          <Text style={styles.sectionLabel}>Cover color</Text>
+          <View style={styles.colorRow}>
+            {COLORS.map((color) => (
+              <Pressable
+                key={color.value}
+                onPress={() => setCoverColor(color.value)}
+                style={[styles.colorButton, { backgroundColor: color.value }, coverColor === color.value && styles.colorButtonActive]}
+                accessibilityLabel={`Choose ${color.name} cover`}
+                accessibilityRole="button"
+              />
+            ))}
+          </View>
+
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionLabel}>Add to cover</Text>
+            <Pressable onPress={addText} style={styles.textToolButton} accessibilityLabel="Add title text">
+              <Ionicons name="text-outline" size={18} color="#FFF8E8" />
+              <Text style={styles.textToolLabel}>Title</Text>
+            </Pressable>
+          </View>
+          <View style={styles.stickerRow}>
+            {STICKERS.map((sticker) => (
+              <Pressable key={sticker.icon} onPress={() => addSticker(sticker.icon)} style={styles.stickerButton} accessibilityLabel={`Add ${sticker.label} sticker`}>
+                <Ionicons name={sticker.icon} size={23} color="#4D6558" />
+              </Pressable>
+            ))}
+          </View>
+
+          {activeElement?.type === "text" && (
+            <View style={styles.editPanel}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionLabel}>Edit title</Text>
+                <Pressable onPress={removeActiveElement} accessibilityLabel="Delete selected element" hitSlop={8}>
+                  <Ionicons name="trash-outline" size={20} color="#A85D5D" />
+                </Pressable>
+              </View>
+              <TextInput
+                value={activeElement.content}
+                onChangeText={updateActiveText}
+                maxLength={28}
+                style={styles.titleInput}
+                placeholder="Type a title"
+                placeholderTextColor="#9BA89F"
+                accessibilityLabel="Cover title"
+              />
+              
+              <Text style={[styles.sectionLabel, { marginTop: 12, marginBottom: 8 }]}>Font Style</Text>
+              <View style={styles.fontRow}>
+                {FONTS.map((font) => (
+                  <Pressable
+                    key={font.value}
+                    onPress={() => updateActiveTextFont(font.value)}
+                    style={[styles.fontButton, activeElement.fontFamily === font.value || (!activeElement.fontFamily && font.value === "Outfit-Bold") ? styles.fontButtonActive : null]}
+                  >
+                    <Text style={[styles.fontButtonText, { fontFamily: font.value }]}>{font.name}</Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <Text style={[styles.sectionLabel, { marginTop: 12, marginBottom: 8 }]}>Text Color</Text>
+              <View style={styles.colorRow}>
+                {TEXT_COLORS.map((color) => (
+                  <Pressable
+                    key={color}
+                    onPress={() => updateActiveTextColor(color)}
+                    style={[styles.textColorButton, { backgroundColor: color }, activeElement.color === color && styles.textColorButtonActive]}
+                  />
+                ))}
+              </View>
+            </View>
+          )}
+          {activeElement?.type === "sticker" && (
+            <Pressable onPress={removeActiveElement} style={styles.deleteButton} accessibilityLabel="Delete selected sticker">
+              <Ionicons name="trash-outline" size={18} color="#A85D5D" />
+              <Text style={styles.deleteText}>Remove selected sticker</Text>
+            </Pressable>
+          )}
+        </ScrollView>
+      ) : (
+        <View style={styles.showToolsContainer}>
+          <Pressable onPress={() => setShowToolbar(true)} style={styles.showToolsButton}>
+            <Ionicons name="color-palette-outline" size={22} color="#FFF8E8" />
+            <Text style={styles.showToolsText}>Show Tools</Text>
           </Pressable>
-        )}
-      </ScrollView>
+        </View>
+      )}
+
     </SafeAreaView>
   );
 }
@@ -358,6 +429,12 @@ const styles = StyleSheet.create({
   elementTouchTarget: { padding: 7, borderRadius: 10, borderWidth: 1, borderColor: "transparent" },
   elementSelected: { borderColor: "rgba(255,248,232,0.9)", borderStyle: "dashed" },
   textElement: { fontFamily: "Outfit-Bold", fontSize: 28, maxWidth: 230, textAlign: "center" },
+  
+  iconOnlyButton: { width: 32, height: 32, alignItems: "center", justifyContent: "center", borderRadius: 16, backgroundColor: "#EEF3ED" },
+  showToolsContainer: { position: "absolute", bottom: 40, left: 0, right: 0, alignItems: "center" },
+  showToolsButton: { flexDirection: "row", alignItems: "center", backgroundColor: "#4D6558", paddingHorizontal: 16, paddingVertical: 12, borderRadius: 30, gap: 8, shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 8, elevation: 5 },
+  showToolsText: { color: "#FFF8E8", fontFamily: "Outfit-Bold", fontSize: 15 },
+
   toolbarContainer: { flexGrow: 0, maxHeight: 290, backgroundColor: "#FFFFFF", borderTopLeftRadius: 26, borderTopRightRadius: 26, shadowColor: "#20352B", shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 10 },
   toolbarContent: { paddingHorizontal: 22, paddingTop: 20, paddingBottom: 24 },
   toolbarHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 },
@@ -378,5 +455,11 @@ const styles = StyleSheet.create({
   titleInput: { height: 42, borderWidth: 1, borderColor: "#CBD8CE", borderRadius: 12, paddingHorizontal: 12, color: "#20352B", fontFamily: "Outfit-Medium", fontSize: 14, marginTop: 1 },
   deleteButton: { flexDirection: "row", alignItems: "center", gap: 7, paddingVertical: 8 },
   deleteText: { color: "#A85D5D", fontFamily: "Outfit-SemiBold", fontSize: 12 },
-});
 
+  fontRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 4 },
+  fontButton: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: "#EEF3ED", borderWidth: 1, borderColor: "transparent" },
+  fontButtonActive: { borderColor: "#4D6558", backgroundColor: "#E3EBE4" },
+  fontButtonText: { color: "#20352B", fontSize: 13 },
+  textColorButton: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: "#E6EDE7", shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 2, elevation: 2 },
+  textColorButtonActive: { borderColor: "#20352B", transform: [{ scale: 1.1 }] },
+});

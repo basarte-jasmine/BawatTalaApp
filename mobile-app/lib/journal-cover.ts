@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+﻿import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as FileSystem from "expo-file-system/legacy";
 
 export type JournalCoverElementType = "text" | "sticker";
@@ -9,6 +9,7 @@ export interface JournalCoverElement {
   type: JournalCoverElementType;
   content: string;
   color?: string;
+  fontFamily?: string;
   icon?: JournalCoverSticker;
   x: number;
   y: number;
@@ -27,14 +28,14 @@ export interface JournalCoverDesign {
 const STORAGE_PREFIX = "@bawat-tala/journal-cover:";
 const PREVIEW_DIRECTORY = "journal-covers";
 
-function getJournalCoverKey(studentNumber: string) {
-  return `${STORAGE_PREFIX}${studentNumber}`;
+function getJournalCoverKey(studentNumber: string, mode: "muni" | "solo" = "solo") {
+  return `${STORAGE_PREFIX}${studentNumber}:${mode}`;
 }
 
-export async function loadJournalCover(studentNumber: string): Promise<JournalCoverDesign | null> {
+export async function loadJournalCover(studentNumber: string, mode: "muni" | "solo" = "solo"): Promise<JournalCoverDesign | null> {
   if (!studentNumber) return null;
 
-  const storedValue = await AsyncStorage.getItem(getJournalCoverKey(studentNumber));
+  const storedValue = await AsyncStorage.getItem(getJournalCoverKey(studentNumber, mode));
   if (!storedValue) return null;
 
   try {
@@ -48,11 +49,11 @@ export async function loadJournalCover(studentNumber: string): Promise<JournalCo
   }
 }
 
-export async function persistJournalCoverPreview(studentNumber: string, previewUri: string | null): Promise<string | null> {
+export async function persistJournalCoverPreview(studentNumber: string, mode: "muni" | "solo", previewUri: string | null): Promise<string | null> {
   if (!studentNumber || !previewUri || !FileSystem.documentDirectory) return null;
 
   const directory = `${FileSystem.documentDirectory}${PREVIEW_DIRECTORY}/`;
-  const destination = `${directory}${encodeURIComponent(studentNumber)}.webp`;
+  const destination = `${directory}${encodeURIComponent(studentNumber)}_${mode}.webp`;
 
   try {
     await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
@@ -66,12 +67,14 @@ export async function persistJournalCoverPreview(studentNumber: string, previewU
 
 export async function saveJournalCover(
   studentNumber: string,
+  mode: "muni" | "solo",
   design: Omit<JournalCoverDesign, "updatedAt">,
 ): Promise<JournalCoverDesign> {
   const savedDesign: JournalCoverDesign = {
     ...design,
     updatedAt: new Date().toISOString(),
   };
-  await AsyncStorage.setItem(getJournalCoverKey(studentNumber), JSON.stringify(savedDesign));
+  await AsyncStorage.setItem(getJournalCoverKey(studentNumber, mode), JSON.stringify(savedDesign));
   return savedDesign;
 }
+

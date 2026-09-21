@@ -131,14 +131,14 @@ export default function JournalScreen() {
       }
 
       let mounted = true;
-      void loadJournalCover(user.studentNumber).then((design) => {
+      void loadJournalCover(user.studentNumber, selectedJournalMode).then((design) => {
         if (mounted) setCoverPreviewUri(design?.previewUri ?? null);
       });
 
       return () => {
         mounted = false;
       };
-    }, [user?.studentNumber]),
+    }, [user?.studentNumber, selectedJournalMode]),
   );
 
   useEffect(() => {
@@ -297,7 +297,7 @@ export default function JournalScreen() {
                 )}
                 <Pressable
                   style={{ position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(255,255,255,0.95)', padding: 12, borderRadius: 30, shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 5 }}
-                  onPress={() => router.push("/journal-cover-editor")}
+                  onPress={() => router.push({ pathname: "/journal-cover-editor", params: { mode: selectedJournalMode } })}
                 >
                   <Ionicons name="color-palette-outline" size={24} color="#4D6558" />
                 </Pressable>
