@@ -203,38 +203,7 @@ export default function WellnessToolsScreen() {
                 </Pressable>))}</View>
           </View>
 
-          <View style={[styles.miniResetSection, compact && styles.listSectionCompact]}>
-            <View style={styles.miniResetHeadingRow}>
-              <View style={styles.sectionHeadingCopy}>
-                <View style={styles.sectionKickerRow}>
-                  <Ionicons name="sparkles-outline" size={15} color="#625D8F" />
-                  <Text style={styles.sectionKicker}>QUICK RESET</Text>
-                </View>
-                <Text style={styles.listHeading}>More mini resets</Text>
-                <Text style={styles.listSubHeading}>Short activities to explore when you want something quieter.</Text>
-              </View>
-            </View>
-            <View style={styles.miniResetGrid}>
-              {MINI_RESETS.map((item) => (
-                <Pressable
-                  key={item.id}
-                  style={({ pressed }) => [styles.miniResetTile, compact && styles.miniResetTileCompact, pressed && styles.miniResetCardPressed]}
-                  accessibilityLabel={`${item.title}, ${item.duration}`}
-                  onPress={() => {
-                    router.push({ pathname: "/mini-reset", params: { activity: item.id } } as never);
-                  }}
-                >
-                  <View style={styles.miniResetTileTopRow}>
-                    <View style={styles.miniResetIcon}><Ionicons name={item.icon} size={19} color="#625D8F" /></View>
-                    <Ionicons name="arrow-up-right-box" size={16} color="#8A86A9" />
-                  </View>
-                  <Text style={styles.miniResetTitle}>{item.title}</Text>
-                  <Text style={styles.miniResetDescription} numberOfLines={2}>{item.description}</Text>
-                  <Text style={styles.miniResetMetaText}>{item.duration}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
+          {/* Mini Resets Temporarily Hidden */}
         </View>
       </ScrollView>
 
