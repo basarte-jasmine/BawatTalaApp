@@ -75,7 +75,7 @@ const FEATURED_GAMES: FeaturedGame[] = [
     label: "Playful focus",
     description: "Catch the good things and keep an eye out for shells.",
     duration: "Endless",
-    image: require("../assets/images/Mini Reset/Fruit Catcher/Fruit Catcher Cover.jpg"),
+    image: require("../assets/images/Mini Reset/Fruit Catcher/Fruit Catcher Cover.webp"),
   },
   {
     id: "munis-arrival",

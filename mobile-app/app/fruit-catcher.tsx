@@ -20,14 +20,14 @@ const BASKET_HEIGHT = 80;
 const ITEM_SIZE = 50;
 
 const ASSETS = {
-  basket: require("../assets/images/Mini Reset/Fruit Catcher/Basket.png"),
-  banana: require("../assets/images/Mini Reset/Fruit Catcher/Banana.png"),
-  pear: require("../assets/images/Mini Reset/Fruit Catcher/Pear.png"),
-  orange: require("../assets/images/Mini Reset/Fruit Catcher/Orange.png"),
-  coconut: require("../assets/images/Mini Reset/Fruit Catcher/Coconut.png"),
-  coconutTwo: require("../assets/images/Mini Reset/Fruit Catcher/Coconut_two.png"),
-  shell: require("../assets/images/Mini Reset/Fruit Catcher/Shell.png"),
-  heart: require("../assets/images/Mini Reset/Fruit Catcher/Heart.png"),
+  basket: require("../assets/images/Mini Reset/Fruit Catcher/Basket.webp"),
+  banana: require("../assets/images/Mini Reset/Fruit Catcher/Banana.webp"),
+  pear: require("../assets/images/Mini Reset/Fruit Catcher/Pear.webp"),
+  orange: require("../assets/images/Mini Reset/Fruit Catcher/Orange.webp"),
+  coconut: require("../assets/images/Mini Reset/Fruit Catcher/Coconut.webp"),
+  coconutTwo: require("../assets/images/Mini Reset/Fruit Catcher/Coconut_two.webp"),
+  shell: require("../assets/images/Mini Reset/Fruit Catcher/Shell.webp"),
+  heart: require("../assets/images/Mini Reset/Fruit Catcher/Heart.webp"),
   beach: require("../assets/images/Mini Reset/Fruit Catcher/Beach.jpg"),
 };
 
