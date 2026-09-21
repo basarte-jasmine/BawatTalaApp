@@ -10,6 +10,7 @@ import {
     TextInput,
     useWindowDimensions,
     View,
+    Image,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
@@ -41,7 +42,30 @@ const COLORS = [
   { name: "Forest", value: "#4D6558" },
 ];
 
-const STICKERS: { icon: StickerName; label: string }[] = [
+
+const IMAGE_STICKERS = {
+  BirdStamp: require("../assets/images/Journal Assets/BirdStamp.webp"),
+  BlueEyedGrass: require("../assets/images/Journal Assets/BlueEyedGrass.webp"),
+  Cactus: require("../assets/images/Journal Assets/Cactus.webp"),
+  Daffodil: require("../assets/images/Journal Assets/Daffodil.webp"),
+  FlowerStamp: require("../assets/images/Journal Assets/FlowerStamp.webp"),
+  LadyBugStamp: require("../assets/images/Journal Assets/LadyBugStamp.webp"),
+  PinkFlower: require("../assets/images/Journal Assets/PinkFlower.webp"),
+  SleepingCatStamp: require("../assets/images/Journal Assets/SleepingCatStamp.webp"),
+  Turtle: require("../assets/images/Journal Assets/Turtle.webp"),
+};
+
+const STICKERS: { icon: StickerName; label: string; isImage?: boolean }[] = [
+  
+  { icon: "BirdStamp", label: "Bird", isImage: true },
+  { icon: "BlueEyedGrass", label: "Grass", isImage: true },
+  { icon: "Cactus", label: "Cactus", isImage: true },
+  { icon: "Daffodil", label: "Daffodil", isImage: true },
+  { icon: "FlowerStamp", label: "Flower", isImage: true },
+  { icon: "LadyBugStamp", label: "Ladybug", isImage: true },
+  { icon: "PinkFlower", label: "Pink Flower", isImage: true },
+  { icon: "SleepingCatStamp", label: "Cat", isImage: true },
+  { icon: "Turtle", label: "Turtle", isImage: true },
   { icon: "sparkles", label: "Sparkles" },
   { icon: "heart", label: "Heart" },
   { icon: "flower", label: "Flower" },
@@ -123,8 +147,10 @@ const DraggableElement = ({
         >
           {element.type === "text" ? (
             <Text style={[styles.textElement, { color: element.color, fontFamily: element.fontFamily || "Outfit-Bold" }]}>{element.content}</Text>
+          ) : element.icon && IMAGE_STICKERS[element.icon as keyof typeof IMAGE_STICKERS] ? (
+            <Image source={IMAGE_STICKERS[element.icon as keyof typeof IMAGE_STICKERS]} style={{ width: 100, height: 100 }} resizeMode="contain" />
           ) : (
-            <Ionicons name={element.icon} size={42} color="#FFF8E8" />
+            <Ionicons name={element.icon as any} size={42} color="#FFF8E8" />
           )}
         </Pressable>
       </Animated.View>
@@ -339,7 +365,11 @@ Drag, pinch, or rotate your pieces</Text>
           <View style={styles.stickerRow}>
             {STICKERS.map((sticker) => (
               <Pressable key={sticker.icon} onPress={() => addSticker(sticker.icon)} style={styles.stickerButton} accessibilityLabel={`Add ${sticker.label} sticker`}>
-                <Ionicons name={sticker.icon} size={23} color="#4D6558" />
+                {sticker.isImage ? (
+                  <Image source={IMAGE_STICKERS[sticker.icon as keyof typeof IMAGE_STICKERS]} style={{ width: 30, height: 30 }} resizeMode="contain" />
+                ) : (
+                  <Ionicons name={sticker.icon as any} size={23} color="#4D6558" />
+                )}
               </Pressable>
             ))}
           </View>
@@ -449,7 +479,7 @@ const styles = StyleSheet.create({
   sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   textToolButton: { backgroundColor: "#4D6558", borderRadius: 16, minHeight: 32, paddingHorizontal: 10, flexDirection: "row", gap: 5, alignItems: "center", marginBottom: 9 },
   textToolLabel: { color: "#FFF8E8", fontFamily: "Outfit-SemiBold", fontSize: 12 },
-  stickerRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
+  stickerRow: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 12 },
   stickerButton: { width: 42, height: 42, borderRadius: 13, backgroundColor: "#EEF3ED", alignItems: "center", justifyContent: "center" },
   editPanel: { borderTopWidth: 1, borderTopColor: "#E6EDE7", paddingTop: 12, marginTop: 2 },
   titleInput: { height: 42, borderWidth: 1, borderColor: "#CBD8CE", borderRadius: 12, paddingHorizontal: 12, color: "#20352B", fontFamily: "Outfit-Medium", fontSize: 14, marginTop: 1 },
