@@ -48,12 +48,12 @@ const PROFILE_PICTURE_LIMIT_BYTES = 5 * 1024 * 1024;
 const PROFILE_PICTURE_MAX_DIMENSION = 1024;
 const PROFILE_FRAME_KEY = "@bawat-tala/profile-frame";
 const PROFILE_FRAMES: { id: string; label: string; source: ImageSourcePropType }[] = [
-  { id: "aether", label: "Aether", source: require("../assets/images/Frames/Aether Frame.png") },
-  { id: "blossom", label: "Blossom", source: require("../assets/images/Frames/Blossom Frame.png") },
-  { id: "constellation", label: "Constellation", source: require("../assets/images/Frames/Constellation Frame.png") },
-  { id: "glimmer", label: "Glimmer", source: require("../assets/images/Frames/Glimmer Frame.png") },
-  { id: "sprout", label: "Sprout", source: require("../assets/images/Frames/Sprout Frame.png") },
-  { id: "tide", label: "Tide", source: require("../assets/images/Frames/Tide Frame.png") },
+  { id: "aether", label: "Aether", source: require("../assets/images/Frames/Aether Frame.webp") },
+  { id: "blossom", label: "Blossom", source: require("../assets/images/Frames/Blossom Frame.webp") },
+  { id: "constellation", label: "Constellation", source: require("../assets/images/Frames/Constellation Frame.webp") },
+  { id: "glimmer", label: "Glimmer", source: require("../assets/images/Frames/Glimmer Frame.webp") },
+  { id: "sprout", label: "Sprout", source: require("../assets/images/Frames/Sprout Frame.webp") },
+  { id: "tide", label: "Tide", source: require("../assets/images/Frames/Tide Frame.webp") },
 ];
 
 function getImageMimeType(asset: ImagePicker.ImagePickerAsset) {
