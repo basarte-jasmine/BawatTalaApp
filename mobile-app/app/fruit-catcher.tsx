@@ -12,8 +12,8 @@ import {
     View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useAuthSession } from "../lib/auth-session";
 import { unlockAchievement } from "../lib/achievements";
+import { useAuthSession } from "../lib/auth-session";
 
 const BASKET_WIDTH = 100;
 const BASKET_HEIGHT = 80;
@@ -51,6 +51,7 @@ export default function FruitCatcherScreen() {
   const [longestCombo, setLongestCombo] = useState(0);
   
   const [popups, setPopups] = useState<any[]>([]);
+  const [showExitPrompt, setShowExitPrompt] = useState(false);
 
   const basketX = useRef(new Animated.Value(0)).current;
   const basketXValue = useRef(0);
@@ -251,12 +252,21 @@ export default function FruitCatcherScreen() {
     basketX.setValue(centeredX);
   };
 
+  const confirmExit = () => {
+    setShowExitPrompt(true);
+  };
+
+  const leaveGame = () => {
+    setShowExitPrompt(false);
+    router.replace("/wellness-tools");
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
       <Image source={ASSETS.beach} style={styles.background} resizeMode="cover" />
       
       <View style={styles.topBar}>
-        <Pressable onPress={() => router.replace("/wellness-tools")} style={styles.backButton}>
+        <Pressable onPress={confirmExit} style={styles.backButton} accessibilityLabel="Leave Fruit Catcher">
           <Ionicons name="chevron-back" size={28} color="#FFFFFF" />
         </Pressable>
         <Text style={styles.topTitle}>Fruit Catcher</Text>
@@ -337,6 +347,18 @@ export default function FruitCatcherScreen() {
           </View>
         </View>
       )}
+      {showExitPrompt && (
+        <View style={styles.exitOverlay}>
+          <View style={styles.exitCard}>
+            <Text style={styles.exitTitle}>Leave game?</Text>
+            <Text style={styles.exitText}>Your current progress will be lost.</Text>
+            <View style={styles.exitActions}>
+              <Pressable style={styles.exitStay} onPress={() => setShowExitPrompt(false)}><Text style={styles.exitStayText}>Stay</Text></Pressable>
+              <Pressable style={styles.exitLeave} onPress={leaveGame}><Text style={styles.exitLeaveText}>Leave</Text></Pressable>
+            </View>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -344,7 +366,7 @@ export default function FruitCatcherScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#87CEEB" },
   background: { position: "absolute", width: "100%", height: "100%", opacity: 0.8 },
-  topBar: { height: 52, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 4, zIndex: 10 },
+  topBar: { height: 52, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 4, zIndex: 9999, elevation: 9999 },
   backButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center" },
   topTitle: { color: "#FFFFFF", fontSize: 18, fontFamily: "Outfit-Bold", textShadowColor: 'rgba(0, 0, 0, 0.5)', textShadowOffset: { width: 1, height: 1 }, textShadowRadius: 2 },
   hud: { position: "absolute", top: 60, left: 16, right: 16, zIndex: 10 },
@@ -369,4 +391,13 @@ const styles = StyleSheet.create({
   buttonText: { color: "#FFFFFF", fontSize: 16, fontFamily: "Outfit-Bold" },
   buttonSecondary: { backgroundColor: "#E6ECF1", marginTop: 12 },
   buttonTextSecondary: { color: "#596987", fontSize: 16, fontFamily: "Outfit-Bold" },
+  exitOverlay: { position: "absolute", width: "100%", height: "100%", backgroundColor: "rgba(20, 31, 40, 0.5)", justifyContent: "center", alignItems: "center", zIndex: 10000, elevation: 10000 },
+  exitCard: { width: 290, backgroundColor: "#FFFFFF", padding: 24, borderRadius: 20, shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 18, elevation: 12 },
+  exitTitle: { color: "#33475C", fontSize: 21, fontFamily: "Outfit-Bold", marginBottom: 8 },
+  exitText: { color: "#5D6678", fontSize: 14, lineHeight: 20, marginBottom: 20 },
+  exitActions: { flexDirection: "row", gap: 10, justifyContent: "flex-end" },
+  exitStay: { paddingHorizontal: 16, paddingVertical: 11, borderRadius: 12, backgroundColor: "#E6ECF1" },
+  exitStayText: { color: "#33475C", fontFamily: "Outfit-Bold" },
+  exitLeave: { paddingHorizontal: 16, paddingVertical: 11, borderRadius: 12, backgroundColor: "#B75252" },
+  exitLeaveText: { color: "#FFFFFF", fontFamily: "Outfit-Bold" },
 });

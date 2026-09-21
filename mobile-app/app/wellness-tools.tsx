@@ -25,7 +25,7 @@ type MiniResetItem = {
 type FeaturedGame = {
   description: string;
   duration: string;
-  id: "fruit-catcher" | "image-puzzle";
+  id: "fruit-catcher" | "image-puzzle" | "munis-arrival";
   image: number;
   label: string;
   title: string;
@@ -77,6 +77,14 @@ const FEATURED_GAMES: FeaturedGame[] = [
     duration: "Endless",
     image: require("../assets/images/Mini Reset/Fruit Catcher/Fruit Catcher Cover.jpg"),
   },
+  {
+    id: "munis-arrival",
+    title: "Muni's Arrival",
+    label: "Flow state",
+    description: "Guide the unconscious Muni. Be the gentle current guiding Muni s raft.",
+    duration: "Endless",
+    image: require("../assets/images/Mini Reset/Muni's Arrival/Muni's Arrival Cover.webp"),
+  },
 ];
 
 export default function WellnessToolsScreen() {
@@ -124,14 +132,7 @@ export default function WellnessToolsScreen() {
               <Text style={styles.listHeading}>Meet Muni in motion</Text>
               <Text style={styles.listSubHeading}>Two bigger ways to reset, play, and stay curious.</Text>
             </View>
-            <View style={styles.featuredGameGrid}>
-              {FEATURED_GAMES.map((game) => (
-                <Pressable
-                  key={game.id}
-                  style={({ pressed }) => [styles.featuredGameCard, pressed && styles.miniResetCardPressed]}
-                  accessibilityLabel={`${game.title}, ${game.duration}`}
-                  onPress={() => router.push(game.id === "fruit-catcher" ? "/fruit-catcher" : "/image-puzzle")}
-                >
+            <View style={styles.featuredGameGrid}>{FEATURED_GAMES.map((game) => (<Pressable key={game.id} style={({ pressed }) => [styles.featuredGameCard, pressed && styles.miniResetCardPressed]} accessibilityLabel={game.title + ", " + game.duration} onPress={() => router.push(game.id === "munis-arrival" ? "/munis-arrival" : game.id === "fruit-catcher" ? "/fruit-catcher" : "/image-puzzle")}>
                   <Image source={game.image} style={[styles.featuredGameImage, compact && styles.featuredGameImageCompact]} resizeMode="cover" />
                   <View style={styles.featuredGameBody}>
                     <Text style={styles.featuredGameLabel}>{game.label}</Text>
@@ -142,9 +143,7 @@ export default function WellnessToolsScreen() {
                       <View style={styles.featuredGameArrow}><Ionicons name="arrow-forward" size={15} color="#FFFFFF" /></View>
                     </View>
                   </View>
-                </Pressable>
-              ))}
-            </View>
+                </Pressable>))}</View>
           </View>
 
           <View style={[styles.listSection, compact && styles.listSectionCompact]}>
@@ -521,8 +520,8 @@ const styles = StyleSheet.create({
   miniResetMeta: { flexDirection: "row", alignItems: "center", columnGap: 2 },
   miniResetMetaText: { color: "#71758B", fontSize: 11, lineHeight: 14, fontFamily: "Outfit-Bold" },
   featuredHeadingRow: { marginTop: 24, marginBottom: 14 },
-  featuredGameGrid: { flexDirection: "row", gap: 10 },
-  featuredGameCard: { flex: 1, overflow: "hidden", borderRadius: 18, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#DDE8D6" },
+  featuredGameGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 14, marginTop: 14 },
+  featuredGameCard: { width: "48.5%", overflow: "hidden", borderRadius: 18, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#DDE8D6" },
   featuredGameImage: { width: "100%", height: 156, backgroundColor: "#DFF1F5" },
   featuredGameImageCompact: { height: 128 },
   featuredGameBody: { padding: 11 },

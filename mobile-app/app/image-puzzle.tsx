@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
-  Easing,
   Image,
   PanResponder,
   Pressable,
@@ -10,11 +11,9 @@ import {
   View,
   useWindowDimensions
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useAuthSession } from "../lib/auth-session";
 import { unlockAchievement } from "../lib/achievements";
+import { useAuthSession } from "../lib/auth-session";
 
 const ASSETS = [
   require("../assets/images/Mini Reset/Puzzle/Muni_Flower_Thief.webp"),
@@ -52,6 +51,7 @@ export default function ImagePuzzleScreen() {
   
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [gridSize, setGridSize] = useState(2);
+  const [showExitPrompt, setShowExitPrompt] = useState(false);
   
   const stateRef = useRef({
     gameState: 'intro',
@@ -243,6 +243,15 @@ export default function ImagePuzzleScreen() {
     }
   };
 
+  const confirmExit = () => {
+    setShowExitPrompt(true);
+  };
+
+  const leaveGame = () => {
+    setShowExitPrompt(false);
+    router.replace("/wellness-tools");
+  };
+
   const renderPieces = () => {
     const pieceSize = BOARD_SIZE / gridSize;
     const TRAY_START_Y = BOARD_SIZE + TRAY_GAP;
@@ -295,7 +304,7 @@ export default function ImagePuzzleScreen() {
   return (
     <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
+        <Pressable onPress={confirmExit} style={styles.backButton} accessibilityLabel="Leave Image Puzzle">
           <Ionicons name="chevron-back" size={28} color="#37424F" />
         </Pressable>
         <Text style={styles.headerTitle}>Image Puzzle</Text>
@@ -362,7 +371,7 @@ export default function ImagePuzzleScreen() {
             
             {gameState === 'transition' && timeLeft === 0 && (
               <View style={[styles.transitionOverlay, { height: BOARD_SIZE }]}>
-                <Text style={styles.transitionText}>TIME'S UP</Text>
+                <Text style={styles.transitionText}>TIME&apos;S UP</Text>
               </View>
             )}
             
@@ -371,6 +380,18 @@ export default function ImagePuzzleScreen() {
                 <Text style={styles.transitionText}>LEVEL CLEAR!</Text>
               </View>
             )}
+          </View>
+        </View>
+      )}
+      {showExitPrompt && (
+        <View style={styles.exitOverlay}>
+          <View style={styles.exitCard}>
+            <Text style={styles.exitTitle}>Leave game?</Text>
+            <Text style={styles.exitText}>Your current progress will be lost.</Text>
+            <View style={styles.exitActions}>
+              <Pressable style={styles.exitStay} onPress={() => setShowExitPrompt(false)}><Text style={styles.exitStayText}>Stay</Text></Pressable>
+              <Pressable style={styles.exitLeave} onPress={leaveGame}><Text style={styles.exitLeaveText}>Leave</Text></Pressable>
+            </View>
           </View>
         </View>
       )}
@@ -389,6 +410,8 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(250, 252, 249, 0.98)",
     borderBottomWidth: 1,
     borderBottomColor: "#E0E7DD",
+    zIndex: 9999,
+    elevation: 9999,
   },
   backButton: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
   headerTitle: { color: "#33475C", fontSize: 18, fontFamily: "Outfit-Bold" },
@@ -411,6 +434,15 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   startButtonText: { color: "#FFF", fontSize: 16, fontFamily: "Outfit-Bold", letterSpacing: 1 },
+  exitOverlay: { position: "absolute", width: "100%", height: "100%", backgroundColor: "rgba(20, 31, 40, 0.5)", justifyContent: "center", alignItems: "center", zIndex: 10000, elevation: 10000 },
+  exitCard: { width: 290, backgroundColor: "#FFFFFF", padding: 24, borderRadius: 20, shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 18, elevation: 12 },
+  exitTitle: { color: "#33475C", fontSize: 21, fontFamily: "Outfit-Bold", marginBottom: 8 },
+  exitText: { color: "#5D6678", fontSize: 14, lineHeight: 20, marginBottom: 20 },
+  exitActions: { flexDirection: "row", gap: 10, justifyContent: "flex-end" },
+  exitStay: { paddingHorizontal: 16, paddingVertical: 11, borderRadius: 12, backgroundColor: "#E6ECF1" },
+  exitStayText: { color: "#33475C", fontFamily: "Outfit-Bold" },
+  exitLeave: { paddingHorizontal: 16, paddingVertical: 11, borderRadius: 12, backgroundColor: "#B75252" },
+  exitLeaveText: { color: "#FFFFFF", fontFamily: "Outfit-Bold" },
   
   gameContainer: {
     flex: 1,
