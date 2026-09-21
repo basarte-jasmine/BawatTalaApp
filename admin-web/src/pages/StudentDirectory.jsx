@@ -1325,6 +1325,45 @@ export default function StudentDirectory({ onLogout, session }) {
                         </div>
                       </div>
                     </div>
+                    {studentProfile?.journalCovers?.length > 0 ? (
+                      <div className="rounded-[22px] border border-emerald-100 bg-emerald-50/40 p-4 shadow-sm">
+                        <div className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-800 mb-3 flex items-center gap-2">
+                          <BookOpen className="h-4 w-4" />
+                          Customized Journal Covers
+                        </div>
+                        <div className="flex flex-wrap gap-4">
+                          {studentProfile.journalCovers.map((cover) => (
+                            <div key={cover.mode} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-xs">
+                              {cover.previewUri ? (
+                                <img
+                                  src={cover.previewUri}
+                                  alt={`${cover.mode} journal cover`}
+                                  className="h-20 w-16 rounded-xl object-cover border border-slate-200 shadow-xs"
+                                />
+                              ) : (
+                                <div
+                                  style={{ backgroundColor: cover.color || "#AFC4B1" }}
+                                  className="flex h-20 w-16 items-center justify-center rounded-xl text-xs font-bold text-white shadow-xs"
+                                >
+                                  {cover.mode === "muni" ? "Muni" : "Solo"}
+                                </div>
+                              )}
+                              <div>
+                                <div className="text-sm font-bold text-slate-800">
+                                  {cover.mode === "muni" ? "Muni Companion Journal" : "Solo Reflection Journal"}
+                                </div>
+                                <div className="text-xs text-slate-500 mt-0.5">
+                                  {cover.elements?.length || 0} customized element{cover.elements?.length === 1 ? "" : "s"}
+                                </div>
+                                <div className="text-[11px] text-slate-400 mt-1">
+                                  Updated {formatDate(cover.updatedAt)}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="space-y-4">
                       {filteredProfileEntries.length ? (
                         filteredProfileEntries.map((entry) => {

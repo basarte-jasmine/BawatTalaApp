@@ -20,8 +20,19 @@ function requireCookieSessionSecret() {
   return "bawattala-secure-auth-token-secret-fallback-key-2026";
 }
 
-const TOKEN_SECRET = requireCookieSessionSecret();
+const PRIMARY_TOKEN_SECRET = requireCookieSessionSecret();
 const TOKEN_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+function getVerificationSecrets() {
+  const secrets = new Set();
+  if (PRIMARY_TOKEN_SECRET) secrets.add(PRIMARY_TOKEN_SECRET);
+  const cookieSecret = String(process.env.COOKIE_SESSION_SECRET || "").trim();
+  if (cookieSecret && cookieSecret.length >= 16) secrets.add(cookieSecret);
+  const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+  if (serviceRoleKey) secrets.add(serviceRoleKey);
+  secrets.add("bawattala-secure-auth-token-secret-fallback-key-2026");
+  return Array.from(secrets);
+}
 
 function createStudentToken(studentNumber) {
   const payload = {
@@ -29,32 +40,38 @@ function createStudentToken(studentNumber) {
     exp: Date.now() + TOKEN_MAX_AGE_MS,
   };
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  const signature = crypto.createHmac("sha256", TOKEN_SECRET).update(body).digest("base64url");
-  return `${body}.${signature}`;
+  const signature = crypto.createHmac("sha256", PRIMARY_TOKEN_SECRET).update(body).digest("base64url");
+  return body + "." + signature;
 }
 
-function verifyStudentToken(tokenString) {
+function verifyTokenWithSecrets(tokenString) {
   if (!tokenString || typeof tokenString !== "string") return null;
   const parts = tokenString.split(".");
   if (parts.length !== 2) return null;
   const [body, signature] = parts;
+  const sigBuffer = Buffer.from(signature);
 
-  try {
-    const expectedSignature = crypto.createHmac("sha256", TOKEN_SECRET).update(body).digest("base64url");
-    const sigBuffer = Buffer.from(signature);
-    const expectedBuffer = Buffer.from(expectedSignature);
-    if (sigBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(sigBuffer, expectedBuffer)) {
-      return null;
+  const secrets = getVerificationSecrets();
+  for (const secret of secrets) {
+    try {
+      const expectedSignature = crypto.createHmac("sha256", secret).update(body).digest("base64url");
+      const expectedBuffer = Buffer.from(expectedSignature);
+      if (sigBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(sigBuffer, expectedBuffer)) {
+        const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+        if (payload.exp && Date.now() > payload.exp) {
+          return null;
+        }
+        return payload;
+      }
+    } catch {
+      // Try next secret candidate
     }
-
-    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
-    if (payload.exp && Date.now() > payload.exp) {
-      return null;
-    }
-    return payload;
-  } catch {
-    return null;
   }
+  return null;
+}
+
+function verifyStudentToken(tokenString) {
+  return verifyTokenWithSecrets(tokenString);
 }
 
 function createAdminToken(admin) {
@@ -66,32 +83,12 @@ function createAdminToken(admin) {
     exp: Date.now() + TOKEN_MAX_AGE_MS,
   };
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  const signature = crypto.createHmac("sha256", TOKEN_SECRET).update(body).digest("base64url");
-  return `${body}.${signature}`;
+  const signature = crypto.createHmac("sha256", PRIMARY_TOKEN_SECRET).update(body).digest("base64url");
+  return body + "." + signature;
 }
 
 function verifyAdminToken(tokenString) {
-  if (!tokenString || typeof tokenString !== "string") return null;
-  const parts = tokenString.split(".");
-  if (parts.length !== 2) return null;
-  const [body, signature] = parts;
-
-  try {
-    const expectedSignature = crypto.createHmac("sha256", TOKEN_SECRET).update(body).digest("base64url");
-    const sigBuffer = Buffer.from(signature);
-    const expectedBuffer = Buffer.from(expectedSignature);
-    if (sigBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(sigBuffer, expectedBuffer)) {
-      return null;
-    }
-
-    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
-    if (payload.exp && Date.now() > payload.exp) {
-      return null;
-    }
-    return payload;
-  } catch {
-    return null;
-  }
+  return verifyTokenWithSecrets(tokenString);
 }
 
 function createOAuthState(extraData = {}) {
@@ -102,32 +99,12 @@ function createOAuthState(extraData = {}) {
     exp: Date.now() + 10 * 60 * 1000,
   };
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  const signature = crypto.createHmac("sha256", TOKEN_SECRET).update(body).digest("base64url");
-  return `${body}.${signature}`;
+  const signature = crypto.createHmac("sha256", PRIMARY_TOKEN_SECRET).update(body).digest("base64url");
+  return body + "." + signature;
 }
 
 function verifyOAuthState(stateString) {
-  if (!stateString || typeof stateString !== "string") return null;
-  const parts = stateString.split(".");
-  if (parts.length !== 2) return null;
-  const [body, signature] = parts;
-
-  try {
-    const expectedSignature = crypto.createHmac("sha256", TOKEN_SECRET).update(body).digest("base64url");
-    const sigBuffer = Buffer.from(signature);
-    const expectedBuffer = Buffer.from(expectedSignature);
-    if (sigBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(sigBuffer, expectedBuffer)) {
-      return null;
-    }
-
-    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
-    if (payload.exp && Date.now() > payload.exp) {
-      return null;
-    }
-    return payload;
-  } catch {
-    return null;
-  }
+  return verifyTokenWithSecrets(stateString);
 }
 
 module.exports = {

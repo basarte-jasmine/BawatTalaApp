@@ -242,12 +242,28 @@ export type FutureSelfMessage = {
 };
 
 function getDefaultApiBaseUrl() {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (host !== "localhost" && host !== "127.0.0.1") {
+      return "https://bawattalaapp.onrender.com";
+    }
+  }
   return Platform.OS === "android"
     ? "http://10.0.2.2:4002"
     : "http://localhost:4002";
 }
 
 function normalizeApiBaseUrl(rawUrl: string) {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (
+      host !== "localhost" &&
+      host !== "127.0.0.1" &&
+      (rawUrl.includes("localhost") || rawUrl.includes("127.0.0.1") || rawUrl.includes("10.0.2.2"))
+    ) {
+      return "https://bawattalaapp.onrender.com";
+    }
+  }
   if (
     Platform.OS === "android" &&
     (rawUrl.includes("localhost") || rawUrl.includes("127.0.0.1"))
@@ -1468,18 +1484,18 @@ export async function warmBackend(): Promise<void> {
 }
 
 // Quick reachability probe used to pick the default journaling mode offline.
-export async function isBackendReachable(timeoutMs = 2500): Promise<boolean> {
+export async function isBackendReachable(timeoutMs = 7000): Promise<boolean> {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    const response = await fetch(`${API_BASE_URL}/health`, {
+    const response = await fetch(API_BASE_URL + "/health", {
       credentials: "include",
       headers: buildHeaders(),
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
     // Any HTTP answer means the backend is reachable; only network failures fall through.
-    return true;
+    return Boolean(response);
   } catch {
     return false;
   }
@@ -1495,6 +1511,7 @@ export async function syncOfflineStudentData(studentNumber: string): Promise<Api
     await syncPendingJournalEntries(studentNumber);
     await syncPendingSupportResponses(studentNumber);
     await syncPendingAchievements(studentNumber);
+    await syncPendingJournalCovers(studentNumber);
 
     return {
       ok: preferencesSynced && checkInsSynced,
@@ -1628,6 +1645,123 @@ async function patch(path: string, payload: Record<string, unknown>) {
   notifySessionExpiredIfNeeded(path, response.status);
   const data = await response.json().catch(() => ({}));
   return { response, data };
+}
+
+async function put(path: string, payload: Record<string, unknown>) {
+  const response = await fetchWithTimeout(`${API_BASE_URL}${path}`, {
+    method: "PUT",
+    credentials: "include",
+    headers: buildHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(payload),
+  });
+  notifySessionExpiredIfNeeded(path, response.status);
+  const data = await response.json().catch(() => ({}));
+  return { response, data };
+}
+
+const PENDING_COVERS_KEY = "@bawat-tala/pending-journal-covers:";
+
+export async function fetchJournalCoverRemote(
+  mode: "muni" | "solo" = "solo"
+): Promise<ApiResult & { cover?: any }> {
+  try {
+    const { response, data } = await get(`/api/journal/cover?mode=${encodeURIComponent(mode)}`);
+    return {
+      ok: response.ok,
+      message: data?.message,
+      cover: data?.cover ?? null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "Network error",
+      cover: null,
+    };
+  }
+}
+
+export async function saveJournalCoverRemote(
+  mode: "muni" | "solo",
+  design: { color: string; elements: any[]; previewUri?: string | null }
+): Promise<ApiResult & { cover?: any }> {
+  try {
+    const { response, data } = await put("/api/journal/cover", {
+      mode,
+      color: design.color,
+      elements: design.elements,
+      previewUri: design.previewUri,
+    });
+    return {
+      ok: response.ok,
+      message: data?.message,
+      cover: data?.cover ?? null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "Network error",
+    };
+  }
+}
+
+export async function queuePendingJournalCover(
+  studentNumber: string,
+  mode: "muni" | "solo",
+  design: { color: string; elements: any[]; previewUri?: string | null }
+) {
+  try {
+    const raw = await AsyncStorage.getItem(`${PENDING_COVERS_KEY}${studentNumber}`);
+    const map = raw ? JSON.parse(raw) : {};
+    map[mode] = { mode, color: design.color, elements: design.elements, previewUri: design.previewUri };
+    await AsyncStorage.setItem(`${PENDING_COVERS_KEY}${studentNumber}`, JSON.stringify(map));
+  } catch {}
+}
+
+export async function clearPendingJournalCover(studentNumber: string, mode: "muni" | "solo") {
+  try {
+    const raw = await AsyncStorage.getItem(`${PENDING_COVERS_KEY}${studentNumber}`);
+    if (!raw) return;
+    const map = JSON.parse(raw);
+    delete map[mode];
+    if (Object.keys(map).length === 0) {
+      await AsyncStorage.removeItem(`${PENDING_COVERS_KEY}${studentNumber}`);
+    } else {
+      await AsyncStorage.setItem(`${PENDING_COVERS_KEY}${studentNumber}`, JSON.stringify(map));
+    }
+  } catch {}
+}
+
+export async function syncPendingJournalCovers(studentNumber: string): Promise<boolean> {
+  if (!studentNumber) return true;
+  try {
+    const raw = await AsyncStorage.getItem(`${PENDING_COVERS_KEY}${studentNumber}`);
+    if (!raw) return true;
+    const pendingMap: Record<string, { mode: "muni" | "solo"; color: string; elements: any[]; previewUri?: string | null }> = JSON.parse(raw);
+    const keys = Object.keys(pendingMap);
+    if (keys.length === 0) return true;
+
+    for (const key of keys) {
+      const item = pendingMap[key];
+      if (!item) continue;
+      const res = await saveJournalCoverRemote(item.mode, {
+        color: item.color,
+        elements: item.elements,
+        previewUri: item.previewUri,
+      });
+      if (res.ok) {
+        delete pendingMap[key];
+      }
+    }
+
+    if (Object.keys(pendingMap).length === 0) {
+      await AsyncStorage.removeItem(`${PENDING_COVERS_KEY}${studentNumber}`);
+    } else {
+      await AsyncStorage.setItem(`${PENDING_COVERS_KEY}${studentNumber}`, JSON.stringify(pendingMap));
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function buildLibraryBookFileUrl(studentNumber: string, bookId: string) {

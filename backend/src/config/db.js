@@ -1042,13 +1042,33 @@ async function ensureDatabaseSchema() {
       on public.journal_entries (risk_level);
   `);
 
+ await pool.query(`
+   create index if not exists journal_entry_messages_entry_id_idx
+     on public.journal_entry_messages (entry_id, created_at);
+ `);
+
   await pool.query(`
-    create index if not exists journal_entry_messages_entry_id_idx
-      on public.journal_entry_messages (entry_id, created_at);
+    create table if not exists public.student_journal_covers (
+      id uuid primary key default gen_random_uuid(),
+      student_number text not null,
+      mode text not null default 'solo',
+      color text not null default '#AFC4B1',
+      elements jsonb not null default '[]'::jsonb,
+      preview_data text,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      constraint student_journal_covers_student_mode_unique unique (student_number, mode),
+      constraint student_journal_covers_mode_check check (mode in ('muni', 'solo'))
+    );
   `);
 
   await pool.query(`
-    create table if not exists public.safety_risk_indicators (
+    create index if not exists student_journal_covers_student_mode_idx
+      on public.student_journal_covers (student_number, mode);
+  `);
+
+ await pool.query(`
+   create table if not exists public.safety_risk_indicators (
       id uuid primary key default gen_random_uuid(),
       phrase text not null unique,
       category text not null,

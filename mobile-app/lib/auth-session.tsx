@@ -42,21 +42,12 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     setSessionExpiredHandler(() => {
       void (async () => {
-        const current = userRef.current;
-        const studentNumber = current?.studentNumber;
+        // Explicit policy: In the mobile app, students should NOT be automatically logged out
+        // or have their offline data/wardrobe wiped when an API call encounters an auth mismatch.
+        // Invalidate the active memory token so subsequent calls don't keep repeating the same bad bearer,
+        // but preserve the local profile and student data.
         setApiAuthToken(null);
-        resetMuniWardrobe();
-        setUserState(null);
-        await deleteAuthToken();
-        await clearAuthSessionProfile();
-        if (studentNumber) {
-          await clearAllStudentData(studentNumber);
-        }
-        try {
-          router.replace("/login");
-        } catch {
-          // Navigation may already be unmounted.
-        }
+        console.warn("Session token rejected by server (401). Preserving local session data.");
       })();
     });
     return () => setSessionExpiredHandler(null);

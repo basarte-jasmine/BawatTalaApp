@@ -1,4 +1,4 @@
-﻿import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -131,7 +131,9 @@ export default function JournalScreen() {
       }
 
       let mounted = true;
-      void loadJournalCover(user.studentNumber, selectedJournalMode).then((design) => {
+      void loadJournalCover(user.studentNumber, selectedJournalMode, (updatedDesign) => {
+        if (mounted) setCoverPreviewUri(updatedDesign?.previewUri ?? null);
+      }).then((design) => {
         if (mounted) setCoverPreviewUri(design?.previewUri ?? null);
       });
 

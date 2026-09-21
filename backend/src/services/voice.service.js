@@ -92,14 +92,20 @@ async function synthesizeEdgeSpeech({ text, rate = "+0%", pitch = "+0Hz" }) {
   }
 }
 
+const GROQ_WHISPER_MODELS = [
+  "whisper-large-v3-turbo",
+  "whisper-large-v3",
+];
+
 /**
- * Transcribes voice audio using Groq Whisper Large v3 Turbo
+ * Transcribes voice audio using Groq Whisper Large v3 Turbo with Whisper Large v3 fallback
  * Accurately recognizes Tagalog, Filipino, English, and Taglish speech.
  */
 async function transcribeWithGroqWhisper({
   audioBase64,
   mimeType = "audio/m4a",
   filename = "recording.m4a",
+  models = GROQ_WHISPER_MODELS,
 }) {
   const apiKey = String(process.env.GROQ_API_KEY || "").trim();
   if (!apiKey) {
@@ -107,41 +113,63 @@ async function transcribeWithGroqWhisper({
   }
 
   const audioBuffer = Buffer.from(audioBase64, "base64");
-  const formData = new FormData();
-  const blob = new Blob([audioBuffer], { type: mimeType });
-  formData.append("file", blob, filename);
-  formData.append("model", "whisper-large-v3-turbo");
-  formData.append("response_format", "verbose_json");
-  formData.append("temperature", "0");
-  formData.append(
-    "prompt",
-    "Kumusta Muni? Medyo pagod at stressed ako ngayon sa school and personal life, gusto ko sanang mag-share tungkol sa nararamdaman ko. I feel overwhelmed with my exams and feelings today."
-  );
+  const prompt = "Kumusta Muni? Medyo pagod at stressed ako ngayon sa school and personal life, gusto ko sanang mag-share tungkol sa nararamdaman ko. I feel overwhelmed with my exams and feelings today.";
+  const targetModels = Array.isArray(models) && models.length > 0 ? models : GROQ_WHISPER_MODELS;
 
-  const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
-    method: "POST",
-    headers: {
-      Authorization: "Bearer " + apiKey,
-    },
-    body: formData,
-  });
+  let lastError = null;
 
-  if (!response.ok) {
-    const errorBody = await response.text().catch(() => "");
-    throw new Error(
-      "Whisper transcription failed (" + response.status + "): " + errorBody
-    );
+  for (const model of targetModels) {
+    const formData = new FormData();
+    const blob = new Blob([audioBuffer], { type: mimeType });
+    formData.append("file", blob, filename);
+    formData.append("model", model);
+    formData.append("response_format", "verbose_json");
+    formData.append("temperature", "0");
+    formData.append("prompt", prompt);
+
+    try {
+      const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + apiKey,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => "");
+        lastError = new Error(
+          "Whisper transcription failed (" + response.status + "): " + errorBody
+        );
+        console.warn("Groq Whisper transcription failed, trying next model if available.", {
+          model,
+          status: response.status,
+          error: errorBody,
+        });
+        continue;
+      }
+
+      const data = await response.json();
+      const text = String(data?.text || "").trim();
+      return {
+        text,
+        language: normalizeTranscriptionLanguage(data?.language, text),
+      };
+    } catch (err) {
+      lastError = err;
+      console.warn("Groq Whisper transcription request error, trying next model if available.", {
+        model,
+        error: err?.message || err,
+      });
+      continue;
+    }
   }
 
-  const data = await response.json();
-  const text = String(data?.text || "").trim();
-  return {
-    text,
-    language: normalizeTranscriptionLanguage(data?.language, text),
-  };
+  throw lastError || new Error("Whisper transcription failed for all configured models.");
 }
 
 module.exports = {
+  GROQ_WHISPER_MODELS,
   getVoiceConfig,
   synthesizeEdgeSpeech,
   transcribeWithGroqWhisper,

@@ -62,12 +62,28 @@ export function isUpbeatAndPositive(text: unknown): boolean {
 }
 
 function getDefaultApiBaseUrl() {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (host !== "localhost" && host !== "127.0.0.1") {
+      return "https://bawattalaapp.onrender.com";
+    }
+  }
   return Platform.OS === "android"
     ? "http://10.0.2.2:4002"
     : "http://localhost:4002";
 }
 
 function normalizeApiBaseUrl(rawUrl: string) {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (
+      host !== "localhost" &&
+      host !== "127.0.0.1" &&
+      (rawUrl.includes("localhost") || rawUrl.includes("127.0.0.1") || rawUrl.includes("10.0.2.2"))
+    ) {
+      return "https://bawattalaapp.onrender.com";
+    }
+  }
   if (
     Platform.OS === "android" &&
     (rawUrl.includes("localhost") || rawUrl.includes("127.0.0.1"))

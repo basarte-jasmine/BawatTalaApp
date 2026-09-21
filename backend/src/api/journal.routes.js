@@ -396,6 +396,146 @@ function buildVisibleEntriesWhereClause(alias = "je") {
   `;
 }
 
+router.get("/cover", asyncHandler(async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  if (!studentNumber) {
+    return res.status(401).json({ message: "Student authentication required." });
+  }
+
+  const mode = req.query.mode === "muni" ? "muni" : "solo";
+  const result = await query(
+    `
+      select
+        mode,
+        color,
+        elements,
+        preview_data,
+        updated_at
+      from public.student_journal_covers
+      where student_number = $1 and mode = $2
+      limit 1
+    `,
+    [studentNumber, mode],
+  );
+
+  if (!result.rowCount) {
+    return res.json({ ok: true, cover: null });
+  }
+
+  const row = result.rows[0];
+  return res.json({
+    ok: true,
+    cover: {
+      version: 1,
+      mode: row.mode,
+      color: row.color,
+      elements: Array.isArray(row.elements) ? row.elements : [],
+      previewUri: row.preview_data || null,
+      updatedAt: row.updated_at,
+    },
+  });
+}));
+
+router.put("/cover", asyncHandler(async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  if (!studentNumber) {
+    return res.status(401).json({ message: "Student authentication required." });
+  }
+
+  const mode = req.body?.mode === "muni" ? "muni" : "solo";
+  const color = typeof req.body?.color === "string" && req.body.color.trim() ? req.body.color.trim() : "#AFC4B1";
+  const elements = Array.isArray(req.body?.elements) ? req.body.elements : [];
+  const previewData = typeof req.body?.previewUri === "string" && req.body.previewUri.trim()
+    ? req.body.previewUri.trim()
+    : typeof req.body?.previewData === "string" && req.body.previewData.trim()
+      ? req.body.previewData.trim()
+      : null;
+
+  const result = await query(
+    `
+      insert into public.student_journal_covers (
+        student_number,
+        mode,
+        color,
+        elements,
+        preview_data,
+        updated_at
+      ) values ($1, $2, $3, $4, $5, now())
+      on conflict (student_number, mode) do update
+        set color = excluded.color,
+            elements = excluded.elements,
+            preview_data = coalesce(excluded.preview_data, public.student_journal_covers.preview_data),
+            updated_at = now()
+      returning mode, color, elements, preview_data, updated_at
+    `,
+    [studentNumber, mode, color, JSON.stringify(elements), previewData],
+  );
+
+  const row = result.rows[0];
+  return res.json({
+    ok: true,
+    message: "Journal cover saved.",
+    cover: {
+      version: 1,
+      mode: row.mode,
+      color: row.color,
+      elements: Array.isArray(row.elements) ? row.elements : [],
+      previewUri: row.preview_data || null,
+      updatedAt: row.updated_at,
+    },
+  });
+}));
+
+router.post("/cover", asyncHandler(async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  if (!studentNumber) {
+    return res.status(401).json({ message: "Student authentication required." });
+  }
+
+  const mode = req.body?.mode === "muni" ? "muni" : "solo";
+  const color = typeof req.body?.color === "string" && req.body.color.trim() ? req.body.color.trim() : "#AFC4B1";
+  const elements = Array.isArray(req.body?.elements) ? req.body.elements : [];
+  const previewData = typeof req.body?.previewUri === "string" && req.body.previewUri.trim()
+    ? req.body.previewUri.trim()
+    : typeof req.body?.previewData === "string" && req.body.previewData.trim()
+      ? req.body.previewData.trim()
+      : null;
+
+  const result = await query(
+    `
+      insert into public.student_journal_covers (
+        student_number,
+        mode,
+        color,
+        elements,
+        preview_data,
+        updated_at
+      ) values ($1, $2, $3, $4, $5, now())
+      on conflict (student_number, mode) do update
+        set color = excluded.color,
+            elements = excluded.elements,
+            preview_data = coalesce(excluded.preview_data, public.student_journal_covers.preview_data),
+            updated_at = now()
+      returning mode, color, elements, preview_data, updated_at
+    `,
+    [studentNumber, mode, color, JSON.stringify(elements), previewData],
+  );
+
+  const row = result.rows[0];
+  return res.json({
+    ok: true,
+    message: "Journal cover saved.",
+    cover: {
+      version: 1,
+      mode: row.mode,
+      color: row.color,
+      elements: Array.isArray(row.elements) ? row.elements : [],
+      previewUri: row.preview_data || null,
+      updatedAt: row.updated_at,
+    },
+  });
+}));
+
 router.get("/entries/recently-deleted", asyncHandler(async (req, res) => {
   const studentNumber = resolveRequestStudentNumber(req);
   const result = await query(

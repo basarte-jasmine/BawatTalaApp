@@ -1,5 +1,7 @@
 ﻿const GEMINI_API_KEY = String(process.env.GEMINI_API_KEY || "").trim();
-const GROQ_API_KEY = String(process.env.GROQ_API_KEY || "").trim();
+function getGroqApiKey() {
+  return String(process.env.GROQ_API_KEY || "").trim();
+}
 const OLLAMA_BASE_URL = normalizeBaseUrl(
   process.env.OLLAMA_BASE_URL || process.env.OLLAMA_URL || "",
 );
@@ -192,7 +194,11 @@ const GEMINI_RATE_LIMIT_COOLDOWN_MS = Math.max(
 );
 const GROQ_MODELS = parseModelList(
   process.env.GROQ_MODELS || process.env.GROQ_MODEL,
-  ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
+  ["openai/gpt-oss-120b", "openai/gpt-oss-20b"],
+);
+const GROQ_RATE_LIMIT_COOLDOWN_MS = Math.max(
+  2000,
+  Number(process.env.GROQ_RATE_LIMIT_COOLDOWN_MS || 4000),
 );
 const OLLAMA_MODELS = parseConfiguredModelList(
   process.env.OLLAMA_MODELS || process.env.OLLAMA_MODEL,
@@ -217,6 +223,7 @@ const AI_JSON_TEMPERATURE = 0.6;
 
 let geminiCooldownUntil = 0;
 let geminiLastFailure = null;
+let groqCooldownUntil = 0;
 let groqLastFailure = null;
 let ollamaLastFailure = null;
 
@@ -622,7 +629,23 @@ function clearGeminiFailureState() {
   geminiLastFailure = null;
 }
 
+function getGroqCooldownRemainingMs() {
+  return Math.max(0, groqCooldownUntil - Date.now());
+}
+
+function markGroqRateLimited(detail) {
+  const retryDelay = detail?.retryDelayMs || GROQ_RATE_LIMIT_COOLDOWN_MS;
+  groqCooldownUntil = Date.now() + retryDelay;
+  groqLastFailure = {
+    cooldownMs: retryDelay,
+    occurredAt: new Date().toISOString(),
+    reason: "rate_limit",
+    ...detail,
+  };
+}
+
 function clearGroqFailureState() {
+  groqCooldownUntil = 0;
   groqLastFailure = null;
 }
 
@@ -819,6 +842,27 @@ function mergeRiskSignals(
   };
 }
 
+function parseRetryAfterMs(response, data, defaultMs = 2000) {
+  const header = response?.headers?.get ? response.headers.get("retry-after") : null;
+  if (header) {
+    const seconds = Number(header);
+    if (!Number.isNaN(seconds) && seconds > 0) {
+      return Math.min(Math.round(seconds * 1000), 10000);
+    }
+  }
+
+  const message = String(data?.error?.message || "");
+  const match = message.match(/try again in ([0-9.]+)s/i);
+  if (match) {
+    const seconds = parseFloat(match[1]);
+    if (!Number.isNaN(seconds) && seconds > 0) {
+      return Math.min(Math.round(seconds * 1000) + 150, 10000);
+    }
+  }
+
+  return defaultMs;
+}
+
 function isQuotaError(response, data) {
   if (response?.status === 429) {
     return true;
@@ -999,38 +1043,65 @@ async function requestGroqJson({
   messages,
   schemaLines,
 }) {
-  if (!GROQ_API_KEY) {
+  const apiKey = getGroqApiKey();
+  if (!apiKey) {
     return { ok: false, parsed: null, reason: "groq_missing_key" };
   }
 
+  const targetModels = Array.isArray(models) && models.length > 0 ? models : GROQ_MODELS;
   let lastFailure = null;
 
-  for (const model of models) {
-    try {
-      const response = await fetch(
-        "https://api.groq.com/openai/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${GROQ_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model,
-            messages: [
-              { role: "system", content: systemInstruction },
-              ...messages,
-            ],
-            temperature: AI_JSON_TEMPERATURE,
-            response_format: { type: "json_object" },
-          }),
-        },
-      );
+  for (const model of targetModels) {
+    let response = null;
+    let data = {};
+    const maxAttempts = 2;
 
-      const data = await response.json().catch(() => ({}));
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      try {
+        response = await fetch(
+          "https://api.groq.com/openai/v1/chat/completions",
+          {
+            method: "POST",
+            headers: {
+              Authorization: "Bearer " + apiKey,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model,
+              messages: [
+                { role: "system", content: systemInstruction },
+                ...messages,
+              ],
+              temperature: AI_JSON_TEMPERATURE,
+              response_format: { type: "json_object" },
+            }),
+          },
+        );
+
+        data = await response.json().catch(() => ({}));
+      } catch (error) {
+        lastFailure = {
+          error: error instanceof Error ? error.message : String(error),
+          hasRawText: false,
+          model,
+          reason: "request_error",
+          status: null,
+          statusText: null,
+        };
+        groqLastFailure = {
+          occurredAt: new Date().toISOString(),
+          ...lastFailure,
+        };
+        console.warn(
+          "Groq request error for model, trying next model.",
+          lastFailure,
+        );
+        break;
+      }
+
       const rawText = String(data?.choices?.[0]?.message?.content || "").trim();
 
-      if (response.ok && rawText) {
+      if (response && response.ok && rawText) {
         try {
           const parsed = parseProviderJson(rawText);
           clearGroqFailureState();
@@ -1053,14 +1124,33 @@ async function requestGroqJson({
             "Groq returned invalid JSON, trying next model.",
             lastFailure,
           );
-          continue;
+          break;
         }
+      }
+
+      const is429 = response?.status === 429 || isQuotaError(response, data);
+      if (is429 && attempt < maxAttempts - 1) {
+        const retryDelayMs = parseRetryAfterMs(response, data, 2000);
+        markGroqRateLimited({
+          attempt: attempt + 1,
+          model,
+          status: response?.status,
+          statusText: response?.statusText,
+          retryDelayMs,
+        });
+        console.warn("Groq 429 rate limit reached, retrying before fallback...", {
+          attempt: attempt + 1,
+          model,
+          retryDelayMs,
+        });
+        await wait(retryDelayMs);
+        continue;
       }
 
       lastFailure = {
         hasRawText: Boolean(rawText),
         model,
-        reason: response.status === 429 ? "rate_limit" : "request_failed",
+        reason: is429 ? "rate_limit" : "request_failed",
         status: response?.status,
         statusText: response?.statusText,
       };
@@ -1069,29 +1159,11 @@ async function requestGroqJson({
         occurredAt: new Date().toISOString(),
         ...lastFailure,
       };
-      console.warn("Groq request failed for model, trying next model.", {
+      console.warn("Groq request failed for model, falling back to next model.", {
         data,
         ...lastFailure,
       });
-      continue;
-    } catch (error) {
-      lastFailure = {
-        error: error instanceof Error ? error.message : String(error),
-        hasRawText: false,
-        model,
-        reason: "request_error",
-        status: null,
-        statusText: null,
-      };
-      groqLastFailure = {
-        occurredAt: new Date().toISOString(),
-        ...lastFailure,
-      };
-      console.warn(
-        "Groq request error for model, trying next model.",
-        lastFailure,
-      );
-      continue;
+      break;
     }
   }
 
@@ -1739,6 +1811,8 @@ async function analyzeJournalEntryFinal({
 }
 
 module.exports = {
+  GROQ_MODELS,
+  requestGroqJson,
   analyzeJournalConversation,
   analyzeJournalEntryFinal,
 };

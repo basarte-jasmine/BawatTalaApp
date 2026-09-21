@@ -5151,6 +5151,14 @@ router.get("/students/:studentNumber", async (req, res) => {
       supportResponse === "DECLINED" ||
       studentAction === "DISMISSED";
   }).length;
+  const journalCoversResult = await query(
+    `
+      select mode, color, elements, preview_data, updated_at
+      from public.student_journal_covers
+      where student_number = $1
+    `,
+    [studentNumber],
+  ).catch(() => ({ rows: [] }));
   return res.json({
     profile: {
       studentNumber: profile.student_number,
@@ -5177,6 +5185,13 @@ router.get("/students/:studentNumber", async (req, res) => {
     },
     entries,
     moods,
+    journalCovers: journalCoversResult.rows.map((row) => ({
+      mode: row.mode,
+      color: row.color,
+      elements: row.elements,
+      previewUri: row.preview_data,
+      updatedAt: row.updated_at,
+    })),
   });
 });
 
@@ -5232,6 +5247,7 @@ router.delete("/students/:studentNumber", requireRoles("HEAD_COUNSELOR"), async 
     const deleteStatements = [
       "delete from public.journal_entry_messages where student_number = $1",
       "delete from public.journal_entries where student_number = $1",
+      "delete from public.student_journal_covers where student_number = $1",
       "delete from public.student_moods where student_number = $1",
       "delete from public.counselor_appointments where student_number = $1",
       "delete from public.student_feedbacks where student_number = $1",
