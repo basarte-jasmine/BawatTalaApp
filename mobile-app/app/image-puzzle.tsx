@@ -22,6 +22,7 @@ const ASSETS = [
   require("../assets/images/Mini Reset/Puzzle/Muni_Realistic_Binoculars.webp"),
   require("../assets/images/Mini Reset/Puzzle/Muni_Sunbathing.webp"),
 ];
+const COVER = require("../assets/images/Mini Reset/Puzzle/Muni Puzzle Cover.webp");
 
 function getDifficulty(level: number) {
   const grid = Math.min(5, level + 1);
@@ -313,10 +314,10 @@ export default function ImagePuzzleScreen() {
       
       {gameState === 'intro' && (
         <View style={styles.introContainer}>
-          <Ionicons name="image-outline" size={64} color="#6B8E65" style={{ marginBottom: 20 }} />
+          <Image source={COVER} style={styles.introCover} resizeMode="cover" />
           <Text style={styles.introTitle}>IMAGE PUZZLE</Text>
-          <Text style={styles.introSubtitle}>Reconstruct the image!</Text>
-          <Text style={styles.introDesc}>Complete puzzles, earn points, and survive as long as possible.</Text>
+          <Text style={styles.introSubtitle}>Reconstruct the image gently.</Text>
+          <Text style={styles.introDesc}>Complete each scene before the timer fades. The puzzle grows as you go.</Text>
           <Text style={styles.introHearts}>❤️ ❤️ ❤️</Text>
           
           <Pressable style={styles.startButton} onPress={startGame}>
@@ -423,6 +424,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 20,
   },
+  introCover: { width: 150, height: 150, borderRadius: 24, marginBottom: 20 },
   introTitle: { color: "#304D5B", fontSize: 28, fontFamily: "Outfit-Bold", marginBottom: 10 },
   introSubtitle: { color: "#465866", fontSize: 18, fontFamily: "Outfit-Medium", marginBottom: 20 },
   introDesc: { color: "#718078", fontSize: 15, textAlign: "center", marginBottom: 20, lineHeight: 22 },

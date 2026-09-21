@@ -138,29 +138,6 @@ export default function WellnessToolsScreen() {
             </Text>
           </View>
 
-          <View style={[styles.featuredSection, compact && styles.featuredSectionCompact]}>
-            <View style={styles.sectionHeadingCopy}>
-              <View style={styles.sectionKickerRow}>
-                <Ionicons name="game-controller-outline" size={15} color="#4F8A38" />
-                <Text style={[styles.sectionKicker, styles.featuredKicker]}>FEATURED GAMES</Text>
-              </View>
-              <Text style={styles.listHeading}>Meet Muni in motion</Text>
-              <Text style={styles.listSubHeading}>Two bigger ways to reset, play, and stay curious.</Text>
-            </View>
-            <View style={styles.featuredGameGrid}>{FEATURED_GAMES.map((game) => (<Pressable key={game.id} style={({ pressed }) => [styles.featuredGameCard, pressed && styles.miniResetCardPressed]} accessibilityLabel={game.title + ", " + game.duration} onPress={() => router.push("/" + game.id as any)}>
-                  <Image source={game.image} style={[styles.featuredGameImage, compact && styles.featuredGameImageCompact]} resizeMode="cover" />
-                  <View style={styles.featuredGameBody}>
-                    <Text style={styles.featuredGameLabel}>{game.label}</Text>
-                    <Text style={styles.featuredGameTitle}>{game.title}</Text>
-                    <Text style={styles.featuredGameDescription} numberOfLines={2}>{game.description}</Text>
-                    <View style={styles.featuredGameMeta}>
-                      <Text style={styles.miniResetMetaText}>{game.duration}</Text>
-                      <View style={styles.featuredGameArrow}><Ionicons name="arrow-forward" size={15} color="#FFFFFF" /></View>
-                    </View>
-                  </View>
-                </Pressable>))}</View>
-          </View>
-
           <View style={[styles.listSection, compact && styles.listSectionCompact]}>
             <Text style={styles.listHeading}>Guided support</Text>
             <Text style={styles.listSubHeading}>Simple practices for a steadier moment.</Text>
@@ -203,6 +180,29 @@ export default function WellnessToolsScreen() {
             </View>
           </View>
 
+          <View style={[styles.featuredSection, compact && styles.featuredSectionCompact]}>
+            <View style={styles.sectionHeadingCopy}>
+              <View style={styles.sectionKickerRow}>
+                <Ionicons name="game-controller-outline" size={15} color="#4F8A38" />
+                <Text style={[styles.sectionKicker, styles.featuredKicker]}>FEATURED GAMES</Text>
+              </View>
+              <Text style={styles.listHeading}>Meet Muni in motion</Text>
+              <Text style={styles.listSubHeading}>Bigger ways to reset, play, and stay curious.</Text>
+            </View>
+            <View style={styles.featuredGameGrid}>{FEATURED_GAMES.map((game) => (<Pressable key={game.id} style={({ pressed }) => [styles.featuredGameCard, pressed && styles.miniResetCardPressed]} accessibilityLabel={game.title + ", " + game.duration} onPress={() => router.push("/" + game.id as any)}>
+                  <Image source={game.image} style={[styles.featuredGameImage, compact && styles.featuredGameImageCompact]} resizeMode="cover" />
+                  <View style={styles.featuredGameBody}>
+                    <Text style={styles.featuredGameLabel}>{game.label}</Text>
+                    <Text style={styles.featuredGameTitle}>{game.title}</Text>
+                    <Text style={styles.featuredGameDescription} numberOfLines={2}>{game.description}</Text>
+                    <View style={styles.featuredGameMeta}>
+                      <Text style={styles.miniResetMetaText}>{game.duration}</Text>
+                      <View style={styles.featuredGameArrow}><Ionicons name="arrow-forward" size={15} color="#FFFFFF" /></View>
+                    </View>
+                  </View>
+                </Pressable>))}</View>
+          </View>
+
           <View style={[styles.miniResetSection, compact && styles.listSectionCompact]}>
             <View style={styles.miniResetHeadingRow}>
               <View style={styles.sectionHeadingCopy}>
@@ -226,7 +226,7 @@ export default function WellnessToolsScreen() {
                 >
                   <View style={styles.miniResetTileTopRow}>
                     <View style={styles.miniResetIcon}><Ionicons name={item.icon} size={19} color="#625D8F" /></View>
-                    <Ionicons name="arrow-up-right" size={16} color="#8A86A9" />
+                    <Ionicons name="arrow-up-right-box" size={16} color="#8A86A9" />
                   </View>
                   <Text style={styles.miniResetTitle}>{item.title}</Text>
                   <Text style={styles.miniResetDescription} numberOfLines={2}>{item.description}</Text>
