@@ -2,18 +2,16 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { ConfirmationModal } from "../components/ui/ConfirmationModal";
-import { deleteJournalEntry, fetchRecentJournalEntries } from "../lib/backend-api";
 import { JournalLockGate } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
+import { deleteJournalEntry, fetchRecentJournalEntries } from "../lib/backend-api";
 import { getManilaTodayParts } from "../lib/manila-date";
 import { useOfflineSync } from "../lib/offline-sync";
-
-const BOOK_IMAGE = require("../assets/images/book_sample.png");
 
 type RecentEntryItem = {
   createdAt: string;
@@ -119,7 +117,7 @@ function SwipeSafeEntryCard({
         }}
       >
         <View style={styles.entryIconWrap}>
-          <Image source={BOOK_IMAGE} style={styles.entryIconImage} resizeMode="contain" />
+          <Ionicons name="book-outline" size={22} color="#557A65" />
         </View>
 
         <View style={styles.entryTextWrap}>
@@ -546,9 +544,6 @@ const styles = StyleSheet.create({
     borderColor: "#E0EBD8",
     alignItems: "center",
     justifyContent: "center" },
-  entryIconImage: {
-    width: 40,
-    height: 40 },
   entryTextWrap: {
     flex: 1 },
   entryTime: {
