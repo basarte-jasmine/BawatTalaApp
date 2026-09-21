@@ -1,15 +1,16 @@
-import { router } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+﻿import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
+import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
-import { fetchJournalCalendar, fetchJournalEntriesByDate } from "../lib/backend-api";
 import { JournalLockGate } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
+import { fetchJournalCalendar, fetchJournalEntriesByDate } from "../lib/backend-api";
 import { InformedConsentGate } from "../lib/informed-consent";
+import { loadJournalCover } from "../lib/journal-cover";
 import { getManilaTodayParts } from "../lib/manila-date";
 import { useOfflineSync } from "../lib/offline-sync";
 
@@ -23,7 +24,6 @@ type WeekDayItem = {
   label: string;
 };
 
-const BOOK_IMAGE = require("../assets/images/book_sample.png");
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 function buildIsoDate(year: number, monthIndex: number, day: number) {
@@ -81,6 +81,7 @@ export default function JournalScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showFullInsightModal, setShowFullInsightModal] = useState(false);
   const [selectedJournalMode, setSelectedJournalMode] = useState<"muni" | "solo">("muni");
+  const [coverPreviewUri, setCoverPreviewUri] = useState<string | null>(null);
 
   const selectedDay = useMemo(
     () => calendarDays.find((day) => day.isoDate === weekAnchorDate) ?? null,
@@ -120,6 +121,24 @@ export default function JournalScreen() {
     useCallback(() => {
       void loadWeekData(weekAnchorDate);
     }, [loadWeekData, weekAnchorDate]),
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!user?.studentNumber) {
+        setCoverPreviewUri(null);
+        return;
+      }
+
+      let mounted = true;
+      void loadJournalCover(user.studentNumber).then((design) => {
+        if (mounted) setCoverPreviewUri(design?.previewUri ?? null);
+      });
+
+      return () => {
+        mounted = false;
+      };
+    }, [user?.studentNumber]),
   );
 
   useEffect(() => {
@@ -260,7 +279,28 @@ export default function JournalScreen() {
               </Pressable>
 
               <View style={[styles.journalArtWrap, compact && styles.journalArtWrapCompact]}>
-                <Image source={BOOK_IMAGE} style={[styles.bookImage, compact && styles.bookImageCompact, veryCompact && styles.bookImageVeryCompact]} resizeMode="contain" />
+                {coverPreviewUri ? (
+                  <Image
+                    source={{ uri: coverPreviewUri }}
+                    style={[styles.bookPreview, compact && styles.bookPreviewCompact, veryCompact && styles.bookPreviewVeryCompact]}
+                    resizeMode="cover"
+                    onError={() => setCoverPreviewUri(null)}
+                    accessibilityLabel="Saved journal cover"
+                  />
+                ) : (
+                  <View style={[styles.bookPreview, compact && styles.bookPreviewCompact, veryCompact && styles.bookPreviewVeryCompact]}>
+                    <View style={styles.bookPreviewHighlight} />
+                    <View style={styles.bookPreviewSpine} />
+                    <View style={styles.bookPreviewPageEdge} />
+                    <Text style={styles.bookPreviewTitle}>My{`\n`}Journal</Text>
+                  </View>
+                )}
+                <Pressable
+                  style={{ position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(255,255,255,0.95)', padding: 12, borderRadius: 30, shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 5 }}
+                  onPress={() => router.push("/journal-cover-editor")}
+                >
+                  <Ionicons name="color-palette-outline" size={24} color="#4D6558" />
+                </Pressable>
               </View>
 
               <Pressable 
@@ -574,19 +614,56 @@ const styles = StyleSheet.create({
     marginHorizontal: 10 },
   journalArtWrapCompact: {
     marginBottom: 4 },
-  bookImage: {
+  bookPreview: {
     width: 200,
     height: 250,
+    borderRadius: 16,
+    borderTopLeftRadius: 6,
+    borderBottomLeftRadius: 6,
+    backgroundColor: "#AFC4B1",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
     shadowColor: "#5C6570",
-    shadowOpacity: 0.12,
+    shadowOpacity: 0.18,
     shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 } },
-  bookImageCompact: {
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 5 },
+  bookPreviewCompact: {
     width: 160,
     height: 210 },
-  bookImageVeryCompact: {
+  bookPreviewVeryCompact: {
     width: 130,
     height: 170 },
+  bookPreviewHighlight: {
+    position: "absolute",
+    top: -15,
+    right: -15,
+    width: "90%",
+    height: 80,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    transform: [{ rotate: "-8deg" }] },
+  bookPreviewSpine: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 18,
+    backgroundColor: "rgba(22,48,37,0.14)" },
+  bookPreviewPageEdge: {
+    position: "absolute",
+    right: 0,
+    top: 10,
+    bottom: 10,
+    width: 4,
+    backgroundColor: "rgba(255,248,232,0.32)" },
+  bookPreviewTitle: {
+    color: "#FFF8E8",
+    fontSize: 26,
+    lineHeight: 31,
+    fontFamily: "Outfit-Bold",
+    textAlign: "center",
+    transform: [{ rotate: "-5deg" }] },
   addEntryButton: {
     height: 46,
     borderRadius: 999,
@@ -743,3 +820,4 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 20,
     fontFamily: "Outfit-Bold" } });
+
