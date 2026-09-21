@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { getGameScore, saveGameScore } from "../lib/game-scores";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
     Animated,
@@ -45,7 +46,19 @@ export default function MunisArrivalScreen() {
   const [distance, setDistance] = useState(0);
   const [leaves, setLeaves] = useState(0);
   const [health, setHealth] = useState(3);
+  
   const bestDriftRef = useRef(0);
+  const [, forceUpdate] = useState(0); // Ensure score updates after load
+
+  useEffect(() => {
+    getGameScore("munis-arrival").then((data) => {
+      if (data?.bestDrift) {
+        bestDriftRef.current = data.bestDrift;
+        forceUpdate(prev => prev + 1);
+      }
+    });
+  }, []);
+
 
   const gameWidth = useRef(0);
   const gameHeight = useRef(0);
@@ -238,6 +251,7 @@ export default function MunisArrivalScreen() {
             setHealth((h) => {
               const newH = h - 1;
               if (newH <= 0) setGameState("GAMEOVER");
+saveGameScore("munis-arrival", { bestDrift: bestDriftRef.current });
               return newH;
             });
             

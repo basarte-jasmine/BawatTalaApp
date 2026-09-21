@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { unlockAchievement } from "../lib/achievements";
 import { useAuthSession } from "../lib/auth-session";
+import { getGameScore, saveGameScore } from "../lib/game-scores";
 
 const BASKET_WIDTH = 100;
 const BASKET_HEIGHT = 80;
@@ -51,7 +52,19 @@ export default function FruitCatcherScreen() {
   const [longestCombo, setLongestCombo] = useState(0);
   
   const [popups, setPopups] = useState<any[]>([]);
+  
   const [showExitPrompt, setShowExitPrompt] = useState(false);
+  
+  const [bestScore, setBestScore] = useState(0);
+  const [highestLevel, setHighestLevel] = useState(0);
+
+  useEffect(() => {
+    getGameScore("fruit-catcher").then((data) => {
+      if (data?.bestScore) setBestScore(data.bestScore);
+      if (data?.highestLevel) setHighestLevel(data.highestLevel);
+    });
+  }, []);
+
 
   const basketX = useRef(new Animated.Value(0)).current;
   const basketXValue = useRef(0);
@@ -208,7 +221,14 @@ export default function FruitCatcherScreen() {
     if (currentHearts !== hearts) {
       setHearts(currentHearts);
       if (currentHearts <= 0) {
-        setGameState("gameover");
+        setGameState('gameover');
+      const curScore = stateRef.current?.score || score;
+      const curLevel = stateRef.current?.level || level;
+      let newBest = bestScore;
+      let newHigh = highestLevel;
+      if (curScore > bestScore) { newBest = curScore; setBestScore(curScore); }
+      if (curLevel > highestLevel) { newHigh = curLevel; setHighestLevel(curLevel); }
+      saveGameScore("fruit-catcher", { bestScore: newBest, highestLevel: newHigh });
         if (user?.studentNumber) unlockAchievement("a-softer-minute", user.studentNumber);
         return;
       }
@@ -334,8 +354,8 @@ export default function FruitCatcherScreen() {
         <View style={styles.overlay}>
           <View style={styles.panel}>
             <Text style={styles.panelTitle}>GAME OVER</Text>
-            <Text style={styles.panelText}>Final Score: {score}</Text>
-            <Text style={styles.panelText}>Highest Level: {level}</Text>
+            <Text style={styles.panelText}>Final Score: {score} (Best: {bestScore})</Text>
+            <Text style={styles.panelText}>Highest Level: {level} (Best: {highestLevel})</Text>
             <Text style={styles.panelText}>Fruits Caught: {fruitsCaught}</Text>
             <Text style={styles.panelText}>Longest Combo: {longestCombo}</Text>
             <Pressable style={styles.button} onPress={startGame}>

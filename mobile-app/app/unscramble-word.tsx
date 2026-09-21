@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { getGameScore, saveGameScore } from "../lib/game-scores";
 
 const COVER = require("../assets/images/Mini Reset/Unscramble Word/Unscramble Word Cover.webp"); 
 
@@ -70,7 +71,21 @@ export default function UnscrambleWordScreen() {
   const [showExitPrompt, setShowExitPrompt] = useState(false);
   
   const shakeAnim = useRef(new Animated.Value(0)).current;
+  
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  const bestScoreRef = useRef(0);
+  const bestLevelRef = useRef(0);
+  const [, forceUpdate] = useState(0);
+
+  useEffect(() => {
+    getGameScore("unscramble-word").then((data) => {
+      if (data?.bestScore) bestScoreRef.current = data.bestScore;
+      if (data?.bestLevel) bestLevelRef.current = data.bestLevel;
+      forceUpdate(p => p + 1);
+    });
+  }, []);
+
 
   const getNextWord = (currentLevel: number) => {
     let wordList = WORDS_EASY;
@@ -119,6 +134,9 @@ export default function UnscrambleWordScreen() {
         setTimeLeft((prev) => {
           if (prev <= 1) {
             setGameState("GAMEOVER");
+            if (score > bestScoreRef.current) { bestScoreRef.current = score; }
+            if (level > bestLevelRef.current) { bestLevelRef.current = level; }
+            saveGameScore("unscramble-word", { bestScore: bestScoreRef.current, bestLevel: bestLevelRef.current });
             return 0;
           }
           return prev - 1;
@@ -280,8 +298,8 @@ export default function UnscrambleWordScreen() {
               <Text style={styles.goSub}>Your focus brought calm.</Text>
               
               <View style={styles.statsBox}>
-                <View style={styles.statRow}><Text style={styles.statLabel}>Score</Text><Text style={styles.statValue}>{score}</Text></View>
-                <View style={styles.statRow}><Text style={styles.statLabel}>Words Rebuilt</Text><Text style={styles.statValue}>{level - 1}</Text></View>
+                <View style={styles.statRow}><Text style={styles.statLabel}>Score (Best: {bestScoreRef.current})</Text><Text style={styles.statValue}>{score}</Text></View>
+                <View style={styles.statRow}><Text style={styles.statLabel}>Words Rebuilt (Best: {bestLevelRef.current - 1})</Text><Text style={styles.statValue}>{level - 1}</Text></View>
               </View>
 
               <Pressable style={styles.btnPrimary} onPress={startGame}>

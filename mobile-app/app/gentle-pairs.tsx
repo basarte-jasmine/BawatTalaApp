@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { getGameScore, saveGameScore } from "../lib/game-scores";
 import React, { useEffect, useState } from "react";
 import {
     Image,
@@ -47,7 +48,21 @@ export default function GentlePairsScreen() {
   const [cards, setCards] = useState<Card[]>([]);
   const [flippedIndices, setFlippedIndices] = useState<number[]>([]);
   const [isLocked, setIsLocked] = useState(false);
+  
   const [showExitPrompt, setShowExitPrompt] = useState(false);
+  
+  const bestScoreRef = useRef(0);
+  const bestRoundRef = useRef(0);
+  const [, forceUpdate] = useState(0);
+
+  useEffect(() => {
+    getGameScore("gentle-pairs").then((data) => {
+      if (data?.bestScore) bestScoreRef.current = data.bestScore;
+      if (data?.bestRound) bestRoundRef.current = data.bestRound;
+      forceUpdate(p => p + 1);
+    });
+  }, []);
+
 
   const generateDeck = (lvl: number) => {
     const pairCount = Math.min(ASSETS.length, 2 + Math.floor((lvl - 1) / 2));
@@ -86,6 +101,9 @@ export default function GentlePairsScreen() {
       setTimeLeft((current) => {
         if (current <= 1) {
           setGameState("GAMEOVER");
+          if (score > bestScoreRef.current) bestScoreRef.current = score;
+          if (round > bestRoundRef.current) bestRoundRef.current = round;
+          saveGameScore("gentle-pairs", { bestScore: bestScoreRef.current, bestRound: bestRoundRef.current });
           return 0;
         }
         return current - 1;
@@ -256,8 +274,8 @@ export default function GentlePairsScreen() {
               <Text style={styles.goTitle}>A gentle pause</Text>
               <Text style={styles.goSub}>The round timer ran out. Your memory trail is still here.</Text>
               <View style={styles.statsBox}>
-                <View style={styles.statRow}><Text style={styles.statLabel}>Score</Text><Text style={styles.statValue}>{score}</Text></View>
-                <View style={styles.statRow}><Text style={styles.statLabel}>Rounds cleared</Text><Text style={styles.statValue}>{Math.max(0, round - 1)}</Text></View>
+                <View style={styles.statRow}><Text style={styles.statLabel}>Score (Best: {bestScoreRef.current})</Text><Text style={styles.statValue}>{score}</Text></View>
+                <View style={styles.statRow}><Text style={styles.statLabel}>Rounds (Best: {Math.max(0, bestRoundRef.current - 1)})</Text><Text style={styles.statValue}>{Math.max(0, round - 1)}</Text></View>
               </View>
               <Pressable style={styles.btnPrimary} onPress={startGame}><Text style={styles.btnPrimaryText}>Start Again</Text></Pressable>
             </View>

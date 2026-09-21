@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { unlockAchievement } from "../lib/achievements";
 import { useAuthSession } from "../lib/auth-session";
+import { getGameScore, saveGameScore } from "../lib/game-scores";
 
 const ASSETS = [
   require("../assets/images/Mini Reset/Puzzle/Muni_Flower_Thief.webp"),
