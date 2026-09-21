@@ -25,7 +25,7 @@ type MiniResetItem = {
 type FeaturedGame = {
   description: string;
   duration: string;
-  id: "fruit-catcher" | "image-puzzle" | "munis-arrival" | "gentle-pairs";
+  id: "fruit-catcher" | "image-puzzle" | "munis-arrival" | "gentle-pairs" | "unscramble-word";
   image: number;
   label: string;
   title: string;
@@ -54,13 +54,20 @@ const MINI_RESETS: MiniResetItem[] = [
   
   { id: "pattern", title: "Notice the Pattern", description: "Watch a small sequence, then repeat it.", duration: "~30 sec", icon: "shapes-outline" },
   { id: "recall", title: "Visual Recall", description: "Take a breath and recreate a simple arrangement.", duration: "~30 sec", icon: "eye-outline" },
-  { id: "words", title: "Unscramble a Word", description: "Put a calming word back in order.", duration: "~30 sec", icon: "text-outline" },
   { id: "numbers", title: "Number Flow", description: "Notice a gentle number pattern.", duration: "~20 sec", icon: "analytics-outline" },
   { id: "count", title: "Calm Count", description: "Tap the numbers in a steady order.", duration: "~20 sec", icon: "list-outline" },
   { id: "color", title: "Color Focus", description: "Find the one tile that matches.", duration: "~20 sec", icon: "color-palette-outline" },
 ];
 
 const FEATURED_GAMES: FeaturedGame[] = [
+  {
+    id: "unscramble-word",
+    title: "Unscramble Word",
+    label: "Mindful Focus",
+    description: "Rebuild calming words before the time fades.",
+    duration: "Endless",
+    image: require("../assets/images/Mini Reset/Unscramble Word/Unscramble Word Cover.webp"),
+  },
   {
     id: "gentle-pairs",
     title: "Gentle Pairs",
