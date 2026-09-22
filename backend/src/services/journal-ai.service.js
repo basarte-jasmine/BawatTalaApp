@@ -56,6 +56,7 @@ function personaInstructions(persona) {
       return [
         "PERSONA OBJECTIVE: Empathic supporter for emotional distress, heartbreak, or burnout (not crisis modal).",
         "Validate overwhelm without diagnosing. No hotline spam unless they confirm danger.",
+        "REQUIRED in every DISTRESS_SUPPORT reply: after a short validation, include one natural sentence that soft-offers the in-app Wellness tools (breathing, grounding, mini resets) as an optional next step — vary the wording each time; never paste a fixed canned line; never hotline scripts; never pressure.",
         "Do not ask productivity or task-breakdown questions. Prefer short validating sentences.",
         "If the student refuses questions, use zero question marks.",
       ].join(" ");
@@ -151,6 +152,32 @@ function sanitizeTaskCoachPetReply(rawReply, latestUserMessage) {
 function sanitizeSafeguardingText(rawText) {
   return String(rawText || "").trim();
 }
+
+/** Soft safety net: if DISTRESS_SUPPORT reply omitted wellness, append one varied soft offer.
+ * Does not replace the model reply — only fills the missing optional next-step sentence.
+ */
+function replyMentionsWellnessTools(text) {
+  return /\b(wellness\s*tools?|breathing|grounding|mini[- ]?reset|mini\s+resets?|in[- ]app\s+help|calm(\s+down)?\s+tools?)\b/i.test(
+    String(text || ""),
+  );
+}
+
+const DISTRESS_WELLNESS_SOFT_OFFERS = [
+  "If it helps, the in-app Wellness tools have gentle breathing and grounding mini-resets you can try anytime.",
+  "Whenever you want a soft pause, the Wellness tools in the app have calm breathing and grounding options.",
+  "There are also quiet Wellness tools here in the app — breathing and grounding mini-resets — if you want a small reset.",
+  "If a tiny pause sounds okay, the in-app Wellness tools include breathing and grounding mini-resets you can open when ready.",
+];
+
+function ensureDistressWellnessMention(rawReply, persona) {
+  const text = String(rawReply || "").trim();
+  if (String(persona || "").toUpperCase() !== "DISTRESS_SUPPORT") return text;
+  if (!text) return text;
+  if (replyMentionsWellnessTools(text)) return text;
+  const pick = DISTRESS_WELLNESS_SOFT_OFFERS[Math.floor(Math.random() * DISTRESS_WELLNESS_SOFT_OFFERS.length)];
+  return `${text.replace(/\s+$/, "")} ${pick}`.trim();
+}
+
 
 
 function normalizeBaseUrl(value) {
@@ -1403,9 +1430,11 @@ async function analyzeJournalConversation({
     "Do not repeat generic filler such as 'I'm here for you', 'Nandito lang ako', or 'It's okay to feel that way' unless a safety situation requires it.",
     "Use the latest user message as the main target, but keep continuity with recent conversation history so pronouns, follow-up questions, and topic shifts make sense.",
     "Reference at least one concrete detail from the latest user message whenever possible.",
-    studentRefusedQuestions(latestUserMessage) || distressAssessment.persona === "DISTRESS_SUPPORT"
+    studentRefusedQuestions(latestUserMessage)
       ? "Do not push reflection with coaching questions. Validate only. If the student refused questions, reply with zero question marks."
-      : "Most replies should help the reflection move forward. If the latest message is short, closed, or simply agrees, keep the conversation alive with a gentle follow-up — but never a task-breakdown or productivity plan question.",
+      : distressAssessment.persona === "DISTRESS_SUPPORT"
+        ? "DISTRESS_SUPPORT this turn: validate in 1-2 short sentences, then MUST include one soft natural sentence offering in-app Wellness tools (breathing, grounding, or mini resets). Vary wording. No productivity questions. Prefer zero question marks unless a gentle check-in is needed."
+        : "Most replies should help the reflection move forward. If the latest message is short, closed, or simply agrees, keep the conversation alive with a gentle follow-up — but never a task-breakdown or productivity plan question.",
     "If a question would feel forced, you may respond with a brief natural reaction, but avoid ending several turns in a row with only observations.",
     "Vary your sentence openings and rhythm. Do not reuse the same opening phrase or same reflection structure from recent Muni replies.",
     "Do not fall into a single formulaic Taglish reflection pattern. Avoid using 'Parang' as the default opening, and never use it in consecutive Muni turns.",
@@ -1577,6 +1606,7 @@ async function analyzeJournalConversation({
     // All modes: strip task-manager coaching; respect don't-ask boundaries. No canned replies.
     petReply = sanitizeTaskCoachPetReply(petReply, latestUserMessage);
     petReply = sanitizeSafeguardingText(petReply);
+    petReply = ensureDistressWellnessMention(petReply, persona);
 
     return {
       pet_reply: petReply,

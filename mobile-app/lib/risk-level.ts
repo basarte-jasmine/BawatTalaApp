@@ -282,3 +282,19 @@ export function needsFinishSupportPrompt(
 ): boolean {
   return needsCrisisTrioPrompt(entry, messages);
 }
+
+/**
+ * Mid-chat Yes/No wellness offer for emotional DISTRESS (not crisis).
+ * Requires DISTRESS signal; excludes CONFIRMED_CRITICAL so crisis trio stays intact;
+ * skips when a resource support action already exists.
+ */
+export function needsDistressWellnessOffer(
+  entry?: RiskPromptEntry,
+  messages?: SafetyMessageHint[] | null,
+): boolean {
+  const gated = entryForSafetyPrompt(entry, messages);
+  if (!gated) return false;
+  if (hasResourceSupportAction(gated)) return false;
+  if (normalizeSafetyStatus(gated.safetyStatus) === "CONFIRMED_CRITICAL") return false;
+  return normalizeEmotionalDistressSignal(gated.emotionalDistressSignal) === "DISTRESS";
+}
