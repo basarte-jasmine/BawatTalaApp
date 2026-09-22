@@ -839,9 +839,11 @@ async function readLocalJournalData(studentNumber: string): Promise<StoredJourna
 }
 
 async function writeLocalJournalData(studentNumber: string, data: StoredJournalData) {
-  const plaintext = JSON.stringify(data);
-  const encrypted = await encryptLocalPayload(plaintext);
-  await AsyncStorage.setItem(getLocalJournalStorageKey(studentNumber), encrypted);
+  try {
+    const plaintext = JSON.stringify(data);
+    const encrypted = await encryptLocalPayload(plaintext);
+    await AsyncStorage.setItem(getLocalJournalStorageKey(studentNumber), encrypted);
+  } catch {}
 }
 
 async function upsertLocalJournalRecord(
@@ -1093,9 +1095,11 @@ async function readLocalMoodData(studentNumber: string): Promise<StoredMoodData>
 }
 
 async function writeLocalMoodData(studentNumber: string, data: StoredMoodData) {
-  const plaintext = JSON.stringify(data);
-  const encrypted = await encryptLocalPayload(plaintext);
-  await AsyncStorage.setItem(getLocalMoodStorageKey(studentNumber), encrypted);
+  try {
+    const plaintext = JSON.stringify(data);
+    const encrypted = await encryptLocalPayload(plaintext);
+    await AsyncStorage.setItem(getLocalMoodStorageKey(studentNumber), encrypted);
+  } catch {}
 }
 
 async function upsertLocalMoodEntry(
@@ -1173,7 +1177,9 @@ async function readLocalCheckInData(studentNumber: string): Promise<StoredCheckI
 }
 
 async function writeLocalCheckInData(studentNumber: string, data: StoredCheckInData) {
-  await AsyncStorage.setItem(getLocalCheckInStorageKey(studentNumber), JSON.stringify(data));
+  try {
+    await AsyncStorage.setItem(getLocalCheckInStorageKey(studentNumber), JSON.stringify(data));
+  } catch {}
 }
 
 async function cacheCheckInStatus(
@@ -1359,10 +1365,12 @@ async function readLocalStudentPreferences(studentNumber: string): Promise<Store
 }
 
 async function writeLocalStudentPreferences(studentNumber: string, data: StoredStudentPreferences) {
-  await AsyncStorage.setItem(getLocalPreferencesStorageKey(studentNumber), JSON.stringify({
-    ...data,
-    updatedAt: getNowIsoString(),
-  }));
+  try {
+    await AsyncStorage.setItem(getLocalPreferencesStorageKey(studentNumber), JSON.stringify({
+      ...data,
+      updatedAt: getNowIsoString(),
+    }));
+  } catch {}
 }
 
 async function cacheStudentPreferences(
