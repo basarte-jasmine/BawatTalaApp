@@ -1,6 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import Constants from "expo-constants";
-import { Platform } from "react-native";
+import { API_BASE_URL } from "./api-base-url";
 import { decryptLocalPayload, encryptLocalPayload, looksLikeEncryptedPayload } from "./local-encrypted-storage";
 import { needsSupportPrompt } from "./risk-level";
 
@@ -243,82 +242,6 @@ export type FutureSelfMessage = {
   updatedAt?: string;
 };
 
-/** LAN host from Expo Metro (e.g. 192.168.x.x:8081) — used so physical devices never hit localhost. */
-function getDevLanHost(): string | null {
-  const hostUri =
-    Constants.expoConfig?.hostUri ??
-    (Constants as { manifest2?: { extra?: { expoClient?: { hostUri?: string } } } }).manifest2?.extra?.expoClient?.hostUri ??
-    (Constants as { manifest?: { debuggerHost?: string } }).manifest?.debuggerHost ??
-    null;
-  if (!hostUri || typeof hostUri !== "string") return null;
-  const host = hostUri.split(":")[0]?.trim();
-  if (!host || host === "localhost" || host === "127.0.0.1") return null;
-  return host;
-}
-
-function isPrivateLanHost(host: string): boolean {
-  return /^(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})$/.test(host);
-}
-
-function getDefaultApiBaseUrl() {
-  if (Platform.OS === "web" && typeof window !== "undefined") {
-    const host = window.location.hostname;
-    if (host !== "localhost" && host !== "127.0.0.1") {
-      // Same Wi-Fi browser → local backend; public/deployed host → Render.
-      if (isPrivateLanHost(host)) {
-        return `http://${host}:4002`;
-      }
-      return "https://bawattalaapp.onrender.com";
-    }
-  }
-  const lanHost = getDevLanHost();
-  if (lanHost) {
-    return `http://${lanHost}:4002`;
-  }
-  // Android emulator loopback to host machine; physical devices should use LAN via env or Expo hostUri.
-  return Platform.OS === "android"
-    ? "http://10.0.2.2:4002"
-    : "http://localhost:4002";
-}
-
-function normalizeApiBaseUrl(rawUrl: string) {
-  if (Platform.OS === "web" && typeof window !== "undefined") {
-    const host = window.location.hostname;
-    if (
-      host !== "localhost" &&
-      host !== "127.0.0.1" &&
-      (rawUrl.includes("localhost") || rawUrl.includes("127.0.0.1") || rawUrl.includes("10.0.2.2"))
-    ) {
-      if (isPrivateLanHost(host)) {
-        return `http://${host}:4002`;
-      }
-      return "https://bawattalaapp.onrender.com";
-    }
-  }
-
-  const pointsAtLoopback =
-    rawUrl.includes("localhost") || rawUrl.includes("127.0.0.1");
-
-  // Physical device / Expo Go on LAN: rewrite loopback env to the Metro host machine.
-  const lanHost = getDevLanHost();
-  if (lanHost && pointsAtLoopback) {
-    return rawUrl
-      .replace("localhost", lanHost)
-      .replace("127.0.0.1", lanHost);
-  }
-
-  // Android emulator only: map loopback to the special host alias.
-  if (Platform.OS === "android" && pointsAtLoopback) {
-    return rawUrl
-      .replace("localhost", "10.0.2.2")
-      .replace("127.0.0.1", "10.0.2.2");
-  }
-  return rawUrl;
-}
-
-const API_BASE_URL = normalizeApiBaseUrl(
-  process.env.EXPO_PUBLIC_API_BASE_URL ?? getDefaultApiBaseUrl(),
-);
 let backendWarmupPromise: Promise<void> | null = null;
 
 type ApiResult = {
@@ -1628,9 +1551,9 @@ function notifySessionExpiredIfNeeded(path: string, status: number) {
   }
 }
 
-async function fetchWithTimeout(url: string, init: RequestInit = {}) {
+async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = FETCH_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, {
       ...init,
@@ -1647,11 +1570,11 @@ async function fetchWithTimeout(url: string, init: RequestInit = {}) {
   }
 }
 
-async function get(path: string) {
+async function get(path: string, timeoutMs = FETCH_TIMEOUT_MS) {
   const response = await fetchWithTimeout(`${API_BASE_URL}${path}`, {
     credentials: "include",
     headers: buildHeaders(),
-  });
+  }, timeoutMs);
   notifySessionExpiredIfNeeded(path, response.status);
   const data = await response.json().catch(() => ({}));
   return { response, data };
@@ -2406,6 +2329,9 @@ export async function fetchMonthlyMoods(
   }
 }
 
+/** Catalog can take ~10-20s when Open Library is slow; keep above the default 15s fetch cap. */
+const LIBRARY_FETCH_TIMEOUT_MS = 30000;
+
 export async function fetchLibraryBooks(
   searchQuery?: string,
 ): Promise<ApiResult & { books?: LibraryBookRecord[]; totalItems?: number }> {
@@ -2414,14 +2340,23 @@ export async function fetchLibraryBooks(
     params.set("q", searchQuery.trim());
   }
 
-  const { response, data } = await get(`/api/library/books?${params.toString()}`);
+  try {
+    const { response, data } = await get(`/api/library/books?${params.toString()}`, LIBRARY_FETCH_TIMEOUT_MS);
 
-  return {
-    ok: response.ok,
-    message: data?.message,
-    books: Array.isArray(data?.books) ? data.books : [],
-    totalItems: Number(data?.totalItems ?? 0),
-  };
+    return {
+      ok: response.ok,
+      message: data?.message,
+      books: Array.isArray(data?.books) ? data.books : [],
+      totalItems: Number(data?.totalItems ?? 0),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "Unable to reach the library right now.",
+      books: [],
+      totalItems: 0,
+    };
+  }
 }
 
 export async function downloadLibraryBook(payload: {

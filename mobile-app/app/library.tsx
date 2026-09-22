@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+﻿import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
@@ -157,7 +157,7 @@ function canDownloadEpubInApp(book: LibraryBookRecord) {
   return Boolean(book.supportsInAppReader && book.downloadableEpub !== false);
 }
 
-/** Open Library lendable borrow (e.g. 7 Habits) — opens OL, not in-app EPUB. */
+/** Open Library lendable borrow (e.g. 7 Habits) â€” opens OL, not in-app EPUB. */
 function isOpenLibraryBorrow(book: LibraryBookRecord) {
   if (isBookReadyInApp(book) || isBuiltInBook(book) || canDownloadEpubInApp(book)) return false;
   if (book.openLibraryBorrow === true) return true;
@@ -510,12 +510,30 @@ export default function LibraryScreen() {
         const mergedBooks = await mergeLocalEpubFiles(result.books ?? []);
         setBooks(dedupeLibraryBooks(mergedBooks));
       } else {
-        setBooks([]);
-        setErrorMessage(result.message ?? "Unable to load the library right now.");
+        // Keep last successful catalog so a slow/flake Open Library response
+        // does not flash "unreachable" after books already loaded.
+        setBooks((prev) => {
+          if (prev.length > 0) {
+            setLibraryActionMessage(result.message ?? "Catalog refresh failed. Showing your last loaded books.");
+            return prev;
+          }
+          setErrorMessage(result.message ?? "Unable to load the library right now.");
+          return [];
+        });
       }
-    } catch {
-      setBooks([]);
-      setErrorMessage("Unable to reach the library right now.");
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : "Unable to reach the library right now.";
+      setBooks((prev) => {
+        if (prev.length > 0) {
+          setLibraryActionMessage(message);
+          return prev;
+        }
+        setErrorMessage(message);
+        return [];
+      });
     }
     setIsLoading(false);
   }, [mergeLocalEpubFiles, user?.studentNumber]);
@@ -770,7 +788,7 @@ export default function LibraryScreen() {
       await handleDownloadBook(book);
       return;
     }
-    // Borrow on Open Library = external active CTA (borrowable ≠ downloadableEpub)
+    // Borrow on Open Library = external active CTA (borrowable â‰  downloadableEpub)
     if (isOpenLibraryBorrow(book) || book.actionLabel === "Borrow on Open Library") {
       if (getExternalReaderUrl(book)) {
         await handleOpenExternalBook(book);
@@ -1398,10 +1416,10 @@ export default function LibraryScreen() {
                 <Text style={styles.emptyText}>
                   {activeShelf === "my"
                     ? (submittedQuery
-                        ? `Nothing on your shelf matches “${submittedQuery}”. Clear search or download a free EPUB from Featured.`
+                        ? `Nothing on your shelf matches â€œ${submittedQuery}â€. Clear search or download a free EPUB from Featured.`
                         : "Your shelf shows built-in books and Open Library EPUBs you save. Grab a free EPUB from Featured to get started.")
                     : (submittedQuery
-                        ? `No results for “${submittedQuery}”. Try a simpler title, author, or ISBN.`
+                        ? `No results for â€œ${submittedQuery}â€. Try a simpler title, author, or ISBN.`
                         : "The featured shelf has no books right now. Tap Try Again in a moment, or search by title.")}
                 </Text>
               </View>

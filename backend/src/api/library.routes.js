@@ -14,6 +14,8 @@ const OPEN_LIBRARY_DEFAULT_LANGUAGE = "eng";
 const OPEN_LIBRARY_DOWNLOAD_PROBE_TIMEOUT_MS = 8000;
 const OPEN_LIBRARY_DOWNLOAD_STREAM_TIMEOUT_MS = 45000;
 const OPEN_LIBRARY_DOWNLOAD_CACHE_TTL_MS = 15 * 60 * 1000;
+const OPEN_LIBRARY_BROWSE_CACHE_TTL_MS = 2 * 60 * 1000;
+const LIBRARY_SLOW_REQUEST_MS = 10000;
 const MAX_BOOK_RESULTS = 36;
 /** Self-help / modern personal-growth only (stem + plural aware). */
 const WELLBEING_BOOK_PATTERN = /\b(self[ -]?help|self[ -]?improvement|personal development|personal growth|self[ -]?actualization|personal success|success|habits?|habit|clinical psychology|counseling psychology|positive psychology|mental health|emotional health|emotional intelligence|well[ -]?being|mindfulness|meditation|stress management|anxiety|depression|trauma|grief|resilience|self[ -]?esteem|self[ -]?compassion|coping|burnout|motivation|happiness|therapy|counseling|relationships?|productivity|mindset|confidence|leadership)\b/i;
@@ -81,6 +83,43 @@ const READING_ACHIEVEMENTS = [
 ];
 const ACCENT_COLORS = ["#70C943", "#A8E08A", "#D7F0B7", "#E8F6DF", "#C5E8B0", "#9FD67A"];
 const openLibraryDownloadUrlCache = new Map();
+/** Short TTL cache of Open Library display items for default/search list (not student-specific). */
+const openLibraryBrowseItemsCache = new Map();
+
+function getBrowseCacheKey(searchQuery, page, maxResults) {
+  return `${String(searchQuery || "").toLowerCase()}|${page}|${maxResults}`;
+}
+
+function readBrowseItemsCache(cacheKey) {
+  const hit = openLibraryBrowseItemsCache.get(cacheKey);
+  if (!hit) return null;
+  if (hit.expiresAt <= Date.now()) {
+    openLibraryBrowseItemsCache.delete(cacheKey);
+    return null;
+  }
+  return hit.items;
+}
+
+function writeBrowseItemsCache(cacheKey, items) {
+  if (!Array.isArray(items) || !items.length) return;
+  openLibraryBrowseItemsCache.set(cacheKey, {
+    expiresAt: Date.now() + OPEN_LIBRARY_BROWSE_CACHE_TTL_MS,
+    items,
+  });
+}
+
+function logLibraryRequest(event, details = {}) {
+  const payload = {
+    at: new Date().toISOString(),
+    event,
+    ...details,
+  };
+  if (event === "slow" || event === "soft_fail" || event === "error") {
+    console.warn("[library]", JSON.stringify(payload));
+  } else {
+    console.log("[library]", JSON.stringify(payload));
+  }
+}
 
 function normalizeCompactSpaces(value) {
   return String(value || "").trim().replace(/\s+/g, " ");
@@ -1499,6 +1538,7 @@ async function grantReadingReward({ achievement, bookId, bookTitle, readingSecon
 }
 
 router.get("/books", requireStudentOnlyAuth, async (req, res) => {
+  const startedAt = Date.now();
   let studentNumber;
   try {
     studentNumber = resolveRequestStudentNumber(req);
@@ -1513,6 +1553,42 @@ router.get("/books", requireStudentOnlyAuth, async (req, res) => {
   const searchQuery = normalizeCompactSpaces(req.query.q || DEFAULT_BOOK_QUERY);
   const page = clampInteger(Number(req.query.page || 1), 1, 100, 1);
   const isDefaultBrowse = !normalizeCompactSpaces(req.query.q);
+  const browseCacheKey = getBrowseCacheKey(searchQuery, page, maxResults);
+
+  const respondBooks = (books, extra = {}) => {
+    const ms = Date.now() - startedAt;
+    if (ms >= LIBRARY_SLOW_REQUEST_MS) {
+      logLibraryRequest("slow", {
+        path: "/books",
+        ms,
+        studentNumber,
+        query: searchQuery,
+        page,
+        count: Array.isArray(books) ? books.length : 0,
+        ...extra,
+      });
+    }
+    return res.json({
+      books,
+      query: searchQuery,
+      totalItems: Array.isArray(books) ? books.length : 0,
+      ...extra,
+    });
+  };
+
+  const softEmpty = (message, reason) => {
+    const ms = Date.now() - startedAt;
+    logLibraryRequest("soft_fail", {
+      path: "/books",
+      ms,
+      studentNumber,
+      query: searchQuery,
+      page,
+      reason,
+      message,
+    });
+    return respondBooks([], { degraded: true, message });
+  };
 
   try {
     async function fetchOpenLibraryDocs(queryText, limit, pageNumber) {
@@ -1532,36 +1608,53 @@ router.get("/books", requireStudentOnlyAuth, async (req, res) => {
       return Array.isArray(data.docs) ? data.docs : [];
     }
 
-    const primaryDocs = await fetchOpenLibraryDocs(searchQuery, searchLimit, page).catch(() => []);
-    let mergedDocs = [...primaryDocs];
+    let selectedItems = readBrowseItemsCache(browseCacheKey);
+    let cacheHit = Boolean(selectedItems);
 
-    // On default browse (and first page), seed famous modern self-help titles.
-    if (isDefaultBrowse && page === 1) {
-      const curatedBatches = await Promise.all(
-        CURATED_SELF_HELP_QUERIES.map((queryText) =>
-          fetchOpenLibraryDocs(queryText, 5, 1).catch(() => []),
-        ),
-      );
-      for (const batch of curatedBatches) {
-        mergedDocs.push(...batch);
+    if (!selectedItems) {
+      const primaryDocs = await fetchOpenLibraryDocs(searchQuery, searchLimit, page).catch((error) => {
+        logLibraryRequest("error", {
+          path: "/books",
+          stage: "primary",
+          message: error?.message || String(error),
+        });
+        return [];
+      });
+      let mergedDocs = [...primaryDocs];
+
+      // On default browse (and first page), seed famous modern self-help titles.
+      if (isDefaultBrowse && page === 1) {
+        const curatedBatches = await Promise.all(
+          CURATED_SELF_HELP_QUERIES.map((queryText) =>
+            fetchOpenLibraryDocs(queryText, 5, 1).catch(() => []),
+          ),
+        );
+        for (const batch of curatedBatches) {
+          mergedDocs.push(...batch);
+        }
       }
+
+      if (!mergedDocs.length) {
+        return softEmpty(
+          "Open Library catalog is temporarily unreachable. Please try again.",
+          "open_library_empty_or_timeout",
+        );
+      }
+
+      const seenKeys = new Set();
+      const dedupedDocs = [];
+      for (const doc of mergedDocs) {
+        const key = String(doc?.key || doc?.lending_identifier_s || doc?.title || "").toLowerCase();
+        if (!key || seenKeys.has(key)) continue;
+        seenKeys.add(key);
+        dedupedDocs.push(doc);
+      }
+
+      const relevantItems = dedupedDocs.filter(isWellbeingLibraryBook).filter(isModernOrCuratedSelfHelpBook);
+      selectedItems = await getOpenLibraryDisplayItems(relevantItems, maxResults);
+      writeBrowseItemsCache(browseCacheKey, selectedItems);
     }
 
-    if (!mergedDocs.length) {
-      throw new Error("Open Library catalog is temporarily unreachable. Please try again.");
-    }
-
-    const seenKeys = new Set();
-    const dedupedDocs = [];
-    for (const doc of mergedDocs) {
-      const key = String(doc?.key || doc?.lending_identifier_s || doc?.title || "").toLowerCase();
-      if (!key || seenKeys.has(key)) continue;
-      seenKeys.add(key);
-      dedupedDocs.push(doc);
-    }
-
-    const relevantItems = dedupedDocs.filter(isWellbeingLibraryBook).filter(isModernOrCuratedSelfHelpBook);
-    const selectedItems = await getOpenLibraryDisplayItems(relevantItems, maxResults);
     const bookIds = selectedItems
       .map((item, index) => getOpenLibraryBookId(item, item.sourceId, index))
       .filter(Boolean);
@@ -1572,15 +1665,25 @@ router.get("/books", requireStudentOnlyAuth, async (req, res) => {
       ...Array.from(downloadsByBookId.values()).map((download) => download?.bookId).filter(Boolean),
     ];
     const progressByBookId = await getStudentProgress(studentNumber, [...new Set(progressBookIds)]);
-    const books = selectedItems.map((item, index) => decorateBookBorrowability(mapOpenLibraryBook(item, index, progressByBookId, downloadsByBookId)));
+    const books = selectedItems.map((item, index) =>
+      decorateBookBorrowability(mapOpenLibraryBook(item, index, progressByBookId, downloadsByBookId)),
+    );
 
-    return res.json({
-      books,
-      query: searchQuery,
-      totalItems: books.length,
-    });
+    return respondBooks(books, cacheHit ? { cache: "hit" } : {});
   } catch (error) {
-    return res.status(502).json({ message: error.message || "Failed to load library books." });
+    const message = error?.message || "Failed to load library books.";
+    const isOlSoft =
+      /timed out|unreachable|Open Library|unreadable response|request failed/i.test(message);
+    if (isOlSoft) {
+      return softEmpty(message, "open_library_exception");
+    }
+    logLibraryRequest("error", {
+      path: "/books",
+      ms: Date.now() - startedAt,
+      studentNumber,
+      message,
+    });
+    return res.status(502).json({ message });
   }
 });
 

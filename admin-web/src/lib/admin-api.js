@@ -29,6 +29,8 @@ export function clearAdminToken() {
   }
 }
 
+const RENDER_ADMIN_API_BASE_URL = "https://bawattalaapp.onrender.com";
+
 function isPrivateLanHost(host) {
   return /^(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})$/.test(host);
 }
@@ -36,11 +38,31 @@ function isPrivateLanHost(host) {
 function resolveAdminApiBaseUrl() {
   const configured = String(import.meta.env.VITE_ADMIN_API_BASE_URL || "").trim().replace(/\/$/, "");
   const pageHost = typeof window !== "undefined" ? window.location.hostname : "";
+  const isProd = Boolean(import.meta.env.PROD);
+
+  // Production builds must never keep a private LAN API URL (fails off that Wi-Fi).
+  if (isProd) {
+    if (configured) {
+      try {
+        const parsed = new URL(configured);
+        if (
+          parsed.hostname === "localhost" ||
+          parsed.hostname === "127.0.0.1" ||
+          isPrivateLanHost(parsed.hostname)
+        ) {
+          return RENDER_ADMIN_API_BASE_URL;
+        }
+        return configured;
+      } catch {
+        return RENDER_ADMIN_API_BASE_URL;
+      }
+    }
+    return RENDER_ADMIN_API_BASE_URL;
+  }
 
   if (configured) {
     try {
       const parsed = new URL(configured);
-      // Env pointed at loopback but browser is on LAN → use page host:4002.
       if (
         (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") &&
         pageHost &&
@@ -49,7 +71,6 @@ function resolveAdminApiBaseUrl() {
       ) {
         return `${parsed.protocol}//${pageHost}:${parsed.port || "4002"}`;
       }
-      // Same-machine localhost → relative URLs via Vite proxy.
       if (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") {
         return "";
       }
@@ -59,7 +80,6 @@ function resolveAdminApiBaseUrl() {
     }
   }
 
-  // No env: on LAN page host hit backend on :4002; on localhost use Vite /api proxy.
   if (pageHost && pageHost !== "localhost" && pageHost !== "127.0.0.1" && isPrivateLanHost(pageHost)) {
     return `http://${pageHost}:4002`;
   }
