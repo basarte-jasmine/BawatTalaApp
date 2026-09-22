@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Image, ImageSourcePropType, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
+import {  ImageSourcePropType, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
+import { Image } from "expo-image";
 
 type StudentProfileAvatarProps = {
   iconColor?: string;
@@ -48,7 +49,7 @@ export function StudentProfileAvatar({
         {imageUrl ? (
           <Image
             accessibilityLabel="Student profile picture"
-            resizeMode="cover"
+            contentFit="cover"
             source={{ uri: imageUrl }}
             style={{ borderRadius: radius, height: size, width: size }}
           />
@@ -59,7 +60,7 @@ export function StudentProfileAvatar({
       {frameSource ? (
         <Image
           source={frameSource}
-          resizeMode="contain"
+          contentFit="contain"
           style={[styles.frame, { height: outerSize, width: outerSize }]}
         />
       ) : null}
