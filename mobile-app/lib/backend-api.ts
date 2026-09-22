@@ -1460,7 +1460,10 @@ export async function warmBackend(): Promise<void> {
 }
 
 // Quick reachability probe used to pick the default journaling mode offline.
-export async function isBackendReachable(timeoutMs = 7000): Promise<boolean> {
+export async function isBackendReachable(timeoutMs = 25000): Promise<boolean> {
+  if (typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean' && !navigator.onLine) {
+    return false;
+  }
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -1505,7 +1508,7 @@ export async function syncOfflineStudentData(studentNumber: string): Promise<Api
 }
 
 let activeAuthToken: string | null = null;
-const FETCH_TIMEOUT_MS = 15000;
+const FETCH_TIMEOUT_MS = 30000;
 let sessionExpiredHandler: (() => void) | null = null;
 let sessionExpiredNotified = false;
 
