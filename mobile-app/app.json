@@ -13,7 +13,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#f4fafb",
         "foregroundImage": "./assets/images/BT_Logo.png",
         "monochromeImage": "./assets/images/BT_Logo.png"
       },
@@ -39,10 +39,10 @@
           "image": "./assets/images/BT_Logo.png",
           "imageWidth": 170,
           "resizeMode": "contain",
-          "backgroundColor": "#F8FFF8",
+          "backgroundColor": "#f4fafb",
           "dark": {
             "image": "./assets/images/BT_Logo.png",
-            "backgroundColor": "#F8FFF8"
+            "backgroundColor": "#f4fafb"
           }
         }
       ],
