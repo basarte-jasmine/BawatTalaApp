@@ -9,6 +9,7 @@ import Modal from "../components/Modal";
 import {
   createAdminPeerCounselor,
   createAdminRoleMember,
+  deleteAdminPeerCounselor,
   deleteAdminRoleMember,
   fetchAdminRoleAssignments,
   resendAdminRoleMemberCode,
@@ -367,12 +368,17 @@ export default function RoleAssignments({ onLogout, session }) {
     if (!deleteTarget?.id) return;
     try {
       setIsSaving(true);
-      const data = await deleteAdminRoleMember(deleteTarget.id);
-      setSuccessMessage(data?.message || "Team member deactivated.");
+      if (deleteTarget.memberType === "PEER") {
+        const data = await deleteAdminPeerCounselor(deleteTarget.id);
+        setSuccessMessage(data?.message || "Peer counselor deleted.");
+      } else {
+        const data = await deleteAdminRoleMember(deleteTarget.id);
+        setSuccessMessage(data?.message || "Team member deactivated.");
+      }
       setDeleteTarget(null);
       await loadMembers();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to deactivate team member.");
+      setErrorMessage(error instanceof Error ? error.message : "Failed to remove team member.");
     } finally {
       setIsSaving(false);
     }
@@ -740,10 +746,14 @@ export default function RoleAssignments({ onLogout, session }) {
           isOpen={Boolean(deleteTarget)}
           onClose={() => setDeleteTarget(null)}
           onConfirm={() => void handleDeleteMember()}
-          title="Deactivate Team Member"
-          description={`Mark ${deleteTarget?.fullName || "this member"} as inactive?`}
-          cancelLabel="Keep Active"
-          confirmLabel="Deactivate"
+          title={deleteTarget?.memberType === "PEER" ? "Delete Peer Counselor" : "Deactivate Team Member"}
+          description={
+            deleteTarget?.memberType === "PEER"
+              ? `Permanently delete ${deleteTarget?.fullName || "this peer counselor"} from peer counseling?`
+              : `Mark ${deleteTarget?.fullName || "this member"} as inactive?`
+          }
+          cancelLabel={deleteTarget?.memberType === "PEER" ? "Cancel" : "Keep Active"}
+          confirmLabel={deleteTarget?.memberType === "PEER" ? "Delete Permanently" : "Deactivate"}
           confirmTone="rose"
         />
       </div>

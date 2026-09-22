@@ -4634,7 +4634,7 @@ router.get("/roles", requireRoles("HEAD_COUNSELOR"), async (_req, res) => {
       createdAt: row.created_at,
       memberType: "PEER",
       canEdit: true,
-      canDelete: false,
+      canDelete: true,
     };
   });
   const members = [...adminMembers, ...peerMembers];
@@ -4643,7 +4643,8 @@ router.get("/roles", requireRoles("HEAD_COUNSELOR"), async (_req, res) => {
     members,
     summary: {
       superAdminCount: adminMembers.filter((item) => item.role === "HEAD_COUNSELOR" && item.isActive).length,
-      counselorCount: adminMembers.filter((item) => item.role === "COUNSELOR" && item.isActive).length,
+      // Include HEAD_COUNSELOR in School Counselor count (still counted separately as Super Admin).
+      counselorCount: adminMembers.filter((item) => (item.role === "COUNSELOR" || item.role === "HEAD_COUNSELOR") && item.isActive).length,
       peerAdvisorCount: peerMembers.filter((item) => item.isActive).length,
     },
   });
