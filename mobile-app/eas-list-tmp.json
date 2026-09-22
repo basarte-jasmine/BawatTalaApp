@@ -1,0 +1,146 @@
+﻿node.exe : (node:11664) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland 
+alternative instead.
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:11664) [D...native instead.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(Use `node --trace-deprecation ...` to show where the warning was created)
+Found eas-cli in your project dependencies.
+It's recommended to use the "cli.version" field in eas.json to enforce the eas-cli version for your project.
+Learn more: https://github.com/expo/eas-cli#enforcing-eas-cli-version-for-your-project
+
+[
+  {
+    "id": "8e768348-36de-452f-b4dd-2a85f6581194",
+    "status": "IN_PROGRESS",
+    "platform": "ANDROID",
+    "artifacts": {},
+    "initiatingActor": {
+      "id": "e2142c0e-8dc7-400e-822d-696d10fa23ce",
+      "displayName": "jasmine67"
+    },
+    "logFiles": [
+      "https://storage.googleapis.com/eas-workflows-production/logs/8154e998-fbce-46a8-82ce-9896a9bd16bf/8e768348-36de-452f-b4dd-2a85f6581194/2026-09-22T10%3A50%3A33Z-40e4be75-5bd8-4036-a42a-85f45e8fe037.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260922%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260922T105117Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=08eae29fe657b85769432a9d8ff2bf39b49af47367e737a10ea43e79901b670bcb0cad436c284c136e3984516a0ee8a82587227d73414d13485a83e5ef4e7a0a3fcaf2785ad664a65b0958c3b7dbdb192863210ccbcd0f29bc60129f54a545f0a1f06cdb68ef4b53b781c3845b75ff634101705a13481d1186598f2017272f6b6ca4e378e62b3ddc33191f0a3c268558fe9fa0df005a90ad4006d73fa441c55ed7a3cef3b6a0c7c45f730d60e9504a49d404789aa09f32d8b1f728b28b0ce6bc6b74958200b4c01f5c1a134fba24dcea3dff830abe184fa1b8ce819ff651cd0fed715a9f793a8a5fb3817ff062837d5142567de68cf5c440d10c3a39bdce1a97"
+    ],
+    "app": {
+      "id": "8154e998-fbce-46a8-82ce-9896a9bd16bf",
+      "name": "bawat-tala",
+      "slug": "bawat-tala",
+      "ownerAccount": {
+        "id": "e82781bb-eb36-4bd4-9a75-ea30a6936574",
+        "name": "jasmine67"
+      }
+    },
+    "distribution": "INTERNAL",
+    "buildProfile": "preview",
+    "appIdentifier": "com.bawattala.app",
+    "sdkVersion": "54.0.0",
+    "appVersion": "1.7.1",
+    "appBuildVersion": "2",
+    "runtime": {
+      "id": "01a0c8bc-ca18-7162-a5b4-ff326582c992",
+      "version": "1.7.1"
+    },
+    "gitCommitHash": "21f7b9976eda48d9cc8a880a9af2ce57efedadc8",
+    "gitCommitMessage": "NEW APP VERSION",
+    "priority": "NORMAL",
+    "createdAt": "2026-09-22T10:50:10.790Z",
+    "updatedAt": "2026-09-22T10:50:38.220Z",
+    "expirationDate": "2026-10-06T10:50:10.839Z",
+    "isForIosSimulator": false
+  },
+  {
+    "id": "076074c3-1ebe-474e-a790-cd142179a81f",
+    "status": "FINISHED",
+    "platform": "ANDROID",
+    "artifacts": {
+      "buildUrl": "https://expo.dev/artifacts/eas/f8wvWTQ07M2zmvXaGkduVMBpXw2TUQpMrdRyRsE1vY8.apk",
+      "applicationArchiveUrl": "https://expo.dev/artifacts/eas/f8wvWTQ07M2zmvXaGkduVMBpXw2TUQpMrdRyRsE1vY8.apk"
+    },
+    "initiatingActor": {
+      "id": "e2142c0e-8dc7-400e-822d-696d10fa23ce",
+      "displayName": "jasmine67"
+    },
+    "logFiles": [
+      "https://storage.googleapis.com/eas-workflows-production/logs/8154e998-fbce-46a8-82ce-9896a9bd16bf/076074c3-1ebe-474e-a790-cd142179a81f/2026-09-22T06%3A04%3A53Z-bc920779-237c-4ca1-b3d4-553c2718adc4.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260922%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260922T105117Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=7a0f0167c3cd87aa41534f7a9fa505ba401815d6af1b515a927ead4024e3922c35c46b805b8b53f9b1d47966551a668b523a0e6a0c274e2cf092830281fdffffd97a694a06994b61e27dd424edfe9a5674546dc1f25520049785de7f9f9d264e85d776b683f35a6243535bfc582933b2ce70c949e8e1948e09c7e818fe1c3b02e0d771c181bb1ab7509e23fe425dc366abfed8c4ec399a2656ee040fd28d5111ad52415af866b7a017ae26aeb29669f567aba3512b8f880d667b13e21dbc951fe0d2d492f5b883bfddd9d4a59f8675bbf713766d3232a985ee75682a3e54782b3913f73fb110f44bd085d7c7741090bb749a28053736300aba17d8a0d79dcb5a"
+    ],
+    "app": {
+      "id": "8154e998-fbce-46a8-82ce-9896a9bd16bf",
+      "name": "bawat-tala",
+      "slug": "bawat-tala",
+      "ownerAccount": {
+        "id": "e82781bb-eb36-4bd4-9a75-ea30a6936574",
+        "name": "jasmine67"
+      }
+    },
+    "distribution": "INTERNAL",
+    "buildProfile": "preview",
+    "appIdentifier": "com.bawattala.app",
+    "sdkVersion": "54.0.0",
+    "appVersion": "1.7",
+    "appBuildVersion": "1",
+    "gitCommitHash": "2438919ca302ce4b958242a8326c7d30e5d51c84",
+    "gitCommitMessage": "fix: stop Jasmine default admin seed from demoting Hannah\n\nPoint ensureDefaultAdminAccount at Hannah, ignore retired Jasmine env,\ndelete basartejasmine on boot, and clear wiped admin sessions.",
+    "priority": "NORMAL",
+    "createdAt": "2026-09-22T06:04:49.089Z",
+    "updatedAt": "2026-09-22T06:19:28.626Z",
+    "completedAt": "2026-09-22T06:19:28.452Z",
+    "expirationDate": "2026-10-06T06:04:49.120Z",
+    "isForIosSimulator": false,
+    "metrics": {
+      "buildWaitTime": 3994,
+      "buildQueueTime": 4448,
+      "buildDuration": 870921
+    }
+  },
+  {
+    "id": "1ae25a03-78c7-43c4-861b-c7ebf063bd38",
+    "status": "FINISHED",
+    "platform": "ANDROID",
+    "artifacts": {
+      "buildUrl": "https://expo.dev/artifacts/eas/ybXLT4kZa3Sxrju5Ywt5572eZg88x0vDmLmpUEV24uM.apk",
+      "applicationArchiveUrl": "https://expo.dev/artifacts/eas/ybXLT4kZa3Sxrju5Ywt5572eZg88x0vDmLmpUEV24uM.apk"
+    },
+    "fingerprint": {
+      "id": "01a0c799-a430-72c8-a1ce-ec3b76184674",
+      "hash": "1351e562aaac63e088c422640d9b99d1e3be3c76"
+    },
+    "initiatingActor": {
+      "id": "e2142c0e-8dc7-400e-822d-696d10fa23ce",
+      "displayName": "jasmine67"
+    },
+    "logFiles": [
+      "https://storage.googleapis.com/eas-workflows-production/logs/8154e998-fbce-46a8-82ce-9896a9bd16bf/1ae25a03-78c7-43c4-861b-c7ebf063bd38/2026-09-22T05%3A32%3A15Z-8cef5c1d-e6a1-46f3-b630-c2b77d6e2382.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260922%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260922T105117Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=35f4c1a2b7650a10ee0fdf825f08fbef32352efcf0101b4fdb4025d950a10d8ebf36b2d7dd37ac59600eede5fa1edb9d5a6c69687e93156c32e7ddb95ebcbe939a511e0cb6a78b54ae49ef52fcbdbb214964255d276e8a553439255ac32d32fb530539233cccfe2eba1b69f6aba4151c432be81c6e96eb2509fe010ad415d78c86f49ff6a8d963c9c041bb3f9e536065ad4c52976ec58202ec5ae3b2bba7ecd12968275cb6e5197b3f38f8496333a76e0f164b5cdc36473a6cf21db4661b4076167b0252593037f7af6debc3d33d2d5236f2f71f9fc21dca26b51c4e9868ad49b63f0a3a69894b1dee56e323d4d4986a684fae0c95dafa082966349e4217352e"
+    ],
+    "app": {
+      "id": "8154e998-fbce-46a8-82ce-9896a9bd16bf",
+      "name": "bawat-tala",
+      "slug": "bawat-tala",
+      "ownerAccount": {
+        "id": "e82781bb-eb36-4bd4-9a75-ea30a6936574",
+        "name": "jasmine67"
+      }
+    },
+    "distribution": "INTERNAL",
+    "buildProfile": "preview",
+    "appIdentifier": "com.bawattala.app",
+    "sdkVersion": "54.0.0",
+    "appVersion": "1.7",
+    "appBuildVersion": "1",
+    "gitCommitHash": "2438919ca302ce4b958242a8326c7d30e5d51c84",
+    "gitCommitMessage": "fix: stop Jasmine default admin seed from demoting Hannah\n\nPoint ensureDefaultAdminAccount at Hannah, ignore retired Jasmine env,\ndelete basartejasmine on boot, and clear wiped admin sessions.",
+    "priority": "NORMAL",
+    "createdAt": "2026-09-22T05:32:10.104Z",
+    "updatedAt": "2026-09-22T05:49:19.294Z",
+    "completedAt": "2026-09-22T05:49:19.101Z",
+    "expirationDate": "2026-10-06T05:32:10.148Z",
+    "isForIosSimulator": false,
+    "metrics": {
+      "buildWaitTime": 3301,
+      "buildQueueTime": 6375,
+      "buildDuration": 1019321
+    }
+  }
+]

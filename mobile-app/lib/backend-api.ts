@@ -250,6 +250,7 @@ type ApiResult = {
 };
 
 type StoredJournalEntry = JournalEntry & {
+  localId?: string;
   syncStatus?: "pending" | "synced";
 };
 
@@ -875,7 +876,13 @@ async function upsertLocalJournalRecord(
 
 async function getLocalJournalRecord(studentNumber: string, entryId: string) {
   const data = await readLocalJournalData(studentNumber);
-  return data.entries[entryId] ?? null;
+  if (data.entries[entryId]) {
+    return data.entries[entryId];
+  }
+  const remapped = Object.values(data.entries).find(
+    (item) => (item.entry as any).localId === entryId,
+  );
+  return remapped ?? null;
 }
 
 async function getLocalJournalRecords(studentNumber: string) {
@@ -986,6 +993,7 @@ async function syncPendingJournalEntries(studentNumber: string) {
           data.entries[remoteEntry.id] = {
             entry: {
               ...remoteEntry,
+              localId: localEntryId,
               concernTags: record.entry.concernTags,
               isFinished: record.entry.isFinished,
               primaryConcern: record.entry.primaryConcern,
@@ -2987,20 +2995,62 @@ export async function finishJournalEntry(payload: {
   primaryConcern?: string;
   studentNumber: string;
 }): Promise<ApiResult & { entry?: JournalEntry; messages?: JournalMessage[] }> {
+  const isLocal = payload.entryId.startsWith("local-");
+
+  // Always persist finish state locally first so nothing is lost if offline or network drops
+  const record = await getLocalJournalRecord(payload.studentNumber, payload.entryId);
+  const now = getNowIsoString();
+  const submittedMessages = normalizeJournalMessages(payload.messages);
+  const messages = submittedMessages.length ? submittedMessages : record?.messages ?? [];
+  const summary = record?.entry?.summary || summarizeLocalMessages(messages);
+  const localEntry: StoredJournalEntry = {
+    ...(record?.entry ?? createLocalJournalEntry(payload.studentNumber, false)),
+    concernTags: payload.concernTags ?? record?.entry?.concernTags ?? [],
+    finishedAt: now,
+    insights: record?.entry?.insights?.length ? record.entry.insights : summary ? [summary] : [],
+    isFinished: true,
+    primaryConcern: payload.primaryConcern ?? payload.concernTags?.[0] ?? record?.entry?.primaryConcern ?? "Others",
+    summary,
+    syncStatus: "pending",
+    updatedAt: now,
+  };
+  await upsertLocalJournalRecord(payload.studentNumber, localEntry, messages, "pending");
+
   try {
-    if (payload.entryId.startsWith("local-")) {
-      throw new Error("Local journal entry.");
+    await syncPendingJournalEntries(payload.studentNumber);
+
+    if (isLocal) {
+      const updatedRecord = await getLocalJournalRecord(payload.studentNumber, payload.entryId);
+      if (updatedRecord && !updatedRecord.entry.id.startsWith("local-")) {
+        return {
+          ok: true,
+          message: "Journal entry finished.",
+          entry: updatedRecord.entry,
+          messages: updatedRecord.messages,
+        };
+      }
+      return {
+        ok: true,
+        message: "Journal entry finished offline and queued to sync.",
+        entry: localEntry,
+        messages,
+      };
     }
-    if (!payload.entryId.startsWith("local-")) {
-      await syncPendingJournalEntries(payload.studentNumber);
-    }
-    const { response, data } = await post("/api/journal/session/finish", payload);
+
+    const { response, data } = await post("/api/journal/session/finish", {
+      concernTags: payload.concernTags,
+      entryId: payload.entryId,
+      forceAnalyze: payload.forceAnalyze,
+      messages,
+      primaryConcern: payload.primaryConcern,
+      studentNumber: payload.studentNumber,
+    });
 
     const normalizedEntry = normalizeJournalEntrySafety(data?.entry as JournalEntry | null | undefined) ?? null;
     const localRecord = await getLocalJournalRecord(payload.studentNumber, payload.entryId);
     const normalizedMessages = data?.messages?.length
       ? normalizeJournalMessages(data.messages)
-      : normalizeJournalMessages(localRecord?.messages ?? []);
+      : normalizeJournalMessages(localRecord?.messages ?? messages);
 
     if (response.ok) {
       await upsertLocalJournalRecord(
@@ -3013,35 +3063,14 @@ export async function finishJournalEntry(payload: {
     return {
       ok: response.ok,
       message: data?.message,
-      entry: normalizedEntry ?? undefined,
-      messages: data?.messages?.length ? normalizedMessages : normalizeJournalMessages(data?.messages ?? []),
+      entry: normalizedEntry ?? localEntry,
+      messages: data?.messages?.length ? normalizedMessages : messages,
     };
   } catch {
-    const record = await getLocalJournalRecord(payload.studentNumber, payload.entryId);
-    if (!record) {
-      return { ok: false, message: "Unable to finish this journal entry offline." };
-    }
-
-    const now = getNowIsoString();
-    const submittedMessages = normalizeJournalMessages(payload.messages);
-    const messages = submittedMessages.length ? submittedMessages : record.messages;
-    const summary = record.entry.summary || summarizeLocalMessages(messages);
-    const entry: StoredJournalEntry = {
-      ...record.entry,
-      concernTags: payload.concernTags ?? record.entry.concernTags,
-      finishedAt: now,
-      insights: record.entry.insights?.length ? record.entry.insights : summary ? [summary] : [],
-      isFinished: true,
-      primaryConcern: payload.primaryConcern ?? payload.concernTags?.[0] ?? record.entry.primaryConcern,
-      summary,
-      syncStatus: "pending",
-      updatedAt: now,
-    };
-    await upsertLocalJournalRecord(payload.studentNumber, entry, messages, "pending");
     return {
       ok: true,
-      message: "Saved offline. This entry will sync when your connection returns.",
-      entry,
+      message: "Journal entry finished offline and queued to sync.",
+      entry: localEntry,
       messages,
     };
   }
@@ -3438,9 +3467,12 @@ export async function fetchJournalEntryById(
 
   try {
     await syncPendingJournalEntries(studentNumber);
-    const params = new URLSearchParams({ studentNumber });
-    const { response, data } = await get(`/api/journal/entries/${entryId}?${params.toString()}`);
     const localRecord = await getLocalJournalRecord(studentNumber, entryId);
+    const targetId = (localRecord?.entry && !localRecord.entry.id.startsWith("local-"))
+      ? localRecord.entry.id
+      : entryId;
+    const params = new URLSearchParams({ studentNumber });
+    const { response, data } = await get(`/api/journal/entries/${targetId}?${params.toString()}`);
     const remoteMessages = normalizeJournalMessages(data?.messages);
     const localMessages = normalizeJournalMessages(localRecord?.messages);
     const remoteEntry = (data?.entry ?? null) as JournalEntry | null;

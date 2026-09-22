@@ -830,15 +830,16 @@ export default function WriteEntryScreen() {
     setIsFinishing(true);
     setErrorMessage("");
     setStatusMessage("");
-    const prioritizedPrimaryConcern =
-      finalTags.find((tag) => CONCERN_TAG_OPTIONS.includes(tag) || INTERPERSONAL_RELATIONSHIP_TAGS.includes(tag)) ||
-      finalTags[0];
-    const result = await finishJournalEntry({
-      concernTags: finalTags,
-      entryId: entry.id,
-      primaryConcern: prioritizedPrimaryConcern,
-      studentNumber: user.studentNumber });
-    setIsFinishing(false);
+   const prioritizedPrimaryConcern =
+     finalTags.find((tag) => CONCERN_TAG_OPTIONS.includes(tag) || INTERPERSONAL_RELATIONSHIP_TAGS.includes(tag)) ||
+     finalTags[0];
+   const result = await finishJournalEntry({
+     concernTags: finalTags,
+     entryId: entry.id,
+     messages,
+     primaryConcern: prioritizedPrimaryConcern,
+     studentNumber: user.studentNumber });
+   setIsFinishing(false);
     setIsSavingTags(false);
 
     if (!result.ok) {
@@ -887,55 +888,77 @@ export default function WriteEntryScreen() {
       setErrorMessage("You need to be logged in to finish this journal entry.");
       return;
     }
-    const studentNumber = user.studentNumber;
-    if (!hasTypedContent) {
-      setErrorMessage("Write something first before finishing your journal entry.");
-      return;
-    }
+   const studentNumber = user.studentNumber;
+   if (!hasTypedContent) {
+     setErrorMessage("Write something first before finishing your journal entry.");
+     return;
+   }
 
-    setIsAnalyzingTags(true);
-    setErrorMessage("");
-    setStatusMessage("");
-    let activeEntry = entry;
+   setErrorMessage("");
+   setStatusMessage("");
+   let activeEntry = entry;
 
-    if (inputValue.trim()) {
-      const sendResult = await sendJournalMessage({
-        aiEnabled,
-        entryId: entry.id,
-        message: inputValue.trim(),
-        studentNumber });
+   if (inputValue.trim()) {
+     setIsAnalyzingTags(true);
+     const sendResult = await sendJournalMessage({
+       aiEnabled,
+       entryId: entry.id,
+       message: inputValue.trim(),
+       studentNumber });
 
-      if (!sendResult.ok || !sendResult.entry) {
-        setIsAnalyzingTags(false);
-        setErrorMessage(sendResult.message ?? "Unable to save your journal entry.");
-        return;
-      }
+     if (!sendResult.ok || !sendResult.entry) {
+       setIsAnalyzingTags(false);
+       setErrorMessage(sendResult.message ?? "Unable to save your journal entry.");
+       return;
+     }
 
-      activeEntry = sendResult.entry;
-      setInputValue("");
-      setEntry(sendResult.entry);
-      setMessages(sendResult.messages ?? []);
-    }
+     activeEntry = sendResult.entry;
+     setInputValue("");
+     setEntry(sendResult.entry);
+     setMessages(sendResult.messages ?? []);
+   }
 
-    const result = await suggestJournalTags({
-      entryId: activeEntry.id,
-      studentNumber });
-    setIsAnalyzingTags(false);
+   const isOffline = !aiEnabled || activeEntry.id.startsWith("local-");
 
-    if (!result.ok) {
-      setErrorMessage(result.message ?? "Unable to suggest tags for this journal entry.");
-      return;
-    }
+   if (!aiEnabled || isOffline) {
+     setIsAnalyzingTags(false);
+     const userSelected = normalizeTagsForReview(activeEntry.concernTags ?? []);
+     setEntry(activeEntry);
+     setSelectedTags(userSelected);
+     setShowTagReviewModal(true);
+     return;
+   }
 
-    const suggestedTags = normalizeTagsForReview(
-      (result.suggestedTags?.length ? result.suggestedTags : result.entry?.concernTags) ?? [],
-    );
-    setEntry(result.entry ?? activeEntry);
-    setSelectedTags(suggestedTags.length ? suggestedTags : ["Others"]);
-    setShowTagReviewModal(true);
-  };
+   setIsAnalyzingTags(true);
+   try {
+     const result = await suggestJournalTags({
+       entryId: activeEntry.id,
+       studentNumber,
+     });
 
-  const handleDistressSaveAccept = () => {
+     if (result.ok) {
+       const suggestedTags = normalizeTagsForReview(
+         (result.suggestedTags?.length ? result.suggestedTags : result.entry?.concernTags) ?? [],
+       );
+       setEntry(result.entry ?? activeEntry);
+       setSelectedTags(suggestedTags.length ? suggestedTags : []);
+     } else {
+       const userSelected = normalizeTagsForReview(activeEntry.concernTags ?? []);
+       setEntry(activeEntry);
+       setSelectedTags(userSelected);
+     }
+     setShowTagReviewModal(true);
+   } catch {
+     const userSelected = normalizeTagsForReview(activeEntry.concernTags ?? []);
+     setEntry(activeEntry);
+     setSelectedTags(userSelected);
+     setShowTagReviewModal(true);
+   } finally {
+     setIsAnalyzingTags(false);
+   }
+ };
+
+ const handleDistressSaveAccept = () => {
     setDistressOfferPhase(null);
     setDistressOfferMessageId(null);
     pendingWellnessAfterFinishRef.current = true;
@@ -1472,24 +1495,28 @@ export default function WriteEntryScreen() {
           </View>
         </Modal>
 
-        <Modal
-          visible={showTagReviewModal}
-          transparent
-          animationType="fade"
-          onRequestClose={() => {
-            if (isSavingTags) return;
-            setShowRelationshipTagModal(false);
-            setShowTagReviewModal(false);
-          }}
-        >
-          <View style={styles.modalBackdrop}>
-            <View style={[styles.modalCard, styles.tagReviewModalCard]}>
-              <Text style={styles.concernTitle}>Review journal tags</Text>
-              <Text style={styles.concernSubtitle}>
-                Muni suggested these tags. You can add or remove tags before saving the finished entry.
-              </Text>
+       <Modal
+         visible={showTagReviewModal}
+         transparent
+         animationType="fade"
+         onRequestClose={() => {
+           if (isSavingTags) return;
+           setShowRelationshipTagModal(false);
+           setShowTagReviewModal(false);
+         }}
+       >
+         <View style={styles.modalBackdrop}>
+           <View style={[styles.modalCard, styles.tagReviewModalCard]}>
+             <Text style={styles.concernTitle}>
+               {!aiEnabled || !entry || entry.id.startsWith("local-") ? "Choose journal tags" : "Review journal tags"}
+             </Text>
+             <Text style={styles.concernSubtitle}>
+               {!aiEnabled || !entry || entry.id.startsWith("local-")
+                 ? "Select the tags that best describe your journal entry before saving."
+                 : "Muni suggested these tags. You can add or remove tags before saving the finished entry."}
+             </Text>
 
-              <ScrollView style={styles.tagReviewScroll} showsVerticalScrollIndicator={false}>
+             <ScrollView style={styles.tagReviewScroll} showsVerticalScrollIndicator={false}>
                 <Text style={styles.tagSectionLabel}>Positive tags</Text>
                 <View style={styles.concernGrid}>
                   {POSITIVE_TAG_OPTIONS.map((tag) => {
