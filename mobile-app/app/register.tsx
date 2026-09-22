@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { isValidEmail, isStrongPassword } from "../lib/auth-validation";
+import { isValidEmail } from "../lib/auth-validation";
 import { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 import { Image } from "expo-image";
 import { router } from "expo-router";
@@ -189,10 +189,14 @@ export default function RegisterScreen() {
   }, [barangay, street]);
 
   const canProceedStepFour = useMemo(() => {
+    // Registration password is the birthdate (app flow). Strong-password rules apply only on later change/reset.
+    const passwordValue = String(password || "").trim();
+    const birthdateValue = String(birthdate || "").trim();
     return (
       isValidEmail(email) &&
-      isValidBirthdate(birthdate) &&
-      isStrongPassword(password)
+      isValidBirthdate(birthdateValue) &&
+      Boolean(passwordValue) &&
+      passwordValue === birthdateValue
     );
   }, [email, birthdate, password]);
 
@@ -326,10 +330,8 @@ export default function RegisterScreen() {
       setErrorMessage("Please enter a valid birthdate.");
       return;
     }
-    if (!isStrongPassword(password)) {
-      setErrorMessage(
-        "Choose a stronger password (8+ chars with upper, lower, number, and symbol).",
-      );
+    if (!String(password || "").trim() || String(password || "").trim() !== String(birthdate || "").trim()) {
+      setErrorMessage("Password must match your birthdate for registration.");
       return;
     }
     if (!canProceedStepFour) {
