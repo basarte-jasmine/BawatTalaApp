@@ -1,4 +1,5 @@
 const { verifyAdminToken, verifyStudentToken } = require("../services/auth-token.service");
+const { query } = require("../config/db");
 
 function normalizeStudentNumber(value) {
   return String(value || "")
@@ -62,13 +63,41 @@ function getAuthenticatedAdmin(req) {
   return null;
 }
 
-function requireAdminAuth(req, res, next) {
+async function requireAdminAuth(req, res, next) {
   const admin = getAuthenticatedAdmin(req);
   if (!admin?.email || !admin.isActive) {
     return res.status(401).json({ message: "Please sign in again." });
   }
-  req.admin = admin;
-  next();
+
+  try {
+    const result = await query(
+      `
+        select
+          id,
+          email,
+          coalesce(nullif(full_name, ''), split_part(email, '@', 1)) as full_name,
+          coalesce(role, 'COUNSELOR') as role,
+          coalesce(profile_picture_url, '') as profile_picture_url,
+          is_active
+        from public.admin_accounts
+        where lower(trim(email)) = lower(trim($1))
+        limit 1
+      `,
+      [admin.email],
+    );
+    const row = result.rows[0];
+    if (!row || !row.is_active) {
+      if (req.session) {
+        req.session.admin = null;
+        req.session = null;
+      }
+      return res.status(401).json({ message: "Please sign in again." });
+    }
+    req.admin = buildAdminSessionPayload(row);
+    return next();
+  } catch (error) {
+    return next(error);
+  }
 }
 
 function requireRoles(...roles) {

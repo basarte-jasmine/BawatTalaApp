@@ -341,11 +341,18 @@ async function listAdminNotifications(adminEmail) {
 }
 
 async function ensureDefaultAdminAccount() {
-  const defaultEmail = normalizeEmail(
-    process.env.ADMIN_DEFAULT_EMAIL || "basartejasmine@gmail.com",
+  // Hard-block the retired Jasmine default so a stale Render env cannot recreate her as Head.
+  const rawDefaultEmail = normalizeEmail(
+    process.env.ADMIN_DEFAULT_EMAIL || "bawattala@gmail.com",
   );
+  const retiredDefaultEmails = new Set(["basartejasmine@gmail.com"]);
+  const defaultEmail = retiredDefaultEmails.has(rawDefaultEmail)
+    ? "bawattala@gmail.com"
+    : rawDefaultEmail;
   const configuredDefaultPassword = String(process.env.ADMIN_DEFAULT_PASSWORD || "");
-  const defaultFullName = String(process.env.ADMIN_DEFAULT_FULL_NAME || "Jasmine Batumbakal");
+  const defaultFullName = retiredDefaultEmails.has(rawDefaultEmail)
+    ? "Hannah Montanna"
+    : String(process.env.ADMIN_DEFAULT_FULL_NAME || "Hannah Montanna");
   const defaultRole = "HEAD_COUNSELOR";
   const defaultGender = String(process.env.ADMIN_DEFAULT_GENDER || "Female");
 
@@ -408,6 +415,15 @@ async function ensureDefaultAdminAccount() {
         and lower(email) <> $1
     `,
     [defaultEmail],
+  );
+
+  // Remove retired Super Admin so Google OAuth / stale cookies cannot revive Jasmine Batumbakal.
+  await query(
+    `
+      delete from public.admin_accounts
+      where lower(trim(email)) = any($1::text[])
+    `,
+    [["basartejasmine@gmail.com"]],
   );
 }
 
@@ -1476,8 +1492,18 @@ router.get("/session", async (req, res) => {
   );
 
   const adminRow = result.rows[0];
-  if (!adminRow?.is_active) {
-    if (req.session) req.session.admin = null;
+  // Missing row (wiped account) or inactive → kill cookie session so browsers cannot keep a ghost login.
+  if (!adminRow || !adminRow.is_active) {
+    if (req.session) {
+      req.session.admin = null;
+      req.session = null;
+    }
+    try {
+      res.clearCookie("bt_admin_session", { path: "/" });
+      res.clearCookie("bt_admin_session.sig", { path: "/" });
+    } catch (_error) {
+      // ignore clearCookie failures
+    }
     return res.status(401).json({ message: "Please sign in again." });
   }
 

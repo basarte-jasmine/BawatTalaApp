@@ -23,7 +23,12 @@ function rememberAdminSession(nextSession) {
 }
 
 function forgetAdminSession() {
-  window.localStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
+  try {
+    window.localStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
+    window.localStorage.removeItem("bt_admin_token");
+  } catch {
+    // ignore storage failures
+  }
 }
 
 
@@ -263,6 +268,11 @@ export default function App() {
         if (!isMounted) return;
         setSession(null);
         forgetAdminSession();
+        try {
+          await adminLogout();
+        } catch {
+          // cookie/session may already be gone
+        }
       } finally {
         if (isMounted) {
           setSessionChecked(true);
