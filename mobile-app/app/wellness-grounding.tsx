@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuthSession } from "../lib/auth-session";
 import { unlockAchievement } from "../lib/achievements";
+import { ConfirmationModal } from "../components/ui/ConfirmationModal";
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
 
@@ -73,12 +74,21 @@ export default function WellnessGroundingScreen() {
   const compact = width < 390;
   const narrow = width < 350;
   const [videoReady, setVideoReady] = useState(false);
+  const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
 
   const meditationPlayer = useVideoPlayer(MEDITATION_VIDEO, (player) => {
     player.loop = false;
     player.volume = 1;
     player.audioMixingMode = "doNotMix";
   });
+
+  const safePause = useCallback(() => {
+    try {
+      if (meditationPlayer && typeof meditationPlayer.pause === "function") {
+        meditationPlayer.pause();
+      }
+    } catch {}
+  }, [meditationPlayer]);
 
   useEffect(() => {
     const loadingFallback = setTimeout(() => {
@@ -87,18 +97,48 @@ export default function WellnessGroundingScreen() {
 
     return () => {
       clearTimeout(loadingFallback);
-      meditationPlayer.pause();
+      safePause();
     };
-  }, [meditationPlayer]);
+  }, [safePause]);
+
+  const doExit = useCallback(() => {
+    safePause();
+    try {
+      if (router.canGoBack()) {
+        router.back();
+        return;
+      }
+    } catch {}
+    try {
+      router.replace("/wellness-tools");
+    } catch {}
+  }, [safePause]);
 
   const handleBack = useCallback(() => {
-    meditationPlayer.pause();
-    if (router.canGoBack()) {
-      router.back();
+    if (showExitConfirmModal) {
+      setShowExitConfirmModal(false);
       return;
     }
-    router.replace("/wellness-tools");
-  }, [meditationPlayer]);
+    const isPlaying = Boolean(meditationPlayer?.playing);
+    if (isPlaying) {
+      safePause();
+      setShowExitConfirmModal(true);
+      return;
+    }
+    doExit();
+  }, [doExit, meditationPlayer?.playing, safePause, showExitConfirmModal]);
+
+  const handleCancelExit = () => {
+    setShowExitConfirmModal(false);
+    try {
+      meditationPlayer?.play();
+    } catch {}
+  };
+
+  const handleConfirmExit = () => {
+    setShowExitConfirmModal(false);
+    doExit();
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -236,6 +276,16 @@ export default function WellnessGroundingScreen() {
           </View>
         </View>
       </ScrollView>
+
+      <ConfirmationModal
+        visible={showExitConfirmModal}
+        message="The grounding video is still playing. Are you sure you want to leave?"
+        confirmLabel="Leave"
+        cancelLabel="Stay"
+        confirmTone="danger"
+        onCancel={handleCancelExit}
+        onConfirm={handleConfirmExit}
+      />
     </SafeAreaView>
   );
 }
