@@ -5,15 +5,15 @@ import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
+  
   Modal,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  View,
-} from "react-native";
+  View, } from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
@@ -357,13 +357,13 @@ export default function MuniAvatarScreen() {
         <View style={styles.previewSection}>
           <View style={styles.heroCard}>
             {equippedBackgroundSource ? (
-              <Image source={equippedBackgroundSource} style={styles.heroBackgroundImage} resizeMode="cover" />
+              <Image source={equippedBackgroundSource} style={styles.heroBackgroundImage} contentFit="cover" />
             ) : null}
             <View style={styles.heroOverlay} />
 
             <View style={styles.heroTopRow}>
               <View style={styles.talaPill}>
-                <Image source={TALA_IMAGE} style={styles.talaIcon} resizeMode="contain" />
+                <Image source={TALA_IMAGE} style={styles.talaIcon} contentFit="contain" />
                 <Text style={styles.talaText}>{availableTala.toLocaleString("en-US")}</Text>
               </View>
 
@@ -515,7 +515,7 @@ export default function MuniAvatarScreen() {
                           <Image
                             source={option.source}
                             style={section.id === "background" ? styles.backgroundOptionImage : styles.optionImage}
-                            resizeMode={section.id === "background" ? "cover" : "contain"}
+                            contentFit={section.id === "background" ? "cover" : "contain"}
                           />
                         </View>
                         <Text style={[styles.optionLabel, selected && styles.optionLabelSelected]} numberOfLines={2}>
@@ -549,7 +549,7 @@ export default function MuniAvatarScreen() {
                           <Image
                             source={option.source}
                             style={section.id === "background" ? styles.shopBackgroundImage : styles.shopOptionImage}
-                            resizeMode={section.id === "background" ? "cover" : "contain"}
+                            contentFit={section.id === "background" ? "cover" : "contain"}
                           />
                         </View>
                         <Text style={styles.shopLabel} numberOfLines={2}>
@@ -581,7 +581,7 @@ export default function MuniAvatarScreen() {
                         ) : (
                           <>
                             <View style={styles.priceRow}>
-                              <Image source={TALA_IMAGE} style={styles.shopPriceIcon} resizeMode="contain" />
+                              <Image source={TALA_IMAGE} style={styles.shopPriceIcon} contentFit="contain" />
                               <Text style={styles.shopPriceText}>{option.price}</Text>
                             </View>
                             <View style={styles.shopActionRow}>
@@ -741,7 +741,7 @@ export default function MuniAvatarScreen() {
                   {singleBuyPrompt.option.label ?? singleBuyPrompt.option.id}
                 </Text>
                 <View style={styles.confirmPriceRow}>
-                  <Image source={TALA_IMAGE} style={styles.confirmPriceIcon} resizeMode="contain" />
+                  <Image source={TALA_IMAGE} style={styles.confirmPriceIcon} contentFit="contain" />
                   <Text style={styles.confirmPriceValue}>{singleBuyPrompt.option.price} Tala</Text>
                 </View>
                 <Text style={styles.confirmBalanceHint}>
@@ -868,7 +868,7 @@ export default function MuniAvatarScreen() {
                       </Text>
                     </View>
                     <View style={styles.cartItemPriceWrap}>
-                      <Image source={TALA_IMAGE} style={styles.cartTalaIcon} resizeMode="contain" />
+                      <Image source={TALA_IMAGE} style={styles.cartTalaIcon} contentFit="contain" />
                       <Text style={[styles.cartItemPriceText, !item.checked && styles.cartItemTextMuted]}>
                         {item.option.price}
                       </Text>
@@ -902,7 +902,7 @@ export default function MuniAvatarScreen() {
                     ):
                   </Text>
                   <View style={styles.cartTotalPriceWrap}>
-                    <Image source={TALA_IMAGE} style={styles.cartTotalTalaIcon} resizeMode="contain" />
+                    <Image source={TALA_IMAGE} style={styles.cartTotalTalaIcon} contentFit="contain" />
                     <Text style={styles.cartTotalPriceText}>{cartTotal}</Text>
                   </View>
                 </View>

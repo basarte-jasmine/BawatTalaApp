@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Easing, Image, ImageSourcePropType, Platform, StyleProp, StyleSheet, View, ViewStyle } from "react-native";
+import { Animated, Easing,  ImageSourcePropType, Platform, StyleProp, StyleSheet, View, ViewStyle } from "react-native";
+import { Image } from "expo-image";
+const AnimatedExpoImage = Animated.createAnimatedComponent(Image);
 import {
   getEyeAccessoryStyle,
   getHeadAccessoryStyle,
@@ -244,33 +246,33 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
       <View style={[styles.scaledShell, scaledShellStyle]}>
         <Animated.View style={[styles.avatarStack, breathingStyle]}>
           <View style={styles.layer}>
-            <Image source={MUNI_RIGHT_HAND} style={styles.layer} resizeMode="contain" />
-            <Animated.Image source={MUNI_LEFT_HAND} style={[styles.layer, leftHandWaveStyle]} resizeMode="contain" />
+            <Image source={MUNI_RIGHT_HAND} style={styles.layer} contentFit="contain" />
+            <AnimatedExpoImage source={MUNI_LEFT_HAND} style={[styles.layer, leftHandWaveStyle]} contentFit="contain" />
           </View>
 
           <Image
             source={MUNI_BODY}
             style={styles.layer}
-            resizeMode="contain"
+            contentFit="contain"
           />
 
           <Image
             source={MUNI_FEET}
             style={[styles.layer, styles.feetLayer]}
-            resizeMode="contain"
+            contentFit="contain"
           />
 
           <Image
             source={BLINK_FRAMES[blinkFrameIndex]}
             style={[styles.layer, styles.faceLayer, isGhostOutfit && styles.ghostFaceLayer]}
-            resizeMode="contain"
+            contentFit="contain"
           />
 
           {equippedOutfitSource ? (
             <Image
               source={equippedOutfitSource}
               style={[styles.layer, equippedOutfitStyle]}
-              resizeMode="contain"
+              contentFit="contain"
             />
           ) : null}
 
@@ -278,7 +280,7 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
             <Image
               source={equippedEyeSource}
               style={[styles.layer, equippedEyeStyle]}
-              resizeMode="contain"
+              contentFit="contain"
             />
           ) : null}
 
@@ -286,7 +288,7 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
             <Image
               source={equippedHeadSource}
               style={[styles.layer, equippedHeadStyle]}
-              resizeMode="contain"
+              contentFit="contain"
             />
           ) : null}
         </Animated.View>
