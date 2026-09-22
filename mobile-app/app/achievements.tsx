@@ -16,6 +16,14 @@ const ACHIEVEMENTS = [
     art: require("../assets/images/Achievements/A gentler first step.webp"),
   },
   {
+    id: "future-bottle",
+    title: "A Bottle for Tomorrow",
+    desc: "Send a message toward your future.",
+    rewardTala: 10,
+    art: require("../assets/images/Achievements/A Bottle for Tomorrow.webp"),
+  },
+
+  {
     id: "a-sky-with-many-colors",
     title: "A Sky With Many Colors",
     desc: "Log every emotion at least once.",

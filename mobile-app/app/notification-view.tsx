@@ -15,6 +15,7 @@ const TALA_IMAGE = require("../assets/images/Tala_Star.png");
 const MUNI_AVATAR = require("../assets/images/MUNI_default.png");
 
 const ACHIEVEMENT_ILLUSTRATIONS: Record<string, any> = {
+  "future-bottle": require("../assets/images/Achievements/A Bottle for Tomorrow.webp"),
   "a-gentler-first-step": require("../assets/images/Achievements/A gentler first step.webp"),
   "a-sky-with-many-colors": require("../assets/images/Achievements/A sky with many colors.webp"),
   "a-softer-minute": require("../assets/images/Achievements/A softer minute_.webp"),
@@ -28,6 +29,7 @@ const ACHIEVEMENT_ILLUSTRATIONS: Record<string, any> = {
 };
 
 const ACHIEVEMENT_DESCRIPTIONS: Record<string, string> = {
+  "future-bottle": "Send a message toward your future.",
   "a-gentler-first-step": "Book your first peer counselor appointment.",
   "a-sky-with-many-colors": "Log every emotion at least once.",
   "a-softer-minute": "Complete one wellness exercise session.",
@@ -41,6 +43,7 @@ const ACHIEVEMENT_DESCRIPTIONS: Record<string, string> = {
 };
 
 const ACHIEVEMENT_STORIES: Record<string, string> = {
+  "future-bottle": "You cast your hopes into the sea, trusting the waves to return them when the time is right.",
   "a-gentler-first-step": "Muni knows that reaching out takes real courage. You took the first step toward healing, and this island just got a little warmer because of you.",
   "a-sky-with-many-colors": "Muni has always believed that every feeling paints the sky a different color. You’ve felt them all—and that means you’re truly alive.",
   "a-softer-minute": "Muni noticed you stopped to breathe. In a world that never stops rushing, you chose to be still—and that’s something worth celebrating.",
@@ -54,6 +57,7 @@ const ACHIEVEMENT_STORIES: Record<string, string> = {
 };
 
 const ACHIEVEMENT_TRIVIA: Record<string, string> = {
+  "future-bottle": "Muni says the island keeps every hopeful message until the right tide carries it onward.",
   "a-gentler-first-step": "Muni once heard that the bravest explorers are the ones who ask for a guide.",
   "a-sky-with-many-colors": "Muni believes emotions are signals from the sky, not storms to be hidden.",
   "a-softer-minute": "Muni once timed a cloud drifting by—it took exactly four breaths. Try it!",
