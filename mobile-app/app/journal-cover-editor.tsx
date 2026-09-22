@@ -9,9 +9,8 @@ import {
     Text,
     TextInput,
     useWindowDimensions,
-    View,
-    Image,
-} from "react-native";
+    View} from "react-native";
+import { Image } from "expo-image";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -52,8 +51,7 @@ const IMAGE_STICKERS = {
   LadyBugStamp: require("../assets/images/Journal Assets/LadyBugStamp.webp"),
   PinkFlower: require("../assets/images/Journal Assets/PinkFlower.webp"),
   SleepingCatStamp: require("../assets/images/Journal Assets/SleepingCatStamp.webp"),
-  Turtle: require("../assets/images/Journal Assets/Turtle.webp"),
-};
+  Turtle: require("../assets/images/Journal Assets/Turtle.webp")};
 
 const STICKERS: { icon: StickerName; label: string; isImage?: boolean }[] = [
   
@@ -78,8 +76,7 @@ const DraggableElement = ({
   element,
   isActive,
   onFocus,
-  onTransformChange,
-}: {
+  onTransformChange}: {
   element: CoverElement;
   isActive: boolean;
   onFocus: () => void;
@@ -133,8 +130,7 @@ const DraggableElement = ({
       { translateY: translateY.value },
       { scale: scale.value },
       { rotateZ: `${rotation.value}rad` },
-    ],
-  }));
+    ]}));
 
   return (
     <GestureDetector gesture={Gesture.Simultaneous(panGesture, pinchGesture, rotationGesture)}>
@@ -148,7 +144,7 @@ const DraggableElement = ({
           {element.type === "text" ? (
             <Text style={[styles.textElement, { color: element.color, fontFamily: element.fontFamily || "Outfit-Bold" }]}>{element.content}</Text>
           ) : element.icon && IMAGE_STICKERS[element.icon as keyof typeof IMAGE_STICKERS] ? (
-            <Image source={IMAGE_STICKERS[element.icon as keyof typeof IMAGE_STICKERS]} style={{ width: 100, height: 100 }} resizeMode="contain" />
+            <Image source={IMAGE_STICKERS[element.icon as keyof typeof IMAGE_STICKERS]} style={{ width: 100, height: 100 }} contentFit="contain" />
           ) : (
             <Ionicons name={element.icon as any} size={42} color="#FFF8E8" />
           )}
@@ -272,8 +268,7 @@ export default function JournalCoverEditorScreen() {
         version: 1,
         color: coverColor,
         elements,
-        previewUri,
-      });
+        previewUri});
       router.back();
     } finally {
       setIsSaving(false);
@@ -366,7 +361,7 @@ Drag, pinch, or rotate your pieces</Text>
             {STICKERS.map((sticker) => (
               <Pressable key={sticker.icon} onPress={() => addSticker(sticker.icon)} style={styles.stickerButton} accessibilityLabel={`Add ${sticker.label} sticker`}>
                 {sticker.isImage ? (
-                  <Image source={IMAGE_STICKERS[sticker.icon as keyof typeof IMAGE_STICKERS]} style={{ width: 30, height: 30 }} resizeMode="contain" />
+                  <Image source={IMAGE_STICKERS[sticker.icon as keyof typeof IMAGE_STICKERS]} style={{ width: 30, height: 30 }} contentFit="contain" />
                 ) : (
                   <Ionicons name={sticker.icon as any} size={23} color="#4D6558" />
                 )}
@@ -491,5 +486,4 @@ const styles = StyleSheet.create({
   fontButtonActive: { borderColor: "#4D6558", backgroundColor: "#E3EBE4" },
   fontButtonText: { color: "#20352B", fontSize: 13 },
   textColorButton: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: "#E6EDE7", shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 2, elevation: 2 },
-  textColorButtonActive: { borderColor: "#20352B", transform: [{ scale: 1.1 }] },
-});
+  textColorButtonActive: { borderColor: "#20352B", transform: [{ scale: 1.1 }] }});
