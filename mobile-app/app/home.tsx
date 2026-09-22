@@ -1205,8 +1205,8 @@ export default function HomeScreen() {
     }
 
     setIsSavingMood(true);
-    const result = await saveDailyMood(user.studentNumber, pendingMoodId, getManilaTodayParts().isoDate, "INPUT");
-    setIsSavingMood(false);
+    try {
+      const result = await saveDailyMood(user.studentNumber, pendingMoodId, getManilaTodayParts().isoDate, "INPUT");
 
     if (result.ok) {
       await recordEmotionForAchievement(result.entry?.moodId ?? pendingMoodId, user.studentNumber);
@@ -1220,6 +1220,12 @@ export default function HomeScreen() {
       setMoodSaveStatus(result.message ?? "Emotion was not saved. Please try again.");
       setMoodSaveStatusTone("error");
       void loadTodayMood();
+      }
+    } catch (e) {
+      setMoodSaveStatus("Emotion was not saved. Please try again.");
+      setMoodSaveStatusTone("error");
+    } finally {
+      setIsSavingMood(false);
     }
   };
 

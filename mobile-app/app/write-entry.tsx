@@ -610,9 +610,8 @@ export default function WriteEntryScreen() {
     setActiveJournalEmotionId(emotionId);
     setIsSavingJournalEmotion(true);
     setErrorMessage("");
-
-    const result = await saveDailyMood(user.studentNumber, emotionId, getManilaTodayParts().isoDate, "JOURNAL");
-    setIsSavingJournalEmotion(false);
+    try {
+      const result = await saveDailyMood(user.studentNumber, emotionId, getManilaTodayParts().isoDate, "JOURNAL");
 
     if (!result.ok) {
       setActiveJournalEmotionId(null);
@@ -627,7 +626,12 @@ export default function WriteEntryScreen() {
     }
 
     setStatusMessage("Emotion check-in saved for today.");
-    setShowEmotionPicker(false);
+      setShowEmotionPicker(false);
+    } catch (e) {
+      setErrorMessage("Unable to save your emotion right now.");
+    } finally {
+      setIsSavingJournalEmotion(false);
+    }
   };
 
   const toggleSelectedTag = (tag: string) => {
