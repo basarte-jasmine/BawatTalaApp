@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import {  ImageSourcePropType, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
+import { Image as RNImage, ImageSourcePropType, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
 import { Image } from "expo-image";
 
 type StudentProfileAvatarProps = {
@@ -47,11 +47,11 @@ export function StudentProfileAvatar({
         ]}
       >
         {imageUrl ? (
-          <Image
+          <RNImage
             accessibilityLabel="Student profile picture"
-            contentFit="cover"
+            resizeMode="cover"
             source={{ uri: imageUrl }}
-            style={{ borderRadius: radius, height: size, width: size }}
+            style={{ height: '100%', width: '100%' }}
           />
         ) : (
           <Ionicons name="person-outline" size={iconSize ?? size * 0.58} color={iconColor} />
