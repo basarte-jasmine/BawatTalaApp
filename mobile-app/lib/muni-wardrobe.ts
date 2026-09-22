@@ -28,9 +28,9 @@ export type MuniOwnedItems = Record<MuniCollectionSectionId, string[]>;
 
 export const DEFAULT_MUNI_LOADOUT: MuniLoadout = {
   background: "garden",
-  head: "beanie",
-  eye: "cinema-glasses",
-  outfit: "spooky-ghost",
+  head: null,
+  eye: null,
+  outfit: null,
 };
 
 export const EMPTY_MUNI_LOADOUT: MuniLoadout = {
@@ -46,7 +46,7 @@ export const COLLECTION_SECTIONS: MuniCollectionSection[] = [
     label: "Head",
     options: [
       { id: "artist-beret", label: "Artist Beret", price: 120, source: require("../assets/images/Muni Customization/Head/Artist_Beret.webp") },
-      { id: "beanie", label: "Beanie", price: 0, starter: true, source: require("../assets/images/Muni Customization/Head/Beanie.webp") },
+      { id: "beanie", label: "Beanie", price: 90, source: require("../assets/images/Muni Customization/Head/Beanie.webp") },
       { id: "blue-bandana", label: "Blue Bandana", price: 80, source: require("../assets/images/Muni Customization/Head/Blue bandana.webp") },
       { id: "green-bandana", label: "Green Bandana", price: 80, source: require("../assets/images/Muni Customization/Head/Green bandana.webp") },
       { id: "red-bandana", label: "Red Bandana", price: 80, source: require("../assets/images/Muni Customization/Head/Red bandana.webp") },
@@ -65,7 +65,7 @@ export const COLLECTION_SECTIONS: MuniCollectionSection[] = [
     id: "eye",
     label: "Eye",
     options: [
-      { id: "cinema-glasses", label: "Cinema Glasses", price: 0, starter: true, source: require("../assets/images/Muni Customization/Eyes/Cinema_Glasses.webp") },
+      { id: "cinema-glasses", label: "Cinema Glasses", price: 110, source: require("../assets/images/Muni Customization/Eyes/Cinema_Glasses.webp") },
       { id: "circle-sunglasses", label: "Circle Sunglasses", price: 95, source: require("../assets/images/Muni Customization/Eyes/Circle_Sunglasses.webp") },
       { id: "cyber-visor", label: "Cyber Visor", price: 140, source: require("../assets/images/Muni Customization/Eyes/Cyber_Visor.webp") },
     ],
@@ -80,7 +80,7 @@ export const COLLECTION_SECTIONS: MuniCollectionSection[] = [
       { id: "denim-vest", label: "Denim Vest", price: 130, source: require("../assets/images/Muni Customization/Outfit/Demin vest.webp") },
       { id: "explorer-vest", label: "Explorer Vest", price: 156, source: require("../assets/images/Muni Customization/Outfit/Explorer vest.webp") },
       { id: "green-jumper", label: "Green Jumper", price: 130, source: require("../assets/images/Muni Customization/Outfit/Green jumper.webp") },
-      { id: "spooky-ghost", label: "Spooky Ghost", price: 0, starter: true, source: require("../assets/images/Muni Customization/Outfit/Spooky_Ghost_Sheet.webp") },
+      { id: "spooky-ghost", label: "Spooky Ghost", price: 160, source: require("../assets/images/Muni Customization/Outfit/Spooky_Ghost_Sheet.webp") },
       { id: "yellow-vest", label: "Yellow Vest", price: 130, source: require("../assets/images/Muni Customization/Outfit/Yellow vest.webp") },
     ],
   },
