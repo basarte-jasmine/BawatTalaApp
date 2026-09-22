@@ -93,7 +93,10 @@ export default function WellnessGroundingScreen() {
 
   const handleBack = useCallback(() => {
     meditationPlayer.pause();
-    // Always return to wellness tools — never pop past the tools menu / exit the app.
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
     router.replace("/wellness-tools");
   }, [meditationPlayer]);
 
