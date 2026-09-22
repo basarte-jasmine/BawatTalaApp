@@ -165,33 +165,37 @@ function getReadingAchievementByKey(key) {
   return READING_ACHIEVEMENTS.find((achievement) => achievement.key === key) || null;
 }
 
-function fetchJson(url, { headers = {}, serviceName = "Library API" } = {}) {
+function fetchJson(url, { headers = {}, serviceName = "Library API", timeoutMs = 8000 } = {}) {
   return new Promise((resolve, reject) => {
-    https
-      .get(url, { headers }, (response) => {
-        let body = "";
-        response.setEncoding("utf8");
-        response.on("data", (chunk) => {
-          body += chunk;
-        });
-        response.on("end", () => {
-          let parsed = {};
-          try {
-            parsed = body ? JSON.parse(body) : {};
-          } catch (error) {
-            reject(new Error(`${serviceName} returned an unreadable response.`));
-            return;
-          }
+    const request = https.get(url, { headers }, (response) => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => {
+        body += chunk;
+      });
+      response.on("end", () => {
+        let parsed = {};
+        try {
+          parsed = body ? JSON.parse(body) : {};
+        } catch (error) {
+          reject(new Error(`${serviceName} returned an unreadable response.`));
+          return;
+        }
 
-          if (response.statusCode < 200 || response.statusCode >= 300) {
-            reject(new Error(parsed?.error?.message || parsed?.message || `${serviceName} request failed.`));
-            return;
-          }
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          reject(new Error(parsed?.error?.message || parsed?.message || `${serviceName} request failed.`));
+          return;
+        }
 
-          resolve(parsed);
-        });
-      })
-      .on("error", reject);
+        resolve(parsed);
+      });
+    });
+
+    request.setTimeout(clampInteger(Number(timeoutMs), 1000, 30000, 8000), () => {
+      request.destroy();
+      reject(new Error(`${serviceName} timed out.`));
+    });
+    request.on("error", reject);
   });
 }
 
@@ -707,13 +711,15 @@ async function resolveOpenLibraryDisplayItem(item) {
   if (!access) return null;
 
   if (isOpenLibraryFreeFullBook(item) && sourceId) {
-    try {
-      const downloadUrl = await fetchOpenLibraryEpubDownloadUrl(sourceId);
-      access = getOpenLibraryAccess(item, sourceId, true);
-      return { ...item, access, downloadUrl, sourceId };
-    } catch {
-      return { ...item, access, sourceId };
-    }
+    access = getOpenLibraryAccess(item, sourceId, true);
+    return {
+      ...item,
+      access,
+      sourceId,
+      // List path skips archive.org metadata probes (too slow for mobile 15s timeout).
+      // download endpoint still resolves the real EPUB URL on borrow.
+      downloadableEpub: true,
+    };
   }
 
   return { ...item, access, sourceId };
@@ -743,16 +749,20 @@ function scoreOpenLibraryDisplayItem(item) {
 
 async function getOpenLibraryDisplayItems(items, maxResults) {
   const resolved = [];
-  const batchSize = clampInteger(Number(process.env.OPEN_LIBRARY_DOWNLOADABLE_CHECK_BATCH_SIZE), 1, 6, 3);
-  // Probe enough candidates so borrowable EPUBs can bubble to the top.
-  const probeLimit = Math.min(items.length, Math.max(maxResults * 3, maxResults));
+  const batchSize = clampInteger(Number(process.env.OPEN_LIBRARY_DOWNLOADABLE_CHECK_BATCH_SIZE), 1, 8, 6);
+  // Keep this under the mobile client 15s fetch timeout (catalog + curated searches already take several seconds).
+  const probeLimit = Math.min(items.length, Math.max(maxResults * 2, maxResults));
+  const deadlineMs = clampInteger(Number(process.env.OPEN_LIBRARY_LIST_BUDGET_MS), 3000, 14000, 9000);
+  const startedAt = Date.now();
 
   for (let index = 0; index < probeLimit; index += batchSize) {
+    if (Date.now() - startedAt >= deadlineMs) break;
     const batch = items.slice(index, index + batchSize);
     const results = await Promise.all(batch.map(resolveOpenLibraryDisplayItem));
     for (const item of results) {
       if (item) resolved.push(item);
     }
+    if (resolved.length >= maxResults * 2) break;
   }
 
   resolved.sort((left, right) => scoreOpenLibraryDisplayItem(right) - scoreOpenLibraryDisplayItem(left));
@@ -797,10 +807,10 @@ function isOpenLibraryLendable(book) {
 
 function hasFreeEpubDownload(book) {
   if (!book || typeof book !== "object") return false;
+  if (book.downloadableEpub === true) return true;
   const downloadUrl = String(book.downloadUrl || "").trim();
   if (!downloadUrl) return false;
-  if (book.downloadableEpub === true) return true;
-  return /\.epub(\?\|$)/i.test(downloadUrl) || /\/epub\b/i.test(downloadUrl);
+  return /\.epub(\?|$)/i.test(downloadUrl) || /\/epub\b/i.test(downloadUrl);
 }
 
 function decorateBookBorrowability(book) {
@@ -1522,7 +1532,7 @@ router.get("/books", requireStudentOnlyAuth, async (req, res) => {
       return Array.isArray(data.docs) ? data.docs : [];
     }
 
-    const primaryDocs = await fetchOpenLibraryDocs(searchQuery, searchLimit, page);
+    const primaryDocs = await fetchOpenLibraryDocs(searchQuery, searchLimit, page).catch(() => []);
     let mergedDocs = [...primaryDocs];
 
     // On default browse (and first page), seed famous modern self-help titles.
@@ -1535,6 +1545,10 @@ router.get("/books", requireStudentOnlyAuth, async (req, res) => {
       for (const batch of curatedBatches) {
         mergedDocs.push(...batch);
       }
+    }
+
+    if (!mergedDocs.length) {
+      throw new Error("Open Library catalog is temporarily unreachable. Please try again.");
     }
 
     const seenKeys = new Set();

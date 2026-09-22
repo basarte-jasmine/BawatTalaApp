@@ -1,3 +1,65 @@
+const { PROGRAM_OPTIONS } = require("../constants/student-profile");
+function toTitleCase(value) {
+  const ROMAN_NUMERALS = new Set([
+    "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X",
+    "XI", "XII", "XIII", "XIV", "XV", "XVI", "XVII", "XVIII", "XIX", "XX"
+  ]);
+
+  const LOWERCASE_PARTICLES = new Set([
+    "de", "del", "la", "los", "las", "da", "di", "van", "von", "y"
+  ]);
+
+  function formatSegment(segment) {
+    if (!segment) return "";
+    const upper = segment.toUpperCase();
+    if (ROMAN_NUMERALS.has(upper)) return upper;
+    if (upper === "JR" || upper === "JR.") return upper.endsWith(".") ? "Jr." : "Jr";
+    if (upper === "SR" || upper === "SR.") return upper.endsWith(".") ? "Sr." : "Sr";
+
+    if (/^[a-zA-Z]'[a-zA-Z]/.test(segment)) {
+      const parts = segment.split("'");
+      return parts
+        .map((p, i) => (i === 0 ? p.toUpperCase() : formatSegment(p)))
+        .join("'");
+    }
+
+    if (/^mc[a-z]/i.test(segment) && segment.length > 2) {
+      return "Mc" + segment.charAt(2).toUpperCase() + segment.slice(3).toLowerCase();
+    }
+
+    return segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase();
+  }
+
+  function formatWord(word, index) {
+    if (!word) return "";
+    const lower = word.toLowerCase();
+
+    if (word.includes("-")) {
+      return word
+        .split("-")
+        .map((part, pIdx) => {
+          if (index > 0 && pIdx === 0 && LOWERCASE_PARTICLES.has(part.toLowerCase())) {
+            return part.toLowerCase();
+          }
+          return formatSegment(part);
+        })
+        .join("-");
+    }
+
+    if (index > 0 && LOWERCASE_PARTICLES.has(lower)) {
+      return lower;
+    }
+
+    return formatSegment(word);
+  }
+
+  const raw = String(value || "").trim().replace(/\s+/g, " ");
+  if (!raw) return "";
+
+  const words = raw.split(" ");
+  return words.map((w, idx) => formatWord(w, idx)).join(" ");
+}
+
 const express = require("express");
 const { createHash, randomBytes } = require("crypto");
 const { dbPool } = require("../config/db");
@@ -38,6 +100,11 @@ const SUPPORT_TYPE_PEER = "PEER";
 const COUNSELING_TYPE_OPTIONS = ["1-on-1", "Group"];
 const COUNSELING_TYPE_VALUES = new Set(COUNSELING_TYPE_OPTIONS);
 const STUDENT_NUMBER_PATTERN = /^\d{2}-\d{4}$/;
+
+function normalizeProgram(value) {
+  const raw = String(value || "").trim().replace(/\s+/g, " ");
+  return PROGRAM_OPTIONS.find((option) => option.toLowerCase() === raw.toLowerCase()) || "";
+}
 
 function resolveRequestStudentNumber(req) {
   const fromAuth = resolveStudentNumber(req) || getAuthenticatedStudent(req)?.studentNumber;
@@ -1819,7 +1886,7 @@ function toAppointmentResponse(row) {
       gender: row.counselor_gender,
       pictureUrl: row.counselor_picture_url || "",
       studentNumber: row.peer_student_number || "",
-      program: row.peer_program || "",
+      program: normalizeProgram(row.peer_program) || row.peer_program || "",
       supportType: normalizeSupportType(row.support_type),
     },
   };
@@ -2526,7 +2593,7 @@ router.get("/counselors", requireStudentOrAdminAuth, async (req, res) => {
         pictureUrl: row.profile_picture_url || "",
         specialties: [],
         studentNumber: row.student_number || "",
-        program: row.program || "",
+        program: normalizeProgram(row.program) || row.program || "",
         supportType: SUPPORT_TYPE_PEER,
       })),
     ],
@@ -2623,7 +2690,7 @@ router.get("/availability", requireStudentOrAdminAuth, async (req, res) => {
       gender: counselor.gender,
       pictureUrl: counselor.profile_picture_url || "",
       studentNumber: counselor.student_number || "",
-      program: counselor.program || "",
+      program: normalizeProgram(counselor.program) || counselor.program || "",
       supportType,
     },
     month,
@@ -2829,7 +2896,7 @@ router.post("/admin/book", async (req, res) => {
         gender: counselor.gender,
         pictureUrl: counselor.profile_picture_url || "",
         studentNumber: counselor.student_number || "",
-        program: counselor.program || "",
+      program: normalizeProgram(counselor.program) || counselor.program || "",
         supportType,
       },
       decisionDueAt: getDecisionDeadlineIso(appointment.created_at),
@@ -3052,7 +3119,7 @@ router.post("/book", requireStudentOnlyAuth, async (req, res) => {
         gender: counselor.gender,
         pictureUrl: counselor.profile_picture_url || "",
         studentNumber: counselor.student_number || "",
-        program: counselor.program || "",
+      program: normalizeProgram(counselor.program) || counselor.program || "",
         supportType,
       },
       decisionDueAt: getDecisionDeadlineIso(appointment.created_at),
@@ -3681,7 +3748,7 @@ router.get("/student", requireStudentOnlyAuth, async (req, res) => {
       gender: row.counselor_gender,
       pictureUrl: row.counselor_picture_url || "",
       studentNumber: row.peer_student_number || "",
-      program: row.peer_program || "",
+      program: normalizeProgram(row.peer_program) || row.peer_program || "",
       supportType: normalizeSupportType(row.support_type),
     },
   }));
@@ -3812,7 +3879,7 @@ router.get("/admin/overview", async (req, res) => {
     id: row.id,
     studentNumber: row.student_number,
     studentName: row.student_name,
-    program: row.program || "",
+    program: normalizeProgram(row.program) || row.program || "",
     concern: row.concern,
     counselingType: row.counseling_type || "",
     appointmentDate: normalizeDateValue(row.appointment_date),
@@ -3829,7 +3896,7 @@ router.get("/admin/overview", async (req, res) => {
     counselorName: row.counselor_name,
     counselorRole: toRoleLabel(row.counselor_role, row.support_type),
     peerStudentNumber: row.peer_student_number || "",
-    peerProgram: row.peer_program || "",
+    peerProgram: normalizeProgram(row.peer_program) || row.peer_program || "",
     createdByAdminEmail: row.created_by_admin_email || "",
     createdByAdminName: row.created_by_admin_name || "",
     createdByAdminRole: toRoleLabel(row.created_by_admin_role),
@@ -3853,7 +3920,7 @@ router.get("/admin/overview", async (req, res) => {
       pictureUrl: row.profile_picture_url || "",
       specialties: isPeerSupportType(supportType) ? [] : Array.isArray(row.specialties) ? row.specialties : [],
       studentNumber: row.student_number || "",
-      program: row.program || "",
+      program: normalizeProgram(row.program) || row.program || "",
       supportType,
       isActive: row.is_active !== false,
     })),
@@ -3866,7 +3933,7 @@ router.get("/admin/overview", async (req, res) => {
       pictureUrl: row.profile_picture_url || "",
       specialties: [],
       studentNumber: row.student_number || "",
-      program: row.program || "",
+      program: normalizeProgram(row.program) || row.program || "",
       supportType: SUPPORT_TYPE_PEER,
       isActive: Boolean(row.is_active) && normalizePeerInvitationStatus(row.invitation_status, "ACCEPTED") === "ACCEPTED",
       invitationStatus: normalizePeerInvitationStatus(row.invitation_status, row.is_active ? "ACCEPTED" : "DECLINED"),
@@ -3954,7 +4021,7 @@ router.get("/admin/peer-counselors", async (_req, res) => {
       fullName: row.full_name,
       gender: row.gender,
       studentNumber: row.student_number || "",
-      program: row.program || "",
+      program: normalizeProgram(row.program) || row.program || "",
       pictureUrl: row.profile_picture_url || "",
       googleProfilePictureUrl: "",
       specialties: [],
@@ -3980,13 +4047,13 @@ router.post("/admin/peer-counselors", requireRoles("HEAD_COUNSELOR"), async (req
   const email = String(req.body.email || "").trim().toLowerCase();
   const gender = normalizePeerGender(req.body.gender);
   const studentNumber = String(req.body.studentNumber || "").trim();
-  const program = String(req.body.program || "").trim().replace(/\s+/g, " ");
+  const program = normalizeProgram(req.body.program);
   const actorAdmin = sessionActorAdmin(req);
   const actorEmail = actorAdmin.email;
   const specialties = [];
 
   if (!fullName || !email || !studentNumber || !program) {
-    return res.status(400).json({ message: "Name, Gmail, student number, and program are required." });
+    return res.status(400).json({ message: "Name, Gmail, student number, and a program from the list are required." });
   }
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
     return res.status(400).json({ message: "Valid student number is required." });
@@ -4074,7 +4141,7 @@ router.post("/admin/peer-counselors", requireRoles("HEAD_COUNSELOR"), async (req
       fullName: peerCounselor.full_name,
       gender: peerCounselor.gender,
       studentNumber: peerCounselor.student_number || "",
-      program: peerCounselor.program || "",
+      program: normalizeProgram(peerCounselor.program) || peerCounselor.program || "",
       pictureUrl: peerCounselor.profile_picture_url || "",
       specialties: [],
       isActive: Boolean(peerCounselor.is_active) && invitationStatus === "ACCEPTED",
@@ -4091,14 +4158,14 @@ router.patch("/admin/peer-counselors/:peerCounselorId", requireRoles("HEAD_COUNS
   const email = String(req.body.email || "").trim().toLowerCase();
   const gender = normalizePeerGender(req.body.gender);
   const studentNumber = String(req.body.studentNumber || "").trim();
-  const program = String(req.body.program || "").trim().replace(/\s+/g, " ");
+  const program = normalizeProgram(req.body.program);
   const isActive = typeof req.body.isActive === "boolean" ? req.body.isActive : null;
   const actorAdmin = sessionActorAdmin(req);
   const actorEmail = actorAdmin.email;
   const specialties = [];
 
   if (!peerCounselorId || !fullName || !email || !studentNumber || !program) {
-    return res.status(400).json({ message: "Peer counselor details are required." });
+    return res.status(400).json({ message: "Peer counselor details, including a program from the list, are required." });
   }
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
     return res.status(400).json({ message: "Valid student number is required." });
@@ -4184,7 +4251,7 @@ router.patch("/admin/peer-counselors/:peerCounselorId", requireRoles("HEAD_COUNS
       fullName: peerCounselor.full_name,
       gender: peerCounselor.gender,
       studentNumber: peerCounselor.student_number || "",
-      program: peerCounselor.program || "",
+      program: normalizeProgram(peerCounselor.program) || peerCounselor.program || "",
       pictureUrl: peerCounselor.profile_picture_url || "",
       specialties: [],
       isActive: Boolean(peerCounselor.is_active) && invitationStatus === "ACCEPTED",

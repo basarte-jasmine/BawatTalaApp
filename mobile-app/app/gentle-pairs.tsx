@@ -109,7 +109,7 @@ export default function GentlePairsScreen() {
           if (!rewardClaimedRef.current) {
             rewardClaimedRef.current = true;
             claimMiniResetReward({ activityId: "gentle-pairs", level, roundKey: `gentle-pairs-${Date.now()}`, rounds: Math.max(0, round - 1), score })
-              .then((reward) => setRewardTala(reward.rewardTala))
+              .then((reward) => setRewardTala(reward.rewardTala ?? 0))
               .catch(() => undefined);
           }
           if (score > bestScoreRef.current) bestScoreRef.current = score;

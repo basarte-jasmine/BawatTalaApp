@@ -4,6 +4,9 @@ const MUNI_CATALOG = {
   head: [
     { id: "artist-beret", label: "Artist Beret", price: 120 },
     { id: "beanie", label: "Beanie", price: 0, starter: true },
+    { id: "blue-bandana", label: "Blue Bandana", price: 80 },
+    { id: "green-bandana", label: "Green Bandana", price: 80 },
+    { id: "red-bandana", label: "Red Bandana", price: 80 },
     { id: "clown-wig", label: "Clown Wig", price: 140 },
     { id: "cowboy-hat", label: "Cowboy Hat", price: 130 },
     { id: "knight-helmet", label: "Knight Helmet", price: 180 },
@@ -21,7 +24,13 @@ const MUNI_CATALOG = {
   ],
   outfit: [
     { id: "classic", label: "Classic Muni", price: 0, starter: true },
+    { id: "brown-jumper", label: "Brown Jumper", price: 130 },
+    { id: "denim-jumper", label: "Denim Jumper", price: 143 },
+    { id: "denim-vest", label: "Denim Vest", price: 130 },
+    { id: "explorer-vest", label: "Explorer Vest", price: 156 },
+    { id: "green-jumper", label: "Green Jumper", price: 130 },
     { id: "spooky-ghost", label: "Spooky Ghost", price: 0, starter: true },
+    { id: "yellow-vest", label: "Yellow Vest", price: 130 },
   ],
   background: [
     { id: "beach", label: "Beach", price: 120 },

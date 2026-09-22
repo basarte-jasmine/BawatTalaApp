@@ -129,6 +129,7 @@ export const LEGACY_EMOTION_ALIASES: Record<string, string> = {
   lonely: "sadness",
   overwhelmed: "anxiety",
   sad: "sadness",
+  stress: "anxiety",
   stressed: "anxiety",
   tired: "disappointment",
 };

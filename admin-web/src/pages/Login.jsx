@@ -94,7 +94,15 @@ export default function Login({ onLogin }) {
       if (requestError?.retryAfterSeconds) {
         setLockCountdown(Number(requestError.retryAfterSeconds));
       }
-      setError(requestError?.message || "Invalid email or password. Please try again.");
+      const raw = String(requestError?.message || "");
+      const isNetwork =
+        requestError?.name === "TypeError" ||
+        /failed to fetch|networkerror|load failed|network request failed/i.test(raw);
+      setError(
+        isNetwork
+          ? "We could not reach the server. Check that the backend is running and try again."
+          : raw || "Invalid email or password. Please try again.",
+      );
     } finally {
       setSubmitting(false);
     }

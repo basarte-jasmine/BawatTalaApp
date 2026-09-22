@@ -33,10 +33,12 @@ type AppPreferencesContextValue = {
   muniRemindersEnabled: boolean;
   notificationPreviewsEnabled: boolean;
   privateJournalModeEnabled: boolean;
+  profileFrameId: string | null;
   setAppLockAutoLock: (value: boolean) => void;
   setMuniRemindersEnabled: (value: boolean) => Promise<{ ok: boolean; message?: string }>;
   setNotificationPreviewsEnabled: (value: boolean) => void;
   setPrivateJournalModeEnabled: (value: boolean) => void;
+  setProfileFrameId: (value: string | null) => Promise<{ ok: boolean; message?: string }>;
   resendAppLockResetCode: () => Promise<{ ok: boolean; message?: string; resendAfterSeconds?: number }>;
   resetAppLockWithEmailCode: (journalLockPin: string) => Promise<{ ok: boolean; message?: string }>;
   sendAppLockResetCode: () => Promise<{ ok: boolean; message?: string; resendAfterSeconds?: number }>;
@@ -53,6 +55,7 @@ const DEFAULT_PREFERENCES: StudentPreferences = {
   journalLockEnabled: false,
   notificationPreviewsEnabled: true,
   privateJournalModeEnabled: true,
+  profileFrameId: null,
 };
 
 export function AppPreferencesProvider({ children }: PropsWithChildren) {
@@ -62,6 +65,9 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
   );
   const [privateJournalModeEnabled, setPrivateJournalModeEnabledState] = useState(
     DEFAULT_PREFERENCES.privateJournalModeEnabled,
+  );
+  const [profileFrameId, setProfileFrameIdState] = useState<string | null>(
+    DEFAULT_PREFERENCES.profileFrameId ?? null,
   );
   const [appLockEnabled, setAppLockEnabled] = useState(false);
   const [hasAppLockPin, setHasAppLockPin] = useState(false);
@@ -77,6 +83,7 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
   const applyPreferences = useCallback((preferences: StudentPreferences) => {
     setNotificationPreviewsEnabledState(preferences.notificationPreviewsEnabled);
     setPrivateJournalModeEnabledState(preferences.privateJournalModeEnabled);
+    setProfileFrameIdState(preferences.profileFrameId ?? null);
     setAppLockAutoLockState(preferences.journalLockAutoLock);
     setAppLockEnabled(preferences.journalLockEnabled);
     setHasAppLockPin(preferences.hasJournalLockPin);
@@ -314,6 +321,12 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
         setPrivateJournalModeEnabledState(nextValue);
         void persistPreferences({ privateJournalModeEnabled: nextValue });
       },
+      profileFrameId,
+      setProfileFrameId: async (nextFrameId: string | null) => {
+        const cleanedFrame = typeof nextFrameId === "string" && nextFrameId.trim() ? nextFrameId.trim() : null;
+        setProfileFrameIdState(cleanedFrame);
+        return await persistPreferences({ profileFrameId: cleanedFrame });
+      },
       sendAppLockResetCode: async () => {
         if (!studentNumber) {
           return { ok: false, message: "Student session is missing." };
@@ -394,6 +407,7 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
       persistPreferences,
       privateJournalModeEnabled,
       resetPreferences,
+      profileFrameId,
       studentNumber,
       user?.firstName,
     ],

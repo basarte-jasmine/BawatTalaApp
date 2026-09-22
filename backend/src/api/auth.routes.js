@@ -5,6 +5,11 @@ const {
   supabaseAuthClient,
 } = require("../config/supabase");
 const { query } = require("../config/db");
+const {
+  getLoginLockout,
+  registerFailedLoginAttempt,
+  clearLoginLockout,
+} = require("../services/login-lockout.service");
 const { requireStudentOnlyAuth, resolveStudentNumber } = require("../middleware/auth.middleware");
 const { createStudentToken } = require("../services/auth-token.service");
 const { sendAuthCodeEmail, sendPasswordResetCodeEmail } = require("../services/auth-email.service");
@@ -32,7 +37,6 @@ const REFERRAL_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const REFERRAL_CODE_LENGTH = 9;
 const REFERRAL_JOIN_REWARD_TALA = 100;
 const REFERRAL_INVITE_REWARD_TALA = 150;
-const loginAttempts = new Map();
 const registrationOtpSessions = new Map();
 const resetPasswordSessions = new Map();
 const journalLockResetSessions = new Map();
@@ -42,6 +46,7 @@ const DEFAULT_STUDENT_PREFERENCES = {
   journalLockEnabled: false,
   notificationPreviewsEnabled: true,
   privateJournalModeEnabled: true,
+  profileFrameId: null,
 };
 
 function normalizeCompactSpaces(value) {
@@ -62,20 +67,68 @@ function normalizeStudentGender(value) {
   const normalized = normalizeCompactSpaces(value).toLowerCase();
   if (normalized === "male") return "Male";
   if (normalized === "female") return "Female";
-  if (normalized === "prefer not to say") return "Female";
-  return "";
+    return "";
 }
 
 function toTitleCase(value) {
-  return normalizeCompactSpaces(value)
-    .toLowerCase()
-    .split(" ")
-    .filter(Boolean)
-    .map((part) => {
-      const [first = "", ...rest] = Array.from(part);
-      return first.toUpperCase() + rest.join("");
-    })
-    .join(" ");
+  const ROMAN_NUMERALS = new Set([
+    "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X",
+    "XI", "XII", "XIII", "XIV", "XV", "XVI", "XVII", "XVIII", "XIX", "XX"
+  ]);
+
+  const LOWERCASE_PARTICLES = new Set([
+    "de", "del", "la", "los", "las", "da", "di", "van", "von", "y"
+  ]);
+
+  function formatSegment(segment) {
+    if (!segment) return "";
+    const upper = segment.toUpperCase();
+    if (ROMAN_NUMERALS.has(upper)) return upper;
+    if (upper === "JR" || upper === "JR.") return upper.endsWith(".") ? "Jr." : "Jr";
+    if (upper === "SR" || upper === "SR.") return upper.endsWith(".") ? "Sr." : "Sr";
+
+    if (/^[a-zA-Z]'[a-zA-Z]/.test(segment)) {
+      const parts = segment.split("'");
+      return parts
+        .map((p, i) => (i === 0 ? p.toUpperCase() : formatSegment(p)))
+        .join("'");
+    }
+
+    if (/^mc[a-z]/i.test(segment) && segment.length > 2) {
+      return "Mc" + segment.charAt(2).toUpperCase() + segment.slice(3).toLowerCase();
+    }
+
+    return segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase();
+  }
+
+  function formatWord(word, index) {
+    if (!word) return "";
+    const lower = word.toLowerCase();
+
+    if (word.includes("-")) {
+      return word
+        .split("-")
+        .map((part, pIdx) => {
+          if (index > 0 && pIdx === 0 && LOWERCASE_PARTICLES.has(part.toLowerCase())) {
+            return part.toLowerCase();
+          }
+          return formatSegment(part);
+        })
+        .join("-");
+    }
+
+    if (index > 0 && LOWERCASE_PARTICLES.has(lower)) {
+      return lower;
+    }
+
+    return formatSegment(word);
+  }
+
+  const raw = String(value || "").trim().replace(/\s+/g, " ");
+  if (!raw) return "";
+
+  const words = raw.split(" ");
+  return words.map((w, idx) => formatWord(w, idx)).join(" ");
 }
 
 function normalizeStudentNumber(value) {
@@ -117,29 +170,20 @@ function verifyPassword(value, stored) {
   }
 }
 
-function getLoginAttemptState(key) {
-  const state = loginAttempts.get(key);
-  if (!state) {
-    return { count: 0, lockUntil: 0 };
-  }
-  return state;
+async function getLoginAttemptState(key) {
+  return getLoginLockout("student", key);
 }
 
-function registerFailedAttempt(key) {
-  const now = Date.now();
-  const state = getLoginAttemptState(key);
-  const updatedCount = state.count + 1;
+async function registerFailedAttempt(key) {
+  const result = await registerFailedLoginAttempt("student", key, {
+    limit: LOGIN_ATTEMPTS_LIMIT,
+    lockDurationMs: LOGIN_LOCK_DURATION_MS,
+  });
+  return Boolean(result.locked);
+}
 
-  if (updatedCount >= LOGIN_ATTEMPTS_LIMIT) {
-    loginAttempts.set(key, {
-      count: 0,
-      lockUntil: now + LOGIN_LOCK_DURATION_MS,
-    });
-    return true;
-  }
-
-  loginAttempts.set(key, { count: updatedCount, lockUntil: 0 });
-  return false;
+async function clearLoginAttemptState(key) {
+  await clearLoginLockout("student", key);
 }
 
 function getResetSession(studentNumber) {
@@ -283,16 +327,16 @@ const STUDENT_PROFILE_SELECT =
 
 function normalizeBirthdate(value) {
   const raw = normalizeCompactSpaces(value);
-  const matchIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (matchIso) {
-    return matchIso[1] + "-" + matchIso[2] + "-" + matchIso[3];
-  }
   const matchUs = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
   if (matchUs) {
     const month = matchUs[1].padStart(2, "0");
     const day = matchUs[2].padStart(2, "0");
     const year = matchUs[3];
-    return year + "-" + month + "-" + day;
+    return month + "/" + day + "/" + year;
+  }
+  const matchIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (matchIso) {
+    return matchIso[2] + "/" + matchIso[3] + "/" + matchIso[1];
   }
   return "";
 }
@@ -305,6 +349,74 @@ function findListedOption(options, value) {
   const needle = normalizeCompactSpaces(value).toUpperCase();
   if (!needle) return "";
   return options.find((option) => option.toUpperCase() === needle) || "";
+}
+
+function cleanAndValidateStreet(rawStreet, barangay = "", city = "", province = "", region = "") {
+  if (!rawStreet) {
+    return { error: "Street is required." };
+  }
+  let cleaned = String(rawStreet).trim().replace(/\s+/g, " ");
+  const JUNK_VALUES = new Set([
+    "SECRET", "NONE", "N/A", "NA", "NOT AVAILABLE", "UNKNOWN",
+    "TEST", "SAMPLE", "ASDF", "QWERTY", "NULL", "UNDEFINED",
+    "XXX", "SAME", "NOTHING", "BLANK", "EMPTY"
+  ]);
+  if (JUNK_VALUES.has(cleaned.toUpperCase())) {
+    return { error: "Please enter a valid street address." };
+  }
+  if (!/[a-zA-Z]/.test(cleaned)) {
+    return { error: "Street address must include a street name, not just numbers." };
+  }
+  if (cleaned.replace(/[^a-zA-Z0-9]/g, "").length < 3) {
+    return { error: "Street address is too short. Please enter a valid street name." };
+  }
+  const redundantPhrases = [
+    "Valenzuela City",
+    "Metro Manila",
+    "National Capital Region",
+    city ? city + " City" : "",
+    province ? province + " Province" : "",
+    barangay,
+    city,
+    province,
+    region,
+    "Valenzuela",
+    "NCR"
+  ].filter(Boolean);
+  redundantPhrases.sort((a, b) => b.length - a.length);
+  for (const phrase of redundantPhrases) {
+    const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp("(?:,\\s*|\\s+|-)\\s*" + escaped + "\\b", "gi");
+    cleaned = cleaned.replace(regex, "");
+  }
+  const ABBREVIATIONS = [
+    [/\bSt\.?\b/gi, "Street"],
+    [/\bAve\.?\b/gi, "Avenue"],
+    [/\bRd\.?\b/gi, "Road"],
+    [/\bBlvd\.?\b/gi, "Boulevard"],
+    [/\bDr\.?\b/gi, "Drive"],
+    [/\bExt\.?\b/gi, "Extension"],
+    [/\bSubd\.?\b/gi, "Subdivision"],
+    [/\bVl?ge\.?\b/gi, "Village"],
+    [/\bCpd\.?\b/gi, "Compound"],
+    [/\bHwy\.?\b/gi, "Highway"],
+    [/\bBldg\.?\b/gi, "Building"],
+    [/\bBrgy\.?\b/gi, "Barangay"]
+  ];
+  for (const [abbrRegex, replacement] of ABBREVIATIONS) {
+    cleaned = cleaned.replace(abbrRegex, replacement);
+  }
+  cleaned = cleaned.replace(/[,.-]+$/, "").trim();
+  cleaned = cleaned.toLowerCase().split(" ").filter(Boolean).map((word) => {
+    if (word.includes("-")) {
+      return word.split("-").map(p => p.charAt(0).toUpperCase() + p.slice(1)).join("-");
+    }
+    return word.charAt(0).toUpperCase() + word.slice(1);
+  }).join(" ");
+  if (cleaned.length < 3 || cleaned.length > 120) {
+    return { error: "Street must be between 3 and 120 characters." };
+  }
+  return { cleaned };
 }
 
 function validateAddressField(label, value) {
@@ -321,11 +433,12 @@ function validateAddressField(label, value) {
 }
 
 function parseIsoCalendarDate(value) {
-  const iso = normalizeBirthdate(value);
-  if (!iso) return "";
-  const year = Number(iso.slice(0, 4));
-  const month = Number(iso.slice(5, 7));
-  const day = Number(iso.slice(8, 10));
+  const formatted = normalizeBirthdate(value);
+  if (!formatted) return "";
+  const [monthStr, dayStr, yearStr] = formatted.split("/");
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+  const year = Number(yearStr);
   const utc = new Date(Date.UTC(year, month - 1, day));
   if (
     utc.getUTCFullYear() !== year ||
@@ -334,14 +447,14 @@ function parseIsoCalendarDate(value) {
   ) {
     return "";
   }
-  return iso;
+  return formatted;
 }
 
 function mapStudentProfile(data) {
   if (!data) return null;
   return {
     barangay: data.barangay || "",
-    birthdate: data.birthdate || "",
+    birthdate: normalizeBirthdate(data.birthdate) || data.birthdate || "",
     city: data.city || "",
     email: normalizeEmail(data.email || ""),
     fullName: toTitleCase(data.full_name || ""),
@@ -751,6 +864,9 @@ function normalizeStudentPreferences(row) {
     privateJournalModeEnabled: isBoolean(settings.privateJournalModeEnabled)
       ? settings.privateJournalModeEnabled
       : DEFAULT_STUDENT_PREFERENCES.privateJournalModeEnabled,
+    profileFrameId: typeof settings.profileFrameId === "string" && settings.profileFrameId.trim()
+      ? settings.profileFrameId.trim()
+      : null,
   };
 }
 
@@ -780,7 +896,21 @@ async function loadStudentPreferenceRecord(studentNumber) {
     [studentNumber],
   );
 
-  return result.rows[0] || null;
+  if (result.rows[0]) {
+    return result.rows[0];
+  }
+
+  return saveStudentPreferenceRecord({
+    studentNumber,
+    settings: {
+      notificationPreviewsEnabled: DEFAULT_STUDENT_PREFERENCES.notificationPreviewsEnabled,
+      privateJournalModeEnabled: DEFAULT_STUDENT_PREFERENCES.privateJournalModeEnabled,
+      profileFrameId: DEFAULT_STUDENT_PREFERENCES.profileFrameId,
+    },
+    journalLockEnabled: DEFAULT_STUDENT_PREFERENCES.journalLockEnabled,
+    journalLockPinHash: null,
+    journalLockAutoLock: DEFAULT_STUDENT_PREFERENCES.journalLockAutoLock,
+  });
 }
 
 async function saveStudentPreferenceRecord({
@@ -926,7 +1056,7 @@ router.post("/login", async (req, res) => {
   }
 
   const loginKey = `${studentNumber}:${req.ip || "unknown"}`;
-  const attemptState = getLoginAttemptState(loginKey);
+  const attemptState = await getLoginAttemptState(loginKey);
   const now = Date.now();
   if (attemptState.lockUntil && now < attemptState.lockUntil) {
     return res.status(429).json({
@@ -949,7 +1079,7 @@ router.post("/login", async (req, res) => {
   const hasValidPassword = Boolean(data) && verifyPassword(password, data.password_hash);
 
   if (!hasValidPassword) {
-    const isLocked = registerFailedAttempt(loginKey);
+    const isLocked = await registerFailedAttempt(loginKey);
     if (isLocked) {
       return res.status(429).json({
         message: "Too many failed login attempts. Please try again later.",
@@ -990,7 +1120,7 @@ router.post("/login", async (req, res) => {
     );
   }
 
-  loginAttempts.delete(loginKey);
+  await clearLoginAttemptState(loginKey);
   const fullName = toTitleCase(data.full_name || "");
   const firstName = fullName.split(" ").filter(Boolean)[0] || "User";
 
@@ -1074,7 +1204,7 @@ router.patch("/profile", requireStudentOnlyAuth, async (req, res) => {
     updates.email = nextEmail;
   }
   if (req.body.fullName != null) {
-    const fullName = normalizeUpperText(req.body.fullName || "");
+    const fullName = toTitleCase(req.body.fullName || "");
     if (!fullName) {
       return res.status(400).json({ message: "Full name is required." });
     }
@@ -1097,7 +1227,7 @@ router.patch("/profile", requireStudentOnlyAuth, async (req, res) => {
     if (!matchedProgram) {
       return res.status(400).json({ message: "Choose a program from the list." });
     }
-    updates.program = normalizeUpperText(matchedProgram);
+    updates.program = matchedProgram;
   }
   if (req.body.gender != null) {
     const rawGender = normalizeCompactSpaces(req.body.gender || "");
@@ -1146,19 +1276,18 @@ router.patch("/profile", requireStudentOnlyAuth, async (req, res) => {
     updates.barangay = normalizeUpperText(matchedBarangay);
   }
   if (req.body.street != null) {
-    const street = normalizeUpperText(req.body.street || "");
-    if (!street) {
-      return res.status(400).json({ message: "Street is required." });
+    const rawStreet = normalizeCompactSpaces(req.body.street || "");
+    const streetResult = cleanAndValidateStreet(
+      rawStreet,
+      updates.barangay || current.barangay,
+      updates.city || current.city,
+      updates.province || current.province,
+      updates.region || current.region,
+    );
+    if (streetResult.error) {
+      return res.status(400).json({ message: streetResult.error });
     }
-    if (street.length < 2 || street.length > 120) {
-      return res.status(400).json({ message: "Street must be 2 to 120 characters." });
-    }
-    if (!STREET_PATTERN.test(street)) {
-      return res.status(400).json({
-        message: "Street can include letters, numbers, spaces, hyphens, and periods.",
-      });
-    }
-    updates.street = street;
+    updates.street = streetResult.cleaned;
   }
   if (req.body.birthdate != null) {
     const rawBirthdate = normalizeCompactSpaces(req.body.birthdate || "");
@@ -1167,9 +1296,11 @@ router.patch("/profile", requireStudentOnlyAuth, async (req, res) => {
     }
     const birthdate = parseIsoCalendarDate(rawBirthdate);
     if (!birthdate) {
-      return res.status(400).json({ message: "Enter birthdate as YYYY-MM-DD." });
+      return res.status(400).json({ message: "Enter birthdate as MM/DD/YYYY." });
     }
-    if (birthdate > getManilaDateParts().isoDate) {
+    const [bMonth, bDay, bYear] = birthdate.split("/");
+    const isoDate = "" + bYear + "-" + bMonth + "-" + bDay;
+    if (isoDate > getManilaDateParts().isoDate) {
       return res.status(400).json({ message: "Birthdate cannot be in the future." });
     }
     updates.birthdate = birthdate;
@@ -1650,6 +1781,11 @@ router.patch("/preferences", requireStudentOnlyAuth, async (req, res) => {
     if (isBoolean(req.body.privateJournalModeEnabled)) {
       nextSettings.privateJournalModeEnabled =
         req.body.privateJournalModeEnabled;
+    }
+    if (req.body.profileFrameId !== undefined) {
+      nextSettings.profileFrameId = typeof req.body.profileFrameId === "string" && req.body.profileFrameId.trim()
+        ? req.body.profileFrameId.trim()
+        : null;
     }
 
     let nextJournalLockEnabled = currentPreferences.journalLockEnabled;
@@ -2205,6 +2341,18 @@ router.post("/send-otp", async (req, res) => {
     return res.status(400).json({ message: "Email is required." });
   }
 
+  // Block counselor or peer counselor accounts from registering as students
+  const [counselorCheck, peerCheck] = await Promise.all([
+    query("select id from public.admin_accounts where lower(email) = lower($1) limit 1", [email]),
+    query("select id from public.peer_counselors where lower(email) = lower($1) limit 1", [email]),
+  ]);
+
+  if (counselorCheck.rowCount > 0 || peerCheck.rowCount > 0) {
+    return res.status(409).json({
+      message: "This email is registered as a counselor or peer counselor account. Staff accounts cannot register as students.",
+    });
+  }
+
   const { data: existingProfile, error: existingProfileError } =
     await supabaseAdminClient
       .from("student_profiles")
@@ -2558,18 +2706,42 @@ router.post("/register-profile", async (req, res) => {
     }
   }
 
+  const validatedBirthdate = parseIsoCalendarDate(req.body.birthdate || "");
+  if (!validatedBirthdate) {
+    return res.status(400).json({ message: "Enter birthdate as MM/DD/YYYY." });
+  }
+  const [regMonth, regDay, regYear] = validatedBirthdate.split("/");
+  const regIso = "" + regYear + "-" + regMonth + "-" + regDay;
+  if (regIso > getManilaDateParts().isoDate) {
+    return res.status(400).json({ message: "Birthdate cannot be in the future." });
+  }
+  const program = findListedOption(PROGRAM_OPTIONS, req.body.program || "");
+  if (!program) {
+    return res.status(400).json({ message: "Choose a program from the list." });
+  }
+  const streetResult = cleanAndValidateStreet(
+    req.body.street || "",
+    req.body.barangay || "",
+    req.body.city || "",
+    req.body.province || "",
+    req.body.region || "",
+  );
+  if (streetResult.error) {
+    return res.status(400).json({ message: streetResult.error });
+  }
+
   const payload = {
-    full_name: normalizeUpperText(req.body.fullName || ""),
+    full_name: toTitleCase(req.body.fullName || ""),
     student_number: normalizeStudentNumber(req.body.studentNumber || ""),
-    program: normalizeUpperText(req.body.program || ""),
+    program,
     gender: normalizeStudentGender(req.body.gender || ""),
     region: normalizeUpperText(req.body.region || ""),
     province: normalizeUpperText(req.body.province || ""),
     city: normalizeUpperText(req.body.city || ""),
     barangay: normalizeUpperText(req.body.barangay || ""),
-    street: normalizeUpperText(req.body.street || ""),
+    street: streetResult.cleaned,
     email: normalizeEmail(req.body.email || ""),
-    birthdate: normalizeCompactSpaces(req.body.birthdate || ""),
+    birthdate: validatedBirthdate,
     password_hash: password ? hashPassword(password) : "",
     is_email_verified: true,
     is_id_verified: true,
@@ -2589,6 +2761,34 @@ router.post("/register-profile", async (req, res) => {
 
   if (!payload.gender) {
     return res.status(400).json({ message: "Invalid gender value." });
+  }
+
+  // Block counselor or peer counselor accounts from registering as students
+  const [counselorCheck, peerCheck] = await Promise.all([
+    query("select id from public.admin_accounts where lower(email) = lower($1) limit 1", [payload.email]),
+    query("select id from public.peer_counselors where lower(email) = lower($1) limit 1", [payload.email]),
+  ]);
+
+  if (counselorCheck.rowCount > 0 || peerCheck.rowCount > 0) {
+    return res.status(409).json({
+      message: "This email is registered as a counselor or peer counselor account. Staff accounts cannot register as students.",
+    });
+  }
+
+  // Fuzzy match / warning for accidental duplicate account attempts with minor typos (identical name + birthdate with different email/student_number)
+  const { data: duplicateNameBirthdateAccount } = await supabaseAdminClient
+    .from("student_profiles")
+    .select("student_number, email")
+    .ilike("full_name", payload.full_name)
+    .eq("birthdate", payload.birthdate)
+    .neq("student_number", payload.student_number)
+    .limit(1)
+    .maybeSingle();
+
+  if (duplicateNameBirthdateAccount) {
+    console.warn(
+      "Potential duplicate registration alert: Account with name " + payload.full_name + " and birthdate " + payload.birthdate + " already exists under student number " + duplicateNameBirthdateAccount.student_number + ".",
+    );
   }
 
   const { data: existingProfile, error: existingProfileError } =
@@ -2630,6 +2830,26 @@ router.post("/register-profile", async (req, res) => {
     return res.status(400).json({ message: error.message });
   }
 
+  // Seed default preferences and referral record immediately upon registration
+  try {
+    await Promise.all([
+      saveStudentPreferenceRecord({
+        studentNumber: payload.student_number,
+        settings: {
+          notificationPreviewsEnabled: DEFAULT_STUDENT_PREFERENCES.notificationPreviewsEnabled,
+          privateJournalModeEnabled: DEFAULT_STUDENT_PREFERENCES.privateJournalModeEnabled,
+          profileFrameId: DEFAULT_STUDENT_PREFERENCES.profileFrameId,
+        },
+        journalLockEnabled: DEFAULT_STUDENT_PREFERENCES.journalLockEnabled,
+        journalLockPinHash: null,
+        journalLockAutoLock: DEFAULT_STUDENT_PREFERENCES.journalLockAutoLock,
+      }),
+      ensureStudentReferralRecord(payload.student_number),
+    ]);
+  } catch (seedError) {
+    console.warn("Could not initialize student preferences or referral upon registration:", seedError?.message || seedError);
+  }
+
   req.session.student = {
     studentNumber: payload.student_number,
     email: normalizeEmail(payload.email || ""),
@@ -2640,6 +2860,9 @@ router.post("/register-profile", async (req, res) => {
   return res.json({
     message: "Profile saved.",
     token,
+    potentialDuplicateWarning: duplicateNameBirthdateAccount
+      ? "An account with the same name and birthdate was found. If this was an accidental duplicate, please contact support."
+      : null,
     user: {
       studentNumber: payload.student_number,
       fullName: toTitleCase(payload.full_name || ""),

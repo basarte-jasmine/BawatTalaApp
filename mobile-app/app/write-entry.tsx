@@ -269,6 +269,7 @@ export default function WriteEntryScreen() {
   const [selectedJournalEmotionId, setSelectedJournalEmotionId] = useState(EMOTIONS[0]?.id ?? "");
   const [activeJournalEmotionId, setActiveJournalEmotionId] = useState<string | null>(null);
   const [isSavingJournalEmotion, setIsSavingJournalEmotion] = useState(false);
+  const isSavingJournalEmotionRef = useRef(false);
   const [showEmotionPicker, setShowEmotionPicker] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);

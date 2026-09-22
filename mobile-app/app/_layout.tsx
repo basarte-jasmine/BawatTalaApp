@@ -124,6 +124,14 @@ export default function RootLayout() {
                 <Stack.Screen name="consult" options={getNavigationAnimationConfig("consult")} />
                 <Stack.Screen name="muni-avatar" options={getNavigationAnimationConfig("muni-avatar")} />
                 <Stack.Screen name="muni-voice" options={getNavigationAnimationConfig("muni-voice")} />
+                <Stack.Screen
+                  name="munis-arrival"
+                  options={{
+                    ...getNavigationAnimationConfig("default"),
+                    gestureEnabled: false,
+                    fullScreenGestureEnabled: false,
+                  }}
+                />
               </Stack>
             </OfflineSyncProvider>
             </AppErrorBoundary>

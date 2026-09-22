@@ -29,18 +29,41 @@ export function clearAdminToken() {
   }
 }
 
+function isPrivateLanHost(host) {
+  return /^(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})$/.test(host);
+}
+
 function resolveAdminApiBaseUrl() {
   const configured = String(import.meta.env.VITE_ADMIN_API_BASE_URL || "").trim().replace(/\/$/, "");
-  if (!configured) return "";
-  try {
-    const parsed = new URL(configured);
-    if (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") {
-      return "";
+  const pageHost = typeof window !== "undefined" ? window.location.hostname : "";
+
+  if (configured) {
+    try {
+      const parsed = new URL(configured);
+      // Env pointed at loopback but browser is on LAN → use page host:4002.
+      if (
+        (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") &&
+        pageHost &&
+        pageHost !== "localhost" &&
+        pageHost !== "127.0.0.1"
+      ) {
+        return `${parsed.protocol}//${pageHost}:${parsed.port || "4002"}`;
+      }
+      // Same-machine localhost → relative URLs via Vite proxy.
+      if (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") {
+        return "";
+      }
+      return configured;
+    } catch {
+      return configured.startsWith("/") ? "" : configured;
     }
-    return configured;
-  } catch {
-    return configured.startsWith("/") ? "" : configured;
   }
+
+  // No env: on LAN page host hit backend on :4002; on localhost use Vite /api proxy.
+  if (pageHost && pageHost !== "localhost" && pageHost !== "127.0.0.1" && isPrivateLanHost(pageHost)) {
+    return `http://${pageHost}:4002`;
+  }
+  return "";
 }
 
 const API_BASE_URL = resolveAdminApiBaseUrl();

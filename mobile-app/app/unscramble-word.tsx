@@ -75,7 +75,7 @@ export default function UnscrambleWordScreen() {
   
   const shakeAnim = useRef(new Animated.Value(0)).current;
   
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   
   const bestScoreRef = useRef(0);
   const bestLevelRef = useRef(0);
@@ -142,7 +142,7 @@ export default function UnscrambleWordScreen() {
             if (!rewardClaimedRef.current) {
               rewardClaimedRef.current = true;
               claimMiniResetReward({ activityId: "unscramble-word", level, roundKey: `unscramble-word-${Date.now()}`, score })
-                .then((reward) => setRewardTala(reward.rewardTala))
+                .then((reward) => setRewardTala(reward.rewardTala ?? 0))
                 .catch(() => undefined);
             }
             if (score > bestScoreRef.current) { bestScoreRef.current = score; }

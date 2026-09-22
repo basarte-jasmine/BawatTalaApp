@@ -47,6 +47,7 @@ import {
   getIndicatorFamilyBadgeClasses,
 } from "../lib/risk-labels";
 import { PROGRAM_OPTIONS } from "../lib/register-data";
+import { formatProgramName } from "../lib/format-utils";
 
 const CRITICAL = "#EF4444";
 const SUPPORT = "#FBBF24";
@@ -170,6 +171,10 @@ function flagColor(flag) {
 function formatDate(value, options = {}) {
   if (!value) return "Not available";
   const str = String(value).trim();
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(str)) {
+    const [mm, dd, yyyy] = str.split("/");
+    return mm.padStart(2, "0") + "-" + dd.padStart(2, "0") + "-" + yyyy;
+  }
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
     const [yyyy, mm, dd] = str.split("-");
     return mm + "-" + dd + "-" + yyyy;
@@ -448,12 +453,12 @@ function FlaggedStudentRow({ student, onReview, maskStudentNumbers = false }) {
             profilePictureUrl={student.profilePictureUrl}
           />
           <div className="min-w-0 flex-1">
-            <div className="font-black text-slate-900 tracking-wide uppercase text-sm truncate" title={student.fullName}>
+            <div className="font-black text-slate-900 tracking-wide text-sm truncate" title={student.fullName}>
               {student.fullName}
             </div>
             {student.program && student.program !== "Unspecified" ? (
               <div className="text-xs font-bold text-slate-600 uppercase mt-0.5 truncate">
-                {student.program}
+                {formatProgramName(student.program)}
               </div>
             ) : null}
             <div className="text-xs font-semibold text-slate-500 mt-0.5">
@@ -985,11 +990,11 @@ function ReviewModal({
         <div className="shrink-0 border-b border-slate-200 bg-white px-7 py-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-2xl font-black text-slate-900 tracking-wide uppercase">{student.fullName}</h2>
+              <h2 className="text-2xl font-black text-slate-900 tracking-wide">{student.fullName}</h2>
               <div className="mt-2 flex flex-wrap items-center gap-2.5 text-sm text-slate-500 font-medium">
                 <span>{maskStudentNumber(student.studentNumber, maskStudentNumbers)}</span>
                 <span>•</span>
-                <span className="uppercase">{student.program || "Unspecified"}</span>
+                <span>{formatProgramName(student.program) || "Unspecified"}</span>
                 {followUpInfo?.lastFollowUpAt ? (
                   <>
                     <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-0.5 text-xs font-bold text-emerald-800">
@@ -1264,7 +1269,7 @@ function MessageModal({
                 </span>
               </div>
               <div className="text-xs font-semibold text-slate-500">
-                {maskStudentNumber(student.studentNumber, maskStudentNumbers)} • {student.program || "Unspecified"}
+                {maskStudentNumber(student.studentNumber, maskStudentNumbers)} • {formatProgramName(student.program) || "Unspecified"}
               </div>
             </div>
           </div>

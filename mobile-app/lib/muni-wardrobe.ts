@@ -463,6 +463,29 @@ export async function purchaseMuniItem(sectionId: MuniCollectionSectionId, optio
   return true;
 }
 
+export async function purchaseMuniItemsBatch(items: Array<{ sectionId: MuniCollectionSectionId; optionId: string }>) {
+  if (!activeStudentNumber || !Array.isArray(items) || items.length === 0) {
+    return false;
+  }
+  const validItems = items.filter((i) => {
+    const opt = getMuniCollectionOption(i.sectionId, i.optionId);
+    return Boolean(opt) && !isMuniItemOwned(i.sectionId, i.optionId);
+  });
+  if (validItems.length === 0) {
+    // Nothing left to buy — succeed if every requested item is already owned.
+    return items.every((i) => isMuniItemOwned(i.sectionId, i.optionId));
+  }
+  const result = await purchaseMuniWardrobeItem({
+    items: validItems.map((i) => ({ sectionId: i.sectionId, itemId: i.optionId })),
+    studentNumber: activeStudentNumber,
+  });
+  if (!result.ok) {
+    return false;
+  }
+  applyRemoteWardrobe(result);
+  return true;
+}
+
 export async function saveMuniLoadout(loadout: MuniLoadout) {
   const state = getActiveState();
   if (!activeStudentNumber || !state.hydrated) {
@@ -547,6 +570,15 @@ export function getEyeAccessoryStyle(eyeId: string | null) {
   } as const;
 }
 
+export function getOutfitAccessoryStyle(outfitId: string | null) {
+  if (!outfitId || outfitId === "classic" || outfitId === "spooky-ghost") {
+    return null;
+  }
+  // Vests and jumpers align onto Muni's torso properly
+  return {
+    transform: [{ translateY: 4 }, { scale: 1.02 }],
+  } as const;
+}
 export function areMuniLoadoutsEqual(left: MuniLoadout, right: MuniLoadout) {
   return (
     left.background === right.background &&

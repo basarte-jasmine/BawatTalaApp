@@ -19,6 +19,7 @@ import {
     storeAffirmation,
 } from "../lib/affirmations";
 import { useAuthSession } from "../lib/auth-session";
+import { useAppPreferences } from "../lib/app-preferences";
 import {
     claimDailyCheckIn,
     consumePendingRiskPrompt,
@@ -359,9 +360,38 @@ const DRIFTING_BOTTLE_NOTES: DriftingBottleNote[] = [
     message: "I wrote this after a long day: I am still here, and that is already something worth keeping." },
 ];
 
+const PROFILE_FRAMES: { id: string; label: string; source: any }[] = [
+  { id: "aether", label: "Aether", source: require("../assets/images/Frames/Aether Frame.webp") },
+  { id: "blossom", label: "Blossom", source: require("../assets/images/Frames/Blossom Frame.webp") },
+  { id: "constellation", label: "Constellation", source: require("../assets/images/Frames/Constellation Frame.webp") },
+  { id: "glimmer", label: "Glimmer", source: require("../assets/images/Frames/Glimmer Frame.webp") },
+  { id: "sprout", label: "Sprout", source: require("../assets/images/Frames/Sprout Frame.webp") },
+  { id: "tide", label: "Tide", source: require("../assets/images/Frames/Tide Frame.webp") },
+];
+
 export default function HomeScreen() {
   const { user } = useAuthSession();
+  const { profileFrameId } = useAppPreferences();
   const { isSyncing, refreshKey, syncNow } = useOfflineSync();
+  const [localFrameId, setLocalFrameId] = useState<string | null>(profileFrameId ?? null);
+
+  useEffect(() => {
+    if (profileFrameId !== undefined && profileFrameId !== null) {
+      setLocalFrameId(profileFrameId);
+      return;
+    }
+    if (user?.studentNumber) {
+      void AsyncStorage.getItem(`@bawat-tala/profile-frame:${user.studentNumber}`).then((fid) => {
+        if (fid && PROFILE_FRAMES.some((f) => f.id === fid)) {
+          setLocalFrameId(fid);
+        } else {
+          setLocalFrameId(null);
+        }
+      });
+    }
+  }, [profileFrameId, user?.studentNumber]);
+
+  const activeFrameSource = PROFILE_FRAMES.find((f) => f.id === (profileFrameId || localFrameId))?.source ?? null;
   const handledRiskPromptKeyRef = useRef<string>("");
 
   useEffect(() => {
@@ -413,6 +443,7 @@ export default function HomeScreen() {
   const [moodSaveStatusTone, setMoodSaveStatusTone] = useState<"success" | "error">("success");
   const [pendingMoodId, setPendingMoodId] = useState<string | null>(null);
   const [isSavingMood, setIsSavingMood] = useState(false);
+  const isSavingMoodRef = useRef(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [libraryPreviewBooks, setLibraryPreviewBooks] = useState<LibraryBookRecord[]>([]);
   const [hasScrolled, setHasScrolled] = useState(false);
@@ -1708,6 +1739,7 @@ export default function HomeScreen() {
               iconColor="#496453"
               iconSize={18}
               imageUrl={user?.profilePictureUrl}
+              frameSource={activeFrameSource}
               size={36}
               style={[styles.avatarCircle, hasScrolled ? styles.avatarCircleScrolled : styles.avatarCircleTop]}
             />

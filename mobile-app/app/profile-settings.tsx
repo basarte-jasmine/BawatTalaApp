@@ -44,7 +44,8 @@ import { useAuthSession } from "../lib/auth-session";
 import { getManilaDaysInMonth, getManilaMonthName, getManilaTodayParts, getManilaWeekdayIndex } from "../lib/manila-date";
 import { getAppointmentNoticeStatus, getNotificationRoute } from "../lib/notification-utils";
 import { BARANGAY_OPTIONS, GENDER_OPTIONS, PROGRAM_OPTIONS } from "../lib/register-data";
-import { isValidName } from "../lib/register-validation";
+import { isValidName, cleanAndValidateStreet } from "../lib/register-validation";
+import { formatProgramName, toTitleCase } from "../lib/format";
 
 type SettingsSection =
   | "schedule"
@@ -268,8 +269,9 @@ function BirthdateCalendarPicker({
   }, [selected, today.day, today.monthIndex, today.year, viewMonthIndex, viewYear]);
 
   const handleSelectDay = (day: number) => {
-    const nextIso = toIsoDate(viewYear, viewMonthIndex, day);
-    onChange(nextIso);
+    const mm = String(viewMonthIndex + 1).padStart(2, "0");
+    const dd = String(day).padStart(2, "0");
+    onChange(mm + "/" + dd + "/" + viewYear);
   };
 
   const formattedSelectedText = useMemo(() => {
@@ -752,7 +754,7 @@ export default function ProfileSettingsScreen() {
         setDraftFullName(nextProfile?.fullName || user?.fullName || "");
         setDraftEmail(nextProfile?.email || user?.email || "");
         setDraftProgram(nextProfile?.program || "");
-        setDraftBirthdate(nextProfile?.birthdate ? String(nextProfile.birthdate).slice(0, 10) : "");
+        setDraftBirthdate(nextProfile?.birthdate ? formatBirthdateDisplay(nextProfile.birthdate) : "");
         setDraftStreet(nextProfile?.street || "");
         setDraftBarangay(nextProfile?.barangay || "");
         setDraftCity(nextProfile?.city || "");
@@ -1400,10 +1402,8 @@ export default function ProfileSettingsScreen() {
         return null;
       }
       case "street": {
-        const val = draftStreet.trim().toUpperCase();
-        if (!val) return "Street is required.";
-        if (val.length < 2 || val.length > 120) return "Street must be 2 to 120 characters.";
-        if (!STREET_PATTERN.test(val)) return "Street can include letters, numbers, spaces, hyphens, and periods.";
+        const result = cleanAndValidateStreet(draftStreet, draftBarangay, draftCity, draftProvince, draftRegion);
+        if (result.error) return result.error;
         return null;
       }
       case "barangay": {
@@ -1517,14 +1517,19 @@ export default function ProfileSettingsScreen() {
     setProfileSaving(true);
 
     const payload: Record<string, string> = {};
-    if (field === "fullName") payload.fullName = draftFullName.trim().toUpperCase();
-    if (field === "program") payload.program = draftProgram.trim().toUpperCase();
+    if (field === "fullName") payload.fullName = toTitleCase(draftFullName.trim());
+    if (field === "program") payload.program = draftProgram.trim();
     if (field === "gender") payload.gender = draftGender.trim().toUpperCase();
     if (field === "birthdate") {
       const parsed = parseIsoDate(draftBirthdate);
-      payload.birthdate = parsed ? toIsoDate(parsed.year, parsed.monthIndex, parsed.day) : draftBirthdate.trim();
+      payload.birthdate = parsed
+        ? String(parsed.monthIndex + 1).padStart(2, "0") + "/" + String(parsed.day).padStart(2, "0") + "/" + parsed.year
+        : draftBirthdate.trim();
     }
-    if (field === "street") payload.street = draftStreet.trim().toUpperCase();
+    if (field === "street") {
+      const result = cleanAndValidateStreet(draftStreet, draftBarangay, draftCity, draftProvince, draftRegion);
+      payload.street = result.cleaned || draftStreet.trim();
+    }
     if (field === "barangay") payload.barangay = draftBarangay.trim().toUpperCase();
     if (field === "city") payload.city = draftCity.trim().toUpperCase();
     if (field === "province") payload.province = draftProvince.trim().toUpperCase();
@@ -1609,9 +1614,12 @@ return (
                 <>
                   <TextInput
                     autoFocus={true}
-                    autoCapitalize="characters"
+                    autoCapitalize="words"
                     value={draftFullName}
-                    onChangeText={setUpperDraft("fullName", setDraftFullName)}
+                    onChangeText={(text) => {
+                      setDraftFullName(text);
+                      clearProfileFieldError("fullName");
+                    }}
                     placeholder="Full name"
                     placeholderTextColor="#97A1AA"
                     maxLength={PROFILE_FULL_NAME_MAX_LENGTH}
@@ -1629,7 +1637,7 @@ return (
                   </View>
                 </>
               ) : (
-                <Text style={[styles.rowValue, styles.profileReadOnly]}>{toDisplayCaps(draftFullName)}</Text>
+                <Text style={[styles.rowValue, styles.profileReadOnly]}>{draftFullName ? toTitleCase(draftFullName) : "Not available"}</Text>
               )}
 
               <View style={styles.fieldHeaderRow}>
@@ -1707,10 +1715,10 @@ return (
                 <>
                   <SelectField
                     label=""
-                    value={draftProgram ? draftProgram.toUpperCase() : ""}
+                    value={draftProgram}
                     options={withCurrentOption(PROGRAM_OPTIONS, draftProgram)}
                     onSelect={(value) => {
-                      setDraftProgram(value.toUpperCase());
+                      setDraftProgram(value);
                       clearProfileFieldError("program");
                     }}
                     placeholder="Select program"
@@ -1728,7 +1736,7 @@ return (
                   </View>
                 </>
               ) : (
-                <Text style={[styles.rowValue, styles.profileReadOnly]}>{toDisplayCaps(draftProgram)}</Text>
+                <Text style={[styles.rowValue, styles.profileReadOnly]}>{formatProgramName(draftProgram) || "Not available"}</Text>
               )}
 
               <View style={styles.fieldHeaderRow}>
@@ -1821,9 +1829,9 @@ return (
                 <>
                   <TextInput
                     autoFocus={true}
-                    autoCapitalize="characters"
+                    autoCapitalize="words"
                     value={draftStreet}
-                    onChangeText={setUpperDraft("street", setDraftStreet)}
+                    onChangeText={setDraftStreet}
                     placeholder="Street"
                     placeholderTextColor="#97A1AA"
                     maxLength={PROFILE_STREET_MAX_LENGTH}
@@ -1841,7 +1849,7 @@ return (
                   </View>
                 </>
               ) : (
-                <Text style={[styles.rowValue, styles.profileReadOnly]}>{toDisplayCaps(draftStreet)}</Text>
+                <Text style={[styles.rowValue, styles.profileReadOnly]}>{draftStreet || "Not available"}</Text>
               )}
 
               <View style={styles.fieldHeaderRow}>
@@ -4101,4 +4109,3 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 13,
     fontFamily: "Outfit-Bold" } });
-

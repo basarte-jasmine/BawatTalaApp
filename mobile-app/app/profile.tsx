@@ -70,7 +70,7 @@ function getImageMimeType(asset: ImagePicker.ImagePickerAsset) {
 
 export default function ProfileScreen() {
   const { clearUser, setUser, user } = useAuthSession();
-  const { clearPreferences } = useAppPreferences();
+  const { clearPreferences, profileFrameId, setProfileFrameId } = useAppPreferences();
   const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [showProfilePictureOptions, setShowProfilePictureOptions] = useState(false);
   const [showFrameModal, setShowFrameModal] = useState(false);
@@ -90,16 +90,26 @@ export default function ProfileScreen() {
   }, [user?.profilePictureUrl]);
 
   useEffect(() => {
+    if (profileFrameId !== undefined) {
+      setSelectedFrameId(PROFILE_FRAMES.some((frame) => frame.id === profileFrameId) ? profileFrameId : null);
+    }
+  }, [profileFrameId]);
+
+  useEffect(() => {
     if (!user?.studentNumber) return;
-    void AsyncStorage.getItem(`${PROFILE_FRAME_KEY}:${user.studentNumber}`).then((frameId) => {
-      setSelectedFrameId(PROFILE_FRAMES.some((frame) => frame.id === frameId) ? frameId : null);
-    });
+    if (!profileFrameId) {
+      void AsyncStorage.getItem(`${PROFILE_FRAME_KEY}:${user.studentNumber}`).then((frameId) => {
+        if (frameId && PROFILE_FRAMES.some((frame) => frame.id === frameId)) {
+          setSelectedFrameId(frameId);
+        }
+      });
+    }
     void AsyncStorage.getAllKeys().then((keys) => {
       const prefix = `@bawat-tala/achievement:`;
       const suffix = `:${user.studentNumber}`;
       setAchievementCount(keys.filter((k) => k.startsWith(prefix) && k.endsWith(suffix)).length);
     }).catch(() => undefined);
-  }, [user?.studentNumber]);
+  }, [profileFrameId, user?.studentNumber]);
 
   const openFramePicker = () => {
     setShowProfilePictureOptions(false);
@@ -116,10 +126,12 @@ export default function ProfileScreen() {
   };
 
   const handleConfirmSaveFrame = () => {
-    setSelectedFrameId(tempFrameId);
+    const nextFrame = tempFrameId;
+    setSelectedFrameId(nextFrame);
     if (user?.studentNumber) {
-      void AsyncStorage.setItem(`${PROFILE_FRAME_KEY}:${user.studentNumber}`, tempFrameId ?? "");
+      void AsyncStorage.setItem(`${PROFILE_FRAME_KEY}:${user.studentNumber}`, nextFrame ?? "");
     }
+    void setProfileFrameId(nextFrame);
     setShowFrameConfirmModal(false);
     setShowFrameModal(false);
     showAppNotice("Profile Frame Saved", "Your profile frame has been updated successfully.");

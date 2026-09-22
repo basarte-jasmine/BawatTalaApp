@@ -86,8 +86,35 @@ function checkExistingBackend() {
   });
 }
 
-const server = app.listen(port, () => {
-  console.log(`Backend running on port ${port}`);
+const listenHost = String(process.env.HOST || process.env.BIND_HOST || "0.0.0.0").trim() || "0.0.0.0";
+
+function listLanBaseUrls(listenPort) {
+  try {
+    const os = require("os");
+    const nets = os.networkInterfaces();
+    const urls = [];
+    for (const entries of Object.values(nets || {})) {
+      for (const entry of entries || []) {
+        if (!entry || entry.internal || entry.family !== "IPv4") continue;
+        // Prefer private LAN ranges phones can actually reach on Wi-Fi.
+        if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(entry.address)) {
+          urls.push(`http://${entry.address}:${listenPort}`);
+        }
+      }
+    }
+    return [...new Set(urls)];
+  } catch {
+    return [];
+  }
+}
+
+const server = app.listen(port, listenHost, () => {
+  console.log(`Backend running on http://${listenHost}:${port}`);
+  const lanUrls = listLanBaseUrls(port);
+  if (lanUrls.length) {
+    console.log(`LAN (phones on same Wi-Fi): ${lanUrls.join(" | ")}`);
+    console.log(`Set mobile EXPO_PUBLIC_API_BASE_URL to one of those if devices cannot reach localhost.`);
+  }
   void runStartupTasks();
 });
 

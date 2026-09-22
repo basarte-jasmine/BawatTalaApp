@@ -360,8 +360,8 @@ async function ensureDatabaseSchema() {
     add constraint admin_accounts_gender_check
     check (
       gender is null
-      or gender in ('Male', 'Female', 'Prefer not to say')
-    );
+      or gender in ('Male', 'Female')
+    ) not valid;
   `);
 
   await pool.query(`
@@ -1140,7 +1140,7 @@ async function ensureDatabaseSchema() {
       id uuid primary key default gen_random_uuid(),
       full_name text not null,
       email text not null unique,
-      gender text not null default 'Prefer not to say',
+      gender text not null,
       student_number text,
       program text,
       profile_picture_url text,
@@ -1154,7 +1154,7 @@ async function ensureDatabaseSchema() {
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now(),
       constraint peer_counselors_gender_check check (
-        gender in ('Male', 'Female', 'Prefer not to say')
+        gender in ('Male', 'Female')
       ),
       constraint peer_counselors_invitation_status_check check (
         invitation_status in ('PENDING', 'ACCEPTED', 'DECLINED')
@@ -1171,6 +1171,25 @@ async function ensureDatabaseSchema() {
     alter table public.peer_counselors
     add column if not exists program text;
   `);
+
+  await pool.query(`
+    alter table public.peer_counselors
+    alter column gender drop default;
+  `).catch(() => {});
+
+  await pool.query(`
+    alter table public.peer_counselors
+    drop constraint if exists peer_counselors_gender_check;
+  `).catch(() => {});
+
+  await pool.query(`
+    alter table public.peer_counselors
+    add constraint peer_counselors_gender_check
+    check (
+      gender is null
+      or gender in ('Male', 'Female')
+    ) not valid;
+  `).catch(() => {});
 
   await pool.query(`
     alter table public.peer_counselors
@@ -1656,6 +1675,108 @@ async function ensureDatabaseSchema() {
       on public.student_notifications (student_number, created_at desc);
   `);
 
+
+
+  // Drop redundant duplicate indexes on student_profiles (student_profiles_student_number_key is canonical)
+  try {
+    await pool.query(`drop index if exists public.idx_student_profiles_student_number`);
+    await pool.query(`drop index if exists public.student_profiles_student_number_uidx`);
+  } catch (error) {
+    console.warn("Could not drop redundant student_number indexes:", error?.message || error);
+  }
+
+  // Enforce case-insensitive email uniqueness at database level (each index isolated)
+  try {
+    await pool.query(`
+      create unique index if not exists student_profiles_lower_email_idx
+        on public.student_profiles (lower(trim(email)))
+    `);
+    await pool.query(`
+      create unique index if not exists admin_accounts_lower_email_idx
+        on public.admin_accounts (lower(trim(email)))
+    `);
+    await pool.query(`
+      create unique index if not exists peer_counselors_lower_email_idx
+        on public.peer_counselors (lower(trim(email)))
+    `);
+  } catch (error) {
+    console.warn("Could not ensure lower(email) unique indexes:", error?.message || error);
+  }
+
+  await pool.query(`
+    create table if not exists public.auth_login_lockouts (
+      scope text not null,
+      lock_key text not null,
+      failed_count integer not null default 0,
+      lock_until timestamptz,
+      updated_at timestamptz not null default now(),
+      primary key (scope, lock_key)
+    );
+  `);
+
+  await pool.query(`
+    create index if not exists auth_login_lockouts_lock_until_idx
+      on public.auth_login_lockouts (lock_until)
+      where lock_until is not null;
+  `);
+
+  // Drop orphan notifications before adding FKs (account-delete safety).
+  await pool.query(`
+    delete from public.student_notifications sn
+    where not exists (
+      select 1 from public.student_profiles sp
+      where sp.student_number = sn.student_number
+    );
+  `);
+
+  await pool.query(`
+    delete from public.admin_notifications an
+    where not exists (
+      select 1 from public.admin_accounts aa
+      where lower(aa.email) = lower(an.admin_email)
+    );
+  `);
+
+  await pool.query(`
+    do $$
+    begin
+      if not exists (
+        select 1 from pg_constraint where conname = 'student_notifications_student_number_fkey'
+      ) then
+        alter table public.student_notifications
+          add constraint student_notifications_student_number_fkey
+          foreign key (student_number)
+          references public.student_profiles (student_number)
+          on delete cascade;
+      end if;
+    exception
+      when undefined_table then null;
+      when undefined_column then null;
+      when duplicate_object then null;
+    end $$;
+  `);
+
+  await pool.query(`
+    do $$
+    begin
+      if not exists (
+        select 1 from pg_constraint where conname = 'admin_notifications_admin_email_fkey'
+      ) then
+        alter table public.admin_notifications
+          add constraint admin_notifications_admin_email_fkey
+          foreign key (admin_email)
+          references public.admin_accounts (email)
+          on delete cascade;
+      end if;
+    exception
+      when undefined_table then null;
+      when undefined_column then null;
+      when duplicate_object then null;
+      when foreign_key_violation then null;
+    end $$;
+  `);
+
+
   await pool.query(`
     create index if not exists student_feedbacks_status_created_idx
       on public.student_feedbacks (status, created_at desc);
@@ -1678,11 +1799,278 @@ async function ensureDatabaseSchema() {
       where deleted_at is null;
   `);
 
+
+  // (auth_login_lockouts created above for login-lockout.service.js)
+
+  // --- Student-owned FK hygiene: drop orphans, then attach ON DELETE CASCADE ---
+  const studentOwnedFkTables = [
+    "student_notifications",
+    "student_app_preferences",
+    "student_muni_wardrobes",
+    "student_muni_purchases",
+    "student_library_progress",
+    "student_library_downloads",
+    "student_library_reading_rewards",
+    "future_self_messages",
+    "student_feedbacks",
+    "student_moods",
+    "student_tala_wallets",
+    "student_daily_checkins",
+    "student_achievements",
+    "student_journal_covers",
+    "journal_entries",
+    "student_wellness_game_rewards",
+  ];
+
+  for (const tableName of studentOwnedFkTables) {
+    try {
+      await pool.query(
+        `
+          delete from public.${tableName} child
+          where child.student_number is not null
+            and not exists (
+              select 1
+              from public.student_profiles sp
+              where sp.student_number = child.student_number
+            )
+        `,
+      );
+    } catch (error) {
+      console.warn(`Could not purge orphan rows from ${tableName}:`, error?.message || error);
+    }
+  }
+
+  // Referrals: clean invalid student_number and referred_by_student_number
+  try {
+    await pool.query(`
+      delete from public.student_referrals child
+      where not exists (
+        select 1 from public.student_profiles sp where sp.student_number = child.student_number
+      )
+    `);
+    await pool.query(`
+      update public.student_referrals
+      set referred_by_student_number = null
+      where referred_by_student_number is not null
+        and not exists (
+          select 1 from public.student_profiles sp
+          where sp.student_number = referred_by_student_number
+        )
+    `);
+  } catch (error) {
+    console.warn("Could not purge orphan referral rows:", error?.message || error);
+  }
+
+  async function ensureStudentNumberFk(tableName, constraintName, columnName = "student_number") {
+    try {
+      await pool.query(
+        `
+          do $$
+          begin
+            if not exists (
+              select 1
+              from pg_constraint
+              where conname = '${constraintName}'
+            ) then
+              alter table public.${tableName}
+                add constraint ${constraintName}
+                foreign key (${columnName})
+                references public.student_profiles (student_number)
+                on delete cascade;
+            end if;
+          end
+          $$;
+        `,
+      );
+    } catch (error) {
+      console.warn(`Could not add FK ${constraintName} on ${tableName}:`, error?.message || error);
+    }
+  }
+
+  await ensureStudentNumberFk("student_notifications", "student_notifications_student_number_fkey");
+  await ensureStudentNumberFk("student_app_preferences", "student_app_preferences_student_number_fkey");
+  await ensureStudentNumberFk("student_muni_wardrobes", "student_muni_wardrobes_student_number_fkey");
+  await ensureStudentNumberFk("student_muni_purchases", "student_muni_purchases_student_number_fkey");
+  await ensureStudentNumberFk("student_library_progress", "student_library_progress_student_number_fkey");
+  await ensureStudentNumberFk("student_library_downloads", "student_library_downloads_student_number_fkey");
+  await ensureStudentNumberFk("student_library_reading_rewards", "student_library_reading_rewards_student_number_fkey");
+  await ensureStudentNumberFk("future_self_messages", "future_self_messages_student_number_fkey");
+  await ensureStudentNumberFk("student_feedbacks", "student_feedbacks_student_number_fkey");
+  await ensureStudentNumberFk("student_moods", "student_moods_student_number_fkey");
+  await ensureStudentNumberFk("student_tala_wallets", "student_tala_wallets_student_number_fkey");
+  await ensureStudentNumberFk("student_daily_checkins", "student_daily_checkins_student_number_fkey");
+  await ensureStudentNumberFk("student_achievements", "student_achievements_student_number_fkey");
+  await ensureStudentNumberFk("student_journal_covers", "student_journal_covers_student_number_fkey");
+  await ensureStudentNumberFk("journal_entries", "journal_entries_student_number_fkey");
+  await ensureStudentNumberFk("student_wellness_game_rewards", "student_wellness_game_rewards_student_number_fkey");
+  await ensureStudentNumberFk("student_referrals", "student_referrals_student_number_fkey");
+
+  try {
+    await pool.query(`
+      do $$
+      begin
+        if not exists (
+          select 1 from pg_constraint where conname = 'student_referrals_referred_by_fkey'
+        ) then
+          alter table public.student_referrals
+            add constraint student_referrals_referred_by_fkey
+            foreign key (referred_by_student_number)
+            references public.student_profiles (student_number)
+            on delete set null;
+        end if;
+      end
+      $$;
+    `);
+  } catch (error) {
+    console.warn("Could not add referred_by FK on student_referrals:", error?.message || error);
+  }
+
+
   try {
     const { ensureDefaultSafetyRiskIndicators } = require("../services/safety-risk-indicators.service");
     await ensureDefaultSafetyRiskIndicators(pool);
   } catch (error) {
     console.warn("Could not seed default safety risk indicators:", error?.message || error);
+  }
+
+    // Standardize existing program casing across student_profiles and peer_counselors
+  try {
+    await pool.query(`
+      update public.student_profiles sp
+      set program = opt.canonical_program
+      from (
+        values
+          ('BECED Early Childhood Education'),
+          ('BSEd Filipino'),
+          ('BSEd Science'),
+          ('BSEd Social Studies'),
+          ('BSEd Mathematics'),
+          ('BSEd English'),
+          ('BS Civil Engineering'),
+          ('BS Electrical Engineering'),
+          ('BS Information Technology'),
+          ('BS Psychology'),
+          ('BA Communication Theater Arts'),
+          ('BS Social Work'),
+          ('BSBA Marketing Management'),
+          ('BSBA Human Resource Development Management'),
+          ('BS Accountancy'),
+          ('BSBA Financial Management')
+      ) as opt(canonical_program)
+      where lower(trim(sp.program)) = lower(trim(opt.canonical_program))
+        and sp.program <> opt.canonical_program;
+
+      update public.peer_counselors pc
+      set program = opt.canonical_program
+      from (
+        values
+          ('BECED Early Childhood Education'),
+          ('BSEd Filipino'),
+          ('BSEd Science'),
+          ('BSEd Social Studies'),
+          ('BSEd Mathematics'),
+          ('BSEd English'),
+          ('BS Civil Engineering'),
+          ('BS Electrical Engineering'),
+          ('BS Information Technology'),
+          ('BS Psychology'),
+          ('BA Communication Theater Arts'),
+          ('BS Social Work'),
+          ('BSBA Marketing Management'),
+          ('BSBA Human Resource Development Management'),
+          ('BS Accountancy'),
+          ('BSBA Financial Management')
+      ) as opt(canonical_program)
+      where lower(trim(pc.program)) = lower(trim(opt.canonical_program))
+        and pc.program <> opt.canonical_program;
+    `);
+  } catch (err) {
+    console.warn('Could not standardize program casing:', err?.message || err);
+  }
+
+  // Remove lingering unfinished/empty/discarded journals from DB
+  try {
+    await pool.query(`
+      delete from public.journal_entry_messages
+      where entry_id in (
+        select id from public.journal_entries
+        where is_finished = false
+           or not exists (
+             select 1 from public.journal_entry_messages jem where jem.entry_id = journal_entries.id
+           )
+      );
+    `);
+    await pool.query(`
+      delete from public.journal_entries
+      where is_finished = false
+         or not exists (
+           select 1 from public.journal_entry_messages jem where jem.entry_id = journal_entries.id
+         );
+    `);
+  } catch (error) {
+    console.warn("Could not cleanup unfinished journal entries:", error?.message || error);
+  }
+
+  // Ensure all existing students have default preferences
+  try {
+    await pool.query(`
+      insert into public.student_app_preferences (
+        student_number,
+        settings,
+        journal_lock_enabled,
+        journal_lock_pin_hash,
+        journal_lock_auto_lock
+      )
+      select
+        sp.student_number,
+        '{"notificationPreviewsEnabled": true, "privateJournalModeEnabled": true, "profileFrameId": null}'::jsonb,
+        false,
+        null,
+        true
+      from public.student_profiles sp
+      where not exists (
+        select 1
+        from public.student_app_preferences sap
+        where sap.student_number = sp.student_number
+      )
+      on conflict (student_number) do nothing;
+    `);
+  } catch (error) {
+    console.warn("Could not seed missing student_app_preferences:", error?.message || error);
+  }
+
+  // Ensure all existing students have actual unique referral codes
+  try {
+    const missingReferrals = await pool.query(`
+      select sp.student_number
+      from public.student_profiles sp
+      where not exists (
+        select 1
+        from public.student_referrals sr
+        where sr.student_number = sp.student_number
+      )
+    `);
+    const REFERRAL_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    for (const row of missingReferrals.rows) {
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const bytes = require("crypto").randomBytes(9);
+        let code = "";
+        for (let i = 0; i < 9; i += 1) {
+          code += REFERRAL_ALPHABET[bytes[i] % REFERRAL_ALPHABET.length];
+        }
+        try {
+          await pool.query(
+            `insert into public.student_referrals (student_number, referral_code) values ($1, $2) on conflict (student_number) do nothing`,
+            [row.student_number, code]
+          );
+          break;
+        } catch (err) {
+          if (err?.code !== "23505") throw err;
+        }
+      }
+    }
+  } catch (error) {
+    console.warn("Could not backfill missing student_referrals:", error?.message || error);
   }
 }
 

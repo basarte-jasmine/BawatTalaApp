@@ -126,6 +126,7 @@ app.use(
         parsedCorsOrigin === true ||
         (Array.isArray(parsedCorsOrigin) && parsedCorsOrigin.includes(origin)) ||
         /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+        /^http:\/\/(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?$/.test(origin) ||
         /^https:\/\/.*\.vercel\.app$/.test(origin)
       ) {
         return callback(null, true);
@@ -180,13 +181,26 @@ app.use("/api/admin/forgot-password/verify-code", authOtpVerifyRateLimiter);
 app.use("/api/admin/forgot-password/reset", authLoginRateLimiter);
 app.use("/api/appointments", appointmentRoutes);
 app.use("/api/inbox", (req, res, next) => {
+  // Alias onto appointment notification routes. Express strips /api/inbox, so
+  // /api/inbox/notifications arrives as /notifications — do not prepend again.
   const raw = String(req.url || "/");
   const qIndex = raw.indexOf("?");
   const pathPart = ((qIndex >= 0 ? raw.slice(0, qIndex) : raw) || "/");
   const query = qIndex >= 0 ? raw.slice(qIndex) : "";
-  const normalizedPath = pathPart.startsWith("/") ? pathPart : `/${pathPart}`;
-  const rest = normalizedPath === "/" ? "" : normalizedPath;
-  req.url = `/notifications${rest}${query}`;
+  let targetPath = pathPart.startsWith("/") ? pathPart : `/${pathPart}`;
+
+  if (targetPath === "/" || targetPath === "") {
+    targetPath = "/notifications";
+  } else if (targetPath === "/notifications" || targetPath.startsWith("/notifications/")) {
+    // already correct
+  } else if (targetPath.startsWith("/threads/")) {
+    targetPath = `/notifications${targetPath}`;
+  } else {
+    targetPath = `/notifications${targetPath}`;
+  }
+
+  targetPath = targetPath.replace(/^\/notifications\/notifications(?=\/|$)/, "/notifications");
+  req.url = `${targetPath}${query}`;
   return appointmentRoutes(req, res, next);
 });
 app.use("/api/checkins", checkinRoutes);

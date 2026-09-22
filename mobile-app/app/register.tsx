@@ -24,7 +24,7 @@ import {
   scanSchoolId,
   sendOtp,
   verifyOtp } from "../lib/backend-api";
-import { formatBirthdate, normalizeStudentNumber } from "../lib/format";
+import { formatBirthdate, normalizeStudentNumber, toTitleCase } from "../lib/format";
 import { parseIdText } from "../lib/ocr-parse";
 import {
   BARANGAY_OPTIONS,
@@ -36,7 +36,9 @@ import {
   isLikelySchoolId,
   isValidBirthdate,
   isValidName,
-  isValidStudentNumber } from "../lib/register-validation";
+  isValidStudentNumber,
+  cleanAndValidateStreet,
+} from "../lib/register-validation";
 
 const TOTAL_STEPS = 5;
 const OTP_LENGTH = 8;
@@ -177,7 +179,13 @@ export default function RegisterScreen() {
   }, [fullName, studentNumber, program, gender]);
 
   const canProceedStepThree = useMemo(() => {
-    return Boolean(barangay) && Boolean(street.trim());
+    return Boolean(barangay) && !cleanAndValidateStreet(
+      street,
+      barangay,
+      FIXED_ADDRESS.city,
+      FIXED_ADDRESS.province,
+      FIXED_ADDRESS.region,
+    ).error;
   }, [barangay, street]);
 
   const canProceedStepFour = useMemo(() => {
@@ -369,7 +377,7 @@ export default function RegisterScreen() {
     }
 
     const saveResult = await registerProfile({
-      fullName: fullName.trim(),
+      fullName: toTitleCase(fullName),
       studentNumber: normalizeStudentNumber(studentNumber),
       program: program.trim(),
       gender: gender.trim(),
@@ -377,7 +385,13 @@ export default function RegisterScreen() {
       province: FIXED_ADDRESS.province,
       city: FIXED_ADDRESS.city,
       barangay: barangay.trim(),
-      street: street.trim(),
+      street: cleanAndValidateStreet(
+        street,
+        barangay,
+        FIXED_ADDRESS.city,
+        FIXED_ADDRESS.province,
+        FIXED_ADDRESS.region,
+      ).cleaned || street.trim(),
       email: email.trim().toLowerCase(),
       birthdate: birthdate,
       password: password.trim(),
@@ -389,13 +403,7 @@ export default function RegisterScreen() {
       return;
     }
 
-    const normalizedFullName = fullName
-      .trim()
-      .toLowerCase()
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" ");
+    const normalizedFullName = toTitleCase(fullName);
 
     setUser({
       studentNumber: normalizeStudentNumber(studentNumber),
@@ -560,6 +568,7 @@ export default function RegisterScreen() {
                 label="Full Name"
                 value={fullName}
                 onChangeText={setFullName}
+                autoCapitalize="words"
                 labelStyle={styles.label}
                 inputStyle={styles.input}
               />

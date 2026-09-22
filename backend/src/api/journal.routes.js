@@ -347,6 +347,20 @@ async function removeOrSoftDeleteEntry({ studentNumber, entryId, requireOpen }) 
     return { found: true, removed: false, softDeleted: false, invalidState: true };
   }
 
+  // Unfinished drafts are completely removed from DB
+  if (!entry.is_finished) {
+    await query(`delete from public.journal_entry_messages where entry_id = $1`, [entryId]);
+    const delResult = await query(
+      `delete from public.journal_entries where id = $1 and student_number = $2`,
+      [entryId, studentNumber],
+    );
+    return {
+      found: true,
+      removed: delResult.rowCount > 0,
+      softDeleted: false,
+    };
+  }
+
   const result = await query(
     `
       update public.journal_entries
@@ -374,7 +388,12 @@ async function cleanupStaleEmptyDrafts(studentNumber) {
       delete from public.journal_entries je
       where je.student_number = $1
         and je.is_finished = false
-        and je.created_at < now() - interval '2 hours'
+        and (
+          je.created_at < now() - interval '30 minutes'
+          or not exists (
+            select 1 from public.journal_entry_messages jem where jem.entry_id = je.id limit 1
+          )
+        )
         and not exists (
           select 1
           from public.journal_entry_messages jem

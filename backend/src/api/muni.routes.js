@@ -216,16 +216,31 @@ router.get("/wardrobe", async (req, res) => {
 
 router.post("/purchase", async (req, res) => {
   const studentNumber = resolveStudentNumber(req);
-  const sectionId = String(req.body?.sectionId || "").trim();
-  const itemId = String(req.body?.itemId || "").trim();
-
   if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
     return res.status(400).json({ message: "Valid student number is required." });
   }
 
-  const item = getCatalogItem(sectionId, itemId);
-  if (!item) {
-    return res.status(400).json({ message: "Unknown wardrobe item." });
+  let requestedItems = [];
+  if (Array.isArray(req.body?.items) && req.body.items.length > 0) {
+    requestedItems = req.body.items.map((i) => ({
+      sectionId: String(i?.sectionId || "").trim(),
+      itemId: String(i?.itemId || "").trim(),
+    }));
+  } else {
+    const sectionId = String(req.body?.sectionId || "").trim();
+    const itemId = String(req.body?.itemId || "").trim();
+    requestedItems = [{ sectionId, itemId }];
+  }
+
+  if (!requestedItems.length || requestedItems.some((i) => !i.sectionId || !i.itemId)) {
+    return res.status(400).json({ message: "Item details are required." });
+  }
+
+  for (const itemReq of requestedItems) {
+    const item = getCatalogItem(itemReq.sectionId, itemReq.itemId);
+    if (!item) {
+      return res.status(400).json({ message: "Unknown wardrobe item: " + itemReq.itemId });
+    }
   }
 
   try {
@@ -250,30 +265,48 @@ router.post("/purchase", async (req, res) => {
       );
       const totalTala = Number(walletResult.rows[0]?.total_tala || 0);
       const wardrobe = await ensureWardrobeRow(client, studentNumber);
-      const ownedItems = normalizeOwnedItems(wardrobe.owned_items);
+      const currentOwned = normalizeOwnedItems(wardrobe.owned_items);
 
-      if (ownedItems[sectionId].includes(itemId)) {
-        const error = new Error("Item already owned.");
+      const itemsToBuy = [];
+      for (let i = 0; i < requestedItems.length; i += 1) {
+        const itemReq = requestedItems[i];
+        if (!(currentOwned[itemReq.sectionId] || []).includes(itemReq.itemId)) {
+          const catItem = getCatalogItem(itemReq.sectionId, itemReq.itemId);
+          itemsToBuy.push({
+            itemId: itemReq.itemId,
+            price: Number(catItem ? catItem.price : 0),
+            sectionId: itemReq.sectionId,
+          });
+        }
+      }
+
+      if (itemsToBuy.length === 0) {
+        const error = new Error("Item(s) already owned.");
         error.statusCode = 409;
-        error.payload = serializeWardrobe({ owned_items: ownedItems, loadout: wardrobe.loadout }, totalTala);
+        error.payload = serializeWardrobe({ owned_items: currentOwned, loadout: wardrobe.loadout }, totalTala);
         throw error;
       }
 
-      const price = Number(item.price || 0);
-      if (price > 0 && totalTala < price) {
+      let totalCost = 0;
+      for (let i = 0; i < itemsToBuy.length; i += 1) {
+        totalCost += itemsToBuy[i].price;
+      }
+
+      if (totalCost > 0 && totalTala < totalCost) {
         const error = new Error("Not enough Tala.");
         error.statusCode = 400;
-        error.payload = serializeWardrobe({ owned_items: ownedItems, loadout: wardrobe.loadout }, totalTala);
+        error.payload = serializeWardrobe({ owned_items: currentOwned, loadout: wardrobe.loadout }, totalTala);
         throw error;
       }
 
-      const nextOwned = {
-        ...ownedItems,
-        [sectionId]: [...ownedItems[sectionId], itemId],
-      };
-      const nextTala = Math.max(0, totalTala - price);
+      const nextOwned = Object.assign({}, currentOwned);
+      for (let i = 0; i < itemsToBuy.length; i += 1) {
+        const itm = itemsToBuy[i];
+        nextOwned[itm.sectionId] = (nextOwned[itm.sectionId] || []).concat([itm.itemId]);
+      }
+      const nextTala = Math.max(0, totalTala - totalCost);
 
-      if (price > 0) {
+      if (totalCost > 0) {
         await client.query(
           `
             update public.student_tala_wallets
@@ -285,18 +318,21 @@ router.post("/purchase", async (req, res) => {
         );
       }
 
-      await client.query(
-        `
-          insert into public.student_muni_purchases (
-            student_number,
-            section_id,
-            item_id,
-            price_paid
-          )
-          values ($1, $2, $3, $4)
-        `,
-        [studentNumber, sectionId, itemId, price],
-      );
+      for (let i = 0; i < itemsToBuy.length; i += 1) {
+        const itm = itemsToBuy[i];
+        await client.query(
+          `
+            insert into public.student_muni_purchases (
+              student_number,
+              section_id,
+              item_id,
+              price_paid
+            )
+            values ($1, $2, $3, $4)
+          `,
+          [studentNumber, itm.sectionId, itm.itemId, itm.price],
+        );
+      }
 
       await client.query(
         `

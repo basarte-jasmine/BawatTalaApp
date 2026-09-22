@@ -103,7 +103,7 @@ export default function ImagePuzzleScreen() {
       if (!rewardClaimedRef.current) {
         rewardClaimedRef.current = true;
         claimMiniResetReward({ activityId: "image-puzzle", level: currentLevel, roundKey: `image-puzzle-${Date.now()}`, score: currentScore })
-          .then((reward) => setRewardTala(reward.rewardTala))
+          .then((reward) => setRewardTala(reward.rewardTala ?? 0))
           .catch(() => undefined);
       }
     } else {

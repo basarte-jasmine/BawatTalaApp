@@ -1,3 +1,4 @@
+import { formatProgramName, toTitleCase } from "../lib/format-utils";
  import { useEffect, useMemo, useState } from "react";
  import { useSearchParams } from "react-router-dom";
 import { CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Clock3, Edit2, Filter, Lock, Plus, RefreshCw, Search, Trash2, UserPlus, Users, X } from "lucide-react";
@@ -204,7 +205,7 @@ export default function CalendarScheduling({
     : [];
   const filteredPeerDirectory = useMemo(() => {
     return peerDirectory.filter((peer) => {
-      if (peerProgramFilter !== "ALL" && peer.program !== peerProgramFilter) return false;
+      if (peerProgramFilter !== "ALL" && String(peer.program || "").toLowerCase() !== peerProgramFilter.toLowerCase()) return false;
       if (!peerSearchQuery.trim()) return true;
       const q = peerSearchQuery.trim().toLowerCase();
       const name = String(peer.fullName || "").toLowerCase();
@@ -880,7 +881,7 @@ export default function CalendarScheduling({
                        <optgroup label={counselorLabelPlural}>
                          {counselors.map((c) => (
                            <option key={`cal-filter-${c.id}`} value={c.id}>
-                             {c.fullName}
+                             {toTitleCase(c.fullName)}
                            </option>
                          ))}
                        </optgroup>
@@ -1105,14 +1106,14 @@ export default function CalendarScheduling({
                                   </div>
                                 )}
                                 <div>
-                                  <div className="font-semibold text-slate-800">{peer.fullName}</div>
+                                  <div className="font-semibold text-slate-800">{toTitleCase(peer.fullName)}</div>
                                   <div className="text-xs text-slate-500">{peer.email}</div>
                                 </div>
                               </div>
                             </td>
                             <td className="px-4 py-4 text-slate-600">{peer.gender || "Not set"}</td>
                             <td className="px-4 py-4 text-slate-600">{peer.studentNumber || "Not set"}</td>
-                            <td className="px-4 py-4 text-slate-600">{peer.program || "Not set"}</td>
+                            <td className="px-4 py-4 text-slate-600">{formatProgramName(peer.program) || "Not set"}</td>
                             <td className="px-4 py-4">
                               <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getPeerStatusClasses(peer)}`}>
                                 {getPeerStatusLabel(peer)}
@@ -1418,7 +1419,7 @@ export default function CalendarScheduling({
                                   {item.studentNumber ? maskStudentNumber(item.studentNumber, shouldMaskStudentNumbers) : "No student number"}
                                 </span>
                                 <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600">
-                                  {item.program || "No program"}
+                                  {formatProgramName(item.program) || "No program"}
                                 </span>
                               </>
                             ) : (
@@ -1484,7 +1485,7 @@ export default function CalendarScheduling({
                       <div className="mt-4 grid gap-3 text-sm text-slate-500 sm:grid-cols-[1fr,auto]">
                         <div>
                           <div className="font-semibold text-slate-700">{appointment.studentName}</div>
-                          <div className="mt-1">{appointment.program || maskStudentNumber(appointment.studentNumber, shouldMaskStudentNumbers)}</div>
+                          <div className="mt-1">{formatProgramName(appointment.program) || maskStudentNumber(appointment.studentNumber, shouldMaskStudentNumbers)}</div>
                           {!isPeerSupport && appointment.counselingType ? (
                             <div className="mt-1 text-xs font-semibold text-emerald-700">
                               Counseling type: {appointment.counselingType}

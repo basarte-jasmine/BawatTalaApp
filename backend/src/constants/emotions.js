@@ -24,6 +24,7 @@ const LEGACY_EMOTION_ALIASES = {
   lonely: "sadness",
   overwhelmed: "anxiety",
   sad: "sadness",
+  stress: "anxiety",
   stressed: "anxiety",
   tired: "disappointment",
 };

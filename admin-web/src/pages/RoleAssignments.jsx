@@ -1,3 +1,4 @@
+import { toTitleCase } from "../lib/format-utils";
 import Toast from "../components/Toast";
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Edit2, Trash2, UserPlus, Users } from "lucide-react";
@@ -271,7 +272,7 @@ export default function RoleAssignments({ onLogout, session }) {
       setIsSaving(true);
       const payload = {
         email: formState.email.trim(),
-        fullName: formState.fullName.trim(),
+        fullName: toTitleCase(formState.fullName.trim()),
         gender: formState.gender,
         isActive: Boolean(formState.isActive),
         password: formState.password,
@@ -481,7 +482,7 @@ export default function RoleAssignments({ onLogout, session }) {
                             </div>
                           )}
                           <div>
-                            <div className="font-semibold text-gray-900">{member.fullName}</div>
+                            <div className="font-semibold text-gray-900">{toTitleCase(member.fullName)}</div>
                             <div className="text-xs text-gray-500">{member.email || member.studentNumber}</div>
                           </div>
                         </div>

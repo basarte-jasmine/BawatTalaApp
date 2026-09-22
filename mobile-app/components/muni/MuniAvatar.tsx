@@ -3,6 +3,7 @@ import { Animated, Easing, Image, ImageSourcePropType, Platform, StyleProp, Styl
 import {
   getEyeAccessoryStyle,
   getHeadAccessoryStyle,
+  getOutfitAccessoryStyle,
   getMuniCollectionSource,
   MuniLoadout,
   useSavedMuniLoadout,
@@ -68,6 +69,7 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
   const equippedOutfitSource = getMuniCollectionSource("outfit", activeLoadout.outfit);
   const equippedEyeSource = getMuniCollectionSource("eye", activeLoadout.eye);
   const equippedHeadSource = getMuniCollectionSource("head", activeLoadout.head);
+  const equippedOutfitStyle = getOutfitAccessoryStyle(activeLoadout.outfit);
   const equippedEyeStyle = getEyeAccessoryStyle(activeLoadout.eye);
   const equippedHeadStyle = getHeadAccessoryStyle(activeLoadout.head);
   const isGhostOutfit = activeLoadout.outfit === "spooky-ghost";
@@ -267,7 +269,7 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
           {equippedOutfitSource ? (
             <Image
               source={equippedOutfitSource}
-              style={styles.layer}
+              style={[styles.layer, equippedOutfitStyle]}
               resizeMode="contain"
             />
           ) : null}

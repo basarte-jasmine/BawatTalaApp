@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Platform } from "react-native";
+import { API_BASE_URL } from "./api-base-url";
 
 const AFFIRMATIONS_ENDPOINT = "https://www.affirmations.dev/";
 const AFFIRMATIONS_STORAGE_KEY = "bawat-tala.cached-affirmations.v7";
@@ -61,43 +61,6 @@ export function isUpbeatAndPositive(text: unknown): boolean {
   return true;
 }
 
-function getDefaultApiBaseUrl() {
-  if (Platform.OS === "web" && typeof window !== "undefined") {
-    const host = window.location.hostname;
-    if (host !== "localhost" && host !== "127.0.0.1") {
-      return "https://bawattalaapp.onrender.com";
-    }
-  }
-  return Platform.OS === "android"
-    ? "http://10.0.2.2:4002"
-    : "http://localhost:4002";
-}
-
-function normalizeApiBaseUrl(rawUrl: string) {
-  if (Platform.OS === "web" && typeof window !== "undefined") {
-    const host = window.location.hostname;
-    if (
-      host !== "localhost" &&
-      host !== "127.0.0.1" &&
-      (rawUrl.includes("localhost") || rawUrl.includes("127.0.0.1") || rawUrl.includes("10.0.2.2"))
-    ) {
-      return "https://bawattalaapp.onrender.com";
-    }
-  }
-  if (
-    Platform.OS === "android" &&
-    (rawUrl.includes("localhost") || rawUrl.includes("127.0.0.1"))
-  ) {
-    return rawUrl
-      .replace("localhost", "10.0.2.2")
-      .replace("127.0.0.1", "10.0.2.2");
-  }
-  return rawUrl;
-}
-
-const API_BASE_URL = normalizeApiBaseUrl(
-  process.env.EXPO_PUBLIC_API_BASE_URL ?? getDefaultApiBaseUrl(),
-);
 
 async function tryFetchJson(url: string, timeoutMs = 3500): Promise<any> {
   const controller = new AbortController();

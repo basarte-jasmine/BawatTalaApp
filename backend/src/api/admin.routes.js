@@ -1,8 +1,91 @@
+const { PROGRAM_OPTIONS } = require("../constants/student-profile");
+function toTitleCase(value) {
+  const ROMAN_NUMERALS = new Set([
+    "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X",
+    "XI", "XII", "XIII", "XIV", "XV", "XVI", "XVII", "XVIII", "XIX", "XX"
+  ]);
+
+  const LOWERCASE_PARTICLES = new Set([
+    "de", "del", "la", "los", "las", "da", "di", "van", "von", "y"
+  ]);
+
+  function formatSegment(segment) {
+    if (!segment) return "";
+    const upper = segment.toUpperCase();
+    if (ROMAN_NUMERALS.has(upper)) return upper;
+    if (upper === "JR" || upper === "JR.") return upper.endsWith(".") ? "Jr." : "Jr";
+    if (upper === "SR" || upper === "SR.") return upper.endsWith(".") ? "Sr." : "Sr";
+
+    if (/^[a-zA-Z]'[a-zA-Z]/.test(segment)) {
+      const parts = segment.split("'");
+      return parts
+        .map((p, i) => (i === 0 ? p.toUpperCase() : formatSegment(p)))
+        .join("'");
+    }
+
+    if (/^mc[a-z]/i.test(segment) && segment.length > 2) {
+      return "Mc" + segment.charAt(2).toUpperCase() + segment.slice(3).toLowerCase();
+    }
+
+    return segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase();
+  }
+
+  function formatWord(word, index) {
+    if (!word) return "";
+    const lower = word.toLowerCase();
+
+    if (word.includes("-")) {
+      return word
+        .split("-")
+        .map((part, pIdx) => {
+          if (index > 0 && pIdx === 0 && LOWERCASE_PARTICLES.has(part.toLowerCase())) {
+            return part.toLowerCase();
+          }
+          return formatSegment(part);
+        })
+        .join("-");
+    }
+
+    if (index > 0 && LOWERCASE_PARTICLES.has(lower)) {
+      return lower;
+    }
+
+    return formatSegment(word);
+  }
+
+  const raw = String(value || "").trim().replace(/\s+/g, " ");
+  if (!raw) return "";
+
+  const words = raw.split(" ");
+  return words.map((w, idx) => formatWord(w, idx)).join(" ");
+}
+
+function normalizeMmDdYyyyBirthdate(value) {
+  const raw = String(value || "").trim();
+  const matchUs = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (matchUs) {
+    const month = matchUs[1].padStart(2, "0");
+    const day = matchUs[2].padStart(2, "0");
+    const year = matchUs[3];
+    return month + "/" + day + "/" + year;
+  }
+  const matchIso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (matchIso) {
+    return matchIso[2] + "/" + matchIso[3] + "/" + matchIso[1];
+  }
+  return raw || null;
+}
+
 const express = require("express");
 const { randomBytes, scryptSync, timingSafeEqual } = require("crypto");
 const { google } = require("googleapis");
 const { supabaseAdminClient, supabaseAuthClient } = require("../config/supabase");
 const { JOURNAL_PRIMARY_CONCERN_VALUES, query } = require("../config/db");
+const {
+  getLoginLockout,
+  registerFailedLoginAttempt,
+  clearLoginLockout,
+} = require("../services/login-lockout.service");
 const { getAuthenticatedAdmin, requireAdminAuth, requireRoles } = require("../middleware/auth.middleware");
 const { mapFeedbackRow } = require("./feedback.routes");
 const { sendPasswordResetCodeEmail } = require("../services/auth-email.service");
@@ -96,7 +179,6 @@ const CONSULTATION_CONCERN_CATEGORY_BY_ALIAS = new Map(
   ),
 );
 
-const adminLoginAttempts = new Map();
 const adminResetSessions = new Map();
 const adminRoleVerificationSessions = new Map();
 const adminChangePasswordSessions = new Map();
@@ -138,22 +220,20 @@ function verifyPassword(value, stored) {
   }
 }
 
-function getAttemptState(key) {
-  return adminLoginAttempts.get(key) || { count: 0, lockUntil: 0 };
+async function getAttemptState(key) {
+  return getLoginLockout("admin", key);
 }
 
-function registerFailedAttempt(key) {
-  const now = Date.now();
-  const state = getAttemptState(key);
-  const updatedCount = state.count + 1;
+async function registerFailedAttempt(key) {
+  const result = await registerFailedLoginAttempt("admin", key, {
+    limit: LOGIN_ATTEMPTS_LIMIT,
+    lockDurationMs: LOGIN_LOCK_DURATION_MS,
+  });
+  return Boolean(result.locked);
+}
 
-  if (updatedCount >= LOGIN_ATTEMPTS_LIMIT) {
-    adminLoginAttempts.set(key, { count: 0, lockUntil: now + LOGIN_LOCK_DURATION_MS });
-    return true;
-  }
-
-  adminLoginAttempts.set(key, { count: updatedCount, lockUntil: 0 });
-  return false;
+async function clearAdminLoginAttemptState(key) {
+  await clearLoginLockout("admin", key);
 }
 
 function getResetSession(email) {
@@ -347,6 +427,9 @@ function toMonthlyBuckets(rows, dateKey) {
 }
 
 function normalizeDisplayLabel(value) {
+  const needle = String(value || "").trim().toLowerCase();
+  const matched = PROGRAM_OPTIONS.find((opt) => opt.toLowerCase() === needle);
+  if (matched) return matched;
   return String(value || "")
     .trim()
     .toLowerCase()
@@ -1254,7 +1337,7 @@ router.post("/login", async (req, res) => {
   }
 
   const loginKey = `${email}:${req.ip || "unknown"}`;
-  const attemptState = getAttemptState(loginKey);
+  const attemptState = await getAttemptState(loginKey);
   if (attemptState.lockUntil && Date.now() < attemptState.lockUntil) {
     const remainingSeconds = Math.max(1, Math.ceil((attemptState.lockUntil - Date.now()) / 1000));
     const remainingMinutes = Math.ceil(remainingSeconds / 60);
@@ -1278,9 +1361,9 @@ router.post("/login", async (req, res) => {
 
   const admin = result.rows[0];
   if (!admin) {
-    const isLocked = registerFailedAttempt(loginKey);
+    const isLocked = await registerFailedAttempt(loginKey);
     if (isLocked) {
-      const lockState = getAttemptState(loginKey);
+      const lockState = await getAttemptState(loginKey);
       const remainingSeconds = Math.max(1, Math.ceil((lockState.lockUntil - Date.now()) / 1000));
       const remainingMinutes = Math.ceil(remainingSeconds / 60);
       return res.status(429).json({
@@ -1298,9 +1381,9 @@ router.post("/login", async (req, res) => {
 
   const isPasswordValid = verifyPassword(password, admin.password_hash);
   if (!isPasswordValid) {
-    const isLocked = registerFailedAttempt(loginKey);
+    const isLocked = await registerFailedAttempt(loginKey);
     if (isLocked) {
-      const lockState = getAttemptState(loginKey);
+      const lockState = await getAttemptState(loginKey);
       const remainingSeconds = Math.max(1, Math.ceil((lockState.lockUntil - Date.now()) / 1000));
       const remainingMinutes = Math.ceil(remainingSeconds / 60);
       return res.status(429).json({
@@ -1344,7 +1427,7 @@ router.post("/login", async (req, res) => {
     return res.status(403).json({ message: "This account has been deactivated. Please contact the Head Counselor." });
   }
 
-  adminLoginAttempts.delete(loginKey);
+  await clearAdminLoginAttemptState(loginKey);
   const roleLabel = admin.role === "HEAD_COUNSELOR" ? "Head Counselor" : "Counselor";
   await writeAdminActivityLog({
     actionType: "ADMIN_LOGIN",
@@ -1982,8 +2065,12 @@ router.get("/dashboard/summary", async (req, res) => {
   );
 
   const genderCounts = allProfiles.reduce((acc, row) => {
-    const key = String(row.gender || "").trim().toUpperCase() === "MALE" ? "MALE" : "FEMALE";
-    acc[key] = (acc[key] || 0) + 1;
+    const raw = String(row.gender || "").trim().toUpperCase();
+    if (raw === "MALE") {
+      acc.MALE = (acc.MALE || 0) + 1;
+    } else if (raw === "FEMALE") {
+      acc.FEMALE = (acc.FEMALE || 0) + 1;
+    }
     return acc;
   }, { MALE: 0, FEMALE: 0 });
 
@@ -2430,7 +2517,7 @@ router.get("/dashboard/risk-flags", async (req, res) => {
       insights: Array.isArray(row.insights) ? row.insights : [],
       isResolved: Boolean(row.counselor_resolved_at),
       primaryConcern: row.primary_concern || null,
-      program: row.program || "",
+      program: normalizeDisplayLabel(row.program || ""),
       profilePictureUrl: row.profile_picture_url || "",
       riskLevel: row.risk_level,
       emotionalDistressSignal: String(row.distress_signal || "NONE"),
@@ -3627,7 +3714,7 @@ router.get("/search", async (req, res) => {
   return res.json({
     students: studentsResult.rows.map((row) => ({
       studentNumber: row.student_number,
-      fullName: row.full_name,
+      fullName: toTitleCase(row.full_name),
       program: normalizeDisplayLabel(row.program || "Unspecified"),
       email: row.email || "",
       profilePictureUrl: row.profile_picture_url || "",
@@ -3731,8 +3818,7 @@ router.get("/analytics", async (req, res) => {
           case
             when lower(trim(coalesce(gender, ''))) = 'male' then 'Male'
             when lower(trim(coalesce(gender, ''))) = 'female' then 'Female'
-            when nullif(trim(coalesce(gender, '')), '') is null then 'Female'
-            else initcap(trim(gender))
+            else null
           end as gender,
           coalesce(region, '') as region,
           coalesce(province, '') as province,
@@ -4113,16 +4199,16 @@ router.get("/analytics", async (req, res) => {
 
     return {
       studentNumber,
-      fullName: profile.full_name || studentNumber,
+      fullName: toTitleCase(profile.full_name || studentNumber),
       email: profile.email || "",
       program: normalizeDisplayLabel(profile.program || "Unspecified"),
       yearLevel: inferYearLevelFromStudentNumber(studentNumber),
-      gender: profile.gender && profile.gender.toLowerCase() === "male" ? "Male" : "Female",
+      gender: profile.gender && profile.gender.toLowerCase() === "male" ? "Male" : (profile.gender && profile.gender.toLowerCase() === "female" ? "Female" : null),
       region: profile.region || "",
       province: profile.province || "",
       city: profile.city || "",
       barangay: profile.barangay || "",
-      birthdate: normalizeDateValue(profile.birthdate) || "",
+      birthdate: normalizeMmDdYyyyBirthdate(profile.birthdate) || "",
       registeredAt: profile.created_at || null,
       entriesInRange: stats.entriesInRange,
       flagsInRange: stats.flagsInRange,
@@ -4458,7 +4544,7 @@ router.get("/roles", requireRoles("HEAD_COUNSELOR"), async (_req, res) => {
           aa.email,
           coalesce(nullif(aa.full_name, ''), split_part(aa.email, '@', 1)) as full_name,
           coalesce(aa.role, 'COUNSELOR') as role,
-          case when lower(trim(coalesce(aa.gender, ''))) = 'male' then 'Male' else 'Female' end as gender,
+          case when lower(trim(coalesce(aa.gender, ''))) = 'male' then 'Male' when lower(trim(coalesce(aa.gender, ''))) = 'female' then 'Female' else null end as gender,
           coalesce(aa.profile_picture_url, '') as profile_picture_url,
           coalesce(aa.specialties, '[]'::jsonb) as specialties,
           aa.is_active,
@@ -4544,7 +4630,7 @@ router.get("/roles", requireRoles("HEAD_COUNSELOR"), async (_req, res) => {
       gender: row.gender,
       specialties: Array.isArray(row.specialties) ? row.specialties : [],
       studentNumber: row.student_number || "",
-      program: row.program || "",
+      program: normalizeDisplayLabel(row.program || ""),
       createdAt: row.created_at,
       memberType: "PEER",
       canEdit: true,
@@ -4618,8 +4704,7 @@ router.get("/students", async (req, res) => {
         case
           when lower(trim(coalesce(sp.gender, ''))) = 'male' then 'Male'
           when lower(trim(coalesce(sp.gender, ''))) = 'female' then 'Female'
-          when nullif(trim(coalesce(sp.gender, '')), '') is null then ''
-          else initcap(trim(sp.gender))
+          else null
         end as gender,
         sp.birthdate,
         sp.created_at,
@@ -4666,8 +4751,8 @@ router.get("/students", async (req, res) => {
     barangay: row.barangay || "",
     street: row.street || "",
     profilePictureUrl: row.profile_picture_url || "",
-    gender: row.gender && row.gender.toLowerCase() === "male" ? "Male" : "Female",
-    birthdate: row.birthdate || null,
+    gender: row.gender && row.gender.toLowerCase() === "male" ? "Male" : (row.gender && row.gender.toLowerCase() === "female" ? "Female" : null),
+    birthdate: normalizeMmDdYyyyBirthdate(row.birthdate),
     createdAt: row.created_at,
     totalEntries: Number(row.total_entries || 0),
     lastEntryAt: row.last_entry_at || null,
@@ -4782,7 +4867,7 @@ router.get("/students/recent-entries", async (req, res) => {
   const entries = result.rows.map((row) => ({
     id: row.id,
     studentNumber: row.student_number,
-    fullName: row.full_name || row.student_number,
+    fullName: toTitleCase(row.full_name) || row.student_number,
     program: normalizeDisplayLabel(row.program || "Unspecified"),
     entryDate: normalizeDateValue(row.entry_date),
     title: row.title || "",
@@ -5162,17 +5247,17 @@ router.get("/students/:studentNumber", async (req, res) => {
   return res.json({
     profile: {
       studentNumber: profile.student_number,
-      fullName: profile.full_name,
+      fullName: toTitleCase(profile.full_name),
       email: profile.email,
       program: normalizeDisplayLabel(profile.program || "Unspecified"),
-      gender: profile.gender || "",
+      gender: profile.gender && profile.gender.toLowerCase() === "male" ? "Male" : (profile.gender && profile.gender.toLowerCase() === "female" ? "Female" : null),
       region: profile.region || "",
       province: profile.province || "",
       city: profile.city || "",
       barangay: profile.barangay || "",
       street: profile.street || "",
       profilePictureUrl: profile.profile_picture_url || "",
-      birthdate: profile.birthdate || null,
+      birthdate: normalizeMmDdYyyyBirthdate(profile.birthdate),
       createdAt: profile.created_at,
       hasJournalLockPin: Boolean(preference?.journal_lock_pin_hash),
       journalLockEnabled,
@@ -5364,7 +5449,7 @@ router.get("/settings", async (req, res) => {
         email,
         coalesce(nullif(full_name, ''), split_part(email, '@', 1)) as full_name,
         coalesce(role, 'COUNSELOR') as role,
-        case when lower(trim(coalesce(gender, ''))) = 'male' then 'Male' else 'Female' end as gender,
+        case when lower(trim(coalesce(gender, ''))) = 'male' then 'Male' when lower(trim(coalesce(gender, ''))) = 'female' then 'Female' else null end as gender,
         coalesce(profile_picture_url, '') as profile_picture_url,
         coalesce(specialties, '[]'::jsonb) as specialties,
         coalesce(settings, '{}'::jsonb) as settings,
@@ -5393,9 +5478,9 @@ router.get("/settings", async (req, res) => {
 
 router.patch("/settings", async (req, res) => {
   const email = normalizeEmail(req.admin?.email || "");
-  const fullName = normalizeCompactSpaces(req.body.fullName || "");
-  const rawGender = normalizeCompactSpaces(req.body.gender || "Female");
-  const gender = rawGender.toLowerCase() === "male" ? "Male" : "Female";
+  const fullName = toTitleCase(req.body.fullName || "");
+  const rawGender = normalizeCompactSpaces(req.body.gender || "");
+  const gender = rawGender.toLowerCase() === "male" ? "Male" : (rawGender.toLowerCase() === "female" ? "Female" : "");
   const profilePictureUrl = normalizeCompactSpaces(req.body.profilePictureUrl || "");
   const requestedProfilePictureSource = String(req.body.profilePictureSource || "").trim().toUpperCase();
   const uploadedProfilePicture = parseUploadedImagePayload(req.body.uploadedProfilePicture);
@@ -5520,7 +5605,7 @@ router.patch("/settings", async (req, res) => {
         email,
         coalesce(nullif(full_name, ''), split_part(email, '@', 1)) as full_name,
         coalesce(role, 'COUNSELOR') as role,
-        case when lower(trim(coalesce(gender, ''))) = 'male' then 'Male' else 'Female' end as gender,
+        case when lower(trim(coalesce(gender, ''))) = 'male' then 'Male' when lower(trim(coalesce(gender, ''))) = 'female' then 'Female' else null end as gender,
         coalesce(profile_picture_url, '') as profile_picture_url,
         coalesce(specialties, '[]'::jsonb) as specialties,
         coalesce(settings, '{}'::jsonb) as settings,
@@ -5564,7 +5649,7 @@ router.patch("/settings", async (req, res) => {
 
 router.post("/roles", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
   const email = normalizeEmail(req.body.email || "");
-  const fullName = normalizeCompactSpaces(req.body.fullName || "");
+  const fullName = toTitleCase(req.body.fullName || "");
   const rawGender = normalizeCompactSpaces(req.body.gender || "");
   const gender = rawGender.toLowerCase() === "male" ? "Male" : rawGender.toLowerCase() === "female" ? "Female" : "";
   const role = String(req.body.role || "COUNSELOR").trim().toUpperCase();
@@ -5750,7 +5835,7 @@ router.post("/roles/resend-code", requireRoles("HEAD_COUNSELOR"), async (req, re
 
 router.patch("/roles/:memberId", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
   const memberId = String(req.params.memberId || "").trim();
-  const fullName = normalizeCompactSpaces(req.body.fullName || "");
+  const fullName = toTitleCase(req.body.fullName || "");
   const rawGender = normalizeCompactSpaces(req.body.gender || "");
   const gender = rawGender.toLowerCase() === "male" ? "Male" : rawGender.toLowerCase() === "female" ? "Female" : "";
   const role = String(req.body.role || "").trim().toUpperCase();

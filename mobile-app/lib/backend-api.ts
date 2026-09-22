@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
 import { Platform } from "react-native";
 import { decryptLocalPayload, encryptLocalPayload, looksLikeEncryptedPayload } from "./local-encrypted-storage";
 import { needsSupportPrompt } from "./risk-level";
@@ -39,6 +40,7 @@ export type StudentPreferences = {
   journalLockEnabled: boolean;
   notificationPreviewsEnabled: boolean;
   privateJournalModeEnabled: boolean;
+  profileFrameId?: string | null;
 };
 
 export type StudentReferral = {
@@ -241,13 +243,39 @@ export type FutureSelfMessage = {
   updatedAt?: string;
 };
 
+/** LAN host from Expo Metro (e.g. 192.168.x.x:8081) — used so physical devices never hit localhost. */
+function getDevLanHost(): string | null {
+  const hostUri =
+    Constants.expoConfig?.hostUri ??
+    (Constants as { manifest2?: { extra?: { expoClient?: { hostUri?: string } } } }).manifest2?.extra?.expoClient?.hostUri ??
+    (Constants as { manifest?: { debuggerHost?: string } }).manifest?.debuggerHost ??
+    null;
+  if (!hostUri || typeof hostUri !== "string") return null;
+  const host = hostUri.split(":")[0]?.trim();
+  if (!host || host === "localhost" || host === "127.0.0.1") return null;
+  return host;
+}
+
+function isPrivateLanHost(host: string): boolean {
+  return /^(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})$/.test(host);
+}
+
 function getDefaultApiBaseUrl() {
   if (Platform.OS === "web" && typeof window !== "undefined") {
     const host = window.location.hostname;
     if (host !== "localhost" && host !== "127.0.0.1") {
+      // Same Wi-Fi browser → local backend; public/deployed host → Render.
+      if (isPrivateLanHost(host)) {
+        return `http://${host}:4002`;
+      }
       return "https://bawattalaapp.onrender.com";
     }
   }
+  const lanHost = getDevLanHost();
+  if (lanHost) {
+    return `http://${lanHost}:4002`;
+  }
+  // Android emulator loopback to host machine; physical devices should use LAN via env or Expo hostUri.
   return Platform.OS === "android"
     ? "http://10.0.2.2:4002"
     : "http://localhost:4002";
@@ -261,13 +289,26 @@ function normalizeApiBaseUrl(rawUrl: string) {
       host !== "127.0.0.1" &&
       (rawUrl.includes("localhost") || rawUrl.includes("127.0.0.1") || rawUrl.includes("10.0.2.2"))
     ) {
+      if (isPrivateLanHost(host)) {
+        return `http://${host}:4002`;
+      }
       return "https://bawattalaapp.onrender.com";
     }
   }
-  if (
-    Platform.OS === "android" &&
-    (rawUrl.includes("localhost") || rawUrl.includes("127.0.0.1"))
-  ) {
+
+  const pointsAtLoopback =
+    rawUrl.includes("localhost") || rawUrl.includes("127.0.0.1");
+
+  // Physical device / Expo Go on LAN: rewrite loopback env to the Metro host machine.
+  const lanHost = getDevLanHost();
+  if (lanHost && pointsAtLoopback) {
+    return rawUrl
+      .replace("localhost", lanHost)
+      .replace("127.0.0.1", lanHost);
+  }
+
+  // Android emulator only: map loopback to the special host alias.
+  if (Platform.OS === "android" && pointsAtLoopback) {
     return rawUrl
       .replace("localhost", "10.0.2.2")
       .replace("127.0.0.1", "10.0.2.2");
@@ -348,6 +389,7 @@ const DEFAULT_STUDENT_PREFERENCES: StudentPreferences = {
   journalLockEnabled: false,
   notificationPreviewsEnabled: true,
   privateJournalModeEnabled: true,
+  profileFrameId: null,
 };
 
 function getLocalJournalStorageKey(studentNumber: string) {
@@ -818,7 +860,7 @@ function normalizeJournalEntrySafety(entry?: JournalEntry | null): JournalEntry 
   if (safetyText) {
     next.safetyStatus = safetyStatus;
   } else if ("safetyStatus" in raw || "safety_status" in raw) {
-    // Explicit null from API — keep key so UI can treat as "present but empty" via helpers.
+    // Explicit null from API â€” keep key so UI can treat as "present but empty" via helpers.
     next.safetyStatus = null;
   }
   if (distressText) {
@@ -1375,6 +1417,9 @@ function normalizeStudentPreferences(value?: Partial<StudentPreferences> | null)
       value?.privateJournalModeEnabled === undefined
         ? DEFAULT_STUDENT_PREFERENCES.privateJournalModeEnabled
         : Boolean(value.privateJournalModeEnabled),
+    profileFrameId: typeof value?.profileFrameId === "string" && value.profileFrameId.trim()
+      ? value.profileFrameId.trim()
+      : (value?.profileFrameId === null ? null : (DEFAULT_STUDENT_PREFERENCES.profileFrameId ?? null)),
   };
 }
 
@@ -1857,6 +1902,7 @@ export async function saveStudentPreferences(
       | "journalLockEnabled"
       | "notificationPreviewsEnabled"
       | "privateJournalModeEnabled"
+      | "profileFrameId"
     >
   > & {
     currentJournalLockPin?: string;
@@ -2670,8 +2716,9 @@ export async function fetchMuniWardrobe(
 }
 
 export async function purchaseMuniWardrobeItem(payload: {
-  itemId: string;
-  sectionId: string;
+  itemId?: string;
+  items?: Array<{ itemId: string; sectionId: string }>;
+  sectionId?: string;
   studentNumber: string;
 }): Promise<
   ApiResult & {

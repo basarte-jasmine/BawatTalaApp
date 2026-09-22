@@ -1,3 +1,4 @@
+import { formatProgramName, toTitleCase } from "../lib/format-utils";
 import {
     BookOpen,
     Calendar,
@@ -89,6 +90,10 @@ function formatRelativeTime(value) {
 function formatDate(value) {
   if (!value) return "Not available";
   const str = String(value).trim();
+  const matchUs = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (matchUs) {
+    return `${matchUs[1].padStart(2, "0")}-${matchUs[2].padStart(2, "0")}-${matchUs[3]}`;
+  }
   const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (match) {
     return `${match[2]}-${match[3]}-${match[1]}`;
@@ -353,12 +358,12 @@ function DirectoryRow({ student, onMessage, onViewProfile, onDelete, canDelete =
           <StudentAvatar
             className="h-12 w-12 rounded-full text-base font-bold shadow-sm shrink-0"
             fallbackClassName={avatarTone}
-            fullName={student.fullName}
+            fullName={toTitleCase(student.fullName)}
             profilePictureUrl={student.profilePictureUrl}
           />
           <div className="grid min-w-0 flex-1 gap-x-8 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-[minmax(14rem,1.3fr)_minmax(11rem,1fr)_minmax(8rem,0.7fr)_minmax(6rem,0.5fr)] lg:items-center">
             <div className="min-w-0">
-              <h3 className="truncate text-base font-bold text-slate-900">{student.fullName}</h3>
+              <h3 className="truncate text-base font-bold text-slate-900">{toTitleCase(student.fullName)}</h3>
               <p className="mt-0.5 text-xs font-semibold text-slate-500">{maskStudentNumber(student.studentNumber, maskStudentNumbers)}</p>
               <div className="mt-1.5 flex flex-wrap gap-2">
                 <span className={`inline-flex rounded-full border px-3 py-0.5 text-xs ${getStatusClasses(statusLabel)}`}>
@@ -368,7 +373,7 @@ function DirectoryRow({ student, onMessage, onViewProfile, onDelete, canDelete =
             </div>
             <div>
               <div className="text-xs font-extrabold uppercase tracking-wider text-slate-500">Course</div>
-              <div className="mt-1 text-sm font-semibold text-slate-800">{student.program || "Unspecified"}</div>
+              <div className="mt-1 text-sm font-semibold text-slate-800">{formatProgramName(student.program) || "Unspecified"}</div>
             </div>
             <div>
               <div className="text-xs font-extrabold uppercase tracking-wider text-slate-500">Last Entry</div>
@@ -505,13 +510,13 @@ function MessageModal({
             />
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-slate-900">{student.fullName}</h2>
+                <h2 className="text-base font-bold text-slate-900">{toTitleCase(student.fullName)}</h2>
                 <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
                   Student Channel
                 </span>
               </div>
               <div className="text-xs font-semibold text-slate-500">
-                {maskStudentNumber(student.studentNumber, maskStudentNumbers)} • {student.program || "Unspecified"}
+                {maskStudentNumber(student.studentNumber, maskStudentNumbers)} • {formatProgramName(student.program) || "Unspecified"}
               </div>
             </div>
           </div>
@@ -718,7 +723,7 @@ function RecentEntriesModal({
                         <div>
                           <div className="font-semibold text-slate-900">{entry.fullName || "Unnamed Student"}</div>
                           <div className="mt-2 flex flex-wrap gap-x-8 gap-y-1 text-sm text-slate-500">
-                            <span>{entry.program || "Unspecified"}</span>
+                            <span>{formatProgramName(entry.program) || "Unspecified"}</span>
                             <span>{maskStudentNumber(entry.studentNumber, maskStudentNumbers)}</span>
                           </div>
                         </div>
@@ -1175,12 +1180,12 @@ export default function StudentDirectory({ onLogout, session }) {
                     <StudentAvatar
                       className="h-18 w-18 h-[4.5rem] w-[4.5rem] rounded-[26px] text-2xl shadow-[0_16px_36px_-24px_rgba(79,70,229,0.7)] ring-1 ring-indigo-100"
                       fallbackClassName="bg-white text-indigo-600"
-                      fullName={studentProfile.profile.fullName}
+                      fullName={toTitleCase(studentProfile.profile.fullName)}
                       profilePictureUrl={studentProfile.profile.profilePictureUrl}
                     />
                     <div className="min-w-0 space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="truncate text-2xl font-bold tracking-tight text-slate-900">{studentProfile.profile.fullName}</h2>
+                        <h2 className="truncate text-2xl font-bold tracking-tight text-slate-900">{toTitleCase(studentProfile.profile.fullName)}</h2>
                         <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${getStatusClasses(studentProfile.profile.status)}`}>
                           {studentProfile.profile.status}
                         </span>
@@ -1191,7 +1196,7 @@ export default function StudentDirectory({ onLogout, session }) {
                           {maskStudentNumber(studentProfile.profile.studentNumber, shouldMaskStudentNumbers)}
                         </span>
                         <span>{studentProfile.profile.email || "No email provided"}</span>
-                        <span>{studentProfile.profile.program || "Unspecified"}</span>
+                        <span>{formatProgramName(studentProfile.profile.program) || "Unspecified"}</span>
                         <span>{studentProfile.profile.gender || "Not provided"}</span>
                       </div>
                     </div>
@@ -1225,7 +1230,7 @@ export default function StudentDirectory({ onLogout, session }) {
                         Demographics & Student Details
                       </div>
                       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                        <ProfileInfoTile label="Program / Course" value={studentProfile.profile.program || "Unspecified"} />
+                        <ProfileInfoTile label="Program / Course" value={formatProgramName(studentProfile.profile.program) || "Unspecified"} />
                         <ProfileInfoTile label="Birthdate" value={formatDate(studentProfile.profile.birthdate)} />
                         <ProfileInfoTile label="Joined Date" value={formatDate(studentProfile.profile.createdAt)} />
                         <ProfileInfoTile label="Last Entry" value={latestEntry ? formatDate(latestEntry.entryDate) : "No entries yet"} />
@@ -1436,7 +1441,7 @@ export default function StudentDirectory({ onLogout, session }) {
                                     </div>
                                     <EntryConversation
                                       entry={entry}
-                                      studentName={studentProfile.profile.fullName}
+                                      studentName={toTitleCase(studentProfile.profile.fullName)}
                                       onOpenJournal={(targetEntry) => {
                                         setJournalUnlockPin("");
                                         setJournalUnlockError("");

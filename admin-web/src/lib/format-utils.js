@@ -1,12 +1,12 @@
 import { PROGRAM_OPTIONS } from "./register-data";
 
-export function formatProgramName(value: string | null | undefined) {
+export function formatProgramName(value) {
   const raw = String(value || "").trim().replace(/\s+/g, " ");
   if (!raw) return "";
   return PROGRAM_OPTIONS.find((option) => option.toLowerCase() === raw.toLowerCase()) || toTitleCase(raw);
 }
 
-export function toTitleCase(value: string | null | undefined) {
+export function toTitleCase(value) {
   const ROMAN_NUMERALS = new Set([
     "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X",
     "XI", "XII", "XIII", "XIV", "XV", "XVI", "XVII", "XVIII", "XIX", "XX"
@@ -16,7 +16,7 @@ export function toTitleCase(value: string | null | undefined) {
     "de", "del", "la", "los", "las", "da", "di", "van", "von", "y"
   ]);
 
-  function formatSegment(segment: string): string {
+  function formatSegment(segment) {
     if (!segment) return "";
     const upper = segment.toUpperCase();
     if (ROMAN_NUMERALS.has(upper)) return upper;
@@ -26,7 +26,7 @@ export function toTitleCase(value: string | null | undefined) {
     if (/^[a-zA-Z]'[a-zA-Z]/.test(segment)) {
       const parts = segment.split("'");
       return parts
-        .map((p: string, i: number) => (i === 0 ? p.toUpperCase() : formatSegment(p)))
+        .map((p, i) => (i === 0 ? p.toUpperCase() : formatSegment(p)))
         .join("'");
     }
 
@@ -37,14 +37,14 @@ export function toTitleCase(value: string | null | undefined) {
     return segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase();
   }
 
-  function formatWord(word: string, index: number): string {
+  function formatWord(word, index) {
     if (!word) return "";
     const lower = word.toLowerCase();
 
     if (word.includes("-")) {
       return word
         .split("-")
-        .map((part: string, pIdx: number) => {
+        .map((part, pIdx) => {
           if (index > 0 && pIdx === 0 && LOWERCASE_PARTICLES.has(part.toLowerCase())) {
             return part.toLowerCase();
           }
@@ -65,28 +65,4 @@ export function toTitleCase(value: string | null | undefined) {
 
   const words = raw.split(" ");
   return words.map((w, idx) => formatWord(w, idx)).join(" ");
-}
-
-export function toPascalCase(value: string) {
-  return value
-    .trim()
-    .replace(/[^a-zA-Z0-9()\- ]/g, " ")
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`)
-    .join(" ");
-}
-
-export function normalizeStudentNumber(value: string) {
-  const compact = value.replace(/\s+/g, "");
-  const match = compact.match(/^(\d{2})[- ]?(\d{4})$/);
-  if (!match) return value;
-  return `${match[1]}-${match[2]}`;
-}
-
-export function formatBirthdate(date: Date) {
-  const mm = `${date.getMonth() + 1}`.padStart(2, "0");
-  const dd = `${date.getDate()}`.padStart(2, "0");
-  const yyyy = `${date.getFullYear()}`;
-  return `${mm}/${dd}/${yyyy}`;
 }

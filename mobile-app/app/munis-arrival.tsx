@@ -1,4 +1,4 @@
-import { Ionicons } from "@expo/vector-icons";
+﻿import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -99,6 +99,10 @@ export default function MunisArrivalScreen() {
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true,
       onPanResponderGrant: () => {
         dragStartX.current = targetRaftX.current;
       },
@@ -260,7 +264,7 @@ export default function MunisArrivalScreen() {
                 if (!rewardClaimedRef.current) {
                   rewardClaimedRef.current = true;
                   claimMiniResetReward({ activityId: "munis-arrival", distance, leaves, level: 1, roundKey: `munis-arrival-${Date.now()}` })
-                    .then((reward) => setRewardTala(reward.rewardTala))
+                    .then((reward) => setRewardTala(reward.rewardTala ?? 0))
                     .catch(() => undefined);
                 }
               }
@@ -348,7 +352,7 @@ saveGameScore("munis-arrival", { bestDrift: bestDriftRef.current });
 
   return (
     <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
-      <Animated.View onLayout={handleGameLayout} style={[styles.gameContainer, { transform: [{ translateX: shakeAnim }] }]}> 
+      <View onLayout={handleGameLayout} style={styles.gameContainer}>
         
         
         <View style={StyleSheet.absoluteFill}>
@@ -379,17 +383,29 @@ saveGameScore("munis-arrival", { bestDrift: bestDriftRef.current });
             </View>
           ))}
 
-          <Image
-            source={
-              annoyedTimer.current > 0 
-                ? require("../assets/images/Mini Reset/Muni's Arrival/Muni_Raft_Annoyed.webp")
-                : require("../assets/images/Mini Reset/Muni's Arrival/Muni_LostwRaft.webp")
-            }
-            style={[styles.raft, { left: raftX.current - RAFT_W / 2, top: gameSize.height - RAFT_BOTTOM_OFFSET - RAFT_H }]}
-            resizeMode="contain"
-          />
+          <Animated.View
+            style={[
+              styles.raft,
+              {
+                left: raftX.current - RAFT_W / 2,
+                top: gameSize.height - RAFT_BOTTOM_OFFSET - RAFT_H,
+                transform: [{ translateX: shakeAnim }],
+              },
+            ]}
+            pointerEvents="none"
+          >
+            <Image
+              source={
+                annoyedTimer.current > 0
+                  ? require("../assets/images/Mini Reset/Muni's Arrival/Muni_Raft_Annoyed.webp")
+                  : require("../assets/images/Mini Reset/Muni's Arrival/Muni_LostwRaft.webp")
+              }
+              style={styles.raftImage}
+              resizeMode="contain"
+            />
+          </Animated.View>
         </View>
-      </Animated.View>
+      </View>
 
       {gameState === "PLAYING" && (
         <View style={styles.hudTop}>
@@ -458,13 +474,14 @@ saveGameScore("munis-arrival", { bestDrift: bestDriftRef.current });
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: COLOR_WATER },
-  gameContainer: { flex: 1 },
+  screen: { flex: 1, backgroundColor: COLOR_WATER, overflow: "hidden" },
+  gameContainer: { flex: 1, overflow: "hidden" },
   topBar: { position: "absolute", top: 0, left: 0, right: 0, height: 60, zIndex: 9999, elevation: 9999 },
   backButton: { width: 48, height: 48, marginTop: 6, marginLeft: 8, alignItems: "center", justifyContent: "center", zIndex: 10000, elevation: 10000 },
   touchArea: { flex: 1, position: "absolute", width: "100%", height: "100%", zIndex: 10 },
   particle: { position: "absolute", width: 2, backgroundColor: "#FFFFFF", borderRadius: 2 },
   raft: { position: "absolute", width: RAFT_W, height: RAFT_H },
+  raftImage: { width: RAFT_W, height: RAFT_H },
   itemWrap: { position: "absolute", alignItems: "center", justifyContent: "center" },
   itemImage: { position: "absolute" },
   leaf: { backgroundColor: COLOR_LEAF, borderRadius: 12, borderTopRightRadius: 2, borderBottomLeftRadius: 2, shadowColor: COLOR_LEAF, shadowOpacity: 0.9, shadowRadius: 8, elevation: 4 },

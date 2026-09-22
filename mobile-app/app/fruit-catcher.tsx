@@ -78,7 +78,7 @@ export default function FruitCatcherScreen() {
   const itemsRef = useRef<any[]>([]);
   const [, forceRender] = useState({});
 
-  const requestRef = useRef<number>();
+  const requestRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number>(0);
   const spawnTimerRef = useRef<number>(0);
 
@@ -225,19 +225,19 @@ export default function FruitCatcherScreen() {
       setHearts(currentHearts);
       if (currentHearts <= 0) {
         setGameState('gameover');
-      const curScore = stateRef.current?.score || score;
-      const curLevel = stateRef.current?.level || level;
-      if (!rewardClaimedRef.current) {
-        rewardClaimedRef.current = true;
-        claimMiniResetReward({ activityId: "fruit-catcher", level: curLevel, roundKey: `fruit-catcher-${Date.now()}`, score: curScore })
-          .then((reward) => setRewardTala(reward.rewardTala))
-          .catch(() => undefined);
-      }
-      let newBest = bestScore;
-      let newHigh = highestLevel;
-      if (curScore > bestScore) { newBest = curScore; setBestScore(curScore); }
-      if (curLevel > highestLevel) { newHigh = curLevel; setHighestLevel(curLevel); }
-      saveGameScore("fruit-catcher", { bestScore: newBest, highestLevel: newHigh });
+        const curScore = currentScore;
+        const curLevel = level;
+        if (!rewardClaimedRef.current) {
+          rewardClaimedRef.current = true;
+          claimMiniResetReward({ activityId: "fruit-catcher", level: curLevel, roundKey: "fruit-catcher-" + Date.now(), score: curScore })
+            .then((reward) => setRewardTala(reward.rewardTala ?? 0))
+            .catch(() => undefined);
+        }
+        let newBest = bestScore;
+        let newHigh = highestLevel;
+        if (curScore > bestScore) { newBest = curScore; setBestScore(curScore); }
+        if (curLevel > highestLevel) { newHigh = curLevel; setHighestLevel(curLevel); }
+        saveGameScore("fruit-catcher", { bestScore: newBest, highestLevel: newHigh });
         if (user?.studentNumber) unlockAchievement("a-softer-minute", user.studentNumber);
         return;
       }
