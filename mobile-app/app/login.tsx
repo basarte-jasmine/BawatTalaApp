@@ -1,6 +1,7 @@
 import { router } from "expo-router";
 import { useState } from "react";
-import { Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import {  Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { Image } from "expo-image";
 import { FormTextInput } from "../components/forms/FormTextInput";
 import { PasswordField } from "../components/forms/PasswordField";
 import { AuthCardLayout } from "../components/layout/AuthCardLayout";
@@ -66,8 +67,7 @@ export default function LoginScreen() {
     if (result.requiresReactivation) {
       setReactivationPrompt({
         message: result.message,
-        scheduledDeletionAt: result.scheduledDeletionAt,
-      });
+        scheduledDeletionAt: result.scheduledDeletionAt});
       return;
     }
 
@@ -108,7 +108,7 @@ export default function LoginScreen() {
 
   return (
     <AuthCardLayout contentContainerStyle={styles.scrollContent} cardStyle={styles.card}>
-      <Image source={require("../assets/images/BT_Logo.png")} style={styles.logo} resizeMode="contain" />
+      <Image source={require("../assets/images/BT_Logo.png")} style={styles.logo} contentFit="contain" />
       <Text style={styles.title}>Welcome!</Text>
       <Text style={styles.subtitle}>
         Log in to your account to start journaling{"\n"}and track your progress.
@@ -290,8 +290,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(21, 27, 24, 0.44)",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 22,
-  },
+    paddingHorizontal: 22},
   modalCard: {
     width: "100%",
     maxWidth: 320,
@@ -304,49 +303,41 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
+    elevation: 4},
   modalTitle: {
     color: "#1B2E24",
     fontSize: 18,
     fontFamily: "Outfit-Bold",
     textAlign: "center",
-    marginBottom: 8,
-  },
+    marginBottom: 8},
   modalBody: {
     color: "#52606C",
     fontSize: 13,
     lineHeight: 19,
     textAlign: "center",
-    marginBottom: 16,
-  },
+    marginBottom: 16},
   modalActions: {
     flexDirection: "row",
-    columnGap: 10,
-  },
+    columnGap: 10},
   modalSecondaryButton: {
     flex: 1,
     minHeight: 42,
     borderRadius: 999,
     backgroundColor: "#F2F5F3",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center"},
   modalSecondaryText: {
     color: "#566271",
     fontSize: 13,
-    fontFamily: "Outfit-Bold",
-  },
+    fontFamily: "Outfit-Bold"},
   modalPrimaryButton: {
     flex: 1,
     minHeight: 42,
     borderRadius: 999,
     backgroundColor: "#79C943",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center"},
   modalPrimaryText: {
     color: "#FFFFFF",
     fontSize: 13,
-    fontFamily: "Outfit-Bold",
-  },});
+    fontFamily: "Outfit-Bold"}});

@@ -5,7 +5,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
+  
   Keyboard,
   KeyboardAvoidingView,
   Linking,
@@ -16,8 +16,8 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View
-} from "react-native";
+  View } from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { recordEmotionForAchievement, unlockAchievement } from "../lib/achievements";
 import { JournalLockGate, useAppPreferences } from "../lib/app-preferences";
@@ -42,8 +42,7 @@ import { getManilaTodayParts } from "../lib/manila-date";
 import {
     needsCrisisTrioPrompt,
     needsDistressWellnessOffer,
-    needsFinishSupportPrompt,
-} from "../lib/risk-level";
+    needsFinishSupportPrompt} from "../lib/risk-level";
 
 const NOTEBOOK_RINGS = Array.from({ length: 12 }, (_, index) => index);
 const PAPER_RULES = Array.from({ length: 24 }, (_, index) => index);
@@ -1235,7 +1234,7 @@ export default function WriteEntryScreen() {
               <Image
                 source={selectedJournalEmotionImageSource}
                 style={styles.emotionMenuImage}
-                resizeMode="contain"
+                contentFit="contain"
               />
             ) : (
               <Ionicons name="menu-outline" size={20} color="#53685A" />
@@ -1344,7 +1343,7 @@ export default function WriteEntryScreen() {
                         ]}
                       >
                         {emotionImageSource ? (
-                          <Image source={emotionImageSource} style={styles.emotionPickerImage} resizeMode="contain" />
+                          <Image source={emotionImageSource} style={styles.emotionPickerImage} contentFit="contain" />
                         ) : (
                           <View style={[styles.emotionPickerFallback, { backgroundColor: emotion.color }]} />
                         )}
@@ -1961,8 +1960,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 14,
     marginTop: 6,
-    marginBottom: 4,
-  },
+    marginBottom: 4},
   input: {
     flex: 1,
     minHeight: 50,

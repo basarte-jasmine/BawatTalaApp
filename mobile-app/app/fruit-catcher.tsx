@@ -3,14 +3,15 @@ import { router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
     Animated,
-    Image,
+    
     LayoutChangeEvent,
     PanResponder,
     Pressable,
     StyleSheet,
     Text,
-    View,
-} from "react-native";
+    View} from "react-native";
+import { Image } from "expo-image";
+const AnimatedExpoImage = Animated.createAnimatedComponent(Image);
 import { SafeAreaView } from "react-native-safe-area-context";
 import { unlockAchievement } from "../lib/achievements";
 import { useAuthSession } from "../lib/auth-session";
@@ -30,8 +31,7 @@ const ASSETS = {
   coconutTwo: require("../assets/images/Mini Reset/Fruit Catcher/Coconut_two.webp"),
   shell: require("../assets/images/Mini Reset/Fruit Catcher/Shell.webp"),
   heart: require("../assets/images/Mini Reset/Fruit Catcher/Heart.webp"),
-  beach: require("../assets/images/Mini Reset/Fruit Catcher/Beach.jpg"),
-};
+  beach: require("../assets/images/Mini Reset/Fruit Catcher/Beach.jpg")};
 
 const FRUITS = [
   { id: "banana", src: ASSETS.banana, points: 1 },
@@ -95,8 +95,7 @@ export default function FruitCatcherScreen() {
         if (newX < 0) newX = 0;
         if (newX > maxX) newX = maxX;
         basketX.setValue(newX);
-      },
-    })
+      }})
   ).current;
 
   const handleGameAreaLayout = (event: LayoutChangeEvent) => {
@@ -160,8 +159,7 @@ export default function FruitCatcherScreen() {
         x: Math.random() * Math.max(0, gameWidth.current - ITEM_SIZE),
         y: -ITEM_SIZE,
         speed: baseSpeed + (Math.random() * 0.1),
-        caught: false,
-      };
+        caught: false};
       itemsRef.current.push(newItem);
     }
 
@@ -294,7 +292,7 @@ export default function FruitCatcherScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
-      <Image source={ASSETS.beach} style={styles.background} resizeMode="cover" />
+      <Image source={ASSETS.beach} style={styles.background} contentFit="cover" />
       
       <View style={styles.topBar}>
         <Pressable onPress={confirmExit} style={styles.backButton} accessibilityLabel="Leave Fruit Catcher">
@@ -431,5 +429,4 @@ const styles = StyleSheet.create({
   exitStay: { paddingHorizontal: 16, paddingVertical: 11, borderRadius: 12, backgroundColor: "#E6ECF1" },
   exitStayText: { color: "#33475C", fontFamily: "Outfit-Bold" },
   exitLeave: { paddingHorizontal: 16, paddingVertical: 11, borderRadius: 12, backgroundColor: "#B75252" },
-  exitLeaveText: { color: "#FFFFFF", fontFamily: "Outfit-Bold" },
-});
+  exitLeaveText: { color: "#FFFFFF", fontFamily: "Outfit-Bold" }});

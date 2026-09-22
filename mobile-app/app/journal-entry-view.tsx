@@ -4,7 +4,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Image,
+  
   Linking,
   Platform,
   Pressable,
@@ -14,8 +14,8 @@ import {
   Text,
   TextInput,
   View,
-  useWindowDimensions
-} from "react-native";
+  useWindowDimensions } from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { consumePendingRiskPrompt, fetchJournalEntryById, JournalEntry, JournalMessage, rateJournalEntrySummary, saveJournalSupportResponse } from "../lib/backend-api";
@@ -166,8 +166,7 @@ export default function JournalEntryViewScreen() {
       const result = await saveJournalSupportResponse({
         entryId: entry.id,
         studentAction,
-        studentNumber: user.studentNumber,
-      });
+        studentNumber: user.studentNumber});
       if (result.entry) {
         setEntry(result.entry);
       }
@@ -501,8 +500,7 @@ export default function JournalEntryViewScreen() {
             ) {
               router.dismissTo({
                 pathname: "/journal-calendar",
-                params: { reopenDate: calendarDateValue },
-              });
+                params: { reopenDate: calendarDateValue }});
               return;
             }
             if (router.canGoBack()) {

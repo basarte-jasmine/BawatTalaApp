@@ -4,7 +4,9 @@ import DateTimePicker, { DateTimePickerAndroid, type DateTimePickerEvent } from 
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Easing, Image, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { Animated, Easing,  KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { Image } from "expo-image";
+const AnimatedExpoImage = Animated.createAnimatedComponent(Image);
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, Ellipse, LinearGradient, Path, Rect, Stop } from "react-native-svg";
 import { CounselorAvatar } from "../components/appointments/CounselorAvatar";
@@ -16,8 +18,7 @@ import { recordEmotionForAchievement, unlockAchievement } from "../lib/achieveme
 import {
     fetchAffirmationFromApi,
     getStoredAffirmations,
-    storeAffirmation,
-} from "../lib/affirmations";
+    storeAffirmation} from "../lib/affirmations";
 import { useAuthSession } from "../lib/auth-session";
 import { useAppPreferences } from "../lib/app-preferences";
 import {
@@ -491,8 +492,7 @@ export default function HomeScreen() {
     () => SEA_OBJECTS.map((object) => ({
       ...object,
       left: Math.round(8 + Math.random() * 76),
-      top: object.top + Math.round(-24 + Math.random() * 48),
-    })),
+      top: object.top + Math.round(-24 + Math.random() * 48)})),
     [],
   );
   const seaObjectMotion = useRef(seaObjects.map(() => new Animated.Value(0))).current;
@@ -1978,7 +1978,7 @@ export default function HomeScreen() {
                       ]}
                     >
                       {moodImageSource ? (
-                        <Image source={moodImageSource} style={styles.moodIcon} resizeMode="contain" />
+                        <Image source={moodImageSource} style={styles.moodIcon} contentFit="contain" />
                       ) : (
                         <View style={styles.moodIconPlaceholder} />
                       )}
@@ -2028,7 +2028,7 @@ export default function HomeScreen() {
           <View style={styles.dailyCheckinHeader}>
             <Text style={styles.dailyCheckinTitle}>Daily Check-in</Text>
             <View style={styles.dailyTalaPill}>
-              <Image source={TALA_IMAGE} style={styles.dailyTalaPillIcon} resizeMode="contain" />
+              <Image source={TALA_IMAGE} style={styles.dailyTalaPillIcon} contentFit="contain" />
               <Text style={styles.dailyTalaPillText}>{totalTala.toLocaleString("en-US")}</Text>
             </View>
           </View>
@@ -2061,7 +2061,7 @@ export default function HomeScreen() {
                   <Image
                     source={TALA_IMAGE}
                     style={[styles.dailyRewardTalaIcon, { width: rewardTileIconSize, height: rewardTileIconSize }]}
-                    resizeMode="contain"
+                    contentFit="contain"
                   />
                 )}
                 <Text
@@ -2174,7 +2174,7 @@ export default function HomeScreen() {
               onPress={openBottleModal}
               accessibilityLabel="Open future self message"
             >
-              <Image source={ISLAND_IMAGE} style={styles.futureBottleIslandArt} resizeMode="contain" />
+              <Image source={ISLAND_IMAGE} style={styles.futureBottleIslandArt} contentFit="contain" />
             </Pressable>
             
             {scheduledBottleNotes.length ? <View style={[styles.futureBottleNoteGlow, { top: islandSceneHeight + 8 }]} pointerEvents="none" /> : null}
@@ -2226,7 +2226,7 @@ export default function HomeScreen() {
               </Animated.View>
 
               <View style={styles.seaFloorbed} pointerEvents="none">
-                <Image source={FLOORBED_IMAGE} style={styles.seaFloorbedImage} resizeMode="stretch" />
+                <Image source={FLOORBED_IMAGE} style={styles.seaFloorbedImage} contentFit="fill" />
               </View>
 
               {seaObjects.map((object, index) => {
@@ -2246,11 +2246,10 @@ export default function HomeScreen() {
                           { translateY: motion.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, -10, 0] }) },
                           { rotate: motion.interpolate({ inputRange: [0, 0.5, 1], outputRange: ["-5deg", "5deg", "-5deg"] }) },
                           { scale: object.scale },
-                        ],
-                      },
+                        ]},
                     ]}
                   >
-                    <Image source={object.source} style={styles.seaObjectImage} resizeMode="contain" />
+                    <Image source={object.source} style={styles.seaObjectImage} contentFit="contain" />
                   </Animated.View>
                 );
 
@@ -2299,7 +2298,7 @@ export default function HomeScreen() {
                       hitSlop={16}
                       accessibilityLabel={`Open drifting letter: ${note.sender}`}
                     >
-                      <Image source={BOTTLE_IMAGE} style={styles.driftingBottleImage} resizeMode="contain" />
+                      <Image source={BOTTLE_IMAGE} style={styles.driftingBottleImage} contentFit="contain" />
                     </Pressable>
                   </Animated.View>
                 </Animated.View>
@@ -2344,7 +2343,7 @@ export default function HomeScreen() {
 
             {hasConfirmedDriftingBottleWarning ? (
               <View style={styles.driftingBottleModalBody}>
-                <Image source={BOTTLE_IMAGE} style={styles.driftingBottleModalImage} resizeMode="contain" />
+                <Image source={BOTTLE_IMAGE} style={styles.driftingBottleModalImage} contentFit="contain" />
                 <Text style={styles.driftingBottleModalMessage}>
                   {selectedDriftingBottle?.message ?? ""}
                 </Text>
@@ -2415,7 +2414,7 @@ export default function HomeScreen() {
               <Image
                 source={seaDiscovery === "starfish" ? require("../assets/images/Sea/Starfish.webp") : require("../assets/images/Sea/Meteorite Piece.webp")}
                 style={styles.seaDiscoveryImage}
-                resizeMode="contain"
+                contentFit="contain"
               />
               <Text style={styles.driftingBottleModalMessage}>
                 {seaDiscovery === "starfish"
@@ -2457,7 +2456,7 @@ export default function HomeScreen() {
 
                 <View style={styles.futureBottleIntroCard}>
                   <View style={styles.futureBottleIntroIconWrap}>
-                    <Image source={BOTTLE_IMAGE} style={styles.futureBottleIntroImage} resizeMode="contain" />
+                    <Image source={BOTTLE_IMAGE} style={styles.futureBottleIntroImage} contentFit="contain" />
                   </View>
                   <Text style={styles.futureBottleIntroTitle}>Send a message to your future self</Text>
                   <Text style={styles.futureBottleIntroText}>
@@ -2946,7 +2945,7 @@ export default function HomeScreen() {
             <View style={styles.welcomeArtWrap}>
               <Animated.Image
                 source={TALA_IMAGE}
-                resizeMode="contain"
+                contentFit="contain"
                 style={[
                   styles.welcomeTalaLarge,
                   {
@@ -2955,7 +2954,7 @@ export default function HomeScreen() {
               />
               <Animated.Image
                 source={TALA_IMAGE}
-                resizeMode="contain"
+                contentFit="contain"
                 style={[
                   styles.welcomeTalaSmall,
                   {
@@ -3707,22 +3706,19 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 7,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
-  },
+    elevation: 1},
   pauseTitle: {
     color: "#304558",
     fontSize: 19,
     lineHeight: 24,
     fontFamily: "Outfit-Bold",
     marginTop: 2,
-    marginBottom: 3,
-  },
+    marginBottom: 3},
   pauseSubtitle: {
     color: "#687785",
     fontSize: 13,
     lineHeight: 18,
-    marginBottom: 14,
-  },
+    marginBottom: 14},
   pauseAction: {
     minHeight: 68,
     flexDirection: "row",
@@ -3730,15 +3726,13 @@ const styles = StyleSheet.create({
     columnGap: 11,
     borderTopWidth: 1,
     borderTopColor: "#EDF1EC",
-    paddingVertical: 10,
-  },
+    paddingVertical: 10},
   pauseIcon: {
     width: 42,
     height: 42,
     borderRadius: 14,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center"},
   pauseIconWellness: { backgroundColor: "#EAF5E4" },
   pauseIconLibrary: { backgroundColor: "#F8F0E2" },
   pauseActionCopy: { flex: 1 },

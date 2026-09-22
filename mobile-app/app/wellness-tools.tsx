@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import {  Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 
@@ -66,40 +67,35 @@ const FEATURED_GAMES: FeaturedGame[] = [
     label: "Mindful Focus",
     description: "Rebuild calming words before the time fades.",
     duration: "Endless",
-    image: require("../assets/images/Mini Reset/Unscramble Word/Unscramble Word Cover.webp"),
-  },
+    image: require("../assets/images/Mini Reset/Unscramble Word/Unscramble Word Cover.webp")},
   {
     id: "gentle-pairs",
     title: "Gentle Pairs",
     label: "Memory Focus",
     description: "Flip the cards and find the matching Muni moments.",
     duration: "Endless",
-    image: require("../assets/images/Mini Reset/Gentle Pairs/Gentle Pairs Cover.webp"),
-  },
+    image: require("../assets/images/Mini Reset/Gentle Pairs/Gentle Pairs Cover.webp")},
   {
     id: "image-puzzle",
     title: "Muni's Picture Puzzle",
     label: "Slow focus",
     description: "Rebuild a bright little scene, one piece at a time.",
     duration: "2-5 min",
-    image: require("../assets/images/Mini Reset/Puzzle/Muni Puzzle Cover.webp"),
-  },
+    image: require("../assets/images/Mini Reset/Puzzle/Muni Puzzle Cover.webp")},
   {
     id: "fruit-catcher",
     title: "Fruit Catcher",
     label: "Playful focus",
     description: "Catch the good things and keep an eye out for shells.",
     duration: "Endless",
-    image: require("../assets/images/Mini Reset/Fruit Catcher/Fruit Catcher Cover.webp"),
-  },
+    image: require("../assets/images/Mini Reset/Fruit Catcher/Fruit Catcher Cover.webp")},
   {
     id: "munis-arrival",
     title: "Muni's Arrival",
     label: "Flow state",
     description: "Guide the unconscious Muni. Be the gentle current guiding Muni s raft.",
     duration: "Endless",
-    image: require("../assets/images/Mini Reset/Muni's Arrival/Muni's Arrival Cover.webp"),
-  },
+    image: require("../assets/images/Mini Reset/Muni's Arrival/Muni's Arrival Cover.webp")},
 ];
 
 export default function WellnessToolsScreen() {
@@ -190,7 +186,7 @@ export default function WellnessToolsScreen() {
               <Text style={styles.listSubHeading}>Bigger ways to reset, play, and stay curious.</Text>
             </View>
             <View style={styles.featuredGameGrid}>{FEATURED_GAMES.map((game) => (<Pressable key={game.id} style={({ pressed }) => [styles.featuredGameCard, pressed && styles.miniResetCardPressed]} accessibilityLabel={game.title + ", " + game.duration} onPress={() => router.push("/" + game.id as any)}>
-                  <Image source={game.image} style={[styles.featuredGameImage, compact && styles.featuredGameImageCompact]} resizeMode="cover" />
+                  <Image source={game.image} style={[styles.featuredGameImage, compact && styles.featuredGameImageCompact]} contentFit="cover" />
                   <View style={styles.featuredGameBody}>
                     <Text style={styles.featuredGameLabel}>{game.label}</Text>
                     <Text style={styles.featuredGameTitle}>{game.title}</Text>
@@ -278,8 +274,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     right: -54,
     top: -56,
-    backgroundColor: "rgba(255,255,255,0.42)",
-  },
+    backgroundColor: "rgba(255,255,255,0.42)"},
   heroGlowOne: {
     position: "absolute",
     top: -28,
@@ -483,8 +478,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: 16,
     paddingBottom: 16,
-    marginTop: 14,
-  },
+    marginTop: 14},
   miniResetHeadingRow: { flexDirection: "row", justifyContent: "space-between", columnGap: 12, marginBottom: 14 },
   sectionHeadingCopy: { flex: 1 },
   sectionKickerRow: { flexDirection: "row", alignItems: "center", columnGap: 6, marginBottom: 6 },
@@ -513,5 +507,4 @@ const styles = StyleSheet.create({
   featuredGameTitle: { color: "#33495D", fontSize: 15, lineHeight: 19, fontFamily: "Outfit-Bold", marginBottom: 4 },
   featuredGameDescription: { color: "#687084", fontSize: 11, lineHeight: 15, minHeight: 30, marginBottom: 9 },
   featuredGameMeta: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  featuredGameArrow: { width: 26, height: 26, borderRadius: 13, backgroundColor: "#5A8D44", alignItems: "center", justifyContent: "center" },
-});
+  featuredGameArrow: { width: 26, height: 26, borderRadius: 13, backgroundColor: "#5A8D44", alignItems: "center", justifyContent: "center" }});

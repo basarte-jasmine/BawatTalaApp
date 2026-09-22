@@ -4,7 +4,7 @@ import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
+  
   Linking,
   Modal,
   Platform,
@@ -12,8 +12,8 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  View
-} from "react-native";
+  View } from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   createAudioPlayer,
@@ -40,8 +40,7 @@ import { useAuthSession } from "../lib/auth-session";
 import { unlockAchievement } from "../lib/achievements";
 import {
   needsCrisisTrioPrompt,
-  needsFinishSupportPrompt,
-} from "../lib/risk-level";
+  needsFinishSupportPrompt} from "../lib/risk-level";
 import { JournalLockGate, useAppPreferences } from "../lib/app-preferences";
 
 type VoiceState =
@@ -1185,7 +1184,7 @@ export default function MuniVoiceScreen() {
             <Image
               source={MICROPHONE_IMAGE}
               style={styles.buttonIcon}
-              resizeMode="contain"
+              contentFit="contain"
             />
             <Text style={styles.primaryButtonText}>
               {voiceState === "listening" ? "Recording..." : "Start Recording"}

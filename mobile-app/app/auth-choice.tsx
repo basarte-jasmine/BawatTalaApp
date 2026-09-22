@@ -1,6 +1,7 @@
 import { router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import {  Pressable, StyleSheet, Text, View } from "react-native";
+import { Image } from "expo-image";
 
 export default function AuthChoiceScreen() {
   return (
@@ -11,7 +12,7 @@ export default function AuthChoiceScreen() {
           <Image
             source={require("../assets/images/BT_Logo.png")}
             style={styles.heroLogo}
-            resizeMode="contain"
+            contentFit="contain"
           />
         </View>
 

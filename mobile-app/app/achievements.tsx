@@ -2,7 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import {  Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuthSession } from "../lib/auth-session";
 import { syncPendingAchievements } from "../lib/backend-api";
@@ -13,79 +14,68 @@ const ACHIEVEMENTS = [
     title: "A Gentler First Step",
     desc: "Book your first peer counselor appointment.",
     rewardTala: 10,
-    art: require("../assets/images/Achievements/A gentler first step.webp"),
-  },
+    art: require("../assets/images/Achievements/A gentler first step.webp")},
   {
     id: "future-bottle",
     title: "A Bottle for Tomorrow",
     desc: "Send a message toward your future.",
     rewardTala: 10,
-    art: require("../assets/images/Achievements/A Bottle for Tomorrow.webp"),
-  },
+    art: require("../assets/images/Achievements/A Bottle for Tomorrow.webp")},
 
   {
     id: "a-sky-with-many-colors",
     title: "A Sky With Many Colors",
     desc: "Log every emotion at least once.",
     rewardTala: 15,
-    art: require("../assets/images/Achievements/A sky with many colors.webp"),
-  },
+    art: require("../assets/images/Achievements/A sky with many colors.webp")},
   {
     id: "a-softer-minute",
     title: "A Softer Minute",
     desc: "Complete one wellness exercise session.",
     rewardTala: 10,
-    art: require("../assets/images/Achievements/A softer minute_.webp"),
-  },
+    art: require("../assets/images/Achievements/A softer minute_.webp")},
   {
     id: "asked-for-support",
     title: "Asked for Support",
     desc: "Book your first guidance counselor appointment.",
     rewardTala: 15,
-    art: require("../assets/images/Achievements/Asked for support_.webp"),
-  },
+    art: require("../assets/images/Achievements/Asked for support_.webp")},
   {
     id: "dear-muni",
     title: "Dear Muni",
     desc: "Send your first journal message to Muni.",
     rewardTala: 10,
-    art: require("../assets/images/Achievements/Dear Muni.webp"),
-  },
+    art: require("../assets/images/Achievements/Dear Muni.webp")},
   {
     id: "library-glow",
     title: "Library Glow",
     desc: "Read in the library for 1 hour.",
     rewardTala: 20,
-    art: require("../assets/images/Achievements/Library glow.webp"),
-  },
+    art: require("../assets/images/Achievements/Library glow.webp")},
   {
     id: "message-from-the-tide",
     title: "Message From the Tide",
     desc: "Open a drifting bottle note.",
     rewardTala: 10,
-    art: require("../assets/images/Achievements/Message from the tide.webp"),
-  },
+    art: require("../assets/images/Achievements/Message from the tide.webp")},
   {
     id: "small-good-thing",
     title: "Small Good Thing",
     desc: "Save a journal entry with a positive tag.",
     rewardTala: 10,
-    art: require("../assets/images/Achievements/Small good thing.webp"),
-  },
+    art: require("../assets/images/Achievements/Small good thing.webp")},
   {
     id: "star-shopper",
     title: "Star Shopper",
     desc: "Spend Tala in the Muni shop for the first time.",
     rewardTala: 10,
-    art: require("../assets/images/Achievements/Star shopper.webp"),
-  },
+    art: require("../assets/images/Achievements/Star shopper.webp")},
   {
     id: "voice-beneath-the-stars",
     title: "Voice Beneath the Stars",
     desc: "Complete your first Muni voice journal.",
     rewardTala: 15,
-    art: require("../assets/images/Achievements/Voice beneath the stars.webp"),
-  }
+    art: require("../assets/images/Achievements/Voice beneath the stars.webp")}
 ];
 
 export default function AchievementsScreen() {
@@ -167,7 +157,7 @@ export default function AchievementsScreen() {
             return (
               <View key={ach.id} style={[styles.card, !isUnlocked && styles.cardLocked]}>
                 {ach.art ? (
-                  <Image source={ach.art} style={styles.art} resizeMode="cover" />
+                  <Image source={ach.art} style={styles.art} contentFit="cover" />
                 ) : (
                   <View style={styles.artPlaceholder}>
                     <Ionicons name="star" size={24} color="#D1C7AE" />
@@ -201,8 +191,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 4,
-  },
+    paddingHorizontal: 4},
   back: { width: 42, height: 42, alignItems: "center", justifyContent: "center" },
   topTitle: { color: "#33475C", fontSize: 18, fontFamily: "Outfit-Bold" },
   content: { padding: 16 },
@@ -213,16 +202,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     columnGap: 13,
-    marginBottom: 14,
-  },
+    marginBottom: 14},
   medal: {
     width: 48,
     height: 48,
     borderRadius: 16,
     backgroundColor: "#46566A",
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center"},
   summaryTitle: { color: "#FFF", fontFamily: "Outfit-Bold", fontSize: 17, marginBottom: 3 },
   summaryText: { color: "#D5DEE6", fontSize: 13 },
   card: {
@@ -233,8 +220,7 @@ const styles = StyleSheet.create({
     padding: 13,
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 12,
-  },
+    columnGap: 12},
   cardLocked: { opacity: 0.68 },
   art: { width: 68, height: 68, borderRadius: 34, borderWidth: 2, borderColor: "#E8E2D5" },
   artPlaceholder: { width: 68, height: 68, borderRadius: 34, backgroundColor: "#F2EFE8", alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "#E8E2D5" },
@@ -244,10 +230,8 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontFamily: "Outfit-Bold",
     letterSpacing: 0.6,
-    marginBottom: 3,
-  },
+    marginBottom: 3},
   title: { color: "#414846", fontSize: 17, fontFamily: "Outfit-Bold", marginBottom: 4 },
   desc: { color: "#717A76", fontSize: 13, lineHeight: 18 },
   reward: { color: "#9C7832", fontSize: 11, lineHeight: 15, fontFamily: "Outfit-Bold", marginTop: 5 },
-  cardList: { display: "flex", flexDirection: "column", gap: 14 },
-});
+  cardList: { display: "flex", flexDirection: "column", gap: 14 }});

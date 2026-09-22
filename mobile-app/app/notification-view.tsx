@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator,  Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuthSession } from "../lib/auth-session";
 import { fetchStudentNotifications } from "../lib/backend-api";
@@ -25,8 +26,7 @@ const ACHIEVEMENT_ILLUSTRATIONS: Record<string, any> = {
   "message-from-the-tide": require("../assets/images/Achievements/Message from the tide.webp"),
   "small-good-thing": require("../assets/images/Achievements/Small good thing.webp"),
   "star-shopper": require("../assets/images/Achievements/Star shopper.webp"),
-  "voice-beneath-the-stars": require("../assets/images/Achievements/Voice beneath the stars.webp"),
-};
+  "voice-beneath-the-stars": require("../assets/images/Achievements/Voice beneath the stars.webp")};
 
 const ACHIEVEMENT_DESCRIPTIONS: Record<string, string> = {
   "future-bottle": "Send a message toward your future.",
@@ -39,8 +39,7 @@ const ACHIEVEMENT_DESCRIPTIONS: Record<string, string> = {
   "message-from-the-tide": "Open a drifting bottle note.",
   "small-good-thing": "Save a journal entry with a positive tag.",
   "star-shopper": "Spend Tala in the Muni shop for the first time.",
-  "voice-beneath-the-stars": "Complete your first Muni voice journal.",
-};
+  "voice-beneath-the-stars": "Complete your first Muni voice journal."};
 
 const ACHIEVEMENT_STORIES: Record<string, string> = {
   "future-bottle": "You cast your hopes into the sea, trusting the waves to return them when the time is right.",
@@ -53,8 +52,7 @@ const ACHIEVEMENT_STORIES: Record<string, string> = {
   "message-from-the-tide": "Muni is always wondering about the things floating in the sea… Well, can you tell Muni what is inside?",
   "small-good-thing": "Muni believes that noticing the good—even the smallest kind—is one of the bravest things a person can do.",
   "star-shopper": "Muni’s shop is full of surprises! You just unlocked your first treasure, and the island is sparkling a little more.",
-  "voice-beneath-the-stars": "Your voice echoed across the island tonight. Muni listened to every word and kept it among the constellations.",
-};
+  "voice-beneath-the-stars": "Your voice echoed across the island tonight. Muni listened to every word and kept it among the constellations."};
 
 const ACHIEVEMENT_TRIVIA: Record<string, string> = {
   "future-bottle": "Muni says the island keeps every hopeful message until the right tide carries it onward.",
@@ -67,8 +65,7 @@ const ACHIEVEMENT_TRIVIA: Record<string, string> = {
   "message-from-the-tide": "Muni says the tide delivers only the messages the sea thinks you need to hear.",
   "small-good-thing": "Muni collects small good things in a jar by the lighthouse. The jar is almost full!",
   "star-shopper": "Muni’s favorite item in the shop is the one that hasn’t been discovered yet.",
-  "voice-beneath-the-stars": "Muni’s favorite sound on the island is someone finally saying what they feel.",
-};
+  "voice-beneath-the-stars": "Muni’s favorite sound on the island is someone finally saying what they feel."};
 
 export default function NotificationViewScreen() {
   const { id, createdAt, kind, message, timeLabel, title, metadata: metadataParam } = useLocalSearchParams<{
@@ -108,8 +105,7 @@ export default function NotificationViewScreen() {
               message: found.message,
               timeLabel: found.timeLabel,
               title: found.title,
-              metadata: found.metadata,
-            });
+              metadata: found.metadata});
           }
         }
       } catch {} finally {
@@ -218,7 +214,7 @@ export default function NotificationViewScreen() {
               {!isAchievement ? (
                 <View style={[styles.headerIconBubble, { backgroundColor: visual.chip }]}>
                   {visual.usesTalaLogo ? (
-                    <Image source={TALA_IMAGE} style={styles.headerTalaIcon} resizeMode="contain" />
+                    <Image source={TALA_IMAGE} style={styles.headerTalaIcon} contentFit="contain" />
                   ) : (
                     <Ionicons name={visual.icon} size={22} color={visual.accent} />
                   )}
@@ -242,7 +238,7 @@ export default function NotificationViewScreen() {
 
             {isAchievement && parsedMetadata?.rewardTala ? (
               <View style={[styles.bodyCard, styles.achievementRewardCard, { flexDirection: "row", alignItems: "center", columnGap: 12 }]}>
-                <Image source={TALA_IMAGE} style={{ width: 28, height: 28 }} resizeMode="contain" />
+                <Image source={TALA_IMAGE} style={{ width: 28, height: 28 }} contentFit="contain" />
                 <Text style={[styles.bodyText, { flex: 1, fontFamily: "Outfit-Bold", color: "#9B7E3F" }]}>
                   You earned {parsedMetadata.rewardTala} Tala!
                 </Text>
@@ -258,7 +254,7 @@ export default function NotificationViewScreen() {
             {finalTriviaText ? (
               <View style={styles.triviaCard}>
                 <View style={styles.triviaIdentity}>
-                  <Image source={MUNI_AVATAR} style={styles.triviaAvatar} resizeMode="contain" />
+                  <Image source={MUNI_AVATAR} style={styles.triviaAvatar} contentFit="contain" />
                   <Text style={styles.triviaLabel}>Muni Trivia</Text>
                 </View>
                 <View style={styles.triviaBubble}>
@@ -343,15 +339,13 @@ const styles = StyleSheet.create({
     lineHeight: 18 },
   achievementStoryCard: {
     paddingHorizontal: 18,
-    paddingVertical: 10,
-  },
+    paddingVertical: 10},
   achievementStoryText: {
     color: "#465866",
     fontSize: 16,
     lineHeight: 25,
     textAlign: "center",
-    fontFamily: "Outfit-Medium",
-  },
+    fontFamily: "Outfit-Medium"},
   headerCard: {
     borderRadius: 22,
     borderWidth: 1,
@@ -457,5 +451,4 @@ const styles = StyleSheet.create({
     color: "#416556",
     fontSize: 14.5,
     lineHeight: 22,
-    fontStyle: "italic" },
-});
+    fontStyle: "italic" }});

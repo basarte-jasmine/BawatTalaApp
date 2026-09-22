@@ -2,13 +2,13 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
-    Image,
+    
     Pressable,
     StyleSheet,
     Text,
     View,
-    useWindowDimensions,
-} from "react-native";
+    useWindowDimensions} from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { claimMiniResetReward } from "../lib/backend-api";
 import { getGameScore, saveGameScore } from "../lib/game-scores";
@@ -220,7 +220,7 @@ export default function GentlePairsScreen() {
       <View style={[styles.contentFrame, { width: appWidth }]}>
         {gameState === "START" && (
           <View style={styles.centerContainer}>
-            <Image source={TEMP_COVER} style={styles.coverImage} resizeMode="contain" />
+            <Image source={TEMP_COVER} style={styles.coverImage} contentFit="contain" />
             <Text style={styles.overlayTitle}>Gentle Pairs</Text>
             <Text style={styles.overlaySub}>Find the matching Muni moments.</Text>
             <Text style={styles.overlaySub}>Find every pair, then keep going.</Text>
@@ -264,7 +264,7 @@ export default function GentlePairsScreen() {
                   >
                     {card.isFlipped || card.isMatched ? (
                       <View style={styles.cardFront}>
-                        <Image source={ASSETS[card.imageId]} style={styles.cardImage} resizeMode="contain" />
+                        <Image source={ASSETS[card.imageId]} style={styles.cardImage} contentFit="contain" />
                       </View>
                     ) : (
                       <View style={styles.cardBack}>
@@ -281,7 +281,7 @@ export default function GentlePairsScreen() {
         {gameState === "GAMEOVER" && (
           <View style={styles.centerContainer}>
             <View style={styles.gameOverCard}>
-              <Image source={TEMP_COVER} style={styles.gameOverImage} resizeMode="contain" />
+              <Image source={TEMP_COVER} style={styles.gameOverImage} contentFit="contain" />
               <Text style={styles.goTitle}>A gentle pause</Text>
               <Text style={styles.goSub}>The round timer ran out. Your memory trail is still here.</Text>
               <View style={styles.statsBox}>
@@ -365,5 +365,4 @@ const styles = StyleSheet.create({
   exitStay: { paddingHorizontal: 16, paddingVertical: 11, borderRadius: 12, backgroundColor: "#E6ECF1" },
   exitStayText: { color: "#33475C", fontFamily: "Outfit-Bold" },
   exitLeave: { paddingHorizontal: 16, paddingVertical: 11, borderRadius: 12, backgroundColor: "#B75252" },
-  exitLeaveText: { color: "#FFFFFF", fontFamily: "Outfit-Bold" },
-});
+  exitLeaveText: { color: "#FFFFFF", fontFamily: "Outfit-Bold" }});

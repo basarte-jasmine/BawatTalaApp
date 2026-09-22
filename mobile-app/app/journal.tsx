@@ -2,7 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Image, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import {  Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
@@ -285,7 +286,7 @@ export default function JournalScreen() {
                   <Image
                     source={{ uri: coverPreviewUri }}
                     style={[styles.bookPreview, compact && styles.bookPreviewCompact, veryCompact && styles.bookPreviewVeryCompact]}
-                    resizeMode="cover"
+                    contentFit="cover"
                     onError={() => setCoverPreviewUri(null)}
                     accessibilityLabel="Saved journal cover"
                   />

@@ -3,14 +3,14 @@ import { router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
     Animated,
-    Image,
+    
     Pressable,
     StyleSheet,
     Text,
     useWindowDimensions,
     Vibration,
-    View
-} from "react-native";
+    View } from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { claimMiniResetReward } from "../lib/backend-api";
 import { getGameScore, saveGameScore } from "../lib/game-scores";
@@ -243,7 +243,7 @@ export default function UnscrambleWordScreen() {
       <View style={[styles.contentFrame, { width: appWidth }]}>
         {gameState === "START" && (
           <View style={styles.centerContainer}>
-            <Image source={COVER} style={styles.coverImage} resizeMode="contain" />
+            <Image source={COVER} style={styles.coverImage} contentFit="contain" />
             <Text style={styles.overlayTitle}>Unscramble Word</Text>
             <Text style={styles.overlaySub}>Rebuild calming words before the time fades.</Text>
             
@@ -407,5 +407,4 @@ const styles = StyleSheet.create({
   exitStay: { flex: 1, backgroundColor: "#EAEFE8", paddingVertical: 14, borderRadius: 12, alignItems: "center" },
   exitStayText: { color: "#4D6558", fontSize: 16, fontFamily: "Outfit-Bold" },
   exitLeave: { flex: 1, backgroundColor: "#E76F51", paddingVertical: 14, borderRadius: 12, alignItems: "center" },
-  exitLeaveText: { color: "#FFFFFF", fontSize: 16, fontFamily: "Outfit-Bold" },
-});
+  exitLeaveText: { color: "#FFFFFF", fontSize: 16, fontFamily: "Outfit-Bold" }});

@@ -2,7 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Image, ImageSourcePropType, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import {  ImageSourcePropType, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
@@ -357,7 +358,7 @@ export default function MoodOverviewScreen() {
               <Text style={styles.commonMoodMeta}>Daily Pattern</Text>
               <View style={[styles.commonMoodFace, selectedDayMostCommonMood && { borderColor: selectedDayMostCommonMood.color }]}>
                 {selectedDayMostCommonMood?.image ? (
-                  <Image source={selectedDayMostCommonMood.image} style={styles.commonMoodImage} resizeMode="contain" />
+                  <Image source={selectedDayMostCommonMood.image} style={styles.commonMoodImage} contentFit="contain" />
                 ) : selectedDayMostCommonMood ? (
                   <View style={styles.commonMoodPlaceholder} />
                 ) : (
@@ -383,7 +384,7 @@ export default function MoodOverviewScreen() {
                 <View key={item.id} style={styles.dailyMixChip}>
                   <View style={[styles.dailyMixFace, { borderColor: item.meta.color }]}>
                     {item.meta.image ? (
-                      <Image source={item.meta.image} style={styles.dailyMixImage} resizeMode="contain" />
+                      <Image source={item.meta.image} style={styles.dailyMixImage} contentFit="contain" />
                     ) : (
                       <View style={[styles.dailyEntryFallback, { backgroundColor: item.meta.color }]} />
                     )}
@@ -544,7 +545,7 @@ export default function MoodOverviewScreen() {
               <Text style={styles.commonMoodMeta}>Most Common</Text>
               <View style={[styles.commonMoodFace, mostCommonMood && { borderColor: mostCommonMood.color }]}>
                 {mostCommonMood?.image ? (
-                  <Image source={mostCommonMood.image} style={styles.commonMoodImage} resizeMode="contain" />
+                  <Image source={mostCommonMood.image} style={styles.commonMoodImage} contentFit="contain" />
                 ) : mostCommonMood ? (
                   <View style={styles.commonMoodPlaceholder} />
                 ) : (
@@ -579,7 +580,7 @@ export default function MoodOverviewScreen() {
               <View key={item.id} style={styles.statItem}>
                 <View style={[styles.statFace, { borderColor: item.color }]}>
                   {item.image ? (
-                    <Image source={item.image} style={styles.statImage} resizeMode="contain" />
+                    <Image source={item.image} style={styles.statImage} contentFit="contain" />
                   ) : (
                     <View style={styles.statImagePlaceholder} />
                   )}

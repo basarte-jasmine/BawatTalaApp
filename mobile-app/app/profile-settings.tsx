@@ -4,7 +4,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
+  
   Linking,
   Modal,
   Platform,
@@ -14,8 +14,8 @@ import {
   Switch,
   Text,
   TextInput,
-  View
-} from "react-native";
+  View } from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { OtpCodeInput } from "../components/forms/OtpCodeInput";
 import { ConfirmationModal } from "../components/ui/ConfirmationModal";
@@ -2474,7 +2474,7 @@ return (
               <Card title="Attach image (Optional)">
                 {feedbackAttachment ? (
                   <View style={styles.feedbackAttachmentPreview}>
-                    <Image source={{ uri: feedbackAttachment.uri }} style={styles.feedbackAttachmentImage} resizeMode="cover" />
+                    <Image source={{ uri: feedbackAttachment.uri }} style={styles.feedbackAttachmentImage} contentFit="cover" />
                     <View style={styles.feedbackAttachmentInfo}>
                       <Text style={styles.feedbackAttachmentTitle} numberOfLines={1}>
                         {feedbackAttachment.fileName}
@@ -3708,8 +3708,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 14,
     marginTop: 6,
-    marginBottom: 2,
-  },
+    marginBottom: 2},
   textInput: {
     minHeight: 46,
     borderRadius: 14,

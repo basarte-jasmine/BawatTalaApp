@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ActivityIndicator, Image, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator,  StyleSheet, Text, View } from "react-native";
+import { Image } from "expo-image";
 
 export default function StudioScreen() {
   const { welcome } = useLocalSearchParams<{ welcome?: string }>();
@@ -24,7 +25,7 @@ export default function StudioScreen() {
         <Image
           source={require("../assets/images/BT_Logo.png")}
           style={styles.logo}
-          resizeMode="contain"
+          contentFit="contain"
         />
         <Text style={styles.title}>Bawat Tala</Text>
         <Text style={styles.subtitle}>Preparing your sanctuary...</Text>

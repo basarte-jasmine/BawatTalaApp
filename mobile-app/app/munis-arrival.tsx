@@ -3,14 +3,14 @@ import { router } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
     Animated,
-    Image,
+    
     LayoutChangeEvent,
     PanResponder,
     Pressable,
     StyleSheet,
     Text,
-    View,
-} from "react-native";
+    View} from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 import { claimMiniResetReward } from "../lib/backend-api";
@@ -36,8 +36,7 @@ type FlowParticle = { id: number; x: number; y: number; speed: number; length: n
 const ARRIVAL_ASSETS = {
   croc: require("../assets/images/Mini Reset/Muni's Arrival/Croc.webp"),
   log: require("../assets/images/Mini Reset/Muni's Arrival/Logs.webp"),
-  snake: require("../assets/images/Mini Reset/Muni's Arrival/Snake.webp"),
-};
+  snake: require("../assets/images/Mini Reset/Muni's Arrival/Snake.webp")};
 
 export default function MunisArrivalScreen() {
   const [gameState, setGameState] = useState<"START" | "PLAYING" | "GAMEOVER">("START");
@@ -113,8 +112,7 @@ export default function MunisArrivalScreen() {
         if (newX < minX) newX = minX;
         if (newX > maxX) newX = maxX;
         targetRaftX.current = newX;
-      },
-    })
+      }})
   ).current;
 
   const handleGameLayout = (event: LayoutChangeEvent) => {
@@ -136,8 +134,7 @@ export default function MunisArrivalScreen() {
           y: Math.random() * height,
           speed: PARTICLE_SPEEDS[Math.floor(Math.random() * PARTICLE_SPEEDS.length)],
           length: Math.random() * 20 + 10,
-          opacity: Math.random() * 0.4 + 0.1,
-        });
+          opacity: Math.random() * 0.4 + 0.1});
       }
     }
     setGameSize({ width, height });
@@ -322,8 +319,7 @@ saveGameScore("munis-arrival", { bestDrift: bestDriftRef.current });
           width,
           height,
           rotation,
-          bankSide,
-        });
+          bankSide});
       }
 
       setTick((t) => t + 1);
@@ -377,7 +373,7 @@ saveGameScore("munis-arrival", { bestDrift: bestDriftRef.current });
                 <Image
                   source={ARRIVAL_ASSETS[item.type]}
                   style={[styles.itemImage, { width: item.width, height: item.height }]}
-                  resizeMode="contain"
+                  contentFit="contain"
                 />
               )}
             </View>
@@ -389,8 +385,7 @@ saveGameScore("munis-arrival", { bestDrift: bestDriftRef.current });
               {
                 left: raftX.current - RAFT_W / 2,
                 top: gameSize.height - RAFT_BOTTOM_OFFSET - RAFT_H,
-                transform: [{ translateX: shakeAnim }],
-              },
+                transform: [{ translateX: shakeAnim }]},
             ]}
             pointerEvents="none"
           >
@@ -401,7 +396,7 @@ saveGameScore("munis-arrival", { bestDrift: bestDriftRef.current });
                   : require("../assets/images/Mini Reset/Muni's Arrival/Muni_LostwRaft.webp")
               }
               style={styles.raftImage}
-              resizeMode="contain"
+              contentFit="contain"
             />
           </Animated.View>
         </View>
@@ -426,7 +421,7 @@ saveGameScore("munis-arrival", { bestDrift: bestDriftRef.current });
 
       {gameState === "START" && (
         <View style={styles.overlay}>
-          <Image source={require("../assets/images/Mini Reset/Muni's Arrival/Muni's Arrival Cover.webp")} style={styles.coverImage} resizeMode="cover" />
+          <Image source={require("../assets/images/Mini Reset/Muni's Arrival/Muni's Arrival Cover.webp")} style={styles.coverImage} contentFit="cover" />
           <Text style={[styles.startText, startStep >= 0 && styles.textVisible]}>Muni&apos;s Arrival</Text>
           <Text style={[styles.startSub, startStep >= 1 && styles.textVisible]}>Muni has just arrived.</Text>
           <Text style={[styles.startSub, startStep >= 2 && styles.textVisible]}>They&apos;re still asleep.</Text>
@@ -518,5 +513,4 @@ const styles = StyleSheet.create({
   exitStay: { paddingHorizontal: 16, paddingVertical: 11, borderRadius: 12, backgroundColor: "#EEF3F4" },
   exitStayText: { color: COLOR_TEXT, fontFamily: "Outfit-Bold" },
   exitLeave: { paddingHorizontal: 16, paddingVertical: 11, borderRadius: 12, backgroundColor: "#B75252" },
-  exitLeaveText: { color: "#FFFFFF", fontFamily: "Outfit-Bold" },
-});
+  exitLeaveText: { color: "#FFFFFF", fontFamily: "Outfit-Bold" }});

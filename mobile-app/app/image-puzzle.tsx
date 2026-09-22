@@ -3,14 +3,14 @@ import { router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
-  Image,
+  
   PanResponder,
   Pressable,
   StyleSheet,
   Text,
   View,
-  useWindowDimensions
-} from "react-native";
+  useWindowDimensions } from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { unlockAchievement } from "../lib/achievements";
 import { useAuthSession } from "../lib/auth-session";
@@ -154,8 +154,7 @@ export default function ImagePuzzleScreen() {
         trayRow,
         trayCol,
         isPlaced: false,
-        pan: new Animated.ValueXY({ x: 0, y: 0 }),
-      });
+        pan: new Animated.ValueXY({ x: 0, y: 0 })});
     }
     
     piecesRef.current = newPieces;
@@ -293,8 +292,7 @@ export default function ImagePuzzleScreen() {
             shadowOffset: { width: 0, height: 2 },
             shadowOpacity: piece.isPlaced ? 0 : 0.2,
             shadowRadius: 2,
-            backgroundColor: 'rgba(0,0,0,0.05)',
-          }}
+            backgroundColor: 'rgba(0,0,0,0.05)'}}
         >
           <Image 
             source={ASSETS[currentImageIndex]} 
@@ -306,7 +304,7 @@ export default function ImagePuzzleScreen() {
               top: -piece.correctRow * pieceSize,
               opacity: piece.isPlaced && gameState === 'playing' ? 0.9 : 1
             }} 
-            resizeMode="cover" 
+            contentFit="cover" 
           />
         </Animated.View>
       );
@@ -325,7 +323,7 @@ export default function ImagePuzzleScreen() {
       
       {gameState === 'intro' && (
         <View style={styles.introContainer}>
-          <Image source={COVER} style={styles.introCover} resizeMode="cover" />
+          <Image source={COVER} style={styles.introCover} contentFit="cover" />
           <Text style={styles.introTitle}>IMAGE PUZZLE</Text>
           <Text style={styles.introSubtitle}>Reconstruct the image gently.</Text>
           <Text style={styles.introDesc}>Complete each scene before the timer fades. The puzzle grows as you go.</Text>
@@ -424,8 +422,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#E0E7DD",
     zIndex: 9999,
-    elevation: 9999,
-  },
+    elevation: 9999},
   backButton: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
   headerTitle: { color: "#33475C", fontSize: 18, fontFamily: "Outfit-Bold" },
   headerSpacer: { width: 40, height: 40 },
@@ -434,8 +431,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: 20,
-  },
+    padding: 20},
   introCover: { width: 150, height: 150, borderRadius: 24, marginBottom: 20 },
   introTitle: { color: "#304D5B", fontSize: 28, fontFamily: "Outfit-Bold", marginBottom: 10 },
   introSubtitle: { color: "#465866", fontSize: 18, fontFamily: "Outfit-Medium", marginBottom: 20 },
@@ -445,8 +441,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#4F8A38",
     paddingHorizontal: 32,
     paddingVertical: 16,
-    borderRadius: 999,
-  },
+    borderRadius: 999},
   startButtonText: { color: "#FFF", fontSize: 16, fontFamily: "Outfit-Bold", letterSpacing: 1 },
   exitOverlay: { position: "absolute", width: "100%", height: "100%", backgroundColor: "rgba(20, 31, 40, 0.5)", justifyContent: "center", alignItems: "center", zIndex: 10000, elevation: 10000 },
   exitCard: { width: 290, backgroundColor: "#FFFFFF", padding: 24, borderRadius: 20, shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 18, elevation: 12 },
@@ -461,22 +456,19 @@ const styles = StyleSheet.create({
   gameContainer: {
     flex: 1,
     alignItems: "center",
-    paddingTop: 10,
-  },
+    paddingTop: 10},
   statsBar: {
     width: "100%",
     flexDirection: "row",
     justifyContent: "space-between",
     paddingHorizontal: 30,
-    marginBottom: 4,
-  },
+    marginBottom: 4},
   statText: { color: "#33475C", fontSize: 16, fontFamily: "Outfit-Bold" },
   comboText: { color: "#E09C38", fontSize: 15, fontFamily: "Outfit-Bold" },
   
   playArea: {
     marginTop: 5,
-    position: "relative",
-  },
+    position: "relative"},
   boardBg: {
     position: "absolute",
     top: 0,
@@ -487,8 +479,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
-    borderStyle: "dashed",
-  },
+    borderStyle: "dashed"},
   trayBg: {
     position: "absolute",
     left: 0,
@@ -496,8 +487,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 2,
     borderColor: "rgba(0,0,0,0.05)",
-    borderStyle: "dashed",
-  },
+    borderStyle: "dashed"},
   transitionOverlay: {
     position: "absolute",
     top: 0,
@@ -507,14 +497,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 8,
-    zIndex: 100,
-  },
+    zIndex: 100},
   transitionText: {
     color: "#FFF",
     fontSize: 32,
     fontFamily: "Outfit-Bold",
     textShadowColor: 'rgba(0,0,0,0.3)',
     textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-  }
+    textShadowRadius: 4}
 });

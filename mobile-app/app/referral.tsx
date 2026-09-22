@@ -5,7 +5,7 @@ import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
+  
   Modal,
   Pressable,
   ScrollView,
@@ -15,6 +15,7 @@ import {
   Text,
   TextInput,
   View } from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   fetchStudentReferral,
@@ -166,7 +167,7 @@ export default function ReferralScreen() {
       >
         <View style={styles.hero}>
           <View style={styles.heroIconWrap}>
-            <Image source={TALA_IMAGE} style={styles.heroIcon} resizeMode="contain" />
+            <Image source={TALA_IMAGE} style={styles.heroIcon} contentFit="contain" />
           </View>
           <Text style={styles.heroTitle}>Invite a Friend</Text>
           <Text style={styles.heroSubtitle}>Earn 150 Tala for every friend who joins!</Text>
@@ -183,7 +184,7 @@ export default function ReferralScreen() {
               <View style={styles.codeHeader}>
                 <Text style={styles.cardEyebrow}>YOUR REFERRAL CODE</Text>
                 <View style={styles.rewardPill}>
-                  <Image source={TALA_IMAGE} style={styles.rewardIcon} resizeMode="contain" />
+                  <Image source={TALA_IMAGE} style={styles.rewardIcon} contentFit="contain" />
                   <Text style={styles.rewardText}>+150</Text>
                 </View>
               </View>
@@ -208,7 +209,7 @@ export default function ReferralScreen() {
             <View style={styles.redeemCard}>
               <View style={styles.redeemHeader}>
                 <View style={styles.redeemIconWrap}>
-                  <Image source={TALA_IMAGE} style={styles.redeemIcon} resizeMode="contain" />
+                  <Image source={TALA_IMAGE} style={styles.redeemIcon} contentFit="contain" />
                 </View>
                 <View style={styles.redeemHeaderText}>
                   <Text style={styles.cardTitle}>Claim Friend Reward</Text>
@@ -269,7 +270,7 @@ export default function ReferralScreen() {
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <View style={styles.modalIconWrap}>
-              <Image source={TALA_IMAGE} style={styles.modalRewardIcon} resizeMode="contain" />
+              <Image source={TALA_IMAGE} style={styles.modalRewardIcon} contentFit="contain" />
             </View>
             <Text style={styles.modalTitle}>Tala Received!</Text>
             <Text style={styles.modalBody}>
@@ -498,8 +499,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(15, 23, 42, 0.45)",
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 24,
-  },
+    paddingHorizontal: 24},
   modalCard: {
     width: "100%",
     maxWidth: 340,
@@ -512,8 +512,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
-  },
+    elevation: 6},
   modalIconWrap: {
     width: 72,
     height: 72,
@@ -523,38 +522,31 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: "#DCECCF",
-  },
+    borderColor: "#DCECCF"},
   modalRewardIcon: {
     width: 48,
-    height: 48,
-  },
+    height: 48},
   modalTitle: {
     fontSize: 20,
     fontFamily: "Outfit-Bold",
     color: "#2C3E50",
     marginBottom: 8,
-    textAlign: "center",
-  },
+    textAlign: "center"},
   modalBody: {
     fontSize: 15,
     fontFamily: "Outfit-Medium",
     color: "#5B6B79",
     textAlign: "center",
     lineHeight: 22,
-    marginBottom: 20,
-  },
+    marginBottom: 20},
   modalConfirmButton: {
     width: "100%",
     backgroundColor: "#70C943",
     borderRadius: 14,
     paddingVertical: 13,
     alignItems: "center",
-    justifyContent: "center",
-  },
+    justifyContent: "center"},
   modalConfirmText: {
     fontSize: 16,
     fontFamily: "Outfit-Bold",
-    color: "#FFFFFF",
-  },
-});
+    color: "#FFFFFF"}});
