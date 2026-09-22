@@ -66,6 +66,12 @@
         "projectId": "8154e998-fbce-46a8-82ce-9896a9bd16bf"
       }
     },
-    "owner": "jasmine67"
+    "owner": "jasmine67",
+    "updates": {
+      "url": "https://u.expo.dev/8154e998-fbce-46a8-82ce-9896a9bd16bf"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    }
   }
 }
