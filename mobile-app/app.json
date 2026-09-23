@@ -1,78 +1,78 @@
 {
-  "expo": {
-    "name": "Bawat Tala",
-    "slug": "bawat-tala",
-    "version": "1.7.1",
-    "orientation": "portrait",
-    "icon": "./assets/images/BT_Logo.png",
-    "scheme": "bawattala",
-    "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "ios": {
-      "supportsTablet": true
-    },
-    "android": {
-      "adaptiveIcon": {
-        "backgroundColor": "#f4fafb",
-        "foregroundImage": "./assets/images/BT_Logo.png",
-        "monochromeImage": "./assets/images/BT_Logo.png"
-      },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false,
-      "package": "com.bawattala.app",
-      "permissions": [
-        "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.POST_NOTIFICATIONS"
-      ],
-      "allowBackup": false,
-      "versionCode": 2
-    },
-    "web": {
-      "output": "static",
-      "favicon": "./assets/images/BT_Logo.png"
-    },
-    "plugins": [
-      "expo-router",
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/images/BT_Logo.png",
-          "imageWidth": 170,
-          "resizeMode": "contain",
-          "backgroundColor": "#f4fafb",
-          "dark": {
-            "image": "./assets/images/BT_Logo.png",
-            "backgroundColor": "#f4fafb"
-          }
-        }
-      ],
-      "expo-notifications",
-      "expo-audio",
-      "expo-video",
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "Allow Bawat Tala to choose a profile picture from your photos.",
-          "cameraPermission": "Allow Bawat Tala to take a profile picture."
-        }
-      ],
-      "expo-secure-store"
-    ],
-    "experiments": {
-      "typedRoutes": true
-    },
-    "extra": {
-      "eas": {
-        "projectId": "8154e998-fbce-46a8-82ce-9896a9bd16bf"
-      }
-    },
-    "owner": "jasmine67",
-    "updates": {
-      "url": "https://u.expo.dev/8154e998-fbce-46a8-82ce-9896a9bd16bf"
-    },
-    "runtimeVersion": {
-      "policy": "appVersion"
-    }
-  }
+    "expo":  {
+                 "name":  "Bawat Tala",
+                 "slug":  "bawat-tala",
+                 "version":  "1.7.2",
+                 "orientation":  "portrait",
+                 "icon":  "./assets/images/BT_Logo.png",
+                 "scheme":  "bawattala",
+                 "userInterfaceStyle":  "automatic",
+                 "newArchEnabled":  true,
+                 "ios":  {
+                             "supportsTablet":  true
+                         },
+                 "android":  {
+                                 "adaptiveIcon":  {
+                                                      "backgroundColor":  "#f4fafb",
+                                                      "foregroundImage":  "./assets/images/BT_Logo.png",
+                                                      "monochromeImage":  "./assets/images/BT_Logo.png"
+                                                  },
+                                 "edgeToEdgeEnabled":  true,
+                                 "predictiveBackGestureEnabled":  false,
+                                 "package":  "com.bawattala.app",
+                                 "permissions":  [
+                                                     "android.permission.RECORD_AUDIO",
+                                                     "android.permission.MODIFY_AUDIO_SETTINGS",
+                                                     "android.permission.POST_NOTIFICATIONS"
+                                                 ],
+                                 "allowBackup":  false,
+                                 "versionCode":  3
+                             },
+                 "web":  {
+                             "output":  "static",
+                             "favicon":  "./assets/images/BT_Logo.png"
+                         },
+                 "plugins":  [
+                                 "expo-router",
+                                 [
+                                     "expo-splash-screen",
+                                     {
+                                         "image":  "./assets/images/BT_Logo.png",
+                                         "imageWidth":  170,
+                                         "resizeMode":  "contain",
+                                         "backgroundColor":  "#f4fafb",
+                                         "dark":  {
+                                                      "image":  "./assets/images/BT_Logo.png",
+                                                      "backgroundColor":  "#f4fafb"
+                                                  }
+                                     }
+                                 ],
+                                 "expo-notifications",
+                                 "expo-audio",
+                                 "expo-video",
+                                 [
+                                     "expo-image-picker",
+                                     {
+                                         "photosPermission":  "Allow Bawat Tala to choose a profile picture from your photos.",
+                                         "cameraPermission":  "Allow Bawat Tala to take a profile picture."
+                                     }
+                                 ],
+                                 "expo-secure-store"
+                             ],
+                 "experiments":  {
+                                     "typedRoutes":  true
+                                 },
+                 "extra":  {
+                               "eas":  {
+                                           "projectId":  "8154e998-fbce-46a8-82ce-9896a9bd16bf"
+                                       }
+                           },
+                 "owner":  "jasmine67",
+                 "updates":  {
+                                 "url":  "https://u.expo.dev/8154e998-fbce-46a8-82ce-9896a9bd16bf"
+                             },
+                 "runtimeVersion":  {
+                                        "policy":  "appVersion"
+                                    }
+             }
 }
