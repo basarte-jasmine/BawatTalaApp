@@ -11,7 +11,7 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://bawattalaapp.onrender.com"
+        "EXPO_PUBLIC_API_BASE_URL": "https://bawat-tala-app.vercel.app"
       },
       "android": {
         "buildType": "apk"
@@ -20,7 +20,7 @@
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://bawattalaapp.onrender.com"
+        "EXPO_PUBLIC_API_BASE_URL": "https://bawat-tala-app.vercel.app"
       }
     }
   }

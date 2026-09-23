@@ -171,6 +171,9 @@ app.use(express.json({ limit: "15mb" }));
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
+app.get("/api/health", (_req, res) => {
+  res.json({ ok: true });
+});
 
 app.use("/api/auth/login", authLoginRateLimiter);
 app.use("/api/auth/register-profile", authLoginRateLimiter);

@@ -1450,7 +1450,7 @@ async function syncPendingStudentPreferences(studentNumber: string) {
 }
 
 function shouldWarmBackend() {
-  return API_BASE_URL.includes(".onrender.com");
+  return API_BASE_URL.includes(".onrender.com") || API_BASE_URL.includes(".vercel.app");
 }
 
 export async function warmBackend(): Promise<void> {
@@ -1459,7 +1459,7 @@ export async function warmBackend(): Promise<void> {
   }
 
   if (!backendWarmupPromise) {
-    backendWarmupPromise = fetch(`${API_BASE_URL}/health`)
+    backendWarmupPromise = fetch(`${API_BASE_URL}/api/health`)
       .then(() => undefined)
       .catch(() => undefined);
   }
@@ -1467,7 +1467,7 @@ export async function warmBackend(): Promise<void> {
   await backendWarmupPromise;
 }
 
-// Quick reachability probe used to pick the default journaling mode offline.
+// Quick reachability probe used to pick the default journaling mode offline. 
 export async function isBackendReachable(timeoutMs = 25000): Promise<boolean> {
   if (typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean' && !navigator.onLine) {
     return false;
@@ -1475,7 +1475,7 @@ export async function isBackendReachable(timeoutMs = 25000): Promise<boolean> {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    const response = await fetch(API_BASE_URL + "/health", {
+    const response = await fetch(API_BASE_URL + "/api/health", {
       credentials: "include",
       headers: buildHeaders(),
       signal: controller.signal,

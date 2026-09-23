@@ -23,7 +23,6 @@ export function StudentProfileAvatar({
   const hasFrame = Boolean(frameSource);
   const outerSize = hasFrame ? Math.round(size * FRAME_SCALE) : size;
   const radius = size / 2;
-  const photoOffset = hasFrame ? (outerSize - size) / 2 : 0;
   const validImageUrl = typeof imageUrl === "string" && imageUrl.trim().length > 0 ? imageUrl.trim() : null;
 
   return (
@@ -41,8 +40,7 @@ export function StudentProfileAvatar({
             borderRadius: radius,
             height: size,
             width: size,
-            left: photoOffset,
-            top: photoOffset,
+            zIndex: 1,
           },
           hasFrame ? undefined : style,
         ]}
@@ -64,7 +62,8 @@ export function StudentProfileAvatar({
         <Image
           source={frameSource}
           contentFit="contain"
-          style={[styles.frame, { height: outerSize, width: outerSize }]}
+          pointerEvents="none"
+          style={[styles.frame, { height: outerSize, width: outerSize, zIndex: 2 }]}
         />
       ) : null}
     </View>
@@ -86,7 +85,5 @@ const styles = StyleSheet.create({
   },
   frame: {
     position: "absolute",
-    left: 0,
-    top: 0,
   },
 });

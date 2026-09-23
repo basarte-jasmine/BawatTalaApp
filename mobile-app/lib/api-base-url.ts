@@ -1,8 +1,8 @@
-import Constants from "expo-constants";
-import { Platform } from "react-native";
-
-export const RENDER_API_BASE_URL = "https://bawattalaapp.onrender.com";
-const LOCAL_API_PORT = "4002";
+import Constants from "expo-constants";
+import { Platform } from "react-native";
+
+export const RENDER_API_BASE_URL = "https://bawat-tala-app.vercel.app";
+const LOCAL_API_PORT = "4002";
 
 function isLoopbackHost(host: string) {
   const h = host.trim().toLowerCase();
@@ -69,11 +69,10 @@ function withLocalPort(host: string) {
   return `http://${host}:${LOCAL_API_PORT}`;
 }
 
-/**
- * Resolves the backend base URL for the current device.
- * Accounts are NOT limited to one device — failed multi-device login is almost always a bad API host.
- * Private LAN URLs are ignored unless EXPO_PUBLIC_ALLOW_LAN_API=1 (local Wi-Fi testing only).
- */
+/**
+ * Resolves the backend base URL for the current device.
+ * Private LAN URLs are ignored unless EXPO_PUBLIC_ALLOW_LAN_API=1 (local Wi-Fi testing only).
+ */
 export function resolveApiBaseUrl(rawEnvUrl?: string | null): string {
   const envUrl = String(rawEnvUrl || "").trim().replace(/\/$/, "");
   const production = isProductionClient();

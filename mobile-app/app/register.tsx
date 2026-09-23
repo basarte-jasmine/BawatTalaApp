@@ -313,7 +313,7 @@ export default function RegisterScreen() {
       setHasValidIdScan(true);
     } catch {
       setScanMessage(
-        "Unable to reach OCR service. Check your internet/API URL and try again.",
+        "Unable to reach OCR service. Please check your internet connection and try again.",
       );
     } finally {
       setIsBusy(false);
@@ -618,7 +618,7 @@ export default function RegisterScreen() {
                 label="Street"
                 value={street}
                 onChangeText={setStreet}
-                placeholder={`${FIXED_ADDRESS.city}, ${FIXED_ADDRESS.province}`}
+                placeholder="Enter street name, house or bldg no."
                 placeholderTextColor="#8D8D8D"
                 labelStyle={styles.label}
                 inputStyle={styles.input}

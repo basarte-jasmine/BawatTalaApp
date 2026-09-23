@@ -13,6 +13,10 @@
   ],
   "rewrites": [
     {
+      "source": "/health",
+      "destination": "https://bawattalaapp.onrender.com/health"
+    },
+    {
       "source": "/api/:path*",
       "destination": "https://bawattalaapp.onrender.com/api/:path*"
     },

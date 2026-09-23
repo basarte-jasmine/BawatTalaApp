@@ -19,14 +19,14 @@ function getLoginErrorMessage(message?: string) {
   if (normalized.includes("verify")) {
     return "Please verify your account before logging in.";
   }
-  if (normalized.includes("too many")) {
-    return "Too many login attempts. Please try again later.";
-  }
-  if (normalized.includes("server") || normalized.includes("connection") || normalized.includes("network")) {
-    return "We could not reach the server. This is not a one-device limit — check your internet, or restart Expo so the app uses the live server.";
-  }
-
-  return "Invalid Student ID or password.";
+  if (normalized.includes("too many")) {
+    return "Too many login attempts. Please try again later.";
+  }
+  if (normalized.includes("server") || normalized.includes("connection") || normalized.includes("network")) {
+    return "Unstable internet connection. Please check your network and try again.";
+  }
+
+  return "Invalid Student ID or password.";
 }
 
 export default function LoginScreen() {
