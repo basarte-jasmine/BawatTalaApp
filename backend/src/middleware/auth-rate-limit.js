@@ -11,6 +11,7 @@ const authLoginLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
   message: { message: "Too many login attempts. Please try again in 15 minutes." },
   handler: jsonRateLimitHandler,
 });
@@ -20,6 +21,7 @@ const authOtpSendLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
   message: { message: "Too many verification emails requested. Please try again later." },
   handler: jsonRateLimitHandler,
 });
@@ -29,6 +31,7 @@ const authOtpVerifyLimiter = rateLimit({
   max: 15,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
   message: { message: "Too many verification attempts. Please try again later." },
   handler: jsonRateLimitHandler,
 });
@@ -38,6 +41,7 @@ const adminLoginLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
   message: { message: "Too many admin login attempts. Please try again in 15 minutes." },
   handler: jsonRateLimitHandler,
 });

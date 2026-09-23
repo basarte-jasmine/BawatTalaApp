@@ -40,6 +40,11 @@ function resolveAdminApiBaseUrl() {
   const pageHost = typeof window !== "undefined" ? window.location.hostname : "";
   const isProd = Boolean(import.meta.env.PROD);
 
+  // On Vercel, use relative paths so requests proxy same-origin (no CORS, no preflight timeouts).
+  if (pageHost && (pageHost.endsWith(".vercel.app") || pageHost.includes("vercel"))) {
+    return "";
+  }
+
   // Production builds must never keep a private LAN API URL (fails off that Wi-Fi).
   if (isProd) {
     if (configured) {

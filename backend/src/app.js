@@ -19,6 +19,16 @@ const affirmationRoutes = require("./api/affirmation.routes");
 const wellnessRoutes = require("./api/wellness.routes");
 
 const app = express();
+const isProduction = String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
+
+// Trust reverse proxy headers (Render, Vercel, Cloudflare).
+const trustProxyRaw = String(process.env.TRUST_PROXY ?? "").trim();
+if (trustProxyRaw && trustProxyRaw !== "0" && trustProxyRaw.toLowerCase() !== "false") {
+  const trustProxyNumber = Number(trustProxyRaw);
+  app.set("trust proxy", Number.isFinite(trustProxyNumber) ? trustProxyNumber : trustProxyRaw);
+} else if (isProduction || Boolean(process.env.RENDER)) {
+  app.set("trust proxy", 1);
+}
 
 // API-first helmet: keep CORS-friendly CORP; CSP off (JSON API, not HTML).
 app.use(
@@ -29,7 +39,6 @@ app.use(
 );
 const corsOrigin = process.env.CORS_ORIGIN || "*";
 const allowCredentials = true;
-const isProduction = String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
 const adminSessionDays = Number(process.env.ADMIN_SESSION_DAYS || 30);
 const localAdminOrigins = ["http://localhost:5173", "http://127.0.0.1:5173"];
 
@@ -61,6 +70,7 @@ const authRateLimiter = rateLimit({
   max: 60,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
   message: { message: "Too many auth requests. Please try again later." },
 });
 
@@ -69,6 +79,7 @@ const authLoginRateLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
   message: { message: "Too many login attempts. Please try again in 15 minutes." },
 });
 
@@ -77,6 +88,7 @@ const authOtpSendRateLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
   message: { message: "Too many verification emails requested. Please try again later." },
 });
 
@@ -85,6 +97,7 @@ const authOtpVerifyRateLimiter = rateLimit({
   max: 15,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
   message: { message: "Too many verification attempts. Please try again later." },
 });
 
@@ -93,6 +106,7 @@ const adminLoginRateLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false },
   message: { message: "Too many admin login attempts. Please try again in 15 minutes." },
 });
 
@@ -110,16 +124,7 @@ const parsedCorsOrigin =
         ),
       );
 
-// Local HTTP must not force trust proxy = 1. With NODE_ENV=production, cookie-session
-// used secure:true; cookies then throws on HTTP and Set-Cookie is swallowed.
-const trustProxyRaw = String(process.env.TRUST_PROXY ?? "").trim();
-if (trustProxyRaw && trustProxyRaw !== "0" && trustProxyRaw.toLowerCase() !== "false") {
-  const trustProxyNumber = Number(trustProxyRaw);
-  app.set("trust proxy", Number.isFinite(trustProxyNumber) ? trustProxyNumber : trustProxyRaw);
-}
-
-app.use(
-  cors({
+const corsHandler = cors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
       if (
@@ -134,8 +139,11 @@ app.use(
       return callback(null, false);
     },
     credentials: allowCredentials,
-  }),
-);
+    optionsSuccessStatus: 204,
+});
+
+app.use(corsHandler);
+app.options("*", corsHandler);
 app.use(
   cookieSession({
     name: "bt_admin_session",
