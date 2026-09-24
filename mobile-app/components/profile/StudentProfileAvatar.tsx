@@ -19,14 +19,17 @@ export function StudentProfileAvatar({
   imageUrl,
   frameSource,
   size,
-  style }: StudentProfileAvatarProps) {
+  style,
+}: StudentProfileAvatarProps) {
   const hasFrame = Boolean(frameSource);
   const outerSize = hasFrame ? Math.round(size * FRAME_SCALE) : size;
   const radius = size / 2;
+  const inset = hasFrame ? Math.round((outerSize - size) / 2) : 0;
   const validImageUrl = typeof imageUrl === "string" && imageUrl.trim().length > 0 ? imageUrl.trim() : null;
 
   return (
     <View
+      pointerEvents="box-none"
       style={[
         styles.container,
         { height: outerSize, width: outerSize },
@@ -34,12 +37,15 @@ export function StudentProfileAvatar({
       ]}
     >
       <View
+        pointerEvents="none"
         style={[
           styles.photo,
           {
             borderRadius: radius,
             height: size,
             width: size,
+            top: inset,
+            left: inset,
             zIndex: 1,
           },
           hasFrame ? undefined : style,
@@ -53,6 +59,7 @@ export function StudentProfileAvatar({
             style={{ borderRadius: radius, height: size, width: size }}
             cachePolicy="memory-disk"
             transition={150}
+            pointerEvents="none"
           />
         ) : (
           <Ionicons name="person-outline" size={iconSize ?? size * 0.58} color={iconColor} />
@@ -63,7 +70,7 @@ export function StudentProfileAvatar({
           source={frameSource}
           contentFit="contain"
           pointerEvents="none"
-          style={[styles.frame, { height: outerSize, width: outerSize, zIndex: 2 }]}
+          style={[styles.frame, { height: outerSize, width: outerSize, top: 0, left: 0, zIndex: 2 }]}
         />
       ) : null}
     </View>

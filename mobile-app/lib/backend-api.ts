@@ -242,6 +242,14 @@ export type FutureSelfMessage = {
   updatedAt?: string;
 };
 
+/** Anonymous community sea bottle (other students only; no author identity). */
+export type DriftingBottle = {
+  createdAt: string;
+  deliveryAt?: string;
+  id: string;
+  message: string;
+};
+
 let backendWarmupPromise: Promise<void> | null = null;
 
 type ApiResult = {
@@ -4210,6 +4218,39 @@ export async function deleteFutureSelfMessage(id: string): Promise<ApiResult> {
     return { ok: false, message: "Unable to delete this letter right now." };
   }
 }
+
+
+export async function fetchDriftingBottles(
+  limit = 12,
+): Promise<ApiResult & { bottles?: DriftingBottle[] }> {
+  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(Math.floor(limit), 24)) : 12;
+  const { response, data } = await get(`/api/future-self/drifting?limit=${safeLimit}`);
+  const raw = Array.isArray(data?.bottles)
+    ? data.bottles
+    : Array.isArray(data?.driftingBottles)
+      ? data.driftingBottles
+      : [];
+  const bottles: DriftingBottle[] = raw
+    .map((item: any) => {
+      const id = typeof item?.id === "string" ? item.id.trim() : "";
+      const message = typeof item?.message === "string" ? item.message.trim() : "";
+      if (!id || !message) return null;
+      return {
+        id,
+        message,
+        createdAt: typeof item?.createdAt === "string" ? item.createdAt : "",
+        deliveryAt: typeof item?.deliveryAt === "string" ? item.deliveryAt : undefined,
+      } satisfies DriftingBottle;
+    })
+    .filter((item: DriftingBottle | null): item is DriftingBottle => Boolean(item));
+
+  return {
+    ok: response.ok,
+    message: data?.message,
+    bottles,
+  };
+}
+
 
 export async function updateStudentProfilePicture(
   studentNumber: string,

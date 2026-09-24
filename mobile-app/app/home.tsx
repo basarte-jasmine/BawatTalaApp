@@ -27,6 +27,7 @@ import {
     deleteFutureSelfMessage,
     fetchCheckInStatus,
     fetchDailyMood,
+    fetchDriftingBottles,
     fetchFutureSelfMessage,
     fetchFutureSelfMessages,
     fetchLibraryBooks,
@@ -36,6 +37,7 @@ import {
     saveDailyMood,
     saveFutureSelfMessage,
     updateFutureSelfMessage,
+    type DriftingBottle,
     type LibraryBookRecord
 } from "../lib/backend-api";
 import { EMOTIONS, getEmotionImageSource } from "../lib/emotions";
@@ -97,7 +99,7 @@ const SEA_OBJECTS = [
 const FUTURE_BOTTLE_STORAGE_PREFIX = "@bawat-tala/future-bottle";
 const FUTURE_BOTTLE_INTRO_STORAGE_PREFIX = "@bawat-tala/future-bottle-intro";
 const DRIFTING_BOTTLE_WARNING_STORAGE_PREFIX = "@bawat-tala/drifting-bottle-warning";
-const BOTTLE_MESSAGE_MAX_LENGTH = 240;
+const BOTTLE_MESSAGE_MAX_LENGTH = 1000;
 const BOTTLE_CALENDAR_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const BOTTLE_CLOCK_HOURS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 const BOTTLE_CLOCK_MINUTES = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
@@ -280,86 +282,91 @@ function getBottleCountdownLabel(deliveryAt: Date, nowMs: number) {
   return `${minutes} min left`;
 }
 
-const DRIFTING_BOTTLE_NOTES: DriftingBottleNote[] = [
+const ANONYMOUS_DRIFTING_SENDER = "From another shore";
+
+/** Visual-only lane presets for sea bottles (messages come from API). */
+const DRIFTING_BOTTLE_LAYOUTS: Omit<DriftingBottleNote, "id" | "message" | "sender">[] = [
   {
     baseRotate: "-18deg",
     delay: 0,
     duration: 12800,
     endOffset: -124,
-    id: "shore-note-1",
     initialProgress: 0.18,
     opacity: 0.94,
     scale: 1,
     startOffset: 36,
-    top: 132,
-    sender: "From another shore",
-    message: "You do not have to feel ready to begin again. Starting gently is enough." },
+    top: 132 },
   {
     baseRotate: "14deg",
     delay: 2100,
     duration: 15200,
     endOffset: -146,
-    id: "shore-note-2",
     initialProgress: 0.61,
     opacity: 0.72,
     scale: 0.86,
     startOffset: 112,
-    top: 214,
-    sender: "A drifting note",
-    message: "I wrote this on a hard day. If you found it, I hope tomorrow feels softer for you." },
+    top: 214 },
   {
     baseRotate: "-28deg",
     delay: 4700,
     duration: 17600,
     endOffset: -96,
-    id: "shore-note-3",
     initialProgress: 0.33,
     opacity: 0.58,
     scale: 0.74,
     startOffset: 74,
-    top: 312,
-    sender: "From a quiet wave",
-    message: "Small wins count. I made tea, breathed, and stayed. That became my brave thing today." },
+    top: 312 },
   {
     baseRotate: "22deg",
     delay: 1200,
     duration: 14200,
     endOffset: -138,
-    id: "shore-note-4",
     initialProgress: 0.82,
     opacity: 0.88,
     scale: 0.92,
     startOffset: 148,
-    top: 166,
-    sender: "A note from the tide",
-    message: "Rest counted today too. I hope whoever finds this remembers that softness is still strength." },
+    top: 166 },
   {
     baseRotate: "-10deg",
     delay: 3600,
     duration: 16600,
     endOffset: -110,
-    id: "shore-note-5",
     initialProgress: 0.49,
     opacity: 0.64,
     scale: 0.8,
     startOffset: 12,
-    top: 262,
-    sender: "Across the sea",
-    message: "You are allowed to outgrow the version of you that only knew how to survive." },
+    top: 262 },
   {
     baseRotate: "28deg",
     delay: 6200,
     duration: 18800,
     endOffset: -154,
-    id: "shore-note-6",
     initialProgress: 0.08,
     opacity: 0.5,
     scale: 0.7,
     startOffset: 196,
-    top: 388,
-    sender: "From another player",
-    message: "I wrote this after a long day: I am still here, and that is already something worth keeping." },
+    top: 388 },
 ];
+
+function mapApiBottlesToDriftingNotes(bottles: DriftingBottle[]): DriftingBottleNote[] {
+  const layoutCount = DRIFTING_BOTTLE_LAYOUTS.length;
+  if (!layoutCount) return [];
+
+  return bottles.map((bottle, index) => {
+    const layout = DRIFTING_BOTTLE_LAYOUTS[index % layoutCount];
+    const lane = Math.floor(index / layoutCount);
+    return {
+      ...layout,
+      id: bottle.id,
+      message: bottle.message,
+      sender: ANONYMOUS_DRIFTING_SENDER,
+      top: layout.top + lane * 28,
+      delay: layout.delay + lane * 900,
+      initialProgress: (layout.initialProgress + index * 0.07) % 1,
+    };
+  });
+}
+
 
 const PROFILE_FRAMES: { id: string; label: string; source: any }[] = [
   { id: "aether", label: "Aether", source: require("../assets/images/Frames/Aether Frame.webp") },
@@ -377,20 +384,13 @@ export default function HomeScreen() {
   const [localFrameId, setLocalFrameId] = useState<string | null>(profileFrameId ?? null);
 
   useEffect(() => {
-    if (profileFrameId !== undefined && profileFrameId !== null) {
+    if (profileFrameId) {
       setLocalFrameId(profileFrameId);
       return;
     }
-    if (user?.studentNumber) {
-      void AsyncStorage.getItem(`@bawat-tala/profile-frame:${user.studentNumber}`).then((fid) => {
-        if (fid && PROFILE_FRAMES.some((f) => f.id === fid)) {
-          setLocalFrameId(fid);
-        } else {
-          setLocalFrameId(null);
-        }
-      });
-    }
-  }, [profileFrameId, user?.studentNumber]);
+    // Preferences say no frame — do not revive a stale AsyncStorage frame.
+    setLocalFrameId(null);
+  }, [profileFrameId]);
 
   const activeFrameSource = PROFILE_FRAMES.find((f) => f.id === (profileFrameId || localFrameId))?.source ?? null;
   const handledRiskPromptKeyRef = useRef<string>("");
@@ -458,6 +458,9 @@ export default function HomeScreen() {
   const [showBottleShelfModal, setShowBottleShelfModal] = useState(false);
   const [hasSeenFutureBottleIntro, setHasSeenFutureBottleIntro] = useState(false);
   const [selectedDriftingBottle, setSelectedDriftingBottle] = useState<DriftingBottleNote | null>(null);
+  const [driftingBottleNotes, setDriftingBottleNotes] = useState<DriftingBottleNote[]>([]);
+  const [driftingBottlesLoading, setDriftingBottlesLoading] = useState(false);
+  const [driftingBottlesError, setDriftingBottlesError] = useState("");
   const [seaDiscovery, setSeaDiscovery] = useState<SeaDiscovery | null>(null);
   const [collectedSeaStars, setCollectedSeaStars] = useState(0);
   const [hasConfirmedDriftingBottleWarning, setHasConfirmedDriftingBottleWarning] = useState(false);
@@ -508,11 +511,11 @@ export default function HomeScreen() {
   const quoteAuraDrift = useRef(new Animated.Value(0)).current;
   const quoteAuraPulse = useRef(new Animated.Value(0)).current;
   const driftingBottleProgressRef = useRef<Animated.Value[]>([]);
-  while (driftingBottleProgressRef.current.length < DRIFTING_BOTTLE_NOTES.length) {
+  while (driftingBottleProgressRef.current.length < driftingBottleNotes.length) {
     driftingBottleProgressRef.current.push(new Animated.Value(0));
   }
-  if (driftingBottleProgressRef.current.length > DRIFTING_BOTTLE_NOTES.length) {
-    driftingBottleProgressRef.current = driftingBottleProgressRef.current.slice(0, DRIFTING_BOTTLE_NOTES.length);
+  if (driftingBottleProgressRef.current.length > driftingBottleNotes.length) {
+    driftingBottleProgressRef.current = driftingBottleProgressRef.current.slice(0, driftingBottleNotes.length);
   }
   const driftingBottleProgress = driftingBottleProgressRef.current;
   const updateBottleDeliveryDraft = useCallback((nextDate: Date) => {
@@ -636,15 +639,18 @@ export default function HomeScreen() {
   }, [futureBottleDrift, futureBottleSceneActive]);
 
   useEffect(() => {
-    if (!futureBottleSceneActive) {
+    if (!futureBottleSceneActive || !driftingBottleNotes.length) {
       driftingBottleProgress.forEach((value, index) => {
-        value.setValue(DRIFTING_BOTTLE_NOTES[index]?.initialProgress ?? 0);
+        value.setValue(driftingBottleNotes[index]?.initialProgress ?? 0);
       });
       return;
     }
 
     const loops = driftingBottleProgress.map((value, index) => {
-      const note = DRIFTING_BOTTLE_NOTES[index];
+      const note = driftingBottleNotes[index];
+      if (!note) {
+        return null;
+      }
       value.setValue(note.initialProgress);
       const loop = Animated.loop(
         Animated.sequence([
@@ -666,9 +672,9 @@ export default function HomeScreen() {
     });
 
     return () => {
-      loops.forEach((loop) => loop.stop());
+      loops.forEach((loop) => loop?.stop());
     };
-  }, [driftingBottleProgress, futureBottleSceneActive]);
+  }, [driftingBottleNotes, driftingBottleProgress, futureBottleSceneActive]);
 
   useEffect(() => {
     if (!futureBottleSceneActive) {
@@ -1123,6 +1129,33 @@ export default function HomeScreen() {
       setScheduledBottleNotes([]);
     }
   }, [user?.studentNumber]);
+
+  const loadDriftingBottles = useCallback(async () => {
+    if (!user?.studentNumber) {
+      setDriftingBottleNotes([]);
+      setDriftingBottlesError("");
+      setDriftingBottlesLoading(false);
+      return;
+    }
+
+    setDriftingBottlesLoading(true);
+    setDriftingBottlesError("");
+    try {
+      const result = await fetchDriftingBottles(12);
+      if (!result.ok) {
+        setDriftingBottleNotes([]);
+        setDriftingBottlesError(result.message ?? "Could not load drifting bottles.");
+        return;
+      }
+      setDriftingBottleNotes(mapApiBottlesToDriftingNotes(result.bottles ?? []));
+    } catch {
+      setDriftingBottleNotes([]);
+      setDriftingBottlesError("Could not load drifting bottles.");
+    } finally {
+      setDriftingBottlesLoading(false);
+    }
+  }, [user?.studentNumber]);
+
   const latestMoodLabel = latestMoodId ? EMOTIONS.find((emotion) => emotion.id === latestMoodId)?.label ?? "" : "";
   const pendingMood = pendingMoodId ? EMOTIONS.find((emotion) => emotion.id === pendingMoodId) ?? null : null;
   const consultAppointmentStatus = String(upcomingAppointment?.status || "").toUpperCase();
@@ -1168,8 +1201,9 @@ export default function HomeScreen() {
       loadLibraryPreview(),
       loadNotifications(),
       loadScheduledBottleNote(),
+      loadDriftingBottles(),
     ]);
-  }, [loadCheckInStatus, loadLibraryPreview, loadNotifications, loadScheduledBottleNote, loadTodayMood, loadUpcomingAppointment]);
+  }, [loadCheckInStatus, loadDriftingBottles, loadLibraryPreview, loadNotifications, loadScheduledBottleNote, loadTodayMood, loadUpcomingAppointment]);
 
   useFocusEffect(
     useCallback(() => {
@@ -1451,6 +1485,11 @@ export default function HomeScreen() {
 
     if (trimmedMessage.length < 5) {
       setBottleFormMessage("Write at least 5 characters.");
+      return;
+    }
+
+    if (trimmedMessage.length > BOTTLE_MESSAGE_MAX_LENGTH) {
+      setBottleFormMessage(`Message must be ${BOTTLE_MESSAGE_MAX_LENGTH} characters or fewer.`);
       return;
     }
 
@@ -2267,7 +2306,25 @@ export default function HomeScreen() {
                 );
               })}
 
-              {DRIFTING_BOTTLE_NOTES.map((note, index) => (
+              {driftingBottlesLoading && !driftingBottleNotes.length ? (
+                <View style={styles.driftingBottlesEmptyWrap} pointerEvents="none">
+                  <Text style={styles.driftingBottlesEmptyText}>Looking for bottles on the tide...</Text>
+                </View>
+              ) : null}
+              {!driftingBottlesLoading && driftingBottlesError && !driftingBottleNotes.length ? (
+                <View style={styles.driftingBottlesEmptyWrap} pointerEvents="none">
+                  <Text style={styles.driftingBottlesEmptyText}>No bottles could be loaded right now.</Text>
+                </View>
+              ) : null}
+              {!driftingBottlesLoading && !driftingBottlesError && !driftingBottleNotes.length ? (
+                <View style={styles.driftingBottlesEmptyWrap} pointerEvents="none">
+                  <Text style={styles.driftingBottlesEmptyText}>No bottles yet</Text>
+                </View>
+              ) : null}
+              {driftingBottleNotes.map((note, index) => {
+                const progress = driftingBottleProgress[index];
+                if (!progress) return null;
+                return (
                 <Animated.View
                   key={note.id}
                   style={[
@@ -2277,7 +2334,7 @@ export default function HomeScreen() {
                       opacity: note.opacity,
                       transform: [
                         {
-                          translateX: driftingBottleProgress[index].interpolate({
+                          translateX: progress.interpolate({
                             inputRange: [0, 1],
                             outputRange: [driftingBottleTravelDistance + note.startOffset, note.endOffset] }) },
                         { rotate: note.baseRotate },
@@ -2302,7 +2359,8 @@ export default function HomeScreen() {
                     </Pressable>
                   </Animated.View>
                 </Animated.View>
-              ))}
+                );
+              })}
             </View>
           </View>
           ) : (
@@ -2327,7 +2385,7 @@ export default function HomeScreen() {
                 </Text>
                 <Text style={styles.driftingBottleModalTitle}>
                   {hasConfirmedDriftingBottleWarning
-                    ? selectedDriftingBottle?.sender ?? "From another shore"
+                    ? selectedDriftingBottle?.sender ?? ANONYMOUS_DRIFTING_SENDER
                     : "A quick note first"}
                 </Text>
               </View>
@@ -4278,6 +4336,22 @@ const styles = StyleSheet.create({
   seaObjectImage: {
     width: "100%",
     height: "100%" },
+  driftingBottlesEmptyWrap: {
+    position: "absolute",
+    left: 24,
+    right: 24,
+    top: 210,
+    alignItems: "center",
+    zIndex: 2 },
+  driftingBottlesEmptyText: {
+    color: "rgba(236, 246, 255, 0.78)",
+    fontSize: 13,
+    fontWeight: "600",
+    letterSpacing: 0.2,
+    textAlign: "center",
+    textShadowColor: "rgba(18, 42, 66, 0.35)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3 },
   driftingBottleWrap: {
     position: "absolute",
     left: -78,

@@ -26,10 +26,16 @@ function resolveRequestStudentNumber(req) {
   return "";
 }
 
+const FUTURE_SELF_MESSAGE_MAX_LENGTH = 1000;
+
 function normalizeMessage(value) {
   return String(value || "")
     .trim()
-    .slice(0, 500);
+    .slice(0, FUTURE_SELF_MESSAGE_MAX_LENGTH);
+}
+
+function isMessageTooLong(value) {
+  return String(value || "").trim().length > FUTURE_SELF_MESSAGE_MAX_LENGTH;
 }
 
 function parseDeliveryAt(value) {
@@ -150,6 +156,12 @@ router.post(["/messages", "/"], asyncHandler(async (req, res) => {
   if (!message) {
     return res.status(400).json({ message: "Message is required." });
   }
+  if (isMessageTooLong(req.body.message)) {
+    return res.status(400).json({
+      message: `Message must be ${FUTURE_SELF_MESSAGE_MAX_LENGTH} characters or fewer.`,
+      maxLength: FUTURE_SELF_MESSAGE_MAX_LENGTH,
+    });
+  }
   if (!deliveryAt || !isStrictlyAfterManilaNow(deliveryAt)) {
     return res.status(400).json({ message: "Choose a future delivery date in Philippine time." });
   }
@@ -173,6 +185,42 @@ router.post(["/messages", "/"], asyncHandler(async (req, res) => {
   });
 }));
 
+
+router.get(["/drifting", "/bottles/drifting", "/messages/drifting"], asyncHandler(async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "Valid student number is required." });
+  }
+
+  const rawLimit = Number(req.query.limit);
+  const limit = Number.isFinite(rawLimit)
+    ? Math.max(1, Math.min(Math.floor(rawLimit), 24))
+    : 12;
+
+  // Community sea bottles: other students' Future Me letters only.
+  // Never include the caller's own messages; never expose name/studentNumber.
+  const result = await query(
+    `
+      select id, message, created_at, delivery_at
+      from public.future_self_messages
+      where deleted_at is null
+        and student_number <> $1
+      order by created_at desc
+      limit $2
+    `,
+    [studentNumber, limit],
+  );
+
+  const bottles = result.rows.map((row) => ({
+    id: row.id,
+    message: row.message,
+    createdAt: row.created_at,
+    deliveryAt: row.delivery_at,
+  }));
+
+  return res.json({ bottles, driftingBottles: bottles });
+}));
+
 router.patch(["/messages/:messageId", "/:messageId"], asyncHandler(async (req, res) => {
   const studentNumber = resolveRequestStudentNumber(req);
   const messageId = String(req.params.messageId || "").trim();
@@ -192,6 +240,12 @@ router.patch(["/messages/:messageId", "/:messageId"], asyncHandler(async (req, r
   }
   if (hasMessage && !message) {
     return res.status(400).json({ message: "Message is required." });
+  }
+  if (hasMessage && isMessageTooLong(req.body.message)) {
+    return res.status(400).json({
+      message: `Message must be ${FUTURE_SELF_MESSAGE_MAX_LENGTH} characters or fewer.`,
+      maxLength: FUTURE_SELF_MESSAGE_MAX_LENGTH,
+    });
   }
   if (hasDeliveryAt && (!deliveryAt || !isStrictlyAfterManilaNow(deliveryAt))) {
     return res.status(400).json({ message: "Choose a future delivery date in Philippine time." });

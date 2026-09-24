@@ -90,26 +90,22 @@ export default function ProfileScreen() {
   }, [user?.profilePictureUrl]);
 
   useEffect(() => {
-    if (profileFrameId !== undefined) {
+    if (profileFrameId) {
       setSelectedFrameId(PROFILE_FRAMES.some((frame) => frame.id === profileFrameId) ? profileFrameId : null);
+      return;
     }
+    // Explicit null/empty from preferences means no frame — do not revive from AsyncStorage.
+    setSelectedFrameId(null);
   }, [profileFrameId]);
 
   useEffect(() => {
     if (!user?.studentNumber) return;
-    if (!profileFrameId) {
-      void AsyncStorage.getItem(`${PROFILE_FRAME_KEY}:${user.studentNumber}`).then((frameId) => {
-        if (frameId && PROFILE_FRAMES.some((frame) => frame.id === frameId)) {
-          setSelectedFrameId(frameId);
-        }
-      });
-    }
     void AsyncStorage.getAllKeys().then((keys) => {
       const prefix = `@bawat-tala/achievement:`;
       const suffix = `:${user.studentNumber}`;
       setAchievementCount(keys.filter((k) => k.startsWith(prefix) && k.endsWith(suffix)).length);
     }).catch(() => undefined);
-  }, [profileFrameId, user?.studentNumber]);
+  }, [user?.studentNumber]);
 
   const openFramePicker = () => {
     setShowProfilePictureOptions(false);
@@ -129,7 +125,12 @@ export default function ProfileScreen() {
     const nextFrame = tempFrameId;
     setSelectedFrameId(nextFrame);
     if (user?.studentNumber) {
-      void AsyncStorage.setItem(`${PROFILE_FRAME_KEY}:${user.studentNumber}`, nextFrame ?? "");
+      const storageKey = `${PROFILE_FRAME_KEY}:${user.studentNumber}`;
+      if (nextFrame) {
+        void AsyncStorage.setItem(storageKey, nextFrame);
+      } else {
+        void AsyncStorage.removeItem(storageKey);
+      }
     }
     void setProfileFrameId(nextFrame);
     setShowFrameConfirmModal(false);
@@ -159,12 +160,11 @@ export default function ProfileScreen() {
     if (!user?.studentNumber) return;
     setIsRefreshing(true);
     try {
-      const [frameId, profileResult] = await Promise.all([
-        AsyncStorage.getItem(`${PROFILE_FRAME_KEY}:${user.studentNumber}`),
-        fetchStudentProfile(user.studentNumber),
-      ]);
+      const profileResult = await fetchStudentProfile(user.studentNumber);
       await hydrateMuniWardrobe(user.studentNumber).catch(() => undefined);
-      setSelectedFrameId(PROFILE_FRAMES.some((frame) => frame.id === frameId) ? frameId : null);
+      setSelectedFrameId(
+        profileFrameId && PROFILE_FRAMES.some((frame) => frame.id === profileFrameId) ? profileFrameId : null,
+      );
       void AsyncStorage.getAllKeys().then((keys) => {
         const prefix = `@bawat-tala/achievement:`;
         const suffix = `:${user.studentNumber}`;
@@ -181,7 +181,7 @@ export default function ProfileScreen() {
     } finally {
       setIsRefreshing(false);
     }
-  }, [setUser, user]);
+  }, [profileFrameId, setUser, user]);
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -851,6 +851,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 8,
     bottom: 8,
+    zIndex: 10,
     width: 38,
     height: 38,
     borderRadius: 999,
