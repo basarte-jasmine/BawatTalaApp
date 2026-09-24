@@ -197,7 +197,8 @@ router.get(["/drifting", "/bottles/drifting", "/messages/drifting"], asyncHandle
     ? Math.max(1, Math.min(Math.floor(rawLimit), 24))
     : 12;
 
-  // Community sea bottles: other students' Future Me letters only.
+  // Community sea bottles: other students' Future Me letters only,
+  // and only after the letter's delivery time has arrived (same clock as deliver-to-self).
   // Never include the caller's own messages; never expose name/studentNumber.
   const result = await query(
     `
@@ -205,7 +206,8 @@ router.get(["/drifting", "/bottles/drifting", "/messages/drifting"], asyncHandle
       from public.future_self_messages
       where deleted_at is null
         and student_number <> $1
-      order by created_at desc
+        and delivery_at <= now()
+      order by delivery_at desc, created_at desc
       limit $2
     `,
     [studentNumber, limit],
