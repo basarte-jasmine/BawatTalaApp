@@ -4,7 +4,7 @@
     "slug": "bawat-tala",
     "version": "1.7.3",
     "orientation": "portrait",
-    "icon": "./assets/images/BT_Logo.png",
+    "icon": "./assets/images/Logo_BT.png",
     "scheme": "bawattala",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -14,8 +14,8 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#f4fafb",
-        "foregroundImage": "./assets/images/BT_Logo.png",
-        "monochromeImage": "./assets/images/BT_Logo.png"
+        "foregroundImage": "./assets/images/Logo_BT.png",
+        "monochromeImage": "./assets/images/Logo_BT.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -30,19 +30,19 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/BT_Logo.png"
+      "favicon": "./assets/images/Logo_BT.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/BT_Logo.png",
+          "image": "./assets/images/Logo_BT.png",
           "imageWidth": 170,
           "resizeMode": "contain",
           "backgroundColor": "#f4fafb",
           "dark": {
-            "image": "./assets/images/BT_Logo.png",
+            "image": "./assets/images/Logo_BT.png",
             "backgroundColor": "#f4fafb"
           }
         }

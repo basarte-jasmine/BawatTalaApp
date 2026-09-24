@@ -99,7 +99,7 @@ export default function IntroScreen() {
       >
         <View style={styles.arcTitleWrap}>{titleLetters}</View>
         <Animated.Image
-          source={require("../assets/images/BT_Logo.png")}
+          source={require("../assets/images/Logo_BT.png")}
           contentFit="contain"
           style={[styles.book, { transform: [{ translateY: bookFloatAnim }] }]}
         />

@@ -108,7 +108,7 @@ export default function LoginScreen() {
 
   return (
     <AuthCardLayout contentContainerStyle={styles.scrollContent} cardStyle={styles.card}>
-      <Image source={require("../assets/images/BT_Logo.png")} style={styles.logo} contentFit="contain" />
+      <Image source={require("../assets/images/Logo_BT.png")} style={styles.logo} contentFit="contain" />
       <Text style={styles.title}>Welcome!</Text>
       <Text style={styles.subtitle}>
         Log in to your account to start journaling{"\n"}and track your progress.

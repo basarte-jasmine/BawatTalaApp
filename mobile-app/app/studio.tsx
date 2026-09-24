@@ -23,7 +23,7 @@ export default function StudioScreen() {
     <SafeAreaView style={styles.studioScreen}>
       <View style={styles.centeredScreen}>
         <Image
-          source={require("../assets/images/BT_Logo.png")}
+          source={require("../assets/images/Logo_BT.png")}
           style={styles.logo}
           contentFit="contain"
         />

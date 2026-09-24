@@ -474,7 +474,7 @@ export default function RegisterScreen() {
           {step === 1 && (
             <>
               <Image
-                source={require("../assets/images/BT_Logo.png")}
+                source={require("../assets/images/Logo_BT.png")}
                 style={styles.logo}
                 contentFit="contain"
               />

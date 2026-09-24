@@ -10,7 +10,7 @@ export default function AuthChoiceScreen() {
         <View style={styles.shapeWrap}>
           <View style={styles.shape} />
           <Image
-            source={require("../assets/images/BT_Logo.png")}
+            source={require("../assets/images/Logo_BT.png")}
             style={styles.heroLogo}
             contentFit="contain"
           />
