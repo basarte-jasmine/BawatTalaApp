@@ -88,7 +88,7 @@ const {
 } = require("../services/login-lockout.service");
 const { getAuthenticatedAdmin, requireAdminAuth, requireRoles } = require("../middleware/auth.middleware");
 const { mapFeedbackRow } = require("./feedback.routes");
-const { sendPasswordResetCodeEmail } = require("../services/auth-email.service");
+const { sendAuthCodeEmail, sendPasswordResetCodeEmail } = require("../services/auth-email.service");
 const {
   createAdminToken,
   createOAuthState,
@@ -258,6 +258,68 @@ function setRoleVerificationSession(email, session) {
 
 function clearRoleVerificationSession(email) {
   adminRoleVerificationSessions.delete(email);
+}
+
+async function deleteStaleAuthUsersByEmail(email) {
+  let page = 1;
+  let removedAny = false;
+  while (true) {
+    const { data, error } = await supabaseAdminClient.auth.admin.listUsers({
+      page,
+      perPage: 200,
+    });
+    if (error) throw error;
+    const users = data?.users || [];
+    const matchingUsers = users.filter(
+      (user) => normalizeEmail(user.email || "") === email,
+    );
+    for (const user of matchingUsers) {
+      const { error: deleteError } = await supabaseAdminClient.auth.admin.deleteUser(user.id);
+      if (deleteError) throw deleteError;
+      removedAny = true;
+    }
+    if (users.length < 200) break;
+    page += 1;
+  }
+  return removedAny;
+}
+
+async function sendAdminRoleVerificationCode(email, context) {
+  try {
+    await deleteStaleAuthUsersByEmail(email);
+  } catch (error) {
+    return { ok: false, message: error?.message || "Unable to prepare email verification." };
+  }
+
+  const signupResult = await supabaseAdminClient.auth.admin.generateLink({
+    type: "signup",
+    email,
+    password: "TempPassword" + Math.random().toString(36).slice(-8) + "!1Aa",
+  });
+  if (signupResult.error) {
+    return { ok: false, message: signupResult.error.message || "Failed to generate verification code." };
+  }
+
+  const token = signupResult.data?.properties?.email_otp;
+  if (!token) {
+    return { ok: false, message: "Failed to generate verification code." };
+  }
+
+  const emailResult = await sendAuthCodeEmail({
+    to: email,
+    code: token,
+    expiresInSeconds: Math.ceil(OTP_VALIDITY_MS / 1000),
+    context,
+    subject: "Verify your guidance counselor account",
+    heading: "Verify Your Guidance Account",
+    intro: "Welcome to Bawat Tala! Use the verification code below to verify your email and activate your counselor account:",
+    ignoreText: "If you did not expect this invitation, you can safely ignore this email.",
+  });
+  if (!emailResult.ok) {
+    return { ok: false, message: "Failed to send verification code." };
+  }
+
+  return { ok: true };
 }
 
 async function sendAdminRecoveryCode(email, context) {
@@ -5725,67 +5787,26 @@ router.post("/roles", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
     return res.status(409).json({ message: "This email is already registered as a student. Strictly one account per email only." });
   }
 
-  const sendResult = await sendAdminRecoveryCode(email, `guidance admin account verification [${email}]`);
+  const sendResult = await sendAdminRoleVerificationCode(email, "guidance admin account verification [" + email + "]");
   if (!sendResult.ok) {
     return res.status(400).json({ message: sendResult.message || "Failed to send verification code." });
   }
 
-  const insertResult = await query(
-    `
-      insert into public.admin_accounts (
-        email,
-        password_hash,
-        full_name,
-        role,
-        gender,
-        is_active
-      )
-      values ($1, $2, $3, $4, $5, false)
-      returning id, email, full_name, role, gender, is_active, created_at
-    `,
-    [email, hashPassword(password), fullName, role, gender],
-  );
-
-  const member = insertResult.rows[0];
   const now = Date.now();
   setRoleVerificationSession(email, {
     email,
-    memberId: member.id,
+    fullName,
+    gender,
+    role,
+    passwordHash: hashPassword(password),
     otpExpiresAt: now + OTP_VALIDITY_MS,
     resendAvailableAt: now + OTP_COOLDOWN_MS,
   });
 
-  await writeAdminActivityLog({
-    actionType: "ROLE_MEMBER_CREATED",
-    actorEmail: email,
-    actorName: fullName,
-    actorRole: toRoleManagementLabel(role),
-    entityType: "ROLE_ASSIGNMENT",
-    title: `${fullName} added to the counseling team`,
-    description: `${fullName} was added as ${toRoleManagementLabel(role)}.`,
-    metadata: {
-      memberId: member.id,
-      role,
-    },
-  });
-
   return res.status(201).json({
-    message: "Team member created. Enter the email verification code to activate the account.",
+    message: "Verification code sent to email. Enter the code to activate the account.",
     resendAfterSeconds: Math.ceil(OTP_COOLDOWN_MS / 1000),
-    member: {
-      id: member.id,
-      email: member.email,
-      fullName: member.full_name,
-      role: member.role,
-      roleLabel: toRoleManagementLabel(member.role),
-      department: member.role === "HEAD_COUNSELOR" ? "Administration" : "Counseling Office",
-      assignedStudents: 0,
-      status: "Pending",
-      isActive: false,
-      gender: member.gender,
-      specialties: [],
-      createdAt: member.created_at,
-    },
+    email,
   });
 });
 
@@ -5805,26 +5826,68 @@ router.post("/roles/verify-code", requireRoles("HEAD_COUNSELOR"), async (req, re
     return res.status(400).json({ message: "The code has expired or is invalid. Please try again." });
   }
 
-  const { error } = await supabaseAuthClient.auth.verifyOtp({
-    email,
-    token,
-    type: "recovery",
-  });
-  if (error) {
+  let verifyError = null;
+  for (const type of ["signup", "email"]) {
+    const { error } = await supabaseAuthClient.auth.verifyOtp({
+      email,
+      token,
+      type,
+    });
+    if (!error) {
+      verifyError = null;
+      break;
+    }
+    verifyError = error;
+  }
+  if (verifyError) {
     return res.status(400).json({ message: "The code is invalid. Please check the latest email code and try again." });
   }
 
-  await query(
-    `
-      update public.admin_accounts
-      set is_active = true, updated_at = now()
-      where id = $1 and email = $2
-    `,
-    [session.memberId, email],
+  const adminExist = await query("select id from public.admin_accounts where lower(email) = lower($1) limit 1", [email]);
+  if (adminExist.rowCount > 0) {
+    clearRoleVerificationSession(email);
+    return res.status(409).json({ message: "This email is already registered as an admin or counselor. Strictly one account per email only." });
+  }
+
+  const insertResult = await query(
+    "insert into public.admin_accounts (email, password_hash, full_name, role, gender, is_active) values ($1, $2, $3, $4, $5, true) returning id, email, full_name, role, gender, is_active, created_at",
+    [session.email, session.passwordHash, session.fullName, session.role, session.gender],
   );
 
+  const member = insertResult.rows[0];
+
+  await writeAdminActivityLog({
+    actionType: "ROLE_MEMBER_CREATED",
+    actorEmail: email,
+    actorName: session.fullName,
+    actorRole: toRoleManagementLabel(session.role),
+    entityType: "ROLE_ASSIGNMENT",
+    title: session.fullName + " added to the counseling team",
+    description: session.fullName + " was added as " + toRoleManagementLabel(session.role) + ".",
+    metadata: {
+      memberId: member.id,
+      role: session.role,
+    },
+  });
+
   clearRoleVerificationSession(email);
-  return res.json({ message: "Email verified. Guidance account is now active." });
+  return res.json({
+    message: "Email verified. Guidance account is now active.",
+    member: {
+      id: member.id,
+      email: member.email,
+      fullName: member.full_name,
+      role: member.role,
+      roleLabel: toRoleManagementLabel(member.role),
+      department: member.role === "HEAD_COUNSELOR" ? "Administration" : "Counseling Office",
+      assignedStudents: 0,
+      status: "Active",
+      isActive: true,
+      gender: member.gender,
+      specialties: [],
+      createdAt: member.created_at,
+    },
+  });
 });
 
 router.post("/roles/resend-code", requireRoles("HEAD_COUNSELOR"), async (req, res) => {
@@ -5839,10 +5902,10 @@ router.post("/roles/resend-code", requireRoles("HEAD_COUNSELOR"), async (req, re
   }
   if (Date.now() < session.resendAvailableAt) {
     const remaining = Math.ceil((session.resendAvailableAt - Date.now()) / 1000);
-    return res.status(429).json({ message: `Please wait ${remaining}s before resending.` });
+    return res.status(429).json({ message: "Please wait " + remaining + "s before resending." });
   }
 
-  const sendResult = await sendAdminRecoveryCode(email, `guidance admin account verification resend [${email}]`);
+  const sendResult = await sendAdminRoleVerificationCode(email, "guidance admin account verification resend [" + email + "]");
   if (!sendResult.ok) {
     return res.status(400).json({ message: sendResult.message || "Failed to resend code." });
   }

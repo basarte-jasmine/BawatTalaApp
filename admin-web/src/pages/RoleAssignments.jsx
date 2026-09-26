@@ -312,8 +312,8 @@ export default function RoleAssignments({ onLogout, session }) {
         setIsFormOpen(false);
         setEditingMember(null);
         setFormState(DEFAULT_FORM);
+        await loadMembers();
       }
-      await loadMembers();
     } catch (error) {
       setFormErrors(getServerFieldError(error instanceof Error ? error.message : "Failed to save role assignment."));
     } finally {
