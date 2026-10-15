@@ -3083,25 +3083,19 @@ export default function Overview({ onLogout, session }) {
   const journalEntriesData = aggregateJournalEntriesVolume(analyticsOverview?.charts?.journalEntryVolume?.length > 0 ? analyticsOverview.charts.journalEntryVolume : []);
   const rawGenderDistribution = dashboardSummary?.charts?.genderDistribution || [];
   const normalizedGenderDistribution = (() => {
-    let male = 0;
-    let female = 0;
+    const list = [];
     for (const item of rawGenderDistribution) {
-      const label = String(item.label || "").trim().toLowerCase();
+      const label = String(item.label || "").trim();
       const val = Number(item.value || 0);
-      if (label === "male") {
-        male += val;
-      } else {
-        female += val;
+      if (val > 0 && label) {
+        list.push({ label, value: val });
       }
     }
-    const list = [];
-    if (male > 0) list.push({ label: "Male", value: male });
-    if (female > 0) list.push({ label: "Female", value: female });
     return list;
   })();
   const genderData =
     normalizedGenderDistribution.length > 0
-      ? withColors(normalizedGenderDistribution, ["#2E7D32", "#43A047"])
+      ? withColors(normalizedGenderDistribution, ["#2E7D32", "#43A047", "#81C784", "#A5D6A7"])
       : [];
   const moodTrendData =
     dashboardSummary?.charts?.moodTrends?.series?.length > 0

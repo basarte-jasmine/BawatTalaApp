@@ -11,6 +11,7 @@ import {
 
 type FormTextInputProps = {
   label: string;
+  required?: boolean;
   containerStyle?: StyleProp<ViewStyle>;
   labelStyle?: StyleProp<TextStyle>;
   inputWrapStyle?: StyleProp<ViewStyle>;
@@ -20,6 +21,7 @@ type FormTextInputProps = {
 
 export function FormTextInput({
   label,
+  required = false,
   containerStyle,
   labelStyle,
   inputWrapStyle,
@@ -31,7 +33,7 @@ export function FormTextInput({
 
   return (
     <View style={containerStyle}>
-      <Text style={[styles.label, labelStyle]}>{label}</Text>
+      <Text style={[styles.label, labelStyle]}>{label}{required ? <Text style={styles.requiredAsterisk}> *</Text> : null}</Text>
       {useWrappedInput ? (
         <View style={[styles.inputWrap, inputWrapStyle]}>
           <TextInput
@@ -53,6 +55,9 @@ export function FormTextInput({
 }
 
 const styles = StyleSheet.create({
+  requiredAsterisk: {
+    color: "#DC2626",
+    fontWeight: "700" },
   label: {
     color: "#111111",
     fontSize: 13,

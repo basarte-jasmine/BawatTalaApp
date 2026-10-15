@@ -145,10 +145,11 @@ export default function ProfileScreen() {
     void fetchStudentProfile(user.studentNumber).then((result) => {
       if (!mounted || !result.ok || !result.profile) return;
       const nextProfilePictureUrl = result.profile.profilePictureUrl || "";
+      const nextNickname = typeof result.profile.nickname === "string" ? result.profile.nickname : "";
       setProfilePictureUrl(nextProfilePictureUrl);
       setProgram(String(result.profile.program || "").trim());
-      if (nextProfilePictureUrl !== (user.profilePictureUrl || "")) {
-        setUser({ ...user, profilePictureUrl: nextProfilePictureUrl });
+      if (nextProfilePictureUrl !== (user.profilePictureUrl || "") || nextNickname !== (user.nickname || "")) {
+        setUser({ ...user, profilePictureUrl: nextProfilePictureUrl, nickname: nextNickname });
       }
     });
 
@@ -172,10 +173,11 @@ export default function ProfileScreen() {
       }).catch(() => undefined);
       if (profileResult && profileResult.ok && profileResult.profile) {
         const nextProfilePictureUrl = profileResult.profile.profilePictureUrl || "";
+        const nextNickname = typeof profileResult.profile.nickname === "string" ? profileResult.profile.nickname : "";
         setProfilePictureUrl(nextProfilePictureUrl);
         setProgram(String(profileResult.profile.program || "").trim());
-        if (nextProfilePictureUrl !== (user.profilePictureUrl || "")) {
-          setUser({ ...user, profilePictureUrl: nextProfilePictureUrl });
+        if (nextProfilePictureUrl !== (user.profilePictureUrl || "") || nextNickname !== (user.nickname || "")) {
+          setUser({ ...user, profilePictureUrl: nextProfilePictureUrl, nickname: nextNickname });
         }
       }
     } finally {
@@ -395,7 +397,7 @@ export default function ProfileScreen() {
                 <Ionicons name="camera" size={19} color="#FFFFFF" />
               </Pressable>
             </View>
-            <Text style={styles.name}>{user?.fullName || "User"}</Text>
+            <Text style={styles.name}>{user?.nickname || user?.fullName || "User"}</Text>
             <Text style={styles.email}>{program || "Student"}</Text>
             <View style={styles.identityRow}>
               <View style={styles.identityChip}>

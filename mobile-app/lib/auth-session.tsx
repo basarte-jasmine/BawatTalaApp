@@ -17,6 +17,7 @@ export type AuthUser = {
   email: string;
   firstName: string;
   fullName: string;
+  nickname?: string | null;
   profilePictureUrl?: string;
   studentNumber: string;
   token?: string;

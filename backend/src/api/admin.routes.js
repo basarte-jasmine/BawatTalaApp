@@ -190,6 +190,15 @@ function normalizeStudentNumber(value) {
   return String(value || "").trim().toUpperCase();
 }
 
+function normalizeStudentGenderDisplay(val) {
+  if (!val) return null;
+  const lower = String(val).trim().toLowerCase();
+  if (lower === "male") return "Male";
+  if (lower === "female") return "Female";
+  if (lower === "non-binary" || lower === "nonbinary") return "Non-binary";
+  if (lower.includes("prefer not")) return "Prefer Not to Say";
+  return String(val).trim() || null;
+}
 function normalizeCompactSpaces(value) {
   return String(value || "").trim().replace(/\s+/g, " ");
 }
@@ -2153,14 +2162,20 @@ router.get("/dashboard/summary", async (req, res) => {
   );
 
   const genderCounts = allProfiles.reduce((acc, row) => {
-    const raw = String(row.gender || "").trim().toUpperCase();
-    if (raw === "MALE") {
+    const raw = String(row.gender || "").trim();
+    if (!raw) return acc;
+    const lower = raw.toLowerCase();
+    if (lower === "male") {
       acc.MALE = (acc.MALE || 0) + 1;
-    } else if (raw === "FEMALE") {
+    } else if (lower === "female") {
       acc.FEMALE = (acc.FEMALE || 0) + 1;
+    } else if (lower === "non-binary" || lower === "nonbinary") {
+      acc["NON-BINARY"] = (acc["NON-BINARY"] || 0) + 1;
+    } else if (lower.includes("prefer not")) {
+      acc["PREFER NOT TO SAY"] = (acc["PREFER NOT TO SAY"] || 0) + 1;
     }
     return acc;
-  }, { MALE: 0, FEMALE: 0 });
+  }, { MALE: 0, FEMALE: 0, "NON-BINARY": 0, "PREFER NOT TO SAY": 0 });
 
   const courseCounts = allProfiles.reduce((acc, row) => {
     const key = String(row.program || "UNSPECIFIED");
@@ -2248,6 +2263,8 @@ router.get("/dashboard/summary", async (req, res) => {
   const demographicSplit = [
     { label: "Male", value: Number(genderCounts.MALE || 0) },
     { label: "Female", value: Number(genderCounts.FEMALE || 0) },
+    { label: "Non-binary", value: Number(genderCounts["NON-BINARY"] || 0) },
+    { label: "Prefer Not to Say", value: Number(genderCounts["PREFER NOT TO SAY"] || 0) },
   ].filter((item) => item.value > 0);
 
   const programTotals = allProfiles.reduce((acc, row) => {
@@ -2373,6 +2390,8 @@ router.get("/dashboard/summary", async (req, res) => {
       genderDistribution: [
         { label: "Male", value: Number(genderCounts.MALE || 0) },
         { label: "Female", value: Number(genderCounts.FEMALE || 0) },
+        { label: "Non-binary", value: Number(genderCounts["NON-BINARY"] || 0) },
+        { label: "Prefer Not to Say", value: Number(genderCounts["PREFER NOT TO SAY"] || 0) },
       ].filter((item) => item.value > 0),
       studentDemographics: {
         locations: demographicRows,
@@ -4291,7 +4310,8 @@ router.get("/analytics", async (req, res) => {
       email: profile.email || "",
       program: normalizeDisplayLabel(profile.program || "Unspecified"),
       yearLevel: inferYearLevelFromStudentNumber(studentNumber),
-      gender: profile.gender && profile.gender.toLowerCase() === "male" ? "Male" : (profile.gender && profile.gender.toLowerCase() === "female" ? "Female" : null),
+      gender: normalizeStudentGenderDisplay(profile.gender),
+      nickname: profile.nickname ? String(profile.nickname).trim() : null,
       region: profile.region || "",
       province: profile.province || "",
       city: profile.city || "",
@@ -4795,6 +4815,7 @@ router.get("/students", async (req, res) => {
           when lower(trim(coalesce(sp.gender, ''))) = 'female' then 'Female'
           else null
         end as gender,
+        sp.nickname,
         sp.birthdate,
         sp.created_at,
         sp.deleted_at,
@@ -4840,7 +4861,8 @@ router.get("/students", async (req, res) => {
     barangay: row.barangay || "",
     street: row.street || "",
     profilePictureUrl: row.profile_picture_url || "",
-    gender: row.gender && row.gender.toLowerCase() === "male" ? "Male" : (row.gender && row.gender.toLowerCase() === "female" ? "Female" : null),
+    gender: normalizeStudentGenderDisplay(row.gender),
+    nickname: row.nickname ? String(row.nickname).trim() : null,
     birthdate: normalizeMmDdYyyyBirthdate(row.birthdate),
     createdAt: row.created_at,
     totalEntries: Number(row.total_entries || 0),
@@ -5121,6 +5143,7 @@ router.get("/students/:studentNumber", async (req, res) => {
         coalesce(sp.street, '') as street,
         coalesce(sp.profile_picture_url, '') as profile_picture_url,
         coalesce(sp.gender, '') as gender,
+        sp.nickname,
         sp.birthdate,
         sp.created_at,
         sp.deleted_at,
@@ -5337,9 +5360,10 @@ router.get("/students/:studentNumber", async (req, res) => {
     profile: {
       studentNumber: profile.student_number,
       fullName: toTitleCase(profile.full_name),
+      nickname: profile.nickname ? String(profile.nickname).trim() : null,
       email: profile.email,
       program: normalizeDisplayLabel(profile.program || "Unspecified"),
-      gender: profile.gender && profile.gender.toLowerCase() === "male" ? "Male" : (profile.gender && profile.gender.toLowerCase() === "female" ? "Female" : null),
+      gender: normalizeStudentGenderDisplay(profile.gender),
       region: profile.region || "",
       province: profile.province || "",
       city: profile.city || "",

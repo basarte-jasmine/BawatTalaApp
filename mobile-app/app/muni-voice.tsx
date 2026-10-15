@@ -40,6 +40,7 @@ import { useAuthSession } from "../lib/auth-session";
 import { unlockAchievement } from "../lib/achievements";
 import {
   needsCrisisTrioPrompt,
+  needsDistressWellnessOffer,
   needsFinishSupportPrompt} from "../lib/risk-level";
 import { JournalLockGate, useAppPreferences } from "../lib/app-preferences";
 
@@ -188,6 +189,10 @@ export default function MuniVoiceScreen() {
   const [riskModalRedirectEntryId, setRiskModalRedirectEntryId] = useState<string | null>(null);
   /** After first mid-chat crisis trio show/dismiss, suppress until Finish Journal. */
   const [riskPromptSuppressedUntilFinish, setRiskPromptSuppressedUntilFinish] = useState(false);
+  /** One-time DISTRESS wellness offer inside Muni reply box. */
+  const [distressOfferPhase, setDistressOfferPhase] = useState<"wellness" | "save" | null>(null);
+  const distressWellnessOfferDoneRef = useRef(false);
+  const pendingWellnessAfterFinishRef = useRef(false);
   const [isAnalyzingTags, setIsAnalyzingTags] = useState(false);
   const [isSavingTags, setIsSavingTags] = useState(false);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
@@ -477,6 +482,13 @@ export default function MuniVoiceScreen() {
         setRiskPromptSuppressedUntilFinish(true);
         setRiskModalRedirectEntryId(null);
         setShowRiskModal(true);
+      } else if (
+        result.entry &&
+        !distressWellnessOfferDoneRef.current &&
+        needsDistressWellnessOffer(result.entry, result.messages)
+      ) {
+        distressWellnessOfferDoneRef.current = true;
+        setDistressOfferPhase("wellness");
       }
       void speakReply(finalMuniReply, replyVoice);
     },
@@ -1006,10 +1018,34 @@ export default function MuniVoiceScreen() {
     router.push("/consult?track=professional&skipIntro=1");
   }, [isSavingSupportResponse, saveSupportDecision]);
 
+  const clearDistressOffer = useCallback(() => {
+    distressWellnessOfferDoneRef.current = true;
+    setDistressOfferPhase(null);
+  }, []);
+
+  const handleDistressWellnessYes = useCallback(() => {
+    distressWellnessOfferDoneRef.current = true;
+    setDistressOfferPhase("save");
+  }, []);
+
+  const handleDistressWellnessNo = useCallback(() => {
+    clearDistressOffer();
+  }, [clearDistressOffer]);
+
+  const handleDistressSaveDecline = useCallback(() => {
+    clearDistressOffer();
+  }, [clearDistressOffer]);
+
+  const handleDistressSaveAccept = useCallback(() => {
+    setDistressOfferPhase(null);
+    pendingWellnessAfterFinishRef.current = true;
+    void handleRequestTagReview();
+  }, [handleRequestTagReview]);
   const handleOpenWellnessTools = useCallback(async () => {
     if (isSavingSupportResponse) {
       return;
     }
+    void stopSpeaking();
     const saved = await saveSupportDecision("VIEWED_WELLNESS");
     if (!saved) {
       return;
@@ -1060,6 +1096,14 @@ export default function MuniVoiceScreen() {
       setStatusMessage("Voice journal saved.");
         await unlockAchievement("voice-beneath-the-stars", user.studentNumber);
         if (finalTags.some((t: string) => POSITIVE_TAG_OPTIONS.includes(t))) await unlockAchievement("small-good-thing", user.studentNumber);
+      // DISTRESS Yes->Save: after usual finish, record VIEWED_WELLNESS then open wellness tools.
+      if (pendingWellnessAfterFinishRef.current) {
+        pendingWellnessAfterFinishRef.current = false;
+        await saveSupportDecision("VIEWED_WELLNESS");
+        void stopSpeaking();
+        router.push("/wellness-tools");
+        return;
+      }
       // Finish Journal: re-prompt once only if still CONFIRMED_CRITICAL and no resource action.
       if (finishResult.entry && needsFinishSupportPrompt(finishResult.entry, finishResult.messages)) {
         setRiskModalRedirectEntryId(finishResult.entry.id);
@@ -1168,6 +1212,52 @@ export default function MuniVoiceScreen() {
                 </Pressable>
               </View>
               <Text style={styles.replyText}>{muniReply}</Text>
+              {distressOfferPhase ? (
+                <View style={styles.distressInlineOffer}>
+                  {distressOfferPhase === "wellness" ? (
+                    <>
+                      <Text style={styles.distressInlineHint}>
+                        Open wellness tools?
+                      </Text>
+                      <View style={styles.distressYesNoRow}>
+                        <Pressable
+                          style={[styles.distressChoiceButton, styles.distressChoiceNo]}
+                          onPress={handleDistressWellnessNo}
+                        >
+                          <Text style={styles.distressChoiceNoText}>No</Text>
+                        </Pressable>
+                        <Pressable
+                          style={[styles.distressChoiceButton, styles.distressChoiceYes]}
+                          onPress={handleDistressWellnessYes}
+                        >
+                          <Text style={styles.distressChoiceYesText}>Yes</Text>
+                        </Pressable>
+                      </View>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.distressInlineHint}>
+                        Save this entry first? (tags + summary, then wellness tools)
+                      </Text>
+                      <View style={styles.distressYesNoRow}>
+                        <Pressable
+                          style={[styles.distressChoiceButton, styles.distressChoiceNo]}
+                          onPress={handleDistressSaveDecline}
+                        >
+                          <Text style={styles.distressChoiceNoText}>Not now</Text>
+                        </Pressable>
+                        <Pressable
+                          style={[styles.distressChoiceButton, styles.distressChoiceYes]}
+                          onPress={handleDistressSaveAccept}
+                          disabled={isAnalyzingTags || isSavingJournal || isSavingTags}
+                        >
+                          <Text style={styles.distressChoiceYesText}>Save & open</Text>
+                        </Pressable>
+                      </View>
+                    </>
+                  )}
+                </View>
+              ) : null}
             </View>
           ) : null}
 
@@ -1994,6 +2084,43 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit-Medium",
     textAlign: "center",
     marginBottom: 16 },
+  distressInlineOffer: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#D8E9CB",
+    rowGap: 8 },
+  distressInlineHint: {
+    color: "#3F6235",
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: "Outfit-Medium" },
+  distressYesNoRow: {
+    flexDirection: "row",
+    columnGap: 10,
+    marginTop: 2 },
+  distressChoiceButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12 },
+  distressChoiceNo: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#D7DEE5" },
+  distressChoiceYes: {
+    backgroundColor: "#E2F0D8",
+    borderColor: "#B7D8A2" },
+  distressChoiceNoText: {
+    color: "#566675",
+    fontSize: 14,
+    fontFamily: "Outfit-Bold" },
+  distressChoiceYesText: {
+    color: "#2E6B23",
+    fontSize: 14,
+    fontFamily: "Outfit-Bold" },
   riskModalCard: {
     width: "100%",
     maxWidth: 360,

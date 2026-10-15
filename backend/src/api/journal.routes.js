@@ -145,14 +145,19 @@ function normalizeSummaryFeedbackReason(value) {
 async function getStudentProfile(studentNumber) {
   const { data } = await supabaseAdminClient
     .from("student_profiles")
-    .select("full_name,email")
+    .select("full_name,email,nickname")
     .eq("student_number", studentNumber)
     .maybeSingle();
 
+  const nickname = (data?.nickname || "").trim();
+  const fullName = data?.full_name || "";
+  const firstName = nickname || fullName || "Student";
+
   return {
     email: data?.email || "",
-    fullName: data?.full_name || "",
-    firstName: String(data?.full_name || "").trim().split(/\s+/)[0] || "Student",
+    fullName,
+    nickname: nickname || null,
+    firstName,
   };
 }
 

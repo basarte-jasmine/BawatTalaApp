@@ -17,6 +17,7 @@ import type { NativeScrollEvent, NativeSyntheticEvent } from "react-native";
 import { FormTextInput } from "../components/forms/FormTextInput";
 import { OtpCodeInput } from "../components/forms/OtpCodeInput";
 import { SelectField } from "../components/forms/SelectField";
+import { IdCardCameraModal } from "../components/forms/IdCardCameraModal";
 import { StepProgress } from "../components/forms/StepProgress";
 import { AppPrimaryButton } from "../components/ui/AppPrimaryButton";
 import {
@@ -35,6 +36,7 @@ import { useAuthSession } from "../lib/auth-session";
 import {
   isLikelySchoolId,
   isValidBirthdate,
+  validateStudentBirthdate,
   isValidName,
   isValidStudentNumber,
   cleanAndValidateStreet,
@@ -144,6 +146,7 @@ export default function RegisterScreen() {
   const [barangay, setBarangay] = useState("");
   const [street, setStreet] = useState("");
   const [email, setEmail] = useState("");
+  const [nickname, setNickname] = useState("");
   const [birthdate, setBirthdate] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -153,6 +156,8 @@ export default function RegisterScreen() {
   const [hasValidIdScan, setHasValidIdScan] = useState(false);
   const [compressedIdPicture, setCompressedIdPicture] = useState("");
   const [hasAcceptedScanTerms, setHasAcceptedScanTerms] = useState(false);
+  const [consentError, setConsentError] = useState(false);
+  const [cameraModalVisible, setCameraModalVisible] = useState(false);
   const [policyModalVisible, setPolicyModalVisible] = useState(false);
   const [policyModalTitle, setPolicyModalTitle] = useState("");
   const [policyModalContent, setPolicyModalContent] = useState("");
@@ -213,71 +218,32 @@ export default function RegisterScreen() {
     setStep((prev) => prev - 1);
   };
 
-  const handleScanId = async () => {
+  const checkConsentBeforeIdAction = () => {
     setErrorMessage("");
     if (!hasAcceptedScanTerms) {
+      setConsentError(true);
       setErrorMessage(
-        "Please agree to the Terms and Data Privacy notice before scanning your ID.",
+        "Please check the consent box above to agree to the Terms and Conditions and Privacy Policy before uploading or scanning your ID.",
       );
-      return;
+      return false;
     }
+    setConsentError(false);
+    return true;
+  };
 
-    const ImagePicker = await import("expo-image-picker");
-
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      setErrorMessage("Photo permission is required to scan your ID.");
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsEditing: true,
-      quality: 0.25,
-      base64: true });
-
-    if (result.canceled || !result.assets[0]) return;
-
-    const asset = result.assets[0];
+  const processAndValidateIdImage = async (asset: {
+    base64: string;
+    uri: string;
+    width?: number;
+    height?: number;
+  }) => {
     setScanPreviewUri(asset.uri);
-    setScanMessage("Scanning...");
+    setScanMessage("Scanning ID with OCR...");
     setHasValidIdScan(false);
     setCompressedIdPicture("");
     setIsBusy(true);
 
-    if (!asset.base64) {
-      setIsBusy(false);
-      setScanMessage("Could not read selected image data.");
-      return;
-    }
-
     try {
-      const scanResult = await scanSchoolId(asset.base64);
-
-      if (!scanResult.ok) {
-        setScanMessage(
-          scanResult.message ?? "OCR scan failed. Please try again.",
-        );
-        return;
-      }
-
-      if (
-        !scanResult.isValidId ||
-        !scanResult.ocrText ||
-        !isLikelySchoolId(scanResult.ocrText)
-      ) {
-        setScanMessage(
-          "Uploaded image does not appear to be a valid school ID. Please try again using a clearer image or different ID.",
-        );
-        return;
-      }
-
-      const parsed = parseIdText(scanResult.ocrText);
-      if (parsed.fullName) setFullName(parsed.fullName);
-      if (parsed.studentNumber)
-        setStudentNumber(normalizeStudentNumber(parsed.studentNumber));
-      if (parsed.program) setProgram(parsed.program);
-
       let compressedPhoto = "";
       try {
         const ImageManipulator = await import("expo-image-manipulator");
@@ -305,10 +271,66 @@ export default function RegisterScreen() {
         }
       } catch {
         if (asset.base64) {
-          compressedPhoto = `data:image/jpeg;base64,${asset.base64}`;
+          compressedPhoto = asset.base64.startsWith("data:") ? asset.base64 : `data:image/jpeg;base64,${asset.base64}`;
         }
       }
       setCompressedIdPicture(compressedPhoto);
+
+      const rawBase64 = asset.base64.replace(/^data:image\/[a-zA-Z]+;base64,/, "");
+      const scanResult = await scanSchoolId(rawBase64);
+
+      if (!scanResult.ok) {
+        setScanMessage(
+          scanResult.message ?? "OCR scan failed. Please try again with a clearer image.",
+        );
+        return;
+      }
+
+      if (
+        !scanResult.isValidId ||
+        !scanResult.ocrText ||
+        !isLikelySchoolId(scanResult.ocrText)
+      ) {
+        setScanMessage(
+          "Uploaded image does not appear to be a valid school ID. Please ensure the school name and details are clearly visible.",
+        );
+        return;
+      }
+
+      const ocrRawText = String(scanResult.ocrText || "").trim();
+      if (!ocrRawText) {
+        setScanMessage(
+          "No text detected on the scanned ID. The details cannot be empty. Please upload or scan a clear photo of your school ID.",
+        );
+        return;
+      }
+
+      const parsed = parseIdText(scanResult.ocrText);
+      const extractedName = parsed.fullName ? parsed.fullName.trim() : "";
+      const extractedStudentNumber = parsed.studentNumber ? normalizeStudentNumber(parsed.studentNumber) : "";
+      const extractedProgram = parsed.program ? parsed.program.trim() : "";
+
+      if (!extractedName && !extractedStudentNumber && !extractedProgram) {
+        setScanMessage(
+          "No details could be extracted from your school ID. The details cannot be empty. Please upload or scan a clearer photo of your school ID.",
+        );
+        return;
+      }
+
+      if (!extractedName || !extractedStudentNumber || !extractedProgram) {
+        const missing = [];
+        if (!extractedName) missing.push("Full Name");
+        if (!extractedStudentNumber) missing.push("Student Number");
+        if (!extractedProgram) missing.push("Program");
+        setScanMessage(
+          "Could not extract " + missing.join(", ") + " from the ID. The details cannot be empty. Please upload a clearer photo of your school ID.",
+        );
+        return;
+      }
+
+      setFullName(extractedName);
+      setStudentNumber(extractedStudentNumber);
+      setProgram(extractedProgram);
       setScanMessage("ID scanned successfully. Proceed to continue.");
       setHasValidIdScan(true);
     } catch {
@@ -320,14 +342,62 @@ export default function RegisterScreen() {
     }
   };
 
+  const handleStartCameraScan = () => {
+    if (!checkConsentBeforeIdAction()) return;
+    setCameraModalVisible(true);
+  };
+
+  const handleUploadFile = async () => {
+    if (!checkConsentBeforeIdAction()) return;
+
+    const ImagePicker = await import("expo-image-picker");
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setErrorMessage("Photo permission is required to select your ID from files.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      quality: 0.8,
+      base64: true,
+    });
+
+    if (result.canceled || !result.assets || !result.assets[0]) return;
+    const asset = result.assets[0];
+    if (!asset.base64) {
+      setScanMessage("Could not read selected image data.");
+      return;
+    }
+
+    await processAndValidateIdImage({
+      base64: asset.base64,
+      uri: asset.uri,
+      width: asset.width,
+      height: asset.height,
+    });
+  };
+
+  const handleCameraCapture = async (captured: {
+    base64: string;
+    uri: string;
+    width?: number;
+    height?: number;
+  }) => {
+    setCameraModalVisible(false);
+    await processAndValidateIdImage(captured);
+  };
+
   const handleSendOtp = async () => {
     setErrorMessage("");
     if (!isValidEmail(email)) {
       setErrorMessage("Enter a valid email like name@email.com.");
       return;
     }
-    if (!isValidBirthdate(birthdate)) {
-      setErrorMessage("Please enter a valid birthdate.");
+    const birthdateCheck = validateStudentBirthdate(birthdate);
+    if (!birthdateCheck.isValid) {
+      setErrorMessage(birthdateCheck.error || "Please enter a valid birthdate.");
       return;
     }
     if (!String(password || "").trim() || String(password || "").trim() !== String(birthdate || "").trim()) {
@@ -397,6 +467,7 @@ export default function RegisterScreen() {
       email: email.trim().toLowerCase(),
       birthdate: birthdate,
       password: password.trim(),
+      nickname: nickname.trim() || undefined,
       idPicture: hasValidIdScan && compressedIdPicture ? compressedIdPicture : undefined });
     setIsBusy(false);
 
@@ -410,7 +481,7 @@ export default function RegisterScreen() {
     setUser({
       studentNumber: normalizeStudentNumber(studentNumber),
       fullName: normalizedFullName,
-      firstName: normalizedFullName.split(" ")[0] || "User",
+      firstName: nickname.trim() || normalizedFullName.split(" ")[0] || "User",
       email: email.trim().toLowerCase() });
     router.replace("/studio");
   };
@@ -480,7 +551,7 @@ export default function RegisterScreen() {
               />
               <Text style={styles.title}>Welcome!</Text>
               <Text style={styles.subtitle}>
-                Create your account to start journaling{"\n"}and track your progress.
+                Review our terms and verify your school ID{"\n"}to start journaling and track your progress.
               </Text>
             </>
           )}
@@ -494,32 +565,61 @@ export default function RegisterScreen() {
             <>
               <Text style={styles.sectionTitle}>Upload your school ID</Text>
 
-              <Pressable style={styles.uploadWrap} onPress={handleScanId}>
+              <View style={styles.uploadWrap}>
                 <View style={styles.uploadInner}>
                   {scanPreviewUri ? (
-                    <Image
-                      source={scanPreviewUri}
-                      style={styles.preview}
-                      contentFit="cover"
-                    />
+                    <View style={styles.previewContainer}>
+                      <Image
+                        source={scanPreviewUri}
+                        style={styles.preview}
+                        contentFit="cover"
+                      />
+                      {hasValidIdScan ? (
+                        <View style={styles.previewBadge}>
+                          <Ionicons name="checkmark-circle" size={14} color="#16A34A" />
+                          <Text style={styles.previewBadgeText}>ID Verified</Text>
+                        </View>
+                      ) : null}
+                    </View>
                   ) : (
-                    <Ionicons name="image-outline" size={28} color="#1D1D1D" />
+                    <View style={styles.uploadPlaceholderWrap}>
+                      <Ionicons name="id-card-outline" size={32} color="#4F7A35" />
+                      <Text style={styles.uploadPlaceholderText}>
+                        Scan your PLV ID with your camera or select a file
+                      </Text>
+                    </View>
                   )}
                 </View>
-                <View style={styles.fileButton}>
-                  <Text style={styles.fileButtonText}>
-                    {isBusy ? "Scanning..." : "Select File"}
-                  </Text>
+                <View style={styles.uploadButtonsRow}>
+                  <Pressable
+                    style={[styles.scanOptionBtn, styles.scanOptionBtnCamera]}
+                    onPress={handleStartCameraScan}
+                    disabled={isBusy}
+                  >
+                    <Ionicons name="camera-outline" size={16} color="#FFFFFF" />
+                    <Text style={styles.scanOptionBtnCameraText}>
+                      {isBusy ? "Processing..." : "Scan with Camera"}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.scanOptionBtn, styles.scanOptionBtnUpload]}
+                    onPress={handleUploadFile}
+                    disabled={isBusy}
+                  >
+                    <Ionicons name="cloud-upload-outline" size={16} color="#334155" />
+                    <Text style={styles.scanOptionBtnUploadText}>Upload File</Text>
+                  </Pressable>
                 </View>
-              </Pressable>
+              </View>
               {!!scanMessage && (
                 <Text style={styles.helperText}>{scanMessage}</Text>
               )}
-              <View style={styles.consentCard}>
+              <View style={[styles.consentCard, consentError && styles.consentCardError]}>
                 <Pressable
                   style={styles.checkboxRow}
                   onPress={() => {
                     setHasAcceptedScanTerms((prev) => !prev);
+                    setConsentError(false);
                     setErrorMessage("");
                   }}
                 >
@@ -527,6 +627,7 @@ export default function RegisterScreen() {
                     style={[
                       styles.checkbox,
                       hasAcceptedScanTerms && styles.checkboxChecked,
+                      consentError && styles.checkboxError,
                     ]}
                   >
                     {hasAcceptedScanTerms ? (
@@ -548,7 +649,7 @@ export default function RegisterScreen() {
                     >
                       Privacy Policy
                     </Text>
-                    .
+                    .<Text style={styles.requiredAsterisk}> *</Text>
                   </Text>
                 </Pressable>
                 <Text style={styles.consentBody}>
@@ -566,34 +667,39 @@ export default function RegisterScreen() {
               <Text style={styles.headerBody}>
                 Does this look right?{"\n"}Review the details we found.
               </Text>
+              <Text style={styles.stepNotice}>
+                Scanned details are locked and cannot be edited. Please review carefully.
+              </Text>
               <FormTextInput
                 label="Full Name"
+                required={true}
                 value={fullName}
-                onChangeText={setFullName}
-                autoCapitalize="words"
+                editable={false}
                 labelStyle={styles.label}
-                inputStyle={styles.input}
+                inputStyle={[styles.input, styles.disabledInput]}
               />
               <FormTextInput
                 label="Student Number"
+                required={true}
                 value={studentNumber}
-                onChangeText={(value) =>
-                  setStudentNumber(normalizeStudentNumber(value))
-                }
+                editable={false}
                 placeholder="23-2903"
                 placeholderTextColor="#8D8D8D"
                 labelStyle={styles.label}
-                inputStyle={styles.input}
+                inputStyle={[styles.input, styles.disabledInput]}
               />
               <SelectField
                 label="Program"
+                required={true}
                 value={program}
                 options={PROGRAM_OPTIONS}
                 onSelect={(value) => setProgram(value)}
+                disabled={true}
                 labelStyle={styles.label}
               />
               <SelectField
                 label="Gender"
+                required={true}
                 value={gender}
                 options={GENDER_OPTIONS}
                 onSelect={(value) => setGender(value)}
@@ -609,6 +715,7 @@ export default function RegisterScreen() {
               </Text>
               <SelectField
                 label="Barangay"
+                required={true}
                 value={barangay}
                 options={BARANGAY_OPTIONS}
                 onSelect={(value) => setBarangay(value)}
@@ -616,6 +723,7 @@ export default function RegisterScreen() {
               />
               <FormTextInput
                 label="Street"
+                required={true}
                 value={street}
                 onChangeText={setStreet}
                 placeholder="Enter street name, house or bldg no."
@@ -633,6 +741,7 @@ export default function RegisterScreen() {
               </Text>
               <FormTextInput
                 label="Email Address"
+                required={true}
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
@@ -642,9 +751,25 @@ export default function RegisterScreen() {
                 labelStyle={styles.label}
                 inputStyle={styles.input}
               />
+              <FormTextInput
+                label="Nickname (Optional)"
+                value={nickname}
+                onChangeText={(value) => {
+                  const cleaned = value.replace(/\s+/g, "").slice(0, 15);
+                  setNickname(cleaned);
+                }}
+                autoCapitalize="words"
+                placeholder="e.g. Alex"
+                placeholderTextColor="#8D8D8D"
+                maxLength={15}
+                labelStyle={styles.label}
+                inputStyle={styles.input}
+              />
+              <Text style={styles.helperText}>Optional</Text>
               {Platform.OS === "web" ? (
                 <FormTextInput
                   label="Birthdate"
+                  required={true}
                   value={birthdate}
                   onChangeText={(value) => {
                     setBirthdate(value);
@@ -661,6 +786,7 @@ export default function RegisterScreen() {
                   <View pointerEvents="none">
                     <FormTextInput
                       label="Birthdate"
+                      required={true}
                       value={birthdate}
                       editable={false}
                       showSoftInputOnFocus={false}
@@ -674,6 +800,7 @@ export default function RegisterScreen() {
               )}
               <FormTextInput
                 label="Password"
+                required={true}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
@@ -709,7 +836,7 @@ export default function RegisterScreen() {
               <Text style={styles.headerBody}>
                 Verify your email to finish your account setup.
               </Text>
-              <Text style={styles.otpLabel}>Verification Code</Text>
+              <Text style={styles.otpLabel}>Verification Code<Text style={styles.requiredAsterisk}> *</Text></Text>
               <OtpCodeInput
                 length={OTP_LENGTH}
                 value={otpCode}
@@ -731,6 +858,13 @@ export default function RegisterScreen() {
                 ]}
                 labelStyle={styles.secondaryButtonText}
               />
+
+              <View style={[styles.warningCard, { marginTop: 16 }]}>
+                <Ionicons name="alert-circle-outline" size={20} color="#B45309" style={styles.warningIcon} />
+                <Text style={styles.warningText}>
+                  Please note: Once registered, your personal details (Full Name, Student Number, Program, Birthdate, and Address) cannot be edited. Only your email can be updated later in profile settings.
+                </Text>
+              </View>
             </>
           )}
 
@@ -759,8 +893,9 @@ export default function RegisterScreen() {
               }
               if (step === 1) {
                 if (!hasAcceptedScanTerms) {
+                  setConsentError(true);
                   setErrorMessage(
-                    "Please agree to the Terms and Data Privacy notice before continuing.",
+                    "Please agree to the Terms and Conditions and Privacy Policy before continuing.",
                   );
                   return;
                 }
@@ -770,6 +905,7 @@ export default function RegisterScreen() {
                   );
                   return;
                 }
+                setConsentError(false);
                 setErrorMessage("");
                 setStep(2);
                 return;
@@ -807,6 +943,12 @@ export default function RegisterScreen() {
           />
         )}
       </ScrollView>
+      <IdCardCameraModal
+        visible={cameraModalVisible}
+        onClose={() => setCameraModalVisible(false)}
+        onCapture={handleCameraCapture}
+      />
+
       <Modal
         visible={policyModalVisible}
         transparent
@@ -920,7 +1062,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: 16,
-    paddingBottom: 24,
+    paddingBottom: 120,
     alignItems: "center",
     backgroundColor: "#FFFFFF" },
   backButton: {
@@ -951,6 +1093,19 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: "#1A1A1A",
     marginBottom: 12 },
+  consentCardError: {
+    borderColor: "#DC2626",
+    backgroundColor: "#FEF2F2" },
+  checkboxError: {
+    borderColor: "#DC2626" },
+  uploadWrapInactive: {
+    borderColor: "#BAC2C8",
+    opacity: 0.88 },
+  fileButtonInactive: {
+    backgroundColor: "#F0F2F4",
+    borderColor: "#BAC2C8" },
+  fileButtonTextInactive: {
+    color: "#6B7580" },
   consentCard: {
     backgroundColor: "#F8FCF5",
     borderRadius: 14,
@@ -1015,6 +1170,66 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingTop: 16 },
+  previewContainer: {
+    width: "100%",
+    height: 120,
+    position: "relative" },
+  previewBadge: {
+    position: "absolute",
+    bottom: 6,
+    right: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 4,
+    backgroundColor: "#F0FDF4",
+    borderColor: "#86EFAC",
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12 },
+  previewBadgeText: {
+    fontSize: 11,
+    fontFamily: "Outfit-Bold",
+    color: "#15803D" },
+  uploadPlaceholderWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    rowGap: 6 },
+  uploadPlaceholderText: {
+    fontSize: 12,
+    color: "#64748B",
+    textAlign: "center",
+    paddingHorizontal: 16,
+    fontFamily: "Outfit-Medium" },
+  uploadButtonsRow: {
+    flexDirection: "row",
+    width: "100%",
+    borderTopWidth: 1,
+    borderTopColor: "#DCE3EB" },
+  scanOptionBtn: {
+    flex: 1,
+    height: 42,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 6 },
+  scanOptionBtnCamera: {
+    backgroundColor: "#4F7A35",
+    borderBottomLeftRadius: 6 },
+  scanOptionBtnCameraText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontFamily: "Outfit-Bold" },
+  scanOptionBtnUpload: {
+    backgroundColor: "#F1F5F9",
+    borderLeftWidth: 1,
+    borderLeftColor: "#DCE3EB",
+    borderBottomRightRadius: 6 },
+  scanOptionBtnUploadText: {
+    color: "#334155",
+    fontSize: 12,
+    fontFamily: "Outfit-SemiBold" },
   preview: {
     width: "100%",
     height: 104 },
@@ -1191,5 +1406,34 @@ const styles = StyleSheet.create({
     backgroundColor: "#C9D8C2",
     shadowOpacity: 0,
     elevation: 0 },
+  requiredAsterisk: {
+    color: "#DC2626",
+    fontWeight: "700" },
+  disabledInput: {
+    backgroundColor: "#F3F4F6",
+    color: "#374151" },
+  stepNotice: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginBottom: 12,
+    fontStyle: "italic" },
+  warningCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: "#FEF3C7",
+    borderColor: "#F59E0B",
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 16,
+    gap: 8 },
+  warningIcon: {
+    marginTop: 1 },
+  warningText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+    color: "#92400E",
+    fontWeight: "500" },
   modalCloseButtonTextDisabled: {
     color: "#EEF6EA" } });

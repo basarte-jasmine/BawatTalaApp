@@ -263,6 +263,16 @@ async function ensureStudentProfilePictureSchema() {
 
   await pool.query(`
     alter table if exists public.student_profiles
+    add column if not exists nickname text;
+  `);
+
+  await pool.query(`
+    alter table if exists public.student_profiles
+    add column if not exists nickname_updated_at timestamptz;
+  `);
+
+  await pool.query(`
+    alter table if exists public.student_profiles
     add column if not exists deleted_at timestamptz;
   `);
 

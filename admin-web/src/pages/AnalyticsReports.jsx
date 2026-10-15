@@ -628,6 +628,8 @@ function StudentReportTable({
                 <option value="all">All genders</option>
                 <option value="Female">Female</option>
                 <option value="Male">Male</option>
+                <option value="Non-binary">Non-binary</option>
+                <option value="Prefer Not to Say">Prefer Not to Say</option>
               </select>
             </label>
 

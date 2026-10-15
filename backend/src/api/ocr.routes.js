@@ -15,6 +15,14 @@ function isLikelySchoolId(ocrText) {
     return true;
   }
 
+  if (
+    normalized.includes("pamantasan ng lungsod ng valenzuela") ||
+    (normalized.includes("pamantasan") && normalized.includes("valenzuela")) ||
+    (normalized.includes("plv") && normalized.includes("valenzuela"))
+  ) {
+    return true;
+  }
+
   const requiredWords = ["pamantasan", "ng", "lungsod", "valenzuela"];
   return requiredWords.every((word) => normalized.includes(word));
 }

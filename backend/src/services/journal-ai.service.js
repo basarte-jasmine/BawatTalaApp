@@ -1454,7 +1454,7 @@ async function analyzeJournalConversation({
   ].join(" ");
 
   const analysisPrompt = [
-    `Student first name: ${String(firstName || "Student").trim() || "Student"}`,
+    `Student preferred name / nickname: ${String(firstName || "Student").trim() || "Student"} (refer to the student by this name when addressing them)`,
     `Latest journal message: ${latestUserMessage}`,
     `Conversation Turn: ${meta.turnCount} (${meta.depth} session phase)`,
     `Student's Preferred Language: ${meta.mode}`,

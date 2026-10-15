@@ -4,7 +4,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  
+  KeyboardAvoidingView,
   Linking,
   Modal,
   Platform,
@@ -28,6 +28,7 @@ import {
   fetchStudentAppointments,
   fetchStudentNotifications,
   fetchStudentProfile,
+  updateStudentNickname,
   confirmProfileEmailChange,
   resendProfileEmailChangeCode,
   sendProfileEmailChangeCode,
@@ -655,6 +656,14 @@ export default function ProfileSettingsScreen() {
   const [showPinReset, setShowPinReset] = useState(false);
   const [recentEntriesTotalCount, setRecentEntriesTotalCount] = useState(0);
   const [selectedScheduleDate, setSelectedScheduleDate] = useState<string | null>(null);
+  const [draftNickname, setDraftNickname] = useState(user?.nickname || "");
+  const [nicknameUpdatedAt, setNicknameUpdatedAt] = useState<string | null>(null);
+  const [showNicknameModal, setShowNicknameModal] = useState(false);
+  const [newNickname, setNewNickname] = useState("");
+  const [nicknamePassword, setNicknamePassword] = useState("");
+  const [showNicknamePassword, setShowNicknamePassword] = useState(false);
+  const [nicknameModalError, setNicknameModalError] = useState("");
+  const [nicknameModalSaving, setNicknameModalSaving] = useState(false);
   const [draftFullName, setDraftFullName] = useState("");
   const [draftEmail, setDraftEmail] = useState("");
   const [draftProgram, setDraftProgram] = useState("");
@@ -752,6 +761,8 @@ export default function ProfileSettingsScreen() {
         const nextProfile = result.ok ? result.profile ?? null : null;
         setProfile(nextProfile);
         setDraftFullName(nextProfile?.fullName || user?.fullName || "");
+        setDraftNickname(nextProfile?.nickname || user?.nickname || "");
+        setNicknameUpdatedAt(nextProfile?.nicknameUpdatedAt || null);
         setDraftEmail(nextProfile?.email || user?.email || "");
         setDraftProgram(nextProfile?.program || "");
         setDraftBirthdate(nextProfile?.birthdate ? formatBirthdateDisplay(nextProfile.birthdate) : "");
@@ -1337,6 +1348,56 @@ export default function ProfileSettingsScreen() {
     setShowBirthdatePicker(true);
   };
 
+  const openNicknameModal = () => {
+    setNewNickname(draftNickname || "");
+    setNicknamePassword("");
+    setShowNicknamePassword(false);
+    setNicknameModalError("");
+    setShowNicknameModal(true);
+  };
+
+  const handleSaveNickname = async () => {
+    const cleaned = newNickname.trim().replace(/\s+/g, "").slice(0, 15);
+    if (!cleaned) {
+      setNicknameModalError("Please enter a nickname.");
+      return;
+    }
+    if (!nicknamePassword.trim()) {
+      setNicknameModalError("Please enter your password to confirm.");
+      return;
+    }
+    setNicknameModalSaving(true);
+    setNicknameModalError("");
+    try {
+      const res = await updateStudentNickname({
+        nickname: cleaned,
+        password: nicknamePassword.trim(),
+      });
+      if (!res.ok) {
+        setNicknameModalError(res.message || "Failed to update nickname.");
+        return;
+      }
+      const updatedName = res.profile?.nickname || cleaned;
+      const updatedAt = res.profile?.nicknameUpdatedAt || new Date().toISOString();
+      setDraftNickname(updatedName);
+      setNicknameUpdatedAt(updatedAt);
+      if (user) {
+        setUser({
+          ...user,
+          nickname: updatedName,
+          firstName: updatedName || user.fullName || "User",
+        });
+      }
+      setShowNicknameModal(false);
+      setNicknamePassword("");
+      setNicknameModalError("");
+      showAppNotice("Nickname Updated", "Your nickname has been updated.");
+    } catch (err: any) {
+      setNicknameModalError(err?.message || "Failed to update nickname.");
+    } finally {
+      setNicknameModalSaving(false);
+    }
+  };
   const startEditingEmail = () => {
     startEditingField("email");
   };
@@ -1585,7 +1646,7 @@ return (
         <View style={styles.topBarSpacer} />
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, deletedSelectionMode && selectedDeletedIds.length > 0 ? { paddingBottom: 110 } : null]} showsVerticalScrollIndicator={false}>
+      <ScrollView keyboardShouldPersistTaps="handled" style={styles.scroll} contentContainerStyle={[styles.scrollContent, deletedSelectionMode && selectedDeletedIds.length > 0 ? { paddingBottom: 110 } : null]} showsVerticalScrollIndicator={false}>
         {activeSection !== "schedule" && activeSection !== "app-lock" ? (
           <Text style={styles.subtitle}>
             {activeSection === "help-support" && showContactForm
@@ -1600,45 +1661,22 @@ return (
             <Card>
               <View style={styles.fieldHeaderRow}>
                 <Text style={styles.rowLabel}>Full Name</Text>
-                {editingField !== "fullName" && (
-                  <Pressable
-                    style={styles.fieldEditButton}
-                    onPress={() => startEditingField("fullName")}
-                    accessibilityLabel="Edit Full Name"
-                  >
-                    <Ionicons name="pencil" size={13} color="#4A5D6E" />
-                  </Pressable>
-                )}
               </View>
-              {editingField === "fullName" ? (
-                <>
-                  <TextInput
-                    autoFocus={true}
-                    autoCapitalize="words"
-                    value={draftFullName}
-                    onChangeText={(text) => {
-                      setDraftFullName(text);
-                      clearProfileFieldError("fullName");
-                    }}
-                    placeholder="Full name"
-                    placeholderTextColor="#97A1AA"
-                    maxLength={PROFILE_FULL_NAME_MAX_LENGTH}
-                    style={[styles.textInput, styles.profileInput]}
-                  />
-                  <Text style={styles.charCount}>{draftFullName.length}/{PROFILE_FULL_NAME_MAX_LENGTH}</Text>
-                  {!!profileFieldErrors.fullName && <Text style={styles.fieldError}>{profileFieldErrors.fullName}</Text>}
-                  <View style={styles.fieldActionsRow}>
-                    <Pressable style={[styles.fieldSaveButton, profileSaving && styles.disabledButton]} onPress={() => void handleSaveField("fullName")} disabled={profileSaving}>
-                      <Text style={styles.fieldSaveText}>{profileSaving ? "Saving..." : "Save Changes"}</Text>
-                    </Pressable>
-                    <Pressable style={styles.fieldCancelButton} onPress={cancelEditingProfile} disabled={profileSaving}>
-                      <Text style={styles.fieldCancelText}>Cancel</Text>
-                    </Pressable>
-                  </View>
-                </>
-              ) : (
-                <Text style={[styles.rowValue, styles.profileReadOnly]}>{draftFullName ? toTitleCase(draftFullName) : "Not available"}</Text>
-              )}
+              <Text style={[styles.rowValue, styles.profileReadOnly]}>{draftFullName ? toTitleCase(draftFullName) : "Not available"}</Text>
+
+              <View style={styles.fieldHeaderRow}>
+                <Text style={styles.rowLabel}>Nickname</Text>
+                <Pressable
+                  onPress={openNicknameModal}
+                  accessibilityRole="button"
+                  accessibilityLabel="Change Nickname"
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1, paddingVertical: 4, paddingHorizontal: 6 }]}
+                >
+                  <Text style={styles.changeEmailTextBtn}>Change Nickname</Text>
+                </Pressable>
+              </View>
+              <Text style={[styles.rowValue, styles.profileReadOnly]}>{draftNickname || "Not set"}</Text>
 
               <View style={styles.fieldHeaderRow}>
                 <Text style={styles.rowLabel}>Student ID</Text>
@@ -1647,17 +1685,19 @@ return (
 
               <View style={styles.fieldHeaderRow}>
                 <Text style={styles.rowLabel}>Email</Text>
-                {editingField !== "email" && (
+                {!isChangingEmail && (
                   <Pressable
-                    style={styles.fieldEditButton}
                     onPress={startEditingEmail}
-                    accessibilityLabel="Edit Email"
+                    accessibilityRole="button"
+                    accessibilityLabel="Change Email"
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    style={({ pressed }) => [{ opacity: pressed ? 0.6 : 1, paddingVertical: 4, paddingHorizontal: 6 }]}
                   >
-                    <Ionicons name="pencil" size={13} color="#4A5D6E" />
+                    <Text style={styles.changeEmailTextBtn}>Change Email</Text>
                   </Pressable>
                 )}
               </View>
-              {editingField === "email" && isChangingEmail ? (
+              {isChangingEmail ? (
                 <>
                   <TextInput
                     autoFocus={true}
@@ -1679,7 +1719,7 @@ return (
                   />
                   <Text style={styles.charCount}>{draftEmail.length}/{PROFILE_EMAIL_MAX_LENGTH}</Text>
                   {!!profileFieldErrors.email && <Text style={styles.fieldError}>{profileFieldErrors.email}</Text>}
-                  {!!profileError && !profileAwaitingEmailOtp && <Text style={styles.fieldError}>{profileError}</Text>}
+                  {!!profileError && !profileAwaitingEmailOtp && <Text style={styles.fieldError}>{profileError}</Text>} 
                   <View style={styles.fieldActionsRow}>
                     <Pressable
                       style={[styles.fieldSaveButton, profileSaving && styles.disabledButton]}
@@ -1701,313 +1741,43 @@ return (
 
               <View style={styles.fieldHeaderRow}>
                 <Text style={styles.rowLabel}>Program</Text>
-                {editingField !== "program" && (
-                  <Pressable
-                    style={styles.fieldEditButton}
-                    onPress={() => startEditingField("program")}
-                    accessibilityLabel="Edit Program"
-                  >
-                    <Ionicons name="pencil" size={13} color="#4A5D6E" />
-                  </Pressable>
-                )}
               </View>
-              {editingField === "program" ? (
-                <>
-                  <SelectField
-                    label=""
-                    value={draftProgram}
-                    options={withCurrentOption(PROGRAM_OPTIONS, draftProgram)}
-                    onSelect={(value) => {
-                      setDraftProgram(value);
-                      clearProfileFieldError("program");
-                    }}
-                    placeholder="Select program"
-                    labelStyle={styles.rowLabel}
-                    containerStyle={styles.profileInput}
-                  />
-                  {!!profileFieldErrors.program && <Text style={styles.fieldError}>{profileFieldErrors.program}</Text>}
-                  <View style={styles.fieldActionsRow}>
-                    <Pressable style={[styles.fieldSaveButton, profileSaving && styles.disabledButton]} onPress={() => void handleSaveField("program")} disabled={profileSaving}>
-                      <Text style={styles.fieldSaveText}>{profileSaving ? "Saving..." : "Save Changes"}</Text>
-                    </Pressable>
-                    <Pressable style={styles.fieldCancelButton} onPress={cancelEditingProfile} disabled={profileSaving}>
-                      <Text style={styles.fieldCancelText}>Cancel</Text>
-                    </Pressable>
-                  </View>
-                </>
-              ) : (
-                <Text style={[styles.rowValue, styles.profileReadOnly]}>{formatProgramName(draftProgram) || "Not available"}</Text>
-              )}
+              <Text style={[styles.rowValue, styles.profileReadOnly]}>{formatProgramName(draftProgram) || "Not available"}</Text>
 
               <View style={styles.fieldHeaderRow}>
                 <Text style={styles.rowLabel}>Gender</Text>
-                {editingField !== "gender" && (
-                  <Pressable
-                    style={styles.fieldEditButton}
-                    onPress={() => startEditingField("gender")}
-                    accessibilityLabel="Edit Gender"
-                  >
-                    <Ionicons name="pencil" size={13} color="#4A5D6E" />
-                  </Pressable>
-                )}
               </View>
-              {editingField === "gender" ? (
-                <>
-                  <SelectField
-                    label=""
-                    value={draftGender ? draftGender.toUpperCase() : ""}
-                    options={GENDER_OPTIONS.map((opt) => opt.toUpperCase())}
-                    onSelect={(value) => {
-                      setDraftGender(value.toUpperCase());
-                      clearProfileFieldError("gender");
-                    }}
-                    placeholder="Select gender"
-                    labelStyle={styles.rowLabel}
-                    containerStyle={styles.profileInput}
-                  />
-                  {!!profileFieldErrors.gender && <Text style={styles.fieldError}>{profileFieldErrors.gender}</Text>}
-                  <View style={styles.fieldActionsRow}>
-                    <Pressable style={[styles.fieldSaveButton, profileSaving && styles.disabledButton]} onPress={() => void handleSaveField("gender")} disabled={profileSaving}>
-                      <Text style={styles.fieldSaveText}>{profileSaving ? "Saving..." : "Save Changes"}</Text>
-                    </Pressable>
-                    <Pressable style={styles.fieldCancelButton} onPress={cancelEditingProfile} disabled={profileSaving}>
-                      <Text style={styles.fieldCancelText}>Cancel</Text>
-                    </Pressable>
-                  </View>
-                </>
-              ) : (
-                <Text style={[styles.rowValue, styles.profileReadOnly]}>{toDisplayCaps(draftGender)}</Text>
-              )}
+              <Text style={[styles.rowValue, styles.profileReadOnly]}>{draftGender || "Not available"}</Text>
 
               <View style={styles.fieldHeaderRow}>
                 <Text style={styles.rowLabel}>Birthdate</Text>
-                <Pressable
-                  style={styles.fieldEditButton}
-                  onPress={openBirthdatePicker}
-                  accessibilityLabel="Edit Birthdate"
-                >
-                  <Ionicons name="pencil" size={13} color="#4A5D6E" />
-                </Pressable>
               </View>
-              {editingField === "birthdate" ? (
-                <>
-                  <Pressable onPress={openBirthdatePicker} style={[styles.datePickerField, styles.profileInput]}>
-                    <Text style={draftBirthdate ? styles.datePickerValue : styles.datePickerPlaceholder}>
-                      {draftBirthdate ? formatBirthdateDisplay(draftBirthdate) : "Select birthdate"}
-                    </Text>
-                    <Ionicons name="calendar-outline" size={18} color="#3D5569" />
-                  </Pressable>
-                  {!!profileFieldErrors.birthdate && <Text style={styles.fieldError}>{profileFieldErrors.birthdate}</Text>}
-                  <View style={styles.fieldActionsRow}>
-                    <Pressable style={[styles.fieldSaveButton, profileSaving && styles.disabledButton]} onPress={() => void handleSaveField("birthdate")} disabled={profileSaving}>
-                      <Text style={styles.fieldSaveText}>{profileSaving ? "Saving..." : "Save Changes"}</Text>
-                    </Pressable>
-                    <Pressable style={styles.fieldCancelButton} onPress={cancelEditingProfile} disabled={profileSaving}>
-                      <Text style={styles.fieldCancelText}>Cancel</Text>
-                    </Pressable>
-                  </View>
-                </>
-              ) : (
-                <Pressable onPress={openBirthdatePicker} style={styles.readOnlyDatePickerRow}>
-                  <Text style={[styles.rowValue, styles.profileReadOnlyText]}>{formatBirthdateDisplay(draftBirthdate)}</Text>
-                </Pressable>
-              )}
+              <Text style={[styles.rowValue, styles.profileReadOnly]}>{draftBirthdate ? formatBirthdateDisplay(draftBirthdate) : "Not available"}</Text>
 
               <View style={styles.fieldHeaderRow}>
                 <Text style={styles.rowLabel}>Street</Text>
-                {editingField !== "street" && (
-                  <Pressable
-                    style={styles.fieldEditButton}
-                    onPress={() => startEditingField("street")}
-                    accessibilityLabel="Edit Street"
-                  >
-                    <Ionicons name="pencil" size={13} color="#4A5D6E" />
-                  </Pressable>
-                )}
               </View>
-              {editingField === "street" ? (
-                <>
-                  <TextInput
-                    autoFocus={true}
-                    autoCapitalize="words"
-                    value={draftStreet}
-                    onChangeText={setDraftStreet}
-                    placeholder="Street"
-                    placeholderTextColor="#97A1AA"
-                    maxLength={PROFILE_STREET_MAX_LENGTH}
-                    style={[styles.textInput, styles.profileInput]}
-                  />
-                  <Text style={styles.charCount}>{draftStreet.length}/{PROFILE_STREET_MAX_LENGTH}</Text>
-                  {!!profileFieldErrors.street && <Text style={styles.fieldError}>{profileFieldErrors.street}</Text>}
-                  <View style={styles.fieldActionsRow}>
-                    <Pressable style={[styles.fieldSaveButton, profileSaving && styles.disabledButton]} onPress={() => void handleSaveField("street")} disabled={profileSaving}>
-                      <Text style={styles.fieldSaveText}>{profileSaving ? "Saving..." : "Save Changes"}</Text>
-                    </Pressable>
-                    <Pressable style={styles.fieldCancelButton} onPress={cancelEditingProfile} disabled={profileSaving}>
-                      <Text style={styles.fieldCancelText}>Cancel</Text>
-                    </Pressable>
-                  </View>
-                </>
-              ) : (
-                <Text style={[styles.rowValue, styles.profileReadOnly]}>{draftStreet || "Not available"}</Text>
-              )}
+              <Text style={[styles.rowValue, styles.profileReadOnly]}>{draftStreet || "Not available"}</Text>
 
               <View style={styles.fieldHeaderRow}>
                 <Text style={styles.rowLabel}>Barangay</Text>
-                {editingField !== "barangay" && (
-                  <Pressable
-                    style={styles.fieldEditButton}
-                    onPress={() => startEditingField("barangay")}
-                    accessibilityLabel="Edit Barangay"
-                  >
-                    <Ionicons name="pencil" size={13} color="#4A5D6E" />
-                  </Pressable>
-                )}
               </View>
-              {editingField === "barangay" ? (
-                <>
-                  <SelectField
-                    label=""
-                    value={draftBarangay ? draftBarangay.toUpperCase() : ""}
-                    options={withCurrentOption(BARANGAY_OPTIONS, draftBarangay)}
-                    onSelect={(value) => {
-                      setDraftBarangay(value.toUpperCase());
-                      clearProfileFieldError("barangay");
-                    }}
-                    placeholder="Select barangay"
-                    labelStyle={styles.rowLabel}
-                    containerStyle={styles.profileInput}
-                  />
-                  {!!profileFieldErrors.barangay && <Text style={styles.fieldError}>{profileFieldErrors.barangay}</Text>}
-                  <View style={styles.fieldActionsRow}>
-                    <Pressable style={[styles.fieldSaveButton, profileSaving && styles.disabledButton]} onPress={() => void handleSaveField("barangay")} disabled={profileSaving}>
-                      <Text style={styles.fieldSaveText}>{profileSaving ? "Saving..." : "Save Changes"}</Text>
-                    </Pressable>
-                    <Pressable style={styles.fieldCancelButton} onPress={cancelEditingProfile} disabled={profileSaving}>
-                      <Text style={styles.fieldCancelText}>Cancel</Text>
-                    </Pressable>
-                  </View>
-                </>
-              ) : (
-                <Text style={[styles.rowValue, styles.profileReadOnly]}>{toDisplayCaps(draftBarangay)}</Text>
-              )}
+              <Text style={[styles.rowValue, styles.profileReadOnly]}>{toDisplayCaps(draftBarangay)}</Text>
 
               <View style={styles.fieldHeaderRow}>
                 <Text style={styles.rowLabel}>City</Text>
-                {editingField !== "city" && (
-                  <Pressable
-                    style={styles.fieldEditButton}
-                    onPress={() => startEditingField("city")}
-                    accessibilityLabel="Edit City"
-                  >
-                    <Ionicons name="pencil" size={13} color="#4A5D6E" />
-                  </Pressable>
-                )}
               </View>
-              {editingField === "city" ? (
-                <>
-                  <TextInput
-                    autoFocus={true}
-                    autoCapitalize="characters"
-                    value={draftCity}
-                    onChangeText={setUpperDraft("city", setDraftCity)}
-                    placeholder="City"
-                    placeholderTextColor="#97A1AA"
-                    maxLength={PROFILE_PLACE_MAX_LENGTH}
-                    style={[styles.textInput, styles.profileInput]}
-                  />
-                  <Text style={styles.charCount}>{draftCity.length}/{PROFILE_PLACE_MAX_LENGTH}</Text>
-                  {!!profileFieldErrors.city && <Text style={styles.fieldError}>{profileFieldErrors.city}</Text>}
-                  <View style={styles.fieldActionsRow}>
-                    <Pressable style={[styles.fieldSaveButton, profileSaving && styles.disabledButton]} onPress={() => void handleSaveField("city")} disabled={profileSaving}>
-                      <Text style={styles.fieldSaveText}>{profileSaving ? "Saving..." : "Save Changes"}</Text>
-                    </Pressable>
-                    <Pressable style={styles.fieldCancelButton} onPress={cancelEditingProfile} disabled={profileSaving}>
-                      <Text style={styles.fieldCancelText}>Cancel</Text>
-                    </Pressable>
-                  </View>
-                </>
-              ) : (
-                <Text style={[styles.rowValue, styles.profileReadOnly]}>{toDisplayCaps(draftCity)}</Text>
-              )}
+              <Text style={[styles.rowValue, styles.profileReadOnly]}>{toDisplayCaps(draftCity)}</Text>
 
               <View style={styles.fieldHeaderRow}>
                 <Text style={styles.rowLabel}>Province</Text>
-                {editingField !== "province" && (
-                  <Pressable
-                    style={styles.fieldEditButton}
-                    onPress={() => startEditingField("province")}
-                    accessibilityLabel="Edit Province"
-                  >
-                    <Ionicons name="pencil" size={13} color="#4A5D6E" />
-                  </Pressable>
-                )}
               </View>
-              {editingField === "province" ? (
-                <>
-                  <TextInput
-                    autoFocus={true}
-                    autoCapitalize="characters"
-                    value={draftProvince}
-                    onChangeText={setUpperDraft("province", setDraftProvince)}
-                    placeholder="Province"
-                    placeholderTextColor="#97A1AA"
-                    maxLength={PROFILE_PLACE_MAX_LENGTH}
-                    style={[styles.textInput, styles.profileInput]}
-                  />
-                  <Text style={styles.charCount}>{draftProvince.length}/{PROFILE_PLACE_MAX_LENGTH}</Text>
-                  {!!profileFieldErrors.province && <Text style={styles.fieldError}>{profileFieldErrors.province}</Text>}
-                  <View style={styles.fieldActionsRow}>
-                    <Pressable style={[styles.fieldSaveButton, profileSaving && styles.disabledButton]} onPress={() => void handleSaveField("province")} disabled={profileSaving}>
-                      <Text style={styles.fieldSaveText}>{profileSaving ? "Saving..." : "Save Changes"}</Text>
-                    </Pressable>
-                    <Pressable style={styles.fieldCancelButton} onPress={cancelEditingProfile} disabled={profileSaving}>
-                      <Text style={styles.fieldCancelText}>Cancel</Text>
-                    </Pressable>
-                  </View>
-                </>
-              ) : (
-                <Text style={[styles.rowValue, styles.profileReadOnly]}>{toDisplayCaps(draftProvince)}</Text>
-              )}
+              <Text style={[styles.rowValue, styles.profileReadOnly]}>{toDisplayCaps(draftProvince)}</Text>
 
               <View style={styles.fieldHeaderRow}>
                 <Text style={styles.rowLabel}>Region</Text>
-                {editingField !== "region" && (
-                  <Pressable
-                    style={styles.fieldEditButton}
-                    onPress={() => startEditingField("region")}
-                    accessibilityLabel="Edit Region"
-                  >
-                    <Ionicons name="pencil" size={13} color="#4A5D6E" />
-                  </Pressable>
-                )}
               </View>
-              {editingField === "region" ? (
-                <>
-                  <TextInput
-                    autoFocus={true}
-                    autoCapitalize="characters"
-                    value={draftRegion}
-                    onChangeText={setUpperDraft("region", setDraftRegion)}
-                    placeholder="Region"
-                    placeholderTextColor="#97A1AA"
-                    maxLength={PROFILE_PLACE_MAX_LENGTH}
-                    style={[styles.textInput, styles.profileInput]}
-                  />
-                  <Text style={styles.charCount}>{draftRegion.length}/{PROFILE_PLACE_MAX_LENGTH}</Text>
-                  {!!profileFieldErrors.region && <Text style={styles.fieldError}>{profileFieldErrors.region}</Text>}
-                  <View style={styles.fieldActionsRow}>
-                    <Pressable style={[styles.fieldSaveButton, profileSaving && styles.disabledButton]} onPress={() => void handleSaveField("region")} disabled={profileSaving}>
-                      <Text style={styles.fieldSaveText}>{profileSaving ? "Saving..." : "Save Changes"}</Text>
-                    </Pressable>
-                    <Pressable style={styles.fieldCancelButton} onPress={cancelEditingProfile} disabled={profileSaving}>
-                      <Text style={styles.fieldCancelText}>Cancel</Text>
-                    </Pressable>
-                  </View>
-                </>
-              ) : (
-                <Text style={[styles.rowValue, styles.profileReadOnly]}>{toDisplayCaps(draftRegion)}</Text>
-              )}
+              <Text style={[styles.rowValue, styles.profileReadOnly]}>{toDisplayCaps(draftRegion)}</Text>
             </Card>
 
             {!!profileSuccess && <Text style={styles.feedbackSuccessText}>{profileSuccess}</Text>}
@@ -2598,8 +2368,9 @@ return (
         transparent
         visible={activeSection === "app-lock" && pinConfirmAction !== null}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalBackdrop}>
+          <ScrollView contentContainerStyle={styles.modalScrollWrap} keyboardShouldPersistTaps="handled" bounces={false} showsVerticalScrollIndicator={false}>
+            <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>
               {pinConfirmAction === "turn-off" ? "Turn Off Journal Lock" : "Turn On Journal Lock"}
             </Text>
@@ -2638,7 +2409,8 @@ return (
               </Pressable>
             </View>
           </View>
-        </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal
@@ -2676,8 +2448,9 @@ return (
         transparent
         visible={activeSection === "app-lock" && showPinEditor}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalBackdrop}>
+          <ScrollView contentContainerStyle={styles.modalScrollWrap} keyboardShouldPersistTaps="handled" bounces={false} showsVerticalScrollIndicator={false}>
+            <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>{appLockEnabled ? "Change Journal PIN" : "Create Journal PIN"}</Text>
             <Text style={styles.modalBody}>
               {hasAppLockPin || appLockEnabled
@@ -2741,7 +2514,8 @@ return (
               </Pressable>
             </View>
           </View>
-        </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal
@@ -2750,8 +2524,9 @@ return (
         transparent
         visible={activeSection === "app-lock" && showPinReset}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalBackdrop}>
+          <ScrollView contentContainerStyle={styles.modalScrollWrap} keyboardShouldPersistTaps="handled" bounces={false} showsVerticalScrollIndicator={false}>
+            <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Reset Forgotten PIN</Text>
             <Text style={styles.modalBody}>
               {pinResetVerified
@@ -2825,7 +2600,8 @@ return (
               </Pressable>
             </View>
           </View>
-        </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Modal>
       <Modal
         animationType="fade"
@@ -2957,6 +2733,126 @@ return (
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* Change Nickname Modal */}
+      <Modal
+        visible={showNicknameModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!nicknameModalSaving) setShowNicknameModal(false);
+        }}
+      >
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalBackdrop}>
+          <ScrollView contentContainerStyle={styles.modalScrollWrap} keyboardShouldPersistTaps="handled" bounces={false} showsVerticalScrollIndicator={false}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Change Nickname</Text>
+              {(() => {
+                const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+                const nicknameElapsed = nicknameUpdatedAt ? Date.now() - new Date(nicknameUpdatedAt).getTime() : Infinity;
+                const isNicknameLockedBy14Days = nicknameElapsed < FOURTEEN_DAYS_MS;
+                const nicknameRemainingDays = isNicknameLockedBy14Days
+                  ? Math.ceil((FOURTEEN_DAYS_MS - nicknameElapsed) / (24 * 60 * 60 * 1000))
+                  : 0;
+                const nicknameAvailableDateText = isNicknameLockedBy14Days && nicknameUpdatedAt
+                  ? new Date(new Date(nicknameUpdatedAt).getTime() + FOURTEEN_DAYS_MS).toLocaleDateString("en-US", {
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    })
+                  : "";
+
+                if (isNicknameLockedBy14Days) {
+                  return (
+                    <>
+                      <View style={{ backgroundColor: "#FEF3C7", borderColor: "#F59E0B", borderWidth: 1, borderRadius: 12, padding: 12, marginVertical: 12 }}>
+                        <Text style={{ color: "#92400E", fontSize: 13, lineHeight: 18, fontWeight: "500" }}>
+                          You recently changed your nickname. You can change your nickname again in {nicknameRemainingDays} day{nicknameRemainingDays > 1 ? "s" : ""} on {nicknameAvailableDateText}.
+                        </Text>
+                      </View>
+                      <View style={styles.modalActions}>
+                        <Pressable style={styles.modalPrimaryButton} onPress={() => setShowNicknameModal(false)}>
+                          <Text style={styles.modalPrimaryText}>Got it</Text>
+                        </Pressable>
+                      </View>
+                    </>
+                  );
+                }
+
+                return (
+                  <>
+                    <Text style={styles.modalBody}>
+                      Enter your new nickname and password. Once changed, you will not be able to change your nickname again for 14 days.
+                    </Text>
+                    <Text style={styles.deleteModalLabel}>New Nickname</Text>
+                    <TextInput
+                      value={newNickname}
+                      onChangeText={(val) => {
+                        const cleaned = val.replace(/\s+/g, "").slice(0, 15);
+                        setNewNickname(cleaned);
+                        setNicknameModalError("");
+                      }}
+                      autoCapitalize="words"
+                      placeholder="e.g. Alex"
+                      placeholderTextColor="#97A1AA"
+                      maxLength={15}
+                      style={styles.deleteModalInput}
+                    />
+                    <Text style={{ fontSize: 11, color: "#6A7B8A", marginBottom: 12 }}>One word only, max 15 characters.</Text>
+
+                    <Text style={styles.deleteModalLabel}>Confirm Password</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: "#DDE4EB", borderRadius: 10, backgroundColor: "#FFFFFF", paddingHorizontal: 12, marginBottom: 8 }}>
+                      <TextInput
+                        secureTextEntry={!showNicknamePassword}
+                        value={nicknamePassword}
+                        onChangeText={(val) => {
+                          setNicknamePassword(val);
+                          setNicknameModalError("");
+                        }}
+                        placeholder="Enter your password"
+                        placeholderTextColor="#97A1AA"
+                        style={{ flex: 1, height: 42, fontSize: 14, color: "#111111" }}
+                      />
+                      <Pressable
+                        onPress={() => setShowNicknamePassword((prev) => !prev)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        style={{ padding: 4 }}
+                        accessibilityLabel={showNicknamePassword ? "Hide password" : "Show password"}
+                      >
+                        <Ionicons name={showNicknamePassword ? "eye-off-outline" : "eye-outline"} size={20} color="#556677" />
+                      </Pressable>
+                    </View>
+                    {nicknameModalError ? <Text style={styles.deleteModalError}>{nicknameModalError}</Text> : null}
+
+                    <View style={styles.modalActions}>
+                      <Pressable
+                        style={styles.modalSecondaryButton}
+                        onPress={() => {
+                          setShowNicknameModal(false);
+                          setNicknamePassword("");
+                          setNicknameModalError("");
+                        }}
+                        disabled={nicknameModalSaving}
+                      >
+                        <Text style={styles.modalCancelText}>Cancel</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.modalPrimaryButton, nicknameModalSaving && styles.disabledButton]}
+                        onPress={handleSaveNickname}
+                        disabled={nicknameModalSaving}
+                      >
+                        <Text style={styles.modalPrimaryText}>
+                          {nicknameModalSaving ? "Saving..." : "Save Changes"}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </>
+                );
+              })()}
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Modal>
       {activeSection === "recently-deleted" && deletedSelectionMode && selectedDeletedIds.length > 0 ? (
         <View style={styles.deletedActionBar}>
@@ -3140,7 +3036,7 @@ const styles = StyleSheet.create({
   topTitle: { color: "#314258", fontSize: 17, lineHeight: 23, fontFamily: "Outfit-Bold" },
   topBarSpacer: { width: 38, height: 38 },
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: 12, paddingTop: 16, paddingBottom: 28 },
+  scrollContent: { paddingHorizontal: 12, paddingTop: 16, paddingBottom: 160 },
   subtitle: { color: "#5A6B7A", fontSize: 14, lineHeight: 20, marginBottom: 14 },
   loader: { marginBottom: 14 },
   card: {
@@ -3536,6 +3432,17 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontFamily: "Outfit-SemiBold",
     flex: 1 },
+  modalScrollWrap: {
+    flexGrow: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 20,
+    paddingHorizontal: 16 },
+  changeEmailTextBtn: {
+    color: "#4F7A35",
+    fontSize: 13,
+    fontWeight: "600",
+    paddingVertical: 2 },
   modalBackdrop: {
     flex: 1,
     alignItems: "center",

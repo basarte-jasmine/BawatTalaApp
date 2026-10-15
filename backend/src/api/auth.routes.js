@@ -67,7 +67,9 @@ function normalizeStudentGender(value) {
   const normalized = normalizeCompactSpaces(value).toLowerCase();
   if (normalized === "male") return "Male";
   if (normalized === "female") return "Female";
-    return "";
+  if (normalized === "non-binary" || normalized === "nonbinary" || normalized === "non binary") return "Non-binary";
+  if (normalized === "prefer not to say" || normalized === "perfer not to say" || normalized === "prefer not to disclose") return "Prefer Not to Say";
+  return "";
 }
 
 function toTitleCase(value) {
@@ -323,7 +325,7 @@ function isEmailChangeSessionVerified(session, newEmail) {
 }
 
 const STUDENT_PROFILE_SELECT =
-  "student_number, full_name, email, program, gender, region, province, city, barangay, street, birthdate, profile_picture_url, profile_picture_path";
+  "student_number, full_name, email, program, gender, region, province, city, barangay, street, birthdate, profile_picture_url, profile_picture_path, nickname, nickname_updated_at";
 
 function normalizeBirthdate(value) {
   const raw = normalizeCompactSpaces(value);
@@ -450,6 +452,53 @@ function parseIsoCalendarDate(value) {
   return formatted;
 }
 
+
+function validateStudentBirthdate(value) {
+  const formatted = parseIsoCalendarDate(value);
+  if (!formatted) {
+    return { isValid: false, error: "Enter birthdate as MM/DD/YYYY." };
+  }
+  const [monthStr, dayStr, yearStr] = formatted.split("/");
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+  const year = Number(yearStr);
+
+  const manila = getManilaDateParts();
+  const currentYear = Number(manila.year);
+  const currentMonth = Number(manila.month);
+  const currentDay = Number(manila.day);
+
+  if (
+    year > currentYear ||
+    (year === currentYear && month > currentMonth) ||
+    (year === currentYear && month === currentMonth && day > currentDay)
+  ) {
+    return { isValid: false, error: "Birthdate cannot be in the future." };
+  }
+
+  if (year === currentYear && month === currentMonth && day === currentDay) {
+    return { isValid: false, error: "Birthdate cannot be today's date." };
+  }
+
+  let age = currentYear - year;
+  if (
+    currentMonth < month ||
+    (currentMonth === month && currentDay < day)
+  ) {
+    age--;
+  }
+
+  if (age < 16) {
+    return { isValid: false, error: "Student must be at least 16 years old to register." };
+  }
+
+  if (age > 100) {
+    return { isValid: false, error: "Please enter a valid birthdate." };
+  }
+
+  return { isValid: true, formatted };
+}
+
 function mapStudentProfile(data) {
   if (!data) return null;
   return {
@@ -465,6 +514,8 @@ function mapStudentProfile(data) {
     region: data.region || "",
     street: data.street || "",
     studentNumber: data.student_number,
+    nickname: data.nickname || "",
+    nicknameUpdatedAt: data.nickname_updated_at || null,
   };
 }
 
@@ -1067,7 +1118,7 @@ router.post("/login", async (req, res) => {
   const { data, error } = await supabaseAdminClient
     .from("student_profiles")
     .select(
-      "student_number, full_name, email, password_hash, birthdate, is_email_verified, is_id_verified, profile_picture_url, deleted_at, scheduled_deletion_at",
+      "student_number, full_name, email, password_hash, birthdate, is_email_verified, is_id_verified, profile_picture_url, deleted_at, scheduled_deletion_at, nickname, nickname_updated_at",
     )
     .eq("student_number", studentNumber)
     .maybeSingle();
@@ -1122,7 +1173,8 @@ router.post("/login", async (req, res) => {
 
   await clearLoginAttemptState(loginKey);
   const fullName = toTitleCase(data.full_name || "");
-  const firstName = fullName.split(" ").filter(Boolean)[0] || "User";
+  const nickname = (data.nickname || "").trim();
+  const firstName = nickname || fullName || "User";
 
   req.session.student = {
     studentNumber: data.student_number,
@@ -1138,6 +1190,7 @@ router.post("/login", async (req, res) => {
       studentNumber: data.student_number,
       fullName,
       firstName,
+      nickname: nickname || null,
       email: normalizeEmail(data.email || ""),
       profilePictureUrl: data.profile_picture_url || "",
       token,
@@ -1294,16 +1347,11 @@ router.patch("/profile", requireStudentOnlyAuth, async (req, res) => {
     if (!rawBirthdate) {
       return res.status(400).json({ message: "Birthdate is required." });
     }
-    const birthdate = parseIsoCalendarDate(rawBirthdate);
-    if (!birthdate) {
-      return res.status(400).json({ message: "Enter birthdate as MM/DD/YYYY." });
+    const birthdateCheck = validateStudentBirthdate(rawBirthdate);
+    if (!birthdateCheck.isValid) {
+      return res.status(400).json({ message: birthdateCheck.error });
     }
-    const [bMonth, bDay, bYear] = birthdate.split("/");
-    const isoDate = "" + bYear + "-" + bMonth + "-" + bDay;
-    if (isoDate > getManilaDateParts().isoDate) {
-      return res.status(400).json({ message: "Birthdate cannot be in the future." });
-    }
-    updates.birthdate = birthdate;
+    updates.birthdate = birthdateCheck.formatted;
   }
 
   if (!Object.keys(updates).length) {
@@ -1337,6 +1385,106 @@ router.patch("/profile", requireStudentOnlyAuth, async (req, res) => {
   return res.json({
     message: "Profile updated.",
     profile,
+  });
+});
+
+
+router.patch("/profile/nickname", requireStudentOnlyAuth, async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  if (!studentNumber || !STUDENT_NUMBER_PATTERN.test(studentNumber)) {
+    return res.status(400).json({ message: "A valid Student ID is required." });
+  }
+
+  const password = String(req.body.password || "").trim();
+  if (!password) {
+    return res.status(400).json({ message: "Please enter your password to confirm." });
+  }
+
+  const rawNickname = req.body.nickname != null ? String(req.body.nickname).trim() : "";
+  const cleanedNickname = rawNickname ? rawNickname.split(/\s+/)[0].slice(0, 15) : "";
+  if (!cleanedNickname) {
+    return res.status(400).json({ message: "Please enter a valid nickname (one word, max 15 characters)." });
+  }
+
+  const { data: student, error: fetchError } = await supabaseAdminClient
+    .from("student_profiles")
+    .select("student_number, password_hash, nickname, nickname_updated_at")
+    .eq("student_number", studentNumber)
+    .maybeSingle();
+
+  if (fetchError || !student) {
+    return res.status(404).json({ message: "Student profile not found." });
+  }
+
+  if (!verifyPassword(password, student.password_hash)) {
+    return res.status(400).json({ message: "Incorrect password. Please try again." });
+  }
+
+  const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+  if (student.nickname_updated_at) {
+    const lastUpdateMs = new Date(student.nickname_updated_at).getTime();
+    const elapsed = Date.now() - lastUpdateMs;
+    if (elapsed < FOURTEEN_DAYS_MS) {
+      const remainingMs = FOURTEEN_DAYS_MS - elapsed;
+      const remainingDays = Math.ceil(remainingMs / (24 * 60 * 60 * 1000));
+      const availableDate = new Date(lastUpdateMs + FOURTEEN_DAYS_MS).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+      return res.status(400).json({
+        message: `You can only change your nickname once every 14 days. You can change it again in ${remainingDays} day(s) on ${availableDate}.`,
+        remainingDays,
+        availableDate,
+      });
+    }
+  }
+
+  const now = new Date().toISOString();
+  let updated = null;
+  const updateResult = await supabaseAdminClient
+    .from("student_profiles")
+    .update({
+      nickname: cleanedNickname,
+      nickname_updated_at: now,
+    })
+    .eq("student_number", studentNumber)
+    .select(STUDENT_PROFILE_SELECT)
+    .maybeSingle();
+
+  if (updateResult.error) {
+    try {
+      const qResult = await query(
+        `update public.student_profiles
+         set nickname = $1, nickname_updated_at = $2
+         where student_number = $3
+         returning ${STUDENT_PROFILE_SELECT}`,
+        [cleanedNickname, now, studentNumber]
+      );
+      updated = qResult.rows[0];
+    } catch (dbErr) {
+      return res.status(400).json({ message: updateResult.error.message || dbErr.message });
+    }
+  } else {
+    updated = updateResult.data;
+  }
+
+  const profile = mapStudentProfile(updated || {
+    ...student,
+    nickname: cleanedNickname,
+    nickname_updated_at: now,
+  });
+
+  return res.json({
+    message: "Nickname updated successfully.",
+    profile,
+    user: {
+      studentNumber,
+      fullName: profile.fullName,
+      firstName: cleanedNickname || profile.fullName || "User",
+      nickname: cleanedNickname,
+      email: profile.email,
+    },
   });
 });
 
@@ -2706,15 +2854,11 @@ router.post("/register-profile", async (req, res) => {
     }
   }
 
-  const validatedBirthdate = parseIsoCalendarDate(req.body.birthdate || "");
-  if (!validatedBirthdate) {
-    return res.status(400).json({ message: "Enter birthdate as MM/DD/YYYY." });
+  const birthdateCheck = validateStudentBirthdate(req.body.birthdate || "");
+  if (!birthdateCheck.isValid) {
+    return res.status(400).json({ message: birthdateCheck.error });
   }
-  const [regMonth, regDay, regYear] = validatedBirthdate.split("/");
-  const regIso = "" + regYear + "-" + regMonth + "-" + regDay;
-  if (regIso > getManilaDateParts().isoDate) {
-    return res.status(400).json({ message: "Birthdate cannot be in the future." });
-  }
+  const validatedBirthdate = birthdateCheck.formatted;
   const program = findListedOption(PROGRAM_OPTIONS, req.body.program || "");
   if (!program) {
     return res.status(400).json({ message: "Choose a program from the list." });
@@ -2746,6 +2890,7 @@ router.post("/register-profile", async (req, res) => {
     is_email_verified: true,
     is_id_verified: true,
     id_picture: compressedIdPicture || null,
+    nickname: req.body.nickname ? String(req.body.nickname).trim().split(/\s+/)[0].slice(0, 20) : null,
   };
 
   if (
@@ -2817,9 +2962,17 @@ router.post("/register-profile", async (req, res) => {
     }
   }
 
-  const { error } = await supabaseAdminClient
+  let { error } = await supabaseAdminClient
     .from("student_profiles")
     .insert(payload);
+
+  if (error && error.message && error.message.includes("nickname")) {
+    const { nickname: _ignored, ...fallbackPayload } = payload;
+    const fallbackResult = await supabaseAdminClient
+      .from("student_profiles")
+      .insert(fallbackPayload);
+    error = fallbackResult.error;
+  }
 
   if (error) {
     if (error.code === "23505") {

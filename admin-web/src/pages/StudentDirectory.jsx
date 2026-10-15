@@ -1230,6 +1230,7 @@ export default function StudentDirectory({ onLogout, session }) {
                         Demographics & Student Details
                       </div>
                       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        <ProfileInfoTile label="Nickname" value={studentProfile.profile.nickname || "null"} />
                         <ProfileInfoTile label="Program / Course" value={formatProgramName(studentProfile.profile.program) || "Unspecified"} />
                         <ProfileInfoTile label="Birthdate" value={formatDate(studentProfile.profile.birthdate)} />
                         <ProfileInfoTile label="Joined Date" value={formatDate(studentProfile.profile.createdAt)} />

@@ -19,6 +19,8 @@ export type StudentProfile = {
   email: string;
   fullName: string;
   gender?: string;
+  nickname?: string;
+  nicknameUpdatedAt?: string | null;
   program: string;
   profilePictureUrl: string;
   province: string;
@@ -1817,6 +1819,22 @@ export async function fetchStudentProfile(
   };
 }
 
+
+export async function updateStudentNickname(payload: {
+  nickname: string;
+  password: string;
+}): Promise<ApiResult & { profile?: StudentProfile | null; remainingDays?: number; availableDate?: string; user?: AuthUser }> {
+  const { response, data } = await patch("/api/auth/profile/nickname", payload);
+  return {
+    ok: response.ok,
+    message: data?.message,
+    profile: data?.profile ?? null,
+    remainingDays: data?.remainingDays,
+    availableDate: data?.availableDate,
+    user: data?.user,
+  };
+}
+
 export async function fetchStudentPreferences(
   studentNumber: string,
 ): Promise<ApiResult & { preferences?: StudentPreferences | null }> {
@@ -2146,6 +2164,7 @@ export async function registerProfile(payload: {
   email: string;
   birthdate: string;
   password: string;
+  nickname?: string;
   idPicture?: string;
 }): Promise<ApiResult & { token?: string; user?: AuthUser }> {
   const { response, data } = await post(

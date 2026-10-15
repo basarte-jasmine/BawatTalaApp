@@ -119,6 +119,9 @@ export function resolveApiBaseUrl(rawEnvUrl?: string | null): string {
     if (isVercelHost(host)) {
       return "";
     }
+    if (!production && (host === "localhost" || host === "127.0.0.1")) {
+      return withLocalPort("localhost");
+    }
   }
 
   const publicEnv = pickPublicApiUrl(envUrl);

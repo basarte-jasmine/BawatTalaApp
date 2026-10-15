@@ -12,6 +12,7 @@ import {
 
 type SelectFieldProps = {
   label: string;
+  required?: boolean;
   value: string;
   options: string[];
   onSelect: (value: string) => void;
@@ -25,6 +26,7 @@ type SelectFieldProps = {
 
 export function SelectField({
   label,
+  required = false,
   value,
   options,
   onSelect,
@@ -38,7 +40,7 @@ export function SelectField({
 
   return (
     <View style={containerStyle}>
-      {Boolean(label) && <Text style={[styles.label, labelStyle]}>{label}</Text>}
+      {Boolean(label) && <Text style={[styles.label, labelStyle]}>{label}{required ? <Text style={styles.requiredAsterisk}> *</Text> : null}</Text>}
       <Pressable
         style={[styles.trigger, disabled && styles.triggerDisabled, triggerStyle]}
         onPress={() => {
@@ -75,6 +77,9 @@ export function SelectField({
 }
 
 const styles = StyleSheet.create({
+  requiredAsterisk: {
+    color: "#DC2626",
+    fontWeight: "700" },
   label: {
     color: "#111111",
     fontSize: 13,
