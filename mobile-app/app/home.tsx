@@ -9,7 +9,7 @@ import { Image } from "expo-image";
 const AnimatedExpoImage = Animated.createAnimatedComponent(Image);
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, Ellipse, LinearGradient, Path, Rect, Stop } from "react-native-svg";
-import { getDailyRhythmInfo } from "../lib/muni-reminders";
+import { checkDaysSinceLastActive, getDailyRhythmInfo, recordLastActiveTimestamp } from "../lib/muni-reminders";
 import { CounselorAvatar } from "../components/appointments/CounselorAvatar";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
@@ -445,6 +445,21 @@ export default function HomeScreen() {
   const moodCardYRef = useRef(0);
   const moodHighlightAnim = useRef(new Animated.Value(0)).current;
 
+  useEffect(() => {
+    void recordLastActiveTimestamp();
+
+    if (reconnect === "cocoa" || reconnect === "1") {
+      setShowReconnectModal(true);
+      return;
+    }
+
+    void checkDaysSinceLastActive().then((days) => {
+      if (days >= 4) {
+        setShowReconnectModal(true);
+      }
+    });
+  }, [reconnect]);
+
   const currentRhythm = useMemo(() => {
     return getDailyRhythmInfo(new Date(), rhythm);
   }, [rhythm]);
@@ -498,6 +513,7 @@ export default function HomeScreen() {
   const [futureBottleSceneTopY, setFutureBottleSceneTopY] = useState<number | null>(null);
   const [showConsultOverlay, setShowConsultOverlay] = useState(false);
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+  const [showReconnectModal, setShowReconnectModal] = useState(false);
   const [showBottleModal, setShowBottleModal] = useState(false);
   const [showBottleShelfModal, setShowBottleShelfModal] = useState(false);
   const [hasSeenFutureBottleIntro, setHasSeenFutureBottleIntro] = useState(false);
@@ -3098,6 +3114,54 @@ export default function HomeScreen() {
       </Modal>
 
       <Modal
+        visible={showReconnectModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowReconnectModal(false)}
+      >
+        <View style={styles.reconnectBackdrop}>
+          <View style={styles.reconnectCard}>
+            <View style={styles.reconnectArtRow}>
+              <MuniAvatar style={styles.reconnectMuniAvatar} />
+              <View style={styles.reconnectBadgePill}>
+                <Ionicons name="cafe" size={15} color="#7F4D20" />
+                <Text style={styles.reconnectBadgeText}>Warm cocoa for you</Text>
+              </View>
+            </View>
+
+            <Text style={styles.reconnectEyebrow}>WELCOME BACK</Text>
+            <Text style={styles.reconnectTitle}>Muni is glad you&apos;re here ☁️</Text>
+            <Text style={styles.reconnectBody}>
+              No streaks to maintain, no missed days to worry about, and zero pressure.
+
+Muni saved your space and left a warm cup of cocoa on your desk. Take whatever time feels good today.
+            </Text>
+
+            <View style={styles.reconnectActions}>
+              <Pressable
+                style={styles.reconnectSecondaryButton}
+                onPress={() => setShowReconnectModal(false)}
+              >
+                <Text style={styles.reconnectSecondaryText}>Sip cocoa & relax</Text>
+              </Pressable>
+              <Pressable
+                style={styles.reconnectPrimaryButton}
+                onPress={() => {
+                  setShowReconnectModal(false);
+                  contentScrollRef.current?.scrollTo({
+                    y: Math.max(0, moodCardYRef.current - 24),
+                    animated: true,
+                  });
+                }}
+              >
+                <Text style={styles.reconnectPrimaryText}>Check in today</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
         visible={showWelcomeModal}
         transparent
         animationType="none"
@@ -3445,6 +3509,113 @@ const styles = StyleSheet.create({
     height: 224,
     top: 8,
     right: -38 },
+  reconnectBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(23, 34, 45, 0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 20,
+  },
+  reconnectCard: {
+    width: "100%",
+    maxWidth: 340,
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E6EEE7",
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 18,
+    alignItems: "center",
+    shadowColor: "#2F3B47",
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  reconnectArtRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 10,
+    marginBottom: 12,
+  },
+  reconnectMuniAvatar: {
+    width: 68,
+    height: 68,
+  },
+  reconnectBadgePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 5,
+    backgroundColor: "#FDF5EE",
+    borderWidth: 1,
+    borderColor: "#F3DCBE",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  reconnectBadgeText: {
+    color: "#7F4D20",
+    fontSize: 12,
+    fontFamily: "Outfit-Bold",
+  },
+  reconnectEyebrow: {
+    fontSize: 11,
+    color: "#758A73",
+    fontFamily: "Outfit-Bold",
+    letterSpacing: 1.2,
+    marginBottom: 4,
+  },
+  reconnectTitle: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontFamily: "Outfit-Bold",
+    color: "#2F3D4C",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  reconnectBody: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#526272",
+    textAlign: "center",
+    marginBottom: 18,
+  },
+  reconnectActions: {
+    width: "100%",
+    flexDirection: "row",
+    columnGap: 8,
+  },
+  reconnectSecondaryButton: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 999,
+    backgroundColor: "#F4F7F4",
+    borderWidth: 1,
+    borderColor: "#DCE3DC",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 6,
+  },
+  reconnectSecondaryText: {
+    color: "#4C5F70",
+    fontSize: 13,
+    fontFamily: "Outfit-Bold",
+  },
+  reconnectPrimaryButton: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 999,
+    backgroundColor: "#73CD44",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 6,
+  },
+  reconnectPrimaryText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontFamily: "Outfit-Bold",
+  },
   rhythmBanner: {
     borderRadius: 16,
     backgroundColor: "#F5FAF0",

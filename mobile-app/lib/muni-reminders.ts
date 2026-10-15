@@ -28,6 +28,65 @@ export type DailyRhythmInfo = {
   title: string;
 };
 
+export const INACTIVITY_DAYS = 4;
+
+export const INACTIVITY_REMINDER_TEMPLATE = {
+  id: "muni-reconnect-inactivity",
+  title: "Muni is just thinking of you ☁️",
+  body: (name: string) =>
+    (name ? "Hi " + name + " — n" : "N") +
+    "o streaks to maintain, no pressure. Muni left a warm cup of cocoa on your desk.",
+  route: "/home?reconnect=cocoa",
+};
+
+export const COZY_AMBIENT_REMINDER_TEMPLATE = {
+  id: "muni-cozy-ambient",
+  title: "Rainy afternoon or cozy break? 🌧️",
+  body: (name: string) =>
+    (name ? name + ", stay" : "Stay") +
+    " cozy. Muni has peaceful rain and ocean sounds ready whenever you want a breather.",
+  route: "/wellness-tools?mood=cozy",
+};
+
+export function getInactivityTriggerDate(days = INACTIVITY_DAYS, now = new Date()): Date {
+  const targetDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+  return getNextManilaTriggerDate(14, 30, targetDate);
+}
+
+export function getNextWeekendTriggerDate(now = new Date()): Date {
+  const manilaDate = getManilaNow(now);
+  const currentDayOfWeek = manilaDate.getDay();
+  let daysUntilWeekend = 0;
+  if (currentDayOfWeek === 6) {
+    daysUntilWeekend = 1;
+  } else if (currentDayOfWeek === 0) {
+    daysUntilWeekend = 6;
+  } else {
+    daysUntilWeekend = 6 - currentDayOfWeek;
+  }
+  const target = new Date(now.getTime() + daysUntilWeekend * 24 * 60 * 60 * 1000);
+  return getNextManilaTriggerDate(14, 0, target);
+}
+
+const LAST_ACTIVE_STORAGE_KEY = "bawat-tala.lastActiveAt";
+
+export async function recordLastActiveTimestamp(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(LAST_ACTIVE_STORAGE_KEY, new Date().toISOString());
+  } catch {}
+}
+
+export async function checkDaysSinceLastActive(): Promise<number> {
+  try {
+    const raw = await AsyncStorage.getItem(LAST_ACTIVE_STORAGE_KEY);
+    if (!raw) return 0;
+    const diffMs = Date.now() - new Date(raw).getTime();
+    return Math.max(0, Math.floor(diffMs / (24 * 60 * 60 * 1000)));
+  } catch {
+    return 0;
+  }
+}
+
 const MUNI_REMINDER_STORAGE_PREFIX = "bawat-tala.muniReminders.";
 
 export const DAILY_RHYTHM_TEMPLATES: ReminderTemplate[] = [
@@ -217,7 +276,7 @@ export async function scheduleMuniReminders(studentNumber: string, firstName?: s
 
   const name = normalizeName(firstName);
   const now = new Date();
-  const notificationIds = await Promise.all(
+  const dailyIds = await Promise.all(
     DAILY_RHYTHM_TEMPLATES.map((template) =>
       Notifications.scheduleNotificationAsync({
         content: {
@@ -232,6 +291,42 @@ export async function scheduleMuniReminders(studentNumber: string, firstName?: s
       }),
     ),
   );
+
+  const inactivityId = await Notifications.scheduleNotificationAsync({
+    content: {
+      title: INACTIVITY_REMINDER_TEMPLATE.title,
+      body: INACTIVITY_REMINDER_TEMPLATE.body(name),
+      data: {
+        route: INACTIVITY_REMINDER_TEMPLATE.route,
+        reminderId: INACTIVITY_REMINDER_TEMPLATE.id,
+      },
+    },
+    trigger: {
+      channelId: Platform.OS === "android" ? "muni-reminders" : undefined,
+      date: getInactivityTriggerDate(INACTIVITY_DAYS, now),
+    } as any,
+  }).catch(() => null);
+
+  const cozyId = await Notifications.scheduleNotificationAsync({
+    content: {
+      title: COZY_AMBIENT_REMINDER_TEMPLATE.title,
+      body: COZY_AMBIENT_REMINDER_TEMPLATE.body(name),
+      data: {
+        route: COZY_AMBIENT_REMINDER_TEMPLATE.route,
+        reminderId: COZY_AMBIENT_REMINDER_TEMPLATE.id,
+      },
+    },
+    trigger: {
+      channelId: Platform.OS === "android" ? "muni-reminders" : undefined,
+      date: getNextWeekendTriggerDate(now),
+    } as any,
+  }).catch(() => null);
+
+  const notificationIds = [
+    ...dailyIds,
+    ...(inactivityId ? [inactivityId] : []),
+    ...(cozyId ? [cozyId] : []),
+  ];
 
   await saveStoredPreference(studentNumber, { enabled: true, notificationIds });
   return { ok: true, message: "Muni reminders are on." };

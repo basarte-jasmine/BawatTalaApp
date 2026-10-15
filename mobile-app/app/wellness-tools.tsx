@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import {  Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -99,6 +99,7 @@ const FEATURED_GAMES: FeaturedGame[] = [
 ];
 
 export default function WellnessToolsScreen() {
+  const { mood } = useLocalSearchParams<{ mood?: string }>();
   const { width } = useWindowDimensions();
   const compact = width < 390;
 
@@ -133,6 +134,20 @@ export default function WellnessToolsScreen() {
               Choose one small practice. There is no right pace—just what feels supportive now.
             </Text>
           </View>
+
+          {mood === "cozy" ? (
+            <View style={styles.cozyBanner}>
+              <View style={styles.cozyIconWrap}>
+                <Ionicons name="rainy-outline" size={22} color="#386A73" />
+              </View>
+              <View style={styles.cozyBannerCopy}>
+                <Text style={styles.cozyBannerTitle}>Rainy afternoon or cozy break? 🌧️</Text>
+                <Text style={styles.cozyBannerBody}>
+                  Muni has quiet spaces ready. Start with diaphragmatic breathing or grounding whenever you want a soft breather.
+                </Text>
+              </View>
+            </View>
+          ) : null}
 
           <View style={[styles.listSection, compact && styles.listSectionCompact]}>
             <Text style={styles.listHeading}>Guided support</Text>
@@ -334,6 +349,41 @@ const styles = StyleSheet.create({
   sectionDescCompact: {
     fontSize: 13,
     lineHeight: 19 },
+  cozyBanner: {
+    width: "100%",
+    borderRadius: 20,
+    backgroundColor: "#EDF5F7",
+    borderWidth: 1,
+    borderColor: "#D2E5EA",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 12,
+    marginBottom: 14,
+  },
+  cozyIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: "#DEEEF1",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cozyBannerCopy: {
+    flex: 1,
+  },
+  cozyBannerTitle: {
+    color: "#2C4952",
+    fontSize: 14,
+    fontFamily: "Outfit-Bold",
+    marginBottom: 3,
+  },
+  cozyBannerBody: {
+    color: "#4C6B75",
+    fontSize: 12,
+    lineHeight: 17,
+  },
   featuredSection: {
     width: "100%",
     borderRadius: 24,
