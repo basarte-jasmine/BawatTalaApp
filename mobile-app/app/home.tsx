@@ -9,6 +9,7 @@ import { Image } from "expo-image";
 const AnimatedExpoImage = Animated.createAnimatedComponent(Image);
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, Ellipse, LinearGradient, Path, Rect, Stop } from "react-native-svg";
+import { getDailyRhythmInfo } from "../lib/muni-reminders";
 import { CounselorAvatar } from "../components/appointments/CounselorAvatar";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
@@ -440,6 +441,49 @@ export default function HomeScreen() {
   const [totalTala, setTotalTala] = useState(0);
   const [latestMoodId, setLatestMoodId] = useState<string | null>(null);
   const [todayMoodCheckInCount, setTodayMoodCheckInCount] = useState(0);
+  const contentScrollRef = useRef<ScrollView>(null);
+  const moodCardYRef = useRef(0);
+  const moodHighlightAnim = useRef(new Animated.Value(0)).current;
+
+  const currentRhythm = useMemo(() => {
+    return getDailyRhythmInfo(new Date(), rhythm);
+  }, [rhythm]);
+
+  useEffect(() => {
+    if (focus !== "mood") return;
+
+    const scrollTimer = setTimeout(() => {
+      contentScrollRef.current?.scrollTo({
+        y: Math.max(0, moodCardYRef.current - 24),
+        animated: true,
+      });
+
+      Animated.sequence([
+        Animated.timing(moodHighlightAnim, {
+          toValue: 1,
+          duration: 350,
+          useNativeDriver: false,
+        }),
+        Animated.timing(moodHighlightAnim, {
+          toValue: 0.15,
+          duration: 300,
+          useNativeDriver: false,
+        }),
+        Animated.timing(moodHighlightAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: false,
+        }),
+        Animated.timing(moodHighlightAnim, {
+          toValue: 0,
+          duration: 500,
+          useNativeDriver: false,
+        }),
+      ]).start();
+    }, 350);
+
+    return () => clearTimeout(scrollTimer);
+  }, [focus, moodHighlightAnim]);
   const [moodSaveStatus, setMoodSaveStatus] = useState("");
   const [moodSaveStatusTone, setMoodSaveStatusTone] = useState<"success" | "error">("success");
   const [pendingMoodId, setPendingMoodId] = useState<string | null>(null);
@@ -1243,10 +1287,17 @@ export default function HomeScreen() {
       const result = await saveDailyMood(user.studentNumber, pendingMoodId, getManilaTodayParts().isoDate, "INPUT");
 
     if (result.ok) {
-      await recordEmotionForAchievement(result.entry?.moodId ?? pendingMoodId, user.studentNumber);
-      setLatestMoodId(result.entry?.moodId ?? pendingMoodId);
+      const savedEmotionId = result.entry?.moodId ?? pendingMoodId;
+      await recordEmotionForAchievement(savedEmotionId, user.studentNumber);
+      setLatestMoodId(savedEmotionId);
       setTodayMoodCheckInCount((current) => current + 1);
-      setMoodSaveStatus("Saved. You can add another emotion anytime today.");
+
+      const isGentlePositive = ["joy", "contentment", "excitement", "relief"].includes(savedEmotionId);
+      if (isGentlePositive) {
+        setMoodSaveStatus("Muni is smiling with you! Savoring this bright moment ✨");
+      } else {
+        setMoodSaveStatus("Muni is holding space for you 🍃 It takes courage to name how you feel.");
+      }
       setMoodSaveStatusTone("success");
       void loadTodayMood();
       setPendingMoodId(null);
@@ -1829,6 +1880,7 @@ export default function HomeScreen() {
       </View>
 
       <ScrollView
+        ref={contentScrollRef}
         style={styles.contentScroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -1956,7 +2008,24 @@ export default function HomeScreen() {
           </Animated.View>
         </View>
 
-        <View style={styles.moodCard}>
+        <Animated.View
+          style={[
+            styles.moodCard,
+            {
+              borderColor: moodHighlightAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: ["#E6EEE7", "#73CD44"],
+              }),
+              backgroundColor: moodHighlightAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: ["#FFFFFF", "#F9FCF6"],
+              }),
+            },
+          ]}
+          onLayout={(event) => {
+            moodCardYRef.current = event.nativeEvent.layout.y;
+          }}
+        >
           <View style={styles.surfaceGlow} />
           <View style={styles.moodHeaderRow}>
             <MuniAvatar style={styles.moodPetArt} />
@@ -1977,15 +2046,62 @@ export default function HomeScreen() {
                 : "No emotion check-ins yet today"}
             </Text>
           </View>
-          {moodSaveStatus ? (
-            <Text
-              style={[
-                styles.moodSaveStatusText,
-                moodSaveStatusTone === "error" && styles.moodSaveStatusTextError,
-              ]}
-            >
-              {moodSaveStatus}
+
+          <View style={styles.rhythmBanner}>
+            <View style={styles.rhythmHeaderRow}>
+              <View style={styles.rhythmBadge}>
+                <Text style={styles.rhythmBadgeText}>{currentRhythm.badge}</Text>
+              </View>
+              <Text style={styles.rhythmTimeText}>{currentRhythm.timeWindow}</Text>
+            </View>
+            <Text style={styles.rhythmMessageText}>
+              &ldquo;{currentRhythm.muniMessage}&rdquo;
             </Text>
+            {currentRhythm.kind === "evening" ? (
+              <Pressable
+                style={styles.rhythmActionLink}
+                onPress={() => router.push("/journal")}
+              >
+                <Ionicons name="book-outline" size={13} color="#4F9630" />
+                <Text style={styles.rhythmActionLinkText}>
+                  Want to journal before bed? Open Journal
+                </Text>
+                <Ionicons name="chevron-forward" size={13} color="#4F9630" />
+              </Pressable>
+            ) : null}
+          </View>
+
+          {moodSaveStatus ? (
+            <View style={styles.moodSaveFeedbackWrap}>
+              <Text
+                style={[
+                  styles.moodSaveStatusText,
+                  moodSaveStatusTone === "error" && styles.moodSaveStatusTextError,
+                ]}
+              >
+                {moodSaveStatus}
+              </Text>
+              {moodSaveStatusTone === "success" &&
+              latestMoodId &&
+              ["sadness", "anxiety", "anger", "guilt", "embarrassment", "disappointment"].includes(latestMoodId) ? (
+                <View style={styles.moodSupportRow}>
+                  <Pressable
+                    style={styles.moodSupportChip}
+                    onPress={() => router.push("/wellness-breathing")}
+                  >
+                    <Ionicons name="leaf-outline" size={13} color="#4F9630" />
+                    <Text style={styles.moodSupportChipText}>Take 1-min breath</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.moodSupportChip}
+                    onPress={() => router.push("/journal")}
+                  >
+                    <Ionicons name="create-outline" size={13} color="#4F9630" />
+                    <Text style={styles.moodSupportChipText}>Write in journal</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
           ) : null}
 
           <View style={styles.moodRow}>
@@ -2060,7 +2176,7 @@ export default function HomeScreen() {
           <Pressable style={styles.moodHistoryButton} onPress={() => router.push("/mood-overview")}>
             <Text style={styles.moodHistoryButtonText}>Emotion History</Text>
           </Pressable>
-        </View>
+        </Animated.View>
 
         <View style={styles.dailyCheckinCard}>
           <View style={styles.surfaceGlow} />
@@ -3329,6 +3445,85 @@ const styles = StyleSheet.create({
     height: 224,
     top: 8,
     right: -38 },
+  rhythmBanner: {
+    borderRadius: 16,
+    backgroundColor: "#F5FAF0",
+    borderWidth: 1,
+    borderColor: "#E0EED7",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  rhythmHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 5,
+  },
+  rhythmBadge: {
+    borderRadius: 999,
+    backgroundColor: "#E7F5DD",
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+  },
+  rhythmBadgeText: {
+    color: "#3F6E35",
+    fontSize: 11,
+    fontFamily: "Outfit-Bold",
+  },
+  rhythmTimeText: {
+    color: "#6F8578",
+    fontSize: 11,
+    fontFamily: "Outfit",
+  },
+  rhythmMessageText: {
+    color: "#314336",
+    fontSize: 13,
+    lineHeight: 18,
+    fontStyle: "italic",
+  },
+  rhythmActionLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 4,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#E6EFE2",
+  },
+  rhythmActionLinkText: {
+    flex: 1,
+    color: "#4F9630",
+    fontSize: 12,
+    lineHeight: 16,
+    fontFamily: "Outfit-Bold",
+  },
+  moodSaveFeedbackWrap: {
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  moodSupportRow: {
+    flexDirection: "row",
+    columnGap: 8,
+    marginTop: 6,
+  },
+  moodSupportChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 5,
+    backgroundColor: "#F2F8EE",
+    borderWidth: 1,
+    borderColor: "#D4E9CA",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  moodSupportChipText: {
+    color: "#3A6329",
+    fontSize: 12,
+    lineHeight: 16,
+    fontFamily: "Outfit-Bold",
+  },
   moodCard: {
     borderRadius: 24,
     backgroundColor: "#FFFFFF",

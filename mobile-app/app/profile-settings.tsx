@@ -1938,7 +1938,7 @@ return (
               />
               <ToggleItem
                 title="Muni Reminders"
-                description="Let Muni remind you to check in, pause, and journal."
+                description="Daily rhythms for morning check-in (8:30 AM), midday pause (1:30 PM), and evening wind-down (8:30 PM)."
                 value={muniRemindersEnabled}
                 onValueChange={(value) => void handleMuniRemindersToggle(value)}
                 bordered

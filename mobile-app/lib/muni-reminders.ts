@@ -1,6 +1,6 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+﻿import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
-import { getManilaTodayParts } from "./manila-date";
+import { getManilaNow, getManilaTodayParts } from "./manila-date";
 
 type MuniReminderPreference = {
   enabled: boolean;
@@ -17,37 +17,101 @@ type ReminderTemplate = {
   body: (name: string) => string;
 };
 
+export type DailyRhythmKind = "morning" | "midday" | "evening";
+
+export type DailyRhythmInfo = {
+  badge: string;
+  kind: DailyRhythmKind;
+  label: string;
+  muniMessage: string;
+  timeWindow: string;
+  title: string;
+};
+
 const MUNI_REMINDER_STORAGE_PREFIX = "bawat-tala.muniReminders.";
 
-const REMINDER_TEMPLATES: ReminderTemplate[] = [
+export const DAILY_RHYTHM_TEMPLATES: ReminderTemplate[] = [
   {
     id: "morning-check-in",
     hour: 8,
     minute: 30,
-    route: "/home",
-    title: "Good morning",
-    body: (name) => `Hi ${name} - how are you feeling as today begins?`,
+    route: "/home?focus=mood&rhythm=morning",
+    title: "Magandang umaga from Muni ☀️",
+    body: (name) =>
+      (name ? "Hi " + name + " — b" : "B") + "efore the day gets noisy, how’s your heart feeling this morning?",
   },
   {
-    id: "late-afternoon-breathe",
-    hour: 17,
+    id: "midday-transition",
+    hour: 13,
     minute: 30,
-    route: "/wellness-breathing",
-    title: "A soft pause with Muni",
-    body: (name) => `${name}, take one quiet minute with Muni before the day moves on.`,
+    route: "/home?focus=mood&rhythm=midday",
+    title: "Heavy morning classes? 🌱",
+    body: (name) =>
+      (name ? name + ", drop" : "Drop") + " your school bag for a second. Even a 30-second exhale counts.",
   },
   {
     id: "evening-journal",
     hour: 20,
     minute: 30,
-    route: "/journal",
-    title: "Muni saved space for you",
-    body: (name) => `Want to journal for a bit, ${name}? Muni is here to listen.`,
+    route: "/home?focus=mood&rhythm=evening",
+    title: "Muni saved a quiet space for you ✨",
+    body: (name) =>
+      (name ? "Done with homework, " + name + "? " : "") + "Let’s close the tabs in your head before bed.",
   },
 ];
 
+export function getDailyRhythmInfo(date = new Date(), preferredKind?: string | null): DailyRhythmInfo {
+  if (preferredKind === "morning" || preferredKind === "midday" || preferredKind === "evening") {
+    return getDailyRhythmByKind(preferredKind);
+  }
+
+  const manilaDate = getManilaNow(date);
+  const hour = manilaDate.getHours();
+
+  if (hour >= 5 && hour < 12) {
+    return getDailyRhythmByKind("morning");
+  }
+  if (hour >= 12 && hour < 18) {
+    return getDailyRhythmByKind("midday");
+  }
+  return getDailyRhythmByKind("evening");
+}
+
+export function getDailyRhythmByKind(kind: DailyRhythmKind): DailyRhythmInfo {
+  switch (kind) {
+    case "morning":
+      return {
+        kind: "morning",
+        label: "Morning Anchor",
+        timeWindow: "8:00 AM – 9:00 AM",
+        badge: "☀️ Morning Anchor",
+        title: "Magandang umaga from Muni ☀️",
+        muniMessage: "Before the day gets noisy, how’s your heart feeling this morning?",
+      };
+    case "midday":
+      return {
+        kind: "midday",
+        label: "Midday Transition",
+        timeWindow: "1:00 PM – 2:00 PM",
+        badge: "🌱 Midday Transition",
+        title: "Heavy morning classes? 🌱",
+        muniMessage: "Drop your school bag for a second. Even a 30-second exhale counts.",
+      };
+    case "evening":
+    default:
+      return {
+        kind: "evening",
+        label: "Evening Wind-Down",
+        timeWindow: "8:30 PM – 9:30 PM",
+        badge: "✨ Evening Wind-Down",
+        title: "Muni saved a quiet space for you ✨",
+        muniMessage: "Done with homework or tasks? Let’s close the tabs in your head before bed.",
+      };
+  }
+}
+
 function getReminderStorageKey(studentNumber: string) {
-  return `${MUNI_REMINDER_STORAGE_PREFIX}${studentNumber}`;
+  return MUNI_REMINDER_STORAGE_PREFIX + studentNumber;
 }
 
 function normalizeName(value?: string | null) {
@@ -154,7 +218,7 @@ export async function scheduleMuniReminders(studentNumber: string, firstName?: s
   const name = normalizeName(firstName);
   const now = new Date();
   const notificationIds = await Promise.all(
-    REMINDER_TEMPLATES.map((template) =>
+    DAILY_RHYTHM_TEMPLATES.map((template) =>
       Notifications.scheduleNotificationAsync({
         content: {
           title: template.title,
