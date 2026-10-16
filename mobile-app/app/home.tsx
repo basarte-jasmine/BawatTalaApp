@@ -2194,6 +2194,45 @@ export default function HomeScreen() {
           </Pressable>
         </Animated.View>
 
+        {/* Sunday Highlight Banner: Tala ng Linggo */}
+        <Pressable
+          style={styles.weeklyRecapBanner}
+          onPress={() => router.push("/weekly-recap")}
+          accessibilityLabel="Open Tala ng Linggo: A Week's Recap"
+        >
+          <View style={styles.weeklyRecapGlow} />
+          <View style={styles.weeklyRecapHeader}>
+            <View style={styles.weeklyRecapBadge}>
+              <Ionicons name="sparkles" size={13} color="#B8860B" />
+              <Text style={styles.weeklyRecapBadgeText}>
+                {new Date().getDay() === 0 ? "TODAY'S SUNDAY HIGHLIGHT" : "SUNDAY HIGHLIGHT • TALA NG LINGGO"}
+              </Text>
+            </View>
+            <View style={styles.weeklyRecapArrowPill}>
+              <Text style={styles.weeklyRecapArrowPillText}>Open</Text>
+              <Ionicons name="arrow-forward" size={12} color="#166534" />
+            </View>
+          </View>
+          <Text style={styles.weeklyRecapTitle}>Tala ng Linggo: A Week's Recap</Text>
+          <Text style={styles.weeklyRecapSubtitle}>
+            Unpack your resilience, heavy thoughts offloaded, and how Muni supported your study stamina.
+          </Text>
+          <View style={styles.weeklyRecapStatsRow}>
+            <View style={styles.weeklyRecapStatChip}>
+              <Ionicons name="shield-checkmark" size={12} color="#2F6F25" />
+              <Text style={styles.weeklyRecapStatChipText}>92% Resilience</Text>
+            </View>
+            <View style={styles.weeklyRecapStatChip}>
+              <Ionicons name="heart-circle" size={12} color="#16A34A" />
+              <Text style={styles.weeklyRecapStatChipText}>3 Resets Calmed</Text>
+            </View>
+            <View style={styles.weeklyRecapStatChip}>
+              <Ionicons name="book-outline" size={12} color="#2563EB" />
+              <Text style={styles.weeklyRecapStatChipText}>Library Reads</Text>
+            </View>
+          </View>
+        </Pressable>
+
         <View style={styles.dailyCheckinCard}>
           <View style={styles.surfaceGlow} />
           <View style={styles.dailyCheckinHeader}>
@@ -3856,6 +3895,97 @@ const styles = StyleSheet.create({
     fontSize: 17,
     lineHeight: 22,
     fontFamily: "Outfit-Bold" },
+  weeklyRecapBanner: {
+    backgroundColor: "#163422",
+    borderRadius: 24,
+    marginHorizontal: 0,
+    marginTop: 0,
+    marginBottom: 12,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: "#73CD44",
+    shadowColor: "#163422",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+    elevation: 4,
+    overflow: "hidden",
+  },
+  weeklyRecapGlow: {
+    position: "absolute",
+    right: -25,
+    top: -25,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "rgba(115, 205, 68, 0.18)",
+  },
+  weeklyRecapHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  weeklyRecapBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#FEF9C3",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  weeklyRecapBadgeText: {
+    fontSize: 9,
+    fontFamily: "Outfit-Bold",
+    color: "#854D0E",
+    letterSpacing: 0.4,
+  },
+  weeklyRecapArrowPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#D9F99D",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    gap: 3,
+  },
+  weeklyRecapArrowPillText: {
+    fontSize: 10,
+    fontFamily: "Outfit-Bold",
+    color: "#166534",
+  },
+  weeklyRecapTitle: {
+    fontSize: 16,
+    fontFamily: "Outfit-Bold",
+    color: "#FFFFFF",
+    marginBottom: 3,
+  },
+  weeklyRecapSubtitle: {
+    fontSize: 11,
+    lineHeight: 15,
+    fontFamily: "Outfit",
+    color: "#C5E6CE",
+    marginBottom: 10,
+  },
+  weeklyRecapStatsRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  weeklyRecapStatChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    gap: 4,
+  },
+  weeklyRecapStatChipText: {
+    fontSize: 10,
+    fontFamily: "Outfit-Medium",
+    color: "#E2F0E6",
+  },
   modalKeyboardAvoidingView: {
     flex: 1 },
   modalBackdrop: {

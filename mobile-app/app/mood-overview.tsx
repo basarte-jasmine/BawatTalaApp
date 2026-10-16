@@ -346,6 +346,21 @@ export default function MoodOverviewScreen() {
           </View>
         </View>
 
+        <Pressable
+          style={styles.weeklyRecapLinkCard}
+          onPress={() => router.push("/weekly-recap")}
+        >
+          <View style={styles.weeklyRecapLinkLeft}>
+            <Ionicons name="sparkles" size={16} color="#166534" />
+            <View>
+              <Text style={styles.weeklyRecapLinkTitle}>Tala ng Linggo: A Week's Recap</Text>
+              <Text style={styles.weeklyRecapLinkSub}>View your resilience, coping flow, & focus stats</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#166534" />
+        </Pressable>
+
+
         <View style={styles.dailyCard}>
           <View style={styles.dailyHeader}>
             <View style={styles.summaryHeaderCopy}>
@@ -707,7 +722,36 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     marginTop: 3 },
-  atAGlanceRow: {
+  
+  weeklyRecapLinkCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#DCFCE7",
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1.5,
+    borderColor: "#86EFAC",
+    marginBottom: 14,
+  },
+  weeklyRecapLinkLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  weeklyRecapLinkTitle: {
+    fontSize: 13,
+    fontFamily: "Outfit-Bold",
+    color: "#166534",
+  },
+  weeklyRecapLinkSub: {
+    fontSize: 10,
+    fontFamily: "Outfit",
+    color: "#15803D",
+    marginTop: 1,
+  },
+atAGlanceRow: {
     borderRadius: 18,
     backgroundColor: "#EEF7E9",
     borderWidth: 1,
