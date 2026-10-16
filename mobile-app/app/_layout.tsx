@@ -18,7 +18,7 @@ import { AppNoticeProvider } from "../lib/app-notice";
 import { AppErrorBoundary } from "../components/ui/AppErrorBoundary";
 import { AppPreferencesProvider } from "../lib/app-preferences";
 import { warmBackend } from "../lib/backend-api";
-import { configureMuniNotificationBehavior } from "../lib/muni-reminders";
+import { configureMuniNotificationBehavior, requestInitialNotificationPermissions } from "../lib/muni-reminders";
 import { OfflineSyncProvider } from "../lib/offline-sync";
 import { AppointmentStatusWatcher } from "../components/appointments/AppointmentStatusWatcher";
 import { installSafeOutfitTypography } from "../lib/typography";
@@ -81,6 +81,10 @@ export default function RootLayout() {
   useEffect(() => {
     void configureMuniNotificationBehavior();
 
+    const permissionTimer = setTimeout(() => {
+      void requestInitialNotificationPermissions();
+    }, 400);
+
     let subscription: { remove: () => void } | null = null;
     void import("expo-notifications")
       .then((Notifications) => {
@@ -94,6 +98,7 @@ export default function RootLayout() {
       .catch(() => undefined);
 
     return () => {
+      clearTimeout(permissionTimer);
       subscription?.remove();
     };
   }, []);

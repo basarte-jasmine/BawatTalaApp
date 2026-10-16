@@ -197,7 +197,23 @@ function getNextManilaTriggerDate(hour: number, minute: number, now = new Date()
 async function loadStoredPreference(studentNumber: string): Promise<MuniReminderPreference> {
   const storedValue = await AsyncStorage.getItem(getReminderStorageKey(studentNumber));
   if (!storedValue) {
-    return { enabled: false, notificationIds: [], updatedAt: new Date().toISOString() };
+    let systemGranted = false;
+    const Notifications = await getNotificationsModule();
+    if (Notifications) {
+      try {
+        const perms = await Notifications.getPermissionsAsync();
+        systemGranted = Boolean(perms.granted);
+      } catch {}
+    }
+    const initialPref: MuniReminderPreference = {
+      enabled: systemGranted,
+      notificationIds: [],
+      updatedAt: new Date().toISOString(),
+    };
+    if (systemGranted) {
+      await saveStoredPreference(studentNumber, initialPref);
+    }
+    return initialPref;
   }
 
   try {
@@ -364,4 +380,33 @@ export async function configureMuniNotificationBehavior() {
       shouldShowList: true,
     }),
   });
+}
+
+export async function requestInitialNotificationPermissions(): Promise<{ granted: boolean }> {
+  const Notifications = await getNotificationsModule();
+  if (!Notifications) return { granted: false };
+
+  try {
+    if (Platform.OS === "android") {
+      await Notifications.setNotificationChannelAsync("muni-reminders", {
+        name: "Muni reminders",
+        importance: Notifications.AndroidImportance.DEFAULT,
+      });
+    }
+
+    const current = await Notifications.getPermissionsAsync();
+    if (current.granted) {
+      return { granted: true };
+    }
+
+    if (current.canAskAgain !== false) {
+      const requested = await Notifications.requestPermissionsAsync();
+      return { granted: Boolean(requested.granted) };
+    }
+
+    return { granted: false };
+  } catch (error) {
+    console.warn("Failed to request initial notification permissions:", error);
+    return { granted: false };
+  }
 }

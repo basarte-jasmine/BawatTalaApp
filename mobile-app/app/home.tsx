@@ -2198,7 +2198,7 @@ export default function HomeScreen() {
         <Pressable
           style={styles.weeklyRecapBanner}
           onPress={() => router.push("/weekly-recap")}
-          accessibilityLabel="Open Tala ng Linggo: A Week's Recap"
+          accessibilityLabel="Open Tala ng Linggo: A Week&apos;s Recap"
         >
           <View style={styles.weeklyRecapGlow} />
           <View style={styles.weeklyRecapHeader}>
