@@ -15,8 +15,8 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import Svg, { Defs, LinearGradient, Path, Rect, Stop } from "react-native-svg";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Circle, Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { useAuthSession } from "../lib/auth-session";
 import {
   AUTH_MESSAGES,
@@ -27,74 +27,58 @@ import { loginWithStudentId } from "../lib/backend-api";
 
 const APP_MAX_WIDTH = 412;
 
-function LoginBackdrop({ height, width }: { height: number; width: number }) {
+function HeaderBackdrop({ width, height }: { width: number; height: number }) {
   const sceneWidth = Math.min(width && width > 0 ? width : APP_MAX_WIDTH, APP_MAX_WIDTH);
-  const sceneHeight = Math.max(height && height > 0 ? height : 760, 700);
-  const meadowTop = sceneHeight - 160;
+  const headerHeight = Math.max(height, 160);
+  const cx = sceneWidth * 0.88;
+  const cy = -15;
+  const rings: number[] = [];
+  for (let r = 24; r <= 380; r += 16) {
+    rings.push(r);
+  }
 
   return (
     <Svg
-      style={styles.backdropSvg}
       width={sceneWidth}
-      height={sceneHeight}
-      viewBox={`0 0 ${sceneWidth} ${sceneHeight}`}
+      height={headerHeight}
+      style={StyleSheet.absoluteFillObject}
+      viewBox={"0 0 " + sceneWidth + " " + headerHeight}
     >
       <Defs>
-        <LinearGradient id="loginSky" x1="0" x2="0" y1="0" y2="1">
-          <Stop offset="0" stopColor="#F8FFF8" />
-          <Stop offset="0.55" stopColor="#EEF8F2" />
-          <Stop offset="1" stopColor="#E2F2E9" />
-        </LinearGradient>
-        <LinearGradient id="meadowGradient" x1="0" x2="1" y1="0" y2="1">
-          <Stop offset="0" stopColor="#A8E2D6" />
-          <Stop offset="0.5" stopColor="#87D4A2" />
-          <Stop offset="1" stopColor="#F5DC8C" />
+        <LinearGradient id="headerGradient" x1="0" y1="0" x2="1" y2="1">
+          <Stop offset="0" stopColor="#5EBFA4" />
+          <Stop offset="0.42" stopColor="#7CD49F" />
+          <Stop offset="0.82" stopColor="#C8E8B6" />
+          <Stop offset="1" stopColor="#FCE3A1" />
         </LinearGradient>
       </Defs>
-      <Rect width={sceneWidth} height={sceneHeight} fill="url(#loginSky)" />
-      <Path
-        d={`M0 ${meadowTop + 36} C ${sceneWidth * 0.22} ${meadowTop - 12}, ${sceneWidth * 0.52} ${
-          meadowTop + 48
-        }, ${sceneWidth * 0.76} ${meadowTop + 14} C ${sceneWidth * 0.88} ${meadowTop - 6}, ${
-          sceneWidth * 0.95
-        } ${meadowTop + 18}, ${sceneWidth} ${meadowTop + 6} L ${sceneWidth} ${sceneHeight} L 0 ${sceneHeight} Z`}
-        fill="#D6EDE2"
-        opacity={0.6}
-      />
-      <Path
-        d={`M0 ${meadowTop + 68} C ${sceneWidth * 0.2} ${meadowTop + 28}, ${sceneWidth * 0.44} ${
-          meadowTop + 80
-        }, ${sceneWidth * 0.68} ${meadowTop + 42} C ${sceneWidth * 0.84} ${meadowTop + 22}, ${
-          sceneWidth * 0.94
-        } ${meadowTop + 50}, ${sceneWidth} ${meadowTop + 32} L ${sceneWidth} ${sceneHeight} L 0 ${sceneHeight} Z`}
-        fill="url(#meadowGradient)"
-        opacity={0.3}
-      />
-      {/* Whimsical star sparkles */}
-      <Path
-        d="M32 90 L36 100 L47 104 L36 108 L32 118 L28 108 L17 104 L28 100 Z"
-        fill="#F3C94D"
-        opacity={0.4}
-      />
-      <Path
-        d={`M${sceneWidth - 42} 118 L${sceneWidth - 38} 126 L${sceneWidth - 30} 129 L${sceneWidth - 38} 132 L${
-          sceneWidth - 42
-        } 140 L${sceneWidth - 46} 132 L${sceneWidth - 54} 129 L${sceneWidth - 46} 126 Z`}
-        fill="#55B8A8"
-        opacity={0.42}
-      />
-      <Path
-        d={`M${sceneWidth - 84} 64 L${sceneWidth - 81} 70 L${sceneWidth - 75} 73 L${sceneWidth - 81} 76 L${
-          sceneWidth - 84
-        } 82 L${sceneWidth - 87} 76 L${sceneWidth - 93} 73 L${sceneWidth - 87} 70 Z`}
-        fill="#F1A95D"
-        opacity={0.32}
-      />
-      <Path
-        d="M48 220 L51 225 L56 227 L51 229 L48 234 L45 229 L40 227 L45 225 Z"
-        fill="#72C785"
-        opacity={0.32}
-      />
+      <Rect width={sceneWidth} height={headerHeight} fill="url(#headerGradient)" />
+      {rings.map((radius) => (
+        <Circle
+          key={radius}
+          cx={cx}
+          cy={cy}
+          r={radius}
+          stroke="rgba(255, 255, 255, 0.32)"
+          strokeWidth={1}
+          fill="none"
+        />
+      ))}
+    </Svg>
+  );
+}
+
+function GradientButtonBg() {
+  return (
+    <Svg width="100%" height="100%" style={StyleSheet.absoluteFillObject}>
+      <Defs>
+        <LinearGradient id="btnGrad" x1="0" y1="0" x2="1" y2="0">
+          <Stop offset="0" stopColor="#257A54" />
+          <Stop offset="0.5" stopColor="#31966B" />
+          <Stop offset="1" stopColor="#43B886" />
+        </LinearGradient>
+      </Defs>
+      <Rect width="100%" height="100%" fill="url(#btnGrad)" />
     </Svg>
   );
 }
@@ -109,18 +93,20 @@ function getLoginErrorMessage(message?: string) {
     return "Too many login attempts. Please try again later.";
   }
   if (normalized.includes("server") || normalized.includes("connection") || normalized.includes("network")) {
-    return "Unstable internet connection. Please check your network and try again.";
+    return "Unable to connect to the server. Please check your network and try again.";
   }
 
-  return "Invalid Student ID or password.";
+  return "Invalid Student ID or password. Please try again.";
 }
 
 export default function LoginScreen() {
   const { setUser } = useAuthSession();
-  const { height, width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [studentId, setStudentId] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [focusedField, setFocusedField] = useState<"studentId" | "password" | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [isBusy, setIsBusy] = useState(false);
@@ -130,6 +116,10 @@ export default function LoginScreen() {
   } | null>(null);
 
   const passwordInputRef = useRef<TextInput>(null);
+
+  const isCompactHeight = height > 0 && height < 720;
+  const isNarrowWidth = width > 0 && width < 360;
+  const headerHeight = isCompactHeight ? 180 : 220;
 
   const handleLogin = async () => {
     const studentNumber = normalizeStudentIdInput(studentId);
@@ -200,222 +190,209 @@ export default function LoginScreen() {
     router.replace({ pathname: "/studio", params: { welcome: "1" } });
   };
 
-  const frameWidth = Math.min(width, APP_MAX_WIDTH);
+  const frameWidth = Math.min(width && width > 0 ? width : APP_MAX_WIDTH, APP_MAX_WIDTH);
 
   return (
     <KeyboardAvoidingView
       style={styles.screen}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
     >
-      <LoginBackdrop height={height} width={frameWidth} />
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.topNav}>
+      {/* Top Graphic Header */}
+      <View style={[styles.headerContainer, { width: frameWidth, height: headerHeight }]}>
+        <HeaderBackdrop width={frameWidth} height={headerHeight} />
+        <SafeAreaView edges={["top"]} style={styles.headerSafeArea}>
           <Pressable
             style={styles.backButton}
             onPress={() => (router.canGoBack() ? router.back() : router.replace("/auth-choice"))}
             disabled={isBusy}
-            hitSlop={10}
+            hitSlop={12}
             accessibilityRole="button"
-            accessibilityLabel="Go back"
+            accessibilityLabel="Back"
           >
-            <Ionicons name="arrow-back" size={20} color="#213A35" />
+            <Ionicons name="chevron-back" size={20} color="#18362B" />
+            <Text style={styles.backText}>Back</Text>
           </Pressable>
-        </View>
+        </SafeAreaView>
+      </View>
 
+      {/* White Bottom Sheet Overlapping Header */}
+      <View style={styles.sheetCard}>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            isNarrowWidth && styles.scrollContentNarrow,
+            { paddingBottom: Math.max(insets.bottom + 16, 28) },
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Brand Header */}
-          <View style={styles.headerArea}>
-            <View style={styles.logoBadge}>
+          {/* Brand Logo & Welcome Headings */}
+          <View style={[styles.titleArea, isCompactHeight && styles.titleAreaCompact]}>
+            <View style={[styles.logoBadge, isCompactHeight && styles.logoBadgeCompact]}>
               <Image
                 source={require("../assets/images/Logo_BT.png")}
-                style={styles.logo}
+                style={[styles.logoImage, isCompactHeight && styles.logoImageCompact]}
                 contentFit="contain"
               />
             </View>
-            <Text style={styles.title}>Welcome Back</Text>
+            <Text style={[styles.title, isCompactHeight && styles.titleCompact]}>Welcome Back</Text>
             <Text style={styles.subtitle}>
-              Sign in to continue your reflection journey and find your daily calm.
+              Ready to continue your journaling journey?
+            </Text>
+            <Text style={styles.subtitleBold}>
+              Your sanctuary is right here.
             </Text>
           </View>
 
-          {/* Form Card */}
-          <View style={styles.formCard}>
-            {/* Student ID Field */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>
-                Student ID <Text style={styles.requiredAsterisk}>*</Text>
-              </Text>
-              <View
-                style={[
-                  styles.inputWrapper,
-                  focusedField === "studentId" && styles.inputWrapperFocused,
-                ]}
-              >
-                <Ionicons
-                  name="card-outline"
-                  size={19}
-                  color={focusedField === "studentId" ? "#2D7D5A" : "#728B81"}
-                  style={styles.fieldIcon}
-                />
-                <TextInput
-                  value={studentId}
-                  onChangeText={(text) => {
-                    setStudentId(text);
-                    if (errorMessage) setErrorMessage("");
-                  }}
-                  placeholder="(e.g. 23-2903)"
-                  placeholderTextColor="#96ACA2"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="numbers-and-punctuation"
-                  maxLength={10}
-                  editable={!isBusy}
-                  style={styles.textInput}
-                  onFocus={() => setFocusedField("studentId")}
-                  onBlur={() => setFocusedField(null)}
-                  returnKeyType="next"
-                  onSubmitEditing={() => passwordInputRef.current?.focus()}
-                />
-                {studentId.length > 0 && !isBusy && (
-                  <Pressable
-                    onPress={() => setStudentId("")}
-                    hitSlop={8}
-                    style={styles.clearBtn}
-                    accessibilityRole="button"
-                    accessibilityLabel="Clear student ID"
-                  >
-                    <Ionicons name="close-circle" size={17} color="#9DB1A7" />
-                  </Pressable>
-                )}
-              </View>
-            </View>
-
-            {/* Password Field */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>
-                Password <Text style={styles.requiredAsterisk}>*</Text>
-              </Text>
-              <View
-                style={[
-                  styles.inputWrapper,
-                  focusedField === "password" && styles.inputWrapperFocused,
-                ]}
-              >
-                <Ionicons
-                  name="lock-closed-outline"
-                  size={19}
-                  color={focusedField === "password" ? "#2D7D5A" : "#728B81"}
-                  style={styles.fieldIcon}
-                />
-                <TextInput
-                  ref={passwordInputRef}
-                  value={password}
-                  onChangeText={(text) => {
-                    setPassword(text);
-                    if (errorMessage) setErrorMessage("");
-                  }}
-                  placeholder="Enter your password"
-                  placeholderTextColor="#96ACA2"
-                  secureTextEntry={!showPassword}
-                  editable={!isBusy}
-                  style={styles.textInput}
-                  onFocus={() => setFocusedField("password")}
-                  onBlur={() => setFocusedField(null)}
-                  returnKeyType="done"
-                  onSubmitEditing={handleLogin}
-                />
-                <Pressable
-                  onPress={() => setShowPassword((prev) => !prev)}
-                  hitSlop={8}
-                  style={styles.eyeBtn}
-                  accessibilityRole="button"
-                  accessibilityLabel={showPassword ? "Hide password" : "Show password"}
-                >
-                  <Ionicons
-                    name={showPassword ? "eye-off-outline" : "eye-outline"}
-                    size={20}
-                    color="#657F75"
-                  />
-                </Pressable>
-              </View>
-            </View>
-
-            {/* Forgot Password Link */}
-            <Pressable
-              style={[styles.forgotWrap, isBusy && styles.disabledLink]}
-              disabled={isBusy}
-              onPress={() => router.push("/reset-password")}
-              hitSlop={8}
+          {/* Form Fields */}
+          <View style={styles.formArea}>
+            {/* Student ID */}
+            <View
+              style={[
+                styles.inputWrapper,
+                focusedField === "studentId" && styles.inputWrapperFocused,
+              ]}
             >
-              <Text style={styles.forgotText}>Forgot Password?</Text>
-            </Pressable>
+              <TextInput
+                value={studentId}
+                onChangeText={(text) => {
+                  setStudentId(text);
+                  if (errorMessage) setErrorMessage("");
+                }}
+                placeholder="Student ID (e.g. 23-2903)"
+                placeholderTextColor="#9CA3AF"
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="numbers-and-punctuation"
+                maxLength={10}
+                editable={!isBusy}
+                style={styles.textInput}
+                onFocus={() => setFocusedField("studentId")}
+                onBlur={() => setFocusedField(null)}
+                returnKeyType="next"
+                onSubmitEditing={() => passwordInputRef.current?.focus()}
+              />
+              {studentId.length > 0 && !isBusy && (
+                <Pressable
+                  onPress={() => setStudentId("")}
+                  hitSlop={8}
+                  style={styles.clearBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear ID"
+                >
+                  <Ionicons name="close-circle" size={17} color="#9CA3AF" />
+                </Pressable>
+              )}
+            </View>
 
-            {/* Error Banner */}
+            {/* Password */}
+            <View
+              style={[
+                styles.inputWrapper,
+                focusedField === "password" && styles.inputWrapperFocused,
+              ]}
+            >
+              <TextInput
+                ref={passwordInputRef}
+                value={password}
+                onChangeText={(text) => {
+                  setPassword(text);
+                  if (errorMessage) setErrorMessage("");
+                }}
+                placeholder="Password"
+                placeholderTextColor="#9CA3AF"
+                secureTextEntry={!showPassword}
+                editable={!isBusy}
+                style={styles.textInput}
+                onFocus={() => setFocusedField("password")}
+                onBlur={() => setFocusedField(null)}
+                returnKeyType="done"
+                onSubmitEditing={handleLogin}
+              />
+              <Pressable
+                onPress={() => setShowPassword((prev) => !prev)}
+                hitSlop={10}
+                style={styles.eyeBtn}
+                accessibilityRole="button"
+                accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+              >
+                <Ionicons
+                  name={showPassword ? "eye-off-outline" : "eye-outline"}
+                  size={20}
+                  color="#9CA3AF"
+                />
+              </Pressable>
+            </View>
+
+            {/* Utility Row: Remember me & Forgot Password */}
+            <View style={styles.utilityRow}>
+              <Pressable
+                onPress={() => setRememberMe((prev) => !prev)}
+                style={styles.rememberWrap}
+                hitSlop={6}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: rememberMe }}
+              >
+                <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+                  {rememberMe && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
+                </View>
+                <Text style={styles.rememberText}>Remember me</Text>
+              </Pressable>
+
+              <Pressable
+                disabled={isBusy}
+                onPress={() => router.push("/reset-password")}
+                hitSlop={6}
+              >
+                <Text style={styles.forgotText}>Forgot password?</Text>
+              </Pressable>
+            </View>
+
+            {/* Error Message Banner */}
             {!!errorMessage && (
               <View style={styles.errorBanner}>
-                <Ionicons
-                  name="alert-circle"
-                  size={18}
-                  color="#DC2626"
-                  style={styles.errorIcon}
-                />
+                <Ionicons name="alert-circle" size={16} color="#DC2626" style={{ marginRight: 7 }} />
                 <Text style={styles.errorText}>{errorMessage}</Text>
               </View>
             )}
 
-            {/* Primary Log In Button */}
+            {/* Log In Button (Gradient Pill) */}
             <Pressable
-              style={[styles.loginButton, isBusy && styles.loginButtonDisabled]}
+              style={[styles.loginBtn, isBusy && styles.loginBtnDisabled]}
               onPress={handleLogin}
               disabled={isBusy}
               accessibilityRole="button"
               accessibilityState={{ disabled: isBusy, busy: isBusy }}
             >
+              <GradientButtonBg />
               {isBusy ? (
-                <View style={styles.buttonInner}>
+                <View style={styles.btnInner}>
                   <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
-                  <Text style={styles.loginButtonText}>Logging in...</Text>
+                  <Text style={styles.loginBtnText}>Logging in...</Text>
                 </View>
               ) : (
-                <View style={styles.buttonInner}>
-                  <Text style={styles.loginButtonText}>Log In</Text>
-                  <Ionicons name="arrow-forward" size={17} color="#FFFFFF" style={{ marginLeft: 6 }} />
-                </View>
+                <Text style={styles.loginBtnText}>Log In</Text>
               )}
             </Pressable>
 
-            {/* Elegant Divider */}
-            <View style={styles.orRow}>
-              <View style={styles.orLine} />
-              <View style={styles.orBadge}>
-                <Text style={styles.orBadgeText}>or</Text>
-              </View>
-              <View style={styles.orLine} />
-            </View>
-
-            {/* Create Account Secondary Button */}
-            <View style={styles.registerSection}>
-              <Text style={styles.registerPrompt}>New to Bawat Tala?</Text>
-              <Pressable
-                style={[styles.registerOutlineBtn, isBusy && styles.disabledLink]}
-                disabled={isBusy}
-                onPress={() => router.push("/register")}
-                accessibilityRole="button"
-              >
-                <Ionicons name="sparkles-outline" size={16} color="#2D7D5A" style={{ marginRight: 6 }} />
-                <Text style={styles.registerOutlineBtnText}>Create Student Account</Text>
-              </Pressable>
+            {/* Register / Sign Up Link */}
+            <View style={styles.registerWrap}>
+              <Text style={styles.registerPrompt}>
+                Don't have an account?{" "}
+                <Text
+                  style={styles.registerLink}
+                  onPress={() => !isBusy && router.push("/register")}
+                >
+                  Register
+                </Text>
+              </Text>
             </View>
           </View>
         </ScrollView>
-      </SafeAreaView>
+      </View>
 
-      {/* Reactivation Modal */}
+      {/* Account Reactivation Modal */}
       <Modal
         visible={Boolean(reactivationPrompt)}
         transparent
@@ -425,28 +402,26 @@ export default function LoginScreen() {
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <View style={styles.modalIconWrap}>
-              <Ionicons name="shield-checkmark-outline" size={32} color="#2D7D5A" />
+              <Ionicons name="alert-circle-outline" size={28} color="#2D7D5A" />
             </View>
-            <Text style={styles.modalTitle}>Reactivate Account?</Text>
+            <Text style={styles.modalTitle}>Reactivate Account</Text>
             <Text style={styles.modalBody}>
-              Your account is currently scheduled for deletion. Would you like to cancel deletion and reactivate your account?
+              This account is currently scheduled for deletion. Reactivating will restore your access immediately.
             </Text>
             <View style={styles.modalActions}>
               <Pressable
-                style={styles.modalSecondaryButton}
+                style={styles.modalCancelBtn}
                 onPress={() => setReactivationPrompt(null)}
                 disabled={isBusy}
               >
-                <Text style={styles.modalSecondaryText}>Cancel</Text>
+                <Text style={styles.modalCancelText}>Cancel</Text>
               </Pressable>
               <Pressable
-                style={styles.modalPrimaryButton}
+                style={styles.modalConfirmBtn}
                 onPress={() => void handleConfirmReactivation()}
                 disabled={isBusy}
               >
-                <Text style={styles.modalPrimaryText}>
-                  {isBusy ? "Reactivating..." : "Reactivate"}
-                </Text>
+                <Text style={styles.modalConfirmText}>{isBusy ? "Reactivating..." : "Reactivate"}</Text>
               </Pressable>
             </View>
           </View>
@@ -459,161 +434,190 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F8FFF8",
+    backgroundColor: "#5EBFA4",
   },
-  backdropSvg: {
-    ...StyleSheet.absoluteFillObject,
-    pointerEvents: "none",
+  headerContainer: {
+    alignSelf: "center",
+    overflow: "hidden",
   },
-  safeArea: {
-    flex: 1,
-  },
-  topNav: {
+  headerSafeArea: {
     paddingHorizontal: 20,
     paddingTop: 8,
-    paddingBottom: 4,
   },
   backButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "rgba(255, 255, 255, 0.85)",
-    borderWidth: 1,
-    borderColor: "#E0EBE4",
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#224A38",
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    alignSelf: "flex-start",
+    paddingVertical: 6,
+    paddingRight: 10,
+  },
+  backText: {
+    fontFamily: "Outfit-Medium",
+    fontSize: 15,
+    color: "#18362B",
+    marginLeft: 3,
+  },
+  sheetCard: {
+    flex: 1,
+    marginTop: -32,
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 36,
+    borderTopRightRadius: 36,
+    overflow: "hidden",
+    shadowColor: "#1B3A2E",
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: -6 },
+    elevation: 8,
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 22,
-    paddingBottom: 36,
+    paddingHorizontal: 24,
+    paddingTop: 24,
     justifyContent: "center",
   },
-  headerArea: {
+  scrollContentNarrow: {
+    paddingHorizontal: 16,
+  },
+  titleArea: {
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 24,
+  },
+  titleAreaCompact: {
+    marginBottom: 16,
   },
   logoBadge: {
-    width: 78,
-    height: 78,
-    borderRadius: 39,
+    width: 68,
+    height: 68,
+    borderRadius: 20,
     backgroundColor: "#FFFFFF",
     borderWidth: 1.5,
-    borderColor: "#DCF0E5",
+    borderColor: "#E1F2E8",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 14,
+    marginBottom: 12,
     shadowColor: "#2D7D5A",
     shadowOpacity: 0.12,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
     elevation: 3,
   },
-  logo: {
+  logoBadgeCompact: {
     width: 56,
     height: 56,
+    borderRadius: 16,
+    marginBottom: 8,
+  },
+  logoImage: {
+    width: 48,
+    height: 48,
+  },
+  logoImageCompact: {
+    width: 38,
+    height: 38,
   },
   title: {
     fontFamily: "Outfit-Bold",
-    fontSize: 27,
-    lineHeight: 33,
-    color: "#1B362C",
+    fontSize: 26,
+    lineHeight: 32,
+    color: "#111827",
     textAlign: "center",
     letterSpacing: -0.3,
   },
+  titleCompact: {
+    fontSize: 23,
+    lineHeight: 28,
+  },
   subtitle: {
-    fontFamily: "Outfit-Regular",
+    fontFamily: "Outfit",
     fontSize: 13.5,
     lineHeight: 19,
-    color: "#56706A",
+    color: "#6B7280",
     textAlign: "center",
     marginTop: 6,
-    paddingHorizontal: 16,
   },
-  formCard: {
-    width: "100%",
-    maxWidth: 368,
-    alignSelf: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.94)",
-    borderRadius: 24,
-    borderWidth: 1.5,
-    borderColor: "rgba(216, 238, 226, 0.9)",
-    paddingHorizontal: 20,
-    paddingTop: 22,
-    paddingBottom: 22,
-    shadowColor: "#224A38",
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 3,
-  },
-  fieldGroup: {
-    marginBottom: 14,
-  },
-  fieldLabel: {
+  subtitleBold: {
     fontFamily: "Outfit-SemiBold",
-    fontSize: 13,
-    lineHeight: 18,
-    color: "#203B32",
-    marginBottom: 6,
+    fontSize: 13.5,
+    lineHeight: 19,
+    color: "#1F2937",
+    textAlign: "center",
+    marginTop: 2,
   },
-  requiredAsterisk: {
-    color: "#D94F4F",
-    fontWeight: "700",
+  formArea: {
+    width: "100%",
+    maxWidth: 350,
+    alignSelf: "center",
   },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    height: 48,
+    height: 50,
     borderRadius: 14,
-    backgroundColor: "#F7FAF8",
-    borderWidth: 1.5,
-    borderColor: "#DCE7E1",
-    paddingHorizontal: 12,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.2,
+    borderColor: "#E5E7EB",
+    paddingHorizontal: 16,
+    marginBottom: 14,
   },
   inputWrapperFocused: {
     borderColor: "#2D7D5A",
-    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
     shadowColor: "#2D7D5A",
     shadowOpacity: 0.12,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  fieldIcon: {
-    marginRight: 9,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 1 },
   },
   textInput: {
     flex: 1,
     height: "100%",
     fontFamily: "Outfit",
-    fontSize: 14,
-    color: "#183228",
+    fontSize: 14.5,
+    color: "#111827",
     paddingVertical: 0,
     ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as any) : {}),
   },
   clearBtn: {
     padding: 4,
-    alignItems: "center",
-    justifyContent: "center",
   },
   eyeBtn: {
     padding: 6,
+  },
+  utilityRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 2,
+    marginBottom: 22,
+    paddingHorizontal: 2,
+  },
+  rememberWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: "#9CA3AF",
     alignItems: "center",
     justifyContent: "center",
+    marginRight: 8,
+    backgroundColor: "#FFFFFF",
   },
-  forgotWrap: {
-    alignSelf: "flex-end",
-    marginTop: -4,
-    marginBottom: 16,
+  checkboxChecked: {
+    backgroundColor: "#2D7D5A",
+    borderColor: "#2D7D5A",
+  },
+  rememberText: {
+    fontFamily: "Outfit",
+    fontSize: 13,
+    color: "#4B5563",
   },
   forgotText: {
-    fontFamily: "Outfit-SemiBold",
-    fontSize: 12.5,
+    fontFamily: "Outfit-Medium",
+    fontSize: 13,
     color: "#2D7D5A",
   },
   errorBanner: {
@@ -625,97 +629,57 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    marginBottom: 14,
-  },
-  errorIcon: {
-    marginRight: 8,
+    marginBottom: 16,
   },
   errorText: {
     flex: 1,
     fontFamily: "Outfit-Medium",
     fontSize: 12.5,
     lineHeight: 17,
-    color: "#991B1B",
+    color: "#B91C1C",
   },
-  loginButton: {
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: "#2D7D5A",
+  loginBtn: {
+    height: 50,
+    borderRadius: 16,
+    overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#1B523A",
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
+    shadowColor: "#20724F",
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
+    elevation: 4,
   },
-  loginButtonDisabled: {
+  loginBtnDisabled: {
     opacity: 0.65,
   },
-  buttonInner: {
+  btnInner: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
   },
-  loginButtonText: {
+  loginBtnText: {
     fontFamily: "Outfit-Bold",
-    fontSize: 15,
+    fontSize: 15.5,
     color: "#FFFFFF",
     letterSpacing: 0.2,
   },
-  orRow: {
-    flexDirection: "row",
+  registerWrap: {
     alignItems: "center",
-    marginVertical: 16,
-  },
-  orLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "#E2ECE7",
-  },
-  orBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 2,
-    borderRadius: 10,
-    backgroundColor: "#F0F5F2",
-    marginHorizontal: 8,
-  },
-  orBadgeText: {
-    fontFamily: "Outfit-Medium",
-    fontSize: 11.5,
-    color: "#728B81",
-  },
-  registerSection: {
-    alignItems: "center",
+    marginTop: 22,
   },
   registerPrompt: {
-    fontFamily: "Outfit-Regular",
-    fontSize: 12.5,
-    color: "#6B847A",
-    marginBottom: 8,
+    fontFamily: "Outfit",
+    fontSize: 13,
+    color: "#6B7280",
   },
-  registerOutlineBtn: {
-    width: "100%",
-    height: 44,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: "#2D7D5A",
-    backgroundColor: "#FFFFFF",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  registerOutlineBtnText: {
+  registerLink: {
     fontFamily: "Outfit-Bold",
-    fontSize: 13.5,
     color: "#2D7D5A",
-  },
-  disabledLink: {
-    opacity: 0.5,
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(18, 30, 24, 0.48)",
+    backgroundColor: "rgba(17, 24, 39, 0.45)",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 22,
@@ -723,36 +687,35 @@ const styles = StyleSheet.create({
   modalCard: {
     width: "100%",
     maxWidth: 328,
-    borderRadius: 24,
+    borderRadius: 20,
     backgroundColor: "#FFFFFF",
     paddingHorizontal: 22,
     paddingTop: 24,
     paddingBottom: 20,
     alignItems: "center",
-    shadowColor: "#1B362C",
-    shadowOpacity: 0.18,
+    shadowColor: "#000000",
+    shadowOpacity: 0.12,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 6 },
     elevation: 4,
   },
   modalIconWrap: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: "#EAF6EE",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 12,
   },
   modalTitle: {
-    color: "#1B2E24",
-    fontSize: 19,
+    color: "#111827",
+    fontSize: 18,
     fontFamily: "Outfit-Bold",
-    textAlign: "center",
     marginBottom: 8,
   },
   modalBody: {
-    color: "#52606C",
+    color: "#6B7280",
     fontSize: 13,
     lineHeight: 19,
     textAlign: "center",
@@ -763,35 +726,31 @@ const styles = StyleSheet.create({
     columnGap: 10,
     width: "100%",
   },
-  modalSecondaryButton: {
+  modalCancelBtn: {
     flex: 1,
-    height: 44,
+    height: 42,
     borderRadius: 12,
-    backgroundColor: "#F2F5F3",
+    backgroundColor: "#F3F4F6",
     alignItems: "center",
     justifyContent: "center",
   },
-  modalSecondaryText: {
-    color: "#566271",
+  modalCancelText: {
+    color: "#4B5563",
     fontSize: 13.5,
-    fontFamily: "Outfit-Bold",
+    fontFamily: "Outfit-SemiBold",
   },
-  modalPrimaryButton: {
+  modalConfirmBtn: {
     flex: 1,
-    height: 44,
+    height: 42,
     borderRadius: 12,
     backgroundColor: "#2D7D5A",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#1B523A",
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
   },
-  modalPrimaryText: {
+  modalConfirmText: {
     color: "#FFFFFF",
     fontSize: 13.5,
-    fontFamily: "Outfit-Bold",
+    fontFamily: "Outfit-SemiBold",
   },
 });
+
