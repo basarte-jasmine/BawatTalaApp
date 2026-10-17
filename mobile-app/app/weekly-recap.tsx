@@ -73,7 +73,7 @@ const CARD_THEMES: CardTheme[] = [
     cardBorder: "rgba(232, 121, 249, 0.45)",
     glowColor: "rgba(232, 121, 249, 0.24)",
   },
-  // Card 2: Sunset Amber & Coral (Muni Proactive Coping)
+  // Card 2: Sunset Amber & Coral (Muni Proactive Pauses)
   {
     bgGradient: ["#1C0B05", "#3A1708"],
     accentColor: "#FB923C",
@@ -337,21 +337,54 @@ export default function WeeklyRecapScreen() {
     return count > 0 ? count : 3;
   }, [journalEntries]);
 
-  const interventionsOffered = heavyJournalsCount + 1;
-  const interventionsAccepted = heavyJournalsCount;
-  const copingActionRate = Math.round((interventionsAccepted / interventionsOffered) * 100);
-  const resilienceScore = 92;
+  const checkedInDaysCount = useMemo(() => {
+    const dates = new Set(monthlyMoods.map((m) => m.moodDate));
+    return weeklyDays.filter((d) => dates.has(d.dateStr)).length;
+  }, [weeklyDays, monthlyMoods]);
+
+  const daysWithCheckIn = Math.min(Math.max(checkedInDaysCount, 1), 7);
+  const mindfulResetsCount = Math.max(journalEntries.length, 2);
+
+  const weeklyTalaStars = useMemo(() => {
+    return daysWithCheckIn * 20 + totalJournals * 15 + libraryReadCount * 25;
+  }, [daysWithCheckIn, totalJournals, libraryReadCount]);
+
+  const emotionPalette = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const d of weeklyDays) {
+      if (d.moodId) {
+        counts[d.moodId] = (counts[d.moodId] || 0) + 1;
+      }
+    }
+    const entries = Object.entries(counts);
+    if (!entries.length) {
+      return [
+        { id: "contentment", count: 3, meta: EMOTION_META.contentment },
+        { id: "relief", count: 2, meta: EMOTION_META.relief },
+        { id: "anxiety", count: 2, meta: EMOTION_META.anxiety },
+      ];
+    }
+    return entries
+      .sort((a, b) => b[1] - a[1])
+      .map(([id, count]) => ({
+        id,
+        count,
+        meta: EMOTION_META[id] || EMOTION_META.contentment,
+      }));
+  }, [weeklyDays]);
+
+  const emotionNamesSummary = useMemo(() => {
+    const names = emotionPalette.map((e) => e.meta.label);
+    if (names.length === 0) return "contentment and calm";
+    if (names.length === 1) return names[0];
+    if (names.length === 2) return names[0] + " and " + names[1];
+    return names.slice(0, names.length - 1).join(", ") + ", and " + names[names.length - 1];
+  }, [emotionPalette]);
 
   const handleShare = async () => {
     try {
       await Share.share({
-        message: "Tala ng Linggo: A Week's Recap on Bawat Tala!\n\nResilience Index: " +
-          resilienceScore +
-          "%\nHeavy Stress Offloaded: " +
-          heavyJournalsCount +
-          " sessions\nMuni Coping Rate: " +
-          copingActionRate +
-          "%\nMindful Rest: 28 mins\n\nBalancing academic growth with gentle mental wellness. #BawatTala #StudentProductivity",
+        message: "Tala ng Linggo: My Week Under the Stars on Bawat Tala ?\n\nChecked in " + daysWithCheckIn + " days this week with Muni.\n\nNo pressure, no grades�just gentle moments for the mind. #BawatTala #StudentWellness",
       });
     } catch {
       // ignore
@@ -509,8 +542,8 @@ export default function WeeklyRecapScreen() {
           </View>
         </View>
 
-        {/* Full-Screen Tap Area */}
-        <Pressable style={styles.storyTouchContainer} onPress={handleStoryTap}>
+        {/* Full-Screen Story Deck Container */}
+        <View style={styles.storyTouchContainer}>
           <Animated.View style={[styles.storyCardContainer, { opacity: cardFadeAnim, transform: [{ scale: cardScaleAnim }] }]}>
             {/* CARD 0: INTRO & RESILIENCE GRADE */}
             {storyCardIndex === 0 && (
@@ -520,23 +553,23 @@ export default function WeeklyRecapScreen() {
                 </View>
                 <Text style={styles.storyHeroTitle}>7 Days Under The Stars.</Text>
                 <Text style={[styles.storyHeroSubtitle, { color: currentTheme.subColor }]}>
-                  How did your mind navigate academic pressure this week?
+                  A gentle celebration of showing up for yourself this week.
                 </Text>
 
                 <Animated.View style={[styles.storyScoreGlowWrap, { transform: [{ translateY: floatAnim }] }]}>
                   <View style={styles.storyScoreCircle}>
-                    <Text style={[styles.storyScoreBig, { color: currentTheme.accentColor }]}>{resilienceScore}%</Text>
-                    <Text style={styles.storyScoreLbl}>Resilience Index</Text>
+                    <Text style={[styles.storyScoreBig, { color: currentTheme.accentColor }]}>{daysWithCheckIn}/7</Text>
+                    <Text style={styles.storyScoreLbl}>Days You Paused</Text>
                   </View>
                 </Animated.View>
 
                 <View style={styles.storyHonorBadge}>
                   <Ionicons name="shield-checkmark" size={16} color="#2F6F25" />
-                  <Text style={styles.storyHonorBadgeText}>Balanced Achiever</Text>
+                  <Text style={styles.storyHonorBadgeText}>A Gentle Pace</Text>
                 </View>
 
                 <Text style={styles.storyCardBodyQuote}>
-                  "You absorbed 3 intense study blocks, proactively offloaded stress, and protected your cognitive stamina."
+                  "Wellness is not a score to achieve or a test to pass. Every quiet moment you took to check in matters."
                 </Text>
 
                 <View style={styles.storyTapPrompt}>
@@ -550,11 +583,11 @@ export default function WeeklyRecapScreen() {
             {storyCardIndex === 1 && (
               <View style={styles.storyCardInner}>
                 <View style={[styles.storyBadge, { backgroundColor: currentTheme.badgeBg }]}>
-                  <Text style={[styles.storyBadgeText, { color: currentTheme.badgeText }]}>THE WAVEFORM</Text>
+                  <Text style={[styles.storyBadgeText, { color: currentTheme.badgeText }]}>EMOTIONAL PALETTE</Text>
                 </View>
-                <Text style={styles.storyHeroTitle}>Your week wasn't flat—it had rhythm.</Text>
+                <Text style={styles.storyHeroTitle}>Feelings You Made Space For</Text>
                 <Text style={[styles.storyHeroSubtitle, { color: currentTheme.subColor }]}>
-                  Stress dips were met with rapid recovery inflections.
+                  Every emotion had a seat at your table this week.
                 </Text>
 
                 <View style={styles.storyGraphBox}>
@@ -569,9 +602,9 @@ export default function WeeklyRecapScreen() {
                     <Line x1="68" y1="76" x2="338" y2="76" stroke="rgba(255,255,255,0.15)" strokeWidth="1" strokeDasharray="3,3" />
                     <Line x1="68" y1="124" x2="338" y2="124" stroke="rgba(239,68,68,0.25)" strokeWidth="1" strokeDasharray="3,3" />
 
-                    <SvgText x="8" y="32" fontSize="8" fill="#86EFAC" fontFamily="Outfit-Bold">THRIVING</SvgText>
-                    <SvgText x="8" y="80" fontSize="8" fill="#FDE047" fontFamily="Outfit-Bold">BALANCED</SvgText>
-                    <SvgText x="8" y="128" fontSize="8" fill="#F87171" fontFamily="Outfit-Bold">STRESSED</SvgText>
+                    <SvgText x="8" y="32" fontSize="8" fill="#86EFAC" fontFamily="Outfit-Bold">LIGHT</SvgText>
+                    <SvgText x="8" y="80" fontSize="8" fill="#FDE047" fontFamily="Outfit-Bold">STEADY</SvgText>
+                    <SvgText x="8" y="128" fontSize="8" fill="#F87171" fontFamily="Outfit-Bold">REFLECTIVE</SvgText>
 
                     <Path d={areaPath} fill="url(#storyGrad)" />
                     <Path d={curvePath} fill="none" stroke={currentTheme.accentColor} strokeWidth="3.5" strokeLinecap="round" />
@@ -590,12 +623,23 @@ export default function WeeklyRecapScreen() {
                   </Svg>
                 </View>
 
+                {/* Emotional Palette Chips */}
+                <View style={styles.storyPaletteRow}>
+                  {emotionPalette.slice(0, 4).map((item) => (
+                    <View key={item.id} style={[styles.storyPaletteChip, { borderColor: item.meta.color }]}>
+                      <View style={[styles.storyPaletteDot, { backgroundColor: item.meta.color }]} />
+                      <Text style={styles.storyPaletteLabel}>{item.meta.label}</Text>
+                      <Text style={styles.storyPaletteCount}>x{item.count}</Text>
+                    </View>
+                  ))}
+                </View>
+
                 <View style={[styles.storyHighlightCard, { backgroundColor: currentTheme.cardBg, borderColor: currentTheme.cardBorder }]}>
                   <View style={[styles.storyHighlightDot, { backgroundColor: currentTheme.accentColor }]} />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.storyHighlightTitle}>Midweek Dip & Rapid Bounce-Back</Text>
+                    <Text style={styles.storyHighlightTitle}>All Feelings Are Welcome</Text>
                     <Text style={styles.storyHighlightDesc}>
-                      Wednesday brought heavy exam anxiety, but with active breathwork, your mood returned to Relief within 12 hours.
+                      This week, you welcomed {emotionNamesSummary}. Holding space for difficult moments alongside peaceful ones is how you care for yourself.
                     </Text>
                   </View>
                 </View>
@@ -607,15 +651,15 @@ export default function WeeklyRecapScreen() {
               </View>
             )}
 
-            {/* CARD 2: PROACTIVE COPING (MUNI IN ACTION) */}
+            {/* CARD 2: MOMENTS OF CALM (MUNI IN ACTION) */}
             {storyCardIndex === 2 && (
               <View style={styles.storyCardInner}>
                 <View style={[styles.storyBadge, { backgroundColor: currentTheme.badgeBg }]}>
-                  <Text style={[styles.storyBadgeText, { color: currentTheme.badgeText }]}>PROACTIVE COPING</Text>
+                  <Text style={[styles.storyBadgeText, { color: currentTheme.badgeText }]}>MOMENTS OF CALM</Text>
                 </View>
                 <Text style={styles.storyHeroTitle}>When stress spiked, you didn't stay stuck.</Text>
                 <Text style={[styles.storyHeroSubtitle, { color: currentTheme.subColor }]}>
-                  Muni caught early distress indicators and offered immediate interventions.
+                  Small pauses that gave your heart and mind space to untangle.
                 </Text>
 
                 <View style={styles.storyPipelineBox}>
@@ -623,8 +667,8 @@ export default function WeeklyRecapScreen() {
                     <View style={[styles.storyPipelineIconWrap, { backgroundColor: "rgba(239, 68, 68, 0.2)" }]}>
                       <Ionicons name="alert-circle" size={24} color="#EF4444" />
                     </View>
-                    <Text style={styles.storyPipelineNum}>{heavyJournalsCount}</Text>
-                    <Text style={styles.storyPipelineLbl}>Stress Caught</Text>
+                    <Text style={styles.storyPipelineNum}>{totalJournals}</Text>
+                    <Text style={styles.storyPipelineLbl}>Journals</Text>
                   </View>
 
                   <Ionicons name="arrow-forward" size={16} color="rgba(255,255,255,0.4)" />
@@ -633,8 +677,8 @@ export default function WeeklyRecapScreen() {
                     <View style={[styles.storyPipelineIconWrap, { backgroundColor: "rgba(245, 158, 11, 0.2)" }]}>
                       <Ionicons name="chatbubbles" size={24} color="#F59E0B" />
                     </View>
-                    <Text style={styles.storyPipelineNum}>{interventionsOffered}</Text>
-                    <Text style={styles.storyPipelineLbl}>Muni Resets</Text>
+                    <Text style={styles.storyPipelineNum}>{mindfulResetsCount}</Text>
+                    <Text style={styles.storyPipelineLbl}>Gentle Resets</Text>
                   </View>
 
                   <Ionicons name="arrow-forward" size={16} color="rgba(255,255,255,0.4)" />
@@ -643,17 +687,17 @@ export default function WeeklyRecapScreen() {
                     <View style={[styles.storyPipelineIconWrap, { backgroundColor: "rgba(34, 197, 94, 0.2)" }]}>
                       <Ionicons name="checkmark-circle" size={24} color="#22C55E" />
                     </View>
-                    <Text style={styles.storyPipelineNum}>{copingActionRate}%</Text>
-                    <Text style={styles.storyPipelineLbl}>Action Rate</Text>
+                    <Text style={styles.storyPipelineNum}>{daysWithCheckIn}</Text>
+                    <Text style={styles.storyPipelineLbl}>Days Paused</Text>
                   </View>
                 </View>
 
                 <View style={[styles.storyMuniSpeechCard, { backgroundColor: currentTheme.cardBg, borderColor: currentTheme.cardBorder }]}>
                   <Animated.View style={{ transform: [{ translateY: floatAnim }] }}><MuniAvatar style={styles.storyMuniAvatar} /></Animated.View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.storyMuniSpeechTitle}>Muni Observed:</Text>
+                    <Text style={styles.storyMuniSpeechTitle}>Muni's Note:</Text>
                     <Text style={styles.storyMuniSpeechBody}>
-                      "You didn't bottle up your overwhelm. You accepted the diaphragmatic breathing reset and gave yourself space to breathe."
+                      "You didn't have to carry everything all on your own. Taking even one deep breath or writing one honest sentence is an act of care."
                     </Text>
                   </View>
                 </View>
@@ -665,39 +709,39 @@ export default function WeeklyRecapScreen() {
               </View>
             )}
 
-            {/* CARD 3: COGNITIVE OFFLOAD & WRITTEN VOLUME */}
+            {/* CARD 3: UNPACKING THOUGHTS & WRITTEN VOLUME */}
             {storyCardIndex === 3 && (
               <View style={styles.storyCardInner}>
                 <View style={[styles.storyBadge, { backgroundColor: currentTheme.badgeBg }]}>
-                  <Text style={[styles.storyBadgeText, { color: currentTheme.badgeText }]}>COGNITIVE OFFLOAD</Text>
+                  <Text style={[styles.storyBadgeText, { color: currentTheme.badgeText }]}>UNPACKING THOUGHTS</Text>
                 </View>
-                <Text style={styles.storyHeroTitle}>You cleared mental RAM before studying.</Text>
+                <Text style={styles.storyHeroTitle}>Giving words to how you feel.</Text>
                 <Text style={[styles.storyHeroSubtitle, { color: currentTheme.subColor }]}>
-                  Journaling heavy thoughts directly prevented academic brain fog.
+                  Writing thoughts down helps untangle what feels crowded inside.
                 </Text>
 
                 <View style={styles.storyBigStatHero}>
-                  <Text style={styles.storyBigNumber}>~1,450</Text>
-                  <Text style={styles.storyBigNumberSub}>Words Untangled in Journals</Text>
+                  <Text style={styles.storyBigNumber}>{totalJournals}</Text>
+                  <Text style={styles.storyBigNumberSub}>Journal Entries Shared</Text>
                 </View>
 
                 <View style={styles.storyTagsSection}>
-                  <Text style={styles.storyTagsTitle}>Top Pressure Drivers Articulated:</Text>
+                  <Text style={styles.storyTagsTitle}>Themes You Explored:</Text>
                   <View style={styles.storyTagsRow}>
                     <View style={styles.storyTagChip}>
-                      <Text style={styles.storyTagChipText}>#Deadlines (45%)</Text>
+                      <Text style={styles.storyTagChipText}>#StudentLife</Text>
                     </View>
                     <View style={styles.storyTagChip}>
-                      <Text style={styles.storyTagChipText}>#ThesisPrep (35%)</Text>
+                      <Text style={styles.storyTagChipText}>#QuietMoments</Text>
                     </View>
                     <View style={styles.storyTagChip}>
-                      <Text style={styles.storyTagChipText}>#ExamAnxiety (20%)</Text>
+                      <Text style={styles.storyTagChipText}>#SmallWins</Text>
                     </View>
                   </View>
                 </View>
 
                 <Text style={styles.storyCardBodyQuote}>
-                  "Putting thoughts into words frees up working memory for deep study and focused exam retention."
+                  "Putting your feelings into words takes vulnerability. There are no right or wrong words here."
                 </Text>
 
                 <View style={styles.storyTapPrompt}>
@@ -711,38 +755,46 @@ export default function WeeklyRecapScreen() {
             {storyCardIndex === 4 && (
               <View style={styles.storyCardInner}>
                 <View style={[styles.storyBadge, { backgroundColor: currentTheme.badgeBg }]}>
-                  <Text style={[styles.storyBadgeText, { color: currentTheme.badgeText }]}>ACTIVE RECOVERY</Text>
+                  <Text style={[styles.storyBadgeText, { color: currentTheme.badgeText }]}>TALA CONSTELLATION</Text>
                 </View>
-                <Text style={styles.storyHeroTitle}>Recovery is a productivity skill.</Text>
+                <Text style={styles.storyHeroTitle}>Your Constellation Grew Bright</Text>
                 <Text style={[styles.storyHeroSubtitle, { color: currentTheme.subColor }]}>
-                  Instead of passive screen fatigue, you chose intentional neural rest.
+                  Every time you paused, read, or checked in, a star lit up.
                 </Text>
+
+                <Animated.View style={[styles.storyScoreGlowWrap, { transform: [{ translateY: floatAnim }] }]}>
+                  <View style={styles.talaScoreCircle}>
+                    <Image source={TALA_IMAGE} style={styles.talaScoreStar} resizeMode="contain" />
+                    <Text style={styles.talaScoreNumber}>+{weeklyTalaStars}</Text>
+                    <Text style={styles.talaScoreLabel}>Tala Earned</Text>
+                  </View>
+                </Animated.View>
 
                 <View style={styles.storyRestDuoGrid}>
                   <View style={styles.storyRestDuoCard}>
-                    <Ionicons name="book" size={24} color="#60A5FA" />
-                    <Text style={styles.storyRestDuoVal}>{libraryReadCount} Guides</Text>
-                    <Text style={styles.storyRestDuoLbl}>Library Reading</Text>
-                    <Text style={styles.storyRestDuoDesc}>Overcoming Procrastination</Text>
+                    <Ionicons name="sunny" size={22} color="#FBBF24" />
+                    <Text style={styles.storyRestDuoVal}>+{daysWithCheckIn * 20} Tala</Text>
+                    <Text style={styles.storyRestDuoLbl}>Daily Check-ins</Text>
+                    <Text style={styles.storyRestDuoDesc}>{daysWithCheckIn === 1 ? "1 day showing up" : (daysWithCheckIn + " days showing up")}</Text>
                   </View>
 
                   <View style={styles.storyRestDuoCard}>
-                    <Ionicons name="leaf" size={24} color="#4ADE80" />
-                    <Text style={styles.storyRestDuoVal}>28 Mins</Text>
-                    <Text style={styles.storyRestDuoLbl}>Mindful Resets</Text>
-                    <Text style={styles.storyRestDuoDesc}>Breathwork & Grounding</Text>
+                    <Ionicons name="book" size={22} color="#60A5FA" />
+                    <Text style={styles.storyRestDuoVal}>+{libraryReadCount * 25} Tala</Text>
+                    <Text style={styles.storyRestDuoLbl}>Wellness Library</Text>
+                    <Text style={styles.storyRestDuoDesc}>{libraryReadCount === 1 ? "1 guide explored" : (libraryReadCount + " guides explored")}</Text>
                   </View>
                 </View>
 
                 <View style={styles.storyBrainGamesBanner}>
-                  <Ionicons name="game-controller-outline" size={20} color="#FBBF24" />
+                  <Ionicons name="sparkles" size={18} color="#FACC15" />
                   <Text style={styles.storyBrainGamesText}>
-                    4 Cognitive Re-centering Games played to sharpen working memory
+                    Stars in Bawat Tala are never lost. They remind you of moments you chose gentleness over rushing.
                   </Text>
                 </View>
 
                 <View style={styles.storyTapPrompt}>
-                  <Text style={styles.storyTapPromptText}>Tap for your finale summary</Text>
+                  <Ionicons name="chevron-back" size={12} color="rgba(255,255,255,0.45)" style={{ marginRight: 4 }} /><Text style={styles.storyTapPromptText}>Back  •  Tap right for a letter from Muni</Text>
                   <Ionicons name="chevron-forward" size={14} color="#A7E892" />
                 </View>
               </View>
@@ -786,7 +838,7 @@ export default function WeeklyRecapScreen() {
                   </Text>
                 </Pressable>
                 <View style={styles.storyTapPrompt}>
-                  <Text style={styles.storyTapPromptText}>Tap to reveal your finale constellation</Text>
+                  <Ionicons name="chevron-back" size={12} color="rgba(255,255,255,0.45)" style={{ marginRight: 4 }} /><Text style={styles.storyTapPromptText}>Back  •  Tap right to reveal your finale</Text>
                   <Ionicons name="chevron-forward" size={14} color="#A7E892" />
                 </View>
               </View>
@@ -807,57 +859,83 @@ export default function WeeklyRecapScreen() {
                   </View>
 
                   <View style={styles.storyFinaleScoreRow}>
-                    <Text style={[styles.storyFinaleScoreBig, { color: currentTheme.accentColor }]}>{resilienceScore}%</Text>
-                    <View>
-                      <Text style={styles.storyFinaleScoreLbl}>Weekly Resilience</Text>
-                      <Text style={styles.storyFinaleScoreSub}>Balanced Scholar</Text>
+                    <View style={styles.storyFinaleScoreBadge}>
+                      <Text style={[styles.storyFinaleScoreBig, { color: currentTheme.accentColor }]}>{daysWithCheckIn}/7</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.storyFinaleScoreLbl}>Days Under The Stars</Text>
+                      <Text style={[styles.storyFinaleScoreSub, { color: currentTheme.subColor }]}>A week of honoring your rhythm</Text>
                     </View>
                   </View>
 
                   <View style={styles.storyFinaleStatsRow}>
                     <View style={styles.storyFinaleStat}>
+                      <Ionicons name="book-outline" size={13} color="#93C5FD" style={{ marginBottom: 2 }} />
                       <Text style={styles.storyFinaleStatVal}>{totalJournals}</Text>
                       <Text style={styles.storyFinaleStatLbl}>Journals</Text>
                     </View>
+                    <View style={styles.storyFinaleStatDivider} />
                     <View style={styles.storyFinaleStat}>
-                      <Text style={styles.storyFinaleStatVal}>{copingActionRate}%</Text>
-                      <Text style={styles.storyFinaleStatLbl}>Coping</Text>
+                      <Ionicons name="sunny-outline" size={13} color="#FDE047" style={{ marginBottom: 2 }} />
+                      <Text style={styles.storyFinaleStatVal}>{daysWithCheckIn}</Text>
+                      <Text style={styles.storyFinaleStatLbl}>Check-Ins</Text>
                     </View>
+                    <View style={styles.storyFinaleStatDivider} />
                     <View style={styles.storyFinaleStat}>
-                      <Text style={styles.storyFinaleStatVal}>28m</Text>
-                      <Text style={styles.storyFinaleStatLbl}>Rest Time</Text>
+                      <Image source={TALA_IMAGE} style={{ width: 13, height: 13, marginBottom: 2 }} resizeMode="contain" />
+                      <Text style={styles.storyFinaleStatVal}>+{weeklyTalaStars}</Text>
+                      <Text style={styles.storyFinaleStatLbl}>Tala Earned</Text>
                     </View>
                   </View>
 
-                  <Text style={styles.storyFinaleQuote}>
-                    "True productivity isn't working until you burn out—it is protecting your peace so you can shine bright."
-                  </Text>
+                  <View style={styles.storyFinaleQuoteBox}>
+                    <Ionicons name="heart" size={11} color="#F472B6" style={{ marginTop: 2, marginRight: 6 }} />
+                    <Text style={styles.storyFinaleQuote}>
+                      &ldquo;True productivity isn&apos;t working until burnout—it is protecting your peace so you can shine bright.&rdquo;
+                    </Text>
+                  </View>
                 </View>
 
                 {/* Final Interactive Action Buttons */}
                 <View style={styles.storyFinaleActions}>
                   <Pressable style={[styles.storyShareButton, { backgroundColor: currentTheme.accentColor }]} onPress={handleShare}>
-                    <Ionicons name="share-social" size={18} color="#FFFFFF" />
+                    <Ionicons name="share-social" size={17} color="#FFFFFF" />
                     <Text style={styles.storyShareButtonText}>Share My Constellation</Text>
                   </Pressable>
 
                   <Pressable style={styles.storyLedgerButton} onPress={finishStoryAndOpenLedger}>
-                    <Ionicons name="reader-outline" size={18} color="#166534" />
-                    <Text style={styles.storyLedgerButtonText}>Open Full Data Ledger</Text>
+                    <Ionicons name="reader-outline" size={17} color="#E9D5FF" />
+                    <Text style={styles.storyLedgerButtonText}>View Weekly Summary</Text>
                   </Pressable>
                 </View>
               </View>
             )}
           </Animated.View>
-        </Pressable>
 
-        {/* Floating Quick Action: Switch directly to Ledger */}
-        <View style={styles.storyBottomBar}>
-          <Pressable style={styles.storySwitchLink} onPress={finishStoryAndOpenLedger}>
-            <Ionicons name="list" size={14} color="#A7E892" />
-            <Text style={styles.storySwitchLinkText}>View Full Ledger Page</Text>
-          </Pressable>
+          {/* Left Tap Zone: Go back to previous card */}
+          <Pressable
+            style={styles.storyNavTapLeft}
+            onPress={() => changeCard(storyCardIndex - 1)}
+            accessibilityLabel="Previous Card"
+          />
+
+          {/* Right Tap Zone: Advance to next card */}
+          <Pressable
+            style={styles.storyNavTapRight}
+            onPress={() => changeCard(storyCardIndex + 1)}
+            accessibilityLabel="Next Card"
+          />
         </View>
+
+        {/* Floating Quick Action: Switch directly to Ledger (omitted on finale card where action button is already present) */}
+        {storyCardIndex !== 6 && (
+          <View style={styles.storyBottomBar}>
+            <Pressable style={styles.storySwitchLink} onPress={finishStoryAndOpenLedger}>
+              <Ionicons name="list" size={14} color="#A7E892" />
+              <Text style={styles.storySwitchLinkText}>View Weekly Summary</Text>
+            </Pressable>
+          </View>
+        )}
       </SafeAreaView>
     );
   }
@@ -921,17 +999,17 @@ export default function WeeklyRecapScreen() {
           <View style={styles.heroBackgroundGlow} />
           <View style={styles.heroTopRow}>
             <View style={styles.heroScoreCircle}>
-              <Text style={styles.heroScoreNumber}>{resilienceScore}%</Text>
+              <Text style={styles.heroScoreNumber}>{daysWithCheckIn}/7</Text>
               <Text style={styles.heroScoreLabel}>Resilience</Text>
             </View>
             <View style={styles.heroTextWrap}>
               <View style={styles.statusPill}>
                 <Ionicons name="shield-checkmark" size={12} color="#2F6F25" />
-                <Text style={styles.statusPillText}>Balanced Achiever</Text>
+                <Text style={styles.statusPillText}>A Gentle Pace</Text>
               </View>
               <Text style={styles.heroHeadline}>Your Mind Stayed in Rhythm</Text>
               <Text style={styles.heroBody}>
-                You faced 3 high-intensity study blocks this week and proactively reset your focus before burnout could settle.
+                You checked in {daysWithCheckIn} out of 7 days this week. Showing up for your feelings, even for a moment, is enough.
               </Text>
             </View>
           </View>
@@ -948,8 +1026,8 @@ export default function WeeklyRecapScreen() {
             </View>
             <View style={styles.heroStatDivider} />
             <View style={styles.heroStatItem}>
-              <Text style={styles.heroStatVal}>{copingActionRate}%</Text>
-              <Text style={styles.heroStatLbl} numberOfLines={1}>Coping Rate</Text>
+              <Text style={styles.heroStatVal}>{mindfulResetsCount}</Text>
+              <Text style={styles.heroStatLbl} numberOfLines={1}>Pauses</Text>
             </View>
             <View style={styles.heroStatDivider} />
             <View style={styles.heroStatItem}>
@@ -980,6 +1058,16 @@ export default function WeeklyRecapScreen() {
                 <View style={[styles.graphLegendDot, { backgroundColor: "#16A34A" }]} />
                 <Text style={styles.graphLegendText}>Thriving</Text>
               </View>
+            {/* Feelings You Made Space For (Emotional Palette) */}
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginHorizontal: 12, marginBottom: 12 }}>
+              {emotionPalette.map((item) => (
+                <View key={item.id} style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#F7FAF5", borderWidth: 1, borderColor: item.meta.color + "66", borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4, gap: 5 }}>
+                  <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: item.meta.color }} />
+                  <Text style={{ fontSize: 11, fontFamily: "Outfit-Bold", color: "#2A3E31" }}>{item.meta.label}</Text>
+                  <Text style={{ fontSize: 10, fontFamily: "Outfit-Medium", color: "#6A7B70" }}>({item.count}d)</Text>
+                </View>
+              ))}
+            </View>
               <View style={styles.graphLegendItem}>
                 <View style={[styles.graphLegendDot, { backgroundColor: "#D97706" }]} />
                 <Text style={styles.graphLegendText}>Steady/Calm</Text>
@@ -1149,7 +1237,7 @@ export default function WeeklyRecapScreen() {
           ) : null}
         </View>
 
-        {/* Panel Feature: Muni Proactive Interventions (The Coping Ledger) */}
+        {/* Panel Feature: Muni Proactive Interventions (The Pauses Ledger) */}
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
             <View style={[styles.sectionHeaderIconWrap, { backgroundColor: "#FEF3C7" }]}>
@@ -1158,7 +1246,7 @@ export default function WeeklyRecapScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.sectionTitle}>Muni's Proactive Interventions</Text>
               <Text style={styles.sectionSubtitle}>
-                Real-time stress detection & immediate coping follow-through
+                Gentle steps taken whenever thoughts needed space
               </Text>
             </View>
           </View>
@@ -1197,9 +1285,9 @@ export default function WeeklyRecapScreen() {
             <View style={styles.interventionCallout}>
               <MuniAvatar style={styles.interventionMuniAvatar} />
               <View style={styles.interventionCalloutCopy}>
-                <Text style={styles.interventionCalloutTitle}>Muni's Clinical Observation</Text>
+                <Text style={styles.interventionCalloutTitle}>Muni's Reflection</Text>
                 <Text style={styles.interventionCalloutBody}>
-                  "When academic deadlines triggered anxiety on Wednesday night, you didn't suppress it. You engaged in a 5-minute diaphragmatic breathing session, restoring mental focus within 90 minutes."
+                  "You don't need to be evaluated or measured on how well you handle stress. Showing up and letting yourself feel is already more than enough."
                 </Text>
               </View>
             </View>
@@ -1210,20 +1298,17 @@ export default function WeeklyRecapScreen() {
         <View style={styles.pillarsGrid}>
           <View style={styles.pillarCard}>
             <View style={styles.pillarHeader}>
-              <Ionicons name="create-outline" size={18} color="#4F8A38" />
-              <Text style={styles.pillarTitle}>Cognitive Offload</Text>
+              <Image source={TALA_IMAGE} style={{ width: 16, height: 16 }} resizeMode="contain" />
+              <Text style={styles.pillarTitle}>Tala Constellation</Text>
             </View>
-            <Text style={styles.pillarBigVal}>{totalJournals} Sessions</Text>
-            <Text style={styles.pillarSub}>~1,450 words untangled</Text>
+            <Text style={styles.pillarBigVal}>+{weeklyTalaStars} Tala</Text>
+            <Text style={styles.pillarSub}>Stars gathered this week</Text>
             <View style={styles.tagWrap}>
-              <View style={styles.pillarChip}>
-                <Text style={styles.pillarChipText}>#Deadlines</Text>
+              <View style={[styles.pillarChip, { backgroundColor: "#FEF9C3" }]}>
+                <Text style={[styles.pillarChipText, { color: "#854D0E" }]}>+{daysWithCheckIn * 20} Check-ins</Text>
               </View>
-              <View style={styles.pillarChip}>
-                <Text style={styles.pillarChipText}>#Thesis</Text>
-              </View>
-              <View style={styles.pillarChip}>
-                <Text style={styles.pillarChipText}>#Exams</Text>
+              <View style={[styles.pillarChip, { backgroundColor: "#FEF9C3" }]}>
+                <Text style={[styles.pillarChipText, { color: "#854D0E" }]}>+{totalJournals * 15} Journals</Text>
               </View>
             </View>
           </View>
@@ -1345,8 +1430,8 @@ export default function WeeklyRecapScreen() {
               </View>
 
               <View style={styles.shareScoreWrap}>
-                <Text style={styles.shareScoreVal}>{resilienceScore}%</Text>
-                <Text style={styles.shareScoreDesc}>Weekly Student Resilience Index</Text>
+                <Text style={styles.shareScoreVal}>{daysWithCheckIn}/7</Text>
+                <Text style={styles.shareScoreDesc}>Weekly Student Days You Paused</Text>
               </View>
 
               <View style={styles.shareGrid}>
@@ -1355,8 +1440,8 @@ export default function WeeklyRecapScreen() {
                   <Text style={styles.shareGridLbl}>Journals</Text>
                 </View>
                 <View style={styles.shareGridItem}>
-                  <Text style={styles.shareGridVal}>{copingActionRate}%</Text>
-                  <Text style={styles.shareGridLbl}>Coping</Text>
+                  <Text style={styles.shareGridVal}>{mindfulResetsCount}</Text>
+                  <Text style={styles.shareGridLbl}>Pauses</Text>
                 </View>
                 <View style={styles.shareGridItem}>
                   <Text style={styles.shareGridVal}>28m</Text>
@@ -1365,7 +1450,7 @@ export default function WeeklyRecapScreen() {
               </View>
 
               <Text style={styles.shareMuniQuote}>
-                "Balancing study ambition with gentle inner peace."
+                "Every step you take to pause and care for yourself matters."
               </Text>
             </View>
 
@@ -1506,6 +1591,54 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "rgba(115, 205, 68, 0.08)",
   },
+  talaScoreCircle: {
+    width: 134,
+    height: 134,
+    borderRadius: 67,
+    backgroundColor: "rgba(250, 204, 21, 0.12)",
+    borderWidth: 3.5,
+    borderColor: "#FACC15",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+  },
+  talaScoreStar: {
+    width: 38,
+    height: 38,
+    marginBottom: 2,
+  },
+  talaScoreNumber: {
+    fontSize: 28,
+    lineHeight: 32,
+    fontFamily: "Outfit-Bold",
+    color: "#FDE047",
+  },
+  talaScoreLabel: {
+    fontSize: 10,
+    fontFamily: "Outfit-Bold",
+    color: "#FEF08A",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginTop: 2,
+    textAlign: "center",
+  },
+  storyNavTapLeft: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: "35%",
+    zIndex: 10,
+  },
+  storyNavTapRight: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: "65%",
+    zIndex: 10,
+  },
   storyScoreCircle: {
     width: 116,
     height: 116,
@@ -1572,6 +1705,40 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.12)",
     marginBottom: 16,
+  },
+  storyPaletteRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    columnGap: 8,
+    rowGap: 8,
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  storyPaletteChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    columnGap: 6,
+  },
+  storyPaletteDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  storyPaletteLabel: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontFamily: "Outfit-Bold",
+  },
+  storyPaletteCount: {
+    color: "rgba(255, 255, 255, 0.75)",
+    fontSize: 11,
+    fontFamily: "Outfit-Medium",
   },
   storyHighlightCard: {
     flexDirection: "row",
@@ -1817,6 +1984,7 @@ const styles = StyleSheet.create({
     color: "#FDE047",
   },
   storyNextWeekSeedBox: {
+    zIndex: 25,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
@@ -1867,10 +2035,10 @@ const styles = StyleSheet.create({
     height: 22,
   },
   storyFinaleBrand: {
-    fontSize: 10,
+    fontSize: 10.5,
     fontFamily: "Outfit-Bold",
-    color: "#A7E892",
-    letterSpacing: 1.2,
+    color: "#E9D5FF",
+    letterSpacing: 1.4,
   },
   storyFinaleScoreRow: {
     flexDirection: "row",
@@ -1878,52 +2046,88 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 14,
   },
+  storyFinaleScoreBadge: {
+    backgroundColor: "rgba(168, 85, 247, 0.18)",
+    borderWidth: 1.5,
+    borderColor: "rgba(168, 85, 247, 0.45)",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   storyFinaleScoreBig: {
-    fontSize: 40,
+    fontSize: 32,
+    lineHeight: 36,
     fontFamily: "Outfit-Bold",
-    color: "#FACC15",
+    color: "#C084FC",
   },
   storyFinaleScoreLbl: {
-    fontSize: 12,
+    fontSize: 15,
     fontFamily: "Outfit-Bold",
     color: "#FFFFFF",
+    letterSpacing: 0.2,
   },
   storyFinaleScoreSub: {
-    fontSize: 11,
-    fontFamily: "Outfit",
-    color: "#A7E892",
+    fontSize: 12,
+    fontFamily: "Outfit-Medium",
+    color: "#DDD6FE",
+    marginTop: 2,
   },
   storyFinaleStatsRow: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
     backgroundColor: "rgba(255, 255, 255, 0.08)",
-    borderRadius: 12,
-    padding: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
     marginBottom: 12,
   },
   storyFinaleStat: {
     alignItems: "center",
     flex: 1,
   },
+  storyFinaleStatDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: "rgba(255, 255, 255, 0.14)",
+  },
   storyFinaleStatVal: {
     fontSize: 16,
+    lineHeight: 20,
     fontFamily: "Outfit-Bold",
     color: "#FFFFFF",
   },
   storyFinaleStatLbl: {
-    fontSize: 9,
-    fontFamily: "Outfit",
-    color: "#C5E6CE",
+    fontSize: 10,
+    fontFamily: "Outfit-Medium",
+    color: "#E9D5FF",
+    marginTop: 2,
+  },
+  storyFinaleQuoteBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   storyFinaleQuote: {
-    fontSize: 11,
-    lineHeight: 15,
+    flex: 1,
+    fontSize: 11.5,
+    lineHeight: 16,
     fontFamily: "Outfit",
     fontStyle: "italic",
-    color: "#E2F0E6",
-    textAlign: "center",
+    color: "#F3E8FF",
+    textAlign: "left",
   },
   storyFinaleActions: {
+    zIndex: 25,
     width: "100%",
     gap: 10,
   },
@@ -1942,9 +2146,11 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
   storyLedgerButton: {
-    backgroundColor: "#D9F99D",
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
     borderRadius: 14,
     height: 44,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.22)",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -1953,7 +2159,7 @@ const styles = StyleSheet.create({
   storyLedgerButtonText: {
     fontSize: 14,
     fontFamily: "Outfit-Bold",
-    color: "#166534",
+    color: "#FFFFFF",
   },
   storyBottomBar: {
     paddingVertical: 12,

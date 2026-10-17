@@ -6,7 +6,8 @@ import {
   StyleProp,
   StyleSheet,
   View,
-  ViewStyle } from "react-native";
+  ViewStyle,
+} from "react-native";
 
 type AuthCardLayoutProps = PropsWithChildren<{
   contentContainerStyle?: StyleProp<ViewStyle>;
@@ -18,9 +19,14 @@ export function AuthCardLayout({
   children,
   contentContainerStyle,
   cardStyle,
-  centerContent = true }: AuthCardLayoutProps) {
+  centerContent = true,
+}: AuthCardLayoutProps) {
   return (
-    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}>
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+    >
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -39,14 +45,19 @@ export function AuthCardLayout({
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#FFFFFF" },
+    backgroundColor: "#F8FFF8",
+  },
   content: {
     flexGrow: 1,
-    paddingHorizontal: 26,
-    paddingVertical: 28 },
+    paddingHorizontal: 22,
+    paddingVertical: 24,
+  },
   centeredContent: {
-    justifyContent: "center" },
+    justifyContent: "center",
+  },
   card: {
     width: "100%",
-    maxWidth: 320,
-    alignSelf: "center" } });
+    maxWidth: 360,
+    alignSelf: "center",
+  },
+});

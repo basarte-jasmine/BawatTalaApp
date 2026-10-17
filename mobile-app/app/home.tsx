@@ -414,11 +414,22 @@ export default function HomeScreen() {
   }, [isSyncing, refreshKey, user?.studentNumber]);
   const { height, width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const { consultConfirmed, appointmentId, appointmentNoticeTitle, welcome } = useLocalSearchParams<{
+  const {
+    consultConfirmed,
+    appointmentId,
+    appointmentNoticeTitle,
+    welcome,
+    reconnect,
+    rhythm,
+    focus,
+  } = useLocalSearchParams<{
     consultConfirmed?: string;
     appointmentId?: string;
     appointmentNoticeTitle?: string;
     welcome?: string;
+    reconnect?: string;
+    rhythm?: string;
+    focus?: string;
   }>();
   const compact = height < 760;
   const tiny = height < 680;
