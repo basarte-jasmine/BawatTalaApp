@@ -1,20 +1,17 @@
-import { Ionicons } from "@expo/vector-icons";
-import { VideoView, useVideoPlayer } from "expo-video";
-import { useFocusEffect } from "@react-navigation/native";
+﻿import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useCallback, useEffect, useState, type ComponentProps } from "react";
 import {
-  BackHandler,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
-  useWindowDimensions } from "react-native";
+  useWindowDimensions,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuthSession } from "../lib/auth-session";
 import { unlockAchievement } from "../lib/achievements";
-import { ConfirmationModal } from "../components/ui/ConfirmationModal";
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
 
@@ -24,137 +21,94 @@ type SenseMoment = {
   icon: IoniconName;
   note: string;
   sense: string;
+  hint: string;
 };
-
-const MEDITATION_VIDEO = require("../assets/videos/The 5-4-3-2-1 Grounding Exercise to Manage Anxiety.mp4");
 
 const SENSE_MOMENTS: SenseMoment[] = [
   {
     count: "5",
     sense: "See",
     note: "Notice five steady details around you.",
+    hint: "Look for colors, textures, shadows, or small objects in your space.",
     icon: "eye-outline",
-    accent: "#60B8C6" },
+    accent: "#60B8C6",
+  },
   {
     count: "4",
     sense: "Feel",
-    note: "Let four points of contact bring you back.",
+    note: "Let four points of physical contact bring you back.",
+    hint: "Notice your feet on the floor, your back against the chair, or the fabric of your clothes.",
     icon: "hand-left-outline",
-    accent: "#72A66A" },
+    accent: "#72A66A",
+  },
   {
     count: "3",
     sense: "Hear",
     note: "Listen for three layers of sound.",
+    hint: "Notice distant room hums, birds outside, or the quiet sound of your own breath.",
     icon: "ear-outline",
-    accent: "#7B8FC7" },
+    accent: "#7B8FC7",
+  },
   {
     count: "2",
     sense: "Smell",
-    note: "Find two scents, or simply notice the air.",
+    note: "Find two scents, or simply notice the cool air.",
+    hint: "A sip of coffee, freshly washed shirt, or the ambient scent of the room.",
     icon: "flower-outline",
-    accent: "#B98966" },
+    accent: "#B98966",
+  },
   {
     count: "1",
     sense: "Taste",
-    note: "End with one taste, sip, or slow breath.",
+    note: "End with one taste, sip of water, or slow conscious breath.",
+    hint: "Take a gentle sip of water, notice a lingering mint, or take one deep exhale.",
     icon: "cafe-outline",
-    accent: "#C77F90" },
+    accent: "#C77F90",
+  },
 ];
 
 const MEDITATION_CUES = [
-  "Settle your shoulders before you press play.",
-  "Let the video carry the counting for you.",
-  "Pause anytime and come back when your body feels ready.",
+  "Settle your shoulders and un-clench your jaw before you start.",
+  "Take your time with each sense—there is zero rush.",
+  "If your mind wanders, gently guide it back to the next sense.",
 ];
 
 export default function WellnessGroundingScreen() {
   const { user } = useAuthSession();
-  useEffect(() => { const timer = setTimeout(() => { if (user?.studentNumber) unlockAchievement("a-softer-minute", user.studentNumber); }, 5000); return () => clearTimeout(timer); }, [user?.studentNumber]);
-  const { width } = useWindowDimensions();
-  const compact = width < 390;
-  const narrow = width < 350;
-  const [videoReady, setVideoReady] = useState(false);
-  const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
-
-  const meditationPlayer = useVideoPlayer(MEDITATION_VIDEO, (player) => {
-    player.loop = false;
-    player.volume = 1;
-    player.audioMixingMode = "doNotMix";
-  });
-
-  const safePause = useCallback(() => {
-    try {
-      if (meditationPlayer && typeof meditationPlayer.pause === "function") {
-        meditationPlayer.pause();
-      }
-    } catch {}
-  }, [meditationPlayer]);
+  const [activeStep, setActiveStep] = useState<number>(0);
+  const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
 
   useEffect(() => {
-    const loadingFallback = setTimeout(() => {
-      setVideoReady(true);
-    }, 1400);
-
-    return () => {
-      clearTimeout(loadingFallback);
-      safePause();
-    };
-  }, [safePause]);
-
-  const doExit = useCallback(() => {
-    safePause();
-    try {
-      if (router.canGoBack()) {
-        router.back();
-        return;
+    const timer = setTimeout(() => {
+      if (user?.studentNumber) {
+        unlockAchievement("a-softer-minute", user.studentNumber);
       }
-    } catch {}
-    try {
-      router.replace("/wellness-tools");
-    } catch {}
-  }, [safePause]);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [user?.studentNumber]);
 
-  const handleBack = useCallback(() => {
-    if (showExitConfirmModal) {
-      setShowExitConfirmModal(false);
-      return;
-    }
-    const isPlaying = Boolean(meditationPlayer?.playing);
-    if (isPlaying) {
-      safePause();
-      setShowExitConfirmModal(true);
-      return;
-    }
-    doExit();
-  }, [doExit, meditationPlayer?.playing, safePause, showExitConfirmModal]);
+  const { width } = useWindowDimensions();
+  const compact = width < 390;
 
-  const handleCancelExit = () => {
-    setShowExitConfirmModal(false);
-    try {
-      meditationPlayer?.play();
-    } catch {}
+  const handleStepPress = (idx: number) => {
+    setActiveStep(idx);
+    setCompletedSteps((prev) => {
+      const next = new Set(prev);
+      next.add(idx);
+      return next;
+    });
   };
 
-  const handleConfirmExit = () => {
-    setShowExitConfirmModal(false);
-    doExit();
-  };
-
-  useFocusEffect(
-    useCallback(() => {
-      const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
-        handleBack();
-        return true;
-      });
-
-      return () => subscription.remove();
-    }, [handleBack]),
-  );
+  const currentSense = SENSE_MOMENTS[activeStep] || SENSE_MOMENTS[0];
 
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <View style={styles.topBar}>
-        <Pressable style={styles.backButton} accessibilityLabel="Go back" onPress={handleBack}>
+        <Pressable
+          style={styles.backButton}
+          accessibilityLabel="Go back"
+          onPress={() => router.back()}
+        >
           <Ionicons name="chevron-back" size={28} color="#37424F" />
         </Pressable>
         <Text style={styles.topTitle}>Wellness Tools</Text>
@@ -167,11 +121,12 @@ export default function WellnessGroundingScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.contentFrame}>
+          {/* Hero Header */}
           <View style={[styles.heroCard, compact && styles.heroCardCompact]}>
             <View style={styles.heroTopRow}>
               <View style={styles.heroBadge}>
-                <Ionicons name="play-circle-outline" size={16} color="#2E6B74" />
-                <Text style={styles.heroBadgeText}>Video-led reset</Text>
+                <Ionicons name="leaf-outline" size={16} color="#2E6B74" />
+                <Text style={styles.heroBadgeText}>Sensory Reset</Text>
               </View>
               <View style={styles.heroTimePill}>
                 <Ionicons name="sparkles-outline" size={14} color="#58646E" />
@@ -180,77 +135,109 @@ export default function WellnessGroundingScreen() {
             </View>
 
             <Text style={[styles.heroTitle, compact && styles.heroTitleCompact]}>
-              5-4-3-2-1 Grounding Meditation
+              5-4-3-2-1 Grounding Practice
             </Text>
             <Text style={[styles.heroDescription, compact && styles.heroDescriptionCompact]}>
-              A gentle guided video for naming what is around you, slowing anxious thoughts, and returning to the present moment.
+              A gentle self-guided practice for naming what is around you, slowing anxious thoughts, and returning to the present moment.
             </Text>
 
-            <View style={styles.videoFrame}>
-              <VideoView
-                player={meditationPlayer}
-                style={styles.video}
-                nativeControls
-                contentFit="contain"
-                fullscreenOptions={{ enable: true }}
-                playsInline
-                onFirstFrameRender={() => setVideoReady(true)}
-              />
-              {!videoReady ? (
-                <View pointerEvents="none" style={styles.videoLoadingOverlay}>
-                  <View style={styles.videoLoadingIcon}>
-                    <Ionicons name="play" size={22} color="#FFFFFF" />
-                  </View>
-                  <Text style={styles.videoLoadingText}>Loading meditation video</Text>
+            {/* Active Sense Showcase Card */}
+            <View style={[styles.activeSenseCard, { borderColor: currentSense.accent + "55" }]}>
+              <View style={styles.activeSenseHeader}>
+                <View style={[styles.activeSenseCountBadge, { backgroundColor: currentSense.accent + "22", borderColor: currentSense.accent }]}>
+                  <Text style={[styles.activeSenseCountText, { color: currentSense.accent }]}>{currentSense.count}</Text>
                 </View>
-              ) : null}
-            </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.activeSenseLabel}>Things to {currentSense.sense}</Text>
+                  <Text style={styles.activeSenseNote}>{currentSense.note}</Text>
+                </View>
+                <Ionicons name={currentSense.icon} size={28} color={currentSense.accent} />
+              </View>
 
-            <View style={[styles.videoMetaRow, narrow && styles.videoMetaRowStacked]}>
-              <View style={styles.videoMetaItem}>
-                <Ionicons name="videocam-outline" size={16} color="#356B73" />
-                <Text style={styles.videoMetaText}>Guided exercise</Text>
+              <View style={styles.activeSenseHintBox}>
+                <Ionicons name="bulb-outline" size={15} color="#5B7065" style={{ marginTop: 2, marginRight: 6 }} />
+                <Text style={styles.activeSenseHintText}>{currentSense.hint}</Text>
               </View>
-              <View style={styles.videoMetaItem}>
-                <Ionicons name="heart-outline" size={16} color="#6C7250" />
-                <Text style={styles.videoMetaText}>Anxiety reset</Text>
-              </View>
-              <View style={styles.videoMetaItem}>
-                <Ionicons name="phone-portrait-outline" size={16} color="#6F617B" />
-                <Text style={styles.videoMetaText}>Fullscreen ready</Text>
-              </View>
+
+              <Pressable
+                style={[styles.nextSenseBtn, { backgroundColor: currentSense.accent }]}
+                onPress={() => {
+                  setCompletedSteps((prev) => new Set(prev).add(activeStep));
+                  if (activeStep < SENSE_MOMENTS.length - 1) {
+                    setActiveStep(activeStep + 1);
+                  }
+                }}
+              >
+                <Text style={styles.nextSenseBtnText}>
+                  {activeStep < SENSE_MOMENTS.length - 1 ? "Next Sense (" + SENSE_MOMENTS[activeStep + 1].sense + ") →" : "Completed Grounding ✓"}
+                </Text>
+              </Pressable>
             </View>
           </View>
 
+          {/* Senses Step-by-Step Overview */}
           <View style={[styles.sensesCard, compact && styles.sensesCardCompact]}>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionEyebrow}>Meditation Path</Text>
+              <Text style={styles.sectionEyebrow}>Sensory Roadmap</Text>
               <Text style={[styles.sectionTitle, compact && styles.sectionTitleCompact]}>
-                Let the video lead each sense.
+                Step through each sense
               </Text>
               <Text style={styles.sectionDescription}>
-                The steps stay visible here as a quiet reference while the meditation plays.
+                Tap any step to explore or take them in sequence.
               </Text>
             </View>
 
             <View style={styles.senseList}>
-              {SENSE_MOMENTS.map((item) => (
-                <View key={item.sense} style={styles.senseItem}>
-                  <View style={[styles.senseCount, { backgroundColor: `${item.accent}1F`, borderColor: `${item.accent}42` }]}>
-                    <Text style={[styles.senseCountText, { color: item.accent }]}>{item.count}</Text>
-                  </View>
-                  <View style={[styles.senseIconWrap, { backgroundColor: `${item.accent}16`, borderColor: `${item.accent}30` }]}>
-                    <Ionicons name={item.icon} size={17} color={item.accent} />
-                  </View>
-                  <View style={styles.senseTextWrap}>
-                    <Text style={styles.senseTitle}>{item.sense}</Text>
-                    <Text style={styles.senseNote}>{item.note}</Text>
-                  </View>
-                </View>
-              ))}
+              {SENSE_MOMENTS.map((item, idx) => {
+                const isActive = activeStep === idx;
+                const isDone = completedSteps.has(idx);
+
+                return (
+                  <Pressable
+                    key={item.sense}
+                    style={[
+                      styles.senseItem,
+                      isActive && { borderColor: item.accent, backgroundColor: item.accent + "0C" },
+                    ]}
+                    onPress={() => handleStepPress(idx)}
+                  >
+                    <View
+                      style={[
+                        styles.senseCount,
+                        {
+                          backgroundColor: isDone ? item.accent : item.accent + "1F",
+                          borderColor: item.accent,
+                        },
+                      ]}
+                    >
+                      {isDone ? (
+                        <Ionicons name="checkmark" size={18} color="#FFFFFF" />
+                      ) : (
+                        <Text style={[styles.senseCountText, { color: item.accent }]}>{item.count}</Text>
+                      )}
+                    </View>
+
+                    <View style={[styles.senseIconWrap, { backgroundColor: item.accent + "16", borderColor: item.accent + "30" }]}>
+                      <Ionicons name={item.icon} size={17} color={item.accent} />
+                    </View>
+
+                    <View style={styles.senseTextWrap}>
+                      <Text style={styles.senseTitle}>{item.sense}</Text>
+                      <Text style={styles.senseNote}>{item.note}</Text>
+                    </View>
+
+                    {isActive ? (
+                      <View style={[styles.activePill, { backgroundColor: item.accent }]}>
+                        <Text style={styles.activePillText}>Active</Text>
+                      </View>
+                    ) : null}
+                  </Pressable>
+                );
+              })}
             </View>
           </View>
 
+          {/* Before You Begin Cues */}
           <View style={[styles.cueCard, compact && styles.cueCardCompact]}>
             <View style={styles.cueHeaderIcon}>
               <Ionicons name="leaf-outline" size={20} color="#4F7E5B" />
@@ -268,24 +255,15 @@ export default function WellnessGroundingScreen() {
             </View>
           </View>
 
+          {/* Supportive Disclaimer */}
           <View style={[styles.supportNote, compact && styles.supportNoteCompact]}>
             <Ionicons name="shield-checkmark-outline" size={17} color="#4E6E5C" />
             <Text style={styles.supportNoteText}>
-              This meditation is a self-guided support tool. If the moment feels too heavy, you can return to the wellness menu or reach out through counseling options.
+              This exercise is a self-guided grounding tool. If you feel overwhelmed, take slow breaths or explore our consultation options for support.
             </Text>
           </View>
         </View>
       </ScrollView>
-
-      <ConfirmationModal
-        visible={showExitConfirmModal}
-        message="The grounding video is still playing. Are you sure you want to leave?"
-        confirmLabel="Leave"
-        cancelLabel="Stay"
-        confirmTone="danger"
-        onCancel={handleCancelExit}
-        onConfirm={handleConfirmExit}
-      />
     </SafeAreaView>
   );
 }
@@ -293,7 +271,8 @@ export default function WellnessGroundingScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#EFF5F2" },
+    backgroundColor: "#EFF5F2",
+  },
   topBar: {
     height: 52,
     borderBottomWidth: 1,
@@ -307,33 +286,41 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 3,
     shadowOffset: { width: 0, height: 1 },
-    elevation: 2 },
+    elevation: 2,
+  },
   backButton: {
     width: 36,
     height: 36,
     alignItems: "center",
-    justifyContent: "center" },
+    justifyContent: "center",
+  },
   topTitle: {
     color: "#33475C",
     fontSize: 18,
     lineHeight: 24,
-    fontFamily: "Outfit-Bold" },
+    fontFamily: "Outfit-Bold",
+  },
   topBarSpacer: {
     width: 36,
-    height: 36 },
+    height: 36,
+  },
   scroll: {
-    flex: 1 },
+    flex: 1,
+  },
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 14,
     paddingBottom: 40,
-    alignItems: "center" },
+    alignItems: "center",
+  },
   scrollContentCompact: {
-    paddingHorizontal: 12 },
+    paddingHorizontal: 12,
+  },
   contentFrame: {
     width: "100%",
     maxWidth: 460,
-    alignSelf: "center" },
+    alignSelf: "center",
+  },
   heroCard: {
     width: "100%",
     borderRadius: 28,
@@ -348,17 +335,20 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 5 },
-    elevation: 4 },
+    elevation: 4,
+  },
   heroCardCompact: {
     borderRadius: 24,
     paddingHorizontal: 12,
-    paddingTop: 12 },
+    paddingTop: 12,
+  },
   heroTopRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     columnGap: 10,
-    marginBottom: 12 },
+    marginBottom: 12,
+  },
   heroBadge: {
     flexShrink: 1,
     flexDirection: "row",
@@ -369,12 +359,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#CBE9E7",
     paddingHorizontal: 10,
-    paddingVertical: 7 },
+    paddingVertical: 7,
+  },
   heroBadgeText: {
     color: "#2E6B74",
     fontSize: 12,
     lineHeight: 16,
-    fontFamily: "Outfit-Bold" },
+    fontFamily: "Outfit-Bold",
+  },
   heroTimePill: {
     flexDirection: "row",
     alignItems: "center",
@@ -384,84 +376,103 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E2E8DA",
     paddingHorizontal: 10,
-    paddingVertical: 7 },
+    paddingVertical: 7,
+  },
   heroTimeText: {
     color: "#58646E",
     fontSize: 12,
     lineHeight: 16,
-    fontFamily: "Outfit-Bold" },
+    fontFamily: "Outfit-Bold",
+  },
   heroTitle: {
     color: "#263E4E",
-    fontSize: 27,
-    lineHeight: 33,
+    fontSize: 26,
+    lineHeight: 32,
     fontFamily: "Outfit-Bold",
-    marginBottom: 8 },
+    marginBottom: 8,
+  },
   heroTitleCompact: {
-    fontSize: 23,
-    lineHeight: 29 },
+    fontSize: 22,
+    lineHeight: 28,
+  },
   heroDescription: {
     color: "#607584",
     fontSize: 14,
     lineHeight: 20,
-    marginBottom: 14 },
+    marginBottom: 14,
+  },
   heroDescriptionCompact: {
     fontSize: 13,
-    lineHeight: 19 },
-  videoFrame: {
-    width: "100%",
-    aspectRatio: 16 / 9,
-    borderRadius: 22,
-    backgroundColor: "#142226",
-    borderWidth: 1,
-    borderColor: "#D5E5E1",
-    overflow: "hidden",
-    marginBottom: 12 },
-  video: {
-    width: "100%",
-    height: "100%",
-    backgroundColor: "#142226" },
-  videoLoadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#142226",
-    rowGap: 10 },
-  videoLoadingIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#66AEB8" },
-  videoLoadingText: {
-    color: "#EAF6F6",
-    fontSize: 13,
-    lineHeight: 18,
-    fontFamily: "Outfit-Bold" },
-  videoMetaRow: {
+    lineHeight: 19,
+  },
+  activeSenseCard: {
+    borderRadius: 20,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    padding: 14,
+    marginTop: 6,
+    shadowColor: "#5A6D70",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  activeSenseHeader: {
     flexDirection: "row",
-    columnGap: 8 },
-  videoMetaRowStacked: {
-    flexDirection: "column",
-    rowGap: 8 },
-  videoMetaItem: {
-    flex: 1,
-    minHeight: 42,
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 10,
+  },
+  activeSenseCountBadge: {
+    width: 44,
+    height: 44,
     borderRadius: 14,
-    backgroundColor: "#F4F8F7",
-    borderWidth: 1,
-    borderColor: "#E0E9E6",
-    flexDirection: "row",
+    borderWidth: 1.5,
     alignItems: "center",
     justifyContent: "center",
-    columnGap: 6,
-    paddingHorizontal: 8 },
-  videoMetaText: {
-    color: "#4E626B",
-    fontSize: 12,
-    lineHeight: 16,
+  },
+  activeSenseCountText: {
+    fontSize: 22,
+    lineHeight: 26,
     fontFamily: "Outfit-Bold",
-    textAlign: "center" },
+  },
+  activeSenseLabel: {
+    fontSize: 17,
+    fontFamily: "Outfit-Bold",
+    color: "#2A3E31",
+  },
+  activeSenseNote: {
+    fontSize: 13,
+    fontFamily: "Outfit-Medium",
+    color: "#5F7466",
+    marginTop: 2,
+  },
+  activeSenseHintBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: "#F4F7F4",
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 12,
+  },
+  activeSenseHintText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+    fontFamily: "Outfit",
+    color: "#4A5F52",
+  },
+  nextSenseBtn: {
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  nextSenseBtnText: {
+    color: "#FFFFFF",
+    fontSize: 13.5,
+    fontFamily: "Outfit-Bold",
+  },
   sensesCard: {
     borderRadius: 24,
     backgroundColor: "#FFFFFF",
@@ -475,12 +486,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2 },
+    elevation: 2,
+  },
   sensesCardCompact: {
     borderRadius: 22,
-    paddingHorizontal: 12 },
+    paddingHorizontal: 12,
+  },
   sectionHeader: {
-    marginBottom: 12 },
+    marginBottom: 12,
+  },
   sectionEyebrow: {
     color: "#6D8588",
     fontSize: 11,
@@ -488,24 +502,29 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit-Bold",
     letterSpacing: 0.6,
     textTransform: "uppercase",
-    marginBottom: 4 },
+    marginBottom: 4,
+  },
   sectionTitle: {
     color: "#2B4354",
     fontSize: 21,
     lineHeight: 27,
     fontFamily: "Outfit-Bold",
-    marginBottom: 5 },
+    marginBottom: 5,
+  },
   sectionTitleCompact: {
     fontSize: 19,
-    lineHeight: 25 },
+    lineHeight: 25,
+  },
   sectionDescription: {
     color: "#627887",
     fontSize: 13,
-    lineHeight: 19 },
+    lineHeight: 19,
+  },
   senseList: {
-    rowGap: 9 },
+    rowGap: 9,
+  },
   senseItem: {
-    minHeight: 72,
+    minHeight: 70,
     borderRadius: 18,
     backgroundColor: "#F8FBFA",
     borderWidth: 1,
@@ -514,37 +533,54 @@ const styles = StyleSheet.create({
     alignItems: "center",
     columnGap: 10,
     paddingHorizontal: 11,
-    paddingVertical: 10 },
+    paddingVertical: 10,
+  },
   senseCount: {
     width: 36,
     height: 36,
     borderRadius: 13,
     borderWidth: 1,
     alignItems: "center",
-    justifyContent: "center" },
+    justifyContent: "center",
+  },
   senseCountText: {
     fontSize: 18,
     lineHeight: 22,
-    fontFamily: "Outfit-Bold" },
+    fontFamily: "Outfit-Bold",
+  },
   senseIconWrap: {
     width: 34,
     height: 34,
     borderRadius: 13,
     borderWidth: 1,
     alignItems: "center",
-    justifyContent: "center" },
+    justifyContent: "center",
+  },
   senseTextWrap: {
-    flex: 1 },
+    flex: 1,
+  },
   senseTitle: {
     color: "#2D4352",
     fontSize: 15,
     lineHeight: 20,
-    fontFamily: "Outfit-Bold" },
+    fontFamily: "Outfit-Bold",
+  },
   senseNote: {
     color: "#657886",
     fontSize: 12,
     lineHeight: 17,
-    marginTop: 2 },
+    marginTop: 2,
+  },
+  activePill: {
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  activePillText: {
+    color: "#FFFFFF",
+    fontSize: 10.5,
+    fontFamily: "Outfit-Bold",
+  },
   cueCard: {
     borderRadius: 22,
     backgroundColor: "#F5FAF4",
@@ -555,10 +591,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     columnGap: 12,
-    marginBottom: 12 },
+    marginBottom: 12,
+  },
   cueCardCompact: {
     paddingHorizontal: 12,
-    paddingVertical: 12 },
+    paddingVertical: 12,
+  },
   cueHeaderIcon: {
     width: 42,
     height: 42,
@@ -567,32 +605,39 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#D2E7D1",
     alignItems: "center",
-    justifyContent: "center" },
+    justifyContent: "center",
+  },
   cueTextWrap: {
-    flex: 1 },
+    flex: 1,
+  },
   cueTitle: {
     color: "#334A3B",
     fontSize: 16,
     lineHeight: 21,
     fontFamily: "Outfit-Bold",
-    marginBottom: 8 },
+    marginBottom: 8,
+  },
   cueList: {
-    rowGap: 7 },
+    rowGap: 7,
+  },
   cueItem: {
     flexDirection: "row",
     alignItems: "flex-start",
-    columnGap: 8 },
+    columnGap: 8,
+  },
   cueDot: {
     width: 6,
     height: 6,
     borderRadius: 999,
     backgroundColor: "#77A97A",
-    marginTop: 7 },
+    marginTop: 7,
+  },
   cueText: {
     flex: 1,
     color: "#5E7467",
     fontSize: 13,
-    lineHeight: 18 },
+    lineHeight: 18,
+  },
   supportNote: {
     width: "100%",
     borderRadius: 18,
@@ -604,12 +649,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     columnGap: 10,
-    marginBottom: 6 },
+    marginBottom: 6,
+  },
   supportNoteCompact: {
     paddingHorizontal: 12,
-    paddingVertical: 12 },
+    paddingVertical: 12,
+  },
   supportNoteText: {
     flex: 1,
     color: "#587166",
     fontSize: 13,
-    lineHeight: 19 } });
+    lineHeight: 19,
+  },
+});
+

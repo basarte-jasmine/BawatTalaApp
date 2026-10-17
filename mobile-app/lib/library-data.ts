@@ -19,7 +19,7 @@ export type LibraryBook = {
   chapters: LibraryChapter[];
 };
 
-const BOOK_COVER_IMAGE = require("../assets/images/book_sample.png");
+const BOOK_COVER_IMAGE = require("../assets/images/Tala_Star.png");
 
 export const LIBRARY_BOOKS: LibraryBook[] = [
   {

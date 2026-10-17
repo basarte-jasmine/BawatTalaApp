@@ -15,13 +15,7 @@ type ToolItem = {
   title: string;
 };
 
-type MiniResetItem = {
-  description: string;
-  duration: string;
-  icon: React.ComponentProps<typeof Ionicons>["name"];
-  id: "memory" | "pattern" | "recall" | "words" | "numbers" | "count" | "color";
-  title: string;
-};
+
 
 type FeaturedGame = {
   description: string;
@@ -48,7 +42,7 @@ const WELLNESS_TOOLS: ToolItem[] = [
     label: "Open now",
     title: "5-4-3-2-1 Sensory Grounding",
     icon: "eye-outline",
-    description: "Follow the guided 5-4-3-2-1 video exercise to reconnect with your present surroundings using your senses." },
+    description: "Follow the guided 5-4-3-2-1 exercise to reconnect with your present surroundings using your senses." },
 ];
 
 const MINI_RESETS: MiniResetItem[] = [
@@ -519,33 +513,11 @@ const styles = StyleSheet.create({
   toolArrowWrapStacked: {
     marginTop: 0,
     alignSelf: "flex-start" },
-  miniResetSection: {
-    width: "100%",
-    borderRadius: 24,
-    backgroundColor: "#F9F8FD",
-    borderWidth: 1,
-    borderColor: "#E6E2F2",
-    paddingHorizontal: 14,
-    paddingTop: 16,
-    paddingBottom: 16,
-    marginTop: 14},
-  miniResetHeadingRow: { flexDirection: "row", justifyContent: "space-between", columnGap: 12, marginBottom: 14 },
   sectionHeadingCopy: { flex: 1 },
   sectionKickerRow: { flexDirection: "row", alignItems: "center", columnGap: 6, marginBottom: 6 },
   sectionKicker: { color: "#625D8F", fontSize: 10, lineHeight: 13, letterSpacing: 0.8, fontFamily: "Outfit-Bold" },
   featuredKicker: { color: "#4F8A38" },
-  miniResetSparkle: { width: 38, height: 38, borderRadius: 14, backgroundColor: "#F0EDFA", alignItems: "center", justifyContent: "center" },
-  miniResetGrid: { flexDirection: "row", flexWrap: "wrap", gap: 9 },
-  miniResetTile: { width: "48.5%", minHeight: 142, borderRadius: 18, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E7E4F0", padding: 12 },
-  miniResetTileCompact: { width: "48%", padding: 10 },
-  miniResetTileTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
-  miniResetCard: { width: "100%", minHeight: 64, flexDirection: "row", alignItems: "center", columnGap: 10, borderRadius: 16, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E7E4F0", padding: 11 },
   miniResetCardPressed: { opacity: 0.78, transform: [{ scale: 0.985 }] },
-  miniResetIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: "#F0EDFA", alignItems: "center", justifyContent: "center" },
-  miniResetCopy: { flex: 1 },
-  miniResetTitle: { color: "#3E4159", fontFamily: "Outfit-Bold", fontSize: 15, lineHeight: 19, marginBottom: 2 },
-  miniResetDescription: { color: "#687084", fontSize: 12, lineHeight: 16 },
-  miniResetMeta: { flexDirection: "row", alignItems: "center", columnGap: 2 },
   miniResetMetaText: { color: "#71758B", fontSize: 11, lineHeight: 14, fontFamily: "Outfit-Bold" },
   featuredHeadingRow: { marginTop: 24, marginBottom: 14 },
   featuredGameGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 14, marginTop: 14 },
