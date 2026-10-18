@@ -9,7 +9,7 @@ import { Image } from "expo-image";
 const AnimatedExpoImage = Animated.createAnimatedComponent(Image);
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, Ellipse, LinearGradient, Path, Rect, Stop } from "react-native-svg";
-import { checkDaysSinceLastActive, getDailyRhythmInfo, recordLastActiveTimestamp } from "../lib/muni-reminders";
+import { checkDaysSinceLastActive, recordLastActiveTimestamp } from "../lib/muni-reminders";
 import { CounselorAvatar } from "../components/appointments/CounselorAvatar";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
@@ -470,10 +470,6 @@ export default function HomeScreen() {
       }
     });
   }, [reconnect]);
-
-  const currentRhythm = useMemo(() => {
-    return getDailyRhythmInfo(new Date(), rhythm);
-  }, [rhythm]);
 
   useEffect(() => {
     if (focus !== "mood") return;
@@ -2074,30 +2070,6 @@ export default function HomeScreen() {
             </Text>
           </View>
 
-          <View style={styles.rhythmBanner}>
-            <View style={styles.rhythmHeaderRow}>
-              <View style={styles.rhythmBadge}>
-                <Text style={styles.rhythmBadgeText}>{currentRhythm.badge}</Text>
-              </View>
-              <Text style={styles.rhythmTimeText}>{currentRhythm.timeWindow}</Text>
-            </View>
-            <Text style={styles.rhythmMessageText}>
-              &ldquo;{currentRhythm.muniMessage}&rdquo;
-            </Text>
-            {currentRhythm.kind === "evening" ? (
-              <Pressable
-                style={styles.rhythmActionLink}
-                onPress={() => router.push("/journal")}
-              >
-                <Ionicons name="book-outline" size={13} color="#4F9630" />
-                <Text style={styles.rhythmActionLinkText}>
-                  Want to journal before bed? Open Journal
-                </Text>
-                <Ionicons name="chevron-forward" size={13} color="#4F9630" />
-              </Pressable>
-            ) : null}
-          </View>
-
           {moodSaveStatus ? (
             <View style={styles.moodSaveFeedbackWrap}>
               <Text
@@ -3664,59 +3636,6 @@ const styles = StyleSheet.create({
   reconnectPrimaryText: {
     color: "#FFFFFF",
     fontSize: 14,
-    fontFamily: "Outfit-Bold",
-  },
-  rhythmBanner: {
-    borderRadius: 16,
-    backgroundColor: "#F5FAF0",
-    borderWidth: 1,
-    borderColor: "#E0EED7",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 12,
-  },
-  rhythmHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 5,
-  },
-  rhythmBadge: {
-    borderRadius: 999,
-    backgroundColor: "#E7F5DD",
-    paddingHorizontal: 8,
-    paddingVertical: 2.5,
-  },
-  rhythmBadgeText: {
-    color: "#3F6E35",
-    fontSize: 11,
-    fontFamily: "Outfit-Bold",
-  },
-  rhythmTimeText: {
-    color: "#6F8578",
-    fontSize: 11,
-    fontFamily: "Outfit",
-  },
-  rhythmMessageText: {
-    color: "#314336",
-    fontSize: 13,
-    lineHeight: 18,
-    fontStyle: "italic",
-  },
-  rhythmActionLink: {
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: 4,
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: "#E6EFE2",
-  },
-  rhythmActionLinkText: {
-    flex: 1,
-    color: "#4F9630",
-    fontSize: 12,
-    lineHeight: 16,
     fontFamily: "Outfit-Bold",
   },
   moodSaveFeedbackWrap: {

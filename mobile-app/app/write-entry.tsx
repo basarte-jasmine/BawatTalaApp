@@ -1014,35 +1014,16 @@ export default function WriteEntryScreen() {
                     {formatJournalHeaderDate(entry?.entryDate)}
                   </Text>
 
-                  <Pressable
-                    style={[
-                      styles.muniToggle,
-                      aiEnabled ? styles.muniToggleOn : styles.muniToggleOff,
-                      isEntryFinished && styles.muniToggleDisabled,
-                    ]}
-                    onPress={() => {
-                      if (isEntryFinished) return;
-                      setAiEnabled(false);
-                    }}
-                    disabled={isEntryFinished}
-                    accessibilityLabel="Turn off Muni AI"
-                  >
-                    <View
-                      style={[
-                        styles.muniToggleIconBubble,
-                        aiEnabled
-                          ? styles.muniToggleIconBubbleOn
-                          : styles.muniToggleIconBubbleOff,
-                      ]}
-                    >
+                  <View style={styles.muniBadgePill}>
+                    <View style={styles.muniBadgeIconBubble}>
                       <Ionicons
                         name="sparkles"
                         size={12}
                         color="#2E6B23"
                       />
                     </View>
-                    <Text style={styles.muniToggleText}>Muni On</Text>
-                  </Pressable>
+                    <Text style={styles.muniBadgeText}>With Muni</Text>
+                  </View>
                 </View>
 
                 {entry?.summary ? (
@@ -1164,29 +1145,12 @@ export default function WriteEntryScreen() {
             <View style={styles.plainHeaderRow}>
               <Text style={styles.plainDateText}>{formatJournalHeaderDate(entry?.entryDate)}</Text>
 
-              <Pressable
-                style={[
-                  styles.muniToggle,
-                  styles.muniToggleOff,
-                  isEntryFinished && styles.muniToggleDisabled,
-                ]}
-                onPress={() => {
-                  if (isEntryFinished) return;
-                  setAiEnabled(true);
-                }}
-                disabled={isEntryFinished}
-                accessibilityLabel="Turn on Muni AI"
-              >
-                <View
-                  style={[
-                    styles.muniToggleIconBubble,
-                    styles.muniToggleIconBubbleOff,
-                  ]}
-                >
-                  <Ionicons name="moon-outline" size={12} color="#687787" />
+              <View style={styles.soloBadgePill}>
+                <View style={styles.soloBadgeIconBubble}>
+                  <Ionicons name="book-outline" size={12} color="#5F7065" />
                 </View>
-                <Text style={styles.muniToggleTextOff}>Muni Off</Text>
-              </Pressable>
+                <Text style={styles.soloBadgeText}>Solo Journal</Text>
+              </View>
             </View>
 
             <ScrollView
@@ -1775,43 +1739,60 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit-Bold",
     letterSpacing: 0.2,
     flex: 1 },
-  muniToggle: {
-    minHeight: 34,
+  muniBadgePill: {
+    minHeight: 28,
     borderRadius: 999,
     borderWidth: 1,
+    borderColor: "#CFE5C1",
+    backgroundColor: "#EFF8E8",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    columnGap: 6,
-    paddingHorizontal: 10 },
-  muniToggleOn: {
-    backgroundColor: "#EFF8E8",
-    borderColor: "#CFE5C1" },
-  muniToggleOff: {
-    backgroundColor: "#F3F4F5",
-    borderColor: "#D9DFE3" },
-  muniToggleDisabled: {
-    opacity: 0.7 },
-  muniToggleIconBubble: {
-    width: 18,
-    height: 18,
+    columnGap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+  },
+  muniBadgeIconBubble: {
+    width: 16,
+    height: 16,
     borderRadius: 999,
+    backgroundColor: "#DFF2D1",
     alignItems: "center",
-    justifyContent: "center" },
-  muniToggleIconBubbleOn: {
-    backgroundColor: "#DFF2D1" },
-  muniToggleIconBubbleOff: {
-    backgroundColor: "#E7EBEE" },
-  muniToggleText: {
+    justifyContent: "center",
+  },
+  muniBadgeText: {
     color: "#2E6B23",
-    fontSize: 12,
-    lineHeight: 16,
-    fontFamily: "Outfit-Bold" },
-  muniToggleTextOff: {
-    color: "#687787",
-    fontSize: 12,
-    lineHeight: 16,
-    fontFamily: "Outfit-Bold" },
+    fontSize: 11,
+    lineHeight: 15,
+    fontFamily: "Outfit-Bold",
+  },
+  soloBadgePill: {
+    minHeight: 28,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#D2E0D6",
+    backgroundColor: "#EDF5EF",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+  },
+  soloBadgeIconBubble: {
+    width: 16,
+    height: 16,
+    borderRadius: 999,
+    backgroundColor: "#DEEBE1",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  soloBadgeText: {
+    color: "#3F5847",
+    fontSize: 11,
+    lineHeight: 15,
+    fontFamily: "Outfit-Bold",
+  },
   summaryText: {
     marginLeft: 22,
     marginBottom: 8,

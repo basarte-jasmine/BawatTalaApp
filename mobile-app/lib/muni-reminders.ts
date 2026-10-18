@@ -94,7 +94,7 @@ export const DAILY_RHYTHM_TEMPLATES: ReminderTemplate[] = [
     id: "morning-check-in",
     hour: 8,
     minute: 30,
-    route: "/home?focus=mood&rhythm=morning",
+    route: "/home",
     title: "Magandang umaga from Muni ☀️",
     body: (name) =>
       (name ? "Hi " + name + " — b" : "B") + "efore the day gets noisy, how’s your heart feeling this morning?",
@@ -103,7 +103,7 @@ export const DAILY_RHYTHM_TEMPLATES: ReminderTemplate[] = [
     id: "midday-transition",
     hour: 13,
     minute: 30,
-    route: "/home?focus=mood&rhythm=midday",
+    route: "/home",
     title: "Heavy morning classes? 🌱",
     body: (name) =>
       (name ? name + ", drop" : "Drop") + " your school bag for a second. Even a 30-second exhale counts.",
@@ -112,7 +112,7 @@ export const DAILY_RHYTHM_TEMPLATES: ReminderTemplate[] = [
     id: "evening-journal",
     hour: 20,
     minute: 30,
-    route: "/home?focus=mood&rhythm=evening",
+    route: "/home",
     title: "Muni saved a quiet space for you ✨",
     body: (name) =>
       (name ? "Done with homework, " + name + "? " : "") + "Let’s close the tabs in your head before bed.",
