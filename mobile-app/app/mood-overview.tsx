@@ -1,10 +1,22 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
+import { BlurView } from "expo-blur";
+import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {  ImageSourcePropType, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Animated,
+  Easing,
+  type ImageSourcePropType,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { Image } from "expo-image";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { useAuthSession } from "../lib/auth-session";
@@ -31,11 +43,24 @@ type CalendarDay = {
   state: "empty" | "future" | "mood";
 };
 
-const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
-const INSIGHT_FOOTNOTE = "Summary by Muni, an AI companion. Muni is not a psychometrician or a substitute for professional mental health care.";
+type MuniReflection = {
+  headline: string;
+  body: string;
+  actionLabel?: string;
+  actionRoute?: string;
+  actionIcon?: keyof typeof Ionicons.glyphMap;
+  tone: "support" | "celebrate" | "gentle" | "neutral";
+};
 
+const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
 const MIN_YEAR = 2026;
 const MIN_MONTH_INDEX = 0;
+
+function triggerAppleHaptic(style: Haptics.ImpactFeedbackStyle = Haptics.ImpactFeedbackStyle.Light) {
+  try {
+    void Haptics.impactAsync(style);
+  } catch {}
+}
 
 function getMonthName(monthIndex: number) {
   return new Date(2026, monthIndex, 1).toLocaleString("en-US", { month: "long" });
@@ -48,9 +73,10 @@ function getDayFromMoodDate(value: string) {
 
 function formatDisplayDate(year: number, monthIndex: number, dayNumber: number) {
   return new Date(year, monthIndex, dayNumber).toLocaleDateString("en-US", {
-    month: "long",
+    weekday: "short",
+    month: "short",
     day: "numeric",
-    year: "numeric" });
+  });
 }
 
 function formatCheckInTime(value?: string) {
@@ -60,17 +86,144 @@ function formatCheckInTime(value?: string) {
   return date.toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
-    hour12: true });
+    hour12: true,
+  });
 }
 
 function formatMoodSourceLabel(value?: string) {
-  return String(value || "").toUpperCase() === "JOURNAL" ? "Journal" : "Input";
+  return String(value || "").toUpperCase() === "JOURNAL" ? "Journal" : "Check-in";
+}
+
+// Smart local rule-based companion reflection (0 AI tokens)
+function getMuniEmotionReflection(
+  totalCount: number,
+  mostCommonId: string | null,
+  counts: Record<string, number>,
+): MuniReflection {
+  if (totalCount === 0) {
+    return {
+      headline: "Muni is here with you",
+      body: "Whenever you feel ready, check in with how your heart feels today. Every little emotion you honor counts.",
+      actionLabel: "Check in today",
+      actionRoute: "/home?focus=mood",
+      actionIcon: "heart-outline",
+      tone: "neutral",
+    };
+  }
+
+  const sadnessCount = counts.sadness ?? 0;
+  const anxietyCount = counts.anxiety ?? 0;
+  const angerCount = counts.anger ?? 0;
+  const guiltCount = counts.guilt ?? 0;
+  const disappointmentCount = counts.disappointment ?? 0;
+  const embarrassmentCount = counts.embarrassment ?? 0;
+  const heavyCount = sadnessCount + anxietyCount + angerCount + guiltCount + disappointmentCount + embarrassmentCount;
+
+  const joyCount = counts.joy ?? 0;
+  const excitementCount = counts.excitement ?? 0;
+  const contentmentCount = counts.contentment ?? 0;
+  const reliefCount = counts.relief ?? 0;
+  const brightCount = joyCount + excitementCount + contentmentCount + reliefCount;
+
+  // 1. Sadness is persistent
+  if (sadnessCount >= 2 && (mostCommonId === "sadness" || sadnessCount >= totalCount * 0.35)) {
+    return {
+      headline: "Muni is holding space for you",
+      body: `Sadness has shown up ${sadnessCount} times this month. Heavy feelings can get exhausting to carry alone—would you like to share what's on your mind?`,
+      actionLabel: "Chat with Muni",
+      actionRoute: "/muni-avatar",
+      actionIcon: "chatbubble-ellipses-outline",
+      tone: "support",
+    };
+  }
+
+  // 2. Anxiety is persistent
+  if (anxietyCount >= 2 && (mostCommonId === "anxiety" || anxietyCount >= totalCount * 0.35)) {
+    return {
+      headline: "Let's take a slow breath together",
+      body: `Muni noticed anxiety showed up ${anxietyCount} times recently. When thoughts feel loud or racing, a gentle 1-minute reset can help you find calm.`,
+      actionLabel: "Take a 1-min breath",
+      actionRoute: "/wellness-breathing",
+      actionIcon: "leaf-outline",
+      tone: "support",
+    };
+  }
+
+  // 3. Anger or frustration
+  if (angerCount >= 2 || mostCommonId === "anger") {
+    return {
+      headline: "It's okay to feel upset",
+      body: `Tension and frustration have been present ${angerCount} times. Bottling it up feels heavy—writing it all down in your journal can release that pressure.`,
+      actionLabel: "Write in Journal",
+      actionRoute: "/journal",
+      actionIcon: "create-outline",
+      tone: "support",
+    };
+  }
+
+  // 4. Guilt or Embarrassment
+  if ((guiltCount + embarrassmentCount) >= 2 || mostCommonId === "guilt" || mostCommonId === "embarrassment") {
+    return {
+      headline: "Be kind to yourself today",
+      body: "Muni noticed feelings of guilt or embarrassment weighed on you lately. Everyone stumbles—please remember you deserve forgiveness and gentle warmth.",
+      actionLabel: "Talk to Muni",
+      actionRoute: "/muni-avatar",
+      actionIcon: "heart-outline",
+      tone: "support",
+    };
+  }
+
+  // 5. Disappointment
+  if (disappointmentCount >= 2 || mostCommonId === "disappointment") {
+    return {
+      headline: "One tough moment doesn't define you",
+      body: "Things might not have turned out as planned lately. Muni is proud of you for showing up anyway. Take things one gentle step at a time.",
+      actionLabel: "Take a pause",
+      actionRoute: "/wellness-tools",
+      actionIcon: "pause-circle-outline",
+      tone: "support",
+    };
+  }
+
+  // 6. Bright emotions leading
+  if (brightCount >= heavyCount && brightCount > 0) {
+    if (mostCommonId === "joy" || mostCommonId === "excitement") {
+      return {
+        headline: "Your bright days are glowing ✨",
+        body: `Joy has been your most frequent rhythm (${counts[mostCommonId ?? "joy"] ?? joyCount} check-ins)! Savoring and writing down what brought you happiness keeps the glow alive.`,
+        actionLabel: "Record in Journal",
+        actionRoute: "/journal",
+        actionIcon: "sparkles-outline",
+        tone: "celebrate",
+      };
+    }
+    return {
+      headline: "A peaceful, grounded rhythm 🌿",
+      body: "Contentment and relief have anchored your month. Finding peace amidst busy student life is a real strength.",
+      actionLabel: "Calm read in Library",
+      actionRoute: "/library",
+      actionIcon: "book-outline",
+      tone: "celebrate",
+    };
+  }
+
+  // 7. General mixed/resilient flow
+  return {
+    headline: "You are riding life's waves",
+    body: `You've checked in ${totalCount} times across different emotions. Acknowledging all feelings without judgment builds true emotional stamina. Muni is with you!`,
+    actionLabel: "View Week's Recap",
+    actionRoute: "/weekly-recap",
+    actionIcon: "shield-checkmark-outline",
+    tone: "gentle",
+  };
 }
 
 export default function MoodOverviewScreen() {
+  const insets = useSafeAreaInsets();
   const { user } = useAuthSession();
   const { isSyncing, refreshKey, syncNow } = useOfflineSync();
   const [now, setNow] = useState(() => getManilaTodayParts());
+
   const initialMonth = useMemo(() => {
     const currentYear = now.year;
     const currentMonthIndex = now.monthIndex;
@@ -81,6 +234,7 @@ export default function MoodOverviewScreen() {
 
     return { monthIndex: currentMonthIndex, year: currentYear };
   }, [now]);
+
   const [displayYear, setDisplayYear] = useState(initialMonth.year);
   const [displayMonthIndex, setDisplayMonthIndex] = useState(initialMonth.monthIndex);
   const [monthlyEntries, setMonthlyEntries] = useState<MoodEntryRecord[]>([]);
@@ -88,8 +242,125 @@ export default function MoodOverviewScreen() {
   const [mostCommonMoodId, setMostCommonMoodId] = useState<string | null>(null);
   const [totalCheckIns, setTotalCheckIns] = useState(0);
   const [selectedDayNumber, setSelectedDayNumber] = useState(now.day);
-  const [showDailyRecordsModal, setShowDailyRecordsModal] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showRefreshToast, setShowRefreshToast] = useState(false);
+
+  // Apple Spring animation values
+  const backBtnScale = useRef(new Animated.Value(1)).current;
+  const refreshBtnScale = useRef(new Animated.Value(1)).current;
+  const refreshSpinAnim = useRef(new Animated.Value(0)).current;
+  const progressBarAnim = useRef(new Animated.Value(0)).current;
+  const progressBarOpacity = useRef(new Animated.Value(0)).current;
+  const contentPulseAnim = useRef(new Animated.Value(1)).current;
+  const refreshFeedbackAnim = useRef(new Animated.Value(0)).current;
+  const prevMonthScale = useRef(new Animated.Value(1)).current;
+  const nextMonthScale = useRef(new Animated.Value(1)).current;
+  const todayBtnScale = useRef(new Animated.Value(1)).current;
+  const reflectionBtnScale = useRef(new Animated.Value(1)).current;
+  const dayCardFade = useRef(new Animated.Value(1)).current;
+  const dayCardTranslateY = useRef(new Animated.Value(0)).current;
+
+  const handleButtonPressIn = (animValue: Animated.Value, toValue = 0.92) => {
+    Animated.spring(animValue, {
+      toValue,
+      damping: 14,
+      stiffness: 320,
+      mass: 0.8,
+      useNativeDriver: true,
+    }).start();
+    triggerAppleHaptic(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const handleButtonPressOut = (animValue: Animated.Value) => {
+    Animated.spring(animValue, {
+      toValue: 1,
+      damping: 12,
+      stiffness: 240,
+      mass: 0.8,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const isCurrentlyRefreshing = isRefreshing || isSyncing;
+
+  useEffect(() => {
+    if (isCurrentlyRefreshing) {
+      // Animate top progress bar
+      progressBarOpacity.setValue(1);
+      progressBarAnim.setValue(0);
+      Animated.timing(progressBarAnim, {
+        toValue: 0.85,
+        duration: 600,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start();
+
+      // Content shimmer pulse
+      const pulseLoop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(contentPulseAnim, {
+            toValue: 0.65,
+            duration: 380,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(contentPulseAnim, {
+            toValue: 0.9,
+            duration: 380,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+      pulseLoop.start();
+
+      const spinLoop = Animated.loop(
+        Animated.timing(refreshSpinAnim, {
+          toValue: 1,
+          duration: 750,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }),
+      );
+      spinLoop.start();
+      return () => {
+        spinLoop.stop();
+        pulseLoop.stop();
+        Animated.timing(refreshSpinAnim, {
+          toValue: 0,
+          duration: 200,
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: true,
+        }).start();
+      };
+    } else {
+      // Complete progress bar to 100% and fade out
+      Animated.sequence([
+        Animated.timing(progressBarAnim, {
+          toValue: 1,
+          duration: 160,
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: false,
+        }),
+        Animated.timing(progressBarOpacity, {
+          toValue: 0,
+          duration: 220,
+          useNativeDriver: false,
+        }),
+      ]).start(() => {
+        progressBarAnim.setValue(0);
+      });
+
+      // Spring content back to 1.0 with Apple bounce
+      Animated.spring(contentPulseAnim, {
+        toValue: 1,
+        damping: 14,
+        stiffness: 280,
+        mass: 0.8,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [isCurrentlyRefreshing, refreshSpinAnim, progressBarAnim, progressBarOpacity, contentPulseAnim]);
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -116,7 +387,8 @@ export default function MoodOverviewScreen() {
     setMonthlyEntries(result.entries ?? []);
     setMonthlyCounts({
       ...createEmotionCounts(),
-      ...(result.counts ?? {}) });
+      ...(result.counts ?? {}),
+    });
     setMostCommonMoodId(result.mostCommonMoodId ?? null);
     setTotalCheckIns(result.totalCheckIns ?? 0);
   }, [displayMonthIndex, displayYear, user?.studentNumber]);
@@ -135,12 +407,39 @@ export default function MoodOverviewScreen() {
   }, [loadMonth, refreshKey, user?.studentNumber]);
 
   const handleRefreshMoods = useCallback(async () => {
+    if (isRefreshing || isSyncing) return;
     setIsRefreshing(true);
+    triggerAppleHaptic(Haptics.ImpactFeedbackStyle.Medium);
+    const startTime = Date.now();
     await syncNow();
     setNow(getManilaTodayParts());
     await loadMonth();
+    const elapsed = Date.now() - startTime;
+    if (elapsed < 650) {
+      await new Promise((resolve) => setTimeout(resolve, 650 - elapsed));
+    }
     setIsRefreshing(false);
-  }, [loadMonth, syncNow]);
+    triggerAppleHaptic(Haptics.ImpactFeedbackStyle.Light);
+
+    setShowRefreshToast(true);
+    Animated.sequence([
+      Animated.timing(refreshFeedbackAnim, {
+        toValue: 1,
+        duration: 220,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }),
+      Animated.delay(1600),
+      Animated.timing(refreshFeedbackAnim, {
+        toValue: 0,
+        duration: 260,
+        easing: Easing.in(Easing.ease),
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setShowRefreshToast(false);
+    });
+  }, [isRefreshing, isSyncing, loadMonth, syncNow, refreshFeedbackAnim]);
 
   const moodStats: MoodStat[] = useMemo(
     () =>
@@ -149,11 +448,13 @@ export default function MoodOverviewScreen() {
         color: EMOTION_META[id].color,
         count: monthlyCounts[id] ?? 0,
         image: getEmotionImageSource(EMOTION_META[id]),
-        label: EMOTION_META[id].label })),
+        label: EMOTION_META[id].label,
+      })),
     [monthlyCounts],
   );
+
   const rankedMoodStats = useMemo(
-    () => moodStats.filter((item) => item.count > 0).sort((a, b) => b.count - a.count).slice(0, 5),
+    () => moodStats.filter((item) => item.count > 0).sort((a, b) => b.count - a.count),
     [moodStats],
   );
 
@@ -172,7 +473,8 @@ export default function MoodOverviewScreen() {
         const current = map.get(day);
         map.set(day, {
           count: (current?.count ?? 0) + 1,
-          latestMoodId: entry.moodId });
+          latestMoodId: entry.moodId,
+        });
       }
     });
     return map;
@@ -196,29 +498,31 @@ export default function MoodOverviewScreen() {
     [monthlyEntries, selectedDayNumber],
   );
 
-  const selectedDayCounts = useMemo(() => {
-    const counts = createEmotionCounts();
-    selectedDayEntries.forEach((entry) => {
-      const moodId = normalizeEmotionId(entry.moodId);
-      if (Object.prototype.hasOwnProperty.call(counts, moodId)) {
-        counts[moodId] += 1;
-      }
-    });
-    return counts;
-  }, [selectedDayEntries]);
+  const handleSelectDay = (dayNum: number) => {
+    if (dayNum === selectedDayNumber) return;
+    triggerAppleHaptic(Haptics.ImpactFeedbackStyle.Light);
 
-  const selectedDayMostCommonMoodId = useMemo(() => {
-    const [moodId, count] = Object.entries(selectedDayCounts).sort((a, b) => b[1] - a[1])[0] ?? [];
-    return count > 0 ? moodId : null;
-  }, [selectedDayCounts]);
-  const selectedDayMoodStats = useMemo(
-    () =>
-      EMOTION_ORDER.map((id) => ({
-        id,
-        count: selectedDayCounts[id] ?? 0,
-        meta: EMOTION_META[id] })).filter((item) => item.count > 0),
-    [selectedDayCounts],
-  );
+    // Apple smooth transition
+    dayCardFade.setValue(0.3);
+    dayCardTranslateY.setValue(6);
+    setSelectedDayNumber(dayNum);
+
+    Animated.parallel([
+      Animated.timing(dayCardFade, {
+        toValue: 1,
+        duration: 200,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }),
+      Animated.spring(dayCardTranslateY, {
+        toValue: 0,
+        damping: 15,
+        stiffness: 280,
+        mass: 0.8,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
 
   const calendarDays = useMemo(() => {
     const firstDayIndex = new Date(displayYear, displayMonthIndex, 1).getDay();
@@ -239,7 +543,8 @@ export default function MoodOverviewScreen() {
         isSelected: selectedDayNumber === dayNumber,
         isOutsideMonth: false,
         moodId,
-        state: moodId ? "mood" : isFutureMonth || isFutureDay ? "future" : "empty" });
+        state: moodId ? "mood" : isFutureMonth || isFutureDay ? "future" : "empty",
+      });
     }
 
     const trailingDays = (7 - (days.length % 7)) % 7;
@@ -248,1150 +553,1076 @@ export default function MoodOverviewScreen() {
         dayNumber,
         isOutsideMonth: true,
         moodId: null,
-        state: "future" });
+        state: "future",
+      });
     }
 
     return days;
   }, [displayMonthIndex, displayYear, entriesByDay, isFutureMonth, selectedDayNumber, todayDay, todayMonthKey, viewedMonthKey]);
 
   const canGoPrevious = displayYear > MIN_YEAR || (displayYear === MIN_YEAR && displayMonthIndex > MIN_MONTH_INDEX);
-  const goPreviousMonth = () => {
-    if (!canGoPrevious) {
-      return;
-    }
 
+  const goPreviousMonth = () => {
+    if (!canGoPrevious) return;
+    triggerAppleHaptic(Haptics.ImpactFeedbackStyle.Light);
     if (displayMonthIndex === 0) {
       setDisplayMonthIndex(11);
       setDisplayYear((prev) => prev - 1);
       return;
     }
-
     setDisplayMonthIndex((prev) => prev - 1);
   };
 
   const goNextMonth = () => {
+    if (isFutureMonth) return;
+    triggerAppleHaptic(Haptics.ImpactFeedbackStyle.Light);
     if (displayMonthIndex === 11) {
       setDisplayMonthIndex(0);
       setDisplayYear((prev) => prev + 1);
       return;
     }
-
     setDisplayMonthIndex((prev) => prev + 1);
   };
 
-  const mostCommonMood = mostCommonMoodId ? EMOTION_META[mostCommonMoodId] ?? null : null;
-  const emotionCheckInLabel = `${totalCheckIns} emotion ${totalCheckIns === 1 ? "check-in" : "check-ins"}`;
-  const activeEmotionDays = entriesByDay.size;
-  const multiCheckInDays = [...entriesByDay.values()].filter((item) => item.count > 1).length;
-  const selectedDayMostCommonMood = selectedDayMostCommonMoodId ? EMOTION_META[selectedDayMostCommonMoodId] ?? null : null;
   const selectedDayLabel = formatDisplayDate(displayYear, displayMonthIndex, selectedDayNumber);
-  const selectedDayCheckInLabel = `${selectedDayEntries.length} emotion ${selectedDayEntries.length === 1 ? "check-in" : "check-ins"}`;
-  const selectedDayMoodKindLabel = `${selectedDayMoodStats.length} ${selectedDayMoodStats.length === 1 ? "kind" : "kinds"}`;
-  const selectedDayRecordLabel = `${selectedDayEntries.length} ${selectedDayEntries.length === 1 ? "record" : "records"}`;
-  const dailyInsightText =
-    selectedDayEntries.length <= 0
-      ? `No emotions were logged on ${selectedDayLabel}. Pick any day with a badge to see Muni's daily reflection.`
-      : selectedDayMostCommonMood?.label
-        ? `Muni counted ${selectedDayCheckInLabel.toLowerCase()} on ${selectedDayLabel}. The strongest pattern for this day is "${selectedDayMostCommonMood.label}".`
-        : `Muni counted ${selectedDayCheckInLabel.toLowerCase()} on ${selectedDayLabel}.`;
-  const monthlySubText =
-    totalCheckIns <= 0
-      ? "No monthly check-ins yet."
-      : `${emotionCheckInLabel} across ${activeEmotionDays} ${activeEmotionDays === 1 ? "day" : "days"}${multiCheckInDays ? `, ${multiCheckInDays} with multiple check-ins` : ""}.`;
+  const muniReflection = useMemo(
+    () => getMuniEmotionReflection(totalCheckIns, mostCommonMoodId, monthlyCounts),
+    [totalCheckIns, mostCommonMoodId, monthlyCounts],
+  );
+
+  const refreshSpin = refreshSpinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
+
+  const navBarHeight = Math.max(insets.top, 14) + 48;
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
-      <View style={styles.topBar}>
-        <Pressable style={styles.backButton} onPress={handleBack} accessibilityLabel="Go back">
-          <Ionicons name="chevron-back" size={27} color="#3B454F" />
-        </Pressable>
-        <Text style={styles.topTitle}>Emotion Overview</Text>
-        <View style={styles.topBarSpacer} />
-      </View>
+    <View style={styles.screen}>
+      {/* Apple Floating Translucent Blurred Top Bar (Fixed on top, content scrolls underneath & gets blurred) */}
+      <BlurView
+        intensity={85}
+        tint="light"
+        style={[
+          styles.appleFloatingBar,
+          {
+            paddingTop: Math.max(insets.top, 12),
+            height: navBarHeight,
+          },
+        ]}
+      >
+        <Animated.View style={{ transform: [{ scale: backBtnScale }] }}>
+          <Pressable
+            style={styles.appleCircleButton}
+            onPress={handleBack}
+            onPressIn={() => handleButtonPressIn(backBtnScale)}
+            onPressOut={() => handleButtonPressOut(backBtnScale)}
+            accessibilityLabel="Go back"
+            accessibilityRole="button"
+          >
+            <Ionicons name="chevron-back" size={20} color="#0F172A" />
+          </Pressable>
+        </Animated.View>
+
+        <View style={styles.appleCenterTitleWrap}>
+          <Text style={styles.appleCenterTitleText}>Emotion History</Text>
+        </View>
+
+        <Animated.View style={{ transform: [{ scale: refreshBtnScale }] }}>
+          <Pressable
+            style={styles.appleCircleButton}
+            onPress={handleRefreshMoods}
+            onPressIn={() => handleButtonPressIn(refreshBtnScale)}
+            onPressOut={() => handleButtonPressOut(refreshBtnScale)}
+            accessibilityLabel="Refresh emotions"
+            accessibilityRole="button"
+          >
+            <Animated.View style={{ transform: [{ rotate: refreshSpin }] }}>
+              <Ionicons name="refresh-outline" size={18} color="#0F172A" />
+            </Animated.View>
+          </Pressable>
+        </Animated.View>
+      </BlurView>
+
+      {/* Apple Top Viewport Animated Progress Bar */}
+      <Animated.View
+        style={[
+          styles.appleProgressBarTrack,
+          {
+            top: navBarHeight,
+            opacity: progressBarOpacity,
+          },
+        ]}
+        pointerEvents="none"
+      >
+        <Animated.View
+          style={[
+            styles.appleProgressBarFill,
+            {
+              width: progressBarAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: ["0%", "100%"],
+              }),
+            },
+          ]}
+        />
+      </Animated.View>
+
+      {/* Apple Subtle Floating Feedback Toast */}
+      {showRefreshToast ? (
+        <Animated.View
+          style={[
+            styles.appleToastWrap,
+            {
+              top: navBarHeight + 8,
+              opacity: refreshFeedbackAnim,
+              transform: [
+                {
+                  translateY: refreshFeedbackAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [-8, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+          pointerEvents="none"
+        >
+          <View style={styles.appleToastPill}>
+            <Ionicons name="checkmark-circle" size={13} color="#27561B" style={{ marginRight: 5 }} />
+            <Text style={styles.appleToastText}>Updated just now</Text>
+          </View>
+        </Animated.View>
+      ) : null}
 
       <InformedConsentGate feature="mood">
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing || isSyncing}
-            onRefresh={handleRefreshMoods}
-            colors={["#73CD44"]}
-            tintColor="#73CD44"
-          />
-        }
-      >
-        <View style={styles.pageIntro}>
-          <Text style={styles.pageIntroEyebrow}>YOUR EMOTIONAL RHYTHM</Text>
-          <Text style={styles.pageIntroTitle}>Notice what your days are holding.</Text>
-          <Text style={styles.pageIntroText}>Explore your check-ins gently. There is no right pattern to find.</Text>
-        </View>
-
-        <View style={styles.atAGlanceRow}>
-          <View style={styles.atAGlanceItem}>
-            <Text style={styles.atAGlanceValue}>{totalCheckIns}</Text>
-            <Text style={styles.atAGlanceLabel}>Check-ins</Text>
-          </View>
-          <View style={styles.atAGlanceDivider} />
-          <View style={styles.atAGlanceItem}>
-            <Text style={styles.atAGlanceValue}>{activeEmotionDays}</Text>
-            <Text style={styles.atAGlanceLabel}>Active days</Text>
-          </View>
-          <View style={styles.atAGlanceDivider} />
-          <View style={styles.atAGlanceItem}>
-            <Text style={styles.atAGlanceValue} numberOfLines={1}>{mostCommonMood?.label ?? "-"}</Text>
-            <Text style={styles.atAGlanceLabel}>Most common</Text>
-          </View>
-        </View>
-
-        <Pressable
-          style={styles.weeklyRecapLinkCard}
-          onPress={() => router.push("/weekly-recap")}
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: navBarHeight + 14 },
+          ]}
+          showsVerticalScrollIndicator={false}
+          scrollEventThrottle={16}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing || isSyncing}
+              onRefresh={handleRefreshMoods}
+              colors={["#52B72A"]}
+              tintColor="#52B72A"
+              progressViewOffset={navBarHeight}
+            />
+          }
         >
-          <View style={styles.weeklyRecapLinkLeft}>
-            <Ionicons name="sparkles" size={16} color="#166534" />
-            <View>
-              <Text style={styles.weeklyRecapLinkTitle}>Tala ng Linggo: A Week's Recap</Text>
-              <Text style={styles.weeklyRecapLinkSub}>View your resilience, coping flow, & focus stats</Text>
-            </View>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color="#166534" />
-        </Pressable>
-
-
-        <View style={styles.dailyCard}>
-          <View style={styles.dailyHeader}>
-            <View style={styles.summaryHeaderCopy}>
-              <Text style={styles.summaryEyebrow}>SELECTED DAY</Text>
-              <Text style={styles.summaryMonth}>{selectedDayLabel}</Text>
-              <Text style={styles.summarySub}>{selectedDayCheckInLabel}</Text>
-            </View>
-
-            <View style={styles.dailyMoodWrap}>
-              <Text style={styles.commonMoodMeta}>Daily Pattern</Text>
-              <View style={[styles.commonMoodFace, selectedDayMostCommonMood && { borderColor: selectedDayMostCommonMood.color }]}>
-                {selectedDayMostCommonMood?.image ? (
-                  <Image source={selectedDayMostCommonMood.image} style={styles.commonMoodImage} contentFit="contain" />
-                ) : selectedDayMostCommonMood ? (
-                  <View style={styles.commonMoodPlaceholder} />
-                ) : (
-                  <Text style={styles.commonMoodFallback}>-</Text>
-                )}
+          <Animated.View style={{ opacity: contentPulseAnim }}>
+          {/* Muni Companion Reflection Card (0 Tokens, Smart Rule-Based Support) */}
+          <View style={[
+            styles.muniReflectionCard,
+            muniReflection.tone === "support" && styles.muniReflectionCardSupport,
+            muniReflection.tone === "celebrate" && styles.muniReflectionCardCelebrate,
+          ]}>
+            <View style={styles.muniCardTopRow}>
+              <View style={styles.muniAvatarWrapper}>
+                <MuniAvatar style={styles.muniAvatarArt} />
               </View>
-              <Text style={styles.commonMoodLabel}>{selectedDayMostCommonMood?.label ?? "No emotion yet"}</Text>
-            </View>
-          </View>
 
-          <View style={styles.dailyBreakdownHeader}>
-            <Text style={styles.dailyBreakdownTitle}>Emotion mix</Text>
-            <Text style={styles.dailyBreakdownMeta}>{selectedDayMoodKindLabel}</Text>
-          </View>
-
-          {selectedDayMoodStats.length ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.dailyMixScroller}
-            >
-              {selectedDayMoodStats.map((item) => (
-                <View key={item.id} style={styles.dailyMixChip}>
-                  <View style={[styles.dailyMixFace, { borderColor: item.meta.color }]}>
-                    {item.meta.image ? (
-                      <Image source={item.meta.image} style={styles.dailyMixImage} contentFit="contain" />
-                    ) : (
-                      <View style={[styles.dailyEntryFallback, { backgroundColor: item.meta.color }]} />
-                    )}
-                  </View>
-                  <View style={styles.dailyMixCopy}>
-                    <Text style={styles.dailyMixLabel} numberOfLines={1}>{item.meta.label}</Text>
-                    <Text style={styles.dailyMixCount}>{item.count}x</Text>
-                  </View>
+              <View style={styles.muniCopyWrapper}>
+                <View style={styles.muniKickerRow}>
+                  <Ionicons
+                    name={muniReflection.tone === "celebrate" ? "sparkles" : "chatbubble-ellipses"}
+                    size={11}
+                    color="#356E25"
+                  />
+                  <Text style={styles.muniKickerText}>MUNI&apos;S REFLECTION</Text>
                 </View>
-              ))}
-            </ScrollView>
-          ) : (
-            <Text style={styles.dailyEmptyText}>No emotions logged for this day.</Text>
-          )}
-
-          <View style={styles.dailyBreakdownHeader}>
-            <Text style={styles.dailyBreakdownTitle}>Check-in trail</Text>
-            <Text style={styles.dailyBreakdownMeta}>{selectedDayRecordLabel}</Text>
-          </View>
-
-          <Pressable
-            style={[
-              styles.dailyRecordsButton,
-              !selectedDayEntries.length && styles.dailyRecordsButtonDisabled,
-            ]}
-            onPress={() => setShowDailyRecordsModal(true)}
-            disabled={!selectedDayEntries.length}
-            accessibilityRole="button"
-            accessibilityLabel="Open daily emotion records"
-          >
-            {selectedDayEntries.length ? (
-              <>
-                <View style={styles.dailyRecordsButtonCopy}>
-                  <Text style={styles.dailyRecordsButtonTitle}>View daily records</Text>
-                  <Text style={styles.dailyRecordsButtonMeta}>Emotion, time, and source</Text>
-                </View>
-                <Ionicons name="list-outline" size={20} color="#31465A" />
-              </>
-            ) : (
-              <Text style={styles.dailyRecordsEmptyText}>No check-ins yet</Text>
-            )}
-          </Pressable>
-        </View>
-
-        <View style={styles.calendarCard}>
-          <View style={styles.monthHeader}>
-            <Pressable onPress={goPreviousMonth} disabled={!canGoPrevious} style={styles.monthArrowButton}>
-              <Ionicons name="chevron-back" size={20} color={canGoPrevious ? "#384A5D" : "#B4BCC5"} />
-            </Pressable>
-            <View style={styles.monthLabelWrap}>
-              <Text style={styles.monthLabel}>{getMonthName(displayMonthIndex)}</Text>
-              <Text style={styles.monthYear}>{displayYear}</Text>
+                <Text style={styles.muniHeadlineText}>{muniReflection.headline}</Text>
+              </View>
             </View>
-            <View style={styles.monthActions}>
-              {viewedMonthKey !== todayMonthKey ? (
+
+            <Text style={styles.muniBodyText}>{muniReflection.body}</Text>
+
+            {muniReflection.actionLabel && muniReflection.actionRoute ? (
+              <Animated.View style={[{ transform: [{ scale: reflectionBtnScale }] }, { alignSelf: "flex-start", marginTop: 10 }]}>
                 <Pressable
+                  style={styles.muniActionPill}
                   onPress={() => {
-                    setDisplayYear(now.year);
-                    setDisplayMonthIndex(now.monthIndex);
-                    setSelectedDayNumber(now.day);
+                    if (muniReflection.actionRoute) {
+                      router.push(muniReflection.actionRoute as never);
+                    }
                   }}
-                  style={styles.todayButton}
+                  onPressIn={() => handleButtonPressIn(reflectionBtnScale, 0.94)}
+                  onPressOut={() => handleButtonPressOut(reflectionBtnScale)}
                   accessibilityRole="button"
-                  accessibilityLabel="Go to current month"
+                  accessibilityLabel={muniReflection.actionLabel}
                 >
-                  <Text style={styles.todayButtonText}>Today</Text>
+                  {muniReflection.actionIcon ? (
+                    <Ionicons
+                      name={muniReflection.actionIcon}
+                      size={14}
+                      color="#27561B"
+                      style={{ marginRight: 5 }}
+                    />
+                  ) : null}
+                  <Text style={styles.muniActionPillText}>{muniReflection.actionLabel}</Text>
+                  <Ionicons name="chevron-forward" size={12} color="#27561B" style={{ marginLeft: 4 }} />
                 </Pressable>
-              ) : null}
-              <Pressable onPress={goNextMonth} disabled={isFutureMonth} style={styles.monthArrowButton}>
-                <Ionicons name="chevron-forward" size={20} color={isFutureMonth ? "#B4BCC5" : "#384A5D"} />
-              </Pressable>
-            </View>
+              </Animated.View>
+            ) : null}
           </View>
 
-          <Text style={styles.calendarHint}>Tap a colored day to explore the emotions you logged.</Text>
+          {/* Core Feature 1: Apple Interactive Calendar */}
+          <View style={styles.calendarCard}>
+            <View style={styles.monthHeader}>
+              <Animated.View style={{ transform: [{ scale: prevMonthScale }] }}>
+                <Pressable
+                  onPress={goPreviousMonth}
+                  onPressIn={() => canGoPrevious && handleButtonPressIn(prevMonthScale)}
+                  onPressOut={() => handleButtonPressOut(prevMonthScale)}
+                  disabled={!canGoPrevious}
+                  style={[styles.monthArrowButton, !canGoPrevious && styles.monthArrowButtonDisabled]}
+                  accessibilityLabel="Previous month"
+                >
+                  <Ionicons name="chevron-back" size={18} color={canGoPrevious ? "#0F172A" : "#CBD5E1"} />
+                </Pressable>
+              </Animated.View>
 
-          <View style={styles.weekHeaderRow}>
-            {WEEKDAY_LABELS.map((day) => (
-              <Text key={day} style={styles.weekdayText}>
-                {day}
-              </Text>
-            ))}
-          </View>
+              <View style={styles.monthLabelWrap}>
+                <Text style={styles.monthLabel}>
+                  {`${getMonthName(displayMonthIndex)} ${displayYear}`}
+                </Text>
+              </View>
 
-          <View style={styles.calendarGrid}>
-            {calendarDays.map((day, index) => {
-              const moodMeta = day.moodId ? EMOTION_META[day.moodId] ?? null : null;
-              const isToday =
-                !day.isOutsideMonth &&
-                viewedMonthKey === todayMonthKey &&
-                day.dayNumber === todayDay;
+              <View style={styles.monthActions}>
+                {viewedMonthKey !== todayMonthKey ? (
+                  <Animated.View style={{ transform: [{ scale: todayBtnScale }] }}>
+                    <Pressable
+                      onPress={() => {
+                        triggerAppleHaptic(Haptics.ImpactFeedbackStyle.Light);
+                        setDisplayYear(now.year);
+                        setDisplayMonthIndex(now.monthIndex);
+                        setSelectedDayNumber(now.day);
+                      }}
+                      onPressIn={() => handleButtonPressIn(todayBtnScale)}
+                      onPressOut={() => handleButtonPressOut(todayBtnScale)}
+                      style={styles.todayButton}
+                      accessibilityRole="button"
+                      accessibilityLabel="Go to today"
+                    >
+                      <Text style={styles.todayButtonText}>Today</Text>
+                    </Pressable>
+                  </Animated.View>
+                ) : null}
 
-              return (
-                <View key={`${day.dayNumber ?? "blank"}-${index}`} style={styles.dayCell}>
-                  {day.dayNumber === null ? <View style={styles.dayCircleBlank} /> : (
+                <Animated.View style={{ transform: [{ scale: nextMonthScale }] }}>
                   <Pressable
-                    disabled={day.isOutsideMonth || day.state === "future"}
-                    onPress={() => {
-                      if (day.dayNumber) {
-                        setSelectedDayNumber(day.dayNumber);
-                      }
-                    }}
-                    style={[
-                      styles.dayCircle,
-                      day.isOutsideMonth && styles.dayCircleOutsideMonth,
-                      day.state === "mood" && moodMeta && { backgroundColor: moodMeta.color },
-                      day.state === "future" && styles.dayCircleFuture,
-                      day.state === "empty" && styles.dayCircleEmpty,
-                      day.state === "empty" && styles.dayCircleEmptyBorder,
-                      isToday && styles.dayCircleToday,
-                      day.isSelected && styles.dayCircleSelected,
-                    ]}
+                    onPress={goNextMonth}
+                    onPressIn={() => !isFutureMonth && handleButtonPressIn(nextMonthScale)}
+                    onPressOut={() => handleButtonPressOut(nextMonthScale)}
+                    disabled={isFutureMonth}
+                    style={[styles.monthArrowButton, isFutureMonth && styles.monthArrowButtonDisabled]}
+                    accessibilityLabel="Next month"
                   >
-                    <Text
+                    <Ionicons name="chevron-forward" size={18} color={!isFutureMonth ? "#0F172A" : "#CBD5E1"} />
+                  </Pressable>
+                </Animated.View>
+              </View>
+            </View>
+
+            {/* Weekdays */}
+            <View style={styles.weekHeaderRow}>
+              {WEEKDAY_LABELS.map((day, i) => (
+                <Text key={`${day}-${i}`} style={styles.weekdayText}>
+                  {day}
+                </Text>
+              ))}
+            </View>
+
+            {/* Days Grid */}
+            <View style={styles.calendarGrid}>
+              {calendarDays.map((day, index) => {
+                const moodMeta = day.moodId ? EMOTION_META[day.moodId] ?? null : null;
+                const isToday =
+                  !day.isOutsideMonth &&
+                  viewedMonthKey === todayMonthKey &&
+                  day.dayNumber === todayDay;
+
+                if (day.dayNumber === null) {
+                  return <View key={`blank-${index}`} style={styles.dayCellBlank} />;
+                }
+
+                const isSelectable = !day.isOutsideMonth && day.state !== "future";
+                const isSelected = day.isSelected;
+
+                return (
+                  <View key={`${day.dayNumber}-${index}`} style={styles.dayCell}>
+                    <Pressable
+                      disabled={!isSelectable}
+                      onPress={() => day.dayNumber && handleSelectDay(day.dayNumber)}
                       style={[
-                        styles.dayNumber,
-                        day.isOutsideMonth && styles.dayNumberOutsideMonth,
-                        day.state === "future" && styles.dayNumberFuture,
-                        day.state === "mood" && styles.dayNumberMood,
-                        day.isSelected && styles.dayNumberSelected,
+                        styles.dayCircle,
+                        day.isOutsideMonth && styles.dayCircleOutsideMonth,
+                        day.state === "future" && styles.dayCircleFuture,
+                        day.state === "empty" && styles.dayCircleEmpty,
+                        day.state === "mood" && moodMeta && {
+                          backgroundColor: `${moodMeta.color}35`,
+                          borderColor: moodMeta.color,
+                        },
+                        isToday && styles.dayCircleToday,
+                        isSelected && styles.dayCircleSelected,
                       ]}
                     >
-                      {day.dayNumber}
-                    </Text>
-                    {day.state === "mood" && Number(day.checkInCount || 0) > 1 ? (
-                      <View style={styles.dayCountBadge}>
-                        <Text style={styles.dayCountBadgeText}>{day.checkInCount}</Text>
-                      </View>
-                    ) : null}
-                  </Pressable>
-                  )}
-                </View>
-              );
-            })}
-          </View>
-        </View>
-
-        <View style={styles.insightCard}>
-          <View style={styles.insightImageWrap}>
-            <MuniAvatar style={styles.insightImage} />
-          </View>
-
-          <View style={styles.insightTextWrap}>
-            <Text style={styles.insightText}>{dailyInsightText}</Text>
-            <Text style={styles.insightFootnote}>{INSIGHT_FOOTNOTE}</Text>
-          </View>
-        </View>
-
-        <View style={styles.summaryCard}>
-          <View style={styles.summaryHeader}>
-            <View style={styles.summaryHeaderCopy}>
-              <Text style={styles.summaryEyebrow}>MONTHLY TOTALS</Text>
-              <Text style={styles.summaryMonth}>{`${getMonthName(displayMonthIndex)} ${displayYear}`}</Text>
-              <Text style={styles.summarySub}>{monthlySubText}</Text>
-            </View>
-
-            <View style={styles.commonMoodWrap}>
-              <Text style={styles.commonMoodMeta}>Most Common</Text>
-              <View style={[styles.commonMoodFace, mostCommonMood && { borderColor: mostCommonMood.color }]}>
-                {mostCommonMood?.image ? (
-                  <Image source={mostCommonMood.image} style={styles.commonMoodImage} contentFit="contain" />
-                ) : mostCommonMood ? (
-                  <View style={styles.commonMoodPlaceholder} />
-                ) : (
-                  <Text style={styles.commonMoodFallback}>-</Text>
-                )}
-              </View>
-              <Text style={styles.commonMoodLabel}>{mostCommonMood?.label ?? "No emotion yet"}</Text>
-            </View>
-          </View>
-
-          {rankedMoodStats.length ? (
-            <View style={styles.moodBars}>
-              {rankedMoodStats.map((item) => (
-                <View key={item.id} style={styles.moodBarRow}>
-                  <View style={styles.moodBarLabelWrap}>
-                    <View style={[styles.moodBarDot, { backgroundColor: item.color }]} />
-                    <Text style={styles.moodBarLabel} numberOfLines={1}>{item.label}</Text>
-                  </View>
-                  <View style={styles.moodBarTrack}>
-                    <View style={[styles.moodBarFill, { width: `${Math.max(12, (item.count / Math.max(rankedMoodStats[0].count, 1)) * 100)}%`, backgroundColor: item.color }]} />
-                  </View>
-                  <Text style={styles.moodBarCount}>{item.count}</Text>
-                </View>
-              ))}
-            </View>
-          ) : (
-            <View style={styles.noMonthlyData}><Text style={styles.noMonthlyDataText}>Your emotion pattern will appear here after your first check-in.</Text></View>
-          )}
-
-          <View style={styles.statsRow}>
-            {moodStats.map((item) => (
-              <View key={item.id} style={styles.statItem}>
-                <View style={[styles.statFace, { borderColor: item.color }]}>
-                  {item.image ? (
-                    <Image source={item.image} style={styles.statImage} contentFit="contain" />
-                  ) : (
-                    <View style={styles.statImagePlaceholder} />
-                  )}
-                </View>
-                <Text style={styles.statCount}>{item.count}</Text>
-                <Text style={styles.statLabel} numberOfLines={2}>{item.label}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      </ScrollView>
-
-      <Modal
-        visible={showDailyRecordsModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowDailyRecordsModal(false)}
-      >
-        <View style={styles.detailModalBackdrop}>
-          <View style={styles.recordsModalCard}>
-            <View style={styles.recordsModalHeader}>
-              <View style={styles.recordsModalHeaderCopy}>
-                <Text style={styles.detailModalEyebrow}>DAILY RECORDS</Text>
-                <Text style={styles.detailModalTitle}>{selectedDayLabel}</Text>
-                <Text style={styles.detailModalMeta}>{selectedDayRecordLabel}</Text>
-              </View>
-              <Pressable style={styles.recordsModalCloseButton} onPress={() => setShowDailyRecordsModal(false)} accessibilityLabel="Close records">
-                <Ionicons name="close" size={20} color="#31465A" />
-              </Pressable>
-            </View>
-
-            <View style={styles.recordsTableHeader}>
-              <Text style={[styles.recordsTableHeaderText, styles.recordsEmotionCell]}>Emotion</Text>
-              <Text style={[styles.recordsTableHeaderText, styles.recordsTimeCell]}>Time</Text>
-              <Text style={[styles.recordsTableHeaderText, styles.recordsSourceHeaderCell]}>From</Text>
-            </View>
-
-            <ScrollView style={styles.recordsTableScroll} contentContainerStyle={styles.recordsTableContent}>
-              {selectedDayEntries.map((entry, index) => {
-                const moodMeta = EMOTION_META[entry.moodId] ?? null;
-                return (
-                  <View key={entry.id ?? `${entry.moodId}-${index}`} style={styles.recordsTableRow}>
-                    <Text style={[styles.recordsTableText, styles.recordsEmotionCell]} numberOfLines={1}>
-                      {moodMeta?.label ?? entry.moodLabel}
-                    </Text>
-                    <Text style={[styles.recordsTableText, styles.recordsTimeCell]} numberOfLines={1}>
-                      {formatCheckInTime(entry.createdAt) || "-"}
-                    </Text>
-                    <View style={styles.recordsSourceCell}>
-                      <Text style={styles.recordsSourcePill}>{formatMoodSourceLabel(entry.moodSource)}</Text>
-                    </View>
+                      <Text
+                        style={[
+                          styles.dayNumber,
+                          day.isOutsideMonth && styles.dayNumberOutsideMonth,
+                          day.state === "future" && styles.dayNumberFuture,
+                          day.state === "mood" && styles.dayNumberMood,
+                          isSelected && styles.dayNumberSelected,
+                        ]}
+                      >
+                        {day.dayNumber}
+                      </Text>
+                      {day.state === "mood" && Number(day.checkInCount || 0) > 1 ? (
+                        <View style={[styles.dayCountBadge, moodMeta ? { backgroundColor: moodMeta.color } : null]}>
+                          <Text style={styles.dayCountBadgeText}>{day.checkInCount}</Text>
+                        </View>
+                      ) : null}
+                    </Pressable>
                   </View>
                 );
               })}
-            </ScrollView>
-
-            <Pressable style={styles.detailModalButton} onPress={() => setShowDailyRecordsModal(false)}>
-              <Text style={styles.detailModalButtonText}>Close</Text>
-            </Pressable>
+            </View>
           </View>
-        </View>
-      </Modal>
+
+          {/* Core Feature 2: Selected Day Timeline (Inline — No Modal!) */}
+          <Animated.View
+            style={[
+              styles.dailyCard,
+              {
+                opacity: dayCardFade,
+                transform: [{ translateY: dayCardTranslateY }],
+              },
+            ]}
+          >
+            <View style={styles.dailyCardHeader}>
+              <View style={styles.dailyCardHeaderLeft}>
+                <Ionicons name="calendar-outline" size={16} color="#475569" style={{ marginRight: 6 }} />
+                <Text style={styles.dailyCardDateTitle}>{selectedDayLabel}</Text>
+              </View>
+              <View style={[styles.dailyCardCountPill, selectedDayEntries.length > 0 && styles.dailyCardCountPillActive]}>
+                <Text style={[styles.dailyCardCountText, selectedDayEntries.length > 0 && styles.dailyCardCountTextActive]}>
+                  {selectedDayEntries.length > 0
+                    ? `${selectedDayEntries.length} check-in${selectedDayEntries.length === 1 ? "" : "s"}`
+                    : "No check-ins"}
+                </Text>
+              </View>
+            </View>
+
+            {selectedDayEntries.length > 0 ? (
+              <View style={styles.timelineList}>
+                {selectedDayEntries.map((entry, index) => {
+                  const moodMeta = EMOTION_META[entry.moodId] ?? null;
+                  const moodImageSource = getEmotionImageSource(moodMeta, false);
+
+                  return (
+                    <View
+                      key={entry.id ?? `${entry.moodId}-${index}`}
+                      style={[
+                        styles.timelineItem,
+                        index < selectedDayEntries.length - 1 && styles.timelineItemBorder,
+                      ]}
+                    >
+                      <View style={[styles.timelineIconBox, { borderColor: moodMeta?.color ?? "#CBD5E1", backgroundColor: `${moodMeta?.color ?? "#E2E8F0"}18` }]}>
+                        {moodImageSource ? (
+                          <Image source={moodImageSource} style={styles.timelineEmotionImage} contentFit="contain" />
+                        ) : (
+                          <View style={[styles.timelineDot, { backgroundColor: moodMeta?.color ?? "#94A3B8" }]} />
+                        )}
+                      </View>
+
+                      <View style={styles.timelineInfo}>
+                        <Text style={styles.timelineMoodLabel}>{moodMeta?.label ?? entry.moodLabel}</Text>
+                        <Text style={styles.timelineTimeText}>{formatCheckInTime(entry.createdAt) || "Logged"}</Text>
+                      </View>
+
+                      <View style={styles.timelineSourcePill}>
+                        <Ionicons
+                          name={String(entry.moodSource).toUpperCase() === "JOURNAL" ? "book-outline" : "hand-left-outline"}
+                          size={12}
+                          color="#475569"
+                          style={{ marginRight: 3 }}
+                        />
+                        <Text style={styles.timelineSourceText}>{formatMoodSourceLabel(entry.moodSource)}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              <View style={styles.emptyDayWrap}>
+                <Ionicons name="sparkles-outline" size={20} color="#94A3B8" style={{ marginBottom: 4 }} />
+                <Text style={styles.emptyDayText}>No emotions logged on this day.</Text>
+                <Text style={styles.emptyDayHint}>Tap any highlighted day on the calendar above to inspect.</Text>
+              </View>
+            )}
+          </Animated.View>
+
+          {/* Core Feature 3: Monthly Breakdown (Unified & Clear) */}
+          <View style={styles.monthlyCard}>
+            <View style={styles.monthlyCardHeader}>
+              <Text style={styles.monthlyCardTitle}>Monthly Breakdown</Text>
+              <Text style={styles.monthlyCardSubtitle}>
+                {`${totalCheckIns} total check-in${totalCheckIns === 1 ? "" : "s"}`}
+              </Text>
+            </View>
+
+            {rankedMoodStats.length > 0 ? (
+              <View style={styles.barsContainer}>
+                {rankedMoodStats.map((item) => {
+                  const maxCount = Math.max(rankedMoodStats[0].count, 1);
+                  const percentage = Math.round((item.count / totalCheckIns) * 100);
+                  const barWidthPercent = Math.max(12, Math.round((item.count / maxCount) * 100));
+
+                  return (
+                    <View key={item.id} style={styles.barRow}>
+                      <View style={[styles.barIconCircle, { borderColor: item.color, backgroundColor: `${item.color}18` }]}>
+                        {item.image ? (
+                          <Image source={item.image} style={styles.barEmotionImage} contentFit="contain" />
+                        ) : null}
+                      </View>
+
+                      <View style={styles.barInfoWrap}>
+                        <View style={styles.barLabelRow}>
+                          <Text style={styles.barMoodName}>{item.label}</Text>
+                          <Text style={styles.barCountLabel}>
+                            {`${item.count} (${percentage}%)`}
+                          </Text>
+                        </View>
+                        <View style={styles.barTrack}>
+                          <View
+                            style={[
+                              styles.barFill,
+                              {
+                                width: `${barWidthPercent}%`,
+                                backgroundColor: item.color,
+                              },
+                            ]}
+                          />
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              <View style={styles.noDataWrap}>
+                <Text style={styles.noDataText}>No check-ins logged for this month yet.</Text>
+              </View>
+            )}
+          </View>
+          </Animated.View>
+        </ScrollView>
       </InformedConsentGate>
+
       <HomeBottomNav activeTab="none" />
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F6FAF3" },
-  topBar: {
-    height: 52,
-    backgroundColor: "#FFFFFF",
-    borderBottomWidth: 1,
-    borderBottomColor: "#DCE6D8",
+    backgroundColor: "#F8FAFC",
+  },
+
+  // Apple Floating Blurred Navigation Bar (Stays on top, content scrolls underneath and gets blurred)
+  appleFloatingBar: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 4,
-    shadowColor: "#525C67",
-    shadowOpacity: 0.16,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3 },
-  backButton: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center" },
-  topTitle: {
-    color: "#33465B",
-    fontSize: 36 / 2,
-    lineHeight: 24,
-    fontFamily: "Outfit-Bold" },
-  topBarSpacer: {
-    width: 36,
-    height: 36 },
-  scroll: {
-    flex: 1 },
-  scrollContent: {
-    paddingHorizontal: 10,
-    paddingTop: 12,
-    paddingBottom: 118 },
-  pageIntro: {
-    paddingHorizontal: 5,
-    paddingTop: 2,
-    paddingBottom: 12 },
-  pageIntroEyebrow: {
-    color: "#7C8F77",
-    fontSize: 10,
-    lineHeight: 14,
-    letterSpacing: 1.1,
-    fontFamily: "Outfit-Bold" },
-  pageIntroTitle: {
-    color: "#31465A",
-    fontSize: 23,
-    lineHeight: 29,
-    fontFamily: "Outfit-Bold",
-    marginTop: 3 },
-  pageIntroText: {
-    color: "#6A7481",
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 3 },
-  
-  weeklyRecapLinkCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#DCFCE7",
-    borderRadius: 16,
-    paddingVertical: 12,
     paddingHorizontal: 16,
-    borderWidth: 1.5,
-    borderColor: "#86EFAC",
-    marginBottom: 14,
+    paddingBottom: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.78)",
   },
-  weeklyRecapLinkLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  weeklyRecapLinkTitle: {
-    fontSize: 13,
-    fontFamily: "Outfit-Bold",
-    color: "#166534",
-  },
-  weeklyRecapLinkSub: {
-    fontSize: 10,
-    fontFamily: "Outfit",
-    color: "#15803D",
-    marginTop: 1,
-  },
-atAGlanceRow: {
-    borderRadius: 18,
-    backgroundColor: "#EEF7E9",
-    borderWidth: 1,
-    borderColor: "#DCEBD4",
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 11,
-    marginBottom: 14 },
-  atAGlanceItem: {
-    flex: 1,
-    alignItems: "center",
-    paddingHorizontal: 5 },
-  atAGlanceDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: "#D2E2CA" },
-  atAGlanceValue: {
-    color: "#31465A",
-    fontSize: 16,
-    lineHeight: 20,
-    fontFamily: "Outfit-Bold",
-    maxWidth: 100 },
-  atAGlanceLabel: {
-    color: "#71816D",
-    fontSize: 10,
-    lineHeight: 14,
-    marginTop: 2,
-    fontFamily: "Outfit-SemiBold" },
-  summaryCard: {
-    borderRadius: 22,
+  appleCircleButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#E1EBD9",
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 14,
-    marginBottom: 14,
-    shadowColor: "#525C67",
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2 },
-  dailyCard: {
-    borderRadius: 22,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E1EBD9",
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 14,
-    marginBottom: 14,
-    shadowColor: "#525C67",
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2 },
-  dailyHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    columnGap: 12,
-    marginBottom: 12 },
-  dailyMoodWrap: {
-    alignItems: "center",
-    minWidth: 88,
-    flexShrink: 0 },
-  dailyBreakdownHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 10,
-    marginBottom: 7 },
-  dailyBreakdownTitle: {
-    color: "#31465A",
-    fontSize: 13,
-    lineHeight: 17,
-    fontFamily: "Outfit-Bold" },
-  dailyBreakdownMeta: {
-    color: "#7B8876",
-    fontSize: 11,
-    lineHeight: 15,
-    fontFamily: "Outfit-Bold" },
-  dailyMixScroller: {
-    columnGap: 8,
-    paddingRight: 2,
-    paddingBottom: 1 },
-  dailyMixChip: {
-    width: 126,
-    minHeight: 50,
-    borderRadius: 16,
-    backgroundColor: "#F8FBF5",
-    borderWidth: 1,
-    borderColor: "#E0E9DA",
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: 8,
-    paddingHorizontal: 9,
-    paddingVertical: 7 },
-  dailyMixFace: {
-    width: 42,
-    height: 42,
-    borderRadius: 15,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
     alignItems: "center",
     justifyContent: "center",
-    overflow: "hidden" },
-  dailyMixImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 14 },
-  dailyMixCopy: {
-    flex: 1,
-    minWidth: 0 },
-  dailyMixLabel: {
-    color: "#31465A",
-    fontSize: 12,
-    lineHeight: 16,
-    fontFamily: "Outfit-Bold" },
-  dailyMixCount: {
-    color: "#6A7481",
-    fontSize: 11,
-    lineHeight: 15,
-    marginTop: 1 },
-  dailyRecordsButton: {
-    minHeight: 54,
-    borderRadius: 16,
-    backgroundColor: "#F8FBF5",
-    borderWidth: 1,
-    borderColor: "#D9E7D2",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  appleCenterTitleWrap: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    columnGap: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10 },
-  dailyRecordsButtonDisabled: {
-    opacity: 0.72 },
-  dailyEntryFallback: {
-    width: 20,
-    height: 20,
-    borderRadius: 999 },
-  dailyRecordsButtonCopy: {
-    flex: 1,
-    minWidth: 0 },
-  dailyRecordsButtonTitle: {
-    color: "#31465A",
-    fontSize: 13,
-    lineHeight: 18,
-    fontFamily: "Outfit-Bold" },
-  dailyRecordsButtonMeta: {
-    color: "#6A7481",
-    fontSize: 11,
-    lineHeight: 15,
-    marginTop: 1 },
-  dailyRecordsEmptyText: {
-    color: "#6A7481",
-    fontSize: 12,
-    lineHeight: 16,
-    fontFamily: "Outfit-Bold" },
-  dailyEmptyText: {
-    color: "#6A7481",
-    fontSize: 13,
-    lineHeight: 18,
-    paddingVertical: 6 },
-  summaryHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    columnGap: 12,
-    marginBottom: 12 },
-  summaryHeaderCopy: {
-    flex: 1,
-    minWidth: 0,
-    paddingRight: 2 },
-  summaryEyebrow: {
-    color: "#7C8F77",
-    fontSize: 10,
-    lineHeight: 14,
-    letterSpacing: 1,
-    fontFamily: "Outfit-Bold",
-    marginBottom: 4 },
-  summaryMonth: {
-    color: "#31465A",
-    fontSize: 18,
-    lineHeight: 24,
-    fontFamily: "Outfit-Bold" },
-  summarySub: {
-    color: "#6A7481",
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 2,
-    flexShrink: 1 },
-  commonMoodWrap: {
-    alignItems: "center",
-    minWidth: 84,
-    flexShrink: 0 },
-  commonMoodMeta: {
-    color: "#6E7E8B",
-    fontSize: 10,
-    lineHeight: 14,
-    fontFamily: "Outfit-Bold",
-    marginBottom: 4 },
-  commonMoodFace: {
-    width: 60,
-    height: 60,
-    borderRadius: 18,
-    backgroundColor: "#F8FBF5",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 4,
-    borderWidth: 1.5,
-    borderColor: "#DCE5DB",
-    overflow: "hidden" },
-  commonMoodImage: {
-    width: 56,
-    height: 56,
-    borderRadius: 16 },
-  commonMoodPlaceholder: {
-    width: 56,
-    height: 56 },
-  commonMoodFallback: {
-    color: "#3F4F61",
-    fontSize: 19,
-    lineHeight: 22 },
-  commonMoodLabel: {
-    color: "#3F4F61",
-    fontSize: 11,
-    lineHeight: 14,
-    fontFamily: "Outfit-SemiBold",
-    maxWidth: 84,
-    textAlign: "center" },
-  moodBars: {
-    rowGap: 9,
-    marginBottom: 15,
-    paddingVertical: 2 },
-  moodBarRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: 8 },
-  moodBarLabelWrap: {
-    width: 86,
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: 5 },
-  moodBarDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 999 },
-  moodBarLabel: {
-    flex: 1,
-    color: "#536271",
-    fontSize: 11,
-    lineHeight: 15,
-    fontFamily: "Outfit-SemiBold" },
-  moodBarTrack: {
-    flex: 1,
-    height: 8,
-    borderRadius: 999,
-    backgroundColor: "#EEF2EC",
-    overflow: "hidden" },
-  moodBarFill: {
+    columnGap: 5,
+  },
+  appleCenterTitleText: {
+    color: "#0F172A",
+    fontSize: 16.5,
+    lineHeight: 21,
+    fontFamily: "Outfit-Bold",
+    letterSpacing: -0.3,
+  },
+
+  // Apple Viewport Progress Bar
+  appleProgressBarTrack: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    height: 2.5,
+    zIndex: 110,
+    backgroundColor: "rgba(226, 232, 240, 0.4)",
+    overflow: "hidden",
+  },
+  appleProgressBarFill: {
     height: "100%",
+    backgroundColor: "#52B72A",
     borderRadius: 999,
-    opacity: 0.86 },
-  moodBarCount: {
-    width: 20,
-    color: "#31465A",
-    fontSize: 11,
-    lineHeight: 15,
-    textAlign: "right",
-    fontFamily: "Outfit-Bold" },
-  noMonthlyData: {
-    borderRadius: 14,
-    backgroundColor: "#F7FAF5",
+  },
+
+  // Apple Toast Pill
+  appleToastWrap: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    zIndex: 120,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  appleToastPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.94)",
+    borderWidth: 1,
+    borderColor: "#D2EAC7",
     paddingHorizontal: 12,
-    paddingVertical: 12,
-    marginBottom: 13 },
-  noMonthlyDataText: {
-    color: "#71816D",
-    fontSize: 12,
-    lineHeight: 17,
-    textAlign: "center" },
-  statsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    rowGap: 12 },
-  statItem: {
-    alignItems: "center",
-    paddingHorizontal: 2,
-    width: "20%" },
-  statFace: {
-    width: 56,
-    height: 56,
-    borderRadius: 17,
-    backgroundColor: "#F9FBF7",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 4,
-    borderWidth: 1.5,
-    borderColor: "#DCE5DB",
-    overflow: "hidden" },
-  statImage: {
-    width: 52,
-    height: 52,
-    borderRadius: 15 },
-  statImagePlaceholder: {
-    width: 52,
-    height: 52 },
-  statCount: {
-    color: "#4B5968",
-    fontSize: 13,
-    lineHeight: 16,
-    fontFamily: "Outfit-Bold" },
-  statLabel: {
-    color: "#7A8792",
-    fontSize: 9,
-    lineHeight: 11,
-    marginTop: 2,
-    minHeight: 22,
-    textAlign: "center" },
-  detailModalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(36, 47, 42, 0.28)",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 22 },
-  detailModalCard: {
-    width: "100%",
-    maxWidth: 340,
-    borderRadius: 22,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#DFEADB",
-    paddingHorizontal: 20,
-    paddingVertical: 18,
-    shadowColor: "#24302B",
-    shadowOpacity: 0.18,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 6 },
-  recordsModalCard: {
-    width: "100%",
-    maxWidth: 390,
-    maxHeight: "82%",
-    borderRadius: 22,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#DFEADB",
-    paddingHorizontal: 14,
-    paddingTop: 16,
-    paddingBottom: 14,
-    shadowColor: "#24302B",
-    shadowOpacity: 0.18,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 6 },
-  recordsModalHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    columnGap: 12,
-    marginBottom: 14 },
-  recordsModalHeaderCopy: {
-    flex: 1,
-    minWidth: 0 },
-  recordsModalCloseButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 14,
-    backgroundColor: "#F4F8F1",
-    alignItems: "center",
-    justifyContent: "center" },
-  detailModalEyebrow: {
-    color: "#7C8F77",
-    fontSize: 10,
-    lineHeight: 14,
-    letterSpacing: 1,
-    fontFamily: "Outfit-Bold",
-    marginBottom: 6 },
-  detailModalTitle: {
-    color: "#31465A",
-    fontSize: 22,
-    lineHeight: 28,
-    fontFamily: "Outfit-Bold" },
-  detailModalMeta: {
-    color: "#6A7481",
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: 4 },
-  detailModalTime: {
-    color: "#31465A",
-    fontSize: 18,
-    lineHeight: 24,
-    fontFamily: "Outfit-Bold",
-    marginTop: 14 },
-  recordsTableHeader: {
-    minHeight: 34,
-    borderRadius: 12,
-    backgroundColor: "#EEF5EA",
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
-    marginBottom: 6 },
-  recordsTableHeaderText: {
-    color: "#647960",
-    fontSize: 10,
-    lineHeight: 14,
-    fontFamily: "Outfit-Bold",
-    letterSpacing: 0.8,
-    textTransform: "uppercase" },
-  recordsTableScroll: {
-    maxHeight: 320 },
-  recordsTableContent: {
-    rowGap: 6,
-    paddingBottom: 2 },
-  recordsTableRow: {
-    minHeight: 42,
-    borderRadius: 12,
-    backgroundColor: "#FAFCF8",
-    borderWidth: 1,
-    borderColor: "#E4EDDE",
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10 },
-  recordsTableText: {
-    color: "#31465A",
-    fontSize: 12,
-    lineHeight: 16,
-    fontFamily: "Outfit-Bold" },
-  recordsEmotionCell: {
-    flex: 1.15,
-    minWidth: 0,
-    paddingRight: 8 },
-  recordsTimeCell: {
-    width: 78,
-    paddingRight: 8 },
-  recordsSourceCell: {
-    width: 70,
-    alignItems: "flex-start" },
-  recordsSourceHeaderCell: {
-    width: 70,
-    paddingRight: 0 },
-  recordsSourcePill: {
-    color: "#31465A",
-    fontSize: 11,
-    lineHeight: 15,
-    fontFamily: "Outfit-Bold",
-    backgroundColor: "#EEF5EA",
+    paddingVertical: 5,
     borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    overflow: "hidden" },
-  detailModalButton: {
-    height: 42,
-    borderRadius: 14,
-    backgroundColor: "#31465A",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 18 },
-  detailModalButtonText: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    lineHeight: 18,
-    fontFamily: "Outfit-Bold" },
-  calendarCard: {
-    borderRadius: 22,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E1EBD9",
-    paddingHorizontal: 10,
-    paddingTop: 12,
-    paddingBottom: 12,
-    marginBottom: 14,
-    shadowColor: "#525C67",
+    shadowColor: "#0F172A",
     shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 2 },
+    elevation: 3,
+  },
+  appleToastText: {
+    color: "#27561B",
+    fontSize: 12,
+    lineHeight: 15,
+    fontFamily: "Outfit-Bold",
+  },
+
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 14,
+    paddingBottom: 110,
+  },
+
+  // Muni Companion Reflection Card
+  muniReflectionCard: {
+    borderRadius: 24,
+    backgroundColor: "#F2F9ED",
+    borderWidth: 1,
+    borderColor: "#D5EBD0",
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 16,
+    marginBottom: 12,
+    shadowColor: "#112616",
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  muniReflectionCardSupport: {
+    backgroundColor: "#F4F8F4",
+    borderColor: "#D2E4D2",
+  },
+  muniReflectionCardCelebrate: {
+    backgroundColor: "#F6FAF0",
+    borderColor: "#D5EAD0",
+  },
+  muniCardTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 12,
+    marginBottom: 8,
+  },
+  muniAvatarWrapper: {
+    width: 52,
+    height: 52,
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#D5EBD0",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  muniAvatarArt: {
+    width: 52,
+    height: 52,
+  },
+  muniCopyWrapper: {
+    flex: 1,
+  },
+  muniKickerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 5,
+    marginBottom: 2,
+  },
+  muniKickerText: {
+    color: "#356E25",
+    fontSize: 10,
+    lineHeight: 13,
+    fontFamily: "Outfit-Bold",
+    letterSpacing: 0.8,
+  },
+  muniHeadlineText: {
+    color: "#0F172A",
+    fontSize: 16,
+    lineHeight: 21,
+    fontFamily: "Outfit-Bold",
+    letterSpacing: -0.2,
+  },
+  muniBodyText: {
+    color: "#334155",
+    fontSize: 13.5,
+    lineHeight: 19,
+    fontFamily: "Outfit",
+  },
+  muniActionPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#CCE5C7",
+    paddingHorizontal: 13,
+    paddingVertical: 7,
+    borderRadius: 999,
+    shadowColor: "#1E3B16",
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  muniActionPillText: {
+    color: "#27561B",
+    fontSize: 12.5,
+    lineHeight: 16,
+    fontFamily: "Outfit-Bold",
+  },
+
+  // Calendar Card
+  calendarCard: {
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingHorizontal: 12,
+    paddingTop: 14,
+    paddingBottom: 14,
+    marginBottom: 12,
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
   monthHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 10,
-    paddingHorizontal: 4 },
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  monthArrowButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  monthArrowButtonDisabled: {
+    opacity: 0.45,
+  },
   monthLabelWrap: {
     alignItems: "center",
-    flex: 1 },
-  monthYear: {
-    color: "#7A8792",
-    fontSize: 11,
-    lineHeight: 15,
-    marginTop: 1,
-    fontFamily: "Outfit-SemiBold" },
+    flex: 1,
+  },
+  monthLabel: {
+    color: "#0F172A",
+    fontSize: 17,
+    lineHeight: 22,
+    fontFamily: "Outfit-Bold",
+    letterSpacing: -0.2,
+  },
   monthActions: {
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 5 },
+    columnGap: 6,
+  },
   todayButton: {
-    minHeight: 32,
-    borderRadius: 12,
-    backgroundColor: "#EAF5E5",
+    height: 30,
+    borderRadius: 999,
+    backgroundColor: "#EEF8EB",
+    borderWidth: 1,
+    borderColor: "#D2EAC7",
     justifyContent: "center",
-    paddingHorizontal: 9 },
+    paddingHorizontal: 11,
+  },
   todayButtonText: {
-    color: "#4E8A3A",
-    fontSize: 11,
+    color: "#356E25",
+    fontSize: 11.5,
     lineHeight: 15,
-    fontFamily: "Outfit-Bold" },
-  calendarHint: {
-    color: "#7A8792",
-    fontSize: 11,
-    lineHeight: 15,
-    textAlign: "center",
-    marginTop: -3,
-    marginBottom: 10 },
-  monthArrowButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 12,
-    backgroundColor: "#F4F8F1",
-    alignItems: "center",
-    justifyContent: "center" },
-  monthLabel: {
-    color: "#33475B",
-    fontSize: 35 / 2,
-    lineHeight: 23,
-    fontFamily: "Outfit-Bold" },
+    fontFamily: "Outfit-Bold",
+  },
   weekHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     paddingHorizontal: 2,
-    marginBottom: 6 },
+    marginBottom: 8,
+  },
   weekdayText: {
-    width: "13.5%",
+    width: "14.28%",
     textAlign: "center",
-    color: "#384B5F",
-    fontSize: 18 / 1.2,
-    lineHeight: 18,
-    fontFamily: "Outfit-Bold" },
+    color: "#94A3B8",
+    fontSize: 12,
+    lineHeight: 16,
+    fontFamily: "Outfit-Bold",
+  },
   calendarGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    justifyContent: "space-between",
     rowGap: 7,
-    paddingHorizontal: 0 },
+  },
+  dayCellBlank: {
+    width: "14.28%",
+    aspectRatio: 1,
+  },
   dayCell: {
-    width: "13.6%",
-    alignItems: "center" },
-  dayCircleBlank: {
-    width: 36,
-    height: 36 },
+    width: "14.28%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   dayCircle: {
     width: 36,
     height: 36,
-    borderRadius: 999,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#8BCB68",
-    position: "relative" },
-  dayCircleFuture: {
-    backgroundColor: "#D7DADF",
-    borderColor: "#C5CBD2" },
+    borderWidth: 1.5,
+    borderColor: "transparent",
+    position: "relative",
+  },
   dayCircleOutsideMonth: {
-    opacity: 0.72 },
+    opacity: 0.25,
+  },
+  dayCircleFuture: {
+    opacity: 0.35,
+  },
   dayCircleEmpty: {
-    backgroundColor: "#FFFFFF" },
-  dayCircleEmptyBorder: {
-    borderColor: "#8BCB68" },
+    backgroundColor: "#F8FAFC",
+  },
   dayCircleToday: {
     borderWidth: 2,
-    borderColor: "#5FAD38" },
+    borderColor: "#52B72A",
+  },
   dayCircleSelected: {
-    borderWidth: 2,
-    borderColor: "#31465A" },
+    borderWidth: 2.5,
+    borderColor: "#0F172A",
+  },
   dayNumber: {
-    color: "#4B5F73",
-    fontSize: 15 / 1.08,
-    lineHeight: 18,
-    fontFamily: "Outfit-Bold" },
+    color: "#334155",
+    fontSize: 13.5,
+    lineHeight: 17,
+    fontFamily: "Outfit-SemiBold",
+  },
   dayNumberMood: {
-    color: "#3D4450" },
+    color: "#0F172A",
+    fontFamily: "Outfit-Bold",
+  },
   dayNumberFuture: {
-    color: "#7B848E",
-    fontFamily: "Outfit-SemiBold" },
+    color: "#94A3B8",
+  },
   dayNumberOutsideMonth: {
-    color: "#8D96A0" },
+    color: "#CBD5E1",
+  },
   dayNumberSelected: {
-    color: "#263647" },
+    color: "#0F172A",
+    fontFamily: "Outfit-Bold",
+  },
   dayCountBadge: {
     position: "absolute",
-    right: -4,
-    top: -5,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 999,
-    backgroundColor: "#FFFFFF",
+    right: -2,
+    top: -2,
+    minWidth: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: "#52B72A",
     borderWidth: 1,
-    borderColor: "#6AAF43",
+    borderColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 3 },
+    paddingHorizontal: 2,
+  },
   dayCountBadgeText: {
-    color: "#2E6B23",
-    fontSize: 9,
-    lineHeight: 11,
-    fontFamily: "Outfit-Bold" },
-  insightCard: {
-    borderRadius: 22,
+    color: "#FFFFFF",
+    fontSize: 8.5,
+    lineHeight: 10,
+    fontFamily: "Outfit-Bold",
+  },
+
+  // Selected Day Timeline Card
+  dailyCard: {
+    borderRadius: 24,
     backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 14,
+    marginBottom: 12,
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  dailyCardHeader: {
     flexDirection: "row",
     alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#E1EBD9",
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    shadowColor: "#525C67",
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-    marginBottom: 14 },
-  insightImageWrap: {
-    width: 92,
+    justifyContent: "space-between",
+    marginBottom: 12,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  dailyCardHeaderLeft: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center" },
-  insightImage: {
-    width: 72,
-    height: 72 },
-  insightTextWrap: {
+  },
+  dailyCardDateTitle: {
+    color: "#0F172A",
+    fontSize: 16,
+    lineHeight: 21,
+    fontFamily: "Outfit-Bold",
+  },
+  dailyCardCountPill: {
+    paddingHorizontal: 9,
+    paddingVertical: 3.5,
+    borderRadius: 999,
+    backgroundColor: "#F1F5F9",
+  },
+  dailyCardCountPillActive: {
+    backgroundColor: "#EEF8EB",
+    borderWidth: 1,
+    borderColor: "#D2EAC7",
+  },
+  dailyCardCountText: {
+    color: "#64748B",
+    fontSize: 11,
+    lineHeight: 14,
+    fontFamily: "Outfit-SemiBold",
+  },
+  dailyCardCountTextActive: {
+    color: "#356E25",
+    fontFamily: "Outfit-Bold",
+  },
+  timelineList: {
+    rowGap: 8,
+  },
+  timelineItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 6,
+  },
+  timelineItemBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#F8FAFC",
+    paddingBottom: 10,
+  },
+  timelineIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    marginRight: 10,
+  },
+  timelineEmotionImage: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+  },
+  timelineDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+  },
+  timelineInfo: {
     flex: 1,
-    paddingRight: 6,
-    rowGap: 6 },
-  insightText: {
-    color: "#33485B",
+    minWidth: 0,
+  },
+  timelineMoodLabel: {
+    color: "#0F172A",
     fontSize: 15,
-    lineHeight: 22 },
-  insightFootnote: {
-    color: "#6F7B86",
-    fontSize: 10,
-    lineHeight: 14 } });
+    lineHeight: 19,
+    fontFamily: "Outfit-Bold",
+  },
+  timelineTimeText: {
+    color: "#64748B",
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 2,
+    fontFamily: "Outfit-Medium",
+  },
+  timelineSourcePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: "#F1F5F9",
+  },
+  timelineSourceText: {
+    color: "#475569",
+    fontSize: 11,
+    lineHeight: 14,
+    fontFamily: "Outfit-SemiBold",
+  },
+  emptyDayWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 18,
+  },
+  emptyDayText: {
+    color: "#475569",
+    fontSize: 13.5,
+    lineHeight: 18,
+    fontFamily: "Outfit-SemiBold",
+  },
+  emptyDayHint: {
+    color: "#94A3B8",
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 3,
+  },
 
+  // Monthly Breakdown Card
+  monthlyCard: {
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingHorizontal: 14,
+    paddingTop: 16,
+    paddingBottom: 16,
+    marginBottom: 14,
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  monthlyCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 14,
+  },
+  monthlyCardTitle: {
+    color: "#0F172A",
+    fontSize: 17,
+    lineHeight: 22,
+    fontFamily: "Outfit-Bold",
+    letterSpacing: -0.2,
+  },
+  monthlyCardSubtitle: {
+    color: "#64748B",
+    fontSize: 12,
+    lineHeight: 16,
+    fontFamily: "Outfit-Medium",
+  },
+  barsContainer: {
+    rowGap: 10,
+  },
+  barRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 10,
+  },
+  barIconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  barEmotionImage: {
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+  },
+  barInfoWrap: {
+    flex: 1,
+  },
+  barLabelRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  barMoodName: {
+    color: "#1E293B",
+    fontSize: 13,
+    lineHeight: 17,
+    fontFamily: "Outfit-Bold",
+  },
+  barCountLabel: {
+    color: "#64748B",
+    fontSize: 11.5,
+    lineHeight: 15,
+    fontFamily: "Outfit-SemiBold",
+  },
+  barTrack: {
+    height: 7,
+    borderRadius: 999,
+    backgroundColor: "#F1F5F9",
+    overflow: "hidden",
+  },
+  barFill: {
+    height: "100%",
+    borderRadius: 999,
+  },
+  noDataWrap: {
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  noDataText: {
+    color: "#94A3B8",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+});

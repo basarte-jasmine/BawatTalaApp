@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import DateTimePicker, { DateTimePickerAndroid, type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "@react-navigation/native";
@@ -111,6 +112,12 @@ const TALA_IMAGE = require("../assets/images/Tala_Star.png");
 const ISLAND_IMAGE = require("../assets/images/Sea/Island.webp");
 const BOTTLE_IMAGE = require("../assets/images/Sea/Bottle.webp");
 const FLOORBED_IMAGE = require("../assets/images/Sea/Floorbed.webp");
+
+function triggerAppleHaptic(style: Haptics.ImpactFeedbackStyle = Haptics.ImpactFeedbackStyle.Light) {
+  try {
+    void Haptics.impactAsync(style);
+  } catch {}
+}
 
 function getFutureBottleStorageKey(studentNumber: string) {
   return `${FUTURE_BOTTLE_STORAGE_PREFIX}:${studentNumber}`;
@@ -557,6 +564,18 @@ export default function HomeScreen() {
   const headerSwitchOff = tiny ? 154 : compact ? 174 : 202;
   const idleValues = useRef(EMOTIONS.map(() => new Animated.Value(0))).current;
   const pressScales = useRef(EMOTIONS.map(() => new Animated.Value(1))).current;
+  const moodConfirmAnim = useRef(new Animated.Value(0)).current;
+  const moodConfirmCancelScale = useRef(new Animated.Value(1)).current;
+  const moodConfirmSaveScale = useRef(new Animated.Value(1)).current;
+  const moodHistoryScale = useRef(new Animated.Value(1)).current;
+  const dailyCheckInScale = useRef(new Animated.Value(1)).current;
+  const activeDayPulse = useRef(new Animated.Value(0)).current;
+  const weeklyRecapScale = useRef(new Animated.Value(1)).current;
+  const pauseWellnessScale = useRef(new Animated.Value(1)).current;
+  const pauseLibraryScale = useRef(new Animated.Value(1)).current;
+  const headerProfileScale = useRef(new Animated.Value(1)).current;
+  const headerMessageScale = useRef(new Animated.Value(1)).current;
+  const headerNotifScale = useRef(new Animated.Value(1)).current;
   const quoteWaveDrift = useRef(new Animated.Value(0)).current;
   const futureBottleDrift = useRef(new Animated.Value(0)).current;
   const seaObjects = useMemo(
@@ -621,7 +640,56 @@ export default function HomeScreen() {
   }, [user?.studentNumber]);
 
   useEffect(() => {
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(activeDayPulse, {
+          toValue: 1,
+          duration: 1200,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(activeDayPulse, {
+          toValue: 0,
+          duration: 1200,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    pulseLoop.start();
+    return () => pulseLoop.stop();
+  }, [activeDayPulse]);
+
+  useEffect(() => {
     idleValues.forEach((value) => value.setValue(0));
+    EMOTIONS.forEach((_, index) => {
+      const isSelected = EMOTIONS[index].id === pendingMoodId;
+      Animated.spring(pressScales[index], {
+        toValue: isSelected ? 1.08 : 1,
+        damping: 14,
+        stiffness: 280,
+        mass: 0.8,
+        useNativeDriver: true,
+      }).start();
+    });
+
+    if (pendingMoodId) {
+      Animated.spring(moodConfirmAnim, {
+        toValue: 1,
+        damping: 15,
+        stiffness: 260,
+        mass: 0.8,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(moodConfirmAnim, {
+        toValue: 0,
+        duration: 160,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }).start();
+    }
+
     if (!pendingMoodId) {
       return;
     }
@@ -653,7 +721,7 @@ export default function HomeScreen() {
       loop.stop();
       activeMoodValue.setValue(0);
     };
-  }, [idleValues, pendingMoodId]);
+  }, [idleValues, pendingMoodId, pressScales, moodConfirmAnim]);
 
   useEffect(() => {
     const driftLoop = Animated.loop(
@@ -1291,13 +1359,35 @@ export default function HomeScreen() {
     setIsRefreshing(false);
   }, [loadHomeData, syncNow]);
 
+  const handleButtonPressIn = (animValue: Animated.Value, toValue = 0.96) => {
+    Animated.spring(animValue, {
+      toValue,
+      damping: 14,
+      stiffness: 320,
+      mass: 0.8,
+      useNativeDriver: true,
+    }).start();
+    triggerAppleHaptic(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const handleButtonPressOut = (animValue: Animated.Value) => {
+    Animated.spring(animValue, {
+      toValue: 1,
+      damping: 12,
+      stiffness: 240,
+      mass: 0.8,
+      useNativeDriver: true,
+    }).start();
+  };
+
   const handleMoodSelect = (moodId: string) => {
     if (!user?.studentNumber || isSavingMood) {
       return;
     }
 
-    setPendingMoodId(moodId);
+    setPendingMoodId((prev) => (prev === moodId ? null : moodId));
     setMoodSaveStatus("");
+    triggerAppleHaptic(Haptics.ImpactFeedbackStyle.Medium);
   };
 
   const handleConfirmMood = async () => {
@@ -1307,6 +1397,7 @@ export default function HomeScreen() {
     }
 
     setIsSavingMood(true);
+    triggerAppleHaptic(Haptics.ImpactFeedbackStyle.Medium);
     try {
       const result = await saveDailyMood(user.studentNumber, pendingMoodId, getManilaTodayParts().isoDate, "INPUT");
 
@@ -1323,6 +1414,7 @@ export default function HomeScreen() {
         setMoodSaveStatus("Muni is holding space for you 🍃 It takes courage to name how you feel.");
       }
       setMoodSaveStatusTone("success");
+      triggerAppleHaptic(Haptics.ImpactFeedbackStyle.Heavy);
       void loadTodayMood();
       setPendingMoodId(null);
     } else {
@@ -1341,22 +1433,27 @@ export default function HomeScreen() {
   const handleCancelMoodConfirm = () => {
     if (isSavingMood) return;
     setPendingMoodId(null);
+    triggerAppleHaptic(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const handleMoodPressIn = (index: number) => {
     Animated.spring(pressScales[index], {
-      toValue: 0.9,
+      toValue: 0.88,
       useNativeDriver: true,
-      speed: 30,
-      bounciness: 8 }).start();
+      damping: 14,
+      stiffness: 320,
+      mass: 0.8 }).start();
+    triggerAppleHaptic(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const handleMoodPressOut = (index: number) => {
+    const isMoodActive = pendingMoodId === EMOTIONS[index].id;
     Animated.spring(pressScales[index], {
-      toValue: 1,
+      toValue: isMoodActive ? 1.08 : 1,
       useNativeDriver: true,
-      speed: 20,
-      bounciness: 10 }).start();
+      damping: 12,
+      stiffness: 240,
+      mass: 0.8 }).start();
   };
 
   const updateFutureBottleVisibility = useCallback(
@@ -1849,10 +1946,13 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.screen} edges={["top"]}>
       <View style={[styles.stickyHeader, { top: stickyHeaderTop }, hasScrolled ? styles.stickyHeaderScrolled : styles.stickyHeaderTop]}>
+        <Animated.View style={[{ flex: 1, minWidth: 0, marginRight: 12 }, { transform: [{ scale: headerProfileScale }] }]}>
         <Pressable
           style={styles.headerLeft}
           accessibilityLabel="Open profile"
           onPress={() => router.push("/profile")}
+          onPressIn={() => handleButtonPressIn(headerProfileScale, 0.96)}
+          onPressOut={() => handleButtonPressOut(headerProfileScale)}
         >
           <View style={[styles.headerProfileCard, hasScrolled ? styles.headerProfileCardScrolled : styles.headerProfileCardTop]}>
             <StudentProfileAvatar
@@ -1871,12 +1971,16 @@ export default function HomeScreen() {
             </View>
           </View>
         </Pressable>
+        </Animated.View>
 
         <View style={[styles.headerActionCluster, hasScrolled ? styles.headerActionClusterScrolled : styles.headerActionClusterTop]}>
+          <Animated.View style={[{ transform: [{ scale: headerMessageScale }] }]}>
           <Pressable
             style={styles.headerActionButton}
             accessibilityLabel="Open messages"
             onPress={() => router.push("/messages")}
+            onPressIn={() => handleButtonPressIn(headerMessageScale, 0.90)}
+            onPressOut={() => handleButtonPressOut(headerMessageScale)}
           >
             <Ionicons
               name={hasUnreadMessages ? "mail-unread-outline" : "mail-outline"}
@@ -1885,13 +1989,17 @@ export default function HomeScreen() {
             />
             {hasUnreadMessages ? <View style={styles.headerActionBadge} /> : null}
           </Pressable>
+          </Animated.View>
 
           <View style={styles.headerActionDivider} />
 
+          <Animated.View style={[{ transform: [{ scale: headerNotifScale }] }]}>
           <Pressable
             style={styles.headerActionButton}
             accessibilityLabel="Open notifications"
             onPress={() => router.push("/notifications")}
+            onPressIn={() => handleButtonPressIn(headerNotifScale, 0.90)}
+            onPressOut={() => handleButtonPressOut(headerNotifScale)}
           >
             <Ionicons
               name={hasUnreadNotifications ? "notifications" : "notifications-outline"}
@@ -1900,6 +2008,7 @@ export default function HomeScreen() {
             />
             {hasUnreadNotifications ? <View style={styles.headerActionBadge} /> : null}
           </Pressable>
+          </Animated.View>
         </View>
       </View>
 
@@ -2050,25 +2159,8 @@ export default function HomeScreen() {
             moodCardYRef.current = event.nativeEvent.layout.y;
           }}
         >
-          <View style={styles.surfaceGlow} />
           <View style={styles.moodHeaderRow}>
-            <MuniAvatar style={styles.moodPetArt} />
-            <View style={styles.moodHeaderTextWrap}>
-              <Text style={styles.sectionEyebrow}>Emotions</Text>
-              <Text style={styles.moodHeading}>What emotions are showing up today?</Text>
-              <Text style={styles.moodSubHeading}>
-                Tap any emotion anytime. Each tap adds another daily check-in.
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.moodCheckInStatus}>
-            <Ionicons name="add-circle-outline" size={15} color="#4B7A42" />
-            <Text style={styles.moodCheckInStatusText}>
-              {todayMoodCheckInCount > 0
-                ? `${todayMoodCheckInCount} saved today${latestMoodLabel ? ` - last: ${latestMoodLabel}` : ""}`
-                : "No emotion check-ins yet today"}
-            </Text>
+            <Text style={styles.moodHeading}>What emotions are showing up today?</Text>
           </View>
 
           {moodSaveStatus ? (
@@ -2120,11 +2212,25 @@ export default function HomeScreen() {
                     onPress={() => handleMoodSelect(mood.id)}
                     onPressIn={() => handleMoodPressIn(index)}
                     onPressOut={() => handleMoodPressOut(index)}
+                    accessibilityRole="button"
+                    accessibilityLabel={mood.label}
+                    accessibilityState={{ selected: isMoodActive }}
                   >
                     <Animated.View
                       style={[
                         styles.moodFace,
-                        { borderColor: mood.color },
+                        {
+                          borderColor: mood.color,
+                          backgroundColor: isMoodActive ? `${mood.color}28` : `${mood.color}0D`,
+                          borderWidth: isMoodActive ? 2 : 1.5,
+                        },
+                        isMoodActive && {
+                          shadowColor: mood.color,
+                          shadowOpacity: 0.45,
+                          shadowRadius: 10,
+                          shadowOffset: { width: 0, height: 4 },
+                          elevation: 4,
+                        },
                         {
                           transform: [
                             { translateY: moodTranslateY },
@@ -2137,9 +2243,20 @@ export default function HomeScreen() {
                       ) : (
                         <View style={styles.moodIconPlaceholder} />
                       )}
+                      {isMoodActive ? (
+                        <View style={[styles.moodActiveIndicatorDot, { backgroundColor: mood.color }]}>
+                          <Ionicons name="checkmark" size={9} color="#FFFFFF" />
+                        </View>
+                      ) : null}
                     </Animated.View>
                   </Pressable>
-                  <Text style={styles.moodLabel} numberOfLines={2}>
+                  <Text
+                    style={[
+                      styles.moodLabel,
+                      isMoodActive && { color: "#1E293B", fontFamily: "Outfit-Bold" },
+                    ]}
+                    numberOfLines={2}
+                  >
                     {mood.label}
                   </Text>
                 </View>
@@ -2148,40 +2265,88 @@ export default function HomeScreen() {
           </View>
 
           {pendingMood ? (
-            <View style={[styles.moodConfirmBar, { borderColor: pendingMood.color }]}>
+            <Animated.View
+              style={[
+                styles.moodConfirmBar,
+                {
+                  borderColor: `${pendingMood.color}80`,
+                  backgroundColor: `${pendingMood.color}14`,
+                  opacity: moodConfirmAnim,
+                  transform: [
+                    {
+                      translateY: moodConfirmAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [12, 0],
+                      }),
+                    },
+                    {
+                      scale: moodConfirmAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.96, 1],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              <View style={styles.moodConfirmHeadingRow}>
+                <View style={[styles.moodConfirmDot, { backgroundColor: pendingMood.color }]} />
               <Text style={styles.moodConfirmText} numberOfLines={2}>
-                Add {pendingMood.label} to today&apos;s check-ins?
+                Add <Text style={{ color: "#1E293B", fontFamily: "Outfit-Bold" }}>{pendingMood.label}</Text> to today&apos;s check-ins?
               </Text>
+              </View>
               <View style={styles.moodConfirmActions}>
+                <Animated.View style={[{ flex: 1 }, { transform: [{ scale: moodConfirmCancelScale }] }]}>
                 <Pressable
                   style={styles.moodConfirmSecondaryButton}
                   onPress={handleCancelMoodConfirm}
+                  onPressIn={() => handleButtonPressIn(moodConfirmCancelScale)}
+                  onPressOut={() => handleButtonPressOut(moodConfirmCancelScale)}
                   disabled={isSavingMood}
                 >
                   <Text style={styles.moodConfirmSecondaryText}>Cancel</Text>
                 </Pressable>
+                </Animated.View>
+                <Animated.View style={[{ flex: 1 }, { transform: [{ scale: moodConfirmSaveScale }] }]}>
                 <Pressable
                   style={[styles.moodConfirmPrimaryButton, isSavingMood && styles.moodConfirmPrimaryButtonDisabled]}
                   onPress={() => {
                     void handleConfirmMood();
                   }}
+                  onPressIn={() => handleButtonPressIn(moodConfirmSaveScale)}
+                  onPressOut={() => handleButtonPressOut(moodConfirmSaveScale)}
                   disabled={isSavingMood}
                 >
-                  <Text style={styles.moodConfirmPrimaryText}>{isSavingMood ? "Saving..." : "Save"}</Text>
+                  <Text style={styles.moodConfirmPrimaryText}>{isSavingMood ? "Saving..." : "Save Check-in"}</Text>
                 </Pressable>
+                </Animated.View>
               </View>
-            </View>
+            </Animated.View>
           ) : null}
 
-          <Pressable style={styles.moodHistoryButton} onPress={() => router.push("/mood-overview")}>
+          <Animated.View style={[{ alignSelf: "center", width: "100%", maxWidth: 220, marginTop: 2 }, { transform: [{ scale: moodHistoryScale }] }]}>
+            <Pressable
+              style={styles.moodHistoryButton}
+              onPress={() => router.push("/mood-overview")}
+              onPressIn={() => handleButtonPressIn(moodHistoryScale)}
+              onPressOut={() => handleButtonPressOut(moodHistoryScale)}
+              accessibilityRole="button"
+              accessibilityLabel="View emotion history"
+            >
+              <Ionicons name="time-outline" size={15} color="#356E25" style={{ marginRight: 5 }} />
             <Text style={styles.moodHistoryButtonText}>Emotion History</Text>
+              <Ionicons name="chevron-forward" size={13} color="#356E25" style={{ marginLeft: 4 }} />
           </Pressable>
+          </Animated.View>
         </Animated.View>
 
         {/* Sunday Highlight Banner: Tala ng Linggo */}
+        <Animated.View style={[{ transform: [{ scale: weeklyRecapScale }] }]}>
         <Pressable
           style={styles.weeklyRecapBanner}
           onPress={() => router.push("/weekly-recap")}
+          onPressIn={() => handleButtonPressIn(weeklyRecapScale, 0.97)}
+          onPressOut={() => handleButtonPressOut(weeklyRecapScale)}
           accessibilityLabel="Open Tala ng Linggo: A Week&apos;s Recap"
         >
           <View style={styles.weeklyRecapGlow} />
@@ -2216,6 +2381,7 @@ export default function HomeScreen() {
             </View>
           </View>
         </Pressable>
+        </Animated.View>
 
         <View style={styles.dailyCheckinCard}>
           <View style={styles.surfaceGlow} />
@@ -2229,8 +2395,11 @@ export default function HomeScreen() {
 
           <View style={styles.dailyRewardsRow}>
             {checkInRewards.map((reward, index) => (
-              <View
+              <Animated.View
                 key={reward.id}
+                style={reward.state === "active" ? { transform: [{ scale: activeDayPulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.05] }) }] } : undefined}
+              >
+              <View
                 style={[
                   styles.dailyRewardBox,
                   { width: rewardTileWidth, height: rewardTileHeight },
@@ -2278,9 +2447,11 @@ export default function HomeScreen() {
                   {`Day ${index + 1}`}
                 </Text>
               </View>
+              </Animated.View>
             ))}
           </View>
 
+          <Animated.View style={[{ transform: [{ scale: dailyCheckInScale }] }]}>
           <Pressable
             disabled={isClaimingCheckIn || hasCheckedInToday}
             style={[
@@ -2290,11 +2461,20 @@ export default function HomeScreen() {
             onPress={() => {
               void handleCheckInToday();
             }}
+            onPressIn={() => !isClaimingCheckIn && !hasCheckedInToday && handleButtonPressIn(dailyCheckInScale, 0.96)}
+            onPressOut={() => handleButtonPressOut(dailyCheckInScale)}
           >
+            <Ionicons
+              name={hasCheckedInToday ? "checkmark-circle" : "sparkles"}
+              size={17}
+              color="#FFFFFF"
+              style={{ marginRight: 6 }}
+            />
             <Text style={styles.dailyCheckinButtonText}>
               {isClaimingCheckIn ? "Checking in..." : hasCheckedInToday ? "Checked in today" : "Check-in today"}
             </Text>
           </Pressable>
+          </Animated.View>
         </View>
 
         <DailyTasksCard
@@ -2308,17 +2488,21 @@ export default function HomeScreen() {
           <Text style={styles.pauseTitle}>Choose one gentle next step.</Text>
           <Text style={styles.pauseSubtitle}>There is no need to do everything at once.</Text>
 
+          <Animated.View style={[{ transform: [{ scale: pauseWellnessScale }] }]}>
           <Pressable style={styles.pauseAction} onPress={handleOpenWellnessTools}>
             <View style={[styles.pauseIcon, styles.pauseIconWellness]}><Ionicons name="leaf-outline" size={21} color="#4C7E32" /></View>
             <View style={styles.pauseActionCopy}><Text style={styles.pauseActionTitle}>Wellness tools</Text><Text style={styles.pauseActionMeta}>Breathe, ground, or try a mini reset</Text></View>
-            <Ionicons name="chevron-forward" size={20} color="#71806E" />
+            <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
           </Pressable>
+          </Animated.View>
 
+          <Animated.View style={[{ transform: [{ scale: pauseLibraryScale }] }]}>
           <Pressable style={styles.pauseAction} onPress={handleOpenLibrary}>
             <View style={[styles.pauseIcon, styles.pauseIconLibrary]}><Ionicons name="book-outline" size={21} color="#816B48" /></View>
             <View style={styles.pauseActionCopy}><Text style={styles.pauseActionTitle}>Library</Text><Text style={styles.pauseActionMeta}>{libraryPreviewBooks.length ? `${libraryPreviewBooks.length} calm reads waiting for you` : "Short reads at your own pace"}</Text></View>
-            <Ionicons name="chevron-forward" size={20} color="#71806E" />
+            <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
           </Pressable>
+          </Animated.View>
         </View>
 
         <View
@@ -3672,60 +3856,33 @@ const styles = StyleSheet.create({
   moodCard: {
     borderRadius: 24,
     backgroundColor: "#FFFFFF",
-    paddingHorizontal: 12,
-    paddingTop: 12,
+    paddingHorizontal: 14,
+    paddingTop: 14,
     paddingBottom: 14,
-    shadowColor: "#66737E",
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
+    shadowColor: "#112616",
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+    elevation: 3,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: "#E6EEE7",
+    borderColor: "rgba(110, 160, 120, 0.14)",
     overflow: "hidden" },
   moodHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     marginBottom: 12,
-    paddingHorizontal: 4 },
-  moodPetArt: {
-    width: 86,
-    height: 86,
-    marginLeft: -8,
-    marginRight: 4 },
-  moodHeaderTextWrap: {
-    flex: 1,
-    paddingRight: 4 },
+    paddingHorizontal: 2 },
   moodHeading: {
-    color: "#2F3946",
-    fontSize: 43 / 2,
-    lineHeight: 28,
+    color: "#1E293B",
+    fontSize: 18.5,
+    lineHeight: 24,
     fontFamily: "Outfit-Bold",
-    marginBottom: 3 },
-  moodSubHeading: {
-    color: "#374A5D",
-    fontSize: 36 / 2,
-    lineHeight: 24 },
-  moodCheckInStatus: {
-    minHeight: 34,
-    borderRadius: 999,
-    backgroundColor: "#F4FBEE",
-    borderWidth: 1,
-    borderColor: "#D7EBCB",
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: 7,
-    paddingHorizontal: 12,
-    marginBottom: 12 },
-  moodCheckInStatusText: {
-    flex: 1,
-    color: "#4B6653",
-    fontSize: 12,
-    lineHeight: 16,
-    fontFamily: "Outfit-Bold" },
+    letterSpacing: -0.3,
+    textAlign: "center" },
   moodSaveStatusText: {
-    color: "#4B6653",
+    color: "#3E664A",
     fontSize: 12,
     lineHeight: 16,
     fontFamily: "Outfit-Bold",
@@ -3737,112 +3894,143 @@ const styles = StyleSheet.create({
   moodRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    rowGap: 12,
-    marginBottom: 12 },
+    rowGap: 8,
+    marginBottom: 10,
+    justifyContent: "space-between" },
   moodItem: {
     alignItems: "center",
-    paddingHorizontal: 1,
-    width: "20%" },
+    width: "20%",
+    paddingHorizontal: 1 },
   moodFace: {
-    width: 64,
-    height: 64,
-    borderRadius: 18,
+    width: 52,
+    height: 52,
+    borderRadius: 17,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 4,
     borderWidth: 1.5,
-    borderColor: "#A6B3BC",
+    borderColor: "#E2E8F0",
     overflow: "hidden" },
+  moodActiveIndicatorDot: {
+    position: "absolute",
+    top: 2,
+    right: 2,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: "#FFFFFF" },
   moodIcon: {
-    width: 60,
-    height: 60,
-    borderRadius: 16 },
+    width: 44,
+    height: 44,
+    borderRadius: 13 },
   moodIconPlaceholder: {
-    width: 60,
-    height: 60 },
+    width: 44,
+    height: 44 },
   moodLabel: {
-    color: "#4A4A4A",
+    color: "#475569",
     fontSize: 10.5,
-    lineHeight: 13.5,
-    minHeight: 30,
+    lineHeight: 13,
+    minHeight: 14,
     textAlign: "center",
-    fontFamily: "Outfit-Bold" },
+    fontFamily: "Outfit-Medium" },
   moodConfirmBar: {
-    borderRadius: 18,
+    borderRadius: 20,
     borderWidth: 1,
-    backgroundColor: "#FBFDF8",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 12,
-    rowGap: 10 },
+    backgroundColor: "#F9FCF7",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 14,
+    rowGap: 10,
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2 },
+  moodConfirmHeadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 7 },
+  moodConfirmDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4 },
   moodConfirmText: {
-    color: "#31465A",
+    color: "#334155",
     fontSize: 14,
     lineHeight: 19,
-    fontFamily: "Outfit-Bold",
+    fontFamily: "Outfit-SemiBold",
     textAlign: "center" },
   moodConfirmActions: {
     flexDirection: "row",
-    columnGap: 8 },
+    columnGap: 10 },
   moodConfirmSecondaryButton: {
-    flex: 1,
-    minHeight: 38,
+    minHeight: 40,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: "#DCE6DE",
+    borderColor: "#E2E8F0",
     backgroundColor: "#FFFFFF",
     alignItems: "center",
-    justifyContent: "center" },
+    justifyContent: "center",
+    paddingHorizontal: 16 },
   moodConfirmPrimaryButton: {
-    flex: 1,
-    minHeight: 38,
+    minHeight: 40,
     borderRadius: 999,
-    backgroundColor: "#70C943",
+    backgroundColor: "#52B72A",
     alignItems: "center",
-    justifyContent: "center" },
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    shadowColor: "#3F931E",
+    shadowOpacity: 0.28,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2 },
   moodConfirmPrimaryButtonDisabled: {
-    backgroundColor: "#A8D88E" },
+    backgroundColor: "#A8D88E",
+    shadowOpacity: 0 },
   moodConfirmSecondaryText: {
-    color: "#526474",
+    color: "#64748B",
     fontSize: 14,
     lineHeight: 18,
-    fontFamily: "Outfit-Bold" },
+    fontFamily: "Outfit-SemiBold" },
   moodConfirmPrimaryText: {
     color: "#FFFFFF",
     fontSize: 14,
     lineHeight: 18,
     fontFamily: "Outfit-Bold" },
   moodHistoryButton: {
-    height: 40,
+    minHeight: 36,
     borderRadius: 999,
-    backgroundColor: "#70C943",
+    backgroundColor: "#F2F8ED",
+    borderWidth: 1,
+    borderColor: "#D2E8CB",
     alignItems: "center",
     justifyContent: "center",
-    marginHorizontal: "18%",
-    shadowColor: "#6D6D6D",
-    shadowOpacity: 0.16,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3 },
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    elevation: 0 },
   moodHistoryButtonText: {
-    color: "#FFFFFF",
-    fontSize: 17,
-    lineHeight: 22,
+    color: "#356E25",
+    fontSize: 13.5,
+    lineHeight: 18,
     fontFamily: "Outfit-Bold" },
   weeklyRecapBanner: {
     backgroundColor: "#163422",
-    borderRadius: 24,
+    borderRadius: 26,
     marginHorizontal: 0,
     marginTop: 0,
-    marginBottom: 12,
+    marginBottom: 14,
     padding: 16,
     borderWidth: 1.5,
-    borderColor: "#73CD44",
+    borderColor: "#52B72A",
     shadowColor: "#163422",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.16,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
     elevation: 4,
     overflow: "hidden",
   },
@@ -4075,158 +4263,165 @@ const styles = StyleSheet.create({
     color: "#2F6F25",
     fontFamily: "Outfit-Bold" },
   dailyCheckinCard: {
-    borderRadius: 24,
+    borderRadius: 26,
     backgroundColor: "#FFFFFF",
-    paddingHorizontal: 12,
-    paddingTop: 12,
-    paddingBottom: 14,
-    shadowColor: "#66737E",
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
-    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 16,
+    shadowColor: "#112616",
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3,
+    marginBottom: 14,
     borderWidth: 1,
-    borderColor: "#E6EEE7",
+    borderColor: "rgba(110, 160, 120, 0.14)",
     overflow: "hidden" },
   dailyCheckinHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 10 },
+    marginBottom: 12 },
   dailyCheckinTitle: {
-    color: "#34465A",
-    fontSize: 25 / 2 * 2,
-    lineHeight: 32,
-    fontFamily: "Outfit-Bold" },
+    color: "#1E293B",
+    fontSize: 20,
+    lineHeight: 26,
+    fontFamily: "Outfit-Bold",
+    letterSpacing: -0.3 },
   dailyTalaPill: {
-    minWidth: 124,
-    height: 40,
+    height: 36,
     borderRadius: 999,
-    backgroundColor: "#FFF4A7",
+    backgroundColor: "#FFF9D6",
     borderWidth: 1,
-    borderColor: "#F1E595",
+    borderColor: "#F6E482",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 14 },
+    paddingHorizontal: 12 },
   dailyTalaPillIcon: {
-    width: 18,
-    height: 18,
-    marginRight: 4 },
+    width: 17,
+    height: 17,
+    marginRight: 5 },
   dailyTalaPillText: {
-    color: "#A58E26",
-    fontSize: 21 / 2 * 2,
-    lineHeight: 26,
+    color: "#997A15",
+    fontSize: 15,
+    lineHeight: 20,
     fontFamily: "Outfit-Bold" },
   dailyRewardsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     columnGap: 4,
-    marginBottom: 10 },
+    marginBottom: 14 },
   dailyRewardBox: {
-    borderRadius: 10,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "space-between",
     flexShrink: 0,
     borderWidth: 1,
-    paddingTop: 8,
+    paddingTop: 7,
     paddingBottom: 6 },
   dailyRewardBoxDone: {
-    backgroundColor: "#EEF1ED",
-    borderColor: "transparent" },
+    backgroundColor: "#F0FDF4",
+    borderColor: "#BBF7D0" },
   dailyRewardBoxActive: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#1F2328" },
+    backgroundColor: "#FFFBEB",
+    borderColor: "#F59E0B",
+    shadowColor: "#F59E0B",
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2 },
   dailyRewardBoxLocked: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#A6B3BC" },
+    backgroundColor: "#F8FAFC",
+    borderColor: "#E2E8F0" },
   dailyRewardDoneCircle: {
-    backgroundColor: "#A1C4B3",
+    backgroundColor: "#22C55E",
     alignItems: "center",
     justifyContent: "center" },
   dailyRewardTalaIcon: {
     marginTop: 2 },
   dailyRewardValue: {
-    fontSize: 30 / 2,
-    lineHeight: 20,
+    fontSize: 14,
+    lineHeight: 18,
     fontFamily: "Outfit-Bold" },
   dailyRewardValueDone: {
-    color: "#BAC1C1" },
+    color: "#15803D" },
   dailyRewardValueActive: {
-    color: "#1E1E1E" },
+    color: "#B45309" },
   dailyRewardValueLocked: {
-    color: "#2E503C" },
+    color: "#64748B" },
   dailyRewardDayLabel: {
-    color: "#526373",
-    fontSize: 8,
-    lineHeight: 10,
+    color: "#64748B",
+    fontSize: 9,
+    lineHeight: 12,
     fontFamily: "Outfit-SemiBold" },
   dailyRewardDayLabelDone: {
-    color: "#A0A8AA" },
+    color: "#16A34A" },
   dailyCheckinButton: {
     height: 44,
     borderRadius: 999,
-    backgroundColor: "#70C943",
+    backgroundColor: "#52B72A",
     alignItems: "center",
     justifyContent: "center",
-    marginHorizontal: "16%",
-    marginTop: 2,
-    shadowColor: "#5C6570",
-    shadowOpacity: 0.16,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
+    flexDirection: "row",
+    marginHorizontal: "12%",
+    shadowColor: "#3F931E",
+    shadowOpacity: 0.24,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
     elevation: 3 },
   dailyCheckinButtonDisabled: {
-    backgroundColor: "#A8C99C" },
+    backgroundColor: "#A7DCA3",
+    shadowOpacity: 0 },
   dailyCheckinButtonText: {
     color: "#FFFFFF",
-    fontSize: 18,
-    lineHeight: 24,
+    fontSize: 16,
+    lineHeight: 22,
     fontFamily: "Outfit-Bold" },
   pauseCard: {
-    borderRadius: 22,
+    borderRadius: 26,
     backgroundColor: "#FFFFFF",
     padding: 16,
-    marginBottom: 12,
+    marginBottom: 14,
     borderWidth: 1,
-    borderColor: "#E3ECE2",
-    shadowColor: "#66737E",
+    borderColor: "rgba(110, 160, 120, 0.14)",
+    shadowColor: "#112616",
     shadowOpacity: 0.06,
-    shadowRadius: 7,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1},
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3},
   pauseTitle: {
-    color: "#304558",
+    color: "#1E293B",
     fontSize: 19,
     lineHeight: 24,
     fontFamily: "Outfit-Bold",
-    marginTop: 2,
+    letterSpacing: -0.2,
+    marginTop: 3,
     marginBottom: 3},
   pauseSubtitle: {
-    color: "#687785",
+    color: "#64748B",
     fontSize: 13,
     lineHeight: 18,
-    marginBottom: 14},
+    marginBottom: 12},
   pauseAction: {
-    minHeight: 68,
+    minHeight: 64,
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 11,
+    columnGap: 12,
     borderTopWidth: 1,
-    borderTopColor: "#EDF1EC",
+    borderTopColor: "#F1F5F9",
     paddingVertical: 10},
   pauseIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
+    width: 44,
+    height: 44,
+    borderRadius: 15,
     alignItems: "center",
     justifyContent: "center"},
-  pauseIconWellness: { backgroundColor: "#EAF5E4" },
-  pauseIconLibrary: { backgroundColor: "#F8F0E2" },
+  pauseIconWellness: { backgroundColor: "#EBF7E7" },
+  pauseIconLibrary: { backgroundColor: "#FEF3C7" },
   pauseActionCopy: { flex: 1 },
-  pauseActionTitle: { color: "#34495D", fontSize: 15, lineHeight: 20, fontFamily: "Outfit-Bold", marginBottom: 2 },
-  pauseActionMeta: { color: "#71808B", fontSize: 12, lineHeight: 17 },
+  pauseActionTitle: { color: "#1E293B", fontSize: 15, lineHeight: 20, fontFamily: "Outfit-Bold", marginBottom: 2 },
+  pauseActionMeta: { color: "#64748B", fontSize: 12, lineHeight: 16 },
   wellnessCard: {
     borderRadius: 24,
     backgroundColor: "#F5FBF2",
