@@ -2697,8 +2697,9 @@ export async function fetchMuniWardrobe(
 }
 
 export async function purchaseMuniWardrobeItem(payload: {
+  equip?: boolean;
   itemId?: string;
-  items?: Array<{ itemId: string; sectionId: string }>;
+  items?: { itemId: string; sectionId: string }[];
   sectionId?: string;
   studentNumber: string;
 }): Promise<

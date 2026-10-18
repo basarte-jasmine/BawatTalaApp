@@ -1,18 +1,18 @@
-﻿import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  
   Modal,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  View, } from "react-native";
+  View,
+} from "react-native";
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
@@ -20,60 +20,74 @@ import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { unlockAchievement } from "../lib/achievements";
 import { useAuthSession } from "../lib/auth-session";
 import {
-    areMuniLoadoutsEqual,
-    COLLECTION_SECTIONS,
-    getMuniCollectionSource,
-    getSavedMuniLoadout,
-    hydrateMuniWardrobe,
-    MuniCollectionOption,
-    MuniLoadout,
-    purchaseMuniItem,
-    purchaseMuniItemsBatch,
-    saveMuniLoadout,
-    TALA_IMAGE,
-    useAvailableMuniTala,
-    useOwnedMuniItems,
-    useSavedMuniLoadout
+  areMuniLoadoutsEqual,
+  COLLECTION_SECTIONS,
+  DEFAULT_MUNI_LOADOUT,
+  getMuniCollectionOption,
+  getMuniCollectionSource,
+  getSavedMuniLoadout,
+  hydrateMuniWardrobe,
+  MuniCollectionOption,
+  MuniCollectionSectionId,
+  MuniLoadout,
+  purchaseMuniItem,
+  purchaseMuniItemsBatch,
+  saveMuniLoadout,
+  TALA_IMAGE,
+  useAvailableMuniTala,
+  useOwnedMuniItems,
+  useSavedMuniLoadout,
 } from "../lib/muni-wardrobe";
 
-type AvatarMode = "wardrobe" | "shop";
 type PurchaseNotice = {
   itemLabel: string;
   optionId: string;
-  sectionId: keyof MuniLoadout;
+  sectionId: MuniCollectionSectionId;
 };
 
 type CartItem = {
   checked: boolean;
   option: MuniCollectionOption;
-  sectionId: keyof MuniLoadout;
+  sectionId: MuniCollectionSectionId;
 };
 
-const SECTION_META: Record<keyof MuniLoadout, { icon: string }> = {
-  background: { icon: "image-outline" },
-  eye: { icon: "eye-outline" },
-  head: { icon: "sparkles-outline" },
-  outfit: { icon: "shirt-outline" } };
+type TabMeta = {
+  id: MuniCollectionSectionId;
+  label: string;
+  iconActive: keyof typeof Ionicons.glyphMap;
+  iconInactive: keyof typeof Ionicons.glyphMap;
+};
+
+const CATEGORY_TABS: TabMeta[] = [
+  { id: "outfit", label: "Outfit", iconActive: "shirt", iconInactive: "shirt-outline" },
+  { id: "head", label: "Head", iconActive: "sparkles", iconInactive: "sparkles-outline" },
+  { id: "eye", label: "Eyes", iconActive: "glasses", iconInactive: "glasses-outline" },
+  { id: "background", label: "Room", iconActive: "images", iconInactive: "images-outline" },
+];
+
+const DEFAULT_BG_SOURCE = require("../assets/images/Background/Garden.webp");
 
 export default function MuniAvatarScreen() {
   const { user } = useAuthSession();
   const savedItems = useSavedMuniLoadout();
   const ownedItems = useOwnedMuniItems();
   const availableTala = useAvailableMuniTala();
+
   const [equippedItems, setEquippedItems] = useState<MuniLoadout>(() => getSavedMuniLoadout());
-  const [activeMode, setActiveMode] = useState<AvatarMode>("wardrobe");
+  const [activeTab, setActiveTab] = useState<MuniCollectionSectionId>("outfit");
   const [purchaseNotice, setPurchaseNotice] = useState<PurchaseNotice | null>(null);
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
+  const [showUnlockTriedModal, setShowUnlockTriedModal] = useState(false);
   const [pendingLeaveRoute, setPendingLeaveRoute] = useState<string | null>(null);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  const [saveSuccessNotice, setSaveSuccessNotice] = useState<string | null>(null);
   const [isSavingLoadout, setIsSavingLoadout] = useState(false);
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [showCartModal, setShowCartModal] = useState(false);
-  const [pendingAddToCart, setPendingAddToCart] = useState<{
-    sectionId: keyof MuniLoadout;
+  const [singleBuyPrompt, setSingleBuyPrompt] = useState<{
+    sectionId: MuniCollectionSectionId;
     option: MuniCollectionOption;
   } | null>(null);
-  const [singleBuyPrompt, setSingleBuyPrompt] = useState<{ sectionId: keyof MuniLoadout; option: MuniCollectionOption } | null>(null);
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [isWardrobeLoading, setIsWardrobeLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -83,7 +97,6 @@ export default function MuniAvatarScreen() {
       setIsWardrobeLoading(false);
       return;
     }
-    // Soft indicator only — hydrate returns cached state immediately and refreshes remotely in background.
     setIsWardrobeLoading(true);
     try {
       await hydrateMuniWardrobe(user.studentNumber);
@@ -98,13 +111,25 @@ export default function MuniAvatarScreen() {
     }, [loadWardrobe]),
   );
 
-  // Drop cart rows that are already owned (e.g. after Unlock / Buy All / remote hydrate).
   useEffect(() => {
-    setCartItems((prev) => {
-      const next = prev.filter((item) => !ownedItems[item.sectionId]?.includes(item.option.id));
-      return next.length === prev.length ? prev : next;
+    setEquippedItems(savedItems);
+  }, [savedItems]);
+
+  // Auto-sync tried-on unowned items into cart
+  useEffect(() => {
+    const triedOnList: CartItem[] = [];
+    (Object.keys(equippedItems) as MuniCollectionSectionId[]).forEach((sectionId) => {
+      const optionId = equippedItems[sectionId];
+      if (optionId && !ownedItems[sectionId]?.includes(optionId)) {
+        const option = getMuniCollectionOption(sectionId, optionId);
+        if (option) {
+          triedOnList.push({ checked: true, option, sectionId });
+        }
+      }
     });
-  }, [ownedItems]);
+
+    setCartItems(triedOnList);
+  }, [equippedItems, ownedItems]);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -123,14 +148,36 @@ export default function MuniAvatarScreen() {
     router.replace("/home");
   };
 
-  const handleBack = () => {
-    if (!hasUnsavedChanges) {
-      leaveScreen();
-      return;
+  const hasUnsavedChanges = !areMuniLoadoutsEqual(equippedItems, savedItems);
+
+  // Unowned items currently equipped (tried on)
+  const unownedEquippedItems = useMemo(() => {
+    const list: Array<{ sectionId: MuniCollectionSectionId; option: MuniCollectionOption }> = [];
+    (Object.keys(equippedItems) as MuniCollectionSectionId[]).forEach((sectionId) => {
+      const optionId = equippedItems[sectionId];
+      if (optionId && !ownedItems[sectionId]?.includes(optionId)) {
+        const option = getMuniCollectionOption(sectionId, optionId);
+        if (option) {
+          list.push({ sectionId, option });
+        }
+      }
+    });
+    return list;
+  }, [equippedItems, ownedItems]);
+
+  const unownedEquippedTotal = useMemo(
+    () => unownedEquippedItems.reduce((sum, item) => sum + item.option.price, 0),
+    [unownedEquippedItems],
+  );
+
+  // Unowned item currently previewed in the active tab (if any)
+  const activeTabUnownedItem = useMemo(() => {
+    const currentOptionId = equippedItems[activeTab];
+    if (currentOptionId && !ownedItems[activeTab]?.includes(currentOptionId)) {
+      return getMuniCollectionOption(activeTab, currentOptionId);
     }
-    setPendingLeaveRoute(null);
-    setShowUnsavedModal(true);
-  };
+    return null;
+  }, [activeTab, equippedItems, ownedItems]);
 
   const handleConfirmLeave = () => {
     setShowUnsavedModal(false);
@@ -146,37 +193,71 @@ export default function MuniAvatarScreen() {
     leaveScreen();
   };
 
-  useEffect(() => {
-    setEquippedItems(savedItems);
-  }, [savedItems]);
+  // Stage Background
+  const equippedBackgroundSource =
+    getMuniCollectionSource("background", equippedItems.background) ?? DEFAULT_BG_SOURCE;
 
-  const equippedBackgroundSource = getMuniCollectionSource("background", equippedItems.background);
-  const hasUnsavedChanges = !areMuniLoadoutsEqual(equippedItems, savedItems);
-  const ownedItemCount = COLLECTION_SECTIONS.reduce((sum, section) => sum + ownedItems[section.id].length, 0);
-  const totalItemCount = COLLECTION_SECTIONS.reduce((sum, section) => sum + section.options.length, 0);
-  const equippedItemCount = Object.values(equippedItems).filter(Boolean).length;
-
-  const handleSaveLoadout = useCallback(async () => {
-    if (!hasUnsavedChanges || isSavingLoadout) {
-      return;
-    }
-    setIsSavingLoadout(true);
-    const saved = await saveMuniLoadout(equippedItems);
-    setIsSavingLoadout(false);
-    if (!saved) {
-      setPurchaseError("Your last saved outfit is still on Muni. Please try again.");
-      return;
-    }
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
-  }, [equippedItems, hasUnsavedChanges, isSavingLoadout]);
-
-  const handleEquipItem = useCallback((sectionId: keyof MuniLoadout, optionId: string | null) => {
+  // Equip / Preview an item
+  const handleSelectItem = useCallback((sectionId: MuniCollectionSectionId, optionId: string | null) => {
     setEquippedItems((current) => ({
       ...current,
-      [sectionId]: optionId }));
+      [sectionId]: optionId,
+    }));
     void Haptics.selectionAsync().catch(() => undefined);
   }, []);
 
+  // Reset Look
+  const handleResetLook = useCallback(() => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
+    if (!areMuniLoadoutsEqual(equippedItems, savedItems)) {
+      // Revert back to saved look
+      setEquippedItems(savedItems);
+      setSaveSuccessNotice("Reverted to saved look");
+      setTimeout(() => setSaveSuccessNotice(null), 2200);
+    } else {
+      // If already at saved look, revert accessories to classic Muni
+      setEquippedItems({
+        background: savedItems.background || DEFAULT_MUNI_LOADOUT.background,
+        head: null,
+        eye: null,
+        outfit: null,
+      });
+      setSaveSuccessNotice("Reset to default Muni");
+      setTimeout(() => setSaveSuccessNotice(null), 2200);
+    }
+  }, [equippedItems, savedItems]);
+
+  // Save Look
+  const handleSaveLook = useCallback(async () => {
+    // If trying on unowned items, prompt user to unlock them first
+    if (unownedEquippedItems.length > 0) {
+      setShowUnlockTriedModal(true);
+      return;
+    }
+
+    if (!hasUnsavedChanges) {
+      setSaveSuccessNotice("Look is already saved!");
+      setTimeout(() => setSaveSuccessNotice(null), 2000);
+      return;
+    }
+
+    if (isSavingLoadout) return;
+
+    setIsSavingLoadout(true);
+    const saved = await saveMuniLoadout(equippedItems);
+    setIsSavingLoadout(false);
+
+    if (!saved) {
+      setPurchaseError("Could not save outfit. Please check your connection.");
+      return;
+    }
+
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+    setSaveSuccessNotice("Look saved!");
+    setTimeout(() => setSaveSuccessNotice(null), 2200);
+  }, [equippedItems, hasUnsavedChanges, isSavingLoadout, unownedEquippedItems]);
+
+  // Cart logic
   const selectedCartItems = useMemo(() => cartItems.filter((item) => item.checked), [cartItems]);
   const cartTotal = useMemo(
     () => selectedCartItems.reduce((sum, item) => sum + item.option.price, 0),
@@ -185,37 +266,7 @@ export default function MuniAvatarScreen() {
   const selectedCartCount = selectedCartItems.length;
   const canAffordCart = availableTala >= cartTotal;
 
-  const isInCart = useCallback(
-    (sectionId: keyof MuniLoadout, optionId: string) =>
-      cartItems.some((i) => i.sectionId === sectionId && i.option.id === optionId),
-    [cartItems],
-  );
-
-  const requestAddToCart = useCallback(
-    (sectionId: keyof MuniLoadout, option: MuniCollectionOption) => {
-      if (isInCart(sectionId, option.id)) {
-        setShowCartModal(true);
-        return;
-      }
-      setPendingAddToCart({ sectionId, option });
-    },
-    [isInCart],
-  );
-
-  const confirmAddToCart = useCallback(() => {
-    if (!pendingAddToCart) return;
-    const { sectionId, option } = pendingAddToCart;
-    setCartItems((prev) => {
-      if (prev.some((i) => i.sectionId === sectionId && i.option.id === option.id)) {
-        return prev;
-      }
-      return [...prev, { checked: true, option, sectionId }];
-    });
-    setPendingAddToCart(null);
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
-  }, [pendingAddToCart]);
-
-  const toggleCartChecked = useCallback((sectionId: keyof MuniLoadout, optionId: string) => {
+  const toggleCartChecked = useCallback((sectionId: MuniCollectionSectionId, optionId: string) => {
     setCartItems((prev) =>
       prev.map((item) =>
         item.sectionId === sectionId && item.option.id === optionId
@@ -226,52 +277,101 @@ export default function MuniAvatarScreen() {
     void Haptics.selectionAsync().catch(() => undefined);
   }, []);
 
-  const promptBuySingle = useCallback((sectionId: keyof MuniLoadout, option: MuniCollectionOption) => {
-    setSingleBuyPrompt({ sectionId, option });
-  }, []);
+  // Purchase Single Item (Immediate Unlock & Equip & Save)
+  const handleBuySingleItem = useCallback(
+    async (sectionId: MuniCollectionSectionId, option: MuniCollectionOption) => {
+      if (isPurchasing) return;
+      if (availableTala < option.price) {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
+        setPurchaseError(
+          "You need " + option.price + " Tala to unlock " + (option.label ?? option.id) + ", but you have " + availableTala + " Tala.",
+        );
+        return;
+      }
 
-  const confirmBuySingle = useCallback(async () => {
-    if (!singleBuyPrompt || isPurchasing) return;
-    const { sectionId, option } = singleBuyPrompt;
-    if (availableTala < option.price) {
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
+      setIsPurchasing(true);
+      const purchased = await purchaseMuniItem(sectionId, option.id, true);
+      setIsPurchasing(false);
       setSingleBuyPrompt(null);
-      setPurchaseError("You need " + option.price + " Tala to unlock " + (option.label ?? option.id) + ".");
+
+      if (!purchased) {
+        setPurchaseError("The item could not be unlocked. Please try again.");
+        return;
+      }
+
+      // Remove from cart if present
+      setCartItems((prev) => prev.filter((i) => !(i.sectionId === sectionId && i.option.id === option.id)));
+
+      // Keep it equipped & saved
+      setEquippedItems((current) => ({
+        ...current,
+        [sectionId]: option.id,
+      }));
+
+      setPurchaseNotice({
+        itemLabel: option.label ?? option.id,
+        optionId: option.id,
+        sectionId,
+      });
+
+      await unlockAchievement("star-shopper", user?.studentNumber);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+    },
+    [availableTala, isPurchasing, user?.studentNumber],
+  );
+
+  // Unlock all currently tried-on unowned items
+  const handleUnlockAllTried = useCallback(async () => {
+    if (unownedEquippedItems.length === 0 || isPurchasing) return;
+    if (availableTala < unownedEquippedTotal) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
+      setPurchaseError(
+        "You need " + unownedEquippedTotal + " Tala to unlock these items, but you have " + availableTala + " Tala.",
+      );
       return;
     }
 
     setIsPurchasing(true);
-    const purchased = await purchaseMuniItem(sectionId, option.id);
+    const batch = unownedEquippedItems.map((item) => ({
+      sectionId: item.sectionId,
+      optionId: item.option.id,
+    }));
+    const purchased = await purchaseMuniItemsBatch(batch, true);
     setIsPurchasing(false);
-    setSingleBuyPrompt(null);
+    setShowUnlockTriedModal(false);
 
     if (!purchased) {
-      setPurchaseError("The item could not be unlocked. Please try again.");
+      setPurchaseError("Could not complete the purchase. Please try again.");
       return;
     }
 
-    // Remove from cart if it was in cart
-    setCartItems((prev) => prev.filter((i) => !(i.sectionId === sectionId && i.option.id === option.id)));
+    // Clear cart items that were bought
+    setCartItems((prev) =>
+      prev.filter(
+        (ci) => !unownedEquippedItems.some((ui) => ui.sectionId === ci.sectionId && ui.option.id === ci.option.id),
+      ),
+    );
+
+    // Save current equipped look now that all items are owned
+    await saveMuniLoadout(equippedItems);
 
     setPurchaseNotice({
-      itemLabel: option.label ?? option.id,
-      optionId: option.id,
-      sectionId,
+      itemLabel: unownedEquippedItems.length + " items unlocked & saved",
+      optionId: unownedEquippedItems[0].option.id,
+      sectionId: unownedEquippedItems[0].sectionId,
     });
+
     await unlockAchievement("star-shopper", user?.studentNumber);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
-  }, [availableTala, isPurchasing, singleBuyPrompt, user?.studentNumber]);
+  }, [availableTala, equippedItems, isPurchasing, unownedEquippedItems, unownedEquippedTotal, user?.studentNumber]);
 
-  const confirmBuyCart = useCallback(async () => {
+  // Checkout Shopping Cart
+  const handleBuyCart = useCallback(async () => {
     if (selectedCartCount === 0 || isPurchasing) return;
     if (!canAffordCart) {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => undefined);
       setPurchaseError(
-        "Not enough Tala. You need " +
-          cartTotal +
-          " Tala for the selected items, but you only have " +
-          availableTala +
-          ".",
+        "Not enough Tala. You need " + cartTotal + " Tala, but you only have " + availableTala + " Tala.",
       );
       return;
     }
@@ -281,477 +381,361 @@ export default function MuniAvatarScreen() {
       sectionId: item.sectionId,
       optionId: item.option.id,
     }));
-    const purchased = await purchaseMuniItemsBatch(batchItems);
+    const purchased = await purchaseMuniItemsBatch(batchItems, true);
     setIsPurchasing(false);
     setShowCartModal(false);
 
     if (!purchased) {
-      setCartItems((prev) =>
-        prev.filter((item) => !ownedItems[item.sectionId]?.includes(item.option.id)),
-      );
       setPurchaseError("Could not complete the purchase. Please try again.");
       return;
     }
 
-    const lastItem = selectedCartItems[selectedCartItems.length - 1];
-    const totalCount = selectedCartCount;
-    // After a successful checkout, clear the whole cart (checked + unchecked).
-    setCartItems([]);
-
-    setPurchaseNotice({
-      itemLabel: totalCount === 1 ? (lastItem.option.label ?? lastItem.option.id) : totalCount + " items",
-      optionId: lastItem.option.id,
-      sectionId: lastItem.sectionId,
+    // Equip bought items into current look
+    setEquippedItems((current) => {
+      const next = { ...current };
+      batchItems.forEach((i) => {
+        next[i.sectionId] = i.optionId;
+      });
+      return next;
     });
+
+    setCartItems([]);
+    setPurchaseNotice({
+      itemLabel: selectedCartCount + " item" + (selectedCartCount > 1 ? "s" : "") + " unlocked",
+      optionId: batchItems[0].optionId,
+      sectionId: batchItems[0].sectionId,
+    });
+
     await unlockAchievement("star-shopper", user?.studentNumber);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
-  }, [
-    availableTala,
-    canAffordCart,
-    cartTotal,
-    isPurchasing,
-    ownedItems,
-    selectedCartCount,
-    selectedCartItems,
-    user?.studentNumber,
-  ]);
+  }, [availableTala, canAffordCart, cartTotal, isPurchasing, selectedCartCount, selectedCartItems, user?.studentNumber]);
+
+  // Active category options
+  const activeSection = useMemo(
+    () => COLLECTION_SECTIONS.find((s) => s.id === activeTab) ?? COLLECTION_SECTIONS[0],
+    [activeTab],
+  );
 
   return (
     <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
-      <View style={styles.topBar}>
-        <Pressable style={styles.backButton} accessibilityLabel="Go back" onPress={handleBack}>
-          <Ionicons name="chevron-back" size={26} color="#304456" />
-        </Pressable>
-        <Text style={styles.topTitle}>Muni Wardrobe</Text>
-        {activeMode === "shop" ? (
+      {/* Upper Stage: Room, Character, Rug, Floating Controls */}
+      <View style={styles.stageContainer}>
+        {/* Full Scene Background */}
+        <Image source={equippedBackgroundSource} style={styles.stageBackgroundImage} contentFit="cover" />
+        <View style={styles.stageWarmVignette} />
+
+        {/* Top Header Bar */}
+        <View style={styles.stageTopBar}>
+          {/* Tala Balance Pill moved to top left */}
+          <View style={styles.talaPill}>
+            <Image source={TALA_IMAGE} style={styles.talaIcon} contentFit="contain" />
+            <Text style={styles.talaText}>{availableTala.toLocaleString("en-US")}</Text>
+          </View>
+
+          {/* Cart Button */}
           <Pressable
-            style={styles.cartIconButton}
+            style={styles.roundCartButton}
             accessibilityLabel="Shopping Cart"
             onPress={() => setShowCartModal(true)}
           >
-            <Ionicons name="cart-outline" size={24} color="#304456" />
+            <Ionicons name="cart" size={20} color="#384E3F" />
             {cartItems.length > 0 ? (
               <View style={styles.cartBadge}>
                 <Text style={styles.cartBadgeText}>{cartItems.length}</Text>
               </View>
             ) : null}
           </Pressable>
-        ) : (
-          <View style={styles.topBarSpacer} />
-        )}
-      </View>
+        </View>
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={handleRefresh}
-            colors={["#73CD44"]}
-            tintColor="#73CD44"
-          />
-        }
-      >
-        <View style={styles.previewSection}>
-          <View style={styles.heroCard}>
-            {equippedBackgroundSource ? (
-              <Image source={equippedBackgroundSource} style={styles.heroBackgroundImage} contentFit="cover" />
-            ) : null}
-            <View style={styles.heroOverlay} />
+        {/* Character Stage with Circular Floor Rug */}
+        <View style={styles.stageMuniWrap}>
+          {/* Circular Stage Rug underneath Muni (matching reference) */}
+          {/* Muni Companion Avatar */}
+          <MuniAvatar loadout={equippedItems} style={styles.stageMuniAvatar} />
+        </View>
 
-            <View style={styles.heroTopRow}>
-              <View style={styles.talaPill}>
-                <Image source={TALA_IMAGE} style={styles.talaIcon} contentFit="contain" />
-                <Text style={styles.talaText}>{availableTala.toLocaleString("en-US")}</Text>
-              </View>
-
-              <Pressable
-                style={[styles.saveButton, hasUnsavedChanges ? styles.saveButtonActive : styles.saveButtonSaved]}
-                accessibilityLabel="Save outfit"
-                disabled={!hasUnsavedChanges || isSavingLoadout}
-                onPress={() => void handleSaveLoadout()}
-              >
-                <Ionicons
-                  name={hasUnsavedChanges ? "checkmark-circle" : "checkmark-circle-outline"}
-                  size={18}
-                  color={hasUnsavedChanges ? "#FFFFFF" : "#5E7259"}
-                />
-                <Text style={[styles.saveButtonText, hasUnsavedChanges && styles.saveButtonTextActive]}>
-                  {isSavingLoadout ? "Saving..." : hasUnsavedChanges ? "Save look" : "Saved"}
-                </Text>
-              </Pressable>
+        {/* Floating Stage Controls (Reset on Left, Save on Right) */}
+        <View style={styles.stageBottomFloatingRow}>
+          {/* Remove / Reset Button */}
+          <Pressable
+            style={styles.removeButtonWrap}
+            accessibilityLabel="Remove outfit"
+            onPress={handleResetLook}
+          >
+            <View style={styles.roundResetButton}>
+              <Ionicons name="trash" size={22} color="#D94E4E" />
             </View>
+            <Text style={styles.removeButtonText}>Remove</Text>
+          </Pressable>
 
-            <View style={styles.muniPreviewWrap}>
-              <MuniAvatar loadout={equippedItems} style={styles.muniPreviewAvatar} />
-            </View>
-
-            <View style={styles.heroStatsRow}>
-              <View style={styles.heroStatPill}>
-                <Text style={styles.heroStatValue}>{equippedItemCount}/4</Text>
-                <Text style={styles.heroStatLabel}>Equipped</Text>
-              </View>
-              <View style={styles.heroStatPill}>
-                <Text style={styles.heroStatValue}>
-                  {ownedItemCount}/{totalItemCount}
-                </Text>
-                <Text style={styles.heroStatLabel}>Owned</Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.collectionHeader}>
-            <View style={styles.collectionTitleWrap}>
-              <Text style={styles.collectionKicker}>{activeMode === "wardrobe" ? "Wardrobe" : "Shop"}</Text>
-              <Text style={styles.collectionTitle}>{activeMode === "wardrobe" ? "Your collection" : "New pieces"}</Text>
-            </View>
-            <View style={styles.collectionCountPill}>
-              <Ionicons
-                name={activeMode === "wardrobe" ? "shirt-outline" : "bag-handle-outline"}
-                size={15}
-                color="#507143"
-              />
-              <Text style={styles.collectionCountText}>
-                {activeMode === "wardrobe" ? `${ownedItemCount} owned` : `${availableTala} Tala`}
+          {/* Unsaved / Tried Indicator Pill (if any) */}
+          {unownedEquippedItems.length > 0 ? (
+            <Pressable
+              style={styles.tryOnPill}
+              onPress={() => setShowUnlockTriedModal(true)}
+              accessibilityLabel="Unlock tried items"
+            >
+              <Ionicons name="sparkles" size={13} color="#FFFFFF" />
+              <Text style={styles.tryOnPillText}>
+                Trying on {unownedEquippedItems.length} unowned • {unownedEquippedTotal} Tala
               </Text>
+            </Pressable>
+          ) : isWardrobeLoading ? (
+            <View style={styles.loadingPill}>
+              <ActivityIndicator size="small" color="#527A45" />
+              <Text style={styles.loadingPillText}>Syncing wardrobe...</Text>
             </View>
-          </View>
-
-          {isWardrobeLoading ? (
-            <View style={styles.wardrobeLoadingRow}>
-              <ActivityIndicator size="small" color="#70C943" />
-              <Text style={styles.wardrobeLoadingText}>Loading wardrobe...</Text>
+          ) : saveSuccessNotice ? (
+            <View style={styles.noticeToastPill}>
+              <Ionicons name="checkmark-circle" size={14} color="#2A6F32" />
+              <Text style={styles.noticeToastText}>{saveSuccessNotice}</Text>
             </View>
           ) : null}
 
-          <View style={styles.modeSwitch}>
-            <Pressable
-              style={[styles.modeButton, activeMode === "wardrobe" && styles.modeButtonActive]}
-              onPress={() => setActiveMode("wardrobe")}
+          {/* Save Button (Floppy disk icon with 'Save' matching reference) */}
+          <Pressable
+            style={[
+              styles.saveFloppyButton,
+              hasUnsavedChanges || unownedEquippedItems.length > 0
+                ? styles.saveFloppyButtonActive
+                : styles.saveFloppyButtonIdle,
+            ]}
+            accessibilityLabel="Save outfit"
+            disabled={isSavingLoadout}
+            onPress={() => void handleSaveLook()}
+          >
+            <View
+              style={[
+                styles.saveFloppyIconWrap,
+                (hasUnsavedChanges || unownedEquippedItems.length > 0)
+                  ? styles.saveFloppyIconWrapActive
+                  : styles.saveFloppyIconWrapIdle,
+              ]}
             >
               <Ionicons
-                name={activeMode === "wardrobe" ? "shirt" : "shirt-outline"}
-                size={17}
-                color={activeMode === "wardrobe" ? "#FFFFFF" : "#62746A"}
+                name={hasUnsavedChanges ? "save" : "save-outline"}
+                size={22}
+                color={hasUnsavedChanges || unownedEquippedItems.length > 0 ? "#1B4D24" : "#4A634E"}
               />
-              <Text style={[styles.modeButtonText, activeMode === "wardrobe" && styles.modeButtonTextActive]}>
-                Wardrobe
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[styles.modeButton, activeMode === "shop" && styles.modeButtonActive]}
-              onPress={() => setActiveMode("shop")}
+            </View>
+            <Text
+              style={[
+                styles.saveFloppyText,
+                (hasUnsavedChanges || unownedEquippedItems.length > 0) && styles.saveFloppyTextActive,
+              ]}
             >
-              <Ionicons
-                name={activeMode === "shop" ? "bag-handle" : "bag-handle-outline"}
-                size={17}
-                color={activeMode === "shop" ? "#FFFFFF" : "#62746A"}
-              />
-              <Text style={[styles.modeButtonText, activeMode === "shop" && styles.modeButtonTextActive]}>Shop</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        {COLLECTION_SECTIONS.map((section) => {
-          const ownedOptions = section.options.filter((option) => ownedItems[section.id].includes(option.id));
-          const sectionCount = activeMode === "wardrobe" ? `${ownedOptions.length}/${section.options.length}` : `${section.options.length}`;
-
-          return (
-            <View key={section.id} style={styles.sectionBlock}>
-              <View style={styles.sectionHeader}>
-                <View style={styles.sectionTitleRow}>
-                  <View style={styles.sectionIconBadge}>
-                    <Ionicons name={SECTION_META[section.id].icon as any} size={16} color="#527144" />
-                  </View>
-                  <Text style={styles.sectionTitle}>{section.label}</Text>
-                </View>
-                <Text style={styles.sectionCountText}>{sectionCount}</Text>
-              </View>
-
-              {activeMode === "wardrobe" ? (
-                <View style={styles.optionRow}>
-                  <Pressable
-                    style={[styles.optionCard, equippedItems[section.id] == null && styles.optionCardSelected]}
-                    onPress={() => handleEquipItem(section.id, null)}
-                  >
-                    <View
-                      style={[
-                        styles.optionImageWell,
-                        section.id === "background" && styles.optionImageWellBackground,
-                      ]}
-                    >
-                      <Ionicons name="remove-circle-outline" size={28} color="#6B7C6A" />
-                    </View>
-                    <Text
-                      style={[
-                        styles.optionLabel,
-                        equippedItems[section.id] == null && styles.optionLabelSelected,
-                      ]}
-                    >
-                      None
-                    </Text>
-                    {equippedItems[section.id] == null ? (
-                      <View style={styles.checkBadge}>
-                        <Ionicons name="checkmark" size={15} color="#FFFFFF" />
-                      </View>
-                    ) : null}
-                  </Pressable>
-                  {ownedOptions.map((option) => {
-                    const selected = equippedItems[section.id] === option.id;
-                    return (
-                      <Pressable
-                        key={option.id}
-                        style={[styles.optionCard, selected && styles.optionCardSelected]}
-                        onPress={() => handleEquipItem(section.id, option.id)}
-                      >
-                        <View
-                          style={[
-                            styles.optionImageWell,
-                            section.id === "background" && styles.optionImageWellBackground,
-                          ]}
-                        >
-                          <Image
-                            source={option.source}
-                            style={section.id === "background" ? styles.backgroundOptionImage : styles.optionImage}
-                            contentFit={section.id === "background" ? "cover" : "contain"}
-                          />
-                        </View>
-                        <Text style={[styles.optionLabel, selected && styles.optionLabelSelected]} numberOfLines={2}>
-                          {option.label ?? option.id}
-                        </Text>
-                        {selected ? (
-                          <View style={styles.checkBadge}>
-                            <Ionicons name="checkmark" size={15} color="#FFFFFF" />
-                          </View>
-                        ) : null}
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              ) : (
-                <View style={styles.shopGrid}>
-                  {section.options.map((option) => {
-                    const owned = ownedItems[section.id].includes(option.id);
-                    const selected = equippedItems[section.id] === option.id;
-                    const canAfford = availableTala >= option.price;
-                    return (
-                      <View
-                        key={option.id}
-                        style={[
-                          styles.shopCard,
-                          owned && styles.shopCardOwned,
-                          selected && owned && styles.shopCardSelected,
-                        ]}
-                      >
-                        <View style={styles.shopImageWrap}>
-                          <Image
-                            source={option.source}
-                            style={section.id === "background" ? styles.shopBackgroundImage : styles.shopOptionImage}
-                            contentFit={section.id === "background" ? "cover" : "contain"}
-                          />
-                        </View>
-                        <Text style={styles.shopLabel} numberOfLines={2}>
-                          {option.label ?? option.id}
-                        </Text>
-
-                        {owned ? (
-                          <>
-                            <View style={[styles.shopStatusChip, selected && styles.shopStatusChipActive]}>
-                              <Ionicons
-                                name={selected ? "checkmark-circle" : "checkmark-circle-outline"}
-                                size={14}
-                                color={selected ? "#FFFFFF" : "#5C7257"}
-                              />
-                              <Text style={[styles.shopStatusText, selected && styles.shopStatusTextActive]}>
-                                {selected ? "Equipped" : "Owned"}
-                              </Text>
-                            </View>
-                            <Pressable
-                              style={[styles.wearButton, selected && styles.wearButtonSelected]}
-                              disabled={selected}
-                              onPress={() => handleEquipItem(section.id, option.id)}
-                            >
-                              <Text style={[styles.wearButtonText, selected && styles.wearButtonTextSelected]}>
-                                {selected ? "On Muni" : "Wear"}
-                              </Text>
-                            </Pressable>
-                          </>
-                        ) : (
-                          <>
-                            <View style={styles.priceRow}>
-                              <Image source={TALA_IMAGE} style={styles.shopPriceIcon} contentFit="contain" />
-                              <Text style={styles.shopPriceText}>{option.price}</Text>
-                            </View>
-                            <View style={styles.shopActionRow}>
-                              <Pressable
-                                style={[
-                                  styles.addToCartButton,
-                                  cartItems.some((i) => i.sectionId === section.id && i.option.id === option.id) &&
-                                    styles.addToCartButtonActive,
-                                ]}
-                                accessibilityLabel={
-                                  cartItems.some((i) => i.sectionId === section.id && i.option.id === option.id)
-                                    ? "View cart"
-                                    : "Add to cart"
-                                }
-                                onPress={() => requestAddToCart(section.id, option)}
-                              >
-                                <Ionicons
-                                  name={
-                                    cartItems.some((i) => i.sectionId === section.id && i.option.id === option.id)
-                                      ? "cart"
-                                      : "cart-outline"
-                                  }
-                                  size={15}
-                                  color={
-                                    cartItems.some((i) => i.sectionId === section.id && i.option.id === option.id)
-                                      ? "#4A6546"
-                                      : "#5C7257"
-                                  }
-                                />
-                                <Text
-                                  style={[
-                                    styles.addToCartButtonText,
-                                    cartItems.some((i) => i.sectionId === section.id && i.option.id === option.id) &&
-                                      styles.addToCartButtonTextActive,
-                                  ]}
-                                >
-                                  {cartItems.some((i) => i.sectionId === section.id && i.option.id === option.id)
-                                    ? "In cart"
-                                    : "Cart"}
-                                </Text>
-                              </Pressable>
-                              <Pressable
-                                style={[styles.buyButton, !canAfford && styles.buyButtonDisabled]}
-                                onPress={() => promptBuySingle(section.id, option)}
-                              >
-                                <Ionicons name="bag-add-outline" size={14} color={canAfford ? "#FFFFFF" : "#8A9583"} />
-                                <Text style={[styles.buyButtonText, !canAfford && styles.buyButtonTextDisabled]}>
-                                  {canAfford ? "Unlock" : "Need Tala"}
-                                </Text>
-                              </Pressable>
-                            </View>
-                          </>
-                        )}
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
-            </View>
-          );
-        })}
-      </ScrollView>
-
-      <Modal
-        visible={Boolean(purchaseNotice)}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPurchaseNotice(null)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.unlockModalCard}>
-            <View style={styles.unlockIconBadge}>
-              <Ionicons name="bag-check-outline" size={28} color="#FFFFFF" />
-            </View>
-            <Text style={styles.unlockTitle}>New item unlocked!</Text>
-            <Text style={styles.unlockBody}>
-              {purchaseNotice ? `${purchaseNotice.itemLabel} is now unlocked and ready in your wardrobe.` : ""}
+              {isSavingLoadout ? "Saving..." : "Save"}
             </Text>
+          </Pressable>
+        </View>
+      </View>
 
+      {/* Category Tabs Bar (Divider matching reference image) */}
+      <View style={styles.categoryTabsBar}>
+        {CATEGORY_TABS.map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
             <Pressable
-              style={styles.unlockButton}
+              key={tab.id}
+              style={[styles.categoryTabItem, isActive ? styles.categoryTabItemActive : styles.categoryTabItemInactive]}
               onPress={() => {
-                if (purchaseNotice) {
-                  setEquippedItems((current) => ({
-                    ...current,
-                    [purchaseNotice.sectionId]: purchaseNotice.optionId }));
-                  setActiveMode("wardrobe");
-                }
-                setPurchaseNotice(null);
+                setActiveTab(tab.id);
+                void Haptics.selectionAsync().catch(() => undefined);
               }}
             >
-              <Text style={styles.unlockButtonText}>Wear now</Text>
+              {tab.id === "head" ? (
+                <MaterialCommunityIcons
+                  name="hat-fedora"
+                  size={21}
+                  color={isActive ? "#3D6636" : "#7E907B"}
+                />
+              ) : (
+                <Ionicons
+                  name={isActive ? tab.iconActive : tab.iconInactive}
+                  size={20}
+                  color={isActive ? "#3D6636" : "#7E907B"}
+                />
+              )}
+              {isActive ? <Text style={styles.categoryTabLabelActive}>{tab.label}</Text> : null}
             </Pressable>
-            <Pressable style={[styles.unlockButton, styles.unlockSecondaryButton]} onPress={() => setPurchaseNotice(null)}>
-              <Text style={[styles.unlockButtonText, styles.unlockSecondaryButtonText]}>Keep shopping</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+          );
+        })}
+      </View>
 
-      <Modal
-        visible={showUnsavedModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowUnsavedModal(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Unsaved look</Text>
-            <Text style={styles.modalBody}>
-              You have unsaved changes to Muni&apos;s outfit. Do you want to leave without saving?
-            </Text>
-
-            <View style={styles.modalActions}>
+      {/* Bottom Choices Drawer: Grid of Clothes / Accessories / Rooms */}
+      <View style={styles.drawerContainer}>
+        <ScrollView
+          style={styles.drawerScroll}
+          contentContainerStyle={styles.drawerScrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              colors={["#73CD44"]}
+              tintColor="#73CD44"
+            />
+          }
+        >
+          <View style={styles.itemsGrid}>
+            {/* 'None' / Default Tile for Head, Eye, Outfit */}
+            {activeTab !== "background" ? (
               <Pressable
-                style={styles.modalSecondaryButton}
-                onPress={() => setShowUnsavedModal(false)}
+                style={[
+                  styles.itemCard,
+                  equippedItems[activeTab] === null && styles.itemCardEquipped,
+                ]}
+                onPress={() => handleSelectItem(activeTab, null)}
               >
-                <Text style={styles.modalSecondaryText}>Stay</Text>
+                <View style={styles.itemImageWell}>
+                  <Ionicons name="close-circle-outline" size={28} color="#7D927E" />
+                </View>
+                <Text style={styles.itemCardLabel} numberOfLines={1}>
+                  None
+                </Text>
+                {equippedItems[activeTab] === null && (
+                  <View style={styles.equippedBadge}>
+                    <Ionicons name="checkmark" size={12} color="#FFFFFF" />
+                  </View>
+                )}
+              </Pressable>
+            ) : null}
+
+            {/* List all items in the active category */}
+            {activeSection.options.map((option) => {
+              const isOwned = ownedItems[activeTab]?.includes(option.id);
+              const isEquipped = equippedItems[activeTab] === option.id;
+              const isTriedOn = !isOwned && isEquipped;
+
+              return (
+                <Pressable
+                  key={option.id}
+                  style={[
+                    styles.itemCard,
+                    isEquipped && isOwned && styles.itemCardEquipped,
+                    isTriedOn && styles.itemCardTryingOn,
+                  ]}
+                  onPress={() => handleSelectItem(activeTab, option.id)}
+                >
+                  <View
+                    style={[
+                      styles.itemImageWell,
+                      activeTab === "background" && styles.itemImageWellBackground,
+                    ]}
+                  >
+                    <Image
+                      source={option.source}
+                      style={activeTab === "background" ? styles.bgOptionImage : styles.clothingOptionImage}
+                      contentFit={activeTab === "background" ? "cover" : "contain"}
+                    />
+                  </View>
+
+                  <Text style={styles.itemCardLabel} numberOfLines={1}>
+                    {option.label ?? option.id}
+                  </Text>
+
+                  {/* Price pill if not owned */}
+                  {!isOwned ? (
+                    <View style={styles.itemPricePill}>
+                      <Image source={TALA_IMAGE} style={styles.itemPriceIcon} contentFit="contain" />
+                      <Text style={styles.itemPriceText}>{option.price}</Text>
+                    </View>
+                  ) : null}
+
+                  {/* Equipped Checkmark Badge */}
+                  {isEquipped && isOwned && (
+                    <View style={styles.equippedBadge}>
+                      <Ionicons name="checkmark" size={12} color="#FFFFFF" />
+                    </View>
+                  )}
+
+                  {/* Trying On Badge */}
+                  {isTriedOn && (
+                    <View style={styles.tryingOnBadge}>
+                      <Text style={styles.tryingOnBadgeText}>TRYING</Text>
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
+        </ScrollView>
+
+        {/* Try-On / Instant Buy Floating Bar (When unowned item is previewed in active tab) */}
+        {activeTabUnownedItem ? (
+          <View style={styles.tryOnActionBar}>
+            <View style={styles.tryOnItemInfo}>
+              <Image
+                source={activeTabUnownedItem.source}
+                style={styles.tryOnThumb}
+                contentFit={activeTab === "background" ? "cover" : "contain"}
+              />
+              <View style={styles.tryOnTextWrap}>
+                <Text style={styles.tryOnTitle} numberOfLines={1}>
+                  {activeTabUnownedItem.label ?? activeTabUnownedItem.id}
+                </Text>
+                <View style={styles.tryOnPriceRow}>
+                  <Image source={TALA_IMAGE} style={styles.tryOnPriceIcon} contentFit="contain" />
+                  <Text style={styles.tryOnPriceValue}>{activeTabUnownedItem.price} Tala</Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.tryOnButtonsRow}>
+              {/* Bag button to view everything currently on */}
+              <Pressable
+                style={styles.tryOnCartButton}
+                onPress={() => setShowCartModal(true)}
+              >
+                <Ionicons name="cart-outline" size={18} color="#456149" />
+                {cartItems.length > 0 ? (
+                  <View style={styles.cartBadgeMini}>
+                    <Text style={styles.cartBadgeMiniText}>{cartItems.length}</Text>
+                  </View>
+                ) : null}
               </Pressable>
 
+              {/* Instant Unlock & Keep button */}
               <Pressable
-                style={styles.modalDangerButton}
-                onPress={handleConfirmLeave}
+                style={styles.tryOnBuyButton}
+                onPress={() => setSingleBuyPrompt({ sectionId: activeTab, option: activeTabUnownedItem })}
               >
-                <Text style={styles.modalDangerText}>Leave</Text>
+                <Ionicons name="sparkles" size={15} color="#FFFFFF" />
+                <Text style={styles.tryOnBuyButtonText}>Unlock & Keep</Text>
               </Pressable>
             </View>
           </View>
-        </View>
-      </Modal>
+        ) : null}
+      </View>
 
-      {/* Single Item Purchase Confirmation Modal */}
-      <Modal
-        visible={Boolean(singleBuyPrompt)}
-        transparent
-        animationType="fade"
-        onRequestClose={() => (!isPurchasing ? setSingleBuyPrompt(null) : undefined)}
-      >
+      {/* Confirmation Modal: Single Item Purchase */}
+      <Modal visible={Boolean(singleBuyPrompt)} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Confirm Purchase</Text>
-            {singleBuyPrompt ? (
-              <>
-                <View style={styles.confirmItemPreview}>
-                  <Image
-                    source={singleBuyPrompt.option.source}
-                    style={
-                      singleBuyPrompt.sectionId === "background"
-                        ? styles.confirmBackgroundPreview
-                        : styles.confirmImagePreview
-                    }
-                    resizeMode={singleBuyPrompt.sectionId === "background" ? "cover" : "contain"}
-                  />
-                </View>
-                <Text style={styles.confirmItemTitle}>
-                  {singleBuyPrompt.option.label ?? singleBuyPrompt.option.id}
-                </Text>
-                <View style={styles.confirmPriceRow}>
-                  <Image source={TALA_IMAGE} style={styles.confirmPriceIcon} contentFit="contain" />
-                  <Text style={styles.confirmPriceValue}>{singleBuyPrompt.option.price} Tala</Text>
-                </View>
-                <Text style={styles.confirmBalanceHint}>
-                  Your balance: {availableTala.toLocaleString("en-US")} Tala
-                  {availableTala >= singleBuyPrompt.option.price
-                    ? " (" + (availableTala - singleBuyPrompt.option.price).toLocaleString("en-US") + " remaining)"
-                    : " (Need " + (singleBuyPrompt.option.price - availableTala).toLocaleString("en-US") + " more)"}
-                </Text>
-              </>
-            ) : null}
+            <View style={styles.confirmItemPreview}>
+              {singleBuyPrompt?.option.source ? (
+                <Image
+                  source={singleBuyPrompt.option.source}
+                  style={
+                    singleBuyPrompt.sectionId === "background"
+                      ? styles.confirmBackgroundPreview
+                      : styles.confirmImagePreview
+                  }
+                  contentFit={singleBuyPrompt.sectionId === "background" ? "cover" : "contain"}
+                />
+              ) : null}
+            </View>
+
+            <Text style={styles.modalTitle}>
+              Unlock {singleBuyPrompt?.option.label ?? singleBuyPrompt?.option.id}?
+            </Text>
+            <View style={styles.confirmPriceRow}>
+              <Image source={TALA_IMAGE} style={styles.confirmPriceIcon} contentFit="contain" />
+              <Text style={styles.confirmPriceValue}>{singleBuyPrompt?.option.price} Tala</Text>
+            </View>
+            <Text style={styles.confirmBalanceHint}>
+              Your balance: {availableTala.toLocaleString("en-US")} Tala
+            </Text>
 
             <View style={styles.modalActions}>
               <Pressable
@@ -761,216 +745,281 @@ export default function MuniAvatarScreen() {
               >
                 <Text style={styles.modalSecondaryText}>Cancel</Text>
               </Pressable>
-
               <Pressable
-                style={[
-                  styles.modalPrimaryButton,
-                  styles.modalConfirmBuyButton,
-                  (isPurchasing || (singleBuyPrompt ? availableTala < singleBuyPrompt.option.price : false)) &&
-                    styles.buyButtonDisabled,
-                ]}
-                disabled={isPurchasing || (singleBuyPrompt ? availableTala < singleBuyPrompt.option.price : false)}
-                onPress={() => void confirmBuySingle()}
+                style={styles.modalPrimaryButton}
+                disabled={isPurchasing}
+                onPress={() => {
+                  if (singleBuyPrompt) {
+                    void handleBuySingleItem(singleBuyPrompt.sectionId, singleBuyPrompt.option);
+                  }
+                }}
               >
-                <Text style={styles.modalPrimaryText}>
-                  {isPurchasing ? "Unlocking..." : "Buy Now"}
-                </Text>
+                {isPurchasing ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalPrimaryText}>Confirm Unlock</Text>
+                )}
               </Pressable>
             </View>
           </View>
         </View>
       </Modal>
 
-
-      {/* Add to cart confirmation */}
-      <Modal
-        visible={Boolean(pendingAddToCart)}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPendingAddToCart(null)}
-      >
+      {/* Modal: Unlock All Tried-On Items when Saving */}
+      <Modal visible={showUnlockTriedModal} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Add to cart?</Text>
+            <Text style={styles.modalTitle}>Unlock Your Look?</Text>
             <Text style={styles.modalBody}>
-              {pendingAddToCart
-                ? "Add " + (pendingAddToCart.option.label ?? pendingAddToCart.option.id) + " (" + pendingAddToCart.option.price + " Tala) to your wardrobe cart?"
-                : ""}
+              You are trying on {unownedEquippedItems.length} new piece
+              {unownedEquippedItems.length > 1 ? "s" : ""}. Unlock them to save this look!
             </Text>
-            <View style={styles.modalActions}>
-              <Pressable style={styles.modalSecondaryButton} onPress={() => setPendingAddToCart(null)}>
-                <Text style={styles.modalSecondaryText}>Cancel</Text>
+
+            <ScrollView style={styles.unlockListScroll} showsVerticalScrollIndicator={false}>
+              {unownedEquippedItems.map(({ sectionId, option }) => (
+                <View key={option.id} style={styles.unlockListItem}>
+                  <Image
+                    source={option.source}
+                    style={styles.unlockItemThumb}
+                    contentFit={sectionId === "background" ? "cover" : "contain"}
+                  />
+                  <Text style={styles.unlockItemName} numberOfLines={1}>
+                    {option.label ?? option.id}
+                  </Text>
+                  <View style={styles.unlockItemPriceWrap}>
+                    <Image source={TALA_IMAGE} style={styles.unlockItemPriceIcon} contentFit="contain" />
+                    <Text style={styles.unlockItemPriceText}>{option.price}</Text>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+
+            <View style={styles.unlockTotalRow}>
+              <Text style={styles.unlockTotalLabel}>Total:</Text>
+              <View style={styles.confirmPriceRow}>
+                <Image source={TALA_IMAGE} style={styles.confirmPriceIcon} contentFit="contain" />
+                <Text style={styles.confirmPriceValue}>{unownedEquippedTotal} Tala</Text>
+              </View>
+            </View>
+            <Text style={styles.confirmBalanceHint}>
+              Your balance: {availableTala.toLocaleString("en-US")} Tala
+            </Text>
+
+            <View style={styles.modalColumnActions}>
+              <Pressable
+                style={[
+                  styles.modalPrimaryButtonFull,
+                  availableTala < unownedEquippedTotal && styles.buttonDisabled,
+                ]}
+                disabled={isPurchasing || availableTala < unownedEquippedTotal}
+                onPress={() => void handleUnlockAllTried()}
+              >
+                {isPurchasing ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalPrimaryText}>
+                    {availableTala >= unownedEquippedTotal ? "Unlock & Save Outfit" : "Not Enough Tala"}
+                  </Text>
+                )}
               </Pressable>
-              <Pressable style={styles.modalPrimaryButton} onPress={confirmAddToCart}>
-                <Text style={styles.modalPrimaryText}>Add</Text>
+
+              <Pressable
+                style={styles.modalSecondaryButtonFull}
+                disabled={isPurchasing}
+                onPress={() => {
+                  setShowUnlockTriedModal(false);
+                  // Strip unowned items and save only owned ones
+                  const ownedLook = { ...equippedItems };
+                  unownedEquippedItems.forEach((i) => {
+                    ownedLook[i.sectionId] = savedItems[i.sectionId];
+                  });
+                  setEquippedItems(ownedLook);
+                  void saveMuniLoadout(ownedLook);
+                }}
+              >
+                <Text style={styles.modalSecondaryText}>Revert Unowned & Save</Text>
+              </Pressable>
+
+              <Pressable
+                style={styles.modalTextButton}
+                disabled={isPurchasing}
+                onPress={() => setShowUnlockTriedModal(false)}
+              >
+                <Text style={styles.modalTextButtonLabel}>Keep Trying On</Text>
               </Pressable>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* Cart Drawer / Modal */}
-      <Modal
-        visible={showCartModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => (!isPurchasing ? setShowCartModal(false) : undefined)}
-      >
+      {/* Cart Modal */}
+      <Modal visible={showCartModal} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, styles.cartModalCard]}>
             <View style={styles.cartHeaderRow}>
               <View style={styles.cartHeaderTitleWrap}>
-                <Ionicons name="cart" size={22} color="#4A6546" />
-                <Text style={styles.cartModalTitle}>Wardrobe Cart</Text>
+                <Ionicons name="cart" size={20} color="#345239" />
+                <Text style={styles.cartModalTitle}>Shopping Bag</Text>
                 <View style={styles.cartItemCountBadge}>
                   <Text style={styles.cartItemCountBadgeText}>{cartItems.length}</Text>
                 </View>
               </View>
-              <Pressable
-                style={styles.cartCloseButton}
-                disabled={isPurchasing}
-                onPress={() => setShowCartModal(false)}
-              >
-                <Ionicons name="close" size={22} color="#607164" />
+              <Pressable style={styles.cartCloseButton} onPress={() => setShowCartModal(false)}>
+                <Ionicons name="close" size={22} color="#5D6C62" />
               </Pressable>
             </View>
 
             {cartItems.length === 0 ? (
               <View style={styles.cartEmptyState}>
-                <Ionicons name="bag-outline" size={44} color="#A3B1A1" />
-                <Text style={styles.cartEmptyTitle}>Your cart is empty</Text>
+                <Ionicons name="bag-handle-outline" size={44} color="#A7BAA8" />
+                <Text style={styles.cartEmptyTitle}>Your bag is empty</Text>
                 <Text style={styles.cartEmptySubtitle}>
-                  Tap Cart on any shop item to add it here. Uncheck an item to leave it out of checkout — it stays in your cart.
+                  Tap any item in the wardrobe to try it on and add it to your bag!
                 </Text>
               </View>
             ) : (
-              <ScrollView style={styles.cartList} showsVerticalScrollIndicator={false}>
-                {cartItems.map((item) => (
-                  <View
-                    key={item.sectionId + "-" + item.option.id}
-                    style={[styles.cartItemRow, !item.checked && styles.cartItemRowUnchecked]}
-                  >
-                    <Image
-                      source={item.option.source}
-                      style={
-                        item.sectionId === "background"
-                          ? styles.cartItemImageBackground
-                          : styles.cartItemImage
-                      }
-                      resizeMode={item.sectionId === "background" ? "cover" : "contain"}
-                    />
-                    <View style={styles.cartItemInfo}>
-                      <Text style={[styles.cartItemName, !item.checked && styles.cartItemTextMuted]} numberOfLines={1}>
-                        {item.option.label ?? item.option.id}
-                      </Text>
-                      <Text style={[styles.cartItemSection, !item.checked && styles.cartItemTextMuted]}>
-                        {SECTION_META[item.sectionId] ? item.sectionId : "Accessory"}
-                      </Text>
+              <>
+                <ScrollView style={styles.cartList} showsVerticalScrollIndicator={false}>
+                  {cartItems.map((item) => (
+                    <View
+                      key={item.option.id}
+                      style={[styles.cartItemRow, !item.checked && styles.cartItemRowUnchecked]}
+                    >
+                      <Pressable
+                        style={item.checked ? styles.cartItemCheckboxButton : styles.cartItemCheckboxButtonOff}
+                        onPress={() => toggleCartChecked(item.sectionId, item.option.id)}
+                      >
+                        {item.checked ? <Ionicons name="checkmark" size={16} color="#3E7D32" /> : null}
+                      </Pressable>
+                      <Image
+                        source={item.option.source}
+                        style={
+                          item.sectionId === "background"
+                            ? styles.cartItemImageBackground
+                            : styles.cartItemImage
+                        }
+                        contentFit={item.sectionId === "background" ? "cover" : "contain"}
+                      />
+                      <View style={styles.cartItemInfo}>
+                        <Text style={styles.cartItemName}>{item.option.label ?? item.option.id}</Text>
+                        <Text style={styles.cartItemSection}>{item.sectionId}</Text>
+                      </View>
+                      <View style={styles.cartItemPriceWrap}>
+                        <Image source={TALA_IMAGE} style={styles.cartTalaIcon} contentFit="contain" />
+                        <Text style={styles.cartItemPriceText}>{item.option.price}</Text>
+                      </View>
+                      <Pressable
+                        style={styles.cartItemRemoveButton}
+                        onPress={() => {
+                          setEquippedItems((current) => ({
+                            ...current,
+                            [item.sectionId]: savedItems[item.sectionId],
+                          }));
+                        }}
+                      >
+                        <Ionicons name="trash-outline" size={18} color="#96A699" />
+                      </Pressable>
                     </View>
-                    <View style={styles.cartItemPriceWrap}>
-                      <Image source={TALA_IMAGE} style={styles.cartTalaIcon} contentFit="contain" />
-                      <Text style={[styles.cartItemPriceText, !item.checked && styles.cartItemTextMuted]}>
-                        {item.option.price}
-                      </Text>
+                  ))}
+                </ScrollView>
+
+                <View style={styles.cartFooter}>
+                  <View style={styles.cartTotalRow}>
+                    <Text style={styles.cartTotalLabel}>Total ({selectedCartCount} items):</Text>
+                    <View style={styles.cartTotalPriceWrap}>
+                      <Image source={TALA_IMAGE} style={styles.cartTotalTalaIcon} contentFit="contain" />
+                      <Text style={styles.cartTotalPriceText}>{cartTotal}</Text>
                     </View>
+                  </View>
+                  <Text style={styles.cartBalanceText}>
+                    Your Tala: {availableTala.toLocaleString("en-US")}
+                  </Text>
+
+                  <View style={styles.cartActions}>
+                    <Pressable
+                      style={styles.cartClearButton}
+                      onPress={() => setEquippedItems(savedItems)}
+                      disabled={isPurchasing}
+                    >
+                      <Text style={styles.cartClearButtonText}>Clear</Text>
+                    </Pressable>
                     <Pressable
                       style={[
-                        styles.cartItemRemoveButton,
-                        item.checked ? styles.cartItemCheckboxButton : styles.cartItemCheckboxButtonOff,
+                        styles.cartCheckoutButton,
+                        (!canAffordCart || selectedCartCount === 0) && styles.buttonDisabled,
                       ]}
-                      accessibilityLabel={item.checked ? "Uncheck item" : "Check item"}
-                      disabled={isPurchasing}
-                      onPress={() => toggleCartChecked(item.sectionId, item.option.id)}
+                      onPress={() => void handleBuyCart()}
+                      disabled={isPurchasing || !canAffordCart || selectedCartCount === 0}
                     >
-                      <Ionicons
-                        name={item.checked ? "checkbox" : "square-outline"}
-                        size={22}
-                        color={item.checked ? "#73CD44" : "#9AA89A"}
-                      />
+                      {isPurchasing ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <Text style={styles.cartCheckoutButtonText}>Unlock Items</Text>
+                      )}
                     </Pressable>
                   </View>
-                ))}
-              </ScrollView>
+                </View>
+              </>
             )}
-
-            {cartItems.length > 0 ? (
-              <View style={styles.cartFooter}>
-                <View style={styles.cartTotalRow}>
-                  <Text style={styles.cartTotalLabel}>
-                    Total ({selectedCartCount} selected
-                    {cartItems.length !== selectedCartCount ? " / " + cartItems.length + " in cart" : ""}
-                    ):
-                  </Text>
-                  <View style={styles.cartTotalPriceWrap}>
-                    <Image source={TALA_IMAGE} style={styles.cartTotalTalaIcon} contentFit="contain" />
-                    <Text style={styles.cartTotalPriceText}>{cartTotal}</Text>
-                  </View>
-                </View>
-                <Text style={styles.cartBalanceText}>
-                  Available: {availableTala.toLocaleString("en-US")} Tala
-                  {selectedCartCount === 0
-                    ? " — check at least one item to buy"
-                    : canAffordCart
-                      ? " (" + (availableTala - cartTotal).toLocaleString("en-US") + " remaining)"
-                      : " (Need " + (cartTotal - availableTala).toLocaleString("en-US") + " more Tala)"}
-                </Text>
-                {!canAffordCart && selectedCartCount > 0 ? (
-                  <Text style={styles.cartValidationText}>
-                    Cart total exceeds your Tala. Uncheck some items or earn more Tala before buying.
-                  </Text>
-                ) : null}
-
-                <View style={styles.cartActions}>
-                  <Pressable
-                    style={styles.cartClearButton}
-                    disabled={isPurchasing}
-                    onPress={() => setCartItems([])}
-                  >
-                    <Text style={styles.cartClearButtonText}>Clear</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[
-                      styles.cartCheckoutButton,
-                      (isPurchasing || selectedCartCount === 0 || !canAffordCart) && styles.buyButtonDisabled,
-                    ]}
-                    disabled={isPurchasing || selectedCartCount === 0 || !canAffordCart}
-                    onPress={() => void confirmBuyCart()}
-                  >
-                    <Text style={styles.cartCheckoutButtonText}>
-                      {isPurchasing ? "Unlocking..." : "Buy All (" + cartTotal + " Tala)"}
-                    </Text>
-                  </Pressable>
-                </View>
-              </View>
-            ) : null}
           </View>
         </View>
       </Modal>
 
-      <Modal
-        visible={Boolean(purchaseError)}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPurchaseError(null)}
-      >
+      {/* Success Modal */}
+      <Modal visible={Boolean(purchaseNotice)} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Notice</Text>
-            <Text style={styles.modalBody}>{purchaseError}</Text>
-            <Pressable
-              style={styles.modalNoticeButton}
-              onPress={() => setPurchaseError(null)}
-            >
-              <Text style={styles.modalPrimaryText}>OK</Text>
+          <View style={styles.unlockModalCard}>
+            <View style={styles.unlockIconBadge}>
+              <Ionicons name="sparkles" size={28} color="#FFFFFF" />
+            </View>
+            <Text style={styles.unlockTitle}>New Item Unlocked!</Text>
+            <Text style={styles.unlockBody}>
+              {purchaseNotice?.itemLabel} is now part of your permanent collection and has been saved to Muni.
+            </Text>
+            <Pressable style={styles.unlockButton} onPress={() => setPurchaseNotice(null)}>
+              <Text style={styles.unlockButtonText}>Awesome!</Text>
             </Pressable>
           </View>
         </View>
       </Modal>
 
+      {/* Error Modal */}
+      <Modal visible={Boolean(purchaseError)} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Notice</Text>
+            <Text style={styles.modalBody}>{purchaseError}</Text>
+            <Pressable style={styles.modalNoticeButton} onPress={() => setPurchaseError(null)}>
+              <Text style={styles.modalPrimaryText}>Got it</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Unsaved Changes Confirmation Modal */}
+      <Modal visible={showUnsavedModal} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Unsaved Look</Text>
+            <Text style={styles.modalBody}>
+              You have tried on new pieces that haven't been saved yet. Would you like to leave anyway?
+            </Text>
+            <View style={styles.modalActions}>
+              <Pressable style={styles.modalSecondaryButton} onPress={() => setShowUnsavedModal(false)}>
+                <Text style={styles.modalSecondaryText}>Stay</Text>
+              </Pressable>
+              <Pressable style={styles.modalDangerButton} onPress={handleConfirmLeave}>
+                <Text style={styles.modalDangerText}>Leave</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      {/* Standard App Bottom Nav */}
       <HomeBottomNav
         activeTab="muni"
         onBeforeLeave={(nextRoute) => {
-          if (!hasUnsavedChanges) {
+          if (!hasUnsavedChanges && unownedEquippedItems.length === 0) {
             return true;
           }
           setPendingLeaveRoute(nextRoute);
@@ -985,604 +1034,90 @@ export default function MuniAvatarScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F5F9F1" },
-  topBar: {
-    height: 56,
+    backgroundColor: "#F7FAF5",
+  },
+
+  // Upper Stage Section
+  stageContainer: {
+    height: "46%",
+    minHeight: 280,
+    maxHeight: 380,
+    position: "relative",
+    overflow: "hidden",
     borderBottomWidth: 1,
-    borderBottomColor: "#DDE7D7",
-    backgroundColor: "#FEFFFC",
+    borderBottomColor: "rgba(0,0,0,0.06)",
+  },
+  stageBackgroundImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
+  },
+  stageWarmVignette: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+  },
+  stageTopBar: {
+    position: "absolute",
+    top: 10,
+    left: 14,
+    right: 14,
+    zIndex: 10,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 8,
-    shadowColor: "#5C6570",
+  },
+  talaPill: {
+    height: 38,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 252, 224, 0.96)",
+    borderWidth: 1.5,
+    borderColor: "rgba(224, 196, 74, 0.7)",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    columnGap: 6,
+    shadowColor: "#615220",
     shadowOpacity: 0.1,
     shadowRadius: 5,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2 },
-  backButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 999,
-    backgroundColor: "#F1F6EE",
-    borderWidth: 1,
-    borderColor: "#E0EADC",
-    alignItems: "center",
-    justifyContent: "center" },
-  topTitle: {
-    color: "#304558",
-    fontSize: 18,
-    lineHeight: 24,
-    fontFamily: "Outfit-Bold" },
-  topBarSpacer: {
-    width: 38,
-    height: 38 },
-  scroll: {
-    flex: 1 },
-  scrollContent: {
-    paddingBottom: 116 },
-  previewSection: {
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 18 },
-  heroCard: {
-    height: 292,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: "#D8E6D0",
-    backgroundColor: "#DDEFD6",
-    position: "relative",
-    overflow: "hidden",
-    shadowColor: "#677566",
-    shadowOpacity: 0.14,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 4 },
-  heroBackgroundImage: {
-    ...StyleSheet.absoluteFillObject,
-    width: "100%",
-    height: "100%" },
-  heroOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(255, 255, 255, 0.16)",
-    zIndex: 1 },
-  heroTopRow: {
-    position: "absolute",
-    top: 12,
-    left: 12,
-    right: 12,
-    zIndex: 4,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    columnGap: 10 },
-  talaPill: {
-    minWidth: 96,
-    height: 38,
-    borderRadius: 999,
-    backgroundColor: "rgba(255, 251, 205, 0.94)",
-    borderWidth: 1,
-    borderColor: "rgba(222, 199, 86, 0.6)",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 12,
-    columnGap: 5 },
+    elevation: 2,
+  },
   talaIcon: {
-    width: 17,
-    height: 17 },
+    width: 18,
+    height: 18,
+  },
   talaText: {
-    color: "#465665",
+    color: "#3F4F3F",
     fontSize: 16,
-    lineHeight: 21,
-    fontFamily: "Outfit-Bold" },
-  saveButton: {
-    minWidth: 104,
-    height: 38,
-    borderRadius: 999,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 12,
-    columnGap: 5 },
-  saveButtonActive: {
-    backgroundColor: "#70C943",
-    borderWidth: 1,
-    borderColor: "#5CB72F",
-    shadowColor: "#5C8B43",
-    shadowOpacity: 0.18,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2 },
-  saveButtonSaved: {
-    backgroundColor: "rgba(255, 255, 255, 0.88)",
-    borderWidth: 1,
-    borderColor: "rgba(218, 231, 212, 0.92)" },
-  saveButtonText: {
-    color: "#5E7259",
-    fontSize: 13,
-    lineHeight: 17,
-    fontFamily: "Outfit-Bold" },
-  saveButtonTextActive: {
-    color: "#FFFFFF" },
-  muniPreviewWrap: {
-    position: "absolute",
-    left: "50%",
-    bottom: 54,
-    width: 205,
-    height: 205,
-    marginLeft: -102.5,
-    zIndex: 3 },
-  muniPreviewAvatar: {
-    width: 205,
-    height: 205 },
-  heroStatsRow: {
-    position: "absolute",
-    left: 12,
-    right: 12,
-    bottom: 12,
-    zIndex: 4,
-    flexDirection: "row",
-    columnGap: 8 },
-  heroStatPill: {
-    flex: 1,
-    minHeight: 38,
-    borderRadius: 14,
-    backgroundColor: "rgba(255, 255, 255, 0.88)",
-    borderWidth: 1,
-    borderColor: "rgba(224, 234, 220, 0.9)",
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    columnGap: 6 },
-  heroStatValue: {
-    color: "#304558",
-    fontSize: 14,
-    lineHeight: 18,
-    fontFamily: "Outfit-Bold" },
-  heroStatLabel: {
-    color: "#607181",
-    fontSize: 12,
-    lineHeight: 15,
-    fontFamily: "Outfit-Bold" },
-  collectionHeader: {
-    marginTop: 18,
-    marginBottom: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    columnGap: 12 },
-  collectionTitleWrap: {
-    flex: 1 },
-  collectionKicker: {
-    color: "#6F845C",
-    fontSize: 12,
-    lineHeight: 15,
-    fontFamily: "Outfit-Bold",
-    textTransform: "uppercase" },
-  collectionTitle: {
-    marginTop: 2,
-    color: "#304558",
-    fontSize: 23,
-    lineHeight: 29,
-    fontFamily: "Outfit-Bold" },
-  collectionCountPill: {
-    minHeight: 34,
-    borderRadius: 999,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#DDE9D7",
-    paddingHorizontal: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    columnGap: 5 },
-  collectionCountText: {
-    color: "#507143",
-    fontSize: 12,
-    lineHeight: 15,
-    fontFamily: "Outfit-Bold" },
-  wardrobeLoadingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    columnGap: 8,
-    marginBottom: 10,
-    paddingVertical: 8 },
-  wardrobeLoadingText: {
-    color: "#5E7259",
-    fontSize: 13,
-    lineHeight: 18,
-    fontFamily: "Outfit-Bold" },
-  modeSwitch: {
-    height: 50,
-    borderRadius: 18,
-    backgroundColor: "#E9F2E4",
-    borderWidth: 1,
-    borderColor: "#D6E6CF",
-    padding: 4,
-    flexDirection: "row",
-    columnGap: 6 },
-  modeButton: {
-    flex: 1,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    columnGap: 6 },
-  modeButtonActive: {
-    backgroundColor: "#70C943",
-    shadowColor: "#5D9742",
-    shadowOpacity: 0.16,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2 },
-  modeButtonText: {
-    color: "#62746A",
-    fontSize: 15,
     lineHeight: 20,
-    fontFamily: "Outfit-Bold" },
-  modeButtonTextActive: {
-    color: "#FFFFFF" },
-  sectionBlock: {
-    marginBottom: 18,
-    paddingHorizontal: 14 },
-  sectionHeader: {
-    marginBottom: 10,
-    flexDirection: "row",
+    fontFamily: "Outfit-Bold",
+  },
+  roundCartButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "rgba(255, 255, 255, 0.94)",
+    borderWidth: 1.5,
+    borderColor: "#E5ECE0",
     alignItems: "center",
-    justifyContent: "space-between" },
-  sectionTitleRow: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: 8 },
-  sectionIconBadge: {
-    width: 30,
-    height: 30,
-    borderRadius: 10,
-    backgroundColor: "#EAF5E3",
-    borderWidth: 1,
-    borderColor: "#D7E7CF",
-    alignItems: "center",
-    justifyContent: "center" },
-  sectionTitle: {
-    color: "#304558",
-    fontSize: 17,
-    lineHeight: 22,
-    fontFamily: "Outfit-Bold" },
-  sectionCountText: {
-    color: "#6B7B88",
-    fontSize: 12,
-    lineHeight: 16,
-    fontFamily: "Outfit-Bold" },
-  optionRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    rowGap: 10,
-    columnGap: 8 },
-  optionCard: {
-    width: "31.4%",
-    minHeight: 124,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#DDE8D8",
-    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
     position: "relative",
-    padding: 7,
-    shadowColor: "#71806E",
-    shadowOpacity: 0.08,
+    shadowColor: "#2F3E34",
+    shadowOpacity: 0.12,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2 },
-  optionCardSelected: {
-    borderColor: "#70C943",
-    backgroundColor: "#F7FCF3" },
-  optionImageWell: {
-    height: 78,
-    borderRadius: 14,
-    backgroundColor: "#F4F7F2",
-    borderWidth: 1,
-    borderColor: "#E4ECE0",
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden" },
-  optionImageWellBackground: {
-    backgroundColor: "#DDEFD6" },
-  optionImage: {
-    width: "78%",
-    height: "78%" },
-  backgroundOptionImage: {
-    width: "100%",
-    height: "100%" },
-  optionLabel: {
-    marginTop: 7,
-    color: "#405368",
-    fontSize: 12,
-    lineHeight: 16,
-    fontFamily: "Outfit-Bold",
-    textAlign: "center" },
-  optionLabelSelected: {
-    color: "#2F6F25" },
-  checkBadge: {
-    position: "absolute",
-    top: 7,
-    right: 7,
-    width: 22,
-    height: 22,
-    borderRadius: 999,
-    backgroundColor: "#70C943",
-    borderWidth: 1,
-    borderColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center" },
-  shopGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    rowGap: 12,
-    columnGap: 10 },
-  shopCard: {
-    width: "48%",
-    alignSelf: "flex-start",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#DDE8D8",
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 10,
-    paddingTop: 10,
-    paddingBottom: 12,
-    shadowColor: "#71806E",
-    shadowOpacity: 0.08,
-    shadowRadius: 7,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2 },
-  shopCardOwned: {
-    backgroundColor: "#F7FCF3" },
-  shopCardSelected: {
-    borderColor: "#70C943" },
-  shopImageWrap: {
-    height: 86,
-    borderRadius: 15,
-    backgroundColor: "#F4F7F2",
-    borderWidth: 1,
-    borderColor: "#E4ECE0",
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-    marginBottom: 9 },
-  shopOptionImage: {
-    width: "76%",
-    height: "76%" },
-  shopBackgroundImage: {
-    width: "100%",
-    height: "100%" },
-  shopLabel: {
-    minHeight: 36,
-    color: "#304558",
-    fontSize: 14,
-    lineHeight: 18,
-    fontFamily: "Outfit-Bold",
-    marginBottom: 8 },
-  priceRow: {
-    minHeight: 28,
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: 5,
-    marginBottom: 8 },
-  shopPriceIcon: {
-    width: 15,
-    height: 15 },
-  shopPriceText: {
-    color: "#4F6047",
-    fontSize: 13,
-    lineHeight: 18,
-    fontFamily: "Outfit-Bold" },
-  buyButton: {
-    minHeight: 34,
-    borderRadius: 999,
-    backgroundColor: "#70C943",
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    columnGap: 5,
-    paddingHorizontal: 10 },
-  buyButtonDisabled: {
-    backgroundColor: "#E4ECD9" },
-  buyButtonText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    lineHeight: 16,
-    fontFamily: "Outfit-Bold" },
-  buyButtonTextDisabled: {
-    color: "#8A9583" },
-  shopStatusChip: {
-    minHeight: 28,
-    borderRadius: 999,
-    backgroundColor: "#E8F4DF",
-    alignItems: "center",
-    justifyContent: "center",
-    alignSelf: "flex-start",
-    paddingHorizontal: 10,
-    flexDirection: "row",
-    columnGap: 4,
-    marginBottom: 8 },
-  shopStatusChipActive: {
-    backgroundColor: "#70C943" },
-  shopStatusText: {
-    color: "#5C7257",
-    fontSize: 12,
-    lineHeight: 16,
-    fontFamily: "Outfit-Bold" },
-  shopStatusTextActive: {
-    color: "#FFFFFF" },
-  wearButton: {
-    minHeight: 34,
-    borderRadius: 999,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#D8E6D0",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 10 },
-  wearButtonSelected: {
-    backgroundColor: "#F0F7EA",
-    borderColor: "#D8E6D0" },
-  wearButtonText: {
-    color: "#355468",
-    fontSize: 12,
-    lineHeight: 16,
-    fontFamily: "Outfit-Bold" },
-  wearButtonTextSelected: {
-    color: "#5D7258" },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(21, 27, 24, 0.34)",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 22 },
-  unlockModalCard: {
-    width: "100%",
-    maxWidth: 320,
-    borderRadius: 24,
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 22,
-    paddingTop: 22,
-    paddingBottom: 18,
-    alignItems: "center",
-    shadowColor: "#525C67",
-    shadowOpacity: 0.16,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4 },
-  unlockIconBadge: {
-    width: 58,
-    height: 58,
-    borderRadius: 999,
-    backgroundColor: "#70C943",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 14 },
-  unlockTitle: {
-    color: "#33475C",
-    fontSize: 22,
-    lineHeight: 28,
-    fontFamily: "Outfit-Bold",
-    textAlign: "center" },
-  unlockBody: {
-    marginTop: 8,
-    color: "#66776B",
-    fontSize: 15,
-    lineHeight: 22,
-    fontFamily: "Outfit-Medium",
-    textAlign: "center" },
-  unlockButton: {
-    marginTop: 18,
-    minWidth: 140,
-    minHeight: 42,
-    borderRadius: 999,
-    backgroundColor: "#70C943",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 18 },
-  unlockSecondaryButton: {
-    backgroundColor: "#EEF4E8",
-    marginTop: 8 },
-  unlockSecondaryButtonText: {
-    color: "#4E6748" },
-  unlockButtonText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    lineHeight: 18,
-    fontFamily: "Outfit-Bold" },
-  modalCard: {
-    width: "100%",
-    maxWidth: 320,
-    borderRadius: 22,
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 18,
-    shadowColor: "#525C67",
-    shadowOpacity: 0.16,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4 },
-  modalTitle: {
-    color: "#34465A",
-    fontSize: 18,
-    lineHeight: 24,
-    fontFamily: "Outfit-Bold",
-    textAlign: "center",
-    marginBottom: 8 },
-  modalBody: {
-    color: "#52606C",
-    fontSize: 14,
-    lineHeight: 20,
-    fontFamily: "Outfit-Medium",
-    textAlign: "center",
-    marginBottom: 16 },
-  modalActions: {
-    flexDirection: "row",
-    columnGap: 10 },
-  modalSecondaryButton: {
-    flex: 1,
-    minHeight: 40,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#CDD5C7",
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center" },
-  modalSecondaryText: {
-    color: "#566271",
-    fontSize: 13,
-    fontFamily: "Outfit-Bold" },
-  modalDangerButton: {
-    flex: 1,
-    minHeight: 40,
-    borderRadius: 999,
-    backgroundColor: "#DC4C4C",
-    alignItems: "center",
-    justifyContent: "center" },
-  modalDangerText: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontFamily: "Outfit-Bold" },
-  modalPrimaryButton: {
-    flex: 1,
-    minHeight: 40,
-    borderRadius: 999,
-    backgroundColor: "#70C943",
-    alignItems: "center",
-    justifyContent: "center" },
-  modalNoticeButton: {
-    marginTop: 8,
-    width: "100%",
-    minHeight: 40,
-    borderRadius: 999,
-    backgroundColor: "#70C943",
-    alignItems: "center",
-    justifyContent: "center" },
-  modalPrimaryText: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontFamily: "Outfit-Bold" },
-  cartIconButton: {
-    position: "relative",
-    padding: 6,
-    justifyContent: "center",
-    alignItems: "center",
+    elevation: 3,
   },
   cartBadge: {
     position: "absolute",
-    top: 2,
-    right: 2,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
+    top: -2,
+    right: -2,
+    minWidth: 19,
+    height: 19,
+    borderRadius: 9.5,
     backgroundColor: "#70C943",
+    borderWidth: 1.5,
+    borderColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 4,
@@ -1592,56 +1127,465 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontFamily: "Outfit-Bold",
   },
-  shopActionRow: {
-    flexDirection: "row",
+
+  // Muni Character & Floor Rug (matching reference)
+  stageMuniWrap: {
+    position: "absolute",
+    left: "50%",
+    bottom: 22,
+    width: 210,
+    height: 210,
+    marginLeft: -105,
     alignItems: "center",
     justifyContent: "center",
-    columnGap: 6,
-    width: "100%",
+    zIndex: 5,
   },
-  addToCartButton: {
+  stageMuniAvatar: {
+    width: 210,
+    height: 210,
+  },
+
+  // Floating Controls at Bottom of Stage
+  stageBottomFloatingRow: {
+    position: "absolute",
+    bottom: 8,
+    left: 14,
+    right: 14,
+    zIndex: 10,
     flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+  },
+  removeButtonWrap: {
+    minWidth: 54,
     alignItems: "center",
     justifyContent: "center",
-    columnGap: 4,
-    minHeight: 34,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    backgroundColor: "#EEF3EC",
-    borderWidth: 1,
-    borderColor: "#D7E2D4",
   },
-  addToCartButtonActive: {
-    backgroundColor: "#E7F6DE",
-    borderColor: "#73CD44",
+  roundResetButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.94)",
+    borderWidth: 1.5,
+    borderColor: "#F7B8B8",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#803030",
+    shadowOpacity: 0.16,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
-  addToCartButtonText: {
-    color: "#5C7257",
+  removeButtonText: {
+    marginTop: 3,
+    fontSize: 12,
+    fontFamily: "Outfit-Bold",
+    color: "#B33939",
+    textShadowColor: "rgba(255, 255, 255, 0.85)",
+    textShadowRadius: 3,
+  },
+  tryOnPill: {
+    backgroundColor: "#2C753A",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 5,
+    shadowColor: "#17441F",
+    shadowOpacity: 0.16,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+    marginBottom: 4,
+  },
+  tryOnPillText: {
+    color: "#FFFFFF",
     fontSize: 12,
     fontFamily: "Outfit-Bold",
   },
-  addToCartButtonTextActive: {
-    color: "#4A6546",
+  loadingPill: {
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 6,
+    marginBottom: 4,
   },
-  cartItemCheckboxButton: {
+  loadingPillText: {
+    color: "#466249",
+    fontSize: 11,
+    fontFamily: "Outfit-Medium",
+  },
+  noticeToastPill: {
+    backgroundColor: "#EAF7E8",
+    borderColor: "#B4DEB1",
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 5,
+    marginBottom: 4,
+  },
+  noticeToastText: {
+    color: "#27622E",
+    fontSize: 12,
+    fontFamily: "Outfit-Bold",
+  },
+
+  // Save Floppy Button (Floppy disk icon with 'Save' matching reference)
+  saveFloppyButton: {
+    minWidth: 54,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  saveFloppyIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#2F5036",
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  saveFloppyIconWrapActive: {
+    backgroundColor: "#8BE05F",
+    borderWidth: 1.5,
+    borderColor: "#66C237",
+  },
+  saveFloppyIconWrapIdle: {
+    backgroundColor: "rgba(255, 255, 255, 0.92)",
+    borderWidth: 1.5,
+    borderColor: "#D2E0CD",
+  },
+  saveFloppyButtonActive: {
+    opacity: 1,
+  },
+  saveFloppyButtonIdle: {
+    opacity: 0.85,
+  },
+  saveFloppyText: {
+    marginTop: 3,
+    fontSize: 12,
+    fontFamily: "Outfit-Bold",
+    color: "#46614A",
+    textShadowColor: "rgba(255,255,255,0.85)",
+    textShadowRadius: 3,
+  },
+  saveFloppyTextActive: {
+    color: "#1B4D24",
+  },
+
+  // Horizontal Category Tabs Bar (Divider matching reference image)
+  categoryTabsBar: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    paddingHorizontal: 10,
+    backgroundColor: "#F1F5EE",
+    borderTopWidth: 1,
+    borderTopColor: "#DEE8DA",
+  },
+  categoryTabItem: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 7,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    marginHorizontal: 3,
+  },
+  categoryTabItemActive: {
+    backgroundColor: "#FFFFFF",
+    paddingVertical: 10,
+    marginBottom: -1,
+    borderTopWidth: 2,
+    borderLeftWidth: 1.5,
+    borderRightWidth: 1.5,
+    borderColor: "#D3E2CD",
+    shadowColor: "#39523C",
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: -2 },
+    elevation: 2,
+  },
+  categoryTabItemInactive: {
+    backgroundColor: "#E2ECE0",
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: "#D5E2D2",
+  },
+  categoryTabLabelActive: {
+    marginTop: 2,
+    fontSize: 11,
+    fontFamily: "Outfit-Bold",
+    color: "#2C5625",
+  },
+
+  // Bottom Drawer: Grid of Clothes / Accessories / Rooms
+  drawerContainer: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    position: "relative",
+  },
+  drawerScroll: {
+    flex: 1,
+  },
+  drawerScrollContent: {
+    paddingHorizontal: 8,
+    paddingTop: 10,
+    paddingBottom: 90,
+  },
+  itemsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    rowGap: 8,
+    columnGap: 6,
+  },
+  itemCard: {
+    width: "23.3%",
+    minHeight: 96,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: "#DEE7DC",
+    backgroundColor: "#F8FAF6",
+    alignItems: "center",
+    padding: 5,
+    position: "relative",
+    shadowColor: "#4B5B4D",
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1.5 },
+    elevation: 1,
+  },
+  itemCardEquipped: {
+    borderColor: "#70C943",
+    borderWidth: 2,
+    backgroundColor: "#F3FAEE",
+  },
+  itemCardTryingOn: {
+    borderColor: "#E59E27",
+    borderWidth: 2,
+    backgroundColor: "#FFFDF6",
+  },
+  itemImageWell: {
+    width: "100%",
+    height: 54,
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E7EFE5",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  itemImageWellBackground: {
+    backgroundColor: "#DEEFE0",
+  },
+  clothingOptionImage: {
+    width: "82%",
+    height: "82%",
+  },
+  bgOptionImage: {
+    width: "100%",
+    height: "100%",
+  },
+  itemCardLabel: {
+    marginTop: 4,
+    fontSize: 10,
+    fontFamily: "Outfit-Bold",
+    color: "#3F5243",
+    textAlign: "center",
+  },
+  itemPricePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 2,
+    backgroundColor: "#FFF9DB",
+    borderWidth: 1,
+    borderColor: "#ECD87A",
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    marginTop: 2,
+  },
+  itemPriceIcon: {
+    width: 9,
+    height: 9,
+  },
+  itemPriceText: {
+    fontSize: 9,
+    fontFamily: "Outfit-Bold",
+    color: "#6D5519",
+  },
+  equippedBadge: {
+    position: "absolute",
+    top: 3,
+    right: 3,
+    width: 17,
+    height: 17,
+    borderRadius: 8.5,
+    backgroundColor: "#70C943",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#FFFFFF",
+  },
+  tryingOnBadge: {
+    position: "absolute",
+    top: 3,
+    right: 3,
+    backgroundColor: "#E59E27",
+    borderRadius: 5,
+    paddingHorizontal: 3,
+    paddingVertical: 1,
+  },
+  tryingOnBadgeText: {
+    fontSize: 7,
+    fontFamily: "Outfit-Bold",
+    color: "#FFFFFF",
+  },
+
+  // Try-On Action Bar (Appears above bottom nav when previewing unowned item)
+  tryOnActionBar: {
+    position: "absolute",
+    bottom: 4,
+    left: 8,
+    right: 8,
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: "#CCE2C5",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    shadowColor: "#2F5036",
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+    zIndex: 20,
+  },
+  tryOnItemInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 8,
+    flex: 1,
+  },
+  tryOnThumb: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: "#F2F6F0",
+  },
+  tryOnTextWrap: {
+    flex: 1,
+  },
+  tryOnTitle: {
+    fontSize: 13,
+    fontFamily: "Outfit-Bold",
+    color: "#2C4331",
+  },
+  tryOnPriceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 4,
+    marginTop: 2,
+  },
+  tryOnPriceIcon: {
+    width: 13,
+    height: 13,
+  },
+  tryOnPriceValue: {
+    fontSize: 12,
+    fontFamily: "Outfit-Bold",
+    color: "#4F7049",
+  },
+  tryOnButtonsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 6,
+  },
+  tryOnCartButton: {
     width: 36,
     height: 36,
     borderRadius: 12,
-    backgroundColor: "#E7F6DE",
+    backgroundColor: "#EEF4EC",
     borderWidth: 1,
-    borderColor: "#73CD44",
+    borderColor: "#D2E2CF",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  cartItemCheckboxButtonOff: {
-    width: 36,
+  tryOnBuyButton: {
     height: 36,
-    borderRadius: 12,
-    backgroundColor: "#F2F5F1",
-    borderWidth: 1,
-    borderColor: "#D5DED2",
+    borderRadius: 999,
+    backgroundColor: "#70C943",
+    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 5,
+    shadowColor: "#4B8529",
+    shadowOpacity: 0.22,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  tryOnBuyButtonText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontFamily: "Outfit-Bold",
+  },
+
+  // Modals Styling
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(18, 28, 21, 0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 22,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 330,
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 20,
+    shadowColor: "#2F4435",
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 18,
+    lineHeight: 24,
+    fontFamily: "Outfit-Bold",
+    color: "#2C4032",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  modalBody: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontFamily: "Outfit-Medium",
+    color: "#5C6F61",
+    textAlign: "center",
+    marginBottom: 16,
   },
   confirmItemPreview: {
-    width: 80,
-    height: 80,
+    width: 76,
+    height: 76,
     borderRadius: 16,
     backgroundColor: "#F2F7F0",
     alignItems: "center",
@@ -1651,58 +1595,193 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   confirmImagePreview: {
-    width: 64,
-    height: 64,
+    width: 60,
+    height: 60,
   },
   confirmBackgroundPreview: {
-    width: 80,
-    height: 80,
-  },
-  confirmItemTitle: {
-    fontSize: 16,
-    fontFamily: "Outfit-Bold",
-    color: "#2C3E50",
-    textAlign: "center",
-    marginBottom: 6,
+    width: 76,
+    height: 76,
   },
   confirmPriceRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    columnGap: 6,
-    marginBottom: 6,
+    columnGap: 5,
+    marginBottom: 4,
   },
   confirmPriceIcon: {
-    width: 18,
-    height: 18,
+    width: 17,
+    height: 17,
   },
   confirmPriceValue: {
     fontSize: 16,
     fontFamily: "Outfit-Bold",
-    color: "#466B57",
+    color: "#356B3A",
   },
   confirmBalanceHint: {
     fontSize: 12,
     fontFamily: "Outfit-Medium",
-    color: "#72837A",
+    color: "#778B7C",
     textAlign: "center",
-    marginBottom: 16,
+    marginBottom: 14,
   },
-  modalConfirmBuyButton: {
-    marginTop: 0,
+  modalActions: {
+    flexDirection: "row",
+    columnGap: 10,
+    marginTop: 8,
+  },
+  modalSecondaryButton: {
     flex: 1,
+    minHeight: 42,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor: "#D2E0CE",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
   },
+  modalSecondaryText: {
+    color: "#506954",
+    fontSize: 13,
+    fontFamily: "Outfit-Bold",
+  },
+  modalPrimaryButton: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 999,
+    backgroundColor: "#70C943",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalPrimaryText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontFamily: "Outfit-Bold",
+  },
+  modalDangerButton: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 999,
+    backgroundColor: "#DC4C4C",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalDangerText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontFamily: "Outfit-Bold",
+  },
+  modalNoticeButton: {
+    width: "100%",
+    minHeight: 42,
+    borderRadius: 999,
+    backgroundColor: "#70C943",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 8,
+  },
+  buttonDisabled: {
+    backgroundColor: "#BDD7B7",
+  },
+
+  // Unlock list modal
+  unlockListScroll: {
+    maxHeight: 180,
+    width: "100%",
+    marginBottom: 10,
+  },
+  unlockListItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F0F4ED",
+  },
+  unlockItemThumb: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: "#F2F6EF",
+  },
+  unlockItemName: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 13,
+    fontFamily: "Outfit-Bold",
+    color: "#304635",
+  },
+  unlockItemPriceWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 4,
+  },
+  unlockItemPriceIcon: {
+    width: 13,
+    height: 13,
+  },
+  unlockItemPriceText: {
+    fontSize: 13,
+    fontFamily: "Outfit-Bold",
+    color: "#3D6F39",
+  },
+  unlockTotalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    width: "100%",
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderTopColor: "#E2ECE0",
+  },
+  unlockTotalLabel: {
+    fontSize: 14,
+    fontFamily: "Outfit-Bold",
+    color: "#304635",
+  },
+  modalColumnActions: {
+    width: "100%",
+    rowGap: 8,
+  },
+  modalPrimaryButtonFull: {
+    width: "100%",
+    minHeight: 42,
+    borderRadius: 999,
+    backgroundColor: "#70C943",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalSecondaryButtonFull: {
+    width: "100%",
+    minHeight: 40,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor: "#D2E0CE",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalTextButton: {
+    paddingVertical: 6,
+    alignItems: "center",
+  },
+  modalTextButtonLabel: {
+    fontSize: 12,
+    fontFamily: "Outfit-Medium",
+    color: "#728776",
+  },
+
+  // Cart Modal Specifics
   cartModalCard: {
-    maxHeight: "80%",
+    maxHeight: "82%",
   },
   cartHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     width: "100%",
-    marginBottom: 14,
+    marginBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#EEF3EC",
+    borderBottomColor: "#EEF4EB",
     paddingBottom: 10,
   },
   cartHeaderTitleWrap: {
@@ -1713,10 +1792,10 @@ const styles = StyleSheet.create({
   cartModalTitle: {
     fontSize: 17,
     fontFamily: "Outfit-Bold",
-    color: "#283C32",
+    color: "#2C4332",
   },
   cartItemCountBadge: {
-    backgroundColor: "#EDF6E9",
+    backgroundColor: "#E7F4E3",
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 12,
@@ -1724,7 +1803,7 @@ const styles = StyleSheet.create({
   cartItemCountBadgeText: {
     fontSize: 11,
     fontFamily: "Outfit-Bold",
-    color: "#4A6E44",
+    color: "#356E32",
   },
   cartCloseButton: {
     padding: 4,
@@ -1749,54 +1828,71 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   cartList: {
-    maxHeight: 260,
+    maxHeight: 240,
     width: "100%",
   },
   cartItemRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderBottomWidth: 1,
     borderBottomColor: "#F4F7F2",
   },
   cartItemRowUnchecked: {
-    opacity: 0.55,
+    opacity: 0.5,
+  },
+  cartItemCheckboxButton: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    backgroundColor: "#E4F3E0",
+    borderWidth: 1.5,
+    borderColor: "#70C943",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+  },
+  cartItemCheckboxButtonOff: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    backgroundColor: "#F2F5F1",
+    borderWidth: 1.5,
+    borderColor: "#D3DED1",
+    marginRight: 8,
   },
   cartItemImage: {
-    width: 44,
-    height: 44,
+    width: 38,
+    height: 38,
     borderRadius: 8,
     backgroundColor: "#F7FAF5",
   },
   cartItemImageBackground: {
-    width: 44,
-    height: 44,
+    width: 38,
+    height: 38,
     borderRadius: 8,
   },
   cartItemInfo: {
     flex: 1,
-    marginLeft: 10,
+    marginLeft: 8,
   },
   cartItemName: {
-    fontSize: 14,
+    fontSize: 13,
     fontFamily: "Outfit-Bold",
-    color: "#2B3C33",
-  },
-  cartItemTextMuted: {
-    color: "#9AA89F",
+    color: "#2C4032",
   },
   cartItemSection: {
     fontSize: 11,
     fontFamily: "Outfit-Medium",
-    color: "#7C8D84",
+    color: "#7E9082",
     textTransform: "capitalize",
-    marginTop: 2,
+    marginTop: 1,
   },
   cartItemPriceWrap: {
     flexDirection: "row",
     alignItems: "center",
     columnGap: 4,
-    marginRight: 10,
+    marginRight: 8,
   },
   cartTalaIcon: {
     width: 14,
@@ -1805,25 +1901,17 @@ const styles = StyleSheet.create({
   cartItemPriceText: {
     fontSize: 13,
     fontFamily: "Outfit-Bold",
-    color: "#385646",
+    color: "#376939",
   },
   cartItemRemoveButton: {
     padding: 6,
   },
   cartFooter: {
     width: "100%",
-    marginTop: 12,
+    marginTop: 10,
     borderTopWidth: 1,
-    borderTopColor: "#EEF3EC",
-    paddingTop: 12,
-  },
-  cartValidationText: {
-    marginTop: 6,
-    marginBottom: 4,
-    fontSize: 12,
-    lineHeight: 16,
-    fontFamily: "Outfit-Medium",
-    color: "#C45C3E",
+    borderTopColor: "#EEF4EB",
+    paddingTop: 10,
   },
   cartTotalRow: {
     flexDirection: "row",
@@ -1834,50 +1922,50 @@ const styles = StyleSheet.create({
   cartTotalLabel: {
     fontSize: 14,
     fontFamily: "Outfit-Bold",
-    color: "#3A4D43",
+    color: "#334937",
   },
   cartTotalPriceWrap: {
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 6,
+    columnGap: 5,
   },
   cartTotalTalaIcon: {
-    width: 18,
-    height: 18,
+    width: 16,
+    height: 16,
   },
   cartTotalPriceText: {
-    fontSize: 17,
+    fontSize: 16,
     fontFamily: "Outfit-Bold",
-    color: "#2C6E49",
+    color: "#2E6E34",
   },
   cartBalanceText: {
     fontSize: 11,
     fontFamily: "Outfit-Medium",
-    color: "#76877E",
+    color: "#7C9081",
     textAlign: "right",
-    marginBottom: 12,
+    marginBottom: 10,
   },
   cartActions: {
     flexDirection: "row",
     columnGap: 10,
   },
   cartClearButton: {
-    minHeight: 42,
+    minHeight: 40,
     paddingHorizontal: 16,
     borderRadius: 999,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: "#D2DDD3",
     alignItems: "center",
     justifyContent: "center",
   },
   cartClearButtonText: {
-    color: "#6B7D72",
+    color: "#677E6D",
     fontSize: 13,
     fontFamily: "Outfit-Bold",
   },
   cartCheckoutButton: {
     flex: 1,
-    minHeight: 42,
+    minHeight: 40,
     borderRadius: 999,
     backgroundColor: "#70C943",
     alignItems: "center",
@@ -1885,7 +1973,58 @@ const styles = StyleSheet.create({
   },
   cartCheckoutButtonText: {
     color: "#FFFFFF",
+    fontSize: 13,
+    fontFamily: "Outfit-Bold",
+  },
+
+  // Success modal
+  unlockModalCard: {
+    width: "100%",
+    maxWidth: 310,
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 22,
+    paddingTop: 22,
+    paddingBottom: 20,
+    alignItems: "center",
+  },
+  unlockIconBadge: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: "#70C943",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  unlockTitle: {
+    color: "#2C4032",
+    fontSize: 20,
+    lineHeight: 26,
+    fontFamily: "Outfit-Bold",
+    textAlign: "center",
+  },
+  unlockBody: {
+    marginTop: 8,
+    color: "#5C6F61",
     fontSize: 14,
+    lineHeight: 20,
+    fontFamily: "Outfit-Medium",
+    textAlign: "center",
+  },
+  unlockButton: {
+    marginTop: 16,
+    minWidth: 140,
+    minHeight: 40,
+    borderRadius: 999,
+    backgroundColor: "#70C943",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 20,
+  },
+  unlockButtonText: {
+    color: "#FFFFFF",
+    fontSize: 13,
     fontFamily: "Outfit-Bold",
   },
 });

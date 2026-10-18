@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Easing,  ImageSourcePropType, Platform, StyleProp, StyleSheet, View, ViewStyle } from "react-native";
+import { Animated, Easing, ImageSourcePropType, StyleProp, StyleSheet, View, ViewStyle } from "react-native";
 import { Image } from "expo-image";
-const AnimatedExpoImage = Animated.createAnimatedComponent(Image);
 import {
   getEyeAccessoryStyle,
   getHeadAccessoryStyle,
@@ -48,7 +47,6 @@ let criticalPreloadStarted = false;
 function preloadCriticalBodyParts() {
   if (criticalPreloadStarted) return;
   criticalPreloadStarted = true;
-  // RN Web does not implement Image.resolveAssetSource; calling it blanked the whole Expo web tree.
   const resolveAssetSource = (Image as typeof Image & {
     resolveAssetSource?: (source: ImageSourcePropType) => { uri?: string } | null;
   }).resolveAssetSource;
@@ -76,15 +74,12 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
   const equippedHeadStyle = getHeadAccessoryStyle(activeLoadout.head);
   const isGhostOutfit = activeLoadout.outfit === "spooky-ghost";
   const breath = useRef(new Animated.Value(0)).current;
-  const wave = useRef(new Animated.Value(0)).current;
   const [avatarSize, setAvatarSize] = useState({ height: 96, width: 96 });
   const [blinkFrameIndex, setBlinkFrameIndex] = useState(0);
 
   useEffect(() => {
     preloadCriticalBodyParts();
   }, []);
-
-
 
   useEffect(() => {
     if (!animated) {
@@ -112,35 +107,6 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
     loop.start();
     return () => loop.stop();
   }, [animated, breath]);
-
-  useEffect(() => {
-    if (!animated) {
-      wave.setValue(0);
-      return undefined;
-    }
-
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.delay(700),
-        Animated.timing(wave, {
-          toValue: 0,
-          duration: 1,
-          easing: Easing.linear,
-          useNativeDriver: true,
-        }),
-        Animated.timing(wave, {
-          toValue: 1,
-          duration: 1250,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.delay(2800),
-      ]),
-    );
-
-    loop.start();
-    return () => loop.stop();
-  }, [animated, wave]);
 
   useEffect(() => {
     if (!animated) {
@@ -202,26 +168,6 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
     [breath],
   );
 
-  const leftHandWaveStyle = useMemo(() => {
-    const pivotX = (0.24 - 0.5) * AVATAR_CANVAS_SIZE;
-    const pivotY = (0.63 - 0.5) * AVATAR_CANVAS_SIZE;
-
-    return {
-      transform: [
-        { translateX: pivotX },
-        { translateY: pivotY },
-        {
-          rotate: wave.interpolate({
-            inputRange: [0, 0.2, 0.45, 0.7, 1],
-            outputRange: ["0deg", "-34deg", "24deg", "-30deg", "0deg"],
-          }),
-        },
-        { translateX: -pivotX },
-        { translateY: -pivotY },
-      ],
-    };
-  }, [wave]);
-
   const scaledShellStyle = useMemo(
     () => ({
       transform: [{ scale: Math.min(avatarSize.width, avatarSize.height) / AVATAR_CANVAS_SIZE }],
@@ -247,18 +193,18 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
         <Animated.View style={[styles.avatarStack, breathingStyle]}>
           <View style={styles.layer}>
             <Image source={MUNI_RIGHT_HAND} style={styles.layer} contentFit="contain" />
-            <AnimatedExpoImage source={MUNI_LEFT_HAND} style={[styles.layer, leftHandWaveStyle]} contentFit="contain" />
+            <Image source={MUNI_LEFT_HAND} style={styles.layer} contentFit="contain" />
           </View>
-
-          <Image
-            source={MUNI_BODY}
-            style={styles.layer}
-            contentFit="contain"
-          />
 
           <Image
             source={MUNI_FEET}
             style={[styles.layer, styles.feetLayer]}
+            contentFit="contain"
+          />
+
+          <Image
+            source={MUNI_BODY}
+            style={styles.layer}
             contentFit="contain"
           />
 
@@ -318,13 +264,13 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   faceLayer: {
-    transform: [{ scale: 0.94 }],
+    transform: [{ translateX: -4.5 }],
   },
   ghostFaceLayer: {
-    transform: [{ translateX: -5 }, { translateY: -8 }, { scale: 0.86 }],
+    transform: [{ translateX: -7 }, { translateY: -8 }, { scale: 0.86 }],
   },
   feetLayer: {
-    transform: [{ translateY: -6 }],
+    transform: [{ translateY: -7 }, { translateX: -3.5 }],
   },
   layer: {
     position: "absolute",

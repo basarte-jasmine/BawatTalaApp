@@ -1,4 +1,4 @@
-﻿import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useState } from "react";
 import { ImageSourcePropType } from "react-native";
 import {
@@ -74,7 +74,6 @@ export const COLLECTION_SECTIONS: MuniCollectionSection[] = [
     id: "outfit",
     label: "Outfit",
     options: [
-      { id: "classic", label: "Classic Muni", price: 0, starter: true, source: require("../assets/images/Muni/Body.png") },
       { id: "brown-jumper", label: "Brown Jumper", price: 130, source: require("../assets/images/Muni Customization/Outfit/Brown jumper.webp") },
       { id: "denim-jumper", label: "Denim Jumper", price: 143, source: require("../assets/images/Muni Customization/Outfit/Demin jumper.webp") },
       { id: "denim-vest", label: "Denim Vest", price: 130, source: require("../assets/images/Muni Customization/Outfit/Demin vest.webp") },
@@ -451,13 +450,14 @@ export async function hydrateMuniWardrobe(studentNumber: string) {
   return initialState;
 }
 
-export async function purchaseMuniItem(sectionId: MuniCollectionSectionId, optionId: string) {
+export async function purchaseMuniItem(sectionId: MuniCollectionSectionId, optionId: string, equip = true) {
   const option = getMuniCollectionOption(sectionId, optionId);
   if (!option || isMuniItemOwned(sectionId, optionId) || !activeStudentNumber) {
     return false;
   }
 
   const result = await purchaseMuniWardrobeItem({
+    equip,
     itemId: optionId,
     sectionId,
     studentNumber: activeStudentNumber,
@@ -465,11 +465,20 @@ export async function purchaseMuniItem(sectionId: MuniCollectionSectionId, optio
   if (!result.ok) {
     return false;
   }
-  applyRemoteWardrobe(result);
+  const state = applyRemoteWardrobe(result);
+  if (equip) {
+    state.loadout[sectionId] = optionId;
+    wardrobeByStudent.set(activeStudentNumber, state);
+    notifyAll(state);
+    void persistWardrobe(activeStudentNumber, state);
+  }
   return true;
 }
 
-export async function purchaseMuniItemsBatch(items: Array<{ sectionId: MuniCollectionSectionId; optionId: string }>) {
+export async function purchaseMuniItemsBatch(
+  items: Array<{ sectionId: MuniCollectionSectionId; optionId: string }>,
+  equip = true,
+) {
   if (!activeStudentNumber || !Array.isArray(items) || items.length === 0) {
     return false;
   }
@@ -482,13 +491,22 @@ export async function purchaseMuniItemsBatch(items: Array<{ sectionId: MuniColle
     return items.every((i) => isMuniItemOwned(i.sectionId, i.optionId));
   }
   const result = await purchaseMuniWardrobeItem({
+    equip,
     items: validItems.map((i) => ({ sectionId: i.sectionId, itemId: i.optionId })),
     studentNumber: activeStudentNumber,
   });
   if (!result.ok) {
     return false;
   }
-  applyRemoteWardrobe(result);
+  const state = applyRemoteWardrobe(result);
+  if (equip) {
+    validItems.forEach((i) => {
+      state.loadout[i.sectionId] = i.optionId;
+    });
+    wardrobeByStudent.set(activeStudentNumber, state);
+    notifyAll(state);
+    void persistWardrobe(activeStudentNumber, state);
+  }
   return true;
 }
 
@@ -556,33 +574,21 @@ export function getMuniCollectionSource(sectionId: MuniCollectionSectionId, opti
   return getMuniCollectionOption(sectionId, optionId)?.source ?? null;
 }
 
-export function getHeadAccessoryStyle(headId: string | null) {
-  if (!headId) {
-    return null;
-  }
-
-  return {
-    transform: [{ translateY: 0 }, { scale: 1.04 }],
-  } as const;
+export function getHeadAccessoryStyle(_headId: string | null) {
+  return null;
 }
 
-export function getEyeAccessoryStyle(eyeId: string | null) {
-  if (!eyeId) {
-    return null;
-  }
-
-  return {
-    transform: [{ translateY: 0 }, { scale: 1.01 }],
-  } as const;
+export function getEyeAccessoryStyle(_eyeId: string | null) {
+  return null;
 }
 
 export function getOutfitAccessoryStyle(outfitId: string | null) {
   if (!outfitId || outfitId === "classic" || outfitId === "spooky-ghost") {
     return null;
   }
-  // Vests and jumpers align onto Muni's torso properly
+  // Raise clothes so straps and collars rest naturally on Muni's shoulders and arms
   return {
-    transform: [{ translateY: 4 }, { scale: 1.02 }],
+    transform: [{ translateY: -7 }],
   } as const;
 }
 export function areMuniLoadoutsEqual(left: MuniLoadout, right: MuniLoadout) {

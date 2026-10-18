@@ -1,4 +1,4 @@
-﻿const express = require("express");
+const express = require("express");
 const { dbPool, query } = require("../config/db");
 const { requireStudentOnlyAuth } = require("../middleware/auth.middleware");
 const {
@@ -334,17 +334,36 @@ router.post("/purchase", async (req, res) => {
         );
       }
 
-      await client.query(
-        `
-          update public.student_muni_wardrobes
-          set owned_items = $2::jsonb,
-              updated_at = now()
-          where student_number = $1
-        `,
-        [studentNumber, JSON.stringify(nextOwned)],
-      );
+      const shouldEquip = Boolean(req.body?.equip || req.body?.autoEquip);
+      const nextLoadout = Object.assign({}, wardrobe.loadout || {});
+      if (shouldEquip) {
+        for (let i = 0; i < itemsToBuy.length; i += 1) {
+          const itm = itemsToBuy[i];
+          nextLoadout[itm.sectionId] = itm.itemId;
+        }
+        await client.query(
+          `
+            update public.student_muni_wardrobes
+            set owned_items = $2::jsonb,
+                loadout = $3::jsonb,
+                updated_at = now()
+            where student_number = $1
+          `,
+          [studentNumber, JSON.stringify(nextOwned), JSON.stringify(nextLoadout)],
+        );
+      } else {
+        await client.query(
+          `
+            update public.student_muni_wardrobes
+            set owned_items = $2::jsonb,
+                updated_at = now()
+            where student_number = $1
+          `,
+          [studentNumber, JSON.stringify(nextOwned)],
+        );
+      }
 
-      return serializeWardrobe({ owned_items: nextOwned, loadout: wardrobe.loadout }, nextTala);
+      return serializeWardrobe({ owned_items: nextOwned, loadout: nextLoadout }, nextTala);
     });
 
     return res.json({
