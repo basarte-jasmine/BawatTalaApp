@@ -17,6 +17,7 @@ const ocrRoutes = require("./api/ocr.routes");
 const voiceRoutes = require("./api/voice.routes");
 const affirmationRoutes = require("./api/affirmation.routes");
 const wellnessRoutes = require("./api/wellness.routes");
+const tasksRoutes = require("./api/tasks.routes");
 
 const app = express();
 const isProduction = String(process.env.NODE_ENV || "").trim().toLowerCase() === "production";
@@ -226,6 +227,7 @@ app.use("/api/ocr", ocrRoutes);
 app.use("/api/voice", voiceRoutes);
 app.use("/api/affirmations", affirmationRoutes);
 app.use("/api/wellness", wellnessRoutes);
+app.use("/api/tasks", tasksRoutes);
 
 app.use((err, _req, res, next) => {
   if (err?.type === "entity.too.large") {

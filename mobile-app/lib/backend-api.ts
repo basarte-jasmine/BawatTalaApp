@@ -4423,4 +4423,281 @@ export async function synthesizeVoiceSpeech(payload: {
   };
 }
 
+export type DailyTask = {
+  id: string;
+  student_number: string;
+  task_date: string;
+  title: string;
+  is_gentle: boolean;
+  completed: boolean;
+  completed_at?: string | null;
+  rewarded: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type DailyTaskProgress = {
+  tasksRewardedCount: number;
+  dailyBonusClaimed: boolean;
+  totalRewardedTala: number;
+  maxDailyTala: number;
+  allTasksDone: boolean;
+  completedCount: number;
+  totalTasks: number;
+};
+
+export async function fetchTodayTasks(studentNumber: string): Promise<{
+  ok: boolean;
+  date: string;
+  tasks: DailyTask[];
+  progress: DailyTaskProgress;
+  message?: string;
+}> {
+  const sn = String(studentNumber || "").trim();
+  const cacheKey = `@bawattala_tasks_${sn}`;
+  try {
+    const { response, data } = await get("/api/tasks");
+    if (response.ok && data) {
+      await AsyncStorage.setItem(cacheKey, JSON.stringify(data));
+      return {
+        ok: true,
+        date: data.date,
+        tasks: data.tasks || [],
+        progress: data.progress || {
+          tasksRewardedCount: 0,
+          dailyBonusClaimed: false,
+          totalRewardedTala: 0,
+          maxDailyTala: 50,
+          allTasksDone: false,
+          completedCount: 0,
+          totalTasks: 0,
+        },
+      };
+    }
+  } catch {}
+
+  try {
+    const cached = await AsyncStorage.getItem(cacheKey);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      return {
+        ok: true,
+        date: parsed.date || "",
+        tasks: parsed.tasks || [],
+        progress: parsed.progress || {
+          tasksRewardedCount: 0,
+          dailyBonusClaimed: false,
+          totalRewardedTala: 0,
+          maxDailyTala: 50,
+          allTasksDone: false,
+          completedCount: 0,
+          totalTasks: 0,
+        },
+      };
+    }
+  } catch {}
+
+  return {
+    ok: false,
+    date: "",
+    tasks: [],
+    progress: {
+      tasksRewardedCount: 0,
+      dailyBonusClaimed: false,
+      totalRewardedTala: 0,
+      maxDailyTala: 50,
+      allTasksDone: false,
+      completedCount: 0,
+      totalTasks: 0,
+    },
+  };
+}
+
+export async function createDailyTask(payload: {
+  studentNumber: string;
+  title: string;
+  isGentle?: boolean;
+}): Promise<{ ok: boolean; task?: DailyTask; message?: string }> {
+  const sn = String(payload.studentNumber || "").trim();
+  const cacheKey = `@bawattala_tasks_${sn}`;
+  try {
+    const { response, data } = await post("/api/tasks", {
+      title: payload.title,
+      isGentle: payload.isGentle,
+    });
+    if (response.ok && data?.task) {
+      try {
+        const cachedRaw = await AsyncStorage.getItem(cacheKey);
+        if (cachedRaw) {
+          const cached = JSON.parse(cachedRaw);
+          cached.tasks = [...(cached.tasks || []), data.task];
+          await AsyncStorage.setItem(cacheKey, JSON.stringify(cached));
+        }
+      } catch {}
+      return {
+        ok: true,
+        task: data.task,
+        message: data.message,
+      };
+    }
+  } catch {}
+
+  const localTask: DailyTask = {
+    id: `local-task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    student_number: sn,
+    task_date: getManilaTodayIsoDate(),
+    title: payload.title,
+    is_gentle: Boolean(payload.isGentle),
+    completed: false,
+    completed_at: null,
+    rewarded: false,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  try {
+    const cachedRaw = await AsyncStorage.getItem(cacheKey);
+    const cached = cachedRaw ? JSON.parse(cachedRaw) : { tasks: [], progress: { tasksRewardedCount: 0, dailyBonusClaimed: false, totalRewardedTala: 0, maxDailyTala: 50, allTasksDone: false, completedCount: 0, totalTasks: 0 } };
+    cached.tasks = [...(cached.tasks || []), localTask];
+    cached.progress.totalTasks = cached.tasks.length;
+    await AsyncStorage.setItem(cacheKey, JSON.stringify(cached));
+  } catch {}
+  return { ok: true, task: localTask, message: "Task saved locally." };
+}
+
+export async function toggleDailyTask(payload: {
+  studentNumber: string;
+  taskId: string;
+  completed?: boolean;
+}): Promise<{
+  ok: boolean;
+  task?: DailyTask;
+  rewardTala?: number;
+  bonusClaimed?: boolean;
+  totalTala?: number;
+  message?: string;
+}> {
+  const sn = String(payload.studentNumber || "").trim();
+  const cacheKey = `@bawattala_tasks_${sn}`;
+  try {
+    const { response, data } = await patch(`/api/tasks/${encodeURIComponent(payload.taskId)}/toggle`, {
+      completed: payload.completed,
+    });
+    if (response.ok && data?.task) {
+      try {
+        const cachedRaw = await AsyncStorage.getItem(cacheKey);
+        if (cachedRaw) {
+          const cached = JSON.parse(cachedRaw);
+          cached.tasks = (cached.tasks || []).map((t: DailyTask) => t.id === payload.taskId ? data.task : t);
+          if (data.rewardTala) {
+            cached.progress.totalRewardedTala = Math.min(50, (cached.progress.totalRewardedTala || 0) + data.rewardTala);
+          }
+          if (data.bonusClaimed) {
+            cached.progress.dailyBonusClaimed = true;
+          }
+          await AsyncStorage.setItem(cacheKey, JSON.stringify(cached));
+        }
+      } catch {}
+      return {
+        ok: true,
+        task: data.task,
+        rewardTala: data.rewardTala ?? 0,
+        bonusClaimed: data.bonusClaimed ?? false,
+        totalTala: data.totalTala,
+        message: data.message,
+      };
+    }
+  } catch {}
+
+  try {
+    const cachedRaw = await AsyncStorage.getItem(cacheKey);
+    if (cachedRaw) {
+      const cached = JSON.parse(cachedRaw);
+      let rewardTala = 0;
+      let bonusClaimed = false;
+      let targetTask: DailyTask | undefined;
+
+      cached.tasks = (cached.tasks || []).map((t: DailyTask) => {
+        if (t.id === payload.taskId) {
+          const nextCompleted = typeof payload.completed === "boolean" ? payload.completed : !t.completed;
+          let nextRewarded = t.rewarded;
+          if (nextCompleted && !t.rewarded && (cached.progress.tasksRewardedCount || 0) < 3) {
+            rewardTala += 10;
+            cached.progress.tasksRewardedCount = (cached.progress.tasksRewardedCount || 0) + 1;
+            nextRewarded = true;
+          }
+          targetTask = { ...t, completed: nextCompleted, completed_at: nextCompleted ? new Date().toISOString() : null, rewarded: nextRewarded };
+          return targetTask;
+        }
+        return t;
+      });
+
+      const allDone = cached.tasks.length > 0 && cached.tasks.every((t: DailyTask) => t.completed);
+      if (!cached.progress.dailyBonusClaimed && allDone && ((cached.progress.tasksRewardedCount || 0) >= 3 || cached.tasks.length >= 3)) {
+        rewardTala += 20;
+        bonusClaimed = true;
+        cached.progress.dailyBonusClaimed = true;
+      }
+
+      cached.progress.totalRewardedTala = Math.min(50, (cached.progress.totalRewardedTala || 0) + rewardTala);
+      cached.progress.completedCount = cached.tasks.filter((t: DailyTask) => t.completed).length;
+      cached.progress.allTasksDone = allDone;
+      await AsyncStorage.setItem(cacheKey, JSON.stringify(cached));
+
+      return {
+        ok: true,
+        task: targetTask,
+        rewardTala,
+        bonusClaimed,
+        message: "Updated offline.",
+      };
+    }
+  } catch {}
+
+  return { ok: false, message: "Could not update task." };
+}
+
+export async function deleteDailyTask(payload: {
+  studentNumber: string;
+  taskId: string;
+}): Promise<{ ok: boolean; id?: string; message?: string }> {
+  const sn = String(payload.studentNumber || "").trim();
+  const cacheKey = `@bawattala_tasks_${sn}`;
+  try {
+    await del(`/api/tasks/${encodeURIComponent(payload.taskId)}`);
+  } catch {}
+  try {
+    const cachedRaw = await AsyncStorage.getItem(cacheKey);
+    if (cachedRaw) {
+      const cached = JSON.parse(cachedRaw);
+      cached.tasks = (cached.tasks || []).filter((t: DailyTask) => t.id !== payload.taskId);
+      cached.progress.totalTasks = cached.tasks.length;
+      cached.progress.completedCount = cached.tasks.filter((t: DailyTask) => t.completed).length;
+      await AsyncStorage.setItem(cacheKey, JSON.stringify(cached));
+    }
+  } catch {}
+  return { ok: true, id: payload.taskId };
+}
+
+export async function fetchTaskReflectionPrompt(studentNumber: string): Promise<{
+  ok: boolean;
+  hasCompletedTasks: boolean;
+  prompt: string;
+  completedCount?: number;
+}> {
+  try {
+    const { response, data } = await get("/api/tasks/reflection");
+    return {
+      ok: response.ok,
+      hasCompletedTasks: Boolean(data?.hasCompletedTasks),
+      prompt: data?.prompt || "",
+      completedCount: data?.completedCount || 0,
+    };
+  } catch {
+    return {
+      ok: false,
+      hasCompletedTasks: false,
+      prompt: "",
+    };
+  }
+}
 

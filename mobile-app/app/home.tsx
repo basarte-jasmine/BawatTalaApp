@@ -12,6 +12,7 @@ import Svg, { Defs, Ellipse, LinearGradient, Path, Rect, Stop } from "react-nati
 import { checkDaysSinceLastActive, recordLastActiveTimestamp } from "../lib/muni-reminders";
 import { CounselorAvatar } from "../components/appointments/CounselorAvatar";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
+import { DailyTasksCard } from "../components/home/DailyTasksCard";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { StudentProfileAvatar } from "../components/profile/StudentProfileAvatar";
 import { ConfirmationModal } from "../components/ui/ConfirmationModal";
@@ -2296,7 +2297,11 @@ export default function HomeScreen() {
           </Pressable>
         </View>
 
-        
+        <DailyTasksCard
+          studentNumber={user?.studentNumber || ""}
+          currentMoodId={pendingMoodId || latestMoodId || null}
+          onRefreshTriggered={handleRefreshHome}
+        />
 
         <View style={styles.pauseCard}>
           <Text style={styles.sectionEyebrow}>Take a pause</Text>

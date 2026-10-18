@@ -237,11 +237,17 @@ const JOURNAL_MESSAGE_MAX_LENGTH = 1800;
 
 export default function WriteEntryScreen() {
   const { user } = useAuthSession();
-  const { mode } = useLocalSearchParams<{ mode?: string }>();
+  const { mode, initialText } = useLocalSearchParams<{ mode?: string; initialText?: string }>();
   const { appLockEnabled, isAppLocked } = useAppPreferences();
   const [entry, setEntry] = useState<JournalEntry | null>(null);
   const [messages, setMessages] = useState<JournalMessage[]>([]);
-  const [inputValue, setInputValue] = useState("");
+  const [inputValue, setInputValue] = useState(initialText || "");
+
+  useEffect(() => {
+    if (initialText) {
+      setInputValue(initialText);
+    }
+  }, [initialText]);
   const sessionStartedRef = useRef(false);
   const entryRef = useRef<JournalEntry | null>(null);
   entryRef.current = entry;

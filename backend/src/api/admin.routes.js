@@ -5450,6 +5450,8 @@ router.delete("/students/:studentNumber", requireRoles("HEAD_COUNSELOR"), async 
       "delete from public.counselor_appointments where student_number = $1",
       "delete from public.student_feedbacks where student_number = $1",
       "delete from public.student_daily_checkins where student_number = $1",
+      "delete from public.student_daily_tasks where student_number = $1",
+      "delete from public.student_daily_task_progress where student_number = $1",
       "delete from public.student_library_progress where student_number = $1",
       "delete from public.student_library_downloads where student_number = $1",
       "delete from public.student_library_reading_rewards where student_number = $1",

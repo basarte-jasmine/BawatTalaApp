@@ -537,6 +537,40 @@ async function ensureDatabaseSchema() {
   `);
 
   await pool.query(`
+    create table if not exists public.student_daily_tasks (
+      id text primary key,
+      student_number text not null,
+      task_date date not null default (now() at time zone 'Asia/Manila')::date,
+      title text not null,
+      is_gentle boolean not null default false,
+      completed boolean not null default false,
+      completed_at timestamptz,
+      rewarded boolean not null default false,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+  `);
+
+  await pool.query(`
+    create index if not exists student_daily_tasks_student_date_idx
+      on public.student_daily_tasks (student_number, task_date desc, created_at asc);
+  `);
+
+  await pool.query(`
+    create table if not exists public.student_daily_task_progress (
+      id uuid primary key default gen_random_uuid(),
+      student_number text not null,
+      task_date date not null default (now() at time zone 'Asia/Manila')::date,
+      tasks_rewarded_count integer not null default 0,
+      daily_bonus_claimed boolean not null default false,
+      total_rewarded_tala integer not null default 0,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      constraint student_daily_task_progress_student_date_unique unique (student_number, task_date)
+    );
+  `);
+
+  await pool.query(`
     create table if not exists public.student_library_progress (
       id uuid primary key default gen_random_uuid(),
       student_number text not null,
@@ -1830,6 +1864,8 @@ async function ensureDatabaseSchema() {
     "student_journal_covers",
     "journal_entries",
     "student_wellness_game_rewards",
+    "student_daily_tasks",
+    "student_daily_task_progress",
   ];
 
   for (const tableName of studentOwnedFkTables) {
@@ -1914,6 +1950,8 @@ async function ensureDatabaseSchema() {
   await ensureStudentNumberFk("journal_entries", "journal_entries_student_number_fkey");
   await ensureStudentNumberFk("student_wellness_game_rewards", "student_wellness_game_rewards_student_number_fkey");
   await ensureStudentNumberFk("student_referrals", "student_referrals_student_number_fkey");
+  await ensureStudentNumberFk("student_daily_tasks", "student_daily_tasks_student_number_fkey");
+  await ensureStudentNumberFk("student_daily_task_progress", "student_daily_task_progress_student_number_fkey");
 
   try {
     await pool.query(`

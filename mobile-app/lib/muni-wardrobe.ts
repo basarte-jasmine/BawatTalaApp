@@ -332,6 +332,12 @@ export function getAvailableMuniTala() {
   return getActiveState().totalTala;
 }
 
+export function updateAvailableMuniTala(totalTala: number) {
+  const state = getActiveState();
+  state.totalTala = Math.max(0, Number(totalTala) || 0);
+  notifyAll(state);
+}
+
 export function subscribeOwnedMuniItems(listener: (ownedItems: MuniOwnedItems) => void) {
   ownedItemsListeners.add(listener);
   listener(getOwnedMuniItems());
