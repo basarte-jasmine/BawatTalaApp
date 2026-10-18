@@ -16,7 +16,7 @@ import {
   TextInput,
   View } from "react-native";
 import { Image } from "expo-image";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { AppleTopBar } from "../components/ui/AppleTopBar";
 import {
   fetchStudentReferral,
   redeemStudentReferralCode,
@@ -143,14 +143,8 @@ export default function ReferralScreen() {
   const hasRedeemed = Boolean(referral?.hasRedeemed);
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
-      <View style={styles.topBar}>
-        <Pressable style={styles.backButton} accessibilityLabel="Go back" onPress={handleBack}>
-          <Ionicons name="chevron-back" size={30} color="#3D3F43" />
-        </Pressable>
-        <Text style={styles.topTitle}>Invite a Friend</Text>
-        <View style={styles.topBarSpacer} />
-      </View>
+    <View style={styles.screen}>
+      <AppleTopBar title="Invite a Friend" onBack={handleBack} />
 
       <ScrollView
         style={styles.scroll}
@@ -285,7 +279,7 @@ export default function ReferralScreen() {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -307,7 +301,7 @@ const styles = StyleSheet.create({
   topTitle: { color: "#314258", fontSize: 17, lineHeight: 23, fontFamily: "Outfit-Bold" },
   topBarSpacer: { width: 38, height: 38 },
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: 14, paddingTop: 18, paddingBottom: 30 },
+  scrollContent: { paddingHorizontal: 14, paddingTop: 78, paddingBottom: 30 },
   hero: {
     minHeight: 190,
     borderRadius: 24,

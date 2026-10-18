@@ -18,6 +18,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { AppleTopBar } from "../components/ui/AppleTopBar";
 import Svg, { Circle, Defs, G, Line, LinearGradient, Path, Rect, Stop, Text as SvgText } from "react-native-svg";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
@@ -344,6 +345,8 @@ export default function WeeklyRecapScreen() {
 
   const daysWithCheckIn = Math.min(Math.max(checkedInDaysCount, 1), 7);
   const mindfulResetsCount = Math.max(journalEntries.length, 2);
+  const interventionsOffered = heavyJournalsCount;
+  const interventionsAccepted = Math.min(mindfulResetsCount, heavyJournalsCount);
 
   const weeklyTalaStars = useMemo(() => {
     return daysWithCheckIn * 20 + totalJournals * 15 + libraryReadCount * 25;
@@ -944,28 +947,21 @@ export default function WeeklyRecapScreen() {
   // RENDER: FULL LEDGER MODE (PERMANENT ARCHIVE / DETAILED AUDIT)
   // -------------------------------------------------------------
   return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
-      {/* Top Header */}
-      <View style={styles.topBar}>
-        <Pressable
-          style={styles.backButton}
-          onPress={() => router.back()}
-          accessibilityLabel="Back to Home"
-        >
-          <Ionicons name="chevron-back" size={26} color="#2A3E31" />
-        </Pressable>
-        <View style={styles.topTitleCenter}>
-          <Text style={styles.topTitle}>Tala ng Linggo</Text>
-          <Text style={styles.topSubtitle}>A Week's Recap & Resilience</Text>
-        </View>
-        <Pressable
-          style={styles.shareButton}
-          onPress={() => setShowShareModal(true)}
-          accessibilityLabel="Share Recap"
-        >
-          <Ionicons name="share-social-outline" size={22} color="#386A45" />
-        </Pressable>
-      </View>
+    <View style={styles.screen}>
+      <AppleTopBar
+        title="Tala ng Linggo"
+        subtitle="A Week's Recap & Resilience"
+        onBack={() => router.back()}
+        rightAction={
+          <Pressable
+            style={styles.appleShareButton}
+            onPress={() => setShowShareModal(true)}
+            accessibilityLabel="Share Recap"
+          >
+            <Ionicons name="share-social-outline" size={19} color="#0F172A" />
+          </Pressable>
+        }
+      />
 
       <ScrollView
         style={styles.scroll}
@@ -1471,7 +1467,7 @@ export default function WeeklyRecapScreen() {
       </Modal>
 
       <HomeBottomNav activeTab="none" />
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -2226,11 +2222,27 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "#EEF6EB",
   },
+  appleShareButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
   scroll: {
     flex: 1,
   },
   scrollContent: {
     padding: 16,
+    paddingTop: 78,
     paddingBottom: 96,
   },
   replayStoryBanner: {

@@ -12,8 +12,8 @@ import {
     Text,
     TextInput,
     View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
+import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { unlockAchievement } from "../lib/achievements";
 import { useAuthSession } from "../lib/auth-session";
 import {
@@ -627,15 +627,8 @@ export default function ConsultScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
-      <View style={styles.topBar}>
-        <Pressable style={styles.backButton} accessibilityLabel="Go back" onPress={handleBack}>
-          <Ionicons name="chevron-back" size={28} color="#3A434E" />
-        </Pressable>
-
-        <Text style={styles.topTitle}>Consult Support</Text>
-        <View style={styles.topBarSpacer} />
-      </View>
+    <View style={styles.screen}>
+      <AppleTopBar title="Consult Support" onBack={handleBack} />
 
       <ScrollView
         style={styles.scroll}
@@ -1223,7 +1216,7 @@ export default function ConsultScreen() {
       </Modal>
 
       <HomeBottomNav activeTab="consult" />
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -1261,7 +1254,7 @@ const styles = StyleSheet.create({
   scroll: {
     flex: 1 },
   scrollContent: {
-    paddingTop: 14,
+    paddingTop: 78,
     paddingHorizontal: 12,
     paddingBottom: 116 },
   welcomeHeroCard: {

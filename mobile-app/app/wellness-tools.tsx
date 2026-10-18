@@ -2,8 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import {  Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { Image } from "expo-image";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
+import { AppleTopBar } from "../components/ui/AppleTopBar";
 
 type ToolItem = {
   accentColor: string;
@@ -16,6 +16,14 @@ type ToolItem = {
 };
 
 
+
+type MiniResetItem = {
+  description: string;
+  duration: string;
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  id: string;
+  title: string;
+};
 
 type FeaturedGame = {
   description: string;
@@ -102,14 +110,8 @@ export default function WellnessToolsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
-      <View style={styles.topBar}>
-        <Pressable style={styles.backButton} accessibilityLabel="Go back" onPress={handleBack}>
-          <Ionicons name="chevron-back" size={28} color="#37424F" />
-        </Pressable>
-        <Text style={styles.topTitle}>Wellness Tools</Text>
-        <View style={styles.topBarSpacer} />
-      </View>
+    <View style={styles.screen}>
+      <AppleTopBar title="Wellness Tools" onBack={handleBack} />
 
       <ScrollView
         style={styles.scroll}
@@ -213,7 +215,7 @@ export default function WellnessToolsScreen() {
       </ScrollView>
 
       <HomeBottomNav activeTab="none" />
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -252,7 +254,7 @@ const styles = StyleSheet.create({
     flex: 1 },
   scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 14,
+    paddingTop: 78,
     paddingBottom: 92,
     alignItems: "center" },
   scrollContentCompact: {

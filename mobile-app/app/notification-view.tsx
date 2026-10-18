@@ -3,8 +3,8 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator,  Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuthSession } from "../lib/auth-session";
+import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { fetchStudentNotifications } from "../lib/backend-api";
 import {
     getNotificationDetailTitle,
@@ -178,14 +178,8 @@ export default function NotificationViewScreen() {
     : activeTimeLabel || "";
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
-      <View style={styles.topBar}>
-        <Pressable style={styles.backButton} accessibilityLabel="Go back" onPress={handleBack}>
-          <Ionicons name="chevron-back" size={28} color="#34424F" />
-        </Pressable>
-        <Text style={styles.topTitle}>{detailTitle}</Text>
-        <View style={styles.topBarSpacer} />
-      </View>
+    <View style={styles.screen}>
+      <AppleTopBar title={detailTitle} onBack={handleBack} />
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {loading ? (
@@ -266,7 +260,7 @@ export default function NotificationViewScreen() {
           </>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -302,7 +296,7 @@ const styles = StyleSheet.create({
     flex: 1 },
   content: {
     paddingHorizontal: 16,
-    paddingTop: 18,
+    paddingTop: 78,
     paddingBottom: 32,
     rowGap: 16 },
   achievementCard: {

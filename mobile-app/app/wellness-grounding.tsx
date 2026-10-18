@@ -9,8 +9,8 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuthSession } from "../lib/auth-session";
+import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { unlockAchievement } from "../lib/achievements";
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
@@ -102,18 +102,8 @@ export default function WellnessGroundingScreen() {
   const currentSense = SENSE_MOMENTS[activeStep] || SENSE_MOMENTS[0];
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
-      <View style={styles.topBar}>
-        <Pressable
-          style={styles.backButton}
-          accessibilityLabel="Go back"
-          onPress={() => router.back()}
-        >
-          <Ionicons name="chevron-back" size={28} color="#37424F" />
-        </Pressable>
-        <Text style={styles.topTitle}>Wellness Tools</Text>
-        <View style={styles.topBarSpacer} />
-      </View>
+    <View style={styles.screen}>
+      <AppleTopBar title="5-4-3-2-1 Sensory Grounding" onBack={() => router.back()} />
 
       <ScrollView
         style={styles.scroll}
@@ -264,7 +254,7 @@ export default function WellnessGroundingScreen() {
           </View>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -309,7 +299,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 14,
+    paddingTop: 78,
     paddingBottom: 40,
     alignItems: "center",
   },

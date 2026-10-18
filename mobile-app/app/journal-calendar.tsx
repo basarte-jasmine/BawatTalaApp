@@ -12,8 +12,8 @@ import {
   Text,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { fetchJournalCalendar, fetchJournalEntriesByDate } from "../lib/backend-api";
+import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { JournalLockGate } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
 import { getManilaTodayParts } from "../lib/manila-date";
@@ -238,14 +238,8 @@ export default function JournalCalendarScreen() {
   }, [loadEntriesForDate]);
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
-      <View style={styles.topBar}>
-        <Pressable style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={28} color="#37414A" />
-        </Pressable>
-        <Text style={styles.topBarTitle}>Journal Calendar</Text>
-        <View style={styles.topBarSpacer} />
-      </View>
+    <View style={styles.screen}>
+      <AppleTopBar title="Journal Calendar" onBack={() => router.back()} />
 
       <JournalLockGate>
         <ScrollView
@@ -417,7 +411,7 @@ export default function JournalCalendarScreen() {
           </View>
         </Modal>
       </JournalLockGate>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -462,7 +456,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 12,
-    paddingTop: 12,
+    paddingTop: 78,
     paddingBottom: 40,
   },
   yearControlRow: {

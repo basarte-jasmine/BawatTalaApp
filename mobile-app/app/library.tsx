@@ -8,6 +8,7 @@ import { ActivityIndicator, Image, Linking, Modal, Pressable, ScrollView,
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Circle } from "react-native-svg";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
+import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { useAuthSession } from "../lib/auth-session";
 import {
   claimLibraryReadingReward,
@@ -1188,14 +1189,8 @@ export default function LibraryScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
-      <View style={styles.topBar}>
-        <Pressable style={styles.backButton} accessibilityLabel="Go back" onPress={handleBack}>
-          <Ionicons name="chevron-back" size={28} color="#37424F" />
-        </Pressable>
-        <Text style={styles.topTitle}>Pocket Library</Text>
-        <View style={styles.topBarSpacer} />
-      </View>
+    <View style={styles.screen}>
+      <AppleTopBar title="Pocket Library" onBack={handleBack} />
 
       <ScrollView
         style={styles.scroll}
@@ -1783,7 +1778,7 @@ export default function LibraryScreen() {
       </Modal>
 
       <HomeBottomNav activeTab="none" />
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -1822,7 +1817,7 @@ const styles = StyleSheet.create({
     flex: 1 },
   scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 14,
+    paddingTop: 78,
     paddingBottom: 92,
     alignItems: "center" },
   scrollContentCompact: {

@@ -4,8 +4,8 @@ import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
+import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { ConfirmationModal } from "../components/ui/ConfirmationModal";
 import { JournalLockGate } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
@@ -230,14 +230,8 @@ export default function JournalEntriesScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
-      <View style={styles.topBar}>
-        <Pressable style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={28} color="#39434F" />
-        </Pressable>
-        <Text style={styles.topBarTitle}>Recent Entries</Text>
-        <View style={styles.topBarSpacer} />
-      </View>
+    <View style={styles.screen}>
+      <AppleTopBar title="Recent Entries" onBack={() => router.back()} />
 
       <JournalLockGate>
         <ScrollView
@@ -334,7 +328,7 @@ export default function JournalEntriesScreen() {
       </JournalLockGate>
 
       <HomeBottomNav activeTab="journal" />
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -373,7 +367,7 @@ const styles = StyleSheet.create({
     flex: 1 },
   scrollContent: {
     paddingHorizontal: 12,
-    paddingTop: 12,
+    paddingTop: 78,
     paddingBottom: 110 },
   progressCard: {
     borderRadius: 22,

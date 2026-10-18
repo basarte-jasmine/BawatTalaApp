@@ -2243,11 +2243,6 @@ export default function HomeScreen() {
                       ) : (
                         <View style={styles.moodIconPlaceholder} />
                       )}
-                      {isMoodActive ? (
-                        <View style={[styles.moodActiveIndicatorDot, { backgroundColor: mood.color }]}>
-                          <Ionicons name="checkmark" size={9} color="#FFFFFF" />
-                        </View>
-                      ) : null}
                     </Animated.View>
                   </Pressable>
                   <Text
@@ -3912,17 +3907,6 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: "#E2E8F0",
     overflow: "hidden" },
-  moodActiveIndicatorDot: {
-    position: "absolute",
-    top: 2,
-    right: 2,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1.5,
-    borderColor: "#FFFFFF" },
   moodIcon: {
     width: 44,
     height: 44,

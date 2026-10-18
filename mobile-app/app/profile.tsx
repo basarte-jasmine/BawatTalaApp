@@ -16,8 +16,8 @@ import {
     Text,
     View
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { StudentProfileAvatar } from "../components/profile/StudentProfileAvatar";
+import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { showAppNotice } from "../lib/app-notice";
 import { useAppPreferences } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
@@ -349,15 +349,8 @@ export default function ProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
-      <View style={styles.topBar}>
-        <Pressable style={styles.backButton} accessibilityLabel="Go back" onPress={handleBack}>
-          <Ionicons name="chevron-back" size={30} color="#3D3F43" />
-        </Pressable>
-
-        <Text style={styles.topTitle}>Profile</Text>
-        <View style={styles.topBarSpacer} />
-      </View>
+    <View style={styles.screen}>
+      <AppleTopBar title="Profile" onBack={handleBack} />
 
       <ScrollView
         style={styles.scroll}
@@ -738,7 +731,7 @@ export default function ProfileScreen() {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -790,7 +783,7 @@ const styles = StyleSheet.create({
   scroll: {
     flex: 1 },
   scrollContent: {
-    paddingTop: 16,
+    paddingTop: 78,
     paddingHorizontal: 12,
     paddingBottom: 32 },
   profileHero: {

@@ -689,8 +689,8 @@ export default function MuniAvatarScreen() {
               >
                 <Ionicons name="cart-outline" size={18} color="#456149" />
                 {cartItems.length > 0 ? (
-                  <View style={styles.cartBadgeMini}>
-                    <Text style={styles.cartBadgeMiniText}>{cartItems.length}</Text>
+                  <View style={styles.cartBadge}>
+                    <Text style={styles.cartBadgeText}>{cartItems.length}</Text>
                   </View>
                 ) : null}
               </Pressable>

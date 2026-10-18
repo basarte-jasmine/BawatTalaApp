@@ -15,6 +15,7 @@ import {
   View } from "react-native";
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { AppleTopBar } from "../components/ui/AppleTopBar";
 import {
   createAudioPlayer,
   requestRecordingPermissionsAsync,
@@ -1146,19 +1147,9 @@ export default function MuniVoiceScreen() {
               : "Ready when you are";
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
+    <View style={styles.screen}>
       <JournalLockGate>
-      <View style={styles.topBar}>
-        <Pressable
-          style={styles.backButton}
-          accessibilityLabel="Go back"
-          onPress={handleBack}
-        >
-          <Ionicons name="chevron-back" size={26} color="#304456" />
-        </Pressable>
-        <Text style={styles.topTitle}>Talk to Muni</Text>
-        <View style={styles.topBarSpacer} />
-      </View>
+      <AppleTopBar title="Talk to Muni" onBack={handleBack} />
 
       <ScrollView
         style={styles.scroll}
@@ -1697,7 +1688,7 @@ export default function MuniVoiceScreen() {
         </View>
       </Modal>
       </JournalLockGate>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -1735,6 +1726,7 @@ const styles = StyleSheet.create({
     flex: 1 },
   content: {
     padding: 18,
+    paddingTop: 78,
     rowGap: 14 },
   hero: {
     alignItems: "center",

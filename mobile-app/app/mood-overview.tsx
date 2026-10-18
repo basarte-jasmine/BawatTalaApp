@@ -17,7 +17,6 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { useAuthSession } from "../lib/auth-session";
 import { fetchMonthlyMoods, type MoodEntryRecord } from "../lib/backend-api";
@@ -1023,8 +1022,6 @@ export default function MoodOverviewScreen() {
           </Animated.View>
         </ScrollView>
       </InformedConsentGate>
-
-      <HomeBottomNav activeTab="none" />
     </View>
   );
 }
@@ -1130,7 +1127,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 14,
-    paddingBottom: 110,
+    paddingBottom: 40,
   },
 
   // Muni Companion Reflection Card

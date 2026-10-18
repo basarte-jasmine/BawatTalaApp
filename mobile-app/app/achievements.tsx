@@ -4,8 +4,8 @@ import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {  Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuthSession } from "../lib/auth-session";
+import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { syncPendingAchievements } from "../lib/backend-api";
 
 const ACHIEVEMENTS = [
@@ -117,14 +117,8 @@ export default function AchievementsScreen() {
   const unlockedCount = unlockedIds.size;
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
-      <View style={styles.topBar}>
-        <Pressable style={styles.back} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={28} color="#37424F" />
-        </Pressable>
-        <Text style={styles.topTitle}>Achievements</Text>
-        <View style={styles.back} />
-      </View>
+    <View style={styles.screen}>
+      <AppleTopBar title="Achievements" onBack={() => router.back()} />
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
@@ -177,7 +171,7 @@ export default function AchievementsScreen() {
           })}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -194,7 +188,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4},
   back: { width: 42, height: 42, alignItems: "center", justifyContent: "center" },
   topTitle: { color: "#33475C", fontSize: 18, fontFamily: "Outfit-Bold" },
-  content: { padding: 16 },
+  content: { padding: 16, paddingTop: 78 },
   summary: {
     borderRadius: 22,
     backgroundColor: "#303B4B",

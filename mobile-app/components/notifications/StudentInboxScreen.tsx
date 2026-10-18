@@ -6,8 +6,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView,
   RefreshControl, StyleSheet, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { ConfirmationModal } from "../ui/ConfirmationModal";
+import { AppleTopBar } from "../ui/AppleTopBar";
 import { useAuthSession } from "../../lib/auth-session";
 import {
   AppNotification,
@@ -605,16 +605,11 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
         : "Delete this notification?";
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
-      <View style={styles.topBar}>
-        <Pressable style={styles.backButton} accessibilityLabel="Go back" onPress={handleBack}>
-          <Ionicons name="chevron-back" size={28} color="#34424F" />
-        </Pressable>
-        <Text style={styles.topTitle} numberOfLines={1}>
-          {showingThread ? activeThread?.displayName ?? topTitle : topTitle}
-        </Text>
-        <View style={styles.topBarSpacer} />
-      </View>
+    <View style={styles.screen}>
+      <AppleTopBar
+        title={showingThread ? activeThread?.displayName ?? topTitle : topTitle}
+        onBack={handleBack}
+      />
 
       {showingThread ? null : (
         <View style={styles.summaryWrap}>
@@ -791,7 +786,7 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
         onCancel={() => setPendingDelete(null)}
         onConfirm={() => void handleConfirmDelete()}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -827,7 +822,7 @@ const styles = StyleSheet.create({
     height: 40 },
   summaryWrap: {
     paddingHorizontal: 12,
-    paddingTop: 14,
+    paddingTop: 78,
     paddingBottom: 8 },
   summaryCard: {
     borderRadius: 22,

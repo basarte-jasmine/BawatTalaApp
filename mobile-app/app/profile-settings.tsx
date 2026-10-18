@@ -16,8 +16,8 @@ import {
   TextInput,
   View } from "react-native";
 import { Image } from "expo-image";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { OtpCodeInput } from "../components/forms/OtpCodeInput";
+import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { ConfirmationModal } from "../components/ui/ConfirmationModal";
 import { SelectField } from "../components/forms/SelectField";
 import { useAppPreferences } from "../lib/app-preferences";
@@ -1635,16 +1635,11 @@ export default function ProfileSettingsScreen() {
     setProfileSuccess("Updated successfully.");
   };
 return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
-      <View style={styles.topBar}>
-        <Pressable style={styles.backButton} accessibilityLabel="Go back" onPress={handleBack}>
-          <Ionicons name="chevron-back" size={30} color="#3D3F43" />
-        </Pressable>
-        <Text style={styles.topTitle}>
-          {activeSection === "help-support" && showContactForm ? "Contact Support" : title}
-        </Text>
-        <View style={styles.topBarSpacer} />
-      </View>
+    <View style={styles.screen}>
+      <AppleTopBar
+        title={activeSection === "help-support" && showContactForm ? "Contact Support" : title}
+        onBack={handleBack}
+      />
 
       <ScrollView keyboardShouldPersistTaps="handled" style={styles.scroll} contentContainerStyle={[styles.scrollContent, deletedSelectionMode && selectedDeletedIds.length > 0 ? { paddingBottom: 110 } : null]} showsVerticalScrollIndicator={false}>
         {activeSection !== "schedule" && activeSection !== "app-lock" ? (
@@ -2894,7 +2889,7 @@ return (
         }}
       />
 
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -3036,7 +3031,7 @@ const styles = StyleSheet.create({
   topTitle: { color: "#314258", fontSize: 17, lineHeight: 23, fontFamily: "Outfit-Bold" },
   topBarSpacer: { width: 38, height: 38 },
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: 12, paddingTop: 16, paddingBottom: 160 },
+  scrollContent: { paddingHorizontal: 12, paddingTop: 78, paddingBottom: 160 },
   subtitle: { color: "#5A6B7A", fontSize: 14, lineHeight: 20, marginBottom: 14 },
   loader: { marginBottom: 14 },
   card: {

@@ -5,7 +5,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, BackHandler, Easing, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { AppleTopBar } from "../components/ui/AppleTopBar";
 
 const PHASE_SECONDS = 4;
 const CYCLE_SECONDS = PHASE_SECONDS * 2;
@@ -130,14 +130,8 @@ export default function WellnessBreathingScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
-      <View style={styles.topBar}>
-        <Pressable style={styles.backButton} accessibilityLabel="Go back" onPress={handleBack}>
-          <Ionicons name="chevron-back" size={28} color="#37424F" />
-        </Pressable>
-        <Text style={styles.topTitle}>Wellness Tools</Text>
-        <View style={styles.topBarSpacer} />
-      </View>
+    <View style={styles.screen}>
+      <AppleTopBar title="Diaphragmatic Breathing" onBack={handleBack} />
 
       <ScrollView
         style={styles.scroll}
@@ -231,7 +225,7 @@ export default function WellnessBreathingScreen() {
           </Text>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -270,7 +264,7 @@ const styles = StyleSheet.create({
     flex: 1 },
   scrollContent: {
     paddingHorizontal: 12,
-    paddingTop: 14,
+    paddingTop: 78,
     paddingBottom: 28 },
   heroCard: {
     borderRadius: 24,

@@ -10,8 +10,8 @@ import {
   Text,
   TextInput,
   View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { PasswordField } from "../components/forms/PasswordField";
+import { AppleTopBar } from "../components/ui/AppleTopBar";
 import {
   forgotPasswordResendCode,
   forgotPasswordReset,
@@ -252,14 +252,8 @@ export default function ProfileResetPasswordScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
-      <View style={styles.topBar}>
-        <Pressable style={styles.backButton} accessibilityLabel="Go back" onPress={handleBack}>
-          <Ionicons name="chevron-back" size={30} color="#3D3F43" />
-        </Pressable>
-        <Text style={styles.topTitle}>Reset Password</Text>
-        <View style={styles.topBarSpacer} />
-      </View>
+    <View style={styles.screen}>
+      <AppleTopBar title="Reset Password" onBack={handleBack} />
 
       <KeyboardAvoidingView
         style={styles.keyboardView}
@@ -426,7 +420,7 @@ export default function ProfileResetPasswordScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -461,7 +455,7 @@ const styles = StyleSheet.create({
   topBarSpacer: { width: 38, height: 38 },
   keyboardView: { flex: 1 },
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: 14, paddingTop: 18, paddingBottom: 30 },
+  scrollContent: { paddingHorizontal: 14, paddingTop: 78, paddingBottom: 30 },
   hero: {
     borderRadius: 22,
     backgroundColor: "#F1F9EB",

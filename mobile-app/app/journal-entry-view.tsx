@@ -16,8 +16,8 @@ import {
   View,
   useWindowDimensions } from "react-native";
 import { Image } from "expo-image";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
+import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { consumePendingRiskPrompt, fetchJournalEntryById, JournalEntry, JournalMessage, rateJournalEntrySummary, saveJournalSupportResponse } from "../lib/backend-api";
 import { JournalLockGate } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
@@ -488,11 +488,10 @@ export default function JournalEntryViewScreen() {
   ) : null;
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
-      <View style={styles.topBar}>
-        <Pressable
-          style={styles.topBarBackButton}
-          onPress={() => {
+    <View style={styles.screen}>
+      <AppleTopBar
+        title="Journal Entry"
+        onBack={() => {
             if (
               fromCalendarFlag === "1" &&
               calendarDateValue &&
@@ -508,13 +507,8 @@ export default function JournalEntryViewScreen() {
               return;
             }
             router.replace("/journal-entries");
-          }}
-        >
-          <Ionicons name="chevron-back" size={28} color="#39434F" />
-        </Pressable>
-        <Text style={styles.topBarTitle}>Journal Entry</Text>
-        <View style={styles.topBarSpacer} />
-      </View>
+        }}
+      />
 
       <JournalLockGate>
         <View style={styles.journalContent}>
@@ -747,7 +741,7 @@ export default function JournalEntryViewScreen() {
         )}
         </View>
       </JournalLockGate>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -758,7 +752,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F5F9F2",
     paddingHorizontal: 12,
-    paddingTop: 8,
+    paddingTop: 78,
     paddingBottom: 18 },
   topBar: {
     height: 52,
