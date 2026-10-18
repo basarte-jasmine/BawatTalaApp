@@ -1,11 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Haptics from "expo-haptics";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
-import { useCallback, useEffect, useState, type ComponentProps } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
 import {
     ActivityIndicator,
+    Animated,
     ImageSourcePropType,
     Modal,
     Platform,
@@ -16,13 +18,14 @@ import {
     Text,
     View
 } from "react-native";
+import { Image } from "expo-image";
 import { StudentProfileAvatar } from "../components/profile/StudentProfileAvatar";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { showAppNotice } from "../lib/app-notice";
 import { useAppPreferences } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
-import { clearStudentProfilePicture, fetchStudentProfile, updateStudentProfilePicture } from "../lib/backend-api";
-import { hydrateMuniWardrobe } from "../lib/muni-wardrobe";
+import { clearStudentProfilePicture, fetchStudentAppointments, fetchStudentProfile, updateStudentProfilePicture } from "../lib/backend-api";
+import { getMuniCollectionSource, hydrateMuniWardrobe, useSavedMuniLoadout } from "../lib/muni-wardrobe";
 
 type SettingRow = {
   id: string;
@@ -32,7 +35,6 @@ type SettingRow = {
 };
 
 const ACCOUNT_ROWS: SettingRow[] = [
-  { id: "personal-details", icon: "person-circle-outline", label: "Personal Details", showChevron: true },
   { id: "privacy-security", icon: "shield-checkmark-outline", label: "Privacy & Security", showChevron: true },
   { id: "refer-friend", icon: "share-social-outline", label: "Refer a friend", showChevron: true },
 ];
@@ -55,6 +57,8 @@ const PROFILE_FRAMES: { id: string; label: string; source: ImageSourcePropType }
   { id: "sprout", label: "Sprout", source: require("../assets/images/Frames/Sprout Frame.webp") },
   { id: "tide", label: "Tide", source: require("../assets/images/Frames/Tide Frame.webp") },
 ];
+
+const DEFAULT_MUNI_BG = require("../assets/images/Background/Garden.webp");
 
 function getImageMimeType(asset: ImagePicker.ImagePickerAsset) {
   const mimeType = String(asset.mimeType || "").toLowerCase();
@@ -82,8 +86,41 @@ export default function ProfileScreen() {
   const [isUploadingProfilePicture, setIsUploadingProfilePicture] = useState(false);
   const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null);
   const [achievementCount, setAchievementCount] = useState(0);
+  const [scheduleCount, setScheduleCount] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const selectedFrame = PROFILE_FRAMES.find((frame) => frame.id === selectedFrameId)?.source ?? null;
+  const savedMuniLoadout = useSavedMuniLoadout();
+  const equippedBackgroundSource =
+    getMuniCollectionSource("background", savedMuniLoadout?.background) ?? DEFAULT_MUNI_BG;
+
+  // Apple spring button press scales
+  const statScheduleScale = useRef(new Animated.Value(1)).current;
+  const statAchieveScale = useRef(new Animated.Value(1)).current;
+  const editBtnScale = useRef(new Animated.Value(1)).current;
+  const signOutScale = useRef(new Animated.Value(1)).current;
+
+  const handleButtonPressIn = (animValue: Animated.Value, toValue = 0.94) => {
+    Animated.spring(animValue, {
+      toValue,
+      damping: 14,
+      stiffness: 340,
+      mass: 0.8,
+      useNativeDriver: true,
+    }).start();
+    try {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+  };
+
+  const handleButtonPressOut = (animValue: Animated.Value) => {
+    Animated.spring(animValue, {
+      toValue: 1,
+      damping: 12,
+      stiffness: 240,
+      mass: 0.8,
+      useNativeDriver: true,
+    }).start();
+  };
 
   useEffect(() => {
     setProfilePictureUrl(user?.profilePictureUrl || "");
@@ -104,6 +141,16 @@ export default function ProfileScreen() {
       const prefix = `@bawat-tala/achievement:`;
       const suffix = `:${user.studentNumber}`;
       setAchievementCount(keys.filter((k) => k.startsWith(prefix) && k.endsWith(suffix)).length);
+    }).catch(() => undefined);
+  }, [user?.studentNumber]);
+
+  useEffect(() => {
+    if (!user?.studentNumber) return;
+    void fetchStudentAppointments(user.studentNumber).then((res) => {
+      if (res.ok && Array.isArray(res.appointments)) {
+        const active = res.appointments.filter((a) => !["CANCELLED", "DECLINED"].includes(String(a.status).toUpperCase())).length;
+        setScheduleCount(active);
+      }
     }).catch(() => undefined);
   }, [user?.studentNumber]);
 
@@ -166,6 +213,12 @@ export default function ProfileScreen() {
       setSelectedFrameId(
         profileFrameId && PROFILE_FRAMES.some((frame) => frame.id === profileFrameId) ? profileFrameId : null,
       );
+      void fetchStudentAppointments(user.studentNumber).then((res) => {
+        if (res.ok && Array.isArray(res.appointments)) {
+          const active = res.appointments.filter((a) => !["CANCELLED", "DECLINED"].includes(String(a.status).toUpperCase())).length;
+          setScheduleCount(active);
+        }
+      }).catch(() => undefined);
       void AsyncStorage.getAllKeys().then((keys) => {
         const prefix = `@bawat-tala/achievement:`;
         const suffix = `:${user.studentNumber}`;
@@ -366,16 +419,24 @@ export default function ProfileScreen() {
         }
       >
         <View style={styles.profileHero}>
-          <View style={styles.heroGlowLeft} />
-          <View style={styles.heroGlowRight} />
-          <View style={styles.profileWrap}>
-            <View style={styles.avatarStage}>
-              <StudentProfileAvatar
-                imageUrl={profilePictureUrl}
-                frameSource={selectedFrame}
-                size={120}
-                style={selectedFrame ? undefined : styles.avatarCircle}
-              />
+          {/* Top Banner Backdrop: Equipped Muni Room Background */}
+          <View style={styles.heroBackdrop}>
+            <Image
+              source={equippedBackgroundSource}
+              style={styles.heroBackdropImage}
+              contentFit="cover"
+            />
+            <View style={styles.heroBackdropTintOverlay} />
+          </View>
+
+          {/* Overlapping Profile Avatar */}
+          <View style={styles.avatarOverlapStage}>
+            <StudentProfileAvatar
+              imageUrl={profilePictureUrl}
+              frameSource={selectedFrame}
+              size={114}
+              style={selectedFrame ? undefined : styles.avatarCircle}
+            />
               {isUploadingProfilePicture ? (
                 <View style={styles.avatarLoadingOverlay}>
                   <ActivityIndicator color="#FFFFFF" size="small" />
@@ -387,82 +448,121 @@ export default function ProfileScreen() {
                 onPress={openProfilePictureOptions}
                 style={({ pressed }) => [styles.cameraButton, pressed && styles.cameraButtonPressed]}
               >
-                <Ionicons name="camera" size={19} color="#FFFFFF" />
+                <Ionicons name="camera" size={14} color="#FFFFFF" />
               </Pressable>
             </View>
-            <Text style={styles.name}>{user?.nickname || user?.fullName || "User"}</Text>
-            <Text style={styles.email}>{program || "Student"}</Text>
-            <View style={styles.identityRow}>
-              <View style={styles.identityChip}>
-                <Ionicons name="card-outline" size={14} color="#5E7D58" />
-                <Text style={styles.identityChipText}>{user?.studentNumber || "Student profile"}</Text>
-              </View>
+
+          {/* Profile Name & ID */}
+          <View style={styles.heroBody}>
+            <Text style={styles.heroName}>{user?.nickname || user?.fullName || "Student"}</Text>
+            <View style={styles.heroSubRow}>
+              <Text style={styles.heroSubText}>
+                {user?.studentNumber ? user.studentNumber : "Student profile"}
+              </Text>
+              {program ? (
+                <>
+                  <View style={styles.heroSubDot} />
+                  <Text style={styles.heroSubText} numberOfLines={1}>{program}</Text>
+                </>
+              ) : null}
+            </View>
+
+            {/* 2-Column Stats Row: Schedule & Achievements */}
+            <View style={styles.statsRow}>
+              <Animated.View style={[{ flex: 1 }, { transform: [{ scale: statScheduleScale }] }]}>
+                <Pressable
+                  style={styles.statCol}
+                  onPress={() => void handleRowPress("schedule")}
+                  onPressIn={() => handleButtonPressIn(statScheduleScale)}
+                  onPressOut={() => handleButtonPressOut(statScheduleScale)}
+                >
+                  <Text style={styles.statValue}>{scheduleCount}</Text>
+                  <Text style={styles.statLabel}>Schedule</Text>
+                </Pressable>
+              </Animated.View>
+
+              <View style={styles.statDivider} />
+
+              <Animated.View style={[{ flex: 1 }, { transform: [{ scale: statAchieveScale }] }]}>
+                <Pressable
+                  style={styles.statCol}
+                  onPress={() => router.push("/achievements" as never)}
+                  onPressIn={() => handleButtonPressIn(statAchieveScale)}
+                  onPressOut={() => handleButtonPressOut(statAchieveScale)}
+                >
+                  <Text style={styles.statValue}>{achievementCount}</Text>
+                  <Text style={styles.statLabel}>Achievements</Text>
+                </Pressable>
+              </Animated.View>
+            </View>
+
+            {/* Action Button: Edit profile info (Full Width, App Green) */}
+            <View style={styles.actionButtonWrap}>
+              <Animated.View style={[{ width: "100%" }, { transform: [{ scale: editBtnScale }] }]}>
+                <Pressable
+                  style={styles.editProfileButton}
+                  onPress={() => void handleRowPress("personal-details")}
+                  onPressIn={() => handleButtonPressIn(editBtnScale, 0.96)}
+                  onPressOut={() => handleButtonPressOut(editBtnScale)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Edit profile info"
+                >
+                  <Ionicons name="create-outline" size={17} color="#FFFFFF" style={{ marginRight: 6 }} />
+                  <Text style={styles.editProfileButtonText}>Edit profile info</Text>
+                </Pressable>
+              </Animated.View>
             </View>
           </View>
         </View>
 
-
-
-        <View style={styles.cardsRow}>
-          {/* Left Column: Schedule */}
-          <Pressable style={styles.gridCardSchedule} onPress={() => void handleRowPress("schedule")}>
-            <View style={styles.gridCardTopRow}>
-              <View style={styles.gridScheduleIconWrap}>
-                <Ionicons name="calendar-clear-outline" size={20} color="#5A8A36" />
+        {/* Account Settings */}
+        <View style={styles.sectionWrap}>
+          <Text style={styles.sectionHeaderTitle}>Account Settings</Text>
+          <View style={styles.groupCard}>
+            {ACCOUNT_ROWS.map((row, index) => (
+              <View key={row.id}>
+                <SettingRowItem row={row} onPress={handleRowPress} />
+                {index < ACCOUNT_ROWS.length - 1 ? <View style={styles.rowDivider} /> : null}
               </View>
-              <Ionicons name="chevron-forward" size={16} color="#7E8490" />
-            </View>
-            <Text style={styles.gridCardTitle}>My Schedule</Text>
-            <Text style={styles.gridCardSubtitle} numberOfLines={2}>Consultations & booked dates</Text>
-          </Pressable>
+            ))}
+          </View>
+        </View>
 
-          {/* Right Column: Achievements */}
-          <Pressable style={styles.gridCardAchievement} onPress={() => router.push("/achievements" as never)}>
-            <View style={styles.gridCardTopRow}>
-              <View style={styles.gridAchievementIconWrap}>
-                <Ionicons name="trophy-outline" size={20} color="#9B7E3F" />
+        {/* App Settings */}
+        <View style={styles.sectionWrap}>
+          <Text style={styles.sectionHeaderTitle}>App Settings</Text>
+          <View style={styles.groupCard}>
+            {APP_ROWS.map((row, index) => (
+              <View key={row.id}>
+                <SettingRowItem row={row} onPress={handleRowPress} />
+                {index < APP_ROWS.length - 1 ? <View style={styles.rowDivider} /> : null}
               </View>
-              <Ionicons name="chevron-forward" size={16} color="#7E8490" />
-            </View>
-            <Text style={styles.gridCardTitle} numberOfLines={1}>Achievements</Text>
-            <Text style={styles.gridCardSubtitle} numberOfLines={2}>
-              {achievementCount > 0 ? `${achievementCount} badge${achievementCount === 1 ? "" : "s"} earned` : "Badges & milestones"}
-            </Text>
-          </Pressable>
-
+            ))}
+          </View>
         </View>
 
-        <View style={styles.groupCard}>
-          <Text style={styles.groupTitle}>Account Settings</Text>
-          {ACCOUNT_ROWS.map((row, index) => (
-            <View key={row.id}>
-              <SettingRowItem row={row} onPress={handleRowPress} />
-              {index < ACCOUNT_ROWS.length - 1 ? <View style={styles.rowDivider} /> : null}
+        {/* Sign Out Card */}
+        <View style={styles.sectionWrap}>
+          <Animated.View style={{ transform: [{ scale: signOutScale }] }}>
+            <View style={styles.signOutCard}>
+              <Pressable
+                style={styles.signOutButton}
+                onPress={() => setShowSignOutModal(true)}
+                onPressIn={() => handleButtonPressIn(signOutScale, 0.98)}
+                onPressOut={() => handleButtonPressOut(signOutScale)}
+                accessibilityRole="button"
+                accessibilityLabel="Sign Out"
+              >
+                <Ionicons name="log-out-outline" size={18} color="#DC2626" style={{ marginRight: 6 }} />
+                <Text style={styles.signOutText}>Sign Out</Text>
+              </Pressable>
             </View>
-          ))}
+          </Animated.View>
         </View>
-
-        <View style={styles.groupCard}>
-          <Text style={styles.groupTitle}>App Settings</Text>
-          {APP_ROWS.map((row, index) => (
-            <View key={row.id}>
-              <SettingRowItem row={row} onPress={handleRowPress} />
-              {index < APP_ROWS.length - 1 ? <View style={styles.rowDivider} /> : null}
-            </View>
-          ))}
-        </View>
-
-
-
-        <Pressable style={styles.signOutButton} onPress={() => setShowSignOutModal(true)}>
-          <Text style={styles.signOutText}>Sign Out</Text>
-        </Pressable>
 
         <View style={styles.aboutFooter}>
           <Text style={styles.aboutFooterBrand}>Bawat Tala</Text>
-          <Text style={styles.aboutFooterMeta}>Version {APP_VERSION}</Text>
-          <Text style={styles.aboutFooterMeta}>Built by FANTAFOUR</Text>
-          <Text style={styles.aboutFooterMeta}>Keepsake Studio</Text>
+          <Text style={styles.aboutFooterMeta}>Version {APP_VERSION} • Keepsake Studio</Text>
         </View>
       </ScrollView>
 
@@ -736,16 +836,61 @@ export default function ProfileScreen() {
 }
 
 function SettingRowItem({ onPress, row }: { onPress: (rowId: string) => void | Promise<void>; row: SettingRow }) {
+  const rowScale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(rowScale, {
+      toValue: 0.98,
+      damping: 14,
+      stiffness: 340,
+      mass: 0.8,
+      useNativeDriver: true,
+    }).start();
+    try {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(rowScale, {
+      toValue: 1,
+      damping: 12,
+      stiffness: 240,
+      mass: 0.8,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const iconMeta: { [key: string]: { bg: string; color: string } } = {
+    "privacy-security": { bg: "#EFF6FF", color: "#2563EB" },
+    "refer-friend": { bg: "#FAF5FF", color: "#7C3AED" },
+    "recent-activity": { bg: "#FFFBEB", color: "#D97706" },
+    "app-lock": { bg: "#ECFDF5", color: "#059669" },
+    "recently-deleted": { bg: "#FEF2F2", color: "#DC2626" },
+    "help-support": { bg: "#F0FDFA", color: "#0D9488" },
+  };
+
+  const meta = iconMeta[row.id] ?? { bg: "#F1F5F9", color: "#475569" };
+
   return (
-    <Pressable style={styles.rowItem} onPress={() => void onPress(row.id)}>
-      <View style={styles.rowLeading}>
-        <View style={styles.rowIconWrap}>
-          <Ionicons name={row.icon} size={18} color="#5A8A36" />
+    <Animated.View style={{ transform: [{ scale: rowScale }] }}>
+      <Pressable
+        style={styles.rowItem}
+        onPress={() => void onPress(row.id)}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        accessibilityRole="button"
+        accessibilityLabel={row.label}
+      >
+        <View style={styles.rowLeading}>
+          <View style={[styles.rowIconWrap, { backgroundColor: meta.bg }]}>
+            <Ionicons name={row.icon} size={18} color={meta.color} />
+          </View>
+          <Text style={styles.rowLabel}>{row.label}</Text>
         </View>
-        <Text style={styles.rowLabel}>{row.label}</Text>
-      </View>
-      {row.showChevron ? <Ionicons name="chevron-forward" size={18} color="#7E8490" /> : null}
-    </Pressable>
+        {row.showChevron ? <Ionicons name="chevron-forward" size={16} color="#94A3B8" /> : null}
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -787,7 +932,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingBottom: 32 },
   profileHero: {
-    borderRadius: 24,
+    borderRadius: 28,
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: "#E7EEF4",
@@ -795,41 +940,30 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     shadowColor: "#6A7682",
     shadowOpacity: 0.08,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2 },
-  heroGlowLeft: {
-    position: "absolute",
-    top: -36,
-    left: -20,
-    width: 120,
-    height: 120,
-    borderRadius: 999,
-    backgroundColor: "#DDF8C7",
-    opacity: 0.75 },
-  heroGlowRight: {
-    position: "absolute",
-    right: -30,
-    bottom: -36,
-    width: 140,
-    height: 140,
-    borderRadius: 999,
-    backgroundColor: "#E8F5FF",
-    opacity: 0.85 },
-  profileWrap: {
-    alignItems: "center",
-    paddingHorizontal: 18,
-    paddingVertical: 20 },
-  avatarStage: {
-    height: 172,
-    width: 172,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3 },
+  heroBackdrop: {
+    width: "100%",
+    height: 154,
+    position: "relative",
+    overflow: "hidden" },
+  heroBackdropImage: {
+    ...StyleSheet.absoluteFillObject },
+  heroBackdropTintOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 0, 0, 0.04)" },
+  avatarOverlapStage: {
+    alignSelf: "center",
+    marginTop: -96,
     marginBottom: 8,
-    alignItems: "center",
-    justifyContent: "center" },
+    position: "relative" },
   avatarCircle: {
-    backgroundColor: "#89E1D4",
-    borderWidth: 4,
-    borderColor: "#F2FFFA" },
+    borderRadius: 999,
+    borderWidth: 3,
+    borderColor: "#FFFFFF",
+    backgroundColor: "transparent",
+    overflow: "hidden" },
   avatarLoadingOverlay: {
     position: "absolute",
     left: "50%",
@@ -842,187 +976,135 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(33, 55, 47, 0.52)" },
-  cameraButton: {
-    position: "absolute",
-    right: 8,
-    bottom: 8,
-    zIndex: 10,
-    width: 38,
-    height: 38,
-    borderRadius: 999,
+  heroBody: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 16,
+    alignItems: "center" },
+  heroName: {
+    color: "#0F172A",
+    fontSize: 22,
+    lineHeight: 28,
+    fontFamily: "Outfit-Bold",
+    textAlign: "center" },
+  heroSubRow: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#5E9D41",
-    borderWidth: 3,
+    marginTop: 3,
+    marginBottom: 6,
+    paddingHorizontal: 12 },
+  heroSubText: {
+    color: "#64748B",
+    fontSize: 13,
+    lineHeight: 17,
+    fontFamily: "Outfit-Medium" },
+  heroSubDot: {
+    width: 3.5,
+    height: 3.5,
+    borderRadius: 2,
+    backgroundColor: "#94A3B8",
+    marginHorizontal: 7 },
+  statsRow: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 14,
+    marginTop: 8,
+    marginBottom: 12,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: "#F1F5F9" },
+  statCol: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center" },
+  statValue: {
+    color: "#0F172A",
+    fontSize: 20,
+    lineHeight: 25,
+    fontFamily: "Outfit-Bold" },
+  statLabel: {
+    color: "#64748B",
+    fontSize: 11.5,
+    lineHeight: 15,
+    fontFamily: "Outfit-Medium",
+    marginTop: 2 },
+  statDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: "#E2E8F0" },
+  actionButtonWrap: {
+    width: "100%",
+    marginTop: 2,
+    paddingHorizontal: 4 },
+  editProfileButton: {
+    height: 44,
+    borderRadius: 999,
+    backgroundColor: "#52B72A",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 18,
+    shadowColor: "#2D771F",
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3 },
+  editProfileButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14.5,
+    lineHeight: 19,
+    fontFamily: "Outfit-Bold" },
+  cameraButton: {
+    position: "absolute",
+    right: 0,
+    bottom: 0,
+    zIndex: 10,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#52B72A",
+    borderWidth: 2.5,
     borderColor: "#FFFFFF",
-    shadowColor: "#365D29",
+    shadowColor: "#1B3B12",
     shadowOpacity: 0.22,
-    shadowRadius: 5,
+    shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
     elevation: 4 },
   cameraButtonPressed: {
     opacity: 0.82,
     transform: [{ scale: 0.96 }] },
-  name: {
-    width: "100%",
-    maxWidth: 300,
-    color: "#304558",
-    fontSize: 28,
-    lineHeight: 34,
+  sectionWrap: {
+    marginBottom: 14,
+  },
+  sectionHeaderTitle: {
+    color: "#64748B",
+    fontSize: 11.5,
+    lineHeight: 15,
     fontFamily: "Outfit-Bold",
-    textAlign: "center",
-    marginBottom: 4 },
-  email: {
-    width: "100%",
-    maxWidth: 300,
-    color: "#5E7080",
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: "center",
-    marginBottom: 12 },
-  identityRow: {
-    flexDirection: "row",
-    justifyContent: "center" },
-  identityChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: "#F4F9EF",
-    borderWidth: 1,
-    borderColor: "#DAEAC8" },
-  identityChipText: {
-    color: "#58704C",
-    fontSize: 12,
-    lineHeight: 16,
-    fontFamily: "Outfit-Bold" },
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+    marginBottom: 6,
+    paddingHorizontal: 4,
+  },
   groupCard: {
-    borderRadius: 18,
+    borderRadius: 22,
     backgroundColor: "#FFFFFF",
     overflow: "hidden",
-    marginBottom: 10,
     borderWidth: 1,
-    borderColor: "#E7EEF4",
-    shadowColor: "#6B7681",
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2 },
-  cardsRow: {
-    flexDirection: "row",
-    columnGap: 10,
-    marginBottom: 12},
-  gridCardSchedule: {
-    flex: 1,
-    minHeight: 112,
-    borderRadius: 20,
-    backgroundColor: "#F5F1FF",
-    borderWidth: 1,
-    borderColor: "#E8E0FF",
-    padding: 13,
-    justifyContent: "space-between",
-    shadowColor: "#777777",
-    shadowOpacity: 0.06,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2},
-  gridCardAchievement: {
-    flex: 1,
-    minHeight: 112,
-    borderRadius: 20,
-    backgroundColor: "#FFFDF8",
-    borderWidth: 1,
-    borderColor: "#EEE4CF",
-    padding: 13,
-    justifyContent: "space-between",
-    shadowColor: "#777777",
-    shadowOpacity: 0.06,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2},
-  gridAchievementIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 999,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#EEE4CF"},
-  gridCardTopRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 8},
-  gridScheduleIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 999,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#E0EAD2"},
-  gridCardTitle: {
-    color: "#33475C",
-    fontSize: 15,
-    lineHeight: 19,
-    fontFamily: "Outfit-Bold",
-    marginBottom: 2},
-  gridCardSubtitle: {
-    color: "#6B7685",
-    fontSize: 12,
-    lineHeight: 16},
-  scheduleShortcut: {
-    minHeight: 74,
-    borderRadius: 20,
-    backgroundColor: "#F5F1FF",
-    borderWidth: 1,
-    borderColor: "#E8E0FF",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: 12,
-    marginBottom: 12,
-    shadowColor: "#777777",
-    shadowOpacity: 0.08,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2 },
-  scheduleShortcutIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 999,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#E0EAD2" },
-  scheduleShortcutContent: {
-    flex: 1 },
-  scheduleShortcutText: {
-    color: "#33475C",
-    fontSize: 18,
-    lineHeight: 22,
-    fontFamily: "Outfit-Bold",
-    marginBottom: 2 },
-  scheduleShortcutMeta: {
-    color: "#6B7685",
-    fontSize: 13,
-    lineHeight: 18 },
-  groupTitle: {
-    color: "#2E3F54",
-    fontSize: 15,
-    lineHeight: 20,
-    fontFamily: "Outfit-Bold",
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 8 },
+    borderColor: "#E2E8F0",
+    shadowColor: "#0D2112",
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
   rowItem: {
-    minHeight: 54,
+    minHeight: 52,
     paddingHorizontal: 14,
     flexDirection: "row",
     alignItems: "center",
@@ -1033,59 +1115,58 @@ const styles = StyleSheet.create({
     alignItems: "center",
     columnGap: 12,
     flex: 1,
-    paddingRight: 12 },
+    paddingRight: 10 },
   rowIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    backgroundColor: "#F4FAED",
-    borderWidth: 1,
-    borderColor: "#DBEAC8",
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center" },
   rowLabel: {
-    color: "#34475D",
-    fontSize: 16,
-    lineHeight: 21,
+    color: "#0F172A",
+    fontSize: 15,
+    lineHeight: 20,
     fontFamily: "Outfit-Medium" },
   rowDivider: {
     height: 1,
-    backgroundColor: "#EEF3F6",
-    marginLeft: 60 },
-  signOutButton: {
-    minHeight: 46,
-    borderRadius: 999,
-    backgroundColor: "#FFF7F8",
+    backgroundColor: "#F1F5F9",
+    marginLeft: 58 },
+  signOutCard: {
+    borderRadius: 20,
+    backgroundColor: "#FFFFFF",
+    overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#F4D8DC",
+    borderColor: "#E2E8F0",
+    shadowColor: "#0D2112",
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  signOutButton: {
+    minHeight: 50,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 18,
-    marginBottom: 10,
-    marginHorizontal: 10,
-    shadowColor: "#B49AA1",
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 2 },
+    flexDirection: "row",
+  },
   signOutText: {
-    color: "#EE596B",
-    fontSize: 16,
-    lineHeight: 20,
+    color: "#DC2626",
+    fontSize: 15,
+    lineHeight: 19,
     fontFamily: "Outfit-Bold" },
   aboutFooter: {
     alignItems: "center",
-    marginTop: 18,
+    marginTop: 14,
     paddingBottom: 8,
     rowGap: 2 },
   aboutFooterBrand: {
-    color: "#516476",
+    color: "#64748B",
     fontSize: 13,
     lineHeight: 18,
     fontFamily: "Outfit-Bold" },
   aboutFooterMeta: {
-    color: "#8A96A1",
-    fontSize: 11,
+    color: "#94A3B8",
+    fontSize: 11.5,
     lineHeight: 15,
     textAlign: "center" },
   modalBackdrop: {

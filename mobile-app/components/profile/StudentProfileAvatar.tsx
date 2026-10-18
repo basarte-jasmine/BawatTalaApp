@@ -32,8 +32,7 @@ export function StudentProfileAvatar({
       pointerEvents="box-none"
       style={[
         styles.container,
-        { height: outerSize, width: outerSize },
-        !hasFrame ? style : undefined,
+        { height: outerSize, width: outerSize, borderRadius: hasFrame ? 0 : radius },
       ]}
     >
       <View
