@@ -285,7 +285,7 @@ export default function RegisterScreen() {
         router.back();
         return;
       }
-      router.replace("/login");
+      router.replace("/");
       return;
     }
     setStep((prev) => prev - 1);
@@ -1747,4 +1747,6 @@ const styles = StyleSheet.create({
     height: 8,
   },
 });
+
+
 

@@ -204,7 +204,7 @@ export default function LoginScreen() {
         <SafeAreaView edges={["top"]} style={styles.headerSafeArea}>
           <Pressable
             style={styles.backButton}
-            onPress={() => (router.canGoBack() ? router.back() : router.replace("/auth-choice"))}
+            onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))}
             disabled={isBusy}
             hitSlop={12}
             accessibilityRole="button"
@@ -753,4 +753,6 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit-SemiBold",
   },
 });
+
+
 
