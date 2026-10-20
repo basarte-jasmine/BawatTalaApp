@@ -26,14 +26,11 @@ const ASSETS = [
 const COVER = require("../assets/images/Mini Reset/Puzzle/Muni Puzzle Cover.webp");
 
 function getDifficulty(level: number) {
-  const grid = Math.min(5, level + 1);
-  let timeLimit = 30;
-  if (level === 1) timeLimit = 30;
-  else if (level === 2) timeLimit = 30;
-  else if (level === 3) timeLimit = 35;
-  else if (level === 4) timeLimit = 40;
-  else timeLimit = Math.max(15, 40 - (level - 4) * 2);
-  
+  const grid = Math.min(4, Math.max(2, Math.floor(level / 2) + 1));
+  let timeLimit = 120;
+  if (level <= 2) timeLimit = 120;
+  else if (level <= 4) timeLimit = 150;
+  else timeLimit = 180;
   return { grid, timeLimit };
 }
 
@@ -44,7 +41,8 @@ export default function ImagePuzzleScreen() {
   const BOARD_SIZE = Math.min(width - 40, (height - 250) / 2, 340);
   const TRAY_GAP = 20;
   
-  const [gameState, setGameState] = useState<'intro' | 'playing' | 'transition' | 'gameover'>('intro');
+  type GameState = 'intro' | 'playing' | 'transition' | 'paused' | 'gameover';
+  const [gameState, setGameState] = useState<GameState>('intro');
   const [level, setLevel] = useState(1);
   const [score, setScore] = useState(0);
   const [hearts, setHearts] = useState(3);
@@ -53,6 +51,8 @@ export default function ImagePuzzleScreen() {
   
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [gridSize, setGridSize] = useState(2);
+  const [totalTime, setTotalTime] = useState(120);
+  const [showReferenceModal, setShowReferenceModal] = useState(false);
   const [showExitPrompt, setShowExitPrompt] = useState(false);
   const [rewardTala, setRewardTala] = useState(0);
   const rewardClaimedRef = useRef(false);
@@ -136,6 +136,7 @@ export default function ImagePuzzleScreen() {
     setLevel(lvl);
     setGameState('playing');
     setTimeLeft(timeLimit);
+    setTotalTime(timeLimit);
     
     const newPieces = [];
     const pieceCount = grid * grid;
@@ -254,6 +255,32 @@ export default function ImagePuzzleScreen() {
     }
   };
 
+  const pauseGame = () => {
+    if (gameState === 'playing') {
+      setGameState('paused');
+    }
+  };
+
+  const resumeGame = () => {
+    if (gameState === 'paused') {
+      setGameState('playing');
+    }
+  };
+
+  const restartGame = () => {
+    startGame();
+  };
+
+  const quitGame = () => {
+    router.replace('/wellness-tools');
+  };
+
+  const formatTime = (secs: number) => {
+    const mins = Math.floor(secs / 60);
+    const rem = secs % 60;
+    return mins > 0 ? `${mins}m ${rem < 10 ? '0' : ''}${rem}s` : `${rem}s`;
+  };
+
   const confirmExit = () => {
     setShowExitPrompt(true);
   };
@@ -314,11 +341,24 @@ export default function ImagePuzzleScreen() {
   return (
     <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
       <View style={styles.header}>
-        <Pressable onPress={confirmExit} style={styles.backButton} accessibilityLabel="Leave Image Puzzle">
-          <Ionicons name="chevron-back" size={28} color="#37424F" />
+        <Pressable
+          onPress={() => {
+            if (gameState === 'playing') pauseGame();
+            else quitGame();
+          }}
+          style={styles.backButton}
+          accessibilityLabel="Back"
+        >
+          <Ionicons name="chevron-back" size={26} color="#37424F" />
         </Pressable>
         <Text style={styles.headerTitle}>Image Puzzle</Text>
-        <View style={styles.headerSpacer} />
+        {gameState === 'playing' ? (
+          <Pressable onPress={pauseGame} style={styles.pauseButton} accessibilityLabel="Pause Game">
+            <Ionicons name="pause-circle-outline" size={26} color="#37424F" />
+          </Pressable>
+        ) : (
+          <View style={styles.headerSpacer} />
+        )}
       </View>
       
       {gameState === 'intro' && (
@@ -349,30 +389,75 @@ export default function ImagePuzzleScreen() {
         </View>
       )}
 
-      {(gameState === 'playing' || gameState === 'transition') && (
+      {(gameState === 'playing' || gameState === 'transition' || gameState === 'paused') && (
         <View style={styles.gameContainer}>
           <View style={styles.statsBar}>
             <Text style={styles.statText}>SCORE: {score}</Text>
+            <Text style={styles.statText}>
+              {Array.from({ length: Math.max(0, hearts) }).map(() => '❤️').join(' ')}
+            </Text>
             <Text style={styles.statText}>LEVEL: {level}</Text>
           </View>
-          <View style={styles.statsBar}>
-            <Text style={styles.statText}>
-              {Array.from({length: Math.max(0, hearts)}).map(() => '❤️').join(' ')}
-            </Text>
-            <Text style={[styles.statText, timeLeft <= 5 && { color: '#C45C5C' }]}>
-              TIME: {timeLeft}
-            </Text>
+
+          {/* Relaxing Bar Timer */} 
+          <View style={[styles.timeBarContainer, { width: BOARD_SIZE }]}>
+            <View
+              style={[
+                styles.timeBarFill,
+                {
+                  width: `${Math.min(Math.max((timeLeft / Math.max(totalTime, 1)) * 100, 0), 100)}%`,
+                  backgroundColor: timeLeft < 20 ? '#E9A844' : '#6B8E65',
+                },
+              ]}
+            />
+            <Text style={styles.timeText}>⏱️ {formatTime(timeLeft)}</Text>
           </View>
-          <View style={{ height: 24, justifyContent: 'center' }}>
-            {combo > 1 && (
-              <Text style={styles.comboText}>COMBO x{combo}</Text>
-            )}
+
+          <View style={[styles.metaRow, { width: BOARD_SIZE }]}>
+            <View style={{ flex: 1 }}>
+              {combo > 1 && <Text style={styles.comboText}>COMBO x{combo}</Text>}
+            </View>
+            {/* Reference Photo Thumbnail Button */}
+            <Pressable
+              style={styles.refPhotoBtn}
+              onPress={() => setShowReferenceModal(true)}
+              accessibilityLabel="View Reference Photo"
+            >
+              <Image source={ASSETS[currentImageIndex]} style={styles.refPhotoThumb} contentFit="cover" />
+              <View style={styles.refPhotoMeta}>
+                <Text style={styles.refPhotoText}>Reference</Text>
+                <Ionicons name="expand-outline" size={12} color="#4F8A38" />
+              </View>
+            </Pressable>
           </View>
 
           <View style={[styles.playArea, { width: BOARD_SIZE, height: BOARD_SIZE * 2 + TRAY_GAP }]}>
-            {/* Board Background */}
+            {/* Board Background with Guide Lines & Faint Ghost Image */}
             <View style={[styles.boardBg, { width: BOARD_SIZE, height: BOARD_SIZE }]}>
-              <Ionicons name="image-outline" size={48} color="#D8E2D5" />
+              <Image
+                source={ASSETS[currentImageIndex]}
+                style={[StyleSheet.absoluteFillObject, { opacity: 0.16 }]}
+                contentFit="cover"
+              />
+              {/* Grid guide lines */}
+              <View style={StyleSheet.absoluteFillObject}>
+                {Array.from({ length: gridSize }).map((_, r) => (
+                  <View key={`grow_${r}`} style={{ flexDirection: 'row', height: BOARD_SIZE / gridSize }}>
+                    {Array.from({ length: gridSize }).map((_, c) => (
+                      <View
+                        key={`gcell_${r}_${c}`}
+                        style={[
+                          styles.guideCell,
+                          {
+                            width: BOARD_SIZE / gridSize,
+                            height: BOARD_SIZE / gridSize,
+                          },
+                        ]}
+                      />
+                    ))}
+                  </View>
+                ))}
+              </View>
             </View>
             
             {/* Tray Background */}
@@ -403,6 +488,55 @@ export default function ImagePuzzleScreen() {
               <Pressable style={styles.exitStay} onPress={() => setShowExitPrompt(false)}><Text style={styles.exitStayText}>Stay</Text></Pressable>
               <Pressable style={styles.exitLeave} onPress={leaveGame}><Text style={styles.exitLeaveText}>Leave</Text></Pressable>
             </View>
+          </View>
+        </View>
+      )}
+      {/* Reference Photo Modal */}
+      {showReferenceModal && (
+        <View style={styles.refModalOverlay}>
+          <View style={styles.refModalCard}>
+            <View style={styles.refModalHeader}>
+              <Text style={styles.refModalTitle}>Reference Photo</Text>
+              <Pressable onPress={() => setShowReferenceModal(false)} style={styles.refModalCloseBtn}>
+                <Ionicons name="close-circle" size={28} color="#607181" />
+              </Pressable>
+            </View>
+            <Image
+              source={ASSETS[currentImageIndex]}
+              style={{ width: BOARD_SIZE, height: BOARD_SIZE, borderRadius: 16 }}
+              contentFit="cover"
+            />
+            <Pressable style={styles.refModalDoneBtn} onPress={() => setShowReferenceModal(false)}>
+              <Text style={styles.refModalDoneBtnText}>Back to Puzzle</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      {/* Unified Pause State Modal */}
+      {gameState === 'paused' && (
+        <View style={styles.pauseOverlay}>
+          <View style={styles.pauseCard}>
+            <View style={styles.pauseIconCircle}>
+              <Ionicons name="pause" size={28} color="#6B8E65" />
+            </View>
+            <Text style={styles.pauseTitle}>Game Paused</Text>
+            <Text style={styles.pauseSub}>Take your time, Muni is resting with you.</Text>
+
+            <Pressable style={styles.pauseBtnResume} onPress={resumeGame}>
+              <Ionicons name="play" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={styles.pauseBtnResumeText}>Resume</Text>
+            </Pressable>
+
+            <Pressable style={styles.pauseBtnRestart} onPress={restartGame}>
+              <Ionicons name="refresh" size={18} color="#33475C" style={{ marginRight: 8 }} />
+              <Text style={styles.pauseBtnRestartText}>Restart</Text>
+            </Pressable>
+
+            <Pressable style={styles.pauseBtnQuit} onPress={quitGame}>
+              <Ionicons name="exit-outline" size={18} color="#C45C5C" style={{ marginRight: 8 }} />
+              <Text style={styles.pauseBtnQuitText}>Quit Game</Text>
+            </Pressable>
           </View>
         </View>
       )}
@@ -504,5 +638,157 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit-Bold",
     textShadowColor: 'rgba(0,0,0,0.3)',
     textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4}
+    textShadowRadius: 4},
+  pauseButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  timeBarContainer: {
+    height: 18,
+    backgroundColor: '#E3ECE8',
+    borderRadius: 9,
+    overflow: 'hidden',
+    position: 'relative',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  timeBarFill: { height: '100%', borderRadius: 9 },
+  timeText: {
+    position: 'absolute',
+    width: '100%',
+    textAlign: 'center',
+    fontSize: 11,
+    color: '#FFFFFF',
+    fontFamily: 'Outfit-Bold',
+    textShadowColor: 'rgba(0,0,0,0.25)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  refPhotoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#D8E2D5',
+    gap: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  refPhotoThumb: { width: 26, height: 26, borderRadius: 6 },
+  refPhotoMeta: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  refPhotoText: { color: '#33475C', fontSize: 12, fontFamily: 'Outfit-Bold' },
+  guideCell: {
+    borderWidth: 1,
+    borderColor: 'rgba(107, 142, 101, 0.45)',
+    borderStyle: 'dashed',
+  },
+  refModalOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(18, 30, 24, 0.65)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 15000,
+    padding: 20,
+  },
+  refModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  refModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 14,
+  },
+  refModalTitle: { fontSize: 18, fontFamily: 'Outfit-Bold', color: '#33475C' },
+  refModalCloseBtn: { padding: 2 },
+  refModalDoneBtn: {
+    marginTop: 16,
+    backgroundColor: '#6B8E65',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+    alignItems: 'center',
+  },
+  refModalDoneBtnText: { color: '#FFFFFF', fontSize: 14, fontFamily: 'Outfit-Bold' },
+  pauseOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(22, 36, 44, 0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10000,
+    padding: 20,
+  },
+  pauseCard: {
+    width: '100%',
+    maxWidth: 320,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#102028',
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  pauseIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#F0F5EE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  pauseTitle: { fontSize: 22, fontFamily: 'Outfit-Bold', color: '#33475C', marginBottom: 6 },
+  pauseSub: { fontSize: 14, color: '#607181', textAlign: 'center', marginBottom: 22, lineHeight: 19 },
+  pauseBtnResume: {
+    width: '100%',
+    flexDirection: 'row',
+    backgroundColor: '#6B8E65',
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+    shadowColor: '#6B8E65',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  pauseBtnResumeText: { color: '#FFFFFF', fontSize: 15, fontFamily: 'Outfit-Bold' },
+  pauseBtnRestart: {
+    width: '100%',
+    flexDirection: 'row',
+    backgroundColor: '#F0F4F8',
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  pauseBtnRestartText: { color: '#33475C', fontSize: 15, fontFamily: 'Outfit-Bold' },
+  pauseBtnQuit: {
+    width: '100%',
+    flexDirection: 'row',
+    paddingVertical: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pauseBtnQuitText: { color: '#C45C5C', fontSize: 14, fontFamily: 'Outfit-SemiBold' },
 });

@@ -22,9 +22,9 @@ const ASSETS = [
 ];
 
 const TEMP_COVER = require("../assets/images/Mini Reset/Gentle Pairs/Gentle Pairs Cover.webp"); 
-const ROUND_TIME = 60;
+const ROUND_TIME = 120;
 
-type GameState = "START" | "PLAYING" | "GAMEOVER";
+type GameState = "START" | "PLAYING" | "PAUSED" | "GAMEOVER";
 
 type Card = {
   id: string;
@@ -125,7 +125,7 @@ export default function GentlePairsScreen() {
   }, [gameState, round]);
 
   const handleCardPress = (index: number) => {
-    if (isLocked || cards[index].isFlipped || cards[index].isMatched) return;
+    if (isLocked || gameState !== "PLAYING" || cards[index].isFlipped || cards[index].isMatched) return;
 
     setMoves((m) => m + 1);
 
@@ -149,6 +149,7 @@ export default function GentlePairsScreen() {
             return matchedCards;
           });
           setScore((s) => s + 10 * level);
+          setTimeLeft((t) => Math.min(ROUND_TIME, t + 6));
           setFlippedIndices([]);
           setIsLocked(false);
           checkLevelComplete(newCards, firstIdx, secondIdx);
@@ -184,6 +185,32 @@ export default function GentlePairsScreen() {
     }
   };
 
+  const pauseGame = () => {
+    if (gameState === "PLAYING") {
+      setGameState("PAUSED");
+    }
+  };
+
+  const resumeGame = () => {
+    if (gameState === "PAUSED") {
+      setGameState("PLAYING");
+    }
+  };
+
+  const restartGame = () => {
+    startGame();
+  };
+
+  const quitGame = () => {
+    router.replace("/wellness-tools");
+  };
+
+  const formatTime = (secs: number) => {
+    const mins = Math.floor(secs / 60);
+    const rem = secs % 60;
+    return mins > 0 ? `${mins}m ${rem < 10 ? "0" : ""}${rem}s` : `${rem}s`;
+  };
+
   const confirmExit = () => {
     setShowExitPrompt(true);
   };
@@ -210,11 +237,24 @@ export default function GentlePairsScreen() {
   return (
     <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
       <View style={styles.topBar}>
-        <Pressable onPress={confirmExit} style={styles.backButton} accessibilityLabel="Leave Gentle Pairs">
-          <Ionicons name="chevron-back" size={28} color="#33475C" />
+        <Pressable
+          onPress={() => {
+            if (gameState === "PLAYING") pauseGame();
+            else quitGame();
+          }}
+          style={styles.backButton}
+          accessibilityLabel="Back"
+        >
+          <Ionicons name="chevron-back" size={26} color="#33475C" />
         </Pressable>
         <Text style={styles.topTitle}>Gentle Pairs</Text>
-        <View style={styles.topBarSpacer} />
+        {gameState === "PLAYING" ? (
+          <Pressable onPress={pauseGame} style={styles.pauseButton} accessibilityLabel="Pause Game">
+            <Ionicons name="pause-circle-outline" size={26} color="#33475C" />
+          </Pressable>
+        ) : (
+          <View style={styles.topBarSpacer} />
+        )}
       </View>
 
       <View style={[styles.contentFrame, { width: appWidth }]}>
@@ -231,7 +271,7 @@ export default function GentlePairsScreen() {
           </View>
         )}
 
-        {gameState === "PLAYING" && (
+        {(gameState === "PLAYING" || gameState === "PAUSED") && (
           <View style={styles.gameWrapper}>
             <View style={styles.hud}>
               <View style={styles.hudRow}>
@@ -244,8 +284,8 @@ export default function GentlePairsScreen() {
                 <Text style={styles.progressText}>MOVES {moves}</Text>
               </View>
               <View style={styles.timerTrack}>
-                <View style={[styles.timerFill, { width: `${(timeLeft / ROUND_TIME) * 100}%`, backgroundColor: timeLeft <= 10 ? "#D9685C" : "#35A99A" }]} />
-                <Text style={styles.timerText}>{timeLeft}s</Text>
+                <View style={[styles.timerFill, { width: `${(timeLeft / ROUND_TIME) * 100}%`, backgroundColor: timeLeft <= 15 ? "#E9A844" : "#35A99A" }]} />
+                <Text style={styles.timerText}>⏱️ {formatTime(timeLeft)}</Text>
               </View>
             </View>
 
@@ -307,6 +347,33 @@ export default function GentlePairsScreen() {
           </View>
         )}
       </View>
+      {/* Unified Pause State Modal */}
+      {gameState === "PAUSED" && (
+        <View style={styles.pauseOverlay}>
+          <View style={styles.pauseCard}>
+            <View style={styles.pauseIconCircle}>
+              <Ionicons name="pause" size={28} color="#35A99A" />
+            </View>
+            <Text style={styles.pauseTitle}>Game Paused</Text>
+            <Text style={styles.pauseSub}>Take a gentle breath, Muni is resting with you.</Text>
+
+            <Pressable style={styles.pauseBtnResume} onPress={resumeGame}>
+              <Ionicons name="play" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={styles.pauseBtnResumeText}>Resume</Text>
+            </Pressable>
+
+            <Pressable style={styles.pauseBtnRestart} onPress={restartGame}>
+              <Ionicons name="refresh" size={18} color="#33475C" style={{ marginRight: 8 }} />
+              <Text style={styles.pauseBtnRestartText}>Restart</Text>
+            </Pressable>
+
+            <Pressable style={styles.pauseBtnQuit} onPress={quitGame}>
+              <Ionicons name="exit-outline" size={18} color="#C45C5C" style={{ marginRight: 8 }} />
+              <Text style={styles.pauseBtnQuitText}>Quit Game</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -365,4 +432,71 @@ const styles = StyleSheet.create({
   exitStay: { paddingHorizontal: 16, paddingVertical: 11, borderRadius: 12, backgroundColor: "#E6ECF1" },
   exitStayText: { color: "#33475C", fontFamily: "Outfit-Bold" },
   exitLeave: { paddingHorizontal: 16, paddingVertical: 11, borderRadius: 12, backgroundColor: "#B75252" },
-  exitLeaveText: { color: "#FFFFFF", fontFamily: "Outfit-Bold" }});
+  exitLeaveText: { color: "#FFFFFF", fontFamily: "Outfit-Bold" },
+  pauseButton: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
+  pauseOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(22, 36, 44, 0.55)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 10000,
+    padding: 20,
+  },
+  pauseCard: {
+    width: "100%",
+    maxWidth: 320,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 24,
+    alignItems: "center",
+    shadowColor: "#102028",
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  pauseIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#EAF6F4",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  pauseTitle: { fontSize: 22, fontFamily: "Outfit-Bold", color: "#33475C", marginBottom: 6 },
+  pauseSub: { fontSize: 14, color: "#607181", textAlign: "center", marginBottom: 22, lineHeight: 19 },
+  pauseBtnResume: {
+    width: "100%",
+    flexDirection: "row",
+    backgroundColor: "#35A99A",
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+    shadowColor: "#35A99A",
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  pauseBtnResumeText: { color: "#FFFFFF", fontSize: 15, fontFamily: "Outfit-Bold" },
+  pauseBtnRestart: {
+    width: "100%",
+    flexDirection: "row",
+    backgroundColor: "#F0F4F8",
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  pauseBtnRestartText: { color: "#33475C", fontSize: 15, fontFamily: "Outfit-Bold" },
+  pauseBtnQuit: {
+    width: "100%",
+    flexDirection: "row",
+    paddingVertical: 11,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pauseBtnQuitText: { color: "#C45C5C", fontSize: 14, fontFamily: "Outfit-SemiBold" },
+});

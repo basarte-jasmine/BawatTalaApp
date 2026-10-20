@@ -43,7 +43,7 @@ const FRUITS = [
 
 export default function FruitCatcherScreen() {
   const { user } = useAuthSession();
-  const [gameState, setGameState] = useState<'start' | 'playing' | 'gameover'>('start');
+  const [gameState, setGameState] = useState<'start' | 'playing' | 'paused' | 'gameover'>('start');
   const [score, setScore] = useState(0);
   const [level, setLevel] = useState(1);
   const [hearts, setHearts] = useState(3);
@@ -84,8 +84,8 @@ export default function FruitCatcherScreen() {
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponder: () => gameState === "playing",
+      onMoveShouldSetPanResponder: () => gameState === "playing",
       onPanResponderGrant: () => {
         dragStartX.current = basketXValue.current;
       },
@@ -139,9 +139,9 @@ export default function FruitCatcherScreen() {
     const deltaTime = time - lastTimeRef.current;
     lastTimeRef.current = time;
 
-    const baseSpeed = 0.15 + level * 0.03;
-    const spawnRate = Math.max(400, 1500 - level * 150);
-    const shellProbability = Math.min(0.35, 0.1 + level * 0.05);
+    const baseSpeed = 0.08 + Math.min(level, 5) * 0.01;
+    const spawnRate = Math.max(900, 2000 - Math.min(level, 6) * 120);
+    const shellProbability = Math.min(0.20, 0.05 + level * 0.02);
 
     if (gameWidth.current <= 0 || gameHeight.current <= 0) {
       requestRef.current = requestAnimationFrame(gameLoop);
@@ -281,6 +281,26 @@ export default function FruitCatcherScreen() {
     basketX.setValue(centeredX);
   };
 
+  const pauseGame = () => {
+    if (gameState === 'playing') {
+      setGameState('paused');
+    }
+  };
+
+  const resumeGame = () => {
+    if (gameState === 'paused') {
+      setGameState('playing');
+    }
+  };
+
+  const restartGame = () => {
+    startGame();
+  };
+
+  const quitGame = () => {
+    router.replace('/wellness-tools');
+  };
+
   const confirmExit = () => {
     setShowExitPrompt(true);
   };
@@ -295,14 +315,27 @@ export default function FruitCatcherScreen() {
       <Image source={ASSETS.beach} style={styles.background} contentFit="cover" />
       
       <View style={styles.topBar}>
-        <Pressable onPress={confirmExit} style={styles.backButton} accessibilityLabel="Leave Fruit Catcher">
-          <Ionicons name="chevron-back" size={28} color="#FFFFFF" />
+        <Pressable
+          onPress={() => {
+            if (gameState === 'playing') pauseGame();
+            else quitGame();
+          }}
+          style={styles.backButton}
+          accessibilityLabel="Back"
+        >
+          <Ionicons name="chevron-back" size={26} color="#FFFFFF" />
         </Pressable>
         <Text style={styles.topTitle}>Fruit Catcher</Text>
-        <View style={styles.backButton} />
+        {gameState === 'playing' ? (
+          <Pressable onPress={pauseGame} style={styles.pauseButton} accessibilityLabel="Pause Game">
+            <Ionicons name="pause-circle-outline" size={26} color="#FFFFFF" />
+          </Pressable>
+        ) : (
+          <View style={styles.pausePlaceholder} />
+        )}
       </View>
 
-      {(gameState === "playing" || gameState === "gameover") && (
+      {(gameState === "playing" || gameState === "paused" || gameState === "gameover") && (
         <View style={styles.hud}>
           <View style={styles.hudRow}>
             <Text style={styles.scoreText}>SCORE: {score}</Text>
@@ -389,6 +422,33 @@ export default function FruitCatcherScreen() {
           </View>
         </View>
       )}
+      {/* Unified Pause State Modal */}
+      {gameState === 'paused' && (
+        <View style={styles.pauseOverlay}>
+          <View style={styles.pauseCard}>
+            <View style={styles.pauseIconCircle}>
+              <Ionicons name="pause" size={28} color="#4F8A38" />
+            </View>
+            <Text style={styles.pauseTitle}>Game Paused</Text>
+            <Text style={styles.pauseSub}>Take a gentle breath, Muni is resting with you.</Text>
+
+            <Pressable style={styles.pauseBtnResume} onPress={resumeGame}>
+              <Ionicons name="play" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={styles.pauseBtnResumeText}>Resume</Text>
+            </Pressable>
+
+            <Pressable style={styles.pauseBtnRestart} onPress={restartGame}>
+              <Ionicons name="refresh" size={18} color="#33475C" style={{ marginRight: 8 }} />
+              <Text style={styles.pauseBtnRestartText}>Restart</Text>
+            </Pressable>
+
+            <Pressable style={styles.pauseBtnQuit} onPress={quitGame}>
+              <Ionicons name="exit-outline" size={18} color="#C45C5C" style={{ marginRight: 8 }} />
+              <Text style={styles.pauseBtnQuitText}>Quit Game</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -429,4 +489,72 @@ const styles = StyleSheet.create({
   exitStay: { paddingHorizontal: 16, paddingVertical: 11, borderRadius: 12, backgroundColor: "#E6ECF1" },
   exitStayText: { color: "#33475C", fontFamily: "Outfit-Bold" },
   exitLeave: { paddingHorizontal: 16, paddingVertical: 11, borderRadius: 12, backgroundColor: "#B75252" },
-  exitLeaveText: { color: "#FFFFFF", fontFamily: "Outfit-Bold" }});
+  exitLeaveText: { color: "#FFFFFF", fontFamily: "Outfit-Bold" },
+  pauseButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  pausePlaceholder: { width: 44, height: 44 },
+  pauseOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(22, 36, 44, 0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10000,
+    padding: 20,
+  },
+  pauseCard: {
+    width: '100%',
+    maxWidth: 320,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#102028',
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  pauseIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#EDF5FD',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  pauseTitle: { fontSize: 22, fontFamily: 'Outfit-Bold', color: '#33475C', marginBottom: 6 },
+  pauseSub: { fontSize: 14, color: '#607181', textAlign: 'center', marginBottom: 22, lineHeight: 19 },
+  pauseBtnResume: {
+    width: '100%',
+    flexDirection: 'row',
+    backgroundColor: '#4F8A38',
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+    shadowColor: '#4F8A38',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  pauseBtnResumeText: { color: '#FFFFFF', fontSize: 15, fontFamily: 'Outfit-Bold' },
+  pauseBtnRestart: {
+    width: '100%',
+    flexDirection: 'row',
+    backgroundColor: '#F0F4F8',
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  pauseBtnRestartText: { color: '#33475C', fontSize: 15, fontFamily: 'Outfit-Bold' },
+  pauseBtnQuit: {
+    width: '100%',
+    flexDirection: 'row',
+    paddingVertical: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pauseBtnQuitText: { color: '#C45C5C', fontSize: 14, fontFamily: 'Outfit-SemiBold' },
+});

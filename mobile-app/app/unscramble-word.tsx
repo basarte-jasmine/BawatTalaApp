@@ -13,13 +13,14 @@ import {
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { claimMiniResetReward } from "../lib/backend-api";
+import { WORD_DESCRIPTIONS } from "../lib/word-descriptions";
 import { getGameScore, saveGameScore } from "../lib/game-scores";
 
 const COVER = require("../assets/images/Mini Reset/Unscramble Word/Unscramble Word Cover.webp"); 
 
-type GameState = "START" | "PLAYING" | "GAMEOVER";
+type GameState = "START" | "PLAYING" | "PAUSED" | "GAMEOVER";
 
-const INITIAL_TIME = 45;
+const INITIAL_TIME = 120;
 
 const WORDS_EASY = [
   "AIR", "ART", "AURA", "BEAM", "CALM", "CARE", "COZY", "DAWN", "DEEP", "DOVE", 
@@ -122,6 +123,29 @@ export default function UnscrambleWordScreen() {
     setAnswerSlots([]);
   };
 
+  const pauseGame = () => {
+    if (gameState === "PLAYING") {
+      setGameState("PAUSED");
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+  };
+
+  const resumeGame = () => {
+    if (gameState === "PAUSED") {
+      setGameState("PLAYING");
+    }
+  };
+
+  const restartGame = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    startGame();
+  };
+
+  const quitGame = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    router.replace("/wellness-tools");
+  };
+
   const startGame = () => {
     setGameState("PLAYING");
     setScore(0);
@@ -206,7 +230,7 @@ export default function UnscrambleWordScreen() {
       setLevel(newLevel);
       setCombo(c => c + 1);
       
-      const timeBonus = Math.max(2, currentWord.length - Math.floor(newLevel / 5));
+      const timeBonus = 15;
       setTimeLeft(t => Math.min(t + timeBonus, 99));
 
       setTimeout(() => {
@@ -226,6 +250,12 @@ export default function UnscrambleWordScreen() {
     }
   };
 
+  const formatTime = (secs: number) => {
+    const mins = Math.floor(secs / 60);
+    const rem = secs % 60;
+    return mins > 0 ? `${mins}m ${rem < 10 ? "0" : ""}${rem}s` : `${rem}s`;
+  };
+
   const confirmExit = () => {
     if (gameState === "PLAYING") {
       setShowExitPrompt(true);
@@ -237,7 +267,24 @@ export default function UnscrambleWordScreen() {
   return (
     <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
       <View style={styles.topBar}>
+        <Pressable
+          onPress={() => {
+            if (gameState === "PLAYING") pauseGame();
+            else quitGame();
+          }}
+          style={styles.backButton}
+          accessibilityLabel="Back"
+        >
+          <Ionicons name="chevron-back" size={26} color="#33475C" />
+        </Pressable>
         <Text style={styles.topTitle}>Unscramble Word</Text>
+        {gameState === "PLAYING" ? (
+          <Pressable onPress={pauseGame} style={styles.pauseButton} accessibilityLabel="Pause Game">
+            <Ionicons name="pause-circle-outline" size={26} color="#33475C" />
+          </Pressable>
+        ) : (
+          <View style={styles.pausePlaceholder} />
+        )}
       </View>
 
       <View style={[styles.contentFrame, { width: appWidth }]}>
@@ -253,7 +300,7 @@ export default function UnscrambleWordScreen() {
           </View>
         )}
 
-        {gameState === "PLAYING" && (
+        {(gameState === "PLAYING" || gameState === "PAUSED") && (
           <View style={styles.gameWrapper}>
             <View style={styles.hud}>
               <View style={styles.hudRow}>
@@ -261,25 +308,34 @@ export default function UnscrambleWordScreen() {
                 <Text style={styles.levelText}>LEVEL: {level}</Text>
               </View>
               <View style={styles.timeBarContainer}>
-                <View style={[styles.timeBarFill, { width: `${Math.min((timeLeft / INITIAL_TIME) * 100, 100)}%`, backgroundColor: timeLeft < 10 ? "#E76F51" : "#4A90E2" }]} />
-                <Text style={styles.timeText}>{timeLeft}s</Text>
+                <View style={[styles.timeBarFill, { width: `${Math.min((timeLeft / INITIAL_TIME) * 100, 100)}%`, backgroundColor: timeLeft < 15 ? "#E9A844" : "#4A90E2" }]} />
+                <Text style={styles.timeText}>⏱️ {formatTime(timeLeft)}</Text>
               </View>
               {combo > 1 && <Text style={styles.comboText}>COMBO x{combo}</Text>}
             </View>
 
             <View style={styles.gameArea}>
+              {/* Word Description */}
+              <View style={styles.hintCard}>
+                <View style={styles.hintHeader}>
+                  <Ionicons name="sparkles" size={14} color="#4A90E2" />
+                  <Text style={styles.hintLabel}>WORD MEANING</Text>
+                </View>
+                <Text style={styles.hintText}>{WORD_DESCRIPTIONS[currentWord] || "A mindful island word to restore calm."}</Text>
+              </View>
               <Text style={styles.instruction}>Tap letters to build the word</Text>
 
               <Animated.View style={[styles.answerContainer, { transform: [{ translateX: shakeAnim }] }]}>
                 {Array.from({ length: currentWord.length }).map((_, i) => {
                   const ans = answerSlots[i];
+                  const isCorrectPosition = ans && ans.char === currentWord[i];
                   return (
                     <Pressable
                       key={`slot_${i}`}
                       onPress={() => ans ? handleAnswerPress(ans, i) : null}
-                      style={[styles.answerSlot, ans ? styles.answerSlotFilled : null, isError && styles.answerSlotError]}
+                      style={[styles.answerSlot, ans ? styles.answerSlotFilled : null, isCorrectPosition ? styles.answerSlotCorrect : null, isError && styles.answerSlotError]}
                     >
-                      <Text style={styles.answerText}>{ans ? ans.char : ""}</Text>
+                      <Text style={[styles.answerText, isCorrectPosition && styles.answerTextCorrect]}>{ans ? ans.char : ""}</Text>
                     </Pressable>
                   );
                 })}
@@ -342,9 +398,33 @@ export default function UnscrambleWordScreen() {
         </View>
       )}
 
-      <Pressable onPress={confirmExit} style={styles.backButton} accessibilityLabel="Leave Unscramble Word">
-        <Ionicons name="chevron-back" size={28} color="#33475C" />
-      </Pressable>
+            {/* Unified Pause State Modal */}
+      {gameState === "PAUSED" && (
+        <View style={styles.pauseOverlay}>
+          <View style={styles.pauseCard}>
+            <View style={styles.pauseIconCircle}>
+              <Ionicons name="pause" size={28} color="#4A90E2" />
+            </View>
+            <Text style={styles.pauseTitle}>Game Paused</Text>
+            <Text style={styles.pauseSub}>Take a gentle breath, Muni is resting with you.</Text>
+
+            <Pressable style={styles.pauseBtnResume} onPress={resumeGame}>
+              <Ionicons name="play" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={styles.pauseBtnResumeText}>Resume</Text>
+            </Pressable>
+
+            <Pressable style={styles.pauseBtnRestart} onPress={restartGame}>
+              <Ionicons name="refresh" size={18} color="#33475C" style={{ marginRight: 8 }} />
+              <Text style={styles.pauseBtnRestartText}>Restart</Text>
+            </Pressable>
+
+            <Pressable style={styles.pauseBtnQuit} onPress={quitGame}>
+              <Ionicons name="exit-outline" size={18} color="#C45C5C" style={{ marginRight: 8 }} />
+              <Text style={styles.pauseBtnQuitText}>Quit Game</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -407,4 +487,98 @@ const styles = StyleSheet.create({
   exitStay: { flex: 1, backgroundColor: "#EAEFE8", paddingVertical: 14, borderRadius: 12, alignItems: "center" },
   exitStayText: { color: "#4D6558", fontSize: 16, fontFamily: "Outfit-Bold" },
   exitLeave: { flex: 1, backgroundColor: "#E76F51", paddingVertical: 14, borderRadius: 12, alignItems: "center" },
-  exitLeaveText: { color: "#FFFFFF", fontSize: 16, fontFamily: "Outfit-Bold" }});
+  exitLeaveText: { color: "#FFFFFF", fontSize: 16, fontFamily: "Outfit-Bold" },
+  pauseButton: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
+  pausePlaceholder: { width: 40, height: 40 },
+  hintCard: {
+    backgroundColor: "#EAF2FA",
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "#D3E4F6",
+    width: "100%",
+    maxWidth: 360,
+    alignItems: "center",
+  },
+  hintHeader: { flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 4 },
+  hintLabel: { color: "#3B6E9B", fontSize: 11, fontFamily: "Outfit-Bold", letterSpacing: 0.8 },
+  hintText: { color: "#2B4C6A", fontSize: 14, fontFamily: "Outfit-Medium", textAlign: "center", lineHeight: 19 },
+  answerSlotCorrect: {
+    borderColor: "#3EA658",
+    borderWidth: 2.5,
+    backgroundColor: "#EDF8F0",
+    borderStyle: "solid",
+    shadowColor: "#3EA658",
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  answerTextCorrect: { color: "#2E7D42" },
+  pauseOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(22, 36, 44, 0.55)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 10000,
+    padding: 20,
+  },
+  pauseCard: {
+    width: "100%",
+    maxWidth: 320,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 24,
+    alignItems: "center",
+    shadowColor: "#102028",
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  pauseIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#EDF5FD",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  pauseTitle: { fontSize: 22, fontFamily: "Outfit-Bold", color: "#33475C", marginBottom: 6 },
+  pauseSub: { fontSize: 14, color: "#607181", textAlign: "center", marginBottom: 22, lineHeight: 19 },
+  pauseBtnResume: {
+    width: "100%",
+    flexDirection: "row",
+    backgroundColor: "#4A90E2",
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+    shadowColor: "#4A90E2",
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  pauseBtnResumeText: { color: "#FFFFFF", fontSize: 15, fontFamily: "Outfit-Bold" },
+  pauseBtnRestart: {
+    width: "100%",
+    flexDirection: "row",
+    backgroundColor: "#F0F4F8",
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  pauseBtnRestartText: { color: "#33475C", fontSize: 15, fontFamily: "Outfit-Bold" },
+  pauseBtnQuit: {
+    width: "100%",
+    flexDirection: "row",
+    paddingVertical: 11,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pauseBtnQuitText: { color: "#C45C5C", fontSize: 14, fontFamily: "Outfit-SemiBold" },
+});
