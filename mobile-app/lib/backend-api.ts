@@ -2705,15 +2705,22 @@ export async function fetchMuniWardrobe(
     totalTala?: number;
   }
 > {
-  const params = new URLSearchParams({ studentNumber });
-  const { response, data } = await get(`/api/muni/wardrobe?${params.toString()}`);
-  return {
-    ok: response.ok,
-    message: data?.message,
-    loadout: data?.loadout,
-    ownedItems: data?.ownedItems,
-    totalTala: typeof data?.totalTala === "number" ? data.totalTala : undefined,
-  };
+  try {
+    const params = new URLSearchParams({ studentNumber });
+    const { response, data } = await get("/api/muni/wardrobe?" + params.toString());
+    return {
+      ok: response.ok,
+      message: data?.message,
+      loadout: data?.loadout,
+      ownedItems: data?.ownedItems,
+      totalTala: typeof data?.totalTala === "number" ? data.totalTala : undefined,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "Failed to fetch wardrobe.",
+    };
+  }
 }
 
 export async function purchaseMuniWardrobeItem(payload: {
@@ -2729,14 +2736,21 @@ export async function purchaseMuniWardrobeItem(payload: {
     totalTala?: number;
   }
 > {
-  const { response, data } = await post("/api/muni/purchase", payload);
-  return {
-    ok: response.ok,
-    message: data?.message,
-    loadout: data?.loadout,
-    ownedItems: data?.ownedItems,
-    totalTala: typeof data?.totalTala === "number" ? data.totalTala : undefined,
-  };
+  try {
+    const { response, data } = await post("/api/muni/purchase", payload);
+    return {
+      ok: response.ok,
+      message: data?.message,
+      loadout: data?.loadout,
+      ownedItems: data?.ownedItems,
+      totalTala: typeof data?.totalTala === "number" ? data.totalTala : undefined,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "Failed to purchase wardrobe item.",
+    };
+  }
 }
 
 export async function saveMuniLoadoutRemote(payload: {
@@ -2749,15 +2763,23 @@ export async function saveMuniLoadoutRemote(payload: {
     totalTala?: number;
   }
 > {
-  const { response, data } = await patch("/api/muni/loadout", payload);
-  return {
-    ok: response.ok,
-    message: data?.message,
-    loadout: data?.loadout,
-    ownedItems: data?.ownedItems,
-    totalTala: typeof data?.totalTala === "number" ? data.totalTala : undefined,
-  };
+  try {
+    const { response, data } = await patch("/api/muni/loadout", payload);
+    return {
+      ok: response.ok,
+      message: data?.message,
+      loadout: data?.loadout,
+      ownedItems: data?.ownedItems,
+      totalTala: typeof data?.totalTala === "number" ? data.totalTala : undefined,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "Failed to save wardrobe loadout.",
+    };
+  }
 }
+
 
 export async function fetchCheckInStatus(
   studentNumber: string,

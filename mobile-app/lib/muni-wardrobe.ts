@@ -416,21 +416,25 @@ export async function hydrateMuniWardrobe(studentNumber: string) {
     notifyAll(existing);
     // Refresh remotely in the background so wardrobe UI is not blocked on network.
     void (async () => {
-      // Push a look chosen offline as soon as the connection returns.
-      if (existing.pendingLoadout) {
-        const saved = await saveMuniLoadoutRemote({
-          loadout: existing.pendingLoadout,
-          studentNumber: nextStudent,
-        });
-        if (saved.ok) {
-          existing.pendingLoadout = null;
+      try {
+        // Push a look chosen offline as soon as the connection returns.
+        if (existing.pendingLoadout) {
+          const saved = await saveMuniLoadoutRemote({
+            loadout: existing.pendingLoadout,
+            studentNumber: nextStudent,
+          });
+          if (saved.ok) {
+            existing.pendingLoadout = null;
+          }
         }
+        const result = await fetchMuniWardrobe(nextStudent);
+        if (!result.ok || activeStudentNumber !== nextStudent) {
+          return;
+        }
+        applyRemoteWardrobe(result);
+      } catch {
+        // Offline or background network failure
       }
-      const result = await fetchMuniWardrobe(nextStudent);
-      if (!result.ok || activeStudentNumber !== nextStudent) {
-        return;
-      }
-      applyRemoteWardrobe(result);
     })();
     return existing;
   }
@@ -441,12 +445,16 @@ export async function hydrateMuniWardrobe(studentNumber: string) {
   wardrobeByStudent.set(nextStudent, initialState);
   hydratedStudentNumber = nextStudent;
   notifyAll(initialState);
-  void fetchMuniWardrobe(nextStudent).then((result) => {
-    if (!result.ok || activeStudentNumber !== nextStudent) {
-      return;
-    }
-    applyRemoteWardrobe(result);
-  });
+  void fetchMuniWardrobe(nextStudent)
+    .then((result) => {
+      if (!result.ok || activeStudentNumber !== nextStudent) {
+        return;
+      }
+      applyRemoteWardrobe(result);
+    })
+    .catch(() => {
+      // Offline or background network failure
+    });
   return initialState;
 }
 
