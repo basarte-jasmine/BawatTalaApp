@@ -28,7 +28,7 @@ type MiniResetItem = {
 type FeaturedGame = {
   description: string;
   duration: string;
-  id: "fruit-catcher" | "image-puzzle" | "munis-arrival" | "gentle-pairs" | "unscramble-word";
+  id: "fruit-catcher" | "image-puzzle" | "gentle-pairs" | "unscramble-word";
   image: number;
   label: string;
   title: string;
@@ -91,13 +91,6 @@ const FEATURED_GAMES: FeaturedGame[] = [
     description: "Catch the good things and keep an eye out for shells.",
     duration: "Endless",
     image: require("../assets/images/Mini Reset/Fruit Catcher/Fruit Catcher Cover.webp")},
-  {
-    id: "munis-arrival",
-    title: "Muni's Arrival",
-    label: "Flow state",
-    description: "Guide the unconscious Muni. Be the gentle current guiding Muni s raft.",
-    duration: "Endless",
-    image: require("../assets/images/Mini Reset/Muni's Arrival/Muni's Arrival Cover.webp")},
 ];
 
 export default function WellnessToolsScreen() {

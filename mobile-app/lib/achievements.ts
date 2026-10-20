@@ -19,7 +19,10 @@ export async function unlockAchievement(achievementId: string, studentNumber?: s
   }
   if (result.ok || result.alreadyUnlocked) {
     try {
-      await AsyncStorage.setItem(`@bawat-tala/achievement:${achievementId}:${studentNumber}`, "true");
+      const existing = await AsyncStorage.getItem(`@bawat-tala/achievement:${achievementId}:${studentNumber}`);
+      if (!existing) {
+        await AsyncStorage.setItem(`@bawat-tala/achievement:${achievementId}:${studentNumber}`, Date.now().toString());
+      }
       if (result.ok && !result.alreadyUnlocked) {
         const title = "Achievement Unlocked!";
         const body = result.message || "You earned a new achievement.";

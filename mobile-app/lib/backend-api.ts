@@ -2557,7 +2557,12 @@ export async function syncPendingAchievements(studentNumber: string): Promise<bo
     for (const achievementId of list) {
       try {
         const result = await claimAchievementReward(achievementId);
-        if (!(result.ok || result.alreadyUnlocked)) {
+        if (result.ok || result.alreadyUnlocked) {
+          const existing = await AsyncStorage.getItem("@bawat-tala/achievement:" + achievementId + ":" + sn);
+          if (!existing) {
+            await AsyncStorage.setItem("@bawat-tala/achievement:" + achievementId + ":" + sn, Date.now().toString());
+          }
+        } else {
           remaining.push(achievementId);
         }
       } catch {
@@ -2572,6 +2577,21 @@ export async function syncPendingAchievements(studentNumber: string): Promise<bo
     return false;
   } catch {
     return false;
+  }
+}
+
+export async function getStudentAchievements(): Promise<{
+  ok: boolean;
+  achievements?: Array<{ id: string; title: string; rewardTala: number; unlockedAt?: string }>;
+}> {
+  try {
+    const { response, data } = await get("/api/wellness/achievements");
+    return {
+      ok: response.ok,
+      achievements: Array.isArray(data?.achievements) ? data.achievements : [],
+    };
+  } catch {
+    return { ok: false, achievements: [] };
   }
 }
 

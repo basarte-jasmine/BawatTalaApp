@@ -5,7 +5,7 @@ const { requireStudentOnlyAuth, resolveStudentNumber } = require("../middleware/
 const router = express.Router();
 router.use(requireStudentOnlyAuth);
 const DAILY_TALA_CAP = 12;
-const ACTIVITY_IDS = new Set(["memory", "pattern", "recall", "words", "odd", "numbers", "match", "count", "color", "fruit-catcher", "image-puzzle", "munis-arrival", "gentle-pairs", "unscramble-word"]);
+const ACTIVITY_IDS = new Set(["memory", "pattern", "recall", "words", "odd", "numbers", "match", "count", "color", "fruit-catcher", "image-puzzle", "gentle-pairs", "unscramble-word"]);
 const ACHIEVEMENTS = new Map([
   ["future-bottle", { title: "A Bottle for Tomorrow", rewardTala: 10, message: "Congratulations! You sent a message toward your future.", trivia: "Muni says the island keeps every hopeful message until the right tide carries it onward." }],
   ["seven-little-stars", { title: "Seven Little Stars", rewardTala: 15, message: "Congratulations! You completed seven daily check-ins.", trivia: "Muni remembers falling through the night sky by following seven small stars toward the island." }],
@@ -18,6 +18,32 @@ const ACHIEVEMENTS = new Map([
   ["star-shopper", { title: "Star Shopper", rewardTala: 10, message: "Congratulations! You spent Tala in the Muni shop for the first time.", trivia: "Muni collects bright things because they remind it of the sky it crossed before reaching the island." }],
   ["found-the-right-time", { title: "Found the Right Time", rewardTala: 10, message: "Congratulations! You found the right time for a support session.", trivia: "Muni says the island has many tides, and asking for help is one way to find the gentlest one." }],
 ]);
+
+router.get("/achievements", async (req, res) => {
+  const studentNumber = String(resolveStudentNumber(req) || "").trim();
+  if (!/^\d{2}-\d{4}$/.test(studentNumber)) {
+    return res.status(400).json({ message: "Invalid student number." });
+  }
+  try {
+    const result = await query(
+      `select achievement_id, achievement_title, reward_tala, unlocked_at
+       from public.student_achievements
+       where student_number = $1
+       order by unlocked_at desc`,
+      [studentNumber]
+    );
+    return res.json({
+      achievements: result.rows.map((r) => ({
+        id: r.achievement_id,
+        title: r.achievement_title,
+        rewardTala: r.reward_tala,
+        unlockedAt: r.unlocked_at,
+      })),
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message || "Failed to fetch achievements." });
+  }
+});
 
 router.post("/achievement-reward", async (req, res) => {
   const studentNumber = String(resolveStudentNumber(req) || "").trim();
@@ -87,10 +113,8 @@ router.post("/mini-reset-reward", async (req, res) => {
       ? Math.max(1, Math.floor(score / 25))
       : activityId === "image-puzzle"
         ? Math.max(1, Math.floor(score / 30))
-        : activityId === "munis-arrival"
-          ? Math.max(1, Math.floor(distance / 20) + Math.floor(leaves / 3))
-          : activityId === "gentle-pairs"
-            ? Math.max(1, Math.floor(score / 50) + rounds)
+        : activityId === "gentle-pairs"
+          ? Math.max(1, Math.floor(score / 50) + rounds)
             : activityId === "unscramble-word"
               ? Math.max(1, Math.floor(score / 40) + Math.max(0, level - 1))
               : 1;
