@@ -28,7 +28,7 @@ type MiniResetItem = {
 type FeaturedGame = {
   description: string;
   duration: string;
-  id: "fruit-catcher" | "image-puzzle" | "gentle-pairs" | "unscramble-word";
+  id: "fruit-catcher" | "image-puzzle" | "gentle-pairs" | "unscramble-word" | "galaxy-fall";
   image: number;
   label: string;
   title: string;
@@ -84,6 +84,13 @@ const FEATURED_GAMES: FeaturedGame[] = [
     description: "Rebuild a bright little scene, one piece at a time.",
     duration: "2-5 min",
     image: require("../assets/images/Mini Reset/Puzzle/Muni Puzzle Cover.webp")},
+  {
+    id: "galaxy-fall",
+    title: "Galaxy Fall",
+    label: "Cosmic Drift",
+    description: "Fall through the starry galaxy. Collect Tala Coins while floating past meteors.",
+    duration: "1 min",
+    image: require("../assets/images/Mini Reset/Galaxy Fall/cover.webp")},
   {
     id: "fruit-catcher",
     title: "Fruit Catcher",
