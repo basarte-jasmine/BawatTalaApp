@@ -130,6 +130,7 @@ export default function RootLayout() {
                 <Stack.Screen name="muni-avatar" options={getNavigationAnimationConfig("muni-avatar")} />
                 <Stack.Screen name="muni-voice" options={getNavigationAnimationConfig("muni-voice")} />
                 <Stack.Screen name="galaxy-fall" options={{ ...getNavigationAnimationConfig("default"), gestureEnabled: false, fullScreenGestureEnabled: false }} />
+                <Stack.Screen name="muni-match" options={getNavigationAnimationConfig("default")} />
               </Stack>
             </OfflineSyncProvider>
             </AppErrorBoundary>

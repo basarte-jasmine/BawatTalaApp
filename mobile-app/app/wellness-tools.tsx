@@ -28,7 +28,7 @@ type MiniResetItem = {
 type FeaturedGame = {
   description: string;
   duration: string;
-  id: "fruit-catcher" | "image-puzzle" | "gentle-pairs" | "unscramble-word" | "galaxy-fall";
+  id: "fruit-catcher" | "image-puzzle" | "gentle-pairs" | "unscramble-word" | "galaxy-fall" | "muni-match";
   image: number;
   label: string;
   title: string;
@@ -84,6 +84,13 @@ const FEATURED_GAMES: FeaturedGame[] = [
     description: "Rebuild a bright little scene, one piece at a time.",
     duration: "2-5 min",
     image: require("../assets/images/Mini Reset/Puzzle/Muni Puzzle Cover.webp")},
+  {
+    id: "muni-match",
+    title: "Muni Match",
+    label: "Color Match",
+    description: "Tap groups of matching Munis to clear them and collect Tala Coins.",
+    duration: "1.5 min",
+    image: require("../assets/images/Mini Reset/Muni Match/cover.webp")},
   {
     id: "galaxy-fall",
     title: "Galaxy Fall",

@@ -5,7 +5,7 @@ const { requireStudentOnlyAuth, resolveStudentNumber } = require("../middleware/
 const router = express.Router();
 router.use(requireStudentOnlyAuth);
 const DAILY_TALA_CAP = 12;
-const ACTIVITY_IDS = new Set(["memory", "pattern", "recall", "words", "odd", "numbers", "match", "count", "color", "fruit-catcher", "image-puzzle", "gentle-pairs", "unscramble-word", "galaxy-fall"]);
+const ACTIVITY_IDS = new Set(["memory", "pattern", "recall", "words", "odd", "numbers", "match", "count", "color", "fruit-catcher", "image-puzzle", "gentle-pairs", "unscramble-word", "galaxy-fall", "muni-match"]);
 const ACHIEVEMENTS = new Map([
   ["future-bottle", { title: "A Bottle for Tomorrow", rewardTala: 10, message: "Congratulations! You sent a message toward your future.", trivia: "Muni says the island keeps every hopeful message until the right tide carries it onward." }],
   ["seven-little-stars", { title: "Seven Little Stars", rewardTala: 15, message: "Congratulations! You completed seven daily check-ins.", trivia: "Muni remembers falling through the night sky by following seven small stars toward the island." }],
@@ -119,7 +119,9 @@ router.post("/mini-reset-reward", async (req, res) => {
               ? Math.max(1, Math.floor(score / 40) + Math.max(0, level - 1))
               : activityId === "galaxy-fall"
                 ? Math.max(1, Math.min(Math.floor(score / 3), 12))
-                : 1;
+                : activityId === "muni-match"
+                  ? Math.max(1, Math.min(Math.floor(score / 3), 12))
+                  : 1;
     const rewardTala = Math.max(0, Math.min(calculatedReward, DAILY_TALA_CAP - claimedToday));
     const saved = await query(`insert into public.student_wellness_game_rewards (student_number, round_key, activity_id, level, reward_tala) values ($1,$2,$3,$4,$5) on conflict (student_number, round_key) do nothing returning reward_tala`, [studentNumber, roundKey, activityId, level, rewardTala]);
     if (!saved.rowCount) return res.status(409).json({ message: "This gentle round was already counted." });
