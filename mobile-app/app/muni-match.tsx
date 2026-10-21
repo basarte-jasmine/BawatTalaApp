@@ -1,8 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Animated,
   Pressable,
   StyleSheet,
   Text,
@@ -47,6 +47,12 @@ const TARGET_SCORE = 300; // Target score
 const TARGET_BONUS_COINS = 10;
 const COLOR_KEYS: MuniColor[] = ["orig", "blue", "purple", "red"];
 
+function triggerHaptic(style = Haptics.ImpactFeedbackStyle.Light) {
+  try {
+    void Haptics.impactAsync(style);
+  } catch {}
+}
+
 function createTile(): Tile {
   return {
     id: `tile_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -54,7 +60,11 @@ function createTile(): Tile {
   };
 }
 
-function findConnectedGroup(board: (Tile | null)[][], startR: number, startC: number): { r: number; c: number }[] {
+function findConnectedGroup(
+  board: (Tile | null)[][],
+  startR: number,
+  startC: number
+): { r: number; c: number }[] {
   const targetTile = board[startR][startC];
   if (!targetTile) return [];
   const targetColor = targetTile.color;
@@ -122,7 +132,7 @@ export default function MuniMatchScreen() {
   const { width: screenW } = useWindowDimensions();
   const appWidth = Math.min(screenW, 430);
   const GRID_PADDING = 12;
-  const GAP = 4;
+  const GAP = 5;
   const availableW = appWidth - GRID_PADDING * 2;
   const tileSize = Math.floor((availableW - (COLS - 1) * GAP) / COLS);
 
@@ -135,6 +145,7 @@ export default function MuniMatchScreen() {
   const [popups, setPopups] = useState<Popup[]>([]);
   const [board, setBoard] = useState<Tile[][]>([]);
   const [wobbleCoord, setWobbleCoord] = useState<{ r: number; c: number } | null>(null);
+  const [showExitPrompt, setShowExitPrompt] = useState(false);
 
   const bestScoreRef = useRef(0);
   const bestCoinsRef = useRef(0);
@@ -153,6 +164,7 @@ export default function MuniMatchScreen() {
 
   const finishGame = useCallback((finalScore: number, finalCoins: number, reachedTarget: boolean) => {
     setGameState("GAMEOVER");
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
     if (timerRef.current) clearInterval(timerRef.current);
 
     const bonus = reachedTarget ? TARGET_BONUS_COINS : 0;
@@ -179,6 +191,7 @@ export default function MuniMatchScreen() {
   }, []);
 
   const startGame = () => {
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
     const newBoard = generatePlayableBoard();
     setBoard(newBoard);
     setScore(0);
@@ -193,6 +206,7 @@ export default function MuniMatchScreen() {
   };
 
   const pauseGame = () => {
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
     if (gameState === "PLAYING") {
       setGameState("PAUSED");
       if (timerRef.current) clearInterval(timerRef.current);
@@ -200,6 +214,7 @@ export default function MuniMatchScreen() {
   };
 
   const resumeGame = () => {
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
     if (gameState === "PAUSED") {
       setGameState("PLAYING");
     }
@@ -211,7 +226,18 @@ export default function MuniMatchScreen() {
   };
 
   const quitGame = () => {
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
     if (timerRef.current) clearInterval(timerRef.current);
+    router.replace("/wellness-tools");
+  };
+
+  const handleHeaderBack = () => {
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
+    if (gameState === "PLAYING") {
+      setGameState("PAUSED");
+      setShowExitPrompt(true);
+      return;
+    }
     router.replace("/wellness-tools");
   };
 
@@ -253,24 +279,20 @@ export default function MuniMatchScreen() {
     const group = findConnectedGroup(board, r, c);
 
     if (group.length < 3) {
-      // Need at least 3!
+      triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
       setWobbleCoord({ r, c });
       setTimeout(() => setWobbleCoord(null), 300);
-      Vibration.vibrate(40);
+      Vibration.vibrate(30);
       return;
     }
 
-    // Match 3 or more!
-    Vibration.vibrate(60);
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
     const count = group.length;
 
-    // Coins:
-    // 3 munis = 1 coin, 4 munis = 2 coins, 5+ munis = 3 coins
     let earnedCoins = 1;
     if (count === 4) earnedCoins = 2;
     else if (count >= 5) earnedCoins = 3;
 
-    // Score points:
     let earnedPoints = 30;
     if (count === 4) earnedPoints = 50;
     else if (count >= 5) earnedPoints = 80 + (count - 5) * 20;
@@ -281,8 +303,8 @@ export default function MuniMatchScreen() {
     let nextTargetGranted = targetBonusGranted;
     let extraBonusCoins = 0;
 
-    // Target score bonus (+10 coins once upon reaching 300 points)
     if (!targetBonusGranted && newScore >= TARGET_SCORE) {
+      triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
       nextTargetGranted = true;
       setTargetBonusGranted(true);
       extraBonusCoins = TARGET_BONUS_COINS;
@@ -293,7 +315,7 @@ export default function MuniMatchScreen() {
           text: "+10 Target Bonus!",
           x: pageX - 60,
           y: pageY - 40,
-          color: "#4F8A38",
+          color: "#2E7C1F",
         },
       ]);
     }
@@ -308,18 +330,15 @@ export default function MuniMatchScreen() {
         text: `+${earnedCoins} Tala`,
         x: pageX - 30,
         y: pageY - 10,
-        color: "#F5C447",
+        color: "#D97706",
       },
     ]);
 
-    // Apply Gravity and Refill Columns
     const newBoard = board.map((row) => [...row]);
-    // 1. Clear matched
     for (const pos of group) {
       newBoard[pos.r][pos.c] = null as any;
     }
 
-    // 2. Drop and refill per column
     for (let col = 0; col < COLS; col++) {
       const remaining: Tile[] = [];
       for (let row = ROWS - 1; row >= 0; row--) {
@@ -336,7 +355,6 @@ export default function MuniMatchScreen() {
       }
     }
 
-    // 3. Ensure board has playable moves, otherwise shuffle
     if (!hasAnyValidMatch(newBoard)) {
       setBoard(generatePlayableBoard());
     } else {
@@ -354,25 +372,32 @@ export default function MuniMatchScreen() {
 
   return (
     <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
-      {/* Top Header */}
+      {/* Apple-style Top Bar */}
       <View style={styles.topBar}>
         <Pressable
-          onPress={() => {
-            if (gameState === "PLAYING") pauseGame();
-            else quitGame();
-          }}
-          style={styles.backButton}
+          onPress={handleHeaderBack}
+          style={styles.circleButton}
           accessibilityLabel="Back"
+          hitSlop={8}
         >
-          <Ionicons name="chevron-back" size={26} color="#33475C" />
+          <Ionicons name="chevron-back" size={20} color="#0F172A" />
         </Pressable>
-        <Text style={styles.topTitle}>Muni Match</Text>
+
+        <View style={styles.titlePill}>
+          <Text style={styles.topTitle}>Muni Match</Text>
+        </View>
+
         {gameState === "PLAYING" ? (
-          <Pressable onPress={pauseGame} style={styles.pauseButton} accessibilityLabel="Pause Game">
-            <Ionicons name="pause-circle-outline" size={26} color="#33475C" />
+          <Pressable
+            onPress={pauseGame}
+            style={styles.circleButton}
+            accessibilityLabel="Pause Game"
+            hitSlop={8}
+          >
+            <Ionicons name="pause" size={17} color="#0F172A" />
           </Pressable>
         ) : (
-          <View style={styles.pausePlaceholder} />
+          <View style={styles.buttonSpacer} />
         )}
       </View>
 
@@ -380,51 +405,57 @@ export default function MuniMatchScreen() {
         {/* START SCREEN */}
         {gameState === "START" && (
           <View style={styles.centerContainer}>
-            <Image source={ASSETS.cover} style={styles.coverImage} contentFit="contain" />
-            <Text style={styles.overlayTitle}>Muni Match</Text>
-            <Text style={styles.overlaySub}>
-              Match 3 or more connected Munis of the same color. Reach the 300-point target for a 10 Tala bonus!
-            </Text>
+            <View style={styles.startCard}>
+              <View style={styles.coverWrap}>
+                <Image source={ASSETS.cover} style={styles.coverImage} contentFit="contain" />
+              </View>
+              <Text style={styles.modalTitle}>Muni Match</Text>
+              <Text style={styles.modalDesc}>
+                Match 3 or more connected Munis of the same color. Reach the 300-point target for a
+                10 Tala bonus!
+              </Text>
 
-            <View style={styles.recordsPill}>
-              <View style={styles.recordItem}>
-                <Text style={styles.recordLabel}>Best Score</Text>
-                <Text style={styles.recordValue}>{bestScoreRef.current}</Text>
+              <View style={styles.recordsBox}>
+                <View style={styles.recordCol}>
+                  <Text style={styles.recordColLabel}>BEST SCORE</Text>
+                  <Text style={styles.recordColValue}>{bestScoreRef.current}</Text>
+                </View>
+                <View style={styles.recordDivider} />
+                <View style={styles.recordCol}>
+                  <Text style={styles.recordColLabel}>BEST TALA</Text>
+                  <Text style={styles.recordColValue}>{bestCoinsRef.current}</Text>
+                </View>
               </View>
-              <View style={styles.recordDivider} />
-              <View style={styles.recordItem}>
-                <Text style={styles.recordLabel}>Best Tala</Text>
-                <Text style={styles.recordValue}>{bestCoinsRef.current}</Text>
-              </View>
+
+              <Pressable style={styles.primaryPill} onPress={startGame}>
+                <Ionicons name="play" size={17} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.primaryPillText}>Start Match</Text>
+              </Pressable>
             </View>
-
-            <Pressable style={styles.btnPrimary} onPress={startGame}>
-              <Ionicons name="sparkles" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
-              <Text style={styles.btnPrimaryText}>Start Match</Text>
-            </Pressable>
           </View>
         )}
 
         {/* PLAYING / PAUSED VIEW */}
         {(gameState === "PLAYING" || gameState === "PAUSED") && (
           <View style={styles.gameWrapper}>
-            {/* HUD */}
-            <View style={styles.hud}>
-              <View style={styles.hudRow}>
-                {/* Score & Target */}
-                <View style={styles.scoreContainer}>
-                  <Text style={styles.scoreText}>SCORE: {score}</Text>
-                  <View style={styles.targetRow}>
-                    <Text style={styles.targetLabel}>TARGET {TARGET_SCORE}</Text>
-                    {targetBonusGranted && (
-                      <View style={styles.targetTag}>
-                        <Text style={styles.targetTagText}>✓ +10 BONUS</Text>
-                      </View>
-                    )}
-                  </View>
+            {/* Apple Floating Glass HUD */}
+            <View style={styles.hudCard}>
+              <View style={styles.hudTopRow}>
+                <View style={styles.hudStatGroup}>
+                  <Text style={styles.hudStatLabel}>SCORE</Text>
+                  <Text style={styles.hudStatValue}>{score}</Text>
                 </View>
 
-                {/* Tala Coins Counter */}
+                <View style={styles.targetPill}>
+                  <Text style={styles.targetPillLabel}>TARGET 300</Text>
+                  {targetBonusGranted ? (
+                    <View style={styles.bonusChip}>
+                      <Ionicons name="checkmark-circle" size={12} color="#2E7C1F" />
+                      <Text style={styles.bonusChipText}>+10 Tala</Text>
+                    </View>
+                  ) : null}
+                </View>
+
                 <View style={styles.coinBadge}>
                   <Image source={ASSETS.coin} style={styles.coinIcon} contentFit="contain" />
                   <Text style={styles.coinCount}>+{coins}</Text>
@@ -436,18 +467,21 @@ export default function MuniMatchScreen() {
                 <View style={[styles.targetProgressFill, { width: `${targetProgress}%` }]} />
               </View>
 
-              {/* 90s Relaxing Bar Timer */}
-              <View style={styles.timeBarContainer}>
+              {/* Time Track */}
+              <View style={styles.timeTrack}>
                 <View
                   style={[
-                    styles.timeBarFill,
+                    styles.timeFill,
                     {
                       width: `${Math.min(Math.max((timeLeft / GAME_DURATION) * 100, 0), 100)}%`,
-                      backgroundColor: timeLeft <= 15 ? "#E9A844" : "#4A90E2",
+                      backgroundColor: timeLeft <= 15 ? "#EF4444" : timeLeft <= 30 ? "#F59E0B" : "#52B72A",
                     },
                   ]}
                 />
-                <Text style={styles.timeText}>⏱️ {formatTime(timeLeft)}</Text>
+              </View>
+              <View style={styles.timeLabelRow}>
+                <Ionicons name="time-outline" size={11.5} color="#64748B" />
+                <Text style={styles.timeLabelText}>{formatTime(timeLeft)}</Text>
               </View>
             </View>
 
@@ -497,77 +531,113 @@ export default function MuniMatchScreen() {
           </View>
         )}
 
-        {/* GAMEOVER / SUMMARY MODAL */}
+        {/* GAMEOVER SCREEN */}
         {gameState === "GAMEOVER" && (
           <View style={styles.centerContainer}>
-            <View style={styles.gameOverCard}>
-              <View style={styles.trophyCircle}>
-                <Ionicons name="sparkles" size={36} color="#F5C447" />
+            <View style={styles.modalCard}>
+              <View style={styles.trophyIconWrap}>
+                <Ionicons name="sparkles" size={28} color="#D97706" />
               </View>
-              <Text style={styles.goTitle}>Time&apos;s Up!</Text>
-              <Text style={styles.goSub}>Wonderful color matching and focus.</Text>
+              <Text style={styles.modalTitle}>Match Complete!</Text>
+              <Text style={styles.modalDesc}>Wonderful color matching and mindful focus.</Text>
 
-              {/* Stats Breakdown */}
-              <View style={styles.statsBox}>
+              <View style={styles.statsCard}>
                 <View style={styles.statRow}>
-                  <Text style={styles.statLabel}>Final Match Score</Text>
-                  <Text style={styles.statValue}>{score} pts</Text>
+                  <Text style={styles.statLabel}>Final Score</Text>
+                  <View style={styles.statValueRow}>
+                    <Text style={styles.statValue}>{score} pts</Text>
+                    {score >= bestScoreRef.current && score > 0 ? (
+                      <View style={styles.bestBadge}>
+                        <Text style={styles.bestBadgeText}>BEST</Text>
+                      </View>
+                    ) : null}
+                  </View>
                 </View>
                 <View style={styles.statRow}>
-                  <Text style={styles.statLabel}>Matched Tala Coins</Text>
+                  <Text style={styles.statLabel}>Matched Coins</Text>
                   <Text style={styles.statValue}>+{coins}</Text>
                 </View>
                 {targetBonusGranted && (
                   <View style={styles.statRow}>
-                    <Text style={styles.statLabel}>Target Reached Bonus (300+ pts)</Text>
-                    <Text style={[styles.statValue, { color: "#4F8A38" }]}>+{TARGET_BONUS_COINS} Tala</Text>
+                    <Text style={styles.statLabel}>Target Bonus (300+)</Text>
+                    <View style={styles.bonusBadge}>
+                      <Text style={styles.bonusBadgeText}>+{TARGET_BONUS_COINS} Tala</Text>
+                    </View>
                   </View>
                 )}
-                <View style={styles.statDivider} />
+                <View style={styles.dividerLine} />
                 <View style={styles.statRow}>
-                  <Text style={[styles.statLabel, styles.statLabelBold]}>Total Tala Earned</Text>
-                  <Text style={[styles.statValue, styles.statValueBold]}>
-                    {coins + (targetBonusGranted ? TARGET_BONUS_COINS : 0)}
+                  <Text style={[styles.statLabel, { fontFamily: "Outfit-Bold", color: "#0F172A" }]}>
+                    Total Tala Earned
                   </Text>
+                  <View style={styles.talaBadge}>
+                    <Text style={styles.talaBadgeText}>
+                      +{coins + (targetBonusGranted ? TARGET_BONUS_COINS : 0)} Tala
+                    </Text>
+                  </View>
                 </View>
               </View>
 
-              <Pressable style={styles.btnPrimary} onPress={startGame}>
-                <Ionicons name="refresh" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                <Text style={styles.btnPrimaryText}>Match Again</Text>
+              <Pressable style={styles.primaryPill} onPress={startGame}>
+                <Ionicons name="refresh" size={17} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.primaryPillText}>Match Again</Text>
               </Pressable>
-              <Pressable style={styles.btnSecondary} onPress={quitGame}>
-                <Text style={styles.btnSecondaryText}>Exit to Tools</Text>
+              <Pressable style={styles.secondaryPill} onPress={quitGame}>
+                <Text style={styles.secondaryPillText}>Done</Text>
               </Pressable>
             </View>
           </View>
         )}
       </View>
 
-      {/* PAUSE MODAL */}
-      {gameState === "PAUSED" && (
-        <View style={styles.pauseOverlay}>
-          <View style={styles.pauseCard}>
-            <View style={styles.pauseIconCircle}>
-              <Ionicons name="pause" size={28} color="#4A90E2" />
+      {/* Unified Apple Pause Modal */}
+      {gameState === "PAUSED" && !showExitPrompt && (
+        <View style={styles.overlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.pauseIconWrap}>
+              <Ionicons name="pause" size={26} color="#52B72A" />
             </View>
-            <Text style={styles.pauseTitle}>Game Paused</Text>
-            <Text style={styles.pauseSub}>Take a gentle breath, Muni is resting with you.</Text>
+            <Text style={styles.modalTitle}>Game Paused</Text>
+            <Text style={styles.modalDesc}>Take a gentle breath, Muni is resting with you.</Text>
 
-            <Pressable style={styles.pauseBtnResume} onPress={resumeGame}>
-              <Ionicons name="play" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
-              <Text style={styles.pauseBtnResumeText}>Resume</Text>
+            <Pressable style={styles.primaryPill} onPress={resumeGame}>
+              <Ionicons name="play" size={17} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.primaryPillText}>Resume</Text>
             </Pressable>
 
-            <Pressable style={styles.pauseBtnRestart} onPress={restartGame}>
-              <Ionicons name="refresh" size={18} color="#33475C" style={{ marginRight: 8 }} />
-              <Text style={styles.pauseBtnRestartText}>Restart Match</Text>
+            <Pressable style={styles.secondaryPill} onPress={restartGame}>
+              <Ionicons name="refresh" size={17} color="#334155" style={{ marginRight: 6 }} />
+              <Text style={styles.secondaryPillText}>Restart Match</Text>
             </Pressable>
 
-            <Pressable style={styles.pauseBtnQuit} onPress={quitGame}>
-              <Ionicons name="exit-outline" size={18} color="#C45C5C" style={{ marginRight: 8 }} />
-              <Text style={styles.pauseBtnQuitText}>Quit Game</Text>
+            <Pressable style={styles.textAction} onPress={quitGame}>
+              <Ionicons name="exit-outline" size={16} color="#DC2626" style={{ marginRight: 5 }} />
+              <Text style={styles.textActionRed}>Quit Game</Text>
             </Pressable>
+          </View>
+        </View>
+      )}
+
+      {/* Exit Prompt Sheet */}
+      {showExitPrompt && (
+        <View style={styles.overlay}>
+          <View style={styles.exitCard}>
+            <Text style={styles.exitTitle}>Leave Match?</Text>
+            <Text style={styles.exitText}>Your current game progress will be lost.</Text>
+            <View style={styles.exitActions}>
+              <Pressable
+                style={styles.exitStay}
+                onPress={() => {
+                  setShowExitPrompt(false);
+                  if (gameState === "PAUSED") resumeGame();
+                }}
+              >
+                <Text style={styles.exitStayText}>Stay</Text>
+              </Pressable>
+              <Pressable style={styles.exitLeave} onPress={quitGame}>
+                <Text style={styles.exitLeaveText}>Leave</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       )}
@@ -576,289 +646,496 @@ export default function MuniMatchScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#F7FAF6" },
+  screen: { flex: 1, backgroundColor: "#F8FAF7" },
   contentFrame: { flex: 1, alignSelf: "center", position: "relative" },
+
+  /* Top Bar */
   topBar: {
-    height: 56,
+    height: 52,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E0E7DD",
-    backgroundColor: "#FFFFFF",
-    zIndex: 10,
+    paddingHorizontal: 16,
+    zIndex: 100,
   },
-  topTitle: { color: "#33475C", fontSize: 18, fontFamily: "Outfit-Bold" },
-  backButton: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
-  pauseButton: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
-  pausePlaceholder: { width: 40, height: 40 },
-
-  centerContainer: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
-  coverImage: { width: 140, height: 140, borderRadius: 24, marginBottom: 16 },
-  overlayTitle: { fontSize: 28, fontFamily: "Outfit-Bold", color: "#33475C", marginBottom: 8 },
-  overlaySub: {
-    fontSize: 14,
-    color: "#607181",
-    textAlign: "center",
-    lineHeight: 20,
-    marginBottom: 20,
-    paddingHorizontal: 12,
-  },
-
-  recordsPill: {
-    flexDirection: "row",
-    alignItems: "center",
+  circleButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: "#FFFFFF",
-    paddingVertical: 10,
-    paddingHorizontal: 22,
-    borderRadius: 18,
-    marginBottom: 24,
     borderWidth: 1,
-    borderColor: "#E0E7DD",
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
+    borderColor: "#E2E8F0",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  titlePill: {
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
-  recordItem: { alignItems: "center", minWidth: 80 },
-  recordLabel: { color: "#7A8A96", fontSize: 11, fontFamily: "Outfit-Medium" },
-  recordValue: { color: "#33475C", fontSize: 17, fontFamily: "Outfit-Bold", marginTop: 2 },
-  recordDivider: { width: 1, height: 24, backgroundColor: "#E6ECE4", marginHorizontal: 16 },
-
-  gameWrapper: { flex: 1 },
-
-  hud: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: "#FFFFFF",
-    borderBottomWidth: 1,
-    borderBottomColor: "#E0E7DD",
-    zIndex: 10,
+  topTitle: {
+    color: "#0F172A",
+    fontSize: 15,
+    fontFamily: "Outfit-Bold",
+    letterSpacing: -0.2,
   },
-  hudRow: {
+  buttonSpacer: { width: 38, height: 38 },
+
+  centerContainer: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
+  gameWrapper: { flex: 1, paddingHorizontal: 12, paddingTop: 6 },
+
+  /* HUD */
+  hudCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: "#E6ECE4",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+    marginBottom: 10,
+  },
+  hudTopRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 8,
   },
-  scoreContainer: { flex: 1 },
-  scoreText: { color: "#33475C", fontSize: 17, fontFamily: "Outfit-Bold" },
-  targetRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 },
-  targetLabel: { color: "#7A8A96", fontSize: 11, fontFamily: "Outfit-Medium" },
-  targetTag: {
-    backgroundColor: "#EBF8EE",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "#D2F1D8",
+  hudStatGroup: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    columnGap: 5,
   },
-  targetTagText: { color: "#2E7D42", fontSize: 10, fontFamily: "Outfit-Bold" },
-
+  hudStatLabel: {
+    color: "#64748B",
+    fontSize: 10,
+    fontFamily: "Outfit-Bold",
+    letterSpacing: 0.6,
+  },
+  hudStatValue: {
+    color: "#0F172A",
+    fontSize: 17,
+    fontFamily: "Outfit-Bold",
+  },
+  targetPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: "#F1F5F9",
+  },
+  targetPillLabel: {
+    color: "#64748B",
+    fontSize: 10.5,
+    fontFamily: "Outfit-Bold",
+  },
+  bonusChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 999,
+    backgroundColor: "#EAF6E8",
+  },
+  bonusChipText: {
+    color: "#2E7C1F",
+    fontSize: 10,
+    fontFamily: "Outfit-Bold",
+  },
   coinBadge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFF9E6",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#FCE8A8",
-    gap: 4,
+    columnGap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: "#FEF3C7",
   },
-  coinIcon: { width: 18, height: 18 },
-  coinCount: { color: "#9C7832", fontSize: 14, fontFamily: "Outfit-Bold" },
-
-  targetProgressBar: {
-    height: 4,
-    backgroundColor: "#EAF0E8",
-    borderRadius: 2,
-    overflow: "hidden",
-    marginBottom: 10,
-  },
-  targetProgressFill: { height: "100%", backgroundColor: "#4F8A38", borderRadius: 2 },
-
-  timeBarContainer: {
-    height: 18,
-    backgroundColor: "#E3ECE8",
-    borderRadius: 9,
-    overflow: "hidden",
-    position: "relative",
-    justifyContent: "center",
-  },
-  timeBarFill: { height: "100%", borderRadius: 9 },
-  timeText: {
-    position: "absolute",
-    width: "100%",
-    textAlign: "center",
-    fontSize: 11,
-    color: "#FFFFFF",
+  coinIcon: { width: 14, height: 14 },
+  coinCount: {
+    color: "#B45309",
+    fontSize: 12,
     fontFamily: "Outfit-Bold",
-    textShadowColor: "rgba(0,0,0,0.25)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+  },
+  targetProgressBar: {
+    height: 5,
+    backgroundColor: "#EEF3EC",
+    borderRadius: 999,
+    overflow: "hidden",
+    marginBottom: 6,
+  },
+  targetProgressFill: {
+    height: "100%",
+    backgroundColor: "#52B72A",
+    borderRadius: 999,
+  },
+  timeTrack: {
+    height: 6,
+    backgroundColor: "#EEF3EC",
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  timeFill: {
+    height: "100%",
+    borderRadius: 999,
+  },
+  timeLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    columnGap: 4,
+    marginTop: 4,
+  },
+  timeLabelText: {
+    color: "#64748B",
+    fontSize: 11,
+    fontFamily: "Outfit-Medium",
   },
 
+  /* Board */
   boardArea: {
-    flex: 1,
-    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.94)",
+    borderRadius: 22,
+    borderWidth: 1.5,
+    borderColor: "#E6ECE4",
     alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
   },
   gridRow: {
     flexDirection: "row",
-    marginBottom: 4,
+    marginBottom: 5,
   },
   tileWrap: {
     borderRadius: 12,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#F8FAF8",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
     borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.06)",
+    borderColor: "#EEF3EC",
   },
   tileWobble: {
-    borderColor: "#E76F51",
-    backgroundColor: "#FDECE8",
+    transform: [{ scale: 1.15 }],
+    borderColor: "#EF4444",
   },
   tileImage: {
-    width: "88%",
-    height: "88%",
+    width: "82%",
+    height: "82%",
   },
-
   popupText: {
     position: "absolute",
-    fontSize: 16,
+    fontSize: 15,
     fontFamily: "Outfit-Bold",
-    textShadowColor: "rgba(0,0,0,0.3)",
+    zIndex: 100,
+    textShadowColor: "rgba(0,0,0,0.2)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
 
-  gameOverCard: {
-    width: "100%",
-    maxWidth: 330,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 24,
-    alignItems: "center",
-    shadowColor: "#8BA7B3",
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 12,
-  },
-  trophyCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "#FEF7E6",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
-  },
-  goTitle: { fontSize: 24, fontFamily: "Outfit-Bold", color: "#33475C", marginBottom: 6 },
-  goSub: { fontSize: 14, color: "#607181", textAlign: "center", marginBottom: 20 },
-
-  statsBox: {
-    width: "100%",
-    backgroundColor: "#F4F8F9",
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 20,
-    rowGap: 10,
-  },
-  statRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  statLabel: { fontSize: 13, color: "#546A7B" },
-  statLabelBold: { fontFamily: "Outfit-Bold", color: "#33475C" },
-  statValue: { fontSize: 15, fontFamily: "Outfit-Bold", color: "#33475C" },
-  statValueBold: { fontSize: 18, color: "#4A90E2" },
-  statDivider: { height: 1, backgroundColor: "#E0E7DD", marginVertical: 4 },
-
-  btnPrimary: {
-    width: "100%",
-    maxWidth: 290,
-    backgroundColor: "#4A90E2",
-    borderRadius: 14,
-    paddingVertical: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#4A90E2",
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  btnPrimaryText: { color: "#FFFFFF", fontSize: 15, fontFamily: "Outfit-Bold" },
-  btnSecondary: { width: "100%", paddingVertical: 12, alignItems: "center" },
-  btnSecondaryText: { color: "#546A7B", fontSize: 14, fontFamily: "Outfit-SemiBold" },
-
-  pauseOverlay: {
+  /* Overlays & Modals */
+  overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(22, 36, 44, 0.55)",
+    backgroundColor: "rgba(15, 23, 42, 0.48)",
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 10000,
+    zIndex: 200,
     padding: 20,
   },
-  pauseCard: {
+  startCard: {
     width: "100%",
-    maxWidth: 320,
+    maxWidth: 325,
     backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 24,
-    alignItems: "center",
-    shadowColor: "#102028",
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 12,
-  },
-  pauseIconCircle: {
-    width: 56,
-    height: 56,
     borderRadius: 28,
-    backgroundColor: "#EDF5FD",
+    padding: 22,
+    alignItems: "center",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
+  },
+  coverWrap: {
+    width: 130,
+    height: 130,
+    borderRadius: 22,
+    overflow: "hidden",
+    marginBottom: 14,
+  },
+  coverImage: { width: "100%", height: "100%" },
+  modalCard: {
+    width: "100%",
+    maxWidth: 325,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 28,
+    padding: 22,
+    alignItems: "center",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
+  },
+  pauseIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#EAF6E8",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 12,
   },
-  pauseTitle: { fontSize: 22, fontFamily: "Outfit-Bold", color: "#33475C", marginBottom: 6 },
-  pauseSub: { fontSize: 14, color: "#607181", textAlign: "center", marginBottom: 22, lineHeight: 19 },
-  pauseBtnResume: {
-    width: "100%",
-    flexDirection: "row",
-    backgroundColor: "#4A90E2",
-    borderRadius: 14,
-    paddingVertical: 13,
+  trophyIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#FEF3C7",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10,
-    shadowColor: "#4A90E2",
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 3,
+    marginBottom: 12,
   },
-  pauseBtnResumeText: { color: "#FFFFFF", fontSize: 15, fontFamily: "Outfit-Bold" },
-  pauseBtnRestart: {
-    width: "100%",
+  modalTitle: {
+    fontSize: 22,
+    fontFamily: "Outfit-Bold",
+    color: "#0F172A",
+    marginBottom: 4,
+    textAlign: "center",
+    letterSpacing: -0.3,
+  },
+  modalDesc: {
+    fontSize: 13.5,
+    lineHeight: 18.5,
+    color: "#64748B",
+    textAlign: "center",
+    marginBottom: 18,
+    fontFamily: "Outfit-Regular",
+  },
+
+  recordsBox: {
     flexDirection: "row",
-    backgroundColor: "#F0F4F8",
-    borderRadius: 14,
-    paddingVertical: 13,
     alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 10,
-  },
-  pauseBtnRestartText: { color: "#33475C", fontSize: 15, fontFamily: "Outfit-Bold" },
-  pauseBtnQuit: {
-    width: "100%",
-    flexDirection: "row",
+    justifyContent: "space-around",
+    backgroundColor: "#F8FAF8",
+    borderWidth: 1,
+    borderColor: "#E6ECE4",
+    borderRadius: 18,
     paddingVertical: 11,
+    paddingHorizontal: 16,
+    width: "100%",
+    marginBottom: 18,
+  },
+  recordCol: { alignItems: "center" },
+  recordColLabel: {
+    color: "#64748B",
+    fontSize: 10,
+    fontFamily: "Outfit-Bold",
+    letterSpacing: 0.6,
+    marginBottom: 2,
+  },
+  recordColValue: {
+    color: "#0F172A",
+    fontSize: 18,
+    fontFamily: "Outfit-Bold",
+  },
+  recordDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: "#E2E8F0",
+  },
+
+  primaryPill: {
+    width: "100%",
+    height: 48,
+    borderRadius: 999,
+    backgroundColor: "#52B72A",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#52B72A",
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+    marginBottom: 10,
+  },
+  primaryPillText: {
+    color: "#FFFFFF",
+    fontSize: 15.5,
+    fontFamily: "Outfit-Bold",
+  },
+  secondaryPill: {
+    width: "100%",
+    height: 46,
+    borderRadius: 999,
+    backgroundColor: "#F1F5F9",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  secondaryPillText: {
+    color: "#334155",
+    fontSize: 14.5,
+    fontFamily: "Outfit-Bold",
+  },
+  textAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+  },
+  textActionRed: {
+    color: "#DC2626",
+    fontSize: 14,
+    fontFamily: "Outfit-SemiBold",
+  },
+
+  statsCard: {
+    width: "100%",
+    backgroundColor: "#F8FAF8",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E6ECE4",
+    padding: 13,
+    rowGap: 9,
+    marginBottom: 18,
+  },
+  statRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  statLabel: {
+    color: "#64748B",
+    fontSize: 13,
+    fontFamily: "Outfit-Regular",
+  },
+  statValueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 6,
+  },
+  statValue: {
+    color: "#0F172A",
+    fontSize: 14.5,
+    fontFamily: "Outfit-Bold",
+  },
+  bestBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: "#FEF3C7",
+  },
+  bestBadgeText: {
+    color: "#B45309",
+    fontSize: 9.5,
+    fontFamily: "Outfit-Bold",
+  },
+  bonusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: "#EAF6E8",
+  },
+  bonusBadgeText: {
+    color: "#2E7C1F",
+    fontSize: 11,
+    fontFamily: "Outfit-Bold",
+  },
+  dividerLine: {
+    height: 1,
+    backgroundColor: "#E2E8F0",
+    marginVertical: 2,
+  },
+  talaBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: "#FEF3C7",
+  },
+  talaBadgeText: {
+    color: "#B45309",
+    fontSize: 12,
+    fontFamily: "Outfit-Bold",
+  },
+
+  /* Exit Sheet */
+  exitCard: {
+    width: "100%",
+    maxWidth: 295,
+    backgroundColor: "#FFFFFF",
+    padding: 22,
+    borderRadius: 24,
+    alignItems: "center",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.18,
+    shadowRadius: 18,
+    elevation: 10,
+  },
+  exitTitle: {
+    color: "#0F172A",
+    fontSize: 19,
+    fontFamily: "Outfit-Bold",
+    marginBottom: 6,
+  },
+  exitText: {
+    color: "#64748B",
+    fontSize: 13.5,
+    lineHeight: 18,
+    textAlign: "center",
+    marginBottom: 18,
+    fontFamily: "Outfit-Regular",
+  },
+  exitActions: {
+    flexDirection: "row",
+    columnGap: 10,
+    width: "100%",
+  },
+  exitStay: {
+    flex: 1,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: "#F1F5F9",
     alignItems: "center",
     justifyContent: "center",
   },
-  pauseBtnQuitText: { color: "#C45C5C", fontSize: 14, fontFamily: "Outfit-SemiBold" },
+  exitStayText: {
+    color: "#334155",
+    fontFamily: "Outfit-Bold",
+    fontSize: 14,
+  },
+  exitLeave: {
+    flex: 1,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: "#DC2626",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  exitLeaveText: {
+    color: "#FFFFFF",
+    fontFamily: "Outfit-Bold",
+    fontSize: 14,
+  },
 });

@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -68,6 +69,12 @@ const INITIAL_LIVES = 3;
 const SURVIVAL_BONUS = 10;
 const NO_LIFE_LOST_BONUS = 5;
 
+function triggerHaptic(style = Haptics.ImpactFeedbackStyle.Light) {
+  try {
+    void Haptics.impactAsync(style);
+  } catch {}
+}
+
 export default function GalaxyFallScreen() {
   const { width: screenW, height: screenH } = useWindowDimensions();
   const appWidth = Math.min(screenW, 430);
@@ -78,6 +85,7 @@ export default function GalaxyFallScreen() {
   const [timeLeft, setTimeLeft] = useState(GAME_DURATION);
   const [isVictory, setIsVictory] = useState(false);
   const [rewardTala, setRewardTala] = useState(0);
+  const [showExitPrompt, setShowExitPrompt] = useState(false);
   const [bonusBreakdown, setBonusBreakdown] = useState({ coins: 0, survival: 0, flawless: 0, total: 0 });
 
   const [popups, setPopups] = useState<ScorePopup[]>([]);
@@ -481,30 +489,48 @@ export default function GalaxyFallScreen() {
     return mins > 0 ? `${mins}m ${rem < 10 ? "0" : ""}${rem}s` : `${rem}s`;
   };
 
+  const handleHeaderBack = () => {
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
+    if (gameState === "PLAYING") {
+      setGameState("PAUSED");
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+      setShowExitPrompt(true);
+      return;
+    }
+    router.replace("/wellness-tools");
+  };
+
   return (
     <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
       {/* Background Graphic */}
       <Image source={ASSETS.bg} style={StyleSheet.absoluteFillObject} contentFit="cover" />
 
-      {/* Top Header Bar */}
+      {/* Apple-style Top Bar */}
       <View style={styles.topBar}>
         <Pressable
-          onPress={() => {
-            if (gameState === "PLAYING") pauseGame();
-            else quitGame();
-          }}
-          style={styles.backButton}
+          onPress={handleHeaderBack}
+          style={styles.circleButton}
           accessibilityLabel="Back"
+          hitSlop={8}
         >
-          <Ionicons name="chevron-back" size={26} color="#FFFFFF" />
+          <Ionicons name="chevron-back" size={20} color="#FFFFFF" />
         </Pressable>
-        <Text style={styles.topTitle}>Galaxy Fall</Text>
+
+        <View style={styles.titlePill}>
+          <Text style={styles.topTitle}>Galaxy Fall</Text>
+        </View>
+
         {gameState === "PLAYING" ? (
-          <Pressable onPress={pauseGame} style={styles.pauseButton} accessibilityLabel="Pause Flight">
-            <Ionicons name="pause-circle-outline" size={26} color="#FFFFFF" />
+          <Pressable
+            onPress={pauseGame}
+            style={styles.circleButton}
+            accessibilityLabel="Pause Flight"
+            hitSlop={8}
+          >
+            <Ionicons name="pause" size={17} color="#FFFFFF" />
           </Pressable>
         ) : (
-          <View style={styles.pausePlaceholder} />
+          <View style={styles.buttonSpacer} />
         )}
       </View>
 
@@ -512,41 +538,45 @@ export default function GalaxyFallScreen() {
         {/* START SCREEN */}
         {gameState === "START" && (
           <View style={styles.centerContainer}>
-            <Image source={ASSETS.cover} style={styles.coverImage} contentFit="contain" />
-            <Text style={styles.overlayTitle}>Galaxy Fall</Text>
-            <Text style={styles.overlaySub}>
-              Float through the cosmos with Muni. Gather Tala Coins while gently weaving past meteors and rockets.
-            </Text>
+            <View style={styles.startCard}>
+              <View style={styles.coverWrap}>
+                <Image source={ASSETS.cover} style={styles.coverImage} contentFit="contain" />
+              </View>
+              <Text style={styles.modalTitle}>Galaxy Fall</Text>
+              <Text style={styles.modalDesc}>
+                Float through the cosmos with Muni. Gather Tala Coins while gently weaving past meteors and rockets.
+              </Text>
 
-            <View style={styles.recordsPill}>
-              <View style={styles.recordItem}>
-                <Text style={styles.recordLabel}>Best Score</Text>
-                <Text style={styles.recordValue}>{bestScoreRef.current}</Text>
+              <View style={styles.recordsBox}>
+                <View style={styles.recordCol}>
+                  <Text style={styles.recordColLabel}>BEST SCORE</Text>
+                  <Text style={styles.recordColValue}>{bestScoreRef.current}</Text>
+                </View>
+                <View style={styles.recordDivider} />
+                <View style={styles.recordCol}>
+                  <Text style={styles.recordColLabel}>BEST COINS</Text>
+                  <Text style={styles.recordColValue}>{bestCoinsRef.current}</Text>
+                </View>
               </View>
-              <View style={styles.recordDivider} />
-              <View style={styles.recordItem}>
-                <Text style={styles.recordLabel}>Best Coins</Text>
-                <Text style={styles.recordValue}>{bestCoinsRef.current}</Text>
-              </View>
+
+              <Pressable style={styles.primaryPill} onPress={startGame}>
+                <Ionicons name="planet-outline" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.primaryPillText}>Start Flight</Text>
+              </Pressable>
             </View>
-
-            <Pressable style={styles.btnPrimary} onPress={startGame}>
-              <Ionicons name="planet-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-              <Text style={styles.btnPrimaryText}>Start Flight</Text>
-            </Pressable>
           </View>
         )}
 
         {/* PLAYING / PAUSED HUD & CANVAS */}
         {(gameState === "PLAYING" || gameState === "PAUSED") && (
           <View style={styles.gameWrapper} {...panResponder.panHandlers}>
-            {/* Top HUD */}
-            <View style={styles.hud}>
-              <View style={styles.hudRow}>
+            {/* Apple Floating Dark Glass HUD */}
+            <View style={styles.hudCard}>
+              <View style={styles.hudTopRow}>
                 {/* Coins */}
-                <View style={styles.hudItem}>
+                <View style={styles.hudCoinBadge}>
                   <Image source={ASSETS.coin} style={styles.hudCoinIcon} contentFit="contain" />
-                  <Text style={styles.hudValue}>{coins}</Text>
+                  <Text style={styles.hudCoinValue}>+{coins}</Text>
                 </View>
 
                 {/* Star Lives */}
@@ -555,32 +585,35 @@ export default function GalaxyFallScreen() {
                     <Ionicons
                       key={idx}
                       name={idx < lives ? "star" : "star-outline"}
-                      size={20}
-                      color={idx < lives ? "#F5C447" : "rgba(255,255,255,0.3)"}
+                      size={18}
+                      color={idx < lives ? "#F5C447" : "rgba(255,255,255,0.25)"}
                       style={{ marginHorizontal: 2 }}
                     />
                   ))}
                 </View>
 
                 {/* Score */}
-                <View style={styles.hudItem}>
-                  <Text style={styles.hudLabel}>SCORE</Text>
-                  <Text style={styles.hudValue}>{coins}</Text>
+                <View style={styles.hudStatGroup}>
+                  <Text style={styles.hudStatLabel}>SCORE</Text>
+                  <Text style={styles.hudStatValue}>{coins}</Text>
                 </View>
               </View>
 
-              {/* Relaxing Bar Timer */}
-              <View style={styles.timeBarContainer}>
+              {/* Time Track */}
+              <View style={styles.timeTrack}>
                 <View
                   style={[
-                    styles.timeBarFill,
+                    styles.timeFill,
                     {
                       width: `${Math.min(Math.max((timeLeft / GAME_DURATION) * 100, 0), 100)}%`,
-                      backgroundColor: timeLeft <= 10 ? "#E9A844" : "#4A90E2",
+                      backgroundColor: timeLeft <= 10 ? "#EF4444" : timeLeft <= 20 ? "#F59E0B" : "#52B72A",
                     },
                   ]}
                 />
-                <Text style={styles.timeText}>⏱️ {formatTime(timeLeft)}</Text>
+              </View>
+              <View style={styles.timeLabelRow}>
+                <Ionicons name="time-outline" size={11.5} color="rgba(255,255,255,0.6)" />
+                <Text style={styles.timeLabelText}>{formatTime(timeLeft)}</Text>
               </View>
             </View>
 
@@ -669,7 +702,7 @@ export default function GalaxyFallScreen() {
 
             {/* Bottom Gentle Swipe Hint */}
             <View style={styles.bottomControlHint}>
-              <Ionicons name="swap-horizontal" size={16} color="rgba(255,255,255,0.6)" />
+              <Ionicons name="swap-horizontal" size={15} color="rgba(255,255,255,0.7)" />
               <Text style={styles.bottomControlHintText}>Drag left or right to glide</Text>
             </View>
           </View>
@@ -678,24 +711,24 @@ export default function GalaxyFallScreen() {
         {/* GAMEOVER / VICTORY OVERLAY */}
         {gameState === "GAMEOVER" && (
           <View style={styles.centerContainer}>
-            <View style={styles.gameOverCard}>
+            <View style={styles.modalCard}>
               <View style={[styles.victoryIconWrap, !isVictory && styles.fallenIconWrap]}>
                 <Ionicons
                   name={isVictory ? "sparkles" : "planet-outline"}
-                  size={36}
-                  color={isVictory ? "#F5C447" : "#4A90E2"}
+                  size={32}
+                  color={isVictory ? "#F5C447" : "#38BDF8"}
                 />
               </View>
 
-              <Text style={styles.goTitle}>{isVictory ? "Cosmic Arrival!" : "Gentle Landing"}</Text>
-              <Text style={styles.goSub}>
+              <Text style={styles.modalTitle}>{isVictory ? "Cosmic Arrival!" : "Gentle Landing"}</Text>
+              <Text style={styles.modalDesc}>
                 {isVictory
                   ? "You navigated the cosmos with peace and poise."
-                  : "Muni rested safely on an asteroid."}
+                  : "Muni rested safely on a starway asteroid."}
               </Text>
 
               {/* Rewards Breakdown */}
-              <View style={styles.statsBox}>
+              <View style={styles.statsCard}>
                 <View style={styles.statRow}>
                   <Text style={styles.statLabel}>Tala Coins Collected</Text>
                   <Text style={styles.statValue}>+{bonusBreakdown.coins}</Text>
@@ -703,58 +736,90 @@ export default function GalaxyFallScreen() {
                 {isVictory && (
                   <View style={styles.statRow}>
                     <Text style={styles.statLabel}>60s Survival Bonus</Text>
-                    <Text style={[styles.statValue, { color: "#4F8A38" }]}>+{bonusBreakdown.survival}</Text>
+                    <View style={styles.bonusBadge}>
+                      <Text style={styles.bonusBadgeText}>+{bonusBreakdown.survival} Tala</Text>
+                    </View>
                   </View>
                 )}
                 {isVictory && bonusBreakdown.flawless > 0 && (
                   <View style={styles.statRow}>
-                    <Text style={styles.statLabel}>Flawless Flight Bonus (No Lives Lost)</Text>
-                    <Text style={[styles.statValue, { color: "#4F8A38" }]}>+{bonusBreakdown.flawless}</Text>
+                    <Text style={styles.statLabel}>Flawless Flight Bonus</Text>
+                    <View style={styles.bonusBadge}>
+                      <Text style={styles.bonusBadgeText}>+{bonusBreakdown.flawless} Tala</Text>
+                    </View>
                   </View>
                 )}
-                <View style={styles.statDivider} />
+                <View style={styles.dividerLine} />
                 <View style={styles.statRow}>
-                  <Text style={[styles.statLabel, styles.statLabelBold]}>Total Tala Earned</Text>
-                  <Text style={[styles.statValue, styles.statValueBold]}>{bonusBreakdown.total}</Text>
+                  <Text style={[styles.statLabel, { fontFamily: "Outfit-Bold", color: "#FFFFFF" }]}>
+                    Total Tala Earned
+                  </Text>
+                  <View style={styles.talaBadge}>
+                    <Text style={styles.talaBadgeText}>+{bonusBreakdown.total} Tala</Text>
+                  </View>
                 </View>
               </View>
 
-              <Pressable style={styles.btnPrimary} onPress={startGame}>
-                <Ionicons name="refresh" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
-                <Text style={styles.btnPrimaryText}>Drift Again</Text>
+              <Pressable style={styles.primaryPill} onPress={startGame}>
+                <Ionicons name="refresh" size={17} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.primaryPillText}>Drift Again</Text>
               </Pressable>
-              <Pressable style={styles.btnSecondary} onPress={quitGame}>
-                <Text style={styles.btnSecondaryText}>Exit to Tools</Text>
+              <Pressable style={styles.secondaryPill} onPress={quitGame}>
+                <Text style={styles.secondaryPillText}>Done</Text>
               </Pressable>
             </View>
           </View>
         )}
       </View>
 
-      {/* PAUSE MODAL */}
-      {gameState === "PAUSED" && (
-        <View style={styles.pauseOverlay}>
-          <View style={styles.pauseCard}>
-            <View style={styles.pauseIconCircle}>
-              <Ionicons name="pause" size={28} color="#4A90E2" />
+      {/* Unified Apple Pause Modal */}
+      {gameState === "PAUSED" && !showExitPrompt && (
+        <View style={styles.overlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.pauseIconWrap}>
+              <Ionicons name="pause" size={26} color="#52B72A" />
             </View>
-            <Text style={styles.pauseTitle}>Flight Paused</Text>
-            <Text style={styles.pauseSub}>Take a gentle breath, Muni is floating with you.</Text>
+            <Text style={styles.modalTitle}>Flight Paused</Text>
+            <Text style={styles.modalDesc}>Take a gentle breath, Muni is floating with you.</Text>
 
-            <Pressable style={styles.pauseBtnResume} onPress={resumeGame}>
-              <Ionicons name="play" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
-              <Text style={styles.pauseBtnResumeText}>Resume</Text>
+            <Pressable style={styles.primaryPill} onPress={resumeGame}>
+              <Ionicons name="play" size={17} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.primaryPillText}>Resume</Text>
             </Pressable>
 
-            <Pressable style={styles.pauseBtnRestart} onPress={restartGame}>
-              <Ionicons name="refresh" size={18} color="#33475C" style={{ marginRight: 8 }} />
-              <Text style={styles.pauseBtnRestartText}>Restart Flight</Text>
+            <Pressable style={styles.secondaryPill} onPress={restartGame}>
+              <Ionicons name="refresh" size={17} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.secondaryPillText}>Restart Flight</Text>
             </Pressable>
 
-            <Pressable style={styles.pauseBtnQuit} onPress={quitGame}>
-              <Ionicons name="exit-outline" size={18} color="#C45C5C" style={{ marginRight: 8 }} />
-              <Text style={styles.pauseBtnQuitText}>Quit Game</Text>
+            <Pressable style={styles.textAction} onPress={quitGame}>
+              <Ionicons name="exit-outline" size={16} color="#F87171" style={{ marginRight: 5 }} />
+              <Text style={styles.textActionRed}>Quit Game</Text>
             </Pressable>
+          </View>
+        </View>
+      )}
+
+      {/* Exit Prompt Sheet */}
+      {showExitPrompt && (
+        <View style={styles.overlay}>
+          <View style={styles.exitCard}>
+            <Text style={styles.exitTitle}>Leave Flight?</Text>
+            <Text style={styles.exitText}>Your current flight progress will be lost.</Text>
+            <View style={styles.exitActions}>
+              <Pressable
+                style={styles.exitStay}
+                onPress={() => {
+                  setShowExitPrompt(false);
+                  if (gameState === "PAUSED") resumeGame();
+                }}
+              >
+                <Text style={styles.exitStayText}>Stay</Text>
+              </Pressable>
+              <Pressable style={styles.exitLeave} onPress={quitGame}>
+                <Text style={styles.exitLeaveText}>Leave</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       )}
@@ -765,93 +830,136 @@ export default function GalaxyFallScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#0B1021" },
   contentFrame: { flex: 1, alignSelf: "center", position: "relative" },
+
+  /* Top Bar */
   topBar: {
-    height: 56,
+    height: 52,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 12,
-    backgroundColor: "rgba(11, 16, 33, 0.85)",
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.1)",
-    zIndex: 20,
+    paddingHorizontal: 16,
+    zIndex: 100,
   },
-  topTitle: { color: "#FFFFFF", fontSize: 18, fontFamily: "Outfit-Bold" },
-  backButton: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
-  pauseButton: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
-  pausePlaceholder: { width: 40, height: 40 },
-
-  centerContainer: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
-  coverImage: { width: 140, height: 140, borderRadius: 24, marginBottom: 16 },
-  overlayTitle: { fontSize: 30, fontFamily: "Outfit-Bold", color: "#FFFFFF", marginBottom: 8 },
-  overlaySub: {
-    fontSize: 14,
-    color: "#D0D8E8",
-    textAlign: "center",
-    lineHeight: 20,
-    marginBottom: 20,
-    paddingHorizontal: 10,
-  },
-
-  recordsPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    paddingVertical: 10,
-    paddingHorizontal: 22,
-    borderRadius: 18,
-    marginBottom: 26,
+  circleButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(255, 255, 255, 0.14)",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.15)",
+    borderColor: "rgba(255, 255, 255, 0.22)",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
-  recordItem: { alignItems: "center", minWidth: 80 },
-  recordLabel: { color: "rgba(255, 255, 255, 0.6)", fontSize: 11, fontFamily: "Outfit-Medium" },
-  recordValue: { color: "#F5C447", fontSize: 17, fontFamily: "Outfit-Bold", marginTop: 2 },
-  recordDivider: { width: 1, height: 24, backgroundColor: "rgba(255, 255, 255, 0.2)", marginHorizontal: 16 },
+  titlePill: {
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  topTitle: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontFamily: "Outfit-Bold",
+    letterSpacing: -0.2,
+  },
+  buttonSpacer: { width: 38, height: 38 },
 
+  centerContainer: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
   gameWrapper: { flex: 1, position: "relative" },
 
-  hud: {
-    paddingHorizontal: 16,
+  /* HUD */
+  hudCard: {
+    marginHorizontal: 14,
+    marginTop: 6,
+    marginBottom: 8,
+    backgroundColor: "rgba(15, 23, 42, 0.78)",
+    borderRadius: 20,
+    paddingHorizontal: 14,
     paddingVertical: 10,
-    backgroundColor: "rgba(11, 16, 33, 0.6)",
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.16)",
+    shadowColor: "#000",
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 4,
     zIndex: 15,
   },
-  hudRow: {
+  hudTopRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 8,
   },
-  hudItem: { flexDirection: "row", alignItems: "center", gap: 6 },
-  hudCoinIcon: { width: 22, height: 22 },
-  hudLabel: { color: "rgba(255, 255, 255, 0.6)", fontSize: 11, fontFamily: "Outfit-Bold" },
-  hudValue: { color: "#FFFFFF", fontSize: 16, fontFamily: "Outfit-Bold" },
-  livesRow: { flexDirection: "row", alignItems: "center" },
-
-  timeBarContainer: {
-    height: 18,
-    backgroundColor: "rgba(255, 255, 255, 0.12)",
-    borderRadius: 9,
-    overflow: "hidden",
-    position: "relative",
-    justifyContent: "center",
+  hudCoinBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: "rgba(245, 196, 71, 0.16)",
+    borderWidth: 1,
+    borderColor: "rgba(245, 196, 71, 0.3)",
   },
-  timeBarFill: { height: "100%", borderRadius: 9 },
-  timeText: {
-    position: "absolute",
-    width: "100%",
-    textAlign: "center",
-    fontSize: 11,
-    color: "#FFFFFF",
+  hudCoinIcon: { width: 14, height: 14 },
+  hudCoinValue: {
+    color: "#F5C447",
+    fontSize: 12.5,
     fontFamily: "Outfit-Bold",
-    textShadowColor: "rgba(0,0,0,0.4)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+  },
+  livesRow: { flexDirection: "row", alignItems: "center" },
+  hudStatGroup: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    columnGap: 5,
+  },
+  hudStatLabel: {
+    color: "rgba(255, 255, 255, 0.55)",
+    fontSize: 10,
+    fontFamily: "Outfit-Bold",
+    letterSpacing: 0.6,
+  },
+  hudStatValue: {
+    color: "#FFFFFF",
+    fontSize: 16.5,
+    fontFamily: "Outfit-Bold",
+  },
+  timeTrack: {
+    height: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  timeFill: {
+    height: "100%",
+    borderRadius: 999,
+  },
+  timeLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    columnGap: 4,
+    marginTop: 4,
+  },
+  timeLabelText: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 11,
+    fontFamily: "Outfit-Medium",
   },
 
+  /* Canvas */
   canvasArea: { flex: 1, position: "relative", overflow: "hidden" },
   starParticle: { position: "absolute", backgroundColor: "#FFFFFF" },
 
@@ -862,8 +970,8 @@ const styles = StyleSheet.create({
   shieldBubble: {
     width: "100%",
     height: "100%",
-    borderRadius: 20,
-    backgroundColor: "rgba(0, 206, 201, 0.25)",
+    borderRadius: 999,
+    backgroundColor: "rgba(0, 206, 201, 0.2)",
     borderWidth: 1.5,
     borderColor: "#00CEC9",
     alignItems: "center",
@@ -872,162 +980,330 @@ const styles = StyleSheet.create({
 
   scorePopupText: {
     position: "absolute",
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: "Outfit-Bold",
-    textShadowColor: "rgba(0,0,0,0.8)",
+    zIndex: 100,
+    textShadowColor: "rgba(0,0,0,0.6)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
 
   muniContainer: {
     position: "absolute",
-    width: MUNI_SIZE,
-    height: MUNI_SIZE,
+    width: 60,
+    height: 60,
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 10,
   },
   muniGlow: {
     position: "absolute",
-    width: MUNI_SIZE + 16,
-    height: MUNI_SIZE + 16,
-    borderRadius: (MUNI_SIZE + 16) / 2,
-    backgroundColor: "rgba(108, 92, 231, 0.25)",
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: "rgba(108, 92, 231, 0.35)",
   },
-  muniSprite: { width: "100%", height: "100%" },
+  muniSprite: { width: 56, height: 56 },
 
   bottomControlHint: {
     position: "absolute",
-    bottom: 24,
+    bottom: 20,
     width: "100%",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
+    columnGap: 6,
   },
   bottomControlHintText: {
-    color: "rgba(255, 255, 255, 0.55)",
-    fontSize: 13,
+    color: "rgba(255, 255, 255, 0.65)",
+    fontSize: 12.5,
     fontFamily: "Outfit-Medium",
   },
 
-  gameOverCard: {
-    width: "100%",
-    maxWidth: 330,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 24,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 12,
-  },
-  victoryIconWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "#FEF7E6",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
-  },
-  fallenIconWrap: { backgroundColor: "#EDF5FD" },
-  goTitle: { fontSize: 24, fontFamily: "Outfit-Bold", color: "#1D2D44", marginBottom: 6 },
-  goSub: { fontSize: 14, color: "#607181", textAlign: "center", marginBottom: 20 },
-
-  statsBox: {
-    width: "100%",
-    backgroundColor: "#F4F8F9",
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 20,
-    rowGap: 10,
-  },
-  statRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  statLabel: { fontSize: 13, color: "#546A7B" },
-  statLabelBold: { fontFamily: "Outfit-Bold", color: "#1D2D44" },
-  statValue: { fontSize: 15, fontFamily: "Outfit-Bold", color: "#1D2D44" },
-  statValueBold: { fontSize: 18, color: "#4A90E2" },
-  statDivider: { height: 1, backgroundColor: "#E0E7DD", marginVertical: 4 },
-
-  btnPrimary: {
-    width: "100%",
-    maxWidth: 290,
-    backgroundColor: "#4A90E2",
-    borderRadius: 14,
-    paddingVertical: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#4A90E2",
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  btnPrimaryText: { color: "#FFFFFF", fontSize: 15, fontFamily: "Outfit-Bold" },
-  btnSecondary: { width: "100%", paddingVertical: 12, alignItems: "center" },
-  btnSecondaryText: { color: "#546A7B", fontSize: 14, fontFamily: "Outfit-SemiBold" },
-
-  pauseOverlay: {
+  /* Overlays & Modals */
+  overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(11, 16, 33, 0.7)",
+    backgroundColor: "rgba(5, 8, 18, 0.65)",
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 10000,
+    zIndex: 200,
     padding: 20,
   },
-  pauseCard: {
+  startCard: {
     width: "100%",
-    maxWidth: 320,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 24,
+    maxWidth: 325,
+    backgroundColor: "rgba(15, 23, 42, 0.94)",
+    borderRadius: 28,
+    padding: 22,
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.16)",
     shadowColor: "#000",
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
     elevation: 12,
   },
-  pauseIconCircle: {
-    width: 56,
-    height: 56,
+  coverWrap: {
+    width: 130,
+    height: 130,
+    borderRadius: 22,
+    overflow: "hidden",
+    marginBottom: 14,
+  },
+  coverImage: { width: "100%", height: "100%" },
+  modalCard: {
+    width: "100%",
+    maxWidth: 325,
+    backgroundColor: "rgba(15, 23, 42, 0.95)",
     borderRadius: 28,
-    backgroundColor: "#EDF5FD",
+    padding: 22,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.16)",
+    shadowColor: "#000",
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 12,
+  },
+  pauseIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "rgba(82, 183, 42, 0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(82, 183, 42, 0.35)",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 12,
   },
-  pauseTitle: { fontSize: 22, fontFamily: "Outfit-Bold", color: "#1D2D44", marginBottom: 6 },
-  pauseSub: { fontSize: 14, color: "#607181", textAlign: "center", marginBottom: 22, lineHeight: 19 },
-  pauseBtnResume: {
-    width: "100%",
-    flexDirection: "row",
-    backgroundColor: "#4A90E2",
-    borderRadius: 14,
-    paddingVertical: 13,
+  victoryIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "rgba(245, 196, 71, 0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(245, 196, 71, 0.35)",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10,
+    marginBottom: 12,
   },
-  pauseBtnResumeText: { color: "#FFFFFF", fontSize: 15, fontFamily: "Outfit-Bold" },
-  pauseBtnRestart: {
-    width: "100%",
+  fallenIconWrap: {
+    backgroundColor: "rgba(56, 189, 248, 0.18)",
+    borderColor: "rgba(56, 189, 248, 0.35)",
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontFamily: "Outfit-Bold",
+    color: "#FFFFFF",
+    marginBottom: 4,
+    textAlign: "center",
+    letterSpacing: -0.3,
+  },
+  modalDesc: {
+    fontSize: 13.5,
+    lineHeight: 18.5,
+    color: "rgba(255, 255, 255, 0.7)",
+    textAlign: "center",
+    marginBottom: 18,
+    fontFamily: "Outfit-Regular",
+  },
+
+  recordsBox: {
     flexDirection: "row",
-    backgroundColor: "#F0F4F8",
-    borderRadius: 14,
-    paddingVertical: 13,
     alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 10,
-  },
-  pauseBtnRestartText: { color: "#33475C", fontSize: 15, fontFamily: "Outfit-Bold" },
-  pauseBtnQuit: {
-    width: "100%",
-    flexDirection: "row",
+    justifyContent: "space-around",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.14)",
+    borderRadius: 18,
     paddingVertical: 11,
+    paddingHorizontal: 16,
+    width: "100%",
+    marginBottom: 18,
+  },
+  recordCol: { alignItems: "center" },
+  recordColLabel: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 10,
+    fontFamily: "Outfit-Bold",
+    letterSpacing: 0.6,
+    marginBottom: 2,
+  },
+  recordColValue: {
+    color: "#F5C447",
+    fontSize: 18,
+    fontFamily: "Outfit-Bold",
+  },
+  recordDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
+  },
+
+  primaryPill: {
+    width: "100%",
+    height: 48,
+    borderRadius: 999,
+    backgroundColor: "#52B72A",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#52B72A",
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+    marginBottom: 10,
+  },
+  primaryPillText: {
+    color: "#FFFFFF",
+    fontSize: 15.5,
+    fontFamily: "Outfit-Bold",
+  },
+  secondaryPill: {
+    width: "100%",
+    height: 46,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.16)",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  secondaryPillText: {
+    color: "#FFFFFF",
+    fontSize: 14.5,
+    fontFamily: "Outfit-Bold",
+  },
+  textAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+  },
+  textActionRed: {
+    color: "#F87171",
+    fontSize: 14,
+    fontFamily: "Outfit-SemiBold",
+  },
+
+  statsCard: {
+    width: "100%",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.14)",
+    padding: 13,
+    rowGap: 9,
+    marginBottom: 18,
+  },
+  statRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  statLabel: {
+    color: "rgba(255, 255, 255, 0.7)",
+    fontSize: 13,
+    fontFamily: "Outfit-Regular",
+  },
+  statValue: {
+    color: "#FFFFFF",
+    fontSize: 14.5,
+    fontFamily: "Outfit-Bold",
+  },
+  bonusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: "rgba(82, 183, 42, 0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(82, 183, 42, 0.35)",
+  },
+  bonusBadgeText: {
+    color: "#52B72A",
+    fontSize: 11,
+    fontFamily: "Outfit-Bold",
+  },
+  dividerLine: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.14)",
+    marginVertical: 2,
+  },
+  talaBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: "rgba(245, 196, 71, 0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(245, 196, 71, 0.4)",
+  },
+  talaBadgeText: {
+    color: "#F5C447",
+    fontSize: 12,
+    fontFamily: "Outfit-Bold",
+  },
+
+  /* Exit Sheet */
+  exitCard: {
+    width: "100%",
+    maxWidth: 295,
+    backgroundColor: "rgba(15, 23, 42, 0.95)",
+    padding: 22,
+    borderRadius: 24,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.18)",
+    shadowColor: "#000",
+    shadowOpacity: 0.4,
+    shadowRadius: 18,
+    elevation: 10,
+  },
+  exitTitle: {
+    color: "#FFFFFF",
+    fontSize: 19,
+    fontFamily: "Outfit-Bold",
+    marginBottom: 6,
+  },
+  exitText: {
+    color: "rgba(255, 255, 255, 0.7)",
+    fontSize: 13.5,
+    lineHeight: 18,
+    textAlign: "center",
+    marginBottom: 18,
+    fontFamily: "Outfit-Regular",
+  },
+  exitActions: {
+    flexDirection: "row",
+    columnGap: 10,
+    width: "100%",
+  },
+  exitStay: {
+    flex: 1,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
     alignItems: "center",
     justifyContent: "center",
   },
-  pauseBtnQuitText: { color: "#C45C5C", fontSize: 14, fontFamily: "Outfit-SemiBold" },
+  exitStayText: {
+    color: "#FFFFFF",
+    fontFamily: "Outfit-Bold",
+    fontSize: 14,
+  },
+  exitLeave: {
+    flex: 1,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: "#DC2626",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  exitLeaveText: {
+    color: "#FFFFFF",
+    fontFamily: "Outfit-Bold",
+    fontSize: 14,
+  },
 });
