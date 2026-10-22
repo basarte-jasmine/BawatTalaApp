@@ -1,9 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Pressable, ScrollView,
+import { ActivityIndicator, Animated, Image, Pressable, ScrollView,
   RefreshControl, StyleSheet, Text, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import { ConfirmationModal } from "../ui/ConfirmationModal";
@@ -37,6 +38,47 @@ type StudentInboxScreenProps = {
 type PendingDelete =
   | { type: "item"; id: string }
   | { type: "thread"; key: string };
+
+function ApplePressableCard({
+  children,
+  onPress,
+  style,
+}: {
+  children: React.ReactNode;
+  onPress?: () => void;
+  style?: any;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scale, {
+      toValue: 0.985,
+      friction: 8,
+      tension: 300,
+      useNativeDriver: true,
+    }).start();
+    try {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scale, {
+      toValue: 1,
+      friction: 6,
+      tension: 220,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <Animated.View style={[{ transform: [{ scale }] }, style]}>
+      <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
+        {children}
+      </Pressable>
+    </Animated.View>
+  );
+}
 
 const TALA_IMAGE = require("../../assets/images/Tala_Star.png");
 const ACHIEVEMENT_BADGE = require("../../assets/images/Notification Badge.png");
@@ -473,7 +515,7 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
           </Pressable>
         )}
       >
-        <Pressable
+        <ApplePressableCard
           style={[
             styles.itemCard,
             {
@@ -518,7 +560,7 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
               </Text>
             </View>
           </View>
-        </Pressable>
+        </ApplePressableCard>
       </Swipeable>
     );
   };
@@ -548,7 +590,7 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
           </Pressable>
         )}
       >
-        <Pressable
+        <ApplePressableCard
           style={[
             styles.itemCard,
             {
@@ -592,7 +634,7 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
               </Text>
             </View>
           </View>
-        </Pressable>
+        </ApplePressableCard>
       </Swipeable>
     );
   };
@@ -648,7 +690,12 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
                   <Pressable
                     key={filter.key}
                     style={[styles.filterButton, isActive && styles.filterButtonActive]}
-                    onPress={() => setNotificationFilter(filter.key)}
+                    onPress={() => {
+                      try {
+                        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      } catch {}
+                      setNotificationFilter(filter.key);
+                    }}
                   >
                     <Text style={[styles.filterButtonText, isActive && styles.filterButtonTextActive]}>{filter.label}</Text>
                   </Pressable>
@@ -821,9 +868,9 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40 },
   summaryWrap: {
-    paddingHorizontal: 12,
-    paddingTop: 78,
-    paddingBottom: 8 },
+    paddingHorizontal: 16,
+    paddingTop: 84,
+    paddingBottom: 4 },
   summaryCard: {
     borderRadius: 22,
     borderWidth: 1,
@@ -832,15 +879,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     columnGap: 12,
-    shadowColor: "#6B7B69",
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 2 },
     elevation: 2 },
   summaryIconBubble: {
     width: 44,
     height: 44,
-    borderRadius: 999,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center" },
   summaryTextWrap: {
@@ -878,15 +925,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center" },
   filterButtonActive: {
-    borderColor: "#6FAE46",
-    backgroundColor: "#EAF7DD" },
+    borderColor: "#52B72A",
+    backgroundColor: "#52B72A" },
   filterButtonText: {
     color: "#65746C",
     fontSize: 13,
     lineHeight: 17,
     fontFamily: "Outfit-Bold" },
   filterButtonTextActive: {
-    color: "#4B7F34" },
+    color: "#FFFFFF" },
   dayLabel: {
     color: "#324254",
     fontSize: 16.5,
@@ -992,14 +1039,14 @@ const styles = StyleSheet.create({
   bubbleRowOutgoing: {
     justifyContent: "flex-end" },
   bubbleIncoming: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#E6F4EA" },
+    backgroundColor: "#F1F5F9",
+    borderColor: "#E2E8F0" },
   bubbleOutgoing: {
     alignSelf: "flex-end",
-    backgroundColor: "#4F7D63",
-    borderColor: "#4F7D63" },
+    backgroundColor: "#52B72A",
+    borderColor: "#52B72A" },
   bubbleUnread: {
-    borderColor: "#6FAE46",
+    borderColor: "#52B72A",
     backgroundColor: "#F4FBF6" },
   bubbleBodyOutgoing: {
     color: "#FFFFFF" },
@@ -1117,8 +1164,8 @@ const styles = StyleSheet.create({
   itemTextRead: {
     color: "#647280" },
   bubbleCard: {
-    maxWidth: "78%",
-    borderRadius: 18,
+    maxWidth: "80%",
+    borderRadius: 20,
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 12 },
