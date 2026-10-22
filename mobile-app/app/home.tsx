@@ -2248,7 +2248,7 @@ export default function HomeScreen() {
                       ]}
                     >
                       {moodImageSource ? (
-                        <Image source={moodImageSource} style={styles.moodIcon} resizeMode="contain" />
+                        <Image source={moodImageSource} style={styles.moodIcon} contentFit="contain" cachePolicy="memory-disk" priority="high" />
                       ) : (
                         <View style={styles.moodIconPlaceholder} />
                       )}
@@ -2392,7 +2392,7 @@ export default function HomeScreen() {
           <View style={styles.dailyCheckinHeader}>
             <Text style={styles.dailyCheckinTitle}>Daily Check-in</Text>
             <View style={styles.dailyTalaPill}>
-              <Image source={TALA_IMAGE} style={styles.dailyTalaPillIcon} resizeMode="contain" />
+              <Image source={TALA_IMAGE} style={styles.dailyTalaPillIcon} contentFit="contain" cachePolicy="memory-disk" />
               <Text style={styles.dailyTalaPillText}>{totalTala.toLocaleString("en-US")}</Text>
             </View>
           </View>
@@ -2428,7 +2428,8 @@ export default function HomeScreen() {
                   <Image
                     source={TALA_IMAGE}
                     style={[styles.dailyRewardTalaIcon, { width: rewardTileIconSize, height: rewardTileIconSize }]}
-                    resizeMode="contain"
+                    contentFit="contain"
+                    cachePolicy="memory-disk"
                   />
                 )}
                 <Text
@@ -2560,7 +2561,7 @@ export default function HomeScreen() {
               onPress={openBottleModal}
               accessibilityLabel="Open future self message"
             >
-              <Image source={ISLAND_IMAGE} style={styles.futureBottleIslandArt} resizeMode="contain" />
+              <Image source={ISLAND_IMAGE} style={styles.futureBottleIslandArt} contentFit="contain" cachePolicy="memory-disk" />
             </Pressable>
             
             {scheduledBottleNotes.length ? <View style={[styles.futureBottleNoteGlow, { top: islandSceneHeight + 8 }]} pointerEvents="none" /> : null}
@@ -2635,7 +2636,7 @@ export default function HomeScreen() {
                         ]},
                     ]}
                   >
-                    <Image source={object.source} style={styles.seaObjectImage} resizeMode="contain" />
+                    <Image source={object.source} style={styles.seaObjectImage} contentFit="contain" cachePolicy="memory-disk" />
                   </Animated.View>
                 );
 
@@ -2702,7 +2703,7 @@ export default function HomeScreen() {
                       hitSlop={16}
                       accessibilityLabel={`Open drifting letter: ${note.sender}`}
                     >
-                      <Image source={BOTTLE_IMAGE} style={styles.driftingBottleImage} resizeMode="contain" />
+                      <Image source={BOTTLE_IMAGE} style={styles.driftingBottleImage} contentFit="contain" cachePolicy="memory-disk" />
                     </Pressable>
                   </Animated.View>
                 </Animated.View>
@@ -2748,7 +2749,7 @@ export default function HomeScreen() {
 
             {hasConfirmedDriftingBottleWarning ? (
               <View style={styles.driftingBottleModalBody}>
-                <Image source={BOTTLE_IMAGE} style={styles.driftingBottleModalImage} resizeMode="contain" />
+                <Image source={BOTTLE_IMAGE} style={styles.driftingBottleModalImage} contentFit="contain" cachePolicy="memory-disk" />
                 <Text style={styles.driftingBottleModalMessage}>
                   {selectedDriftingBottle?.message ?? ""}
                 </Text>
@@ -2819,7 +2820,8 @@ export default function HomeScreen() {
               <Image
                 source={seaDiscovery === "starfish" ? require("../assets/images/Sea/Starfish.webp") : require("../assets/images/Sea/Meteorite Piece.webp")}
                 style={styles.seaDiscoveryImage}
-                resizeMode="contain"
+                contentFit="contain"
+                cachePolicy="memory-disk"
               />
               <Text style={styles.driftingBottleModalMessage}>
                 {seaDiscovery === "starfish"
@@ -2861,7 +2863,7 @@ export default function HomeScreen() {
 
                 <View style={styles.futureBottleIntroCard}>
                   <View style={styles.futureBottleIntroIconWrap}>
-                    <Image source={BOTTLE_IMAGE} style={styles.futureBottleIntroImage} resizeMode="contain" />
+                    <Image source={BOTTLE_IMAGE} style={styles.futureBottleIntroImage} contentFit="contain" cachePolicy="memory-disk" />
                   </View>
                   <Text style={styles.futureBottleIntroTitle}>Send a message to your future self</Text>
                   <Text style={styles.futureBottleIntroText}>

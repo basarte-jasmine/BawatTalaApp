@@ -192,26 +192,32 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
       <View style={[styles.scaledShell, scaledShellStyle]}>
         <Animated.View style={[styles.avatarStack, breathingStyle]}>
           <View style={styles.layer}>
-            <Image source={MUNI_RIGHT_HAND} style={styles.layer} contentFit="contain" />
-            <Image source={MUNI_LEFT_HAND} style={styles.layer} contentFit="contain" />
+            <Image source={MUNI_RIGHT_HAND} style={styles.layer} contentFit="contain" cachePolicy="memory-disk" priority="high" />
+            <Image source={MUNI_LEFT_HAND} style={styles.layer} contentFit="contain" cachePolicy="memory-disk" priority="high" />
           </View>
 
           <Image
             source={MUNI_FEET}
             style={[styles.layer, styles.feetLayer]}
             contentFit="contain"
+            cachePolicy="memory-disk"
+            priority="high"
           />
 
           <Image
             source={MUNI_BODY}
             style={styles.layer}
             contentFit="contain"
+            cachePolicy="memory-disk"
+            priority="high"
           />
 
           <Image
             source={BLINK_FRAMES[blinkFrameIndex]}
             style={[styles.layer, styles.faceLayer, isGhostOutfit && styles.ghostFaceLayer]}
             contentFit="contain"
+            cachePolicy="memory-disk"
+            priority="high"
           />
 
           {equippedOutfitSource ? (
@@ -219,6 +225,7 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
               source={equippedOutfitSource}
               style={[styles.layer, equippedOutfitStyle]}
               contentFit="contain"
+              cachePolicy="memory-disk"
             />
           ) : null}
 
@@ -227,6 +234,7 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
               source={equippedEyeSource}
               style={[styles.layer, equippedEyeStyle]}
               contentFit="contain"
+              cachePolicy="memory-disk"
             />
           ) : null}
 
@@ -235,6 +243,7 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
               source={equippedHeadSource}
               style={[styles.layer, equippedHeadStyle]}
               contentFit="contain"
+              cachePolicy="memory-disk"
             />
           ) : null}
         </Animated.View>

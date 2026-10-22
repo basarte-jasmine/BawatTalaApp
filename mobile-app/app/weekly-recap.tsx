@@ -7,7 +7,6 @@ import {
   Animated,
   Easing,
   Dimensions,
-  Image,
   Modal,
   Pressable,
   RefreshControl,
@@ -17,6 +16,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
 import Svg, { Circle, Defs, G, Line, LinearGradient, Path, Rect, Stop, Text as SvgText } from "react-native-svg";
@@ -767,7 +767,7 @@ export default function WeeklyRecapScreen() {
 
                 <Animated.View style={[styles.storyScoreGlowWrap, { transform: [{ translateY: floatAnim }] }]}>
                   <View style={styles.talaScoreCircle}>
-                    <Image source={TALA_IMAGE} style={styles.talaScoreStar} resizeMode="contain" />
+                    <Image source={TALA_IMAGE} style={styles.talaScoreStar} contentFit="contain" cachePolicy="memory-disk" />
                     <Text style={styles.talaScoreNumber}>+{weeklyTalaStars}</Text>
                     <Text style={styles.talaScoreLabel}>Tala Earned</Text>
                   </View>
@@ -827,7 +827,7 @@ export default function WeeklyRecapScreen() {
                     "Magandang gabi! Looking back at our past seven days, I see a student who is not only working hard toward their academic goals, but also learning to honor their own boundaries. When stress tried to pull you under on Wednesday, you paused and let yourself breathe. True productivity isn't working until you burn out—it is protecting your peace so you can shine bright. I'm honored to be by your side."
                   </Text>
                   <View style={styles.storyLetterFooter}>
-                    <Image source={TALA_IMAGE} style={styles.storyLetterStar} resizeMode="contain" />
+                    <Image source={TALA_IMAGE} style={styles.storyLetterStar} contentFit="contain" cachePolicy="memory-disk" />
                     <Text style={styles.storyLetterSign}>Always in your corner, Muni ✨</Text>
                   </View>
                 </View>
@@ -857,7 +857,7 @@ export default function WeeklyRecapScreen() {
                 {/* Aesthetic Export Card */}
                 <View style={[styles.storyFinaleCard, { backgroundColor: currentTheme.cardBg, borderColor: currentTheme.cardBorder }]}>
                   <View style={styles.storyFinaleHeader}>
-                    <Image source={TALA_IMAGE} style={styles.storyFinaleStar} resizeMode="contain" />
+                    <Image source={TALA_IMAGE} style={styles.storyFinaleStar} contentFit="contain" cachePolicy="memory-disk" />
                     <Text style={styles.storyFinaleBrand}>BAWAT TALA • WEEKLY WRAPPED</Text>
                   </View>
 
@@ -885,7 +885,7 @@ export default function WeeklyRecapScreen() {
                     </View>
                     <View style={styles.storyFinaleStatDivider} />
                     <View style={styles.storyFinaleStat}>
-                      <Image source={TALA_IMAGE} style={{ width: 13, height: 13, marginBottom: 2 }} resizeMode="contain" />
+                      <Image source={TALA_IMAGE} style={{ width: 13, height: 13, marginBottom: 2 }} contentFit="contain" cachePolicy="memory-disk" />
                       <Text style={styles.storyFinaleStatVal}>+{weeklyTalaStars}</Text>
                       <Text style={styles.storyFinaleStatLbl}>Tala Earned</Text>
                     </View>
@@ -1192,7 +1192,7 @@ export default function WeeklyRecapScreen() {
                   </Text>
                   <View style={[styles.dayNodeAvatarWrap, { borderColor: day.moodColor }]}>
                     {emotionImg ? (
-                      <Image source={emotionImg} style={styles.dayNodeAvatarImg} resizeMode="contain" />
+                      <Image source={emotionImg} style={styles.dayNodeAvatarImg} contentFit="contain" cachePolicy="memory-disk" />
                     ) : (
                       <Ionicons name="star" size={14} color={day.moodColor} />
                     )}
@@ -1294,7 +1294,7 @@ export default function WeeklyRecapScreen() {
         <View style={styles.pillarsGrid}>
           <View style={styles.pillarCard}>
             <View style={styles.pillarHeader}>
-              <Image source={TALA_IMAGE} style={{ width: 16, height: 16 }} resizeMode="contain" />
+              <Image source={TALA_IMAGE} style={{ width: 16, height: 16 }} contentFit="contain" cachePolicy="memory-disk" />
               <Text style={styles.pillarTitle}>Tala Constellation</Text>
             </View>
             <Text style={styles.pillarBigVal}>+{weeklyTalaStars} Tala</Text>
@@ -1375,7 +1375,7 @@ export default function WeeklyRecapScreen() {
             "Magandang gabi! Looking back at our past seven days, I see a student who is not only working hard toward their goals, but also learning to honor their own boundaries. When stress tried to pull you under on Wednesday, you paused and let yourself breathe. True productivity isn't working until you burn out—it is protecting your peace so you can shine bright. I'm honored to be by your side."
           </Text>
           <View style={styles.muniLetterFooter}>
-            <Image source={TALA_IMAGE} style={styles.muniLetterStar} resizeMode="contain" />
+            <Image source={TALA_IMAGE} style={styles.muniLetterStar} contentFit="contain" cachePolicy="memory-disk" />
             <Text style={styles.muniLetterSign}>With warmth, Muni • Your Mental Wellness Companion</Text>
           </View>
         </View>
@@ -1418,7 +1418,7 @@ export default function WeeklyRecapScreen() {
           <View style={styles.shareCardContainer}>
             <View style={styles.shareCard}>
               <View style={styles.shareCardHeader}>
-                <Image source={TALA_IMAGE} style={styles.shareTalaIcon} resizeMode="contain" />
+                <Image source={TALA_IMAGE} style={styles.shareTalaIcon} contentFit="contain" cachePolicy="memory-disk" />
                 <View>
                   <Text style={styles.shareCardBrand}>BAWAT TALA</Text>
                   <Text style={styles.shareCardTitle}>Tala ng Linggo • Weekly Recap</Text>

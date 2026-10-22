@@ -6,12 +6,12 @@ import { useEffect, useRef } from "react";
 import {
   Animated,
   Easing,
-  Image,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type TabKeyClean = "home" | "journal" | "consult" | "muni" | "none";
@@ -233,7 +233,8 @@ export function HomeBottomNav({ activeTab, onBeforeLeave, transparent = false, o
                 <Image
                   source={isActive ? MUNI_NAV_ACTIVE_IMAGE : MUNI_NAV_INACTIVE_IMAGE}
                   style={styles.tabMuniArt}
-                  resizeMode="contain"
+                  contentFit="contain"
+                  cachePolicy="memory-disk"
                 />
               ) : (
                 <Ionicons
@@ -312,7 +313,8 @@ export function HomeBottomNav({ activeTab, onBeforeLeave, transparent = false, o
                 <Image
                   source={MICROPHONE_IMAGE}
                   style={styles.centerVoiceIcon}
-                  resizeMode="contain"
+                  contentFit="contain"
+                  cachePolicy="memory-disk"
                 />
               </Pressable>
             </Animated.View>

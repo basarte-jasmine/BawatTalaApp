@@ -933,7 +933,7 @@ export default function MoodOverviewScreen() {
                     >
                       <View style={[styles.timelineIconBox, { borderColor: moodMeta?.color ?? "#CBD5E1", backgroundColor: `${moodMeta?.color ?? "#E2E8F0"}18` }]}>
                         {moodImageSource ? (
-                          <Image source={moodImageSource} style={styles.timelineEmotionImage} contentFit="contain" />
+                          <Image source={moodImageSource} style={styles.timelineEmotionImage} contentFit="contain" cachePolicy="memory-disk" />
                         ) : (
                           <View style={[styles.timelineDot, { backgroundColor: moodMeta?.color ?? "#94A3B8" }]} />
                         )}
@@ -986,7 +986,7 @@ export default function MoodOverviewScreen() {
                     <View key={item.id} style={styles.barRow}>
                       <View style={[styles.barIconCircle, { borderColor: item.color, backgroundColor: `${item.color}18` }]}>
                         {item.image ? (
-                          <Image source={item.image} style={styles.barEmotionImage} contentFit="contain" />
+                          <Image source={item.image} style={styles.barEmotionImage} contentFit="contain" cachePolicy="memory-disk" />
                         ) : null}
                       </View>
 

@@ -4,8 +4,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Image, Pressable, ScrollView,
+import { ActivityIndicator, Animated, Pressable, ScrollView,
   RefreshControl, StyleSheet, Text, View } from "react-native";
+import { Image } from "expo-image";
 import { Swipeable } from "react-native-gesture-handler";
 import { ConfirmationModal } from "../ui/ConfirmationModal";
 import { AppleTopBar } from "../ui/AppleTopBar";
@@ -527,11 +528,11 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
         >
           <View style={styles.itemRow}>
             {visual.isAchievement ? (
-              <Image source={ACHIEVEMENT_BADGE} style={styles.itemAchievementBadge} resizeMode="contain" />
+              <Image source={ACHIEVEMENT_BADGE} style={styles.itemAchievementBadge} contentFit="contain" cachePolicy="memory-disk" />
             ) : (
               <View style={[styles.itemIconWrap, { backgroundColor: visual.chip }]}>
                 {visual.usesTalaLogo ? (
-                  <Image source={TALA_IMAGE} style={styles.itemTalaIcon} resizeMode="contain" />
+                  <Image source={TALA_IMAGE} style={styles.itemTalaIcon} contentFit="contain" cachePolicy="memory-disk" />
                 ) : (
                   <Ionicons name={visual.icon} size={18} color={visual.accent} />
                 )}
@@ -567,7 +568,15 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
 
   const renderCounselorAvatar = (name: string, photoUrl?: string, unread = false) => {
     if (photoUrl) {
-      return <Image source={{ uri: photoUrl }} style={[styles.avatarImage, unread && styles.avatarUnreadRing]} />;
+      return (
+        <Image
+          source={{ uri: photoUrl }}
+          style={[styles.avatarImage, unread && styles.avatarUnreadRing]}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          transition={150}
+        />
+      );
     }
     return (
       <View style={[styles.avatarFallback, unread && styles.avatarUnreadRing]}>

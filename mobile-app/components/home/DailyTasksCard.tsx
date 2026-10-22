@@ -3,7 +3,6 @@ import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
   Modal,
   Pressable,
   StyleSheet,
@@ -11,6 +10,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { Image } from "expo-image";
 import {
   createDailyTask,
   deleteDailyTask,
@@ -199,7 +199,7 @@ export function DailyTasksCard({
 
         {/* Tala Star Progress Pill */}
         <View style={styles.talaPill}>
-          <Image source={TALA_STAR_IMAGE} style={styles.talaIcon} resizeMode="contain" />
+          <Image source={TALA_STAR_IMAGE} style={styles.talaIcon} contentFit="contain" cachePolicy="memory-disk" />
           <Text style={styles.talaText}>
             {progress.totalRewardedTala} / {progress.maxDailyTala}
           </Text>
@@ -401,7 +401,7 @@ export function DailyTasksCard({
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <View style={styles.modalIconWrap}>
-              <Image source={TALA_STAR_IMAGE} style={styles.modalStarImage} resizeMode="contain" />
+              <Image source={TALA_STAR_IMAGE} style={styles.modalStarImage} contentFit="contain" cachePolicy="memory-disk" />
             </View>
 
             <Text style={styles.modalTitle}>{rewardModal.title}</Text>

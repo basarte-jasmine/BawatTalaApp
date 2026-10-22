@@ -334,7 +334,7 @@ export default function UnscrambleWordScreen() {
           <View style={styles.centerContainer}>
             <View style={styles.startCard}>
               <View style={styles.coverWrap}>
-                <Image source={COVER} style={styles.coverImage} contentFit="contain" />
+                <Image source={COVER} style={styles.coverImage} contentFit="contain" cachePolicy="memory-disk" />
               </View>
               <Text style={styles.modalTitle}>Unscramble Word</Text>
               <Text style={styles.modalDesc}>

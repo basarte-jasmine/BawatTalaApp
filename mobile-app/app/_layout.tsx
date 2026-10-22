@@ -1,5 +1,5 @@
 ﻿import { router, Stack } from "expo-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
 import { StatusBar } from "expo-status-bar";
@@ -23,6 +23,7 @@ import { OfflineSyncProvider } from "../lib/offline-sync";
 import { AppointmentStatusWatcher } from "../components/appointments/AppointmentStatusWatcher";
 import { installSafeOutfitTypography } from "../lib/typography";
 import { getNavigationAnimationConfig } from "../lib/navigation-config";
+import { preloadCoreAssetsAsync } from "../lib/preload-assets";
 
 const APP_MAX_WIDTH = 412;
 const DESKTOP_FRAME_BREAKPOINT = 768;
@@ -55,6 +56,7 @@ function applyGlobalTypography() {
 
 export default function RootLayout() {
   const { width } = useWindowDimensions();
+  const [assetsLoaded, setAssetsLoaded] = useState(false);
   const [fontsLoaded, fontError] = useFonts({
     Outfit: require("../assets/fonts/Outfit-Regular.ttf"),
     "Outfit-Medium": require("../assets/fonts/Outfit-Medium.ttf"),
@@ -62,17 +64,20 @@ export default function RootLayout() {
     "Outfit-Bold": require("../assets/fonts/Outfit-Bold.ttf") });
 
   useEffect(() => {
-    // Never crash the release APK on font load failure â€” fall back to system text.
+    void preloadCoreAssetsAsync().finally(() => setAssetsLoaded(true));
+  }, []);
+
+  useEffect(() => {
     if (fontError) {
       console.warn("Outfit fonts failed to load; using system font.", fontError);
       void SplashScreen.hideAsync();
       return;
     }
-    if (!fontsLoaded) return;
-
-    applyGlobalTypography();
-    void SplashScreen.hideAsync();
-  }, [fontError, fontsLoaded]);
+    if (fontsLoaded && assetsLoaded) {
+      applyGlobalTypography();
+      void SplashScreen.hideAsync();
+    }
+  }, [fontError, fontsLoaded, assetsLoaded]);
 
   useEffect(() => {
     void warmBackend();
@@ -103,7 +108,7 @@ export default function RootLayout() {
     };
   }, []);
 
-  if (!fontsLoaded && !fontError) return null;
+  if ((!fontsLoaded && !fontError) || (!assetsLoaded && !fontError)) return null;
 
   const useDesktopFrame = width >= DESKTOP_FRAME_BREAKPOINT;
 

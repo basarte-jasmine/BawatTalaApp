@@ -295,7 +295,7 @@ export default function GentlePairsScreen() {
           <View style={styles.centerContainer}>
             <View style={styles.startCard}>
               <View style={styles.coverWrap}>
-                <Image source={TEMP_COVER} style={styles.coverImage} contentFit="contain" />
+                <Image source={TEMP_COVER} style={styles.coverImage} contentFit="contain" cachePolicy="memory-disk" />
               </View>
               <Text style={styles.modalTitle}>Gentle Pairs</Text>
               <Text style={styles.modalDesc}>
@@ -388,6 +388,7 @@ export default function GentlePairsScreen() {
                           source={ASSETS[card.imageId]}
                           style={styles.cardImage}
                           contentFit="contain"
+                          cachePolicy="memory-disk"
                         />
                       </View>
                     ) : (

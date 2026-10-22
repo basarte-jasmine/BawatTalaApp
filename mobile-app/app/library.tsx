@@ -4,8 +4,9 @@ import * as Haptics from "expo-haptics";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Image, Linking, Modal, Pressable, ScrollView,
+import { ActivityIndicator, Animated, Linking, Modal, Pressable, ScrollView,
   RefreshControl, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { Image } from "expo-image";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle } from "react-native-svg";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
@@ -1153,7 +1154,9 @@ export default function LibraryScreen() {
               <Image
                 source={{ uri: book.coverImageUrl }}
                 style={styles.bookCoverImage}
-                resizeMode="cover"
+                contentFit="cover"
+                cachePolicy="memory-disk"
+                transition={150}
               />
             ) : (
               <View style={styles.bookCoverPlaceholder}>
@@ -1640,7 +1643,7 @@ export default function LibraryScreen() {
                         {isClaimingReadingReward ? (
                           <ActivityIndicator size="small" color="#52B72A" />
                         ) : (
-                          <Image source={TALA_IMAGE} style={styles.readerRewardIcon} resizeMode="contain" />
+                          <Image source={TALA_IMAGE} style={styles.readerRewardIcon} contentFit="contain" cachePolicy="memory-disk" />
                         )}
                       </View>
                       <View style={[styles.readerRewardGoalPill, { backgroundColor: activeColors.controlBg, borderColor: activeColors.borderColor }]}>
@@ -1747,7 +1750,7 @@ export default function LibraryScreen() {
         <View style={styles.confirmModalBackdrop}>
           <View style={styles.confirmModalCard}>
             <View style={styles.confirmModalIconWrap}>
-              <Image source={TALA_IMAGE} style={styles.confirmModalIcon} resizeMode="contain" />
+              <Image source={TALA_IMAGE} style={styles.confirmModalIcon} contentFit="contain" cachePolicy="memory-disk" />
             </View>
             <Text style={styles.confirmModalTitle}>Leave reader?</Text>
             <Text style={styles.confirmModalBody}>
@@ -1815,7 +1818,7 @@ export default function LibraryScreen() {
             <View style={styles.rewardModalIconHalo}>
               <View style={styles.rewardModalArtPlaceholder}>
                 <Ionicons name="trophy-outline" size={30} color="#6E8C35" />
-                <Image source={TALA_IMAGE} style={styles.rewardModalIcon} resizeMode="contain" />
+                <Image source={TALA_IMAGE} style={styles.rewardModalIcon} contentFit="contain" cachePolicy="memory-disk" />
               </View>
             </View>
             <Text style={styles.rewardModalEyebrow}>Reading achievement</Text>

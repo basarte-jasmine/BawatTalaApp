@@ -376,6 +376,7 @@ export default function ImagePuzzleScreen() {
               opacity: piece.isPlaced && gameState === "playing" ? 0.92 : 1,
             }}
             contentFit="cover"
+            cachePolicy="memory-disk"
           />
         </Animated.View>
       );
@@ -418,7 +419,7 @@ export default function ImagePuzzleScreen() {
         <View style={styles.centerContainer}>
           <View style={styles.startCard}>
             <View style={styles.coverWrap}>
-              <Image source={COVER} style={styles.coverImage} contentFit="contain" />
+              <Image source={COVER} style={styles.coverImage} contentFit="contain" cachePolicy="memory-disk" />
             </View>
             <Text style={styles.modalTitle}>Image Puzzle</Text>
             <Text style={styles.modalDesc}>

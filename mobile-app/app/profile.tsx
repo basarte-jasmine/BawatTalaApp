@@ -425,6 +425,8 @@ export default function ProfileScreen() {
               source={equippedBackgroundSource}
               style={styles.heroBackdropImage}
               contentFit="cover"
+              cachePolicy="memory-disk"
+              priority="high"
             />
             <View style={styles.heroBackdropTintOverlay} />
           </View>

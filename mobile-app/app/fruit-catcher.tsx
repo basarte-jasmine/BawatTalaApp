@@ -365,7 +365,7 @@ export default function FruitCatcherScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
-      <Image source={ASSETS.beach} style={styles.background} contentFit="cover" />
+      <Image source={ASSETS.beach} style={styles.background} contentFit="cover" cachePolicy="memory-disk" priority="high" />
 
       {/* Apple-style Header Bar */}
       <View style={styles.topBar}>
@@ -424,6 +424,8 @@ export default function FruitCatcherScreen() {
                     key={i}
                     source={ASSETS.heart}
                     style={[styles.heart, i >= hearts && styles.emptyHeart]}
+                    contentFit="contain"
+                    cachePolicy="memory-disk"
                   />
                 ))}
               </View>
@@ -441,6 +443,8 @@ export default function FruitCatcherScreen() {
                 key={item.id}
                 source={item.type === "shell" ? ASSETS.shell : item.fruitData?.src}
                 style={[styles.item, { left: item.x, top: item.y }]}
+                contentFit="contain"
+                cachePolicy="memory-disk"
               />
             ))}
             {popups.map((p) => (
@@ -472,7 +476,7 @@ export default function FruitCatcherScreen() {
         <View style={styles.overlay}>
           <View style={styles.modalCard}>
             <View style={styles.startIconWrap}>
-              <Image source={ASSETS.basket} style={styles.startBasketIcon} contentFit="contain" />
+              <Image source={ASSETS.basket} style={styles.startBasketIcon} contentFit="contain" cachePolicy="memory-disk" />
             </View>
             <Text style={styles.modalTitle}>Fruit Catcher</Text>
             <Text style={styles.modalDesc}>

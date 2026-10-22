@@ -482,7 +482,7 @@ export default function MuniMatchScreen() {
           <View style={styles.centerContainer}>
             <View style={styles.startCard}>
               <View style={styles.coverWrap}>
-                <Image source={ASSETS.cover} style={styles.coverImage} contentFit="contain" />
+                <Image source={ASSETS.cover} style={styles.coverImage} contentFit="contain" cachePolicy="memory-disk" />
               </View>
               <Text style={styles.modalTitle}>Muni Match</Text>
               <Text style={styles.modalDesc}>
@@ -532,7 +532,7 @@ export default function MuniMatchScreen() {
                 </View>
 
                 <View style={styles.coinBadge}>
-                  <Image source={ASSETS.coin} style={styles.coinIcon} contentFit="contain" />
+                  <Image source={ASSETS.coin} style={styles.coinIcon} contentFit="contain" cachePolicy="memory-disk" />
                   <Text style={styles.coinCount}>+{coins}</Text>
                 </View>
               </View>
@@ -611,6 +611,7 @@ export default function MuniMatchScreen() {
                             source={ASSETS[tile.color]}
                             style={styles.tileImage}
                             contentFit="contain"
+                            cachePolicy="memory-disk"
                           />
                         )}
                       </View>

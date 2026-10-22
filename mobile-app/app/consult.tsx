@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     ActivityIndicator,
     Animated,
-    Image,
     Modal,
     Pressable,
     ScrollView,
@@ -14,6 +13,7 @@ import {
     Text,
     TextInput,
     View } from "react-native";
+import { Image } from "expo-image";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { unlockAchievement } from "../lib/achievements";
@@ -1008,7 +1008,13 @@ export default function ConsultScreen() {
                             <View style={[styles.counselorCard, selected && styles.selectedCounselorCard]}>
                               <View style={styles.counselorRow}>
                               {item.pictureUrl ? (
-                                <Image source={{ uri: item.pictureUrl }} style={styles.counselorAvatarImage} />
+                                <Image
+                                  source={{ uri: item.pictureUrl }}
+                                  style={styles.counselorAvatarImage}
+                                  contentFit="cover"
+                                  cachePolicy="memory-disk"
+                                  transition={150}
+                                />
                               ) : (
                                 <View style={styles.counselorAvatarFallback}>
                                   <Text style={styles.counselorAvatarText}>

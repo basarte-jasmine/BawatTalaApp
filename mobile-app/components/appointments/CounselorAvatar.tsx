@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
-import { Image, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
+import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
+import { Image } from "expo-image";
 
 type CounselorAvatarProps = {
   fullName?: string | null;
@@ -35,7 +36,9 @@ export function CounselorAvatar({ fullName, pictureUrl, size, style }: Counselor
         <Image
           accessibilityLabel={`${fullName || "Counselor"} profile picture`}
           onError={() => setImageFailed(true)}
-          resizeMode="cover"
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          transition={150}
           source={{ uri: pictureUrl || "" }}
           style={{ height: size, width: size }}
         />

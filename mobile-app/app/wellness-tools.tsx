@@ -357,6 +357,7 @@ export default function WellnessToolsScreen() {
                         style={[styles.gameImage, compact && styles.gameImageCompact]}
                         contentFit="cover"
                         transition={180}
+                        cachePolicy="memory-disk"
                       />
                       <View style={styles.gameBody}>
                         <Text style={styles.gameLabel}>{game.label}</Text>

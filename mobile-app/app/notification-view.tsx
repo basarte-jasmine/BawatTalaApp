@@ -194,7 +194,9 @@ export default function NotificationViewScreen() {
                   <Image
                     source={illustration ? { uri: illustration } : localIllustration || TALA_IMAGE}
                     style={styles.achievementArt}
-                    resizeMode={localIllustration || illustration ? "cover" : "contain"}
+                    contentFit={localIllustration || illustration ? "cover" : "contain"}
+                    cachePolicy="memory-disk"
+                    transition={150}
                   />
                 </View>
                 <View style={styles.achievementCopy}>
@@ -208,7 +210,7 @@ export default function NotificationViewScreen() {
               {!isAchievement ? (
                 <View style={[styles.headerIconBubble, { backgroundColor: visual.chip }]}>
                   {visual.usesTalaLogo ? (
-                    <Image source={TALA_IMAGE} style={styles.headerTalaIcon} contentFit="contain" />
+                    <Image source={TALA_IMAGE} style={styles.headerTalaIcon} contentFit="contain" cachePolicy="memory-disk" />
                   ) : (
                     <Ionicons name={visual.icon} size={22} color={visual.accent} />
                   )}
@@ -232,7 +234,7 @@ export default function NotificationViewScreen() {
 
             {isAchievement && parsedMetadata?.rewardTala ? (
               <View style={[styles.bodyCard, styles.achievementRewardCard, { flexDirection: "row", alignItems: "center", columnGap: 12 }]}>
-                <Image source={TALA_IMAGE} style={{ width: 28, height: 28 }} contentFit="contain" />
+                <Image source={TALA_IMAGE} style={{ width: 28, height: 28 }} contentFit="contain" cachePolicy="memory-disk" />
                 <Text style={[styles.bodyText, { flex: 1, fontFamily: "Outfit-Bold", color: "#9B7E3F" }]}>
                   You earned {parsedMetadata.rewardTala} Tala!
                 </Text>
@@ -248,7 +250,7 @@ export default function NotificationViewScreen() {
             {finalTriviaText ? (
               <View style={styles.triviaCard}>
                 <View style={styles.triviaIdentity}>
-                  <Image source={MUNI_AVATAR} style={styles.triviaAvatar} contentFit="contain" />
+                  <Image source={MUNI_AVATAR} style={styles.triviaAvatar} contentFit="contain" cachePolicy="memory-disk" />
                   <Text style={styles.triviaLabel}>Muni Trivia</Text>
                 </View>
                 <View style={styles.triviaBubble}>

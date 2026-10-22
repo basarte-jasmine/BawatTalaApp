@@ -500,7 +500,7 @@ export default function GalaxyFallScreen() {
   return (
     <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
       {/* Background Graphic */}
-      <Image source={ASSETS.bg} style={StyleSheet.absoluteFillObject} contentFit="cover" />
+      <Image source={ASSETS.bg} style={StyleSheet.absoluteFillObject} contentFit="cover" cachePolicy="memory-disk" priority="high" />
 
       {/* Apple-style Top Bar */}
       <View style={styles.topBar}>
@@ -537,7 +537,7 @@ export default function GalaxyFallScreen() {
           <View style={styles.centerContainer}>
             <View style={styles.startCard}>
               <View style={styles.coverWrap}>
-                <Image source={ASSETS.cover} style={styles.coverImage} contentFit="contain" />
+                <Image source={ASSETS.cover} style={styles.coverImage} contentFit="contain" cachePolicy="memory-disk" />
               </View>
               <Text style={styles.modalTitle}>Galaxy Fall</Text>
               <Text style={styles.modalDesc}>
@@ -572,7 +572,7 @@ export default function GalaxyFallScreen() {
               <View style={styles.hudTopRow}>
                 {/* Coins */}
                 <View style={styles.hudCoinBadge}>
-                  <Image source={ASSETS.coin} style={styles.hudCoinIcon} contentFit="contain" />
+                  <Image source={ASSETS.coin} style={styles.hudCoinIcon} contentFit="contain" cachePolicy="memory-disk" />
                   <Text style={styles.hudCoinValue}>+{coins}</Text>
                 </View>
 
@@ -650,13 +650,13 @@ export default function GalaxyFallScreen() {
                   ]}
                 >
                   {item.type === "coin" && (
-                    <Image source={ASSETS.coin} style={styles.coinImage} contentFit="contain" />
+                    <Image source={ASSETS.coin} style={styles.coinImage} contentFit="contain" cachePolicy="memory-disk" />
                   )}
                   {item.type === "meteor" && (
-                    <Image source={ASSETS.meteor} style={styles.meteorImage} contentFit="contain" />
+                    <Image source={ASSETS.meteor} style={styles.meteorImage} contentFit="contain" cachePolicy="memory-disk" />
                   )}
                   {item.type === "rocket" && (
-                    <Image source={ASSETS.rocket} style={styles.rocketImage} contentFit="contain" />
+                    <Image source={ASSETS.rocket} style={styles.rocketImage} contentFit="contain" cachePolicy="memory-disk" />
                   )}
                   {item.type === "shield" && (
                     <View style={styles.shieldBubble}>
@@ -691,7 +691,7 @@ export default function GalaxyFallScreen() {
                   },
                 ]}
               >
-                <Image source={ASSETS.muni} style={styles.muniSprite} contentFit="contain" />
+                <Image source={ASSETS.muni} style={styles.muniSprite} contentFit="contain" cachePolicy="memory-disk" priority="high" />
               </Animated.View>
             </Animated.View>
 
