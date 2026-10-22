@@ -13,6 +13,7 @@ import Svg, { Defs, Ellipse, LinearGradient, Path, Rect, Stop } from "react-nati
 import { checkDaysSinceLastActive, recordLastActiveTimestamp } from "../lib/muni-reminders";
 import { CounselorAvatar } from "../components/appointments/CounselorAvatar";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
+import { MuniVoiceOverlay } from "../components/voice/MuniVoiceOverlay";
 import { DailyTasksCard } from "../components/home/DailyTasksCard";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { StudentProfileAvatar } from "../components/profile/StudentProfileAvatar";
@@ -391,6 +392,14 @@ export default function HomeScreen() {
   const { profileFrameId } = useAppPreferences();
   const { isSyncing, refreshKey, syncNow } = useOfflineSync();
   const [localFrameId, setLocalFrameId] = useState<string | null>(profileFrameId ?? null);
+  const { voice } = useLocalSearchParams<{ voice?: string }>();
+  const [isVoiceOverlayVisible, setIsVoiceOverlayVisible] = useState(false);
+
+  useEffect(() => {
+    if (voice === "1" || voice === "true") {
+      setIsVoiceOverlayVisible(true);
+    }
+  }, [voice]);
 
   useEffect(() => {
     if (profileFrameId) {
@@ -3495,7 +3504,15 @@ Muni saved your space and left a warm cup of cocoa on your desk. Take whatever t
         </View>
       ) : null}
 
-      <HomeBottomNav activeTab="home" transparent={bottomNavTransparent} />
+      <HomeBottomNav
+        activeTab="home"
+        transparent={bottomNavTransparent}
+        onMicPress={() => setIsVoiceOverlayVisible(true)}
+      />
+      <MuniVoiceOverlay
+        visible={isVoiceOverlayVisible}
+        onClose={() => setIsVoiceOverlayVisible(false)}
+      />
     </SafeAreaView>
   );
 }

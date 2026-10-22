@@ -50,9 +50,10 @@ type HomeBottomNavProps = {
   activeTab?: TabKeyClean | "profile";
   onBeforeLeave?: (nextRoute: string) => boolean;
   transparent?: boolean;
+  onMicPress?: () => void;
 };
 
-export function HomeBottomNav({ activeTab, onBeforeLeave, transparent = false }: HomeBottomNavProps) {
+export function HomeBottomNav({ activeTab, onBeforeLeave, transparent = false, onMicPress }: HomeBottomNavProps) {
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const normalizedActiveTab = activeTab === "profile" ? "consult" : activeTab;
@@ -187,9 +188,17 @@ export function HomeBottomNav({ activeTab, onBeforeLeave, transparent = false }:
   };
 
   const handleMicPress = () => {
+    if (onMicPress) {
+      onMicPress();
+      return;
+    }
+    if (pathname === "/home") {
+      router.push("/home?voice=1" as never);
+      return;
+    }
     if (pathname === "/muni-voice") return;
     if (onBeforeLeave && !onBeforeLeave("/muni-voice")) return;
-    router.push("/muni-voice" as never);
+    router.push("/home?voice=1" as never);
   };
 
   const renderTab = (item: NavItem, globalIndex: number) => {
