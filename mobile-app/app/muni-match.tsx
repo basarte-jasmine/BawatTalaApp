@@ -3,6 +3,7 @@ import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  PanResponder,
   Pressable,
   StyleSheet,
   Text,
@@ -145,6 +146,7 @@ export default function MuniMatchScreen() {
   const [popups, setPopups] = useState<Popup[]>([]);
   const [board, setBoard] = useState<Tile[][]>([]);
   const [wobbleCoord, setWobbleCoord] = useState<{ r: number; c: number } | null>(null);
+  const [selectedPath, setSelectedPath] = useState<{ r: number; c: number }[]>([]);
   const [showExitPrompt, setShowExitPrompt] = useState(false);
 
   const bestScoreRef = useRef(0);
@@ -153,6 +155,16 @@ export default function MuniMatchScreen() {
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const rewardClaimedRef = useRef(false);
+  const gameStateRef = useRef(gameState);
+  const boardRef = useRef(board);
+  const scoreRef = useRef(score);
+  const coinsRef = useRef(coins);
+  const targetBonusGrantedRef = useRef(targetBonusGranted);
+  gameStateRef.current = gameState;
+  boardRef.current = board;
+  scoreRef.current = score;
+  coinsRef.current = coins;
+  targetBonusGrantedRef.current = targetBonusGranted;
 
   useEffect(() => {
     getGameScore("muni-match").then((data) => {
@@ -201,6 +213,7 @@ export default function MuniMatchScreen() {
     setRewardTala(0);
     setPopups([]);
     setWobbleCoord(null);
+    setSelectedPath([]);
     rewardClaimedRef.current = false;
     setGameState("PLAYING");
   };
@@ -271,18 +284,60 @@ export default function MuniMatchScreen() {
     }
   }, [popups]);
 
-  // Tile Tap Handler
-  const handleTilePress = (r: number, c: number, pageX: number, pageY: number) => {
-    if (gameState !== "PLAYING") return;
-    if (!board[r] || !board[r][c]) return;
+  const pathRef = useRef<{ r: number; c: number }[]>([]);
+  const pathColorRef = useRef<MuniColor | null>(null);
 
-    const group = findConnectedGroup(board, r, c);
+  const getTileAtPoint = (locationX: number, locationY: number) => {
+    const stride = tileSize + GAP;
+    const c = Math.floor((locationX - GRID_PADDING) / stride);
+    const r = Math.floor((locationY - GRID_PADDING) / stride);
+    if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return null;
+    const tileLeft = GRID_PADDING + c * stride;
+    const tileTop = GRID_PADDING + r * stride;
+    if (locationX > tileLeft + tileSize || locationY > tileTop + tileSize) return null;
+    return { r, c };
+  };
 
+  const addPathTile = (position: { r: number; c: number }) => {
+    const tile = boardRef.current[position.r]?.[position.c];
+    if (!tile) return;
+    const path = pathRef.current;
+    const last = path[path.length - 1];
+
+    if (!pathColorRef.current) {
+      pathColorRef.current = tile.color;
+    }
+    if (tile.color !== pathColorRef.current) return;
+    if (last && last.r === position.r && last.c === position.c) return;
+
+    if (path.length > 1) {
+      const previous = path[path.length - 2];
+      if (previous.r === position.r && previous.c === position.c) {
+        path.pop();
+        setSelectedPath([...path]);
+        return;
+      }
+    }
+
+    if (last && Math.abs(last.r - position.r) + Math.abs(last.c - position.c) !== 1) return;
+    if (path.some((item) => item.r === position.r && item.c === position.c)) return;
+    path.push(position);
+    setSelectedPath([...path]);
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const finishPath = (pageX: number, pageY: number) => {
+    const group = pathRef.current;
+    pathRef.current = [];
+    pathColorRef.current = null;
+    setSelectedPath([]);
     if (group.length < 3) {
-      triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
-      setWobbleCoord({ r, c });
-      setTimeout(() => setWobbleCoord(null), 300);
-      Vibration.vibrate(30);
+      if (group.length > 0) {
+        triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
+        setWobbleCoord(group[0]);
+        setTimeout(() => setWobbleCoord(null), 300);
+        Vibration.vibrate(30);
+      }
       return;
     }
 
@@ -297,15 +352,13 @@ export default function MuniMatchScreen() {
     if (count === 4) earnedPoints = 50;
     else if (count >= 5) earnedPoints = 80 + (count - 5) * 20;
 
-    const newScore = score + earnedPoints;
+    const newScore = scoreRef.current + earnedPoints;
     setScore(newScore);
 
-    let nextTargetGranted = targetBonusGranted;
     let extraBonusCoins = 0;
 
-    if (!targetBonusGranted && newScore >= TARGET_SCORE) {
+    if (!targetBonusGrantedRef.current && newScore >= TARGET_SCORE) {
       triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
-      nextTargetGranted = true;
       setTargetBonusGranted(true);
       extraBonusCoins = TARGET_BONUS_COINS;
       setPopups((prev) => [
@@ -320,7 +373,7 @@ export default function MuniMatchScreen() {
       ]);
     }
 
-    const nextCoins = coins + earnedCoins + extraBonusCoins;
+    const nextCoins = coinsRef.current + earnedCoins + extraBonusCoins;
     setCoins(nextCoins);
 
     setPopups((prev) => [
@@ -334,7 +387,7 @@ export default function MuniMatchScreen() {
       },
     ]);
 
-    const newBoard = board.map((row) => [...row]);
+    const newBoard = boardRef.current.map((row) => [...row]);
     for (const pos of group) {
       newBoard[pos.r][pos.c] = null as any;
     }
@@ -361,6 +414,28 @@ export default function MuniMatchScreen() {
       setBoard(newBoard);
     }
   };
+
+  const boardPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => gameStateRef.current === "PLAYING",
+      onMoveShouldSetPanResponder: () => gameStateRef.current === "PLAYING",
+      onPanResponderGrant: (event) => {
+        pathRef.current = [];
+        pathColorRef.current = null;
+        setSelectedPath([]);
+        const position = getTileAtPoint(event.nativeEvent.locationX, event.nativeEvent.locationY);
+        if (position) addPathTile(position);
+      },
+      onPanResponderMove: (event) => {
+        const position = getTileAtPoint(event.nativeEvent.locationX, event.nativeEvent.locationY);
+        if (position) addPathTile(position);
+      },
+      onPanResponderRelease: (event) => {
+        finishPath(event.nativeEvent.pageX, event.nativeEvent.pageY);
+      },
+      onPanResponderTerminate: () => finishPath(0, 0),
+    })
+  ).current;
 
   const formatTime = (secs: number) => {
     const mins = Math.floor(secs / 60);
@@ -411,8 +486,8 @@ export default function MuniMatchScreen() {
               </View>
               <Text style={styles.modalTitle}>Muni Match</Text>
               <Text style={styles.modalDesc}>
-                Match 3 or more connected Munis of the same color. Reach the 300-point target for a
-                10 Tala bonus!
+                Drag through 3 or more adjacent Munis of the same color to connect them. Release to
+                clear your line, earn points, and reach the 300-point target for a 10 Tala bonus!
               </Text>
 
               <View style={styles.recordsBox}>
@@ -486,18 +561,41 @@ export default function MuniMatchScreen() {
             </View>
 
             {/* Board Container */}
-            <View style={[styles.boardArea, { padding: GRID_PADDING }]}>
+            <View
+              style={[styles.boardArea, { padding: GRID_PADDING }]}
+              {...boardPanResponder.panHandlers}
+            >
+              {selectedPath.slice(1).map((position, index) => {
+                const previous = selectedPath[index];
+                const x1 = GRID_PADDING + previous.c * (tileSize + GAP) + tileSize / 2;
+                const y1 = GRID_PADDING + previous.r * (tileSize + GAP) + tileSize / 2;
+                const x2 = GRID_PADDING + position.c * (tileSize + GAP) + tileSize / 2;
+                const y2 = GRID_PADDING + position.r * (tileSize + GAP) + tileSize / 2;
+                const length = Math.hypot(x2 - x1, y2 - y1);
+                const angle = Math.atan2(y2 - y1, x2 - x1);
+                return (
+                  <View
+                    key={`path_${previous.r}_${previous.c}_${position.r}_${position.c}`}
+                    pointerEvents="none"
+                    style={[
+                      styles.pathSegment,
+                      {
+                        left: (x1 + x2) / 2 - length / 2,
+                        top: (y1 + y2) / 2 - 3,
+                        width: length,
+                        transform: [{ rotate: `${angle}rad` }],
+                      },
+                    ]}
+                  />
+                );
+              })}
               {board.map((row, r) => (
                 <View key={`row_${r}`} style={[styles.gridRow, { gap: GAP }]}>
                   {row.map((tile, c) => {
                     const isWobbling = wobbleCoord?.r === r && wobbleCoord?.c === c;
                     return (
-                      <Pressable
+                      <View
                         key={tile ? tile.id : `empty_${r}_${c}`}
-                        onPress={(e) => {
-                          const { pageX, pageY } = e.nativeEvent;
-                          handleTilePress(r, c, pageX, pageY);
-                        }}
                         style={[
                           styles.tileWrap,
                           {
@@ -515,7 +613,7 @@ export default function MuniMatchScreen() {
                             contentFit="contain"
                           />
                         )}
-                      </Pressable>
+                      </View>
                     );
                   })}
                 </View>
@@ -840,6 +938,18 @@ const styles = StyleSheet.create({
   tileWobble: {
     transform: [{ scale: 1.15 }],
     borderColor: "#EF4444",
+  },
+  pathSegment: {
+    position: "absolute",
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: "#8B5CF6",
+    shadowColor: "#8B5CF6",
+    shadowOpacity: 0.7,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 5,
+    zIndex: 2,
   },
   tileImage: {
     width: "82%",
