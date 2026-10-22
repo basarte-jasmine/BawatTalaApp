@@ -61,7 +61,7 @@ type ScorePopup = {
 
 const GAME_DURATION = 60; // 60 seconds flight
 const MUNI_SIZE = 72;
-const MUNI_BOTTOM_OFFSET = 120;
+const MUNI_TOP_OFFSET = MUNI_SIZE / 2 + 8;
 const COIN_SIZE = 36;
 const METEOR_SIZE = 54;
 const ROCKET_SIZE = 60;
@@ -87,6 +87,8 @@ export default function GalaxyFallScreen() {
   const [rewardTala, setRewardTala] = useState(0);
   const [showExitPrompt, setShowExitPrompt] = useState(false);
   const [bonusBreakdown, setBonusBreakdown] = useState({ coins: 0, survival: 0, flawless: 0, total: 0 });
+  const gameStateRef = useRef(gameState);
+  gameStateRef.current = gameState;
 
   const [popups, setPopups] = useState<ScorePopup[]>([]);
   const [gameSize, setGameSize] = useState({ width: appWidth, height: screenH });
@@ -158,14 +160,14 @@ export default function GalaxyFallScreen() {
   // Fluid Pan Responder for Swiping / Dragging Muni
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponder: () => gameStateRef.current === "PLAYING",
+      onMoveShouldSetPanResponder: () => gameStateRef.current === "PLAYING",
       onPanResponderGrant: (evt) => {
         dragStartX.current = targetMuniX.current;
         touchStartX.current = evt.nativeEvent.pageX;
       },
       onPanResponderMove: (evt, gestureState) => {
-        if (gameState !== "PLAYING") return;
+        if (gameStateRef.current !== "PLAYING") return;
         let newX = dragStartX.current + gestureState.dx * 1.05;
         const halfMuni = MUNI_SIZE / 2;
         const minX = halfMuni + 6;
@@ -307,21 +309,20 @@ export default function GalaxyFallScreen() {
       });
     }
 
-    // 2. Muni Smooth Horizontal Interpolation & Dynamic Tilt
+    // Keep Muni near the top while the world moves upward to create the falling illusion.
     const dx = targetMuniX.current - muniX.current;
     muniX.current += dx * 0.14;
     muniTilt.current = Math.max(-18, Math.min(18, dx * 0.35));
 
-    // 3. Upward Star Particles (giving descending feeling)
-    particlesRef.current.forEach((p) => {
-      p.y -= p.speed;
-      if (p.y < -10) {
-        p.y = gameSize.height + 10;
-        p.x = Math.random() * gameSize.width;
+    particlesRef.current.forEach((particle) => {
+      particle.y -= particle.speed * (dt / 16.67);
+      if (particle.y < -10) {
+        particle.y = gameSize.height + 10;
+        particle.x = Math.random() * gameSize.width;
       }
     });
 
-    // 4. Invulnerability Timer
+    // Invulnerability Timer
     if (invulnerableTimer.current > 0) {
       invulnerableTimer.current--;
       if (invulnerableTimer.current <= 0) {
@@ -329,8 +330,7 @@ export default function GalaxyFallScreen() {
       }
     }
 
-    // 5. Spawning Items (Coins, Meteors, Rockets)
-    // Relaxed, rhythmic interval so it feels floaty and peaceful
+    // Spawn items below the canvas; moving them upward makes Muni appear to fall.
     if (frameCount.current % 50 === 0) {
       const rand = Math.random();
       const halfW = 30;
@@ -366,7 +366,7 @@ export default function GalaxyFallScreen() {
         id: `item_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         type: itemType,
         x: spawnX,
-        y: -itemSize,
+        y: gameSize.height + itemSize / 2,
         width: itemSize,
         height: itemSize,
         speed,
@@ -375,8 +375,7 @@ export default function GalaxyFallScreen() {
       });
     }
 
-    // 6. Move Items & Check Hitboxes
-    const muniY = gameSize.height - MUNI_BOTTOM_OFFSET - MUNI_SIZE / 2;
+    const muniY = MUNI_TOP_OFFSET;
     const muniHitbox = {
       x: muniX.current - MUNI_SIZE * 0.32,
       y: muniY - MUNI_SIZE * 0.32,
@@ -391,11 +390,9 @@ export default function GalaxyFallScreen() {
       const item = itemsRef.current[i];
       if (item.collected) continue;
 
-      item.y += item.speed;
-      item.rotation += item.rotationSpeed;
+      item.y -= item.speed * (dt / 16.67);
 
-      // Item off screen bottom
-      if (item.y > gameSize.height + 40) {
+      if (item.y + item.height / 2 < muniY - MUNI_SIZE / 2) {
         itemsRef.current.splice(i, 1);
         continue;
       }
@@ -688,14 +685,12 @@ export default function GalaxyFallScreen() {
                   styles.muniContainer,
                   {
                     left: muniX.current - MUNI_SIZE / 2,
-                    bottom: MUNI_BOTTOM_OFFSET,
+                    top: MUNI_TOP_OFFSET - MUNI_SIZE / 2,
                     opacity: muniOpacityAnim,
                     transform: [{ rotate: `${muniTilt.current}deg` }],
                   },
                 ]}
               >
-                {/* Gentle Starlight Aura */}
-                <View style={styles.muniGlow} />
                 <Image source={ASSETS.muni} style={styles.muniSprite} contentFit="contain" />
               </Animated.View>
             </Animated.View>
@@ -994,13 +989,6 @@ const styles = StyleSheet.create({
     height: 60,
     alignItems: "center",
     justifyContent: "center",
-  },
-  muniGlow: {
-    position: "absolute",
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: "rgba(108, 92, 231, 0.35)",
   },
   muniSprite: { width: 56, height: 56 },
 

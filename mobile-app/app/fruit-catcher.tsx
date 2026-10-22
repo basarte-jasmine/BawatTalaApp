@@ -66,6 +66,8 @@ export default function FruitCatcherScreen() {
 
   const [bestScore, setBestScore] = useState(0);
   const [highestLevel, setHighestLevel] = useState(0);
+  const gameStateRef = useRef(gameState);
+  gameStateRef.current = gameState;
 
   useEffect(() => {
     getGameScore("fruit-catcher").then((data) => {
@@ -89,8 +91,8 @@ export default function FruitCatcherScreen() {
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => gameState === "playing",
-      onMoveShouldSetPanResponder: () => gameState === "playing",
+      onStartShouldSetPanResponder: () => gameStateRef.current === "playing",
+      onMoveShouldSetPanResponder: () => gameStateRef.current === "playing",
       onPanResponderGrant: () => {
         dragStartX.current = basketXValue.current;
       },
