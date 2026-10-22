@@ -1,13 +1,13 @@
 ﻿import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Linking, Modal, Pressable, ScrollView,
+import { ActivityIndicator, Animated, Image, Linking, Modal, Pressable, ScrollView,
   RefreshControl, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle } from "react-native-svg";
-import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { useAuthSession } from "../lib/auth-session";
 import {
@@ -23,7 +23,7 @@ import {
   type LibraryBookRecord,
   type ReadingAchievementReward } from "../lib/backend-api";
 import { BUILT_IN_LIBRARY_BOOK_IDS, BUILT_IN_LIBRARY_BOOKS } from "../lib/builtin-library-books";
-import { filterAndSortLibraryBooks, getPaginationPageNumbers, paginateBooks, type LibraryFilterSource, type LibrarySortOption } from "../lib/library-filter";
+import { getPaginationPageNumbers, paginateBooks } from "../lib/library-filter";
 import { LIBRARY_MATCHA, matchaAccentFor, titleInitial } from "../lib/library-theme";
 import {
   deleteCachedEpubFile,
@@ -338,9 +338,56 @@ function buildFallbackReaderPages(book: LibraryBookRecord): ReaderPage[] {
 
 const LIBRARY_SEARCH_MAX_LENGTH = 120;
 
+function AppleBookCard({
+  children,
+  onPress,
+  compact,
+}: {
+  children: React.ReactNode;
+  onPress: () => void;
+  compact: boolean;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scale, {
+      toValue: 0.985,
+      friction: 8,
+      tension: 300,
+      useNativeDriver: true,
+    }).start();
+    try {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scale, {
+      toValue: 1,
+      friction: 6,
+      tension: 220,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <Animated.View style={[{ transform: [{ scale }] }, styles.bookCardWrap]}>
+      <Pressable
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        style={[styles.bookCard, compact && styles.bookCardCompact]}
+      >
+        {children}
+      </Pressable>
+    </Animated.View>
+  );
+}
+
 export default function LibraryScreen() {
   const { user } = useAuthSession();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const compact = width < 390;
   const narrow = width < 360;
   const [books, setBooks] = useState<LibraryBookRecord[]>([]);
@@ -367,9 +414,9 @@ export default function LibraryScreen() {
   const [readingRewardMessage, setReadingRewardMessage] = useState("");
   const [bookPendingRemoval, setBookPendingRemoval] = useState<LibraryBookRecord | null>(null);
   const [isRemovingBook, setIsRemovingBook] = useState(false);
-  const [sourceFilter, setSourceFilter] = useState<LibraryFilterSource>("all");
-  const [sortBy, setSortBy] = useState<LibrarySortOption>("recent");
-  const [showShelfFilterModal, setShowShelfFilterModal] = useState(false);
+  const [shelfTabsWidth, setShelfTabsWidth] = useState(0);
+  const slideAnim = useRef(new Animated.Value(activeShelf === "featured" ? 0 : 1)).current;
+  const tabWidth = shelfTabsWidth > 0 ? (shelfTabsWidth - 8) / 2 : 0;
   const [featuredPage, setFeaturedPage] = useState(1);
   const [searchDraft, setSearchDraft] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
@@ -391,11 +438,10 @@ export default function LibraryScreen() {
 
   const displayedBooks = useMemo(() => {
     if (activeShelf === "my") {
-      const searched = filterBooksByQuery(myShelfBooks, submittedQuery);
-      return filterAndSortLibraryBooks(searched, { source: sourceFilter, sort: sortBy });
+      return filterBooksByQuery(myShelfBooks, submittedQuery);
     }
     return paginatedFeatured.items;
-  }, [activeShelf, featuredBooks, myShelfBooks, submittedQuery, sourceFilter, sortBy, paginatedFeatured.items]);
+  }, [activeShelf, myShelfBooks, submittedQuery, paginatedFeatured.items]);
   const displayedIsLoading = activeShelf === "my" ? isMyShelfLoading : isLoading;
   const displayedErrorMessage = activeShelf === "my" ? (myShelfBooks.length ? "" : myShelfErrorMessage) : errorMessage;
   const downloadedCount = myShelfBooks.length;
@@ -683,8 +729,17 @@ export default function LibraryScreen() {
   };
 
   const handleShelfTabChange = (nextShelf: ShelfTab) => {
+    try {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
     setActiveShelf(nextShelf);
-    setShowShelfFilterModal(false);
+    Animated.spring(slideAnim, {
+      toValue: nextShelf === "featured" ? 0 : 1,
+      damping: 22,
+      stiffness: 280,
+      mass: 0.8,
+      useNativeDriver: true,
+    }).start();
     setFeaturedPage(1);
     setSearchDraft("");
     setSubmittedQuery("");
@@ -1066,7 +1121,7 @@ export default function LibraryScreen() {
     ) as keyof typeof Ionicons.glyphMap;
 
     return (
-      <Pressable key={book.id} style={[styles.bookCard, compact && styles.bookCardCompact]} onPress={() => void handlePrimaryBookAction(book)}>
+      <AppleBookCard key={book.id} compact={compact} onPress={() => void handlePrimaryBookAction(book)}>
         <View style={styles.bookCardTopRow}>
           <View style={styles.bookTag}>
             <Text style={styles.bookTagText}>{book.shelfLabel}</Text>
@@ -1100,7 +1155,7 @@ export default function LibraryScreen() {
             <Text style={styles.bookCategory}>{book.category}</Text>
             <Text style={[styles.bookTitle, compact && styles.bookTitleCompact]}>{book.title}</Text>
             <Text style={styles.bookAuthor}>{book.author}</Text>
-            <Text style={styles.bookBlurb}>{book.blurb}</Text>
+            <Text style={styles.bookBlurb} numberOfLines={2}>{book.blurb}</Text>
 
             <View style={styles.bookMetaRow}>
               <View style={styles.bookMetaPill}>
@@ -1113,7 +1168,7 @@ export default function LibraryScreen() {
               </View>
               <View style={styles.bookMetaPill}>
                 <Ionicons name={accessIconName} size={14} color="#5C655B" />
-                <Text style={styles.bookMetaText}>{book.provider === "builtin" ? "Built in" : isDownloaded ? "Saved in app" : canDownloadEpubInApp(book) || actionLabel === "Download EPUB" ? "Free EPUB" : isOpenLibraryBorrow(book) || actionLabel === "Borrow on Open Library" ? "Open Library" : isPreviewOrCatalogOnly(book) ? "Preview only" : book.accessLabel || actionLabel || "Open online"}</Text>
+                <Text style={styles.bookMetaText}>{book.provider === "builtin" ? "Ready in app" : isDownloaded ? "Saved in app" : canDownloadEpubInApp(book) || actionLabel === "Download EPUB" ? "Free EPUB" : isOpenLibraryBorrow(book) || actionLabel === "Borrow on Open Library" ? "Open Library" : isPreviewOrCatalogOnly(book) ? "Preview only" : book.accessLabel || actionLabel || "Open online"}</Text>
               </View>
               {isDownloaded || progressPercent > 0 ? (
                 <View style={styles.bookMetaPill}>
@@ -1184,7 +1239,7 @@ export default function LibraryScreen() {
             </View>
           </View>
         </View>
-      </Pressable>
+      </AppleBookCard>
     );
   };
 
@@ -1206,63 +1261,6 @@ export default function LibraryScreen() {
         }
       >
         <View style={styles.contentFrame}>
-          <View style={[styles.heroCard, compact && styles.heroCardCompact]}>
-            <View style={styles.heroGlowOne} />
-            <View style={styles.heroGlowTwo} />
-
-            <View style={[styles.heroHeaderRow, compact && styles.heroHeaderRowStacked]}>
-              <View style={styles.heroTextWrap}>
-                <Text style={styles.heroBadge}>Reading Room</Text>
-                <Text style={[styles.heroTitle, compact && styles.heroTitleCompact]}>A little space to slow down and read.</Text>
-                <Text style={[styles.heroBody, compact && styles.heroBodyCompact]}>
-                  Browse the library, read books available in Bawat Tala, or check out titles you can read online.
-                </Text>
-              </View>
-
-              <View style={[styles.heroBooksCluster, compact && styles.heroBooksClusterStacked]}>
-                <View style={[styles.heroBookSpine, styles.heroBookSpineOne]} />
-                <View style={[styles.heroBookSpine, styles.heroBookSpineTwo]} />
-                <View style={[styles.heroBookSpine, styles.heroBookSpineThree]} />
-              </View>
-            </View>
-
-            <View style={[styles.heroStatsRow, compact && styles.heroStatsRowWrap]}>
-              <View style={[styles.heroStatPill, compact && styles.heroStatPillCompact]}>
-                <Text style={styles.heroStatValue}>{activeShelf === "my" ? myShelfBooks.length : books.length}</Text>
-                <Text style={styles.heroStatLabel}>Books on shelf</Text>
-              </View>
-              <View style={[styles.heroStatPill, compact && styles.heroStatPillCompact]}>
-                <Text style={styles.heroStatValue}>{downloadedCount}</Text>
-                <Text style={styles.heroStatLabel}>In app</Text>
-              </View>
-              <View style={[styles.heroStatPill, compact && styles.heroStatPillCompact]}>
-                <Text style={styles.heroStatValue}>{onlineCount}</Text>
-                <Text style={styles.heroStatLabel}>Open online</Text>
-              </View>
-            </View>
-          </View>
-
-
-
-          <View style={styles.shelfTabs}>
-            <Pressable
-              style={[styles.shelfTabButton, activeShelf === "featured" && styles.shelfTabButtonActive]}
-              onPress={() => handleShelfTabChange("featured")}
-            >
-              <Text style={[styles.shelfTabText, activeShelf === "featured" && styles.shelfTabTextActive]}>
-                Featured Shelf
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[styles.shelfTabButton, activeShelf === "my" && styles.shelfTabButtonActive]}
-              onPress={() => handleShelfTabChange("my")}
-            >
-              <Text style={[styles.shelfTabText, activeShelf === "my" && styles.shelfTabTextActive]}>
-                My Shelf
-              </Text>
-            </Pressable>
-          </View>
-
           <View style={[styles.searchCard, compact && styles.searchCardCompact]}>
             <View style={styles.searchInputWrap}>
               <Ionicons name="search-outline" size={18} color="#5C655B" />
@@ -1289,25 +1287,7 @@ export default function LibraryScreen() {
               <Ionicons name="search" size={15} color="#FFFFFF" />
               <Text style={styles.searchButtonText}>Search</Text>
             </Pressable>
-            {activeShelf === "my" ? (
-              <Pressable
-                style={[
-                  styles.filterIconButton,
-                  (sourceFilter !== "all" || sortBy !== "recent") && styles.filterIconButtonActive,
-                ]}
-                accessibilityLabel="Filter and sort shelf"
-                onPress={() => setShowShelfFilterModal(true)}
-              >
-                <Ionicons
-                  name="options-outline"
-                  size={19}
-                  color={sourceFilter !== "all" || sortBy !== "recent" ? "#FFFFFF" : "#5C655B"}
-                />
-                {sourceFilter !== "all" || sortBy !== "recent" ? (
-                  <View style={styles.filterActiveDot} />
-                ) : null}
-              </Pressable>
-            ) : null}
+
           </View>
 
 
@@ -1323,10 +1303,10 @@ export default function LibraryScreen() {
             </Text>
             <Text style={styles.sectionSubTitle}>
               {activeShelf === "my"
-                ? "Built-in EPUBs and free Open Library downloads stay here with reading progress."
+                ? "Saved books and reading progress."
                 : submittedQuery
                   ? `Showing Open Library matches for "${submittedQuery}".`
-                  : "Download free EPUBs here, or open borrow and preview books online."}
+                  : "Free offline EPUBs and books to read anytime."}
             </Text>
           </View>
 
@@ -1412,7 +1392,7 @@ export default function LibraryScreen() {
                   {activeShelf === "my"
                     ? (submittedQuery
                         ? `Nothing on your shelf matches â€œ${submittedQuery}â€. Clear search or download a free EPUB from Featured.`
-                        : "Your shelf shows built-in books and Open Library EPUBs you save. Grab a free EPUB from Featured to get started.")
+                        : "Your shelf keeps books you're reading and saved EPUBs. Add books from Featured to get started.")
                     : (submittedQuery
                         ? `No results for â€œ${submittedQuery}â€. Try a simpler title, author, or ISBN.`
                         : "The featured shelf has no books right now. Tap Try Again in a moment, or search by title.")}
@@ -1423,120 +1403,7 @@ export default function LibraryScreen() {
         </View>
       </ScrollView>
 
-      <Modal
-        visible={showShelfFilterModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowShelfFilterModal(false)}
-      >
-        <Pressable style={styles.modalOverlay} onPress={() => setShowShelfFilterModal(false)}>
-          <Pressable style={styles.filterModalCard} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.filterModalHeader}>
-              <View style={{ flexDirection: "row", alignItems: "center", columnGap: 8 }}>
-                <View style={styles.filterModalIconWrap}>
-                  <Ionicons name="options-outline" size={18} color="#70C943" />
-                </View>
-                <Text style={styles.filterModalTitle}>Filter & Sort Shelf</Text>
-              </View>
-              <Pressable
-                style={styles.filterModalCloseButton}
-                accessibilityLabel="Close filters"
-                onPress={() => setShowShelfFilterModal(false)}
-              >
-                <Ionicons name="close" size={20} color="#5C655B" />
-              </Pressable>
-            </View>
 
-            {/* Source Section */}
-            <View style={styles.filterModalSection}>
-              <Text style={styles.filterModalSectionTitle}>Source</Text>
-              <View style={styles.filterModalOptionsRow}>
-                {(
-                  [
-                    { key: "all", label: "All" },
-                    { key: "builtin", label: "Built-in" },
-                    { key: "downloaded", label: "Downloaded" },
-                  ] as const
-                ).map((opt) => (
-                  <Pressable
-                    key={opt.key}
-                    style={[
-                      styles.filterModalOptionPill,
-                      sourceFilter === opt.key && styles.filterModalOptionPillActive,
-                    ]}
-                    onPress={() => setSourceFilter(opt.key)}
-                  >
-                    <Text
-                      style={[
-                        styles.filterModalOptionText,
-                        sourceFilter === opt.key && styles.filterModalOptionTextActive,
-                      ]}
-                    >
-                      {opt.label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-
-            {/* Sort Section */}
-            <View style={styles.filterModalSection}>
-              <Text style={styles.filterModalSectionTitle}>Sort By</Text>
-              <View style={styles.filterModalOptionsRow}>
-                {(
-                  [
-                    { key: "recent", label: "Recent", icon: "time-outline" as const },
-                    { key: "title", label: "Title", icon: "text-outline" as const },
-                    { key: "author", label: "Author", icon: "person-outline" as const },
-                  ] as const
-                ).map((opt) => (
-                  <Pressable
-                    key={opt.key}
-                    style={[
-                      styles.filterModalOptionPill,
-                      sortBy === opt.key && styles.filterModalOptionPillActive,
-                    ]}
-                    onPress={() => setSortBy(opt.key)}
-                  >
-                    <Ionicons
-                      name={opt.icon}
-                      size={14}
-                      color={sortBy === opt.key ? "#FFFFFF" : "#5C655B"}
-                      style={{ marginRight: 4 }}
-                    />
-                    <Text
-                      style={[
-                        styles.filterModalOptionText,
-                        sortBy === opt.key && styles.filterModalOptionTextActive,
-                      ]}
-                    >
-                      {opt.label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-
-            <View style={styles.filterModalActions}>
-              <Pressable
-                style={styles.filterModalResetButton}
-                onPress={() => {
-                  setSourceFilter("all");
-                  setSortBy("recent");
-                }}
-              >
-                <Text style={styles.filterModalResetText}>Reset</Text>
-              </Pressable>
-              <Pressable
-                style={styles.filterModalDoneButton}
-                onPress={() => setShowShelfFilterModal(false)}
-              >
-                <Text style={styles.filterModalDoneText}>Done</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
 
       <Modal visible={Boolean(selectedBook)} animationType="slide" onRequestClose={handleCloseBook}>
         <SafeAreaView style={styles.readerScreen}>
@@ -1723,7 +1590,7 @@ export default function LibraryScreen() {
             </View>
             <Text style={styles.confirmModalTitle}>Remove from My Shelf?</Text>
             <Text style={styles.confirmModalBody}>
-              This removes the downloaded copy and reading progress for {bookPendingRemoval?.title ?? "this book"}. Built-in books stay on your shelf.
+              This removes the downloaded copy and reading progress for {bookPendingRemoval?.title ?? "this book"}.
             </Text>
             <View style={styles.confirmModalActions}>
               <Pressable
@@ -1777,7 +1644,64 @@ export default function LibraryScreen() {
         </View>
       </Modal>
 
-      <HomeBottomNav activeTab="none" />
+      {/* Floating Apple Bottom Nav */}
+      <View style={[styles.bottomNavContainer, { bottom: Math.max(insets.bottom, 12) + 18 }]}>
+        <View
+          style={styles.shelfTabsTrack}
+          onLayout={(e) => setShelfTabsWidth(e.nativeEvent.layout.width)}
+        >
+          {tabWidth > 0 ? (
+            <Animated.View
+              style={[
+                styles.shelfSlidingPill,
+                {
+                  width: tabWidth,
+                  transform: [
+                    {
+                      translateX: slideAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, tabWidth],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            />
+          ) : null}
+
+          <Pressable
+            style={styles.shelfTabItem}
+            onPress={() => handleShelfTabChange("featured")}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeShelf === "featured" }}
+          >
+            <Ionicons
+              name={activeShelf === "featured" ? "sparkles" : "sparkles-outline"}
+              size={17}
+              color={activeShelf === "featured" ? "#2E7C1F" : "#64748B"}
+            />
+            <Text style={[styles.shelfTabText, activeShelf === "featured" && styles.shelfTabTextActive]}>
+              Featured
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={styles.shelfTabItem}
+            onPress={() => handleShelfTabChange("my")}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeShelf === "my" }}
+          >
+            <Ionicons
+              name={activeShelf === "my" ? "bookmark" : "bookmark-outline"}
+              size={17}
+              color={activeShelf === "my" ? "#2E7C1F" : "#64748B"}
+            />
+            <Text style={[styles.shelfTabText, activeShelf === "my" && styles.shelfTabTextActive]}>
+              My Shelf
+            </Text>
+          </Pressable>
+        </View>
+      </View>
     </View>
   );
 }
@@ -1817,8 +1741,8 @@ const styles = StyleSheet.create({
     flex: 1 },
   scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 78,
-    paddingBottom: 92,
+    paddingTop: 84,
+    paddingBottom: 115,
     alignItems: "center" },
   scrollContentCompact: {
     paddingHorizontal: 12 },
@@ -1986,46 +1910,57 @@ const styles = StyleSheet.create({
     lineHeight: 23,
     fontFamily: "Outfit-Bold",
     marginBottom: 6 },
-  introBody: {
-    color: "#5C655B",
-    fontSize: 13,
-    lineHeight: 19 },
-  shelfTabs: {
-    width: "100%",
-    minHeight: 52,
-    borderRadius: 18,
-    backgroundColor: "#E8F6DF",
+ introBody: {
+   color: "#5C655B",
+   fontSize: 13,
+   lineHeight: 19 },
+ shelfTabs: {
+   width: "100%",
+    borderRadius: 999,
+    backgroundColor: "#EDF2EB",
     borderWidth: 1,
-    borderColor: "#D5E8CB",
+    borderColor: "#DEE6DC",
     flexDirection: "row",
     alignItems: "center",
-    padding: 5,
-    marginBottom: 12 },
+    padding: 4,
+    marginBottom: 14 },
   shelfTabButton: {
     flex: 1,
-    minHeight: 40,
-    borderRadius: 15,
+    minHeight: 38,
+    borderRadius: 999,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 8 },
+    columnGap: 6,
+    paddingHorizontal: 12 },
   shelfTabButtonActive: {
     backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#D5E8CB",
-    shadowColor: "#6F845C",
+    shadowColor: "#0F172A",
     shadowOpacity: 0.08,
-    shadowRadius: 5,
+    shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
     elevation: 2 },
   shelfTabText: {
-    color: "#596B80",
-    fontSize: 14,
-    lineHeight: 18,
+    color: "#64748B",
+    fontSize: 13.5,
     fontFamily: "Outfit-SemiBold",
     textAlign: "center" },
   shelfTabTextActive: {
-    color: "#0C2341",
+    color: "#0F172A",
     fontFamily: "Outfit-Bold" },
+  shelfTabCountBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 1.5,
+    borderRadius: 999,
+    backgroundColor: "rgba(0, 0, 0, 0.06)" },
+  shelfTabCountBadgeActive: {
+    backgroundColor: "#EAF6E8" },
+  shelfTabCountText: {
+    color: "#64748B",
+    fontSize: 11,
+    fontFamily: "Outfit-Bold" },
+  shelfTabCountTextActive: {
+    color: "#2E7C1F" },
   searchCard: {
     width: "100%",
     borderRadius: 22,
@@ -2074,10 +2009,10 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center" },
-  searchButton: {
-    minHeight: 44,
-    borderRadius: 16,
-    backgroundColor: "#70C943",
+ searchButton: {
+   minHeight: 44,
+   borderRadius: 16,
+    backgroundColor: "#52B72A",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -2378,6 +2313,58 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     fontFamily: "Outfit-Bold" },
+  bookCardWrap: {
+    width: "100%",
+  },
+  bottomNavContainer: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    zIndex: 90,
+    backgroundColor: "transparent",
+  },
+  shelfTabsTrack: {
+    width: "100%",
+    maxWidth: 380,
+    height: 52,
+    borderRadius: 999,
+    backgroundColor: "rgba(228, 237, 226, 0.95)",
+    borderWidth: 1,
+    borderColor: "rgba(211, 227, 207, 0.9)",
+    flexDirection: "row",
+    position: "relative",
+    padding: 4,
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
+  shelfSlidingPill: {
+    position: "absolute",
+    top: 4,
+    left: 4,
+    bottom: 4,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  shelfTabItem: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    columnGap: 6,
+    zIndex: 2,
+    borderRadius: 999,
+  },
   bookCard: {
     width: "100%",
     borderRadius: 24,
@@ -2521,10 +2508,10 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     gap: 8,
     marginTop: 12 },
-  bookReadButton: {
-    minHeight: 38,
-    borderRadius: 999,
-    backgroundColor: "#70C943",
+ bookReadButton: {
+   minHeight: 38,
+   borderRadius: 999,
+    backgroundColor: "#52B72A",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
