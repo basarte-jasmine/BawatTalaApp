@@ -528,20 +528,18 @@ export default function ImagePuzzleScreen() {
                 )}
               </View>
 
-              {/* Time Track with Countdown Label */}
-              <View style={styles.timeTrackWrap}>
-                <View style={styles.timeTrack}>
-                  <View
-                    style={[
-                      styles.timeFill,
-                      {
-                        width: `${Math.min(Math.max((timeLeft / Math.max(totalTime, 1)) * 100, 0), 100)}%`,
-                        backgroundColor: timeLeft < 20 ? "#EF4444" : timeLeft < 40 ? "#F59E0B" : "#52B72A",
-                      },
-                    ]}
-                  />
-                </View>
-                <Text style={styles.timeLabel}>⏱️ {formatTime(timeLeft)}</Text>
+              {/* Prominent Visual Timer Bar with Centered Countdown */}
+              <View style={styles.timeBarContainer}>
+                <View
+                  style={[
+                    styles.timeBarFill,
+                    {
+                      width: `${Math.min(Math.max((timeLeft / Math.max(totalTime, 1)) * 100, 0), 100)}%`,
+                      backgroundColor: timeLeft < 20 ? "#EF4444" : timeLeft < 40 ? "#F59E0B" : "#52B72A",
+                    },
+                  ]}
+                />
+                <Text style={styles.timeText}>⏱️ {formatTime(timeLeft)}</Text>
               </View>
             </View>
 
@@ -771,39 +769,112 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     columnGap: 10,
-    marginBottom: 8,
+    marginBottom: 10,
   },
-  hudContentRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: 12,
-  },
-  hudStatsCol: {
+  hudCard: {
     flex: 1,
+    height: 72,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    justifyContent: "space-between",
+    borderWidth: 1,
+    borderColor: "#E6ECE4",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
-  timeTrackWrap: {
+  hudTopRow: {
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 8,
+    justifyContent: "space-between",
   },
-  timeLabel: {
-    fontSize: 11,
+  hudStatGroup: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    columnGap: 4,
+  },
+  hudStatLabel: {
+    color: "#64748B",
+    fontSize: 10,
     fontFamily: "Outfit-Bold",
-    color: "#475569",
-    minWidth: 48,
+    letterSpacing: 0.5,
+  },
+  hudStatValue: {
+    color: "#0F172A",
+    fontSize: 16,
+    fontFamily: "Outfit-Bold",
+  },
+  heartsRow: {
+    flexDirection: "row",
+    columnGap: 3,
+    alignItems: "center",
+  },
+  hudLevelPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: "#EAF6E8",
+  },
+  hudLevelText: {
+    color: "#2E7C1F",
+    fontSize: 10.5,
+    fontFamily: "Outfit-Bold",
+  },
+  hudComboPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: "#FEF3C7",
+  },
+  hudComboText: {
+    color: "#B45309",
+    fontSize: 10,
+    fontFamily: "Outfit-Bold",
+  },
+  timeBarContainer: {
+    width: "100%",
+    height: 18,
+    backgroundColor: "#EEF3EC",
+    borderRadius: 9,
+    overflow: "hidden",
+    position: "relative",
+    justifyContent: "center",
+  },
+  timeBarFill: {
+    height: "100%",
+    borderRadius: 9,
+  },
+  timeText: {
+    position: "absolute",
+    width: "100%",
+    textAlign: "center",
+    fontSize: 11,
+    color: "#FFFFFF",
+    fontFamily: "Outfit-Bold",
+    textShadowColor: "rgba(0,0,0,0.35)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   refContainer: {
-    width: 68,
-    height: 68,
-    borderRadius: 12,
+    width: 72,
+    height: 72,
+    borderRadius: 18,
     borderWidth: 1.5,
     borderColor: "#D2E4CE",
-    backgroundColor: "#F8FAF7",
+    backgroundColor: "#FFFFFF",
     overflow: "hidden",
     position: "relative",
     shadowColor: "#0F172A",
     shadowOpacity: 0.08,
-    shadowRadius: 5,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
     elevation: 3,
   },
   refImage: {
@@ -815,7 +886,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "rgba(15, 23, 42, 0.7)",
+    backgroundColor: "rgba(15, 23, 42, 0.72)",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -824,112 +895,10 @@ const styles = StyleSheet.create({
   },
   refBadgeText: {
     color: "#FFFFFF",
-    fontSize: 8.5,
+    fontSize: 9,
     fontFamily: "Outfit-Bold",
     letterSpacing: 0.2,
   },
-  hudCard: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderWidth: 1,
-    borderColor: "#E6ECE4",
-    shadowColor: "#0F172A",
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-    marginBottom: 8,
-  },
-  hudTopRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 8,
-  },
-  hudStatGroup: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    columnGap: 5,
-  },
-  hudStatLabel: {
-    color: "#64748B",
-    fontSize: 10,
-    fontFamily: "Outfit-Bold",
-    letterSpacing: 0.6,
-  },
-  hudStatValue: {
-    color: "#0F172A",
-    fontSize: 17,
-    fontFamily: "Outfit-Bold",
-  },
-  heartsRow: {
-    flexDirection: "row",
-    columnGap: 4,
-    alignItems: "center",
-  },
-  hudLevelPill: {
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-    borderRadius: 999,
-    backgroundColor: "#EAF6E8",
-  },
-  hudLevelText: {
-    color: "#2E7C1F",
-    fontSize: 11,
-    fontFamily: "Outfit-Bold",
-  },
-  timeTrack: {
-    height: 7,
-    backgroundColor: "#EEF3EC",
-    borderRadius: 999,
-    overflow: "hidden",
-  },
-  timeFill: {
-    height: "100%",
-    borderRadius: 999,
-  },
-
-  metaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 8,
-  },
-  hudComboPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: 3,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-    backgroundColor: "#FEF3C7",
-  },
-  hudComboText: {
-    color: "#B45309",
-    fontSize: 11,
-    fontFamily: "Outfit-Bold",
-  },
-  refPhotoBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    shadowColor: "#0F172A",
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  refPhotoThumb: { width: 18, height: 18, borderRadius: 5 },
-  refPhotoText: { color: "#334155", fontSize: 11, fontFamily: "Outfit-Bold" },
-
   playArea: { position: "relative" },
   boardBg: {
     backgroundColor: "#FFFFFF",
