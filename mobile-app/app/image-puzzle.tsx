@@ -495,77 +495,75 @@ export default function ImagePuzzleScreen() {
       {/* PLAYING / TRANSITION / PAUSED */}
       {(gameState === "playing" || gameState === "transition" || gameState === "paused") && (
         <View style={styles.gameContainer}>
-          {/* Apple HUD Pod with Reference Image Container */}
-          <View style={[styles.hudCard, { width: BOARD_SIZE }]}>
-            <View style={styles.hudContentRow}>
-              {/* Left Stats & Timer Column */}
-              <View style={styles.hudStatsCol}>
-                <View style={styles.hudTopRow}>
-                  <View style={styles.hudStatGroup}>
-                    <Text style={styles.hudStatLabel}>SCORE</Text>
-                    <Text style={styles.hudStatValue}>{score}</Text>
-                  </View>
-
-                  <View style={styles.heartsRow}>
-                    {Array.from({ length: 3 }).map((_, i) => (
-                      <Ionicons
-                        key={i}
-                        name={i < hearts ? "heart" : "heart-outline"}
-                        size={16}
-                        color={i < hearts ? "#EF4444" : "#CBD5E1"}
-                      />
-                    ))}
-                  </View>
-
-                  <View style={styles.hudLevelPill}>
-                    <Text style={styles.hudLevelText}>LVL {level}</Text>
-                  </View>
-
-                  {combo > 1 && (
-                    <View style={styles.hudComboPill}>
-                      <Ionicons name="flash" size={11} color="#D97706" />
-                      <Text style={styles.hudComboText}>x{combo}</Text>
-                    </View>
-                  )}
+          {/* Top Controls: Status Container + Reference Container side-by-side */}
+          <View style={[styles.topControlsRow, { width: BOARD_SIZE }]}>
+            {/* Left Status Container */}
+            <View style={styles.hudCard}>
+              <View style={styles.hudTopRow}>
+                <View style={styles.hudStatGroup}>
+                  <Text style={styles.hudStatLabel}>SCORE</Text>
+                  <Text style={styles.hudStatValue}>{score}</Text>
                 </View>
 
-                {/* Time Track with Countdown Label */}
-                <View style={styles.timeTrackWrap}>
-                  <View style={styles.timeTrack}>
-                    <View
-                      style={[
-                        styles.timeFill,
-                        {
-                          width: `${Math.min(Math.max((timeLeft / Math.max(totalTime, 1)) * 100, 0), 100)}%`,
-                          backgroundColor: timeLeft < 20 ? "#EF4444" : timeLeft < 40 ? "#F59E0B" : "#52B72A",
-                        },
-                      ]}
+                <View style={styles.heartsRow}>
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <Ionicons
+                      key={i}
+                      name={i < hearts ? "heart" : "heart-outline"}
+                      size={15}
+                      color={i < hearts ? "#EF4444" : "#CBD5E1"}
                     />
-                  </View>
-                  <Text style={styles.timeLabel}>⏱️ {formatTime(timeLeft)}</Text>
+                  ))}
                 </View>
+
+                <View style={styles.hudLevelPill}>
+                  <Text style={styles.hudLevelText}>LVL {level}</Text>
+                </View>
+
+                {combo > 1 && (
+                  <View style={styles.hudComboPill}>
+                    <Ionicons name="flash" size={10} color="#D97706" />
+                    <Text style={styles.hudComboText}>x{combo}</Text>
+                  </View>
+                )}
               </View>
 
-              {/* Right Reference Image Container */}
-              <Pressable
-                style={styles.refContainer}
-                onPress={() => {
-                  triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
-                  setShowReferenceModal(true);
-                }}
-                accessibilityLabel="Enlarge Reference Photo"
-              >
-                <Image
-                  source={ASSETS[currentImageIndex]}
-                  style={styles.refImage}
-                  contentFit="cover"
-                />
-                <View style={styles.refBadge}>
-                  <Ionicons name="expand" size={10} color="#FFFFFF" />
-                  <Text style={styles.refBadgeText}>Reference</Text>
+              {/* Time Track with Countdown Label */}
+              <View style={styles.timeTrackWrap}>
+                <View style={styles.timeTrack}>
+                  <View
+                    style={[
+                      styles.timeFill,
+                      {
+                        width: `${Math.min(Math.max((timeLeft / Math.max(totalTime, 1)) * 100, 0), 100)}%`,
+                        backgroundColor: timeLeft < 20 ? "#EF4444" : timeLeft < 40 ? "#F59E0B" : "#52B72A",
+                      },
+                    ]}
+                  />
                 </View>
-              </Pressable>
+                <Text style={styles.timeLabel}>⏱️ {formatTime(timeLeft)}</Text>
+              </View>
             </View>
+
+            {/* Tiny Reference Container Next to the Status Container */}
+            <Pressable
+              style={styles.refContainer}
+              onPress={() => {
+                triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
+                setShowReferenceModal(true);
+              }}
+              accessibilityLabel="Enlarge Reference Photo"
+            >
+              <Image
+                source={ASSETS[currentImageIndex]}
+                style={styles.refImage}
+                contentFit="cover"
+              />
+              <View style={styles.refBadge}>
+                <Ionicons name="expand" size={10} color="#FFFFFF" />
+                <Text style={styles.refBadgeText}>Reference</Text>
+              </View>
+            </Pressable>
           </View>
 
           {/* Playfield Area */}
@@ -769,6 +767,12 @@ const styles = StyleSheet.create({
 
   /* HUD */
     /* HUD Redesign with Reference Container */
+  topControlsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 10,
+    marginBottom: 8,
+  },
   hudContentRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -789,8 +793,8 @@ const styles = StyleSheet.create({
     minWidth: 48,
   },
   refContainer: {
-    width: 66,
-    height: 66,
+    width: 68,
+    height: 68,
     borderRadius: 12,
     borderWidth: 1.5,
     borderColor: "#D2E4CE",
@@ -825,10 +829,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   hudCard: {
+    flex: 1,
     backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     borderWidth: 1,
     borderColor: "#E6ECE4",
     shadowColor: "#0F172A",
