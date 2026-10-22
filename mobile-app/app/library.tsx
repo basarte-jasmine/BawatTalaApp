@@ -401,6 +401,9 @@ export default function LibraryScreen() {
   const [myShelfErrorMessage, setMyShelfErrorMessage] = useState("");
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   const [readerPageIndex, setReaderPageIndex] = useState(0);
+  const [readerTheme, setReaderTheme] = useState<"warm" | "clean" | "night">("warm");
+  const [readerFontSize, setReaderFontSize] = useState<number>(18);
+  const pageTurnAnim = useRef(new Animated.Value(1)).current;
   const [readerPages, setReaderPages] = useState<ReaderPage[]>([]);
   const [isReaderLoading, setIsReaderLoading] = useState(false);
   const [readerErrorMessage, setReaderErrorMessage] = useState("");
@@ -951,7 +954,16 @@ export default function LibraryScreen() {
   };
 
   const handleReaderPageChange = (nextPage: number) => {
+    try {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
     const boundedPage = Math.min(Math.max(nextPage, 0), Math.max(readerPages.length - 1, 0));
+
+    Animated.sequence([
+      Animated.timing(pageTurnAnim, { toValue: 0.35, duration: 75, useNativeDriver: true }),
+      Animated.timing(pageTurnAnim, { toValue: 1, duration: 120, useNativeDriver: true }),
+    ]).start();
+
     setReaderPageIndex(boundedPage);
     readerScrollRef.current?.scrollTo({ y: 0, animated: false });
     if (selectedBook) {
@@ -1406,148 +1418,324 @@ export default function LibraryScreen() {
 
 
       <Modal visible={Boolean(selectedBook)} animationType="slide" onRequestClose={handleCloseBook}>
-        <SafeAreaView style={styles.readerScreen}>
-          <View style={styles.readerAuraOne} />
-          <View style={styles.readerAuraTwo} />
+        {(() => {
+          const activeColors =
+            readerTheme === "night"
+              ? {
+                  screenBg: "#0B0F19",
+                  cardBg: "#131B2E",
+                  borderColor: "#1E293B",
+                  textColor: "#E2E8F0",
+                  titleColor: "#F8FAFC",
+                  eyebrowColor: "#94A3B8",
+                  pageNumberColor: "#64748B",
+                  controlBg: "#1E293B",
+                  controlBorder: "#334155",
+                  controlText: "#F8FAFC",
+                  topBarBg: "rgba(11, 15, 25, 0.94)",
+                }
+              : readerTheme === "clean"
+              ? {
+                  screenBg: "#F8FAFC",
+                  cardBg: "#FFFFFF",
+                  borderColor: "#E2E8F0",
+                  textColor: "#0F172A",
+                  titleColor: "#0F172A",
+                  eyebrowColor: "#64748B",
+                  pageNumberColor: "#94A3B8",
+                  controlBg: "#FFFFFF",
+                  controlBorder: "#E2E8F0",
+                  controlText: "#334155",
+                  topBarBg: "rgba(248, 250, 252, 0.94)",
+                }
+              : {
+                  screenBg: "#FBF8F1",
+                  cardBg: "#FFFFFF",
+                  borderColor: "#EDE2D0",
+                  textColor: "#292524",
+                  titleColor: "#1C1917",
+                  eyebrowColor: "#78716C",
+                  pageNumberColor: "#A8A29E",
+                  controlBg: "#FFFFFF",
+                  controlBorder: "#EDE2D0",
+                  controlText: "#44403C",
+                  topBarBg: "rgba(251, 248, 241, 0.94)",
+                };
 
-          <View style={styles.readerFrame}>
-            <View style={[styles.readerTopBar, compact && styles.readerTopBarCompact, narrow && styles.readerTopBarStacked]}>
-              <Pressable style={styles.readerTopButton} accessibilityLabel="Close reader" onPress={handleCloseBook}>
-                <Ionicons name="chevron-back" size={22} color="#35485B" />
-              </Pressable>
+          const bookProgressRatio =
+            readerPages.length > 0 ? (readerPageIndex + 1) / readerPages.length : 0;
+          const bookProgressPercent = Math.round(bookProgressRatio * 100);
 
-              <View style={[styles.readerTopTextWrap, compact && styles.readerTopTextWrapCompact]}>
-                <Text style={styles.readerTopEyebrow}>{selectedBook?.category ?? "Library"}</Text>
-                <Text style={[styles.readerTopTitle, compact && styles.readerTopTitleCompact]} numberOfLines={1}>
-                  {selectedBook?.title ?? ""}
-                </Text>
+          return (
+            <SafeAreaView style={[styles.readerScreen, { backgroundColor: activeColors.screenBg }]}>
+              {/* Apple Floating Header */}
+              <View style={[styles.readerHeader, { backgroundColor: activeColors.topBarBg, borderBottomColor: activeColors.borderColor }]}>
+                <View style={styles.readerHeaderTopRow}>
+                  <Pressable
+                    style={[styles.readerCloseCircle, { backgroundColor: activeColors.controlBg, borderColor: activeColors.borderColor }]}
+                    accessibilityLabel="Close reader"
+                    onPress={handleCloseBook}
+                  >
+                    <Ionicons name="close" size={20} color={activeColors.controlText} />
+                  </Pressable>
+
+                  <View style={styles.readerHeaderCenter}>
+                    <Text style={[styles.readerHeaderCategory, { color: activeColors.eyebrowColor }]}>
+                      {selectedBook?.category ?? "Library"}
+                    </Text>
+                    <Text
+                      style={[styles.readerHeaderBookTitle, { color: activeColors.titleColor }]}
+                      numberOfLines={1}
+                    >
+                      {selectedBook?.title ?? ""}
+                    </Text>
+                  </View>
+
+                  {/* Header Actions: Font Size, Theme, and Page Badge */}
+                  <View style={styles.readerHeaderActions}>
+                    {/* Theme Toggle Button */}
+                    <Pressable
+                      style={[styles.readerThemeButton, { backgroundColor: activeColors.controlBg, borderColor: activeColors.borderColor }]}
+                      onPress={() => {
+                        try {
+                          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        } catch {}
+                        setReaderTheme((curr) => (curr === "warm" ? "clean" : curr === "clean" ? "night" : "warm"));
+                      }}
+                      accessibilityLabel="Toggle reading theme"
+                    >
+                      <Ionicons
+                        name={readerTheme === "night" ? "moon" : readerTheme === "clean" ? "sunny" : "book"}
+                        size={15}
+                        color={activeColors.controlText}
+                      />
+                    </Pressable>
+
+                    {/* Font Size Toggle Button */}
+                    <Pressable
+                      style={[styles.readerFontButton, { backgroundColor: activeColors.controlBg, borderColor: activeColors.borderColor }]}
+                      onPress={() => {
+                        try {
+                          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        } catch {}
+                        setReaderFontSize((curr) => (curr === 16 ? 18 : curr === 18 ? 21 : curr === 21 ? 24 : 16));
+                      }}
+                      accessibilityLabel="Change text size"
+                    >
+                      <Text style={[styles.readerFontButtonText, { color: activeColors.controlText }]}>
+                        Aa
+                      </Text>
+                    </Pressable>
+
+                    {/* Page Badge */}
+                    <View style={[styles.readerPagePill, { backgroundColor: activeColors.controlBg, borderColor: activeColors.borderColor }]}>
+                      <Text style={[styles.readerPagePillText, { color: activeColors.controlText }]}>
+                        {isReaderLoading ? "..." : readerPages.length > 0 ? ('' + (readerPageIndex + 1) + '/' + readerPages.length) : "0/0"}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Apple Slim Reading Progress Bar */}
+                <View style={styles.readerProgressTrack}>
+                  <View
+                    style={[
+                      styles.readerProgressFill,
+                      { width: (bookProgressRatio * 100) + '%' },
+                    ]}
+                  />
+                </View>
               </View>
 
-              <View style={[styles.readerPageBadge, narrow && styles.readerPageBadgeStacked]}>
-                <Text style={styles.readerPageBadgeText}>
-                  {isReaderLoading ? "..." : readerPages.length > 0 ? `${readerPageIndex + 1}/${readerPages.length}` : "0/0"}
-                </Text>
-              </View>
-            </View>
-
-            <View style={[styles.readerBookShell, compact && styles.readerBookShellCompact]}>
-              <View style={[styles.readerSpineShadow, compact && styles.readerSpineShadowCompact]} />
-              <View style={[styles.readerPageCard, compact && styles.readerPageCardCompact]}>
-                <View style={[styles.readerPageInner, compact && styles.readerPageInnerCompact]}>
+              {/* Main Reading Frame */}
+              <View style={styles.readerMainArea}>
+                <View style={[styles.readerPageCard, { backgroundColor: activeColors.cardBg, borderColor: activeColors.borderColor }]}>
                   {isReaderLoading ? (
                     <View style={styles.readerLoadingWrap}>
-                      <ActivityIndicator color="#70C943" />
-                      <Text style={styles.readerLoadingText}>Opening EPUB...</Text>
+                      <ActivityIndicator size="large" color="#52B72A" />
+                      <Text style={[styles.readerLoadingText, { color: activeColors.eyebrowColor }]}>
+                        Opening book...
+                      </Text>
                     </View>
                   ) : (
-                    <>
-                      {!!readerErrorMessage && <Text style={styles.readerInlineErrorText}>{readerErrorMessage}</Text>}
-                      <Text style={styles.readerPageEyebrow}>{currentPage?.eyebrow ?? ""}</Text>
-                      <Text style={[styles.readerPageTitle, compact && styles.readerPageTitleCompact]}>{currentPage?.title ?? ""}</Text>
+                    <Animated.View style={[styles.readerAnimatedPageWrap, { opacity: pageTurnAnim }]}>
+                      {!!readerErrorMessage && (
+                        <Text style={styles.readerInlineErrorText}>{readerErrorMessage}</Text>
+                      )}
 
-                      <ScrollView ref={readerScrollRef} style={styles.readerPageScroll} showsVerticalScrollIndicator={false}>
+                      <ScrollView
+                        ref={readerScrollRef}
+                        style={styles.readerPageScroll}
+                        contentContainerStyle={styles.readerPageScrollContent}
+                        showsVerticalScrollIndicator={false}
+                      >
+                        {currentPage?.eyebrow ? (
+                          <Text style={[styles.readerPageEyebrow, { color: activeColors.eyebrowColor }]}>
+                            {currentPage.eyebrow}
+                          </Text>
+                        ) : null}
+
+                        {currentPage?.title ? (
+                          <Text style={[styles.readerPageTitle, { color: activeColors.titleColor }]}>
+                            {currentPage.title}
+                          </Text>
+                        ) : null}
+
                         {currentPage?.paragraphs.map((paragraph, index) => (
-                          <Text key={`${currentPage.title}-${index}`} style={[styles.readerPageBody, compact && styles.readerPageBodyCompact]}>
+                          <Text
+                            key={'' + currentPage.title + '-' + index}
+                            style={[
+                              styles.readerPageBody,
+                              {
+                                color: activeColors.textColor,
+                                fontSize: readerFontSize,
+                                lineHeight: Math.round(readerFontSize * 1.68),
+                              },
+                            ]}
+                          >
                             {paragraph}
                           </Text>
                         ))}
+
+                        <View style={styles.readerEndOfPageSpacer} />
                       </ScrollView>
 
-                      <Text style={styles.readerPageNumber}>
-                        {readerPages.length > 0 ? `Page ${readerPageIndex + 1}` : ""}
-                      </Text>
-                    </>
+                      {/* Bottom Page Indicator */}
+                      <View style={styles.readerPageFooterRow}>
+                        <Text style={[styles.readerPageFooterText, { color: activeColors.pageNumberColor }]}>
+                          {readerPages.length > 0 ? ('Page ' + (readerPageIndex + 1) + ' of ' + readerPages.length + ' (' + bookProgressPercent + '%)') : ""}
+                        </Text>
+                      </View>
+                    </Animated.View>
                   )}
+
+                  {/* Reading Milestone Activity Ring (Apple Activity Style) */}
+                  {!isReaderLoading && readerPages.length > 0 && nextReadingAchievement ? (
+                    <View style={[styles.readerRewardBubble, { backgroundColor: activeColors.cardBg, borderColor: activeColors.borderColor }]} pointerEvents="none">
+                      <Svg width={READING_REWARD_RING_SIZE} height={READING_REWARD_RING_SIZE} style={styles.readerRewardRing}>
+                        <Circle
+                          cx={READING_REWARD_RING_SIZE / 2}
+                          cy={READING_REWARD_RING_SIZE / 2}
+                          r={READING_REWARD_RING_RADIUS}
+                          stroke={readerTheme === "night" ? "rgba(255,255,255,0.12)" : "rgba(82, 183, 42, 0.2)"}
+                          strokeWidth={READING_REWARD_RING_STROKE}
+                          fill="transparent"
+                        />
+                        <Circle
+                          cx={READING_REWARD_RING_SIZE / 2}
+                          cy={READING_REWARD_RING_SIZE / 2}
+                          r={READING_REWARD_RING_RADIUS}
+                          stroke="#52B72A"
+                          strokeWidth={READING_REWARD_RING_STROKE}
+                          fill="transparent"
+                          strokeDasharray={'' + READING_REWARD_RING_CIRCUMFERENCE + ' ' + READING_REWARD_RING_CIRCUMFERENCE}
+                          strokeDashoffset={readingRewardStrokeOffset}
+                          strokeLinecap="round"
+                          rotation={-90}
+                          originX={READING_REWARD_RING_SIZE / 2}
+                          originY={READING_REWARD_RING_SIZE / 2}
+                        />
+                      </Svg>
+                      <View style={styles.readerRewardIconWrap}>
+                        {isClaimingReadingReward ? (
+                          <ActivityIndicator size="small" color="#52B72A" />
+                        ) : (
+                          <Image source={TALA_IMAGE} style={styles.readerRewardIcon} resizeMode="contain" />
+                        )}
+                      </View>
+                      <View style={[styles.readerRewardGoalPill, { backgroundColor: activeColors.controlBg, borderColor: activeColors.borderColor }]}>
+                        <Text style={[styles.readerRewardGoalText, { color: activeColors.controlText }]}>
+                          {readingRewardGoalLabel}
+                        </Text>
+                      </View>
+                    </View>
+                  ) : null}
                 </View>
-                {!isReaderLoading && readerPages.length > 0 && nextReadingAchievement ? (
-                  <View style={styles.readerRewardBubble} pointerEvents="none">
-                    <Svg width={READING_REWARD_RING_SIZE} height={READING_REWARD_RING_SIZE} style={styles.readerRewardRing}>
-                      <Circle
-                        cx={READING_REWARD_RING_SIZE / 2}
-                        cy={READING_REWARD_RING_SIZE / 2}
-                        r={READING_REWARD_RING_RADIUS}
-                        stroke="rgba(197, 232, 176, 0.7)"
-                        strokeWidth={READING_REWARD_RING_STROKE}
-                        fill="rgba(247, 250, 246, 0.92)"
-                      />
-                      <Circle
-                        cx={READING_REWARD_RING_SIZE / 2}
-                        cy={READING_REWARD_RING_SIZE / 2}
-                        r={READING_REWARD_RING_RADIUS}
-                        stroke="#70C943"
-                        strokeWidth={READING_REWARD_RING_STROKE}
-                        fill="transparent"
-                        strokeDasharray={`${READING_REWARD_RING_CIRCUMFERENCE} ${READING_REWARD_RING_CIRCUMFERENCE}`}
-                        strokeDashoffset={readingRewardStrokeOffset}
-                        strokeLinecap="round"
-                        rotation={-90}
-                        originX={READING_REWARD_RING_SIZE / 2}
-                        originY={READING_REWARD_RING_SIZE / 2}
-                      />
-                    </Svg>
-                    <View style={styles.readerRewardIconWrap}>
-                      {isClaimingReadingReward ? (
-                        <ActivityIndicator size="small" color="#70C943" />
-                      ) : (
-                        <Image source={TALA_IMAGE} style={styles.readerRewardIcon} resizeMode="contain" />
-                      )}
-                    </View>
-                    <View style={styles.readerRewardGoalPill}>
-                      <Text style={styles.readerRewardGoalText}>{readingRewardGoalLabel}</Text>
-                    </View>
+              </View>
+
+              {/* Floating Bottom Control Dock */}
+              <View style={[styles.readerControlDock, { backgroundColor: activeColors.topBarBg, borderTopColor: activeColors.borderColor }]}>
+                {/* Previous Page Circular Action */}
+                <Pressable
+                  style={[
+                    styles.readerNavCircle,
+                    { backgroundColor: activeColors.controlBg, borderColor: activeColors.borderColor },
+                    (!canGoPreviousPage || isReaderLoading) && styles.readerNavCircleDisabled,
+                  ]}
+                  disabled={!canGoPreviousPage || isReaderLoading}
+                  onPress={() => handleReaderPageChange(readerPageIndex - 1)}
+                  accessibilityLabel="Previous Page"
+                >
+                  <Ionicons
+                    name="chevron-back"
+                    size={20}
+                    color={canGoPreviousPage && !isReaderLoading ? activeColors.controlText : "#94A3B8"}
+                  />
+                </Pressable>
+
+                {/* Center Star Rating Pod */}
+                <View style={[styles.readerRatingPill, { backgroundColor: activeColors.controlBg, borderColor: activeColors.borderColor }]}>
+                  <Text style={[styles.readerRatingLabel, { color: activeColors.eyebrowColor }]}>Rating</Text>
+                  <View style={styles.ratingStarsRow}>
+                    {STAR_VALUES.map((star) => (
+                      <Pressable
+                        key={star}
+                        style={styles.ratingStarButton}
+                        onPress={() => {
+                          try {
+                            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          } catch {}
+                          void handleRateBook(star);
+                        }}
+                      >
+                        <Ionicons
+                          name={star <= selectedBookRating ? "star" : "star-outline"}
+                          size={18}
+                          color={star <= selectedBookRating ? "#F59E0B" : activeColors.eyebrowColor}
+                        />
+                      </Pressable>
+                    ))}
                   </View>
-                ) : null}
-              </View>
-            </View>
-
-            <View style={styles.readerUtilityRow}>
-              <View style={styles.ratingWrap}>
-                <Text style={styles.ratingLabel}>Rate this book</Text>
-                <View style={styles.ratingStars}>
-                  {STAR_VALUES.map((star) => (
-                    <Pressable key={star} style={styles.ratingStarButton} onPress={() => void handleRateBook(star)}>
-                      <Ionicons
-                        name={star <= selectedBookRating ? "star" : "star-outline"}
-                        size={20}
-                        color={star <= selectedBookRating ? "#D7A52F" : "#6F845C"}
-                      />
-                    </Pressable>
-                  ))}
                 </View>
+
+                {/* Next Page / Finish Book Button */}
+                <Pressable
+                  style={[
+                    styles.readerPrimaryActionPill,
+                    isReaderLoading && styles.readerPrimaryButtonDisabled,
+                  ]}
+                  disabled={isReaderLoading}
+                  onPress={() => {
+                    try {
+                      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    } catch {}
+                    if (canGoNextPage) {
+                      handleReaderPageChange(readerPageIndex + 1);
+                      return;
+                    }
+                    handleFinishBook();
+                  }}
+                  accessibilityLabel={canGoNextPage ? "Next Page" : "Finish Book"}
+                >
+                  <Text style={styles.readerPrimaryActionText}>
+                    {isReaderLoading
+                      ? "Opening..."
+                      : canGoNextPage
+                      ? "Next"
+                      : selectedBook?.progress?.status === "FINISHED"
+                      ? "Close"
+                      : "Finish Book"}
+                  </Text>
+                  <Ionicons
+                    name={canGoNextPage ? "arrow-forward" : "checkmark-circle"}
+                    size={16}
+                    color="#FFFFFF"
+                  />
+                </Pressable>
               </View>
-            </View>
-            {!!ratingErrorMessage && <Text style={styles.ratingErrorText}>{ratingErrorMessage}</Text>}
-
-            <View style={[styles.readerFooter, compact && styles.readerFooterStacked]}>
-              <Pressable
-                style={[styles.readerNavButton, compact && styles.readerFooterButtonFull, (!canGoPreviousPage || isReaderLoading) && styles.readerNavButtonDisabled]}
-                disabled={!canGoPreviousPage || isReaderLoading}
-                onPress={() => handleReaderPageChange(readerPageIndex - 1)}
-              >
-                <Ionicons name="arrow-back" size={16} color={canGoPreviousPage && !isReaderLoading ? "#35485B" : "#A8C49A"} />
-                <Text style={[styles.readerNavButtonText, (!canGoPreviousPage || isReaderLoading) && styles.readerNavButtonTextDisabled]}>Previous</Text>
-              </Pressable>
-
-              <Pressable
-                style={[styles.readerPrimaryButton, compact && styles.readerFooterButtonFull, isReaderLoading && styles.readerPrimaryButtonDisabled]}
-                disabled={isReaderLoading}
-                onPress={() => {
-                  if (canGoNextPage) {
-                    handleReaderPageChange(readerPageIndex + 1);
-                    return;
-                  }
-
-                  handleFinishBook();
-                }}
-              >
-                <Text style={styles.readerPrimaryButtonText}>
-                  {isReaderLoading ? "Opening" : canGoNextPage ? "Next page" : selectedBook?.progress?.status === "FINISHED" ? "Close book" : "Finish book"}
-                </Text>
-                <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
-              </Pressable>
-            </View>
-          </View>
-        </SafeAreaView>
+            </SafeAreaView>
+          );
+        })()}
       </Modal>
 
       <Modal
@@ -2589,334 +2777,293 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit-Bold" },
   readerScreen: {
     flex: 1,
-    backgroundColor: "#EDE3D3",
+  },
+  readerHeader: {
     paddingHorizontal: 16,
-    paddingTop: 6,
-    paddingBottom: 20,
-    alignItems: "center" },
-  readerFrame: {
-    flex: 1,
-    width: "100%",
-    maxWidth: 420,
-    alignSelf: "center" },
-  readerAuraOne: {
-    position: "absolute",
-    top: -34,
-    right: -18,
-    width: 188,
-    height: 188,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.26)" },
-  readerAuraTwo: {
-    position: "absolute",
-    left: -36,
-    bottom: 120,
-    width: 164,
-    height: 164,
-    borderRadius: 999,
-    backgroundColor: "rgba(193, 213, 191, 0.28)" },
-  readerTopBar: {
+    paddingTop: 8,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    zIndex: 10,
+  },
+  readerHeaderTopRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    columnGap: 10,
-    marginBottom: 14 },
-  readerTopBarCompact: {
-    columnGap: 8 },
-  readerTopBarStacked: {
-    flexDirection: "column",
-    alignItems: "stretch",
-    rowGap: 10 },
-  readerTopButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.55)",
+    marginBottom: 8,
+  },
+  readerCloseCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: "rgba(219, 203, 180, 0.9)",
-    alignItems: "center",
-    justifyContent: "center" },
-  readerTopTextWrap: {
-    flex: 1,
-    minWidth: 0,
-    alignItems: "center",
-    paddingHorizontal: 6 },
-  readerTopTextWrapCompact: {
-    paddingHorizontal: 2 },
-  readerTopEyebrow: {
-    color: "#7B6F5F",
-    fontSize: 11,
-    lineHeight: 14,
-    fontFamily: "Outfit-Bold",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 2 },
-  readerTopTitle: {
-    color: "#4A4439",
-    fontSize: 16,
-    lineHeight: 20,
-    fontFamily: "Outfit-Bold" },
-  readerTopTitleCompact: {
-    fontSize: 14,
-    lineHeight: 18 },
-  readerPageBadge: {
-    minWidth: 48,
-    height: 38,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.55)",
-    borderWidth: 1,
-    borderColor: "rgba(219, 203, 180, 0.9)",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 10,
-    alignSelf: "center" },
-  readerPageBadgeStacked: {
-    alignSelf: "flex-start" },
-  readerPageBadgeText: {
-    color: "#61584A",
-    fontSize: 12,
-    lineHeight: 16,
-    fontFamily: "Outfit-Bold" },
-  readerBookShell: {
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  readerHeaderCenter: {
     flex: 1,
-    position: "relative",
-    marginBottom: 14,
-    width: "100%" },
-  readerBookShellCompact: {
-    marginBottom: 12 },
-  readerSpineShadow: {
-    position: "absolute",
-    top: 22,
-    bottom: 22,
-    left: 2,
-    width: 24,
-    borderTopLeftRadius: 22,
-    borderBottomLeftRadius: 22,
-    backgroundColor: "#D1BEA3" },
-  readerSpineShadowCompact: {
-    top: 16,
-    bottom: 16,
-    width: 20 },
+    alignItems: "center",
+    paddingHorizontal: 8,
+  },
+  readerHeaderCategory: {
+    fontSize: 10.5,
+    fontFamily: "Outfit-Bold",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    marginBottom: 2,
+  },
+  readerHeaderBookTitle: {
+    fontSize: 14.5,
+    fontFamily: "Outfit-Bold",
+    letterSpacing: -0.2,
+  },
+  readerHeaderActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 6,
+  },
+  readerThemeButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  readerFontButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  readerFontButtonText: {
+    fontSize: 13,
+    fontFamily: "Outfit-Bold",
+  },
+  readerPagePill: {
+    paddingHorizontal: 8,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  readerPagePillText: {
+    fontSize: 11,
+    fontFamily: "Outfit-Bold",
+  },
+  readerProgressTrack: {
+    height: 3,
+    backgroundColor: "rgba(0,0,0,0.06)",
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  readerProgressFill: {
+    height: "100%",
+    backgroundColor: "#52B72A",
+    borderRadius: 999,
+  },
+
+  readerMainArea: {
+    flex: 1,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 6,
+  },
   readerPageCard: {
     flex: 1,
-    position: "relative",
-    borderRadius: 30,
-    backgroundColor: "#FFF9EF",
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: "#E1D3BE",
-    shadowColor: "#7D6D5A",
-    shadowOpacity: 0.14,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 5,
-    marginLeft: 12,
-    alignSelf: "stretch" },
-  readerPageCardCompact: {
-    marginLeft: 8 },
-  readerPageInner: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 10,
+    position: "relative",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  readerAnimatedPageWrap: {
     flex: 1,
-    paddingHorizontal: 22,
-    paddingTop: 24,
-    paddingBottom: 18 },
-  readerPageInnerCompact: {
-    paddingHorizontal: 16,
-    paddingTop: 18,
-    paddingBottom: 14 },
+  },
   readerLoadingWrap: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    rowGap: 10 },
+    rowGap: 10,
+  },
   readerLoadingText: {
-    color: "#5C655B",
     fontSize: 13,
-    lineHeight: 18,
-    fontFamily: "Outfit-Bold" },
+    fontFamily: "Outfit-Medium",
+  },
   readerInlineErrorText: {
-    color: "#9B4B3D",
+    color: "#DC2626",
     fontSize: 12,
-    lineHeight: 17,
     fontFamily: "Outfit-Bold",
-    marginBottom: 10 },
+    marginBottom: 8,
+  },
   readerPageEyebrow: {
-    color: "#877B68",
     fontSize: 11,
-    lineHeight: 14,
     fontFamily: "Outfit-Bold",
+    letterSpacing: 0.8,
     textTransform: "uppercase",
-    letterSpacing: 0.6,
-    marginBottom: 8 },
+    marginBottom: 6,
+  },
   readerPageTitle: {
-    color: "#4E4539",
-    fontFamily: "serif",
-    fontSize: 30,
-    lineHeight: 36,
-    marginBottom: 18 },
-  readerPageTitleCompact: {
     fontSize: 24,
     lineHeight: 30,
-    marginBottom: 14 },
+    fontFamily: "Outfit-Bold",
+    letterSpacing: -0.3,
+    marginBottom: 16,
+  },
   readerPageScroll: {
-    flex: 1 },
+    flex: 1,
+  },
+  readerPageScrollContent: {
+    paddingBottom: 16,
+  },
   readerPageBody: {
-    color: "#534B41",
-    fontFamily: "serif",
-    fontSize: 18,
-    lineHeight: 31,
-    marginBottom: 16 },
-  readerPageBodyCompact: {
-    fontSize: 16,
-    lineHeight: 27,
-    marginBottom: 14 },
-  readerPageNumber: {
-    alignSelf: "center",
-    color: "#9A8C78",
-    fontSize: 12,
-    lineHeight: 16,
-    marginTop: 8 },
+    fontFamily: "Outfit-Regular",
+    marginBottom: 16,
+    letterSpacing: 0.2,
+  },
+  readerEndOfPageSpacer: {
+    height: 24,
+  },
+  readerPageFooterRow: {
+    alignItems: "center",
+    paddingTop: 6,
+    paddingBottom: 2,
+  },
+  readerPageFooterText: {
+    fontSize: 11,
+    fontFamily: "Outfit-Medium",
+  },
+
+  /* Reward Milestone Bubble */
   readerRewardBubble: {
     position: "absolute",
-    right: 8,
-    bottom: 8,
+    right: 12,
+    bottom: 12,
     width: READING_REWARD_RING_SIZE,
-    height: READING_REWARD_RING_SIZE + 14,
+    height: READING_REWARD_RING_SIZE + 16,
+    borderRadius: 20,
     alignItems: "center",
-    justifyContent: "flex-start",
-    opacity: 0.82 },
+    justifyContent: "center",
+  },
   readerRewardRing: {
     position: "absolute",
     left: 0,
-    top: 0 },
+    top: 0,
+  },
   readerRewardIconWrap: {
     width: 42,
     height: 42,
-    borderRadius: 999,
-    marginTop: 11,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E6D8BE",
+    borderRadius: 21,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#7D6D5A",
-    shadowOpacity: 0.14,
-    shadowRadius: 7,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3 },
+  },
   readerRewardIcon: {
-    width: 24,
-    height: 24 },
+    width: 20,
+    height: 20,
+  },
   readerRewardGoalPill: {
-    marginTop: 4,
-    minWidth: 38,
+    position: "absolute",
+    bottom: -12,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
     borderRadius: 999,
-    backgroundColor: "rgba(255, 253, 248, 0.94)",
     borderWidth: 1,
-    borderColor: "#E6D8BE",
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    alignItems: "center" },
+  },
   readerRewardGoalText: {
-    color: "#5B6B38",
-    fontSize: 10,
-    lineHeight: 13,
-    fontFamily: "Outfit-Bold" },
-  readerUtilityRow: {
+    fontSize: 9.5,
+    fontFamily: "Outfit-Bold",
+  },
+
+  /* Bottom Control Dock */
+  readerControlDock: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 12,
+    borderTopWidth: 1,
     columnGap: 10,
-    rowGap: 8,
-    marginBottom: 10,
-    flexWrap: "wrap" },
-  ratingWrap: {
+  },
+  readerNavCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  readerNavCircleDisabled: {
+    opacity: 0.4,
+  },
+  readerRatingPill: {
     flexDirection: "row",
     alignItems: "center",
     columnGap: 8,
-    flexShrink: 1 },
-  ratingLabel: {
-    color: "#665D50",
-    fontSize: 12,
-    lineHeight: 16,
-    fontFamily: "Outfit-Bold" },
-  ratingStars: {
+    paddingHorizontal: 12,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  readerRatingLabel: {
+    fontSize: 11,
+    fontFamily: "Outfit-Bold",
+    letterSpacing: 0.4,
+  },
+  ratingStarsRow: {
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 2 },
+    columnGap: 2,
+  },
   ratingStarButton: {
-    width: 26,
-    height: 28,
-    alignItems: "center",
-    justifyContent: "center" },
-  openReaderButton: {
-    minHeight: 34,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.62)",
-    borderWidth: 1,
-    borderColor: "#DECDB7",
+    padding: 2,
+  },
+  readerPrimaryActionPill: {
+    flex: 1,
+    maxWidth: 160,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#52B72A",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     columnGap: 6,
-    paddingHorizontal: 12 },
-  openReaderText: {
-    color: "#35485B",
-    fontSize: 12,
-    lineHeight: 16,
-    fontFamily: "Outfit-Bold" },
-  ratingErrorText: {
-    color: "#B85C5C",
-    fontSize: 12,
-    lineHeight: 16,
-    textAlign: "center",
-    marginBottom: 8 },
-  readerFooter: {
-    flexDirection: "row",
-    alignItems: "center",
-    columnGap: 10 },
-  readerFooterStacked: {
-    flexDirection: "column-reverse",
-    alignItems: "stretch",
-    rowGap: 8 },
-  readerFooterButtonFull: {
-    width: "100%" },
-  readerNavButton: {
-    minWidth: 0,
-    minHeight: 46,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.62)",
-    borderWidth: 1,
-    borderColor: "#DECDB7",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    columnGap: 8,
-    paddingHorizontal: 14 },
-  readerNavButtonDisabled: {
-    backgroundColor: "rgba(247, 239, 227, 0.6)" },
-  readerNavButtonText: {
-    color: "#35485B",
-    fontSize: 14,
-    lineHeight: 18,
-    fontFamily: "Outfit-Bold" },
-  readerNavButtonTextDisabled: {
-    color: "#A8C49A" },
-  readerPrimaryButton: {
-    flex: 1,
-    minHeight: 46,
-    borderRadius: 999,
-    backgroundColor: "#70C943",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    columnGap: 8,
-    paddingHorizontal: 16 },
+    paddingHorizontal: 14,
+    shadowColor: "#52B72A",
+    shadowOpacity: 0.28,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
   readerPrimaryButtonDisabled: {
-    opacity: 0.68 },
-  readerPrimaryButtonText: {
+    opacity: 0.6,
+  },
+  readerPrimaryActionText: {
     color: "#FFFFFF",
-    fontSize: 15,
-    lineHeight: 20,
-    fontFamily: "Outfit-Bold" },
+    fontSize: 13.5,
+    fontFamily: "Outfit-Bold",
+  },
+
   confirmModalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(45, 38, 28, 0.38)",
