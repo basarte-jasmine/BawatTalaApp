@@ -1,8 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     ActivityIndicator,
+    Animated,
     Image,
     Modal,
     Pressable,
@@ -169,6 +171,56 @@ function getPeerGenderDescription(gender: string) {
     return `${normalizedGender} peer counselor`;
   }
   return "Peer counselor";
+}
+
+function ApplePressableCard({
+  children,
+  onPress,
+  style,
+  disabled,
+}: {
+  children: React.ReactNode;
+  onPress?: () => void;
+  style?: any;
+  disabled?: boolean;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    if (disabled) return;
+    Animated.spring(scale, {
+      toValue: 0.98,
+      friction: 8,
+      tension: 300,
+      useNativeDriver: true,
+    }).start();
+    try {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+  };
+
+  const handlePressOut = () => {
+    if (disabled) return;
+    Animated.spring(scale, {
+      toValue: 1,
+      friction: 6,
+      tension: 220,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <Animated.View style={[{ transform: [{ scale }] }, style]}>
+      <Pressable
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        disabled={disabled}
+      >
+        {children}
+      </Pressable>
+    </Animated.View>
+  );
 }
 
 export default function ConsultScreen() {
@@ -628,7 +680,11 @@ export default function ConsultScreen() {
 
   return (
     <View style={styles.screen}>
-      <AppleTopBar title="Consult Support" onBack={handleBack} />
+      <AppleTopBar
+        title={showChooser ? "Support Options" : selectedTrack === "peer" ? "Peer Counseling" : "Guidance Counseling"}
+        subtitle={showChooser ? "Choose your path" : `Step ${step} of ${TOTAL_STEPS} · ${currentStepLabel}`}
+        onBack={handleBack}
+      />
 
       <ScrollView
         style={styles.scroll}
@@ -644,129 +700,122 @@ export default function ConsultScreen() {
         }
       >
         {showChooser ? (
-          <>
+          <View style={styles.contentFrame}>
             <View style={styles.welcomeHeroCard}>
-              <View style={styles.welcomeGlowOne} />
-              <View style={styles.welcomeGlowTwo} />
-              <View style={styles.welcomeHeroTopRow}>
-                <View style={styles.welcomeHeroIconWrap}>
-                  <Ionicons name="chatbubbles-outline" size={24} color="#447348" />
-                </View>
-                <View style={styles.welcomeHeroCopy}>
-                  <Text style={styles.welcomeEyebrow}>Support That Meets You Gently</Text>
-                  <Text style={styles.welcomeTitle}>Choose the kind of support that feels right today.</Text>
-                  <Text style={styles.welcomeText}>
-                    Start with a licensed professional counselor or a peer counselor. Both paths are meant to help you feel safer, heard, and supported.
-                  </Text>
-                </View>
+              <View style={styles.welcomeOrb} />
+              <View style={styles.welcomeBadge}>
+                <Ionicons name="sparkles" size={12} color="#2E7C1F" />
+                <Text style={styles.welcomeBadgeText}>STUDENT CARE</Text>
               </View>
-
-              <View style={styles.welcomePillRow}>
-                <View style={styles.welcomePill}>
-                  <Ionicons name="shield-checkmark-outline" size={14} color="#4B7A42" />
-                  <Text style={styles.welcomePillText}>Private support</Text>
-                </View>
-                <View style={styles.welcomePill}>
-                  <Ionicons name="leaf-outline" size={14} color="#4B7A42" />
-                  <Text style={styles.welcomePillText}>Calm first step</Text>
-                </View>
-              </View>
+              <Text style={styles.welcomeTitle}>Choose Your Support Path</Text>
+              <Text style={styles.welcomeText}>
+                Connect privately with a licensed guidance counselor, or speak with a trained student peer listener.
+              </Text>
             </View>
 
             {errorMessage ? <Text style={styles.errorBanner}>{errorMessage}</Text> : null}
 
-            <View style={styles.stepCard}>
-              <Text style={styles.stepTitle}>Who would you like to talk to?</Text>
-              <Text style={styles.stepSubTitle}>
-                Pick the kind of support you want first. You can always come back and choose the other option later.
-              </Text>
-
-              <Pressable style={styles.trackOptionCard} onPress={() => handleChooseTrack("professional")}>
-                <View style={styles.trackOptionIconWrap}>
-                  <Ionicons name="calendar-clear-outline" size={22} color="#4E7E2D" />
+            <ApplePressableCard
+              style={styles.trackCardWrap}
+              onPress={() => handleChooseTrack("professional")}
+            >
+              <View style={styles.trackCard}>
+                <View style={[styles.trackIconWrap, styles.trackIconWrapGreen]}>
+                  <Ionicons name="calendar" size={24} color="#2E7C1F" />
                 </View>
-                <View style={styles.trackOptionCopy}>
-                  <View style={styles.trackOptionHeaderRow}>
-                    <Text style={styles.trackOptionTitle}>Professional Counselor</Text>
-                    <View style={[styles.trackStatusPill, styles.trackStatusPillActive]}>
-                      <Text style={[styles.trackStatusText, styles.trackStatusTextActive]}>
-                        {professionalCounselors.length ? `${professionalCounselors.length} available` : "Book a session"}
+                <View style={styles.trackCopy}>
+                  <View style={styles.trackHeaderRow}>
+                    <Text style={styles.trackTitle}>Professional Counselor</Text>
+                    <View style={styles.trackPillGreen}>
+                      <Text style={styles.trackPillTextGreen}>
+                        {professionalCounselors.length ? `${professionalCounselors.length} available` : "Book"}
                       </Text>
                     </View>
                   </View>
-                  <Text style={styles.trackOptionBody}>
-                    Meet with guidance staff for deeper support, private counseling, and formal scheduled care.
+                  <Text style={styles.trackBody}>
+                    Licensed guidance counselors for deeper support, 1-on-1 private sessions, or group discussions.
                   </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color="#6B8862" />
-              </Pressable>
-
-              <Pressable style={[styles.trackOptionCard, styles.trackOptionCardSoft]} onPress={() => handleChooseTrack("peer")}>
-                <View style={[styles.trackOptionIconWrap, styles.trackOptionIconWrapBlue]}>
-                  <Ionicons name="people-outline" size={22} color="#4E6F88" />
+                <View style={styles.trackChevronCircle}>
+                  <Ionicons name="chevron-forward" size={16} color="#64748B" />
                 </View>
-                <View style={styles.trackOptionCopy}>
-                  <View style={styles.trackOptionHeaderRow}>
-                    <Text style={styles.trackOptionTitle}>Peer Counselor</Text>
-                    <View style={[styles.trackStatusPill, hasPeerCounselors ? styles.trackStatusPillBlue : styles.trackStatusPillMuted]}>
-                      <Text
-                        style={[
-                          styles.trackStatusText,
-                          hasPeerCounselors ? styles.trackStatusTextBlue : styles.trackStatusTextMuted,
-                        ]}
-                      >
-                        {hasPeerCounselors ? `${peerCounselors.length} available` : "Open now"}
+              </View>
+            </ApplePressableCard>
+
+            <ApplePressableCard
+              style={styles.trackCardWrap}
+              onPress={() => handleChooseTrack("peer")}
+            >
+              <View style={styles.trackCard}>
+                <View style={[styles.trackIconWrap, styles.trackIconWrapBlue]}>
+                  <Ionicons name="people" size={24} color="#0284C7" />
+                </View>
+                <View style={styles.trackCopy}>
+                  <View style={styles.trackHeaderRow}>
+                    <Text style={styles.trackTitle}>Peer Counselor</Text>
+                    <View style={hasPeerCounselors ? styles.trackPillBlue : styles.trackPillMuted}>
+                      <Text style={hasPeerCounselors ? styles.trackPillTextBlue : styles.trackPillTextMuted}>
+                        {hasPeerCounselors ? `${peerCounselors.length} available` : "Coming soon"}
                       </Text>
                     </View>
                   </View>
-                  <Text style={styles.trackOptionBody}>
-                    Start with a trained student listener when you want a more relatable, lighter first conversation.
+                  <Text style={styles.trackBody}>
+                    Trained student peer listeners for relatable, everyday support, academic advice, or shared guidance.
                   </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color="#6B7B87" />
-              </Pressable>
-            </View>
-          </>
+                <View style={styles.trackChevronCircle}>
+                  <Ionicons name="chevron-forward" size={16} color="#64748B" />
+                </View>
+              </View>
+            </ApplePressableCard>
+          </View>
         ) : (
-          <>
-            <View style={styles.introCard}>
-              <View style={styles.introHeaderRow}>
-                <View style={[styles.introIconWrap, selectedTrack === "peer" && styles.introIconWrapBlue]}>
+          <View style={styles.contentFrame}>
+            <View style={styles.wizardHeaderCard}>
+              <View style={styles.wizardTopRow}>
+                <View style={styles.wizardTrackTag}>
                   <Ionicons
-                    name={selectedTrack === "peer" ? "people-outline" : "calendar-clear-outline"}
-                    size={22}
-                    color={selectedTrack === "peer" ? "#4E6F88" : "#4E7E2D"}
+                    name={selectedTrack === "peer" ? "people" : "calendar"}
+                    size={14}
+                    color={selectedTrack === "peer" ? "#0284C7" : "#2E7C1F"}
                   />
+                  <Text style={[styles.wizardTrackTagText, selectedTrack === "peer" && { color: "#0284C7" }]}>
+                    {selectedTrack === "peer" ? "PEER COUNSELING" : "PROFESSIONAL COUNSELING"}
+                  </Text>
                 </View>
-                <View style={styles.introTextWrap}>
-                  <Text style={styles.introEyebrow}>{supportEyebrow}</Text>
-                  <Text style={styles.introTitle}>{supportTitle}</Text>
-                  <Text style={styles.introText}>{supportDescription}</Text>
-                </View>
+                {opensWithChooser ? (
+                  <Pressable
+                    style={styles.switchTrackLink}
+                    onPress={() => {
+                      setShowChooser(true);
+                      setErrorMessage("");
+                    }}
+                  >
+                    <Text style={styles.switchTrackLinkText}>Change</Text>
+                  </Pressable>
+                ) : null}
               </View>
 
               {supportsStepFlow ? (
                 <>
-                  <View style={styles.progressMetaRow}>
-                    <Text style={styles.progressStepText}>{`Step ${step} of ${TOTAL_STEPS}`}</Text>
-                    <Text style={styles.progressStepLabel}>{currentStepLabel}</Text>
-                  </View>
-
                   <View style={styles.progressRow}>
                     {Array.from({ length: TOTAL_STEPS }).map((_, index) => {
                       const stepIndex = index + 1;
+                      const isComplete = stepIndex <= step;
                       return (
-                        <View key={`step-${stepIndex}`} style={[styles.progressDot, stepIndex <= step && styles.progressDotActive]} />
+                        <View
+                          key={`step-${stepIndex}`}
+                          style={[styles.progressSegment, isComplete && styles.progressSegmentActive]}
+                        />
                       );
                     })}
                   </View>
+                  <View style={styles.progressLabelRow}>
+                    <Text style={styles.progressStepCount}>{`Step ${step} of ${TOTAL_STEPS}`}</Text>
+                    <Text style={styles.progressStepName}>{currentStepLabel}</Text>
+                  </View>
                 </>
-              ) : (
-                <View style={styles.peerStatusBanner}>
-                  <Ionicons name="sparkles-outline" size={16} color="#5F7A8F" />
-                  <Text style={styles.peerStatusBannerText}>Peer counselor schedules are still being prepared.</Text>
-                </View>
-              )}
+              ) : null}
             </View>
 
             {errorMessage ? <Text style={styles.errorBanner}>{errorMessage}</Text> : null}
@@ -901,20 +950,22 @@ export default function ConsultScreen() {
                     {COUNSELING_TYPE_OPTIONS.map((item) => {
                       const selected = selectedCounselingType === item.id;
                       return (
-                        <Pressable
+                        <ApplePressableCard
                           key={item.id}
-                          style={[styles.peerFormatCard, selected && styles.peerFormatCardActive]}
+                          style={styles.formatCardWrap}
                           onPress={() => setSelectedCounselingType(item.id)}
                         >
-                          <View style={[styles.peerFormatIconWrap, selected && styles.peerFormatIconWrapActive]}>
-                            <Ionicons name={item.icon} size={22} color={selected ? "#2E6F24" : "#50687A"} />
+                          <View style={[styles.peerFormatCard, selected && styles.peerFormatCardActive]}>
+                            <View style={[styles.peerFormatIconWrap, selected && styles.peerFormatIconWrapActive]}>
+                              <Ionicons name={item.icon} size={22} color={selected ? "#2E7C1F" : "#50687A"} />
+                            </View>
+                            <View style={styles.peerFormatCopy}>
+                              <Text style={[styles.peerFormatTitle, selected && styles.peerFormatTitleActive]}>{item.title}</Text>
+                              <Text style={styles.peerFormatText}>{item.description}</Text>
+                            </View>
+                            {selected ? <Ionicons name="checkmark-circle" size={24} color="#52B72A" /> : <View style={styles.radioEmpty} />}
                           </View>
-                          <View style={styles.peerFormatCopy}>
-                            <Text style={[styles.peerFormatTitle, selected && styles.peerFormatTitleActive]}>{item.title}</Text>
-                            <Text style={styles.peerFormatText}>{item.description}</Text>
-                          </View>
-                          {selected ? <Ionicons name="checkmark-circle" size={24} color="#2E6F24" /> : null}
-                        </Pressable>
+                        </ApplePressableCard>
                       );
                     })}
                   </View>
@@ -949,12 +1000,13 @@ export default function ConsultScreen() {
                       filteredCounselors.map((item) => {
                         const selected = selectedCounselor === item.id;
                         return (
-                          <Pressable
+                          <ApplePressableCard
                             key={item.id}
-                            style={[styles.counselorCard, selected && styles.selectedCounselorCard]}
+                            style={styles.counselorCardWrap}
                             onPress={() => setSelectedCounselor(item.id)}
                           >
-                            <View style={styles.counselorRow}>
+                            <View style={[styles.counselorCard, selected && styles.selectedCounselorCard]}>
+                              <View style={styles.counselorRow}>
                               {item.pictureUrl ? (
                                 <Image source={{ uri: item.pictureUrl }} style={styles.counselorAvatarImage} />
                               ) : (
@@ -1011,9 +1063,10 @@ export default function ConsultScreen() {
                                 </View>
                               </View>
 
-                              {selected ? <Ionicons name="checkmark-circle" size={24} color="#2E6F24" /> : null}
+                              {selected ? <Ionicons name="checkmark-circle" size={24} color="#52B72A" /> : <View style={styles.radioEmpty} />}
                             </View>
-                          </Pressable>
+                            </View>
+                          </ApplePressableCard>
                         );
                       })
                     ) : (
@@ -1172,7 +1225,7 @@ export default function ConsultScreen() {
                 </Pressable>
               </View>
             ) : null}
-          </>
+          </View>
         )}
       </ScrollView>
 
@@ -1253,6 +1306,199 @@ const styles = StyleSheet.create({
     height: 36 },
   scroll: {
     flex: 1 },
+    contentFrame: {
+    width: "100%",
+    maxWidth: 420,
+    alignSelf: "center",
+  },
+  welcomeOrb: {
+    position: "absolute",
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    right: -40,
+    top: -40,
+    backgroundColor: "rgba(255, 255, 255, 0.45)",
+  },
+  welcomeBadge: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.95)",
+    marginBottom: 8,
+  },
+  welcomeBadgeText: {
+    color: "#2E7C1F",
+    fontSize: 10.5,
+    letterSpacing: 0.8,
+    fontFamily: "Outfit-Bold",
+  },
+  trackCardWrap: {
+    width: "100%",
+    marginBottom: 12,
+  },
+  trackCard: {
+    width: "100%",
+    borderRadius: 20,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E6ECE4",
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 12,
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  trackIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  trackIconWrapGreen: {
+    backgroundColor: "#EAF6E8",
+  },
+  trackIconWrapBlue: {
+    backgroundColor: "#E0F2FE",
+  },
+  trackCopy: {
+    flex: 1,
+  },
+  trackHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 3,
+  },
+  trackTitle: {
+    color: "#0F172A",
+    fontSize: 15.5,
+    fontFamily: "Outfit-Bold",
+  },
+  trackBody: {
+    color: "#64748B",
+    fontSize: 12.5,
+    lineHeight: 17,
+    fontFamily: "Outfit-Regular",
+  },
+  trackPillGreen: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: "#EAF6E8",
+  },
+  trackPillTextGreen: {
+    color: "#2E7C1F",
+    fontSize: 11,
+    fontFamily: "Outfit-Bold",
+  },
+  trackPillBlue: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: "#E0F2FE",
+  },
+  trackPillTextBlue: {
+    color: "#0284C7",
+    fontSize: 11,
+    fontFamily: "Outfit-Bold",
+  },
+  trackPillMuted: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: "#F1F5F9",
+  },
+  trackPillTextMuted: {
+    color: "#64748B",
+    fontSize: 11,
+    fontFamily: "Outfit-Medium",
+  },
+  trackChevronCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#F8FAF8",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  wizardHeaderCard: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#E6ECE4",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 12,
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  wizardTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  wizardTrackTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 5,
+  },
+  wizardTrackTagText: {
+    color: "#2E7C1F",
+    fontSize: 11,
+    fontFamily: "Outfit-Bold",
+    letterSpacing: 0.6,
+  },
+  switchTrackLink: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: "#F1F5F9",
+  },
+  switchTrackLinkText: {
+    color: "#475569",
+    fontSize: 11.5,
+    fontFamily: "Outfit-Bold",
+  },
+  progressSegment: {
+    flex: 1,
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: "#E2E8F0",
+  },
+  progressSegmentActive: {
+    backgroundColor: "#52B72A",
+  },
+  progressLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  progressStepCount: {
+    color: "#64748B",
+    fontSize: 11,
+    fontFamily: "Outfit-Medium",
+  },
+  progressStepName: {
+    color: "#0F172A",
+    fontSize: 12.5,
+    fontFamily: "Outfit-Bold",
+  },
   scrollContent: {
     paddingTop: 78,
     paddingHorizontal: 12,
@@ -1537,6 +1783,21 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingVertical: 48,
     rowGap: 10 },
+  formatCardWrap: {
+    width: "100%",
+    marginBottom: 8,
+  },
+  counselorCardWrap: {
+    width: "100%",
+    marginBottom: 10,
+  },
+  radioEmpty: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderColor: "#CBD5E1",
+  },
   loadingText: {
     color: "#52606C",
     fontSize: 14,
