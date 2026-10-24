@@ -632,7 +632,7 @@ export default function WeeklyRecapScreen() {
 
                 {/* Emotional Palette Chips */}
                 <View style={styles.storyPaletteRow}>
-                  {emotionPalette.slice(0, 4).map((item) => (
+                  {emotionPalette.map((item) => (
                     <View key={item.id} style={[styles.storyPaletteChip, { borderColor: item.meta.color }]}>
                       <View style={[styles.storyPaletteDot, { backgroundColor: item.meta.color }]} />
                       <Text style={styles.storyPaletteLabel}>{item.meta.label}</Text>

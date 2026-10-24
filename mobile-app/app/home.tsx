@@ -2355,25 +2355,19 @@ export default function HomeScreen() {
         >
           <View style={styles.weeklyRecapGlow} />
           <View style={styles.weeklyRecapHeader}>
-            <View style={styles.weeklyRecapBadge}>
-              <Ionicons name="sparkles" size={13} color="#B8860B" />
-              <Text style={styles.weeklyRecapBadgeText}>
-                {new Date().getDay() === 0 ? "TODAY'S SUNDAY HIGHLIGHT" : "SUNDAY HIGHLIGHT • TALA NG LINGGO"}
-              </Text>
-            </View>
+            <Text style={[styles.weeklyRecapTitle, { marginBottom: 0, flex: 1, marginRight: 10 }]}>Tala ng Linggo: A Week's Recap</Text>
             <View style={styles.weeklyRecapArrowPill}>
               <Text style={styles.weeklyRecapArrowPillText}>Open</Text>
               <Ionicons name="arrow-forward" size={12} color="#166534" />
             </View>
           </View>
-          <Text style={styles.weeklyRecapTitle}>Tala ng Linggo: A Week's Recap</Text>
           <Text style={styles.weeklyRecapSubtitle}>
             Unpack your resilience, heavy thoughts offloaded, and how Muni supported your study stamina.
           </Text>
           <View style={styles.weeklyRecapStatsRow}>
             <View style={styles.weeklyRecapStatChip}>
-              <Ionicons name="shield-checkmark" size={12} color="#2F6F25" />
-              <Text style={styles.weeklyRecapStatChipText}>92% Resilience</Text>
+              <Ionicons name="sparkles" size={12} color="#EAB308" />
+              <Text style={styles.weeklyRecapStatChipText}>Moments of Calm</Text>
             </View>
             <View style={styles.weeklyRecapStatChip}>
               <Ionicons name="heart-circle" size={12} color="#16A34A" />
