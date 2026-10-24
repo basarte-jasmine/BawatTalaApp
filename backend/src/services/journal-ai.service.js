@@ -56,7 +56,7 @@ function personaInstructions(persona) {
       return [
         "PERSONA OBJECTIVE: Empathic supporter for emotional distress, heartbreak, or burnout (not crisis modal).",
         "Validate overwhelm without diagnosing. No hotline spam unless they confirm danger.",
-        "REQUIRED in every DISTRESS_SUPPORT reply: after a short validation, include one natural sentence that soft-offers the in-app Wellness tools (breathing, grounding, mini resets) as an optional next step — vary the wording each time; never paste a fixed canned line; never hotline scripts; never pressure.",
+        "REQUIRED in every DISTRESS_SUPPORT reply: after a short validation, include one natural sentence that soft-offers the in-app Wellness tools (Diaphragmatic Breathing exercise or 5-4-3-2-1 Grounding exercise tool) as an optional next step — vary the wording each time; never paste a fixed canned line; never hotline scripts; never pressure.",
         "Do not ask productivity or task-breakdown questions. Prefer short validating sentences.",
         "If the student refuses questions, use zero question marks.",
       ].join(" ");
@@ -163,10 +163,10 @@ function replyMentionsWellnessTools(text) {
 }
 
 const DISTRESS_WELLNESS_SOFT_OFFERS = [
-  "If it helps, the in-app Wellness tools have gentle breathing and grounding mini-resets you can try anytime.",
-  "Whenever you want a soft pause, the Wellness tools in the app have calm breathing and grounding options.",
-  "There are also quiet Wellness tools here in the app — breathing and grounding mini-resets — if you want a small reset.",
-  "If a tiny pause sounds okay, the in-app Wellness tools include breathing and grounding mini-resets you can open when ready.",
+  "If it helps, the in-app Wellness tools have gentle Diaphragmatic Breathing and the 5-4-3-2-1 Grounding exercise you can try anytime.",
+  "Whenever you want a soft pause, the Wellness tools in the app have Diaphragmatic Breathing and 5-4-3-2-1 Grounding options.",
+  "There are also quiet Wellness tools here in the app — Diaphragmatic Breathing and the 5-4-3-2-1 Grounding exercise tool — if you want a moment to center yourself.",
+  "If a tiny pause sounds okay, the in-app Wellness tools include Diaphragmatic Breathing and 5-4-3-2-1 Grounding that you can open when ready.",
 ];
 
 function ensureDistressWellnessMention(rawReply, persona) {
@@ -1436,7 +1436,7 @@ async function analyzeJournalConversation({
     studentRefusedQuestions(latestUserMessage)
       ? "Do not push reflection with coaching questions. Validate only. If the student refused questions, reply with zero question marks."
       : distressAssessment.persona === "DISTRESS_SUPPORT"
-        ? "DISTRESS_SUPPORT this turn: validate in 1-2 short sentences, then MUST include one soft natural sentence offering in-app Wellness tools (breathing, grounding, or mini resets). Vary wording. No productivity questions. Prefer zero question marks unless a gentle check-in is needed."
+        ? "DISTRESS_SUPPORT this turn: validate in 1-2 short sentences, then MUST include one soft natural sentence offering in-app Wellness tools (Diaphragmatic Breathing exercise or 5-4-3-2-1 Grounding exercise tool). Vary wording. No productivity questions. Prefer zero question marks unless a gentle check-in is needed."
         : "Most replies should help the reflection move forward. If the latest message is short, closed, or simply agrees, keep the conversation alive with a gentle follow-up — but never a task-breakdown or productivity plan question.",
     "If a question would feel forced, you may respond with a brief natural reaction, but avoid ending several turns in a row with only observations.",
     "Vary your sentence openings and rhythm. Do not reuse the same opening phrase or same reflection structure from recent Muni replies.",

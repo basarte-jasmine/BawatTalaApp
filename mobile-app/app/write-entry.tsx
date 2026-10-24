@@ -20,6 +20,7 @@ import {
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { recordEmotionForAchievement, unlockAchievement } from "../lib/achievements";
+import { ConfirmationModal } from "../components/ui/ConfirmationModal";
 import { JournalLockGate, useAppPreferences } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
 import {
@@ -251,7 +252,9 @@ export default function WriteEntryScreen() {
   const sessionStartedRef = useRef(false);
   const entryRef = useRef<JournalEntry | null>(null);
   entryRef.current = entry;
-  const [aiEnabled, setAiEnabled] = useState(true);
+  const isSoloMode = mode === "new-solo" || mode === "solo";
+  const targetAiEnabled = !isSoloMode;
+  const [aiEnabled, setAiEnabled] = useState(targetAiEnabled);
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
@@ -262,6 +265,7 @@ export default function WriteEntryScreen() {
   const [animatedMuniMessageId, setAnimatedMuniMessageId] = useState("");
   const [isAiRetryLocked, setIsAiRetryLocked] = useState(false);
   const [showRiskModal, setShowRiskModal] = useState(false);
+  const [showOfflineSwitchModal, setShowOfflineSwitchModal] = useState(false);
   const [riskModalRedirectEntryId, setRiskModalRedirectEntryId] = useState<string | null>(null);
   /** After first mid-chat crisis trio show/dismiss, suppress until Finish Journal. */
   const [riskPromptSuppressedUntilFinish, setRiskPromptSuppressedUntilFinish] = useState(false);
@@ -313,10 +317,7 @@ export default function WriteEntryScreen() {
 
   const loadJournalSession = useCallback(async () => {
     if (!user?.studentNumber) {
-      setMessages([]);
-      setEntry(null);
       setIsLoading(false);
-      void loadJournalEmotion();
       return;
     }
 
@@ -325,51 +326,37 @@ export default function WriteEntryScreen() {
       return;
     }
 
-    if (sessionStartedRef.current && entryRef.current?.id) {
-      setIsLoading(false);
-      return;
-    }
-
     setIsLoading(true);
     setErrorMessage("");
     setStatusMessage("");
+    setAiEnabled(targetAiEnabled);
 
     if (mode === "new" || mode === "new-muni" || mode === "new-solo") {
-      // Offline users start with Solo Journaling by default (no Muni session).
-      const backendReachable = await isBackendReachable();
-      if (!backendReachable) {
-        const offlineResult = await createJournalSession({
-          aiEnabled: false,
+      if (targetAiEnabled) {
+        const reachable = await isBackendReachable();
+        if (!reachable) {
+          setShowOfflineSwitchModal(true);
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      try {
+        const createResult = await createJournalSession({
+          aiEnabled: targetAiEnabled,
           forceNew: true,
-          studentNumber: user.studentNumber });
-        setEntry(offlineResult.entry ?? null);
-        setMessages(offlineResult.messages ?? []);
-        setAiEnabled(false);
-        setStatusMessage("You're offline. Solo journal is on and it will sync later.");
-        sessionStartedRef.current = true;
-        void loadJournalEmotion();
-        setIsLoading(false);
-        return;
-      }
-      const createResult = await createJournalSession({
-          aiEnabled: mode === "new-solo" ? false : true,
-        forceNew: true,
-        studentNumber: user.studentNumber });
+          studentNumber: user.studentNumber,
+        });
 
-      if (!createResult.ok) {
-        setErrorMessage(
-          createResult.message ?? "Unable to open a new journal entry.",
-        );
+        setEntry(createResult.entry ?? null);
+        setMessages(createResult.messages ?? []);
+        if (!createResult.ok && createResult.message) {
+          setStatusMessage(createResult.message);
+        }
+      } catch {
         setMessages([]);
-        setEntry(null);
-        setAiEnabled(false);
-        setIsLoading(false);
-        return;
       }
-
-      setEntry(createResult.entry ?? null);
-      setMessages(createResult.messages ?? []);
-      setAiEnabled(Boolean(createResult.entry?.aiEnabled) && !(createResult.entry?.id?.startsWith("local-")));
+      setAiEnabled(targetAiEnabled);
       sessionStartedRef.current = true;
       void loadJournalEmotion();
       setIsLoading(false);
@@ -379,23 +366,28 @@ export default function WriteEntryScreen() {
     const result = await fetchTodayJournalSession(user.studentNumber);
 
     if (!result.ok) {
+      if (targetAiEnabled && /offline|network|failed/i.test(result.message || "")) {
+        setShowOfflineSwitchModal(true);
+        setIsLoading(false);
+        return;
+      }
       setErrorMessage(
         result.message ?? "Unable to load your journal right now.",
       );
       setMessages([]);
       setEntry(null);
-      setAiEnabled(false);
+      setAiEnabled(targetAiEnabled);
       setIsLoading(false);
       return;
     }
 
     setEntry(result.entry ?? null);
     setMessages(result.messages ?? []);
-    setAiEnabled(result.entry ? Boolean(result.entry.aiEnabled) : !/offline/i.test(result.message ?? ""));
+    setAiEnabled(targetAiEnabled);
     sessionStartedRef.current = true;
     void loadJournalEmotion();
     setIsLoading(false);
-  }, [appLockEnabled, isAppLocked, loadJournalEmotion, mode, user?.studentNumber]);
+  }, [appLockEnabled, isAppLocked, loadJournalEmotion, mode, targetAiEnabled, user?.studentNumber]);
 
   useFocusEffect(
     useCallback(() => {
@@ -435,8 +427,13 @@ export default function WriteEntryScreen() {
   }, [isAiRetryLocked]);
 
   const visibleMessages = useMemo(() => {
-    if (messages.length > 0) return messages;
-    return getIntroMessages(user?.firstName || "friend", aiEnabled);
+    const intro = getIntroMessages(user?.firstName || "friend", aiEnabled);
+    if (!aiEnabled) return messages;
+    const hasIntro = messages.some((m) => m.id === "intro");
+    if (!hasIntro) {
+      return [...intro, ...messages];
+    }
+    return messages;
   }, [aiEnabled, messages, user?.firstName]);
   const displayMessages = useMemo(
     () =>
@@ -515,6 +512,26 @@ export default function WriteEntryScreen() {
     navigateAway();
   };
 
+  const handleConfirmSwitchToManual = async () => {
+    setShowOfflineSwitchModal(false);
+    setAiEnabled(false);
+    setStatusMessage("Switched to manual writing. Your thoughts will be saved offline.");
+    if (!entry && user?.studentNumber) {
+      const offlineResult = await createJournalSession({
+        aiEnabled: false,
+        forceNew: true,
+        studentNumber: user.studentNumber,
+      });
+      setEntry(offlineResult.entry ?? null);
+      setMessages(offlineResult.messages ?? []);
+    }
+  };
+
+  const handleCancelSwitchToManual = () => {
+    setShowOfflineSwitchModal(false);
+    router.back();
+  };
+
   const handleSendMessage = async () => {
     if (!user?.studentNumber || isSending) return;
 
@@ -539,7 +556,11 @@ export default function WriteEntryScreen() {
     if (!result.ok) {
       setPendingUserMessage("");
       setInputValue(trimmedMessage);
-      setErrorMessage(result.message ?? "Unable to save your journal entry.");
+      if (/network|offline|failed to fetch|internet|timeout/i.test(result.message || "")) {
+        setShowOfflineSwitchModal(true);
+      } else {
+        setErrorMessage(result.message ?? "Unable to save your journal entry.");
+      }
       return;
     }
 
@@ -1032,10 +1053,6 @@ export default function WriteEntryScreen() {
                   </View>
                 </View>
 
-                {entry?.summary ? (
-                  <Text style={styles.summaryText}>{entry.summary}</Text>
-                ) : null}
-
                 <ScrollView
                   style={styles.conversationScroll}
                   contentContainerStyle={styles.conversationContent}
@@ -1466,6 +1483,16 @@ export default function WriteEntryScreen() {
             </View>
           </View>
         </Modal>
+
+        <ConfirmationModal
+          visible={showOfflineSwitchModal}
+          message="Muni needs an internet connection to chat with you. Would you like to switch to manual writing for now so your thoughts can still be saved offline?"
+          confirmLabel="Switch to Manual"
+          cancelLabel="Go Back"
+          confirmTone="primary"
+          onConfirm={() => void handleConfirmSwitchToManual()}
+          onCancel={handleCancelSwitchToManual}
+        />
 
        <Modal
          visible={showTagReviewModal}
