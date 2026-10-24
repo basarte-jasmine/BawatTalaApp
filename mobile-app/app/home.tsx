@@ -46,7 +46,7 @@ import {
 } from "../lib/backend-api";
 import { EMOTIONS, getEmotionImageSource } from "../lib/emotions";
 import { getManilaNow, getManilaStartOfToday, getManilaTodayParts } from "../lib/manila-date";
-import { getAvailableMuniTala, updateAvailableMuniTala, hydrateMuniWardrobe, subscribeAvailableMuniTala, TALA_IMAGE } from "../lib/muni-wardrobe";
+import { getAvailableMuniTala, updateAvailableMuniTala, hydrateMuniWardrobe, subscribeAvailableMuniTala } from "../lib/muni-wardrobe";
 import { isAdminMessageNotification } from "../lib/notification-utils";
 import { useOfflineSync } from "../lib/offline-sync";
 

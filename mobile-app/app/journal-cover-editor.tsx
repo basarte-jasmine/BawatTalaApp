@@ -156,24 +156,25 @@ const DraggableElement = ({
       runOnJS(onTransformChange)(element.id, translateX.value, translateY.value, scale.value, rotation.value);
     });
 
-  const zoomPanGesture = Gesture.Pan()
+  const rotatePanGesture = Gesture.Pan()
     .onStart(() => {
-      savedScale.value = scale.value;
+      savedRotation.value = rotation.value;
     })
     .onUpdate((event) => {
-      const delta = (event.translationX + event.translationY) / 120;
-      scale.value = Math.max(0.5, Math.min(2.5, savedScale.value + delta));
+      const delta = -(event.translationX - event.translationY) / 60;
+      rotation.value = savedRotation.value + delta;
     })
     .onEnd(() => {
-      savedScale.value = scale.value;
+      savedRotation.value = rotation.value;
       runOnJS(onTransformChange)(element.id, translateX.value, translateY.value, scale.value, rotation.value);
     });
 
-  const handleCycleZoom = () => {
-    const nextScale = scale.value >= 1.8 ? 0.75 : Number((scale.value + 0.35).toFixed(2));
-    scale.value = nextScale;
-    savedScale.value = nextScale;
-    onTransformChange(element.id, translateX.value, translateY.value, nextScale, rotation.value);
+  const handleCycleRotate = () => {
+    const step = Math.PI / 4; // 45 degrees per tap
+    const nextRot = Number((rotation.value + step).toFixed(3));
+    rotation.value = nextRot;
+    savedRotation.value = nextRot;
+    onTransformChange(element.id, translateX.value, translateY.value, scale.value, nextRot);
   };
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -233,21 +234,21 @@ const DraggableElement = ({
                   </View>
                 </Pressable>
 
-                <GestureDetector gesture={zoomPanGesture}>
+                <GestureDetector gesture={rotatePanGesture}>
                   <Pressable
                     style={styles.floatingActionItem}
                     onPress={(e) => {
                       e.stopPropagation?.();
-                      handleCycleZoom();
+                      handleCycleRotate();
                     }}
                     hitSlop={6}
-                    accessibilityLabel="Zoom or resize sticker"
+                    accessibilityLabel="Rotate sticker"
                   >
                     <View style={styles.floatingActionCircle}>
-                      <Ionicons name="scan-outline" size={16} color="#1E293B" />
+                      <Ionicons name="sync-outline" size={16} color="#1E293B" />
                     </View>
                     <View style={styles.floatingActionPill}>
-                      <Text style={styles.floatingActionPillText}>zoom</Text>
+                      <Text style={styles.floatingActionPillText}>rotate</Text>
                     </View>
                   </Pressable>
                 </GestureDetector>
