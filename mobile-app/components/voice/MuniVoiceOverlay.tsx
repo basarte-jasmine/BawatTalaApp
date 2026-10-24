@@ -376,19 +376,23 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
       if (!cleaned || isDisposedRef.current) return;
 
       void stopSpeaking();
-      const chosenVoice = voiceName || getVoiceForSpokenLanguage(entry?.spokenLanguage, cleaned);
+      const chosenVoice = voiceName || getVoiceForSpokenLanguage((entry as any)?.spokenLanguage, cleaned);
 
       try {
         setVoiceState("speaking");
-        const audioBuffer = await synthesizeVoiceSpeech({
+        const synthRes = await synthesizeVoiceSpeech({
           text: cleaned,
           voice: chosenVoice,
         });
 
         if (isDisposedRef.current) return;
+        const base64Audio = synthRes?.audioBase64 || "";
+        if (!base64Audio) {
+          setVoiceState("idle");
+          return;
+        }
 
         if (Platform.OS === "web") {
-          const base64Audio = arrayBufferToBase64(audioBuffer);
           const blobUrl = base64ToBlobUrl(base64Audio, "audio/mp3");
           webBlobUrlRef.current = blobUrl;
           const audio = new window.Audio(blobUrl);
@@ -405,9 +409,8 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
           };
           await audio.play();
         } else {
-          const base64Audio = arrayBufferToBase64(audioBuffer);
           const player = createAudioPlayer({
-            uri: `data:audio/mp3;base64,${D}{base64Audio}`,
+            uri: `data:audio/mp3;base64,${base64Audio}`,
           });
           nativePlayerRef.current = player;
           player.addListener("playbackStatusUpdate", (status) => {
@@ -423,7 +426,7 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
         }
       }
     },
-    [entry?.spokenLanguage, stopSpeaking]
+    [(entry as any)?.spokenLanguage, stopSpeaking]
   );
 
   const loadSession = useCallback(async () => {
@@ -449,12 +452,12 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
 
       const session = await createJournalSession({
         studentNumber: user.studentNumber,
-        type: "voice",
+        aiEnabled: true,
       });
 
       if (isDisposedRef.current) return;
 
-      setActiveEntry(session.entry);
+      setActiveEntry(session.entry ?? null);
       setConversationMessages(session.messages ?? []);
 
       const latestReply = getLatestAssistantReply(session.messages);
@@ -639,7 +642,8 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
       const sendResult = await sendJournalMessage({
         entryId: entry.id,
         studentNumber: user.studentNumber,
-        text: spokenText,
+        message: spokenText,
+        aiEnabled: true,
       });
 
       if (!sendResult.ok) {

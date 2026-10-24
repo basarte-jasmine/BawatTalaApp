@@ -14,16 +14,19 @@ type MuniAvatarProps = {
   animated?: boolean;
   loadout?: MuniLoadout;
   style?: StyleProp<ViewStyle>;
+  waving?: boolean;
 };
 
 // Safe underscore filenames - spaced names can fail Metro asset resolution in release APKs.
-const MUNI_FEET = require("../../assets/images/Muni/Feet.png");
-const MUNI_BODY = require("../../assets/images/Muni/Body.png");
-const MUNI_LEFT_HAND = require("../../assets/images/Muni/Left_Hand.png");
+const MUNI_FEET = require("../../assets/images/Muni/Feet.webp");
+const MUNI_BODY = require("../../assets/images/Muni/Body.webp");
 const MUNI_RIGHT_HAND = require("../../assets/images/Muni/Right_Hand.png");
-const MUNI_EYES_OPEN = require("../../assets/images/Muni/Eyes_Full_Open.png");
-const MUNI_EYES_HALF = require("../../assets/images/Muni/Eyes_Half_Open.png");
-const MUNI_EYES_CLOSED = require("../../assets/images/Muni/Eyes_Closed.png");
+const MUNI_ARM_1 = require("../../assets/images/Muni/Arm1.webp");
+const MUNI_ARM_2 = require("../../assets/images/Muni/Arm2.webp");
+const MUNI_ARM_3 = require("../../assets/images/Muni/Arm3.webp");
+const MUNI_EYES_OPEN = require("../../assets/images/Muni/Eyes_Full_Open.webp");
+const MUNI_EYES_HALF = require("../../assets/images/Muni/Eyes_Half_Open.webp");
+const MUNI_EYES_CLOSED = require("../../assets/images/Muni/Eyes_Closed.webp");
 const AVATAR_CANVAS_SIZE = 205;
 
 const BLINK_FRAMES: ImageSourcePropType[] = [
@@ -34,11 +37,23 @@ const BLINK_FRAMES: ImageSourcePropType[] = [
   MUNI_EYES_OPEN,
 ];
 
+const WAVE_SEQUENCE: ImageSourcePropType[] = [
+  MUNI_ARM_1,
+  MUNI_ARM_2,
+  MUNI_ARM_3,
+  MUNI_ARM_2,
+  MUNI_ARM_3,
+  MUNI_ARM_2,
+  MUNI_ARM_1,
+];
+
 const CRITICAL_BODY_SOURCES: ImageSourcePropType[] = [
   MUNI_BODY,
   MUNI_FEET,
-  MUNI_LEFT_HAND,
   MUNI_RIGHT_HAND,
+  MUNI_ARM_1,
+  MUNI_ARM_2,
+  MUNI_ARM_3,
   MUNI_EYES_OPEN,
 ];
 
@@ -63,7 +78,7 @@ function preloadCriticalBodyParts() {
   });
 }
 
-export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps) {
+export function MuniAvatar({ animated = true, loadout, style, waving = false }: MuniAvatarProps) {
   const savedLoadout = useSavedMuniLoadout();
   const activeLoadout = loadout ?? savedLoadout;
   const equippedOutfitSource = getMuniCollectionSource("outfit", activeLoadout.outfit);
@@ -76,6 +91,7 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
   const breath = useRef(new Animated.Value(0)).current;
   const [avatarSize, setAvatarSize] = useState({ height: 96, width: 96 });
   const [blinkFrameIndex, setBlinkFrameIndex] = useState(0);
+  const [currentArmSource, setCurrentArmSource] = useState<ImageSourcePropType>(MUNI_ARM_1);
 
   useEffect(() => {
     preloadCriticalBodyParts();
@@ -142,6 +158,58 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
     };
   }, [animated]);
 
+  useEffect(() => {
+    if (!animated) {
+      setCurrentArmSource(MUNI_ARM_1);
+      return undefined;
+    }
+
+    let mounted = true;
+    let waveTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    function triggerWave() {
+      WAVE_SEQUENCE.forEach((frame, idx) => {
+        setTimeout(() => {
+          if (mounted) {
+            setCurrentArmSource(frame);
+          }
+        }, idx * 110);
+      });
+
+      setTimeout(() => {
+        if (mounted) {
+          setCurrentArmSource(MUNI_ARM_1);
+        }
+      }, WAVE_SEQUENCE.length * 110);
+    }
+
+    function scheduleWave(delay = 4000 + Math.random() * 3000) {
+      waveTimeout = setTimeout(() => {
+        triggerWave();
+        if (mounted) {
+          scheduleWave(6000 + Math.random() * 4000);
+        }
+      }, delay);
+    }
+
+    if (waving) {
+      const waveInterval = setInterval(() => {
+        if (mounted) triggerWave();
+      }, WAVE_SEQUENCE.length * 110 + 350);
+      triggerWave();
+      return () => {
+        mounted = false;
+        clearInterval(waveInterval);
+      };
+    }
+
+    scheduleWave();
+    return () => {
+      mounted = false;
+      if (waveTimeout) clearTimeout(waveTimeout);
+    };
+  }, [animated, waving]);
+
   const breathingStyle = useMemo(
     () => ({
       transform: [
@@ -191,10 +259,21 @@ export function MuniAvatar({ animated = true, loadout, style }: MuniAvatarProps)
     >
       <View style={[styles.scaledShell, scaledShellStyle]}>
         <Animated.View style={[styles.avatarStack, breathingStyle]}>
-          <View style={styles.layer}>
-            <Image source={MUNI_RIGHT_HAND} style={styles.layer} contentFit="contain" cachePolicy="memory-disk" priority="high" />
-            <Image source={MUNI_LEFT_HAND} style={styles.layer} contentFit="contain" cachePolicy="memory-disk" priority="high" />
-          </View>
+          {/* Both hands: Right Hand on left side, animated waving Arm on right side */} 
+          <Image
+            source={MUNI_RIGHT_HAND}
+            style={styles.layer}
+            contentFit="contain"
+            cachePolicy="memory-disk"
+            priority="high"
+          />
+          <Image
+            source={currentArmSource}
+            style={[styles.layer, styles.wavingArmLayer]}
+            contentFit="contain"
+            cachePolicy="memory-disk"
+            priority="high"
+          />
 
           <Image
             source={MUNI_FEET}
@@ -272,11 +351,14 @@ const styles = StyleSheet.create({
     height: AVATAR_CANVAS_SIZE,
     position: "relative",
   },
+  wavingArmLayer: {
+    transform: [{ translateX: 14 }, { scale: 1.12 }],
+  },
   faceLayer: {
-    transform: [{ translateX: -4.5 }],
+    transform: [{ translateX: -2.5 }, { translateY: 2.5 }, { scale: 0.84 }],
   },
   ghostFaceLayer: {
-    transform: [{ translateX: -7 }, { translateY: -8 }, { scale: 0.86 }],
+    transform: [{ translateX: -4 }, { translateY: -6 }, { scale: 0.8 }],
   },
   feetLayer: {
     transform: [{ translateY: -7 }, { translateX: -3.5 }],

@@ -347,7 +347,7 @@ export default function WellnessToolsScreen() {
                 {FEATURED_GAMES.map((game) => (
                   <AppleCardPressable
                     key={game.id}
-                    onPress={() => router.push("/" + (game.id as any))}
+                    onPress={() => router.push(("/" + game.id) as never)}
                     accessibilityLabel={game.title + ", " + game.duration}
                     style={styles.gameCardWrap}
                   >

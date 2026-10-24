@@ -1574,7 +1574,7 @@ export default function LibraryScreen() {
                   <View
                     style={[
                       styles.readerProgressFill,
-                      { width: (bookProgressRatio * 100) + '%' },
+                      { width: `${bookProgressRatio * 100}%` as `${number}%` },
                     ]}
                   />
                 </View>
