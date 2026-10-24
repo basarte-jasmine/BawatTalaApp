@@ -46,7 +46,7 @@ import {
 } from "../lib/backend-api";
 import { EMOTIONS, getEmotionImageSource } from "../lib/emotions";
 import { getManilaNow, getManilaStartOfToday, getManilaTodayParts } from "../lib/manila-date";
-import { hydrateMuniWardrobe, subscribeAvailableMuniTala } from "../lib/muni-wardrobe";
+import { getAvailableMuniTala, updateAvailableMuniTala, hydrateMuniWardrobe, subscribeAvailableMuniTala, TALA_IMAGE } from "../lib/muni-wardrobe";
 import { isAdminMessageNotification } from "../lib/notification-utils";
 import { useOfflineSync } from "../lib/offline-sync";
 
@@ -92,7 +92,28 @@ type DriftingBottleNote = {
   top: number;
 };
 
-type SeaDiscovery = "meteorite" | "starfish";
+type SeaDiscovery = "meteorite" | "starfish" | "stingray";
+
+const SEA_AFFIRMATIONS: Record<SeaDiscovery, string[]> = {
+  starfish: [
+    "Every gentle pause you take is a star you light in your own constellation.",
+    "Tulad ng mga tala sa dagat, manatiling payapa kahit marahan ang agos ng buhay.",
+    "You don't need to rush to be worthy. Showing up today is already enough.",
+    "Even the smallest star shines brightly in the deep. Trust your gentle pace.",
+  ],
+  stingray: [
+    "Glide smoothly through heavy thoughts—not everything requires your immediate reaction.",
+    "Huminga nang malalim. Hayaan mong dalhin ka ng banayad na alon sa kapayapaan.",
+    "Grace is not moving fast; it is navigating deep waters with stillness and calm.",
+    "Let the worries of school and deadlines gently float away for this one breath.",
+  ],
+  meteorite: [
+    "A reminder of where you came from: a long journey through the dark, guided by a sky full of hope.",
+    "Every challenge you faced shaped the quiet resilience you carry inside you right now.",
+    "Ang liwanag na hinahanap mo ay nagmumula sa sarili mong pagsisikap at kabutihan.",
+    "You are made of stardust and quiet strength. Keep shining at your own rhythm.",
+  ],
+};
 
 const SEA_OBJECTS = [
   { id: "meteorite", source: require("../assets/images/Sea/Meteorite Piece.webp"), left: 22, top: 172, size: 58, scale: 0.92, drift: 18, duration: 5200 },
@@ -546,6 +567,21 @@ export default function HomeScreen() {
   const [driftingBottlesLoading, setDriftingBottlesLoading] = useState(false);
   const [driftingBottlesError, setDriftingBottlesError] = useState("");
   const [seaDiscovery, setSeaDiscovery] = useState<SeaDiscovery | null>(null);
+  const [tideGiftsToday, setTideGiftsToday] = useState(0);
+  const [seaDiscoveryAffirmation, setSeaDiscoveryAffirmation] = useState("");
+  const [seaDiscoveryRewardTala, setSeaDiscoveryRewardTala] = useState(0);
+
+  useEffect(() => {
+    async function loadTideGifts() {
+      if (!user?.studentNumber) return;
+      const todayIso = getManilaTodayParts().isoDate;
+      const stored = await AsyncStorage.getItem(`@bawat-tala/tide-gifts:${user.studentNumber}:${todayIso}`);
+      if (stored) {
+        setTideGiftsToday(parseInt(stored, 10) || 0);
+      }
+    }
+    void loadTideGifts();
+  }, [user?.studentNumber]);
   const [collectedSeaStars, setCollectedSeaStars] = useState(0);
   const [hasConfirmedDriftingBottleWarning, setHasConfirmedDriftingBottleWarning] = useState(false);
   const [skipDriftingBottleWarning, setSkipDriftingBottleWarning] = useState(false);
@@ -2612,7 +2648,7 @@ export default function HomeScreen() {
 
               {seaObjects.map((object, index) => {
                 const motion = seaObjectMotion[index];
-                const isInteractive = object.id === "meteorite" || object.id === "starfish";
+                const isInteractive = true; // Star, meteor, and stingray are all interactive tide visitors
                 const objectContent = (
                   <Animated.View
                     style={[
@@ -2639,7 +2675,7 @@ export default function HomeScreen() {
                     key={object.id}
                     onPress={() => openSeaDiscovery(object.id as SeaDiscovery)}
                     style={styles.seaObjectButton}
-                    accessibilityLabel={object.id === "meteorite" ? "Discover a meteorite piece" : "Collect a starfish star"}
+                    accessibilityLabel={object.id === "meteorite" ? "Discover a meteorite piece" : object.id === "stingray" ? "Greet the gentle stingray" : "Collect a starfish star"}
                   >
                     {objectContent}
                   </Pressable>
@@ -2800,10 +2836,18 @@ export default function HomeScreen() {
             <View style={styles.driftingBottleModalHeader}>
               <View style={styles.driftingBottleModalTitleWrap}>
                 <Text style={styles.driftingBottleModalEyebrow}>
-                  {seaDiscovery === "starfish" ? "A little tide gift" : "A piece of Muni's story"}
+                  {seaDiscovery === "starfish"
+                    ? "A LITTLE TIDE GIFT"
+                    : seaDiscovery === "stingray"
+                    ? "A GENTLE SEA VISITOR"
+                    : "A PIECE OF MUNI'S STORY"}
                 </Text>
                 <Text style={styles.driftingBottleModalTitle}>
-                  {seaDiscovery === "starfish" ? "A star for you" : "Meteorite memory"}
+                  {seaDiscovery === "starfish"
+                    ? "A Star from the Tide"
+                    : seaDiscovery === "stingray"
+                    ? "Gentle Stingray"
+                    : "Meteorite Memory"}
                 </Text>
               </View>
               <Pressable style={styles.bottleModalCloseButton} onPress={closeSeaDiscovery} accessibilityLabel="Close sea discovery">
@@ -2812,16 +2856,39 @@ export default function HomeScreen() {
             </View>
             <View style={styles.seaDiscoveryBody}>
               <Image
-                source={seaDiscovery === "starfish" ? require("../assets/images/Sea/Starfish.webp") : require("../assets/images/Sea/Meteorite Piece.webp")}
+                source={
+                  seaDiscovery === "starfish"
+                    ? require("../assets/images/Sea/Starfish.webp")
+                    : seaDiscovery === "stingray"
+                    ? require("../assets/images/Sea/Stingray.webp")
+                    : require("../assets/images/Sea/Meteorite Piece.webp")
+                }
                 style={styles.seaDiscoveryImage}
                 contentFit="contain"
                 cachePolicy="memory-disk"
               />
-              <Text style={styles.driftingBottleModalMessage}>
-                {seaDiscovery === "starfish"
-                  ? `The starfish left you a bright little reminder. You have collected ${collectedSeaStars} ${collectedSeaStars === 1 ? "star" : "stars"} from the sea.`
-                  : "Muni says this meteorite piece is a tiny reminder of where it came from: a long journey through the dark, guided by a sky full of possibilities."}
-              </Text>
+
+              {/* Affirmation Box */}
+              <View style={styles.seaAffirmationBox}>
+                <Text style={styles.seaAffirmationQuote}>"{seaDiscoveryAffirmation}"</Text>
+              </View>
+
+              {/* Tala Reward Status */}
+              {seaDiscoveryRewardTala > 0 ? (
+                <View style={styles.seaRewardPill}>
+                  <Image source={TALA_IMAGE} style={{ width: 14, height: 14 }} contentFit="contain" />
+                  <Text style={styles.seaRewardPillText}>+{seaDiscoveryRewardTala} Tala Earned</Text>
+                  <Text style={styles.seaRewardCountText}>({tideGiftsToday}/10 gifts today)</Text>
+                </View>
+              ) : (
+                <View style={styles.seaRewardMaxPill}>
+                  <Text style={styles.seaRewardMaxText}>10/10 tide gifts collected today ✨</Text>
+                </View>
+              )}
+
+              <Pressable style={styles.seaCollectButton} onPress={closeSeaDiscovery}>
+                <Text style={styles.seaCollectButtonText}>Salamat, Muni ✨</Text>
+              </Pressable>
             </View>
           </View>
         </View>
@@ -5041,6 +5108,73 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 23,
     textAlign: "center" },
+  seaAffirmationBox: {
+    backgroundColor: "#F4F9F2",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#DDE9D9",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginTop: 8,
+    marginBottom: 12,
+    width: "100%",
+  },
+  seaAffirmationQuote: {
+    color: "#2C4A35",
+    fontSize: 13.5,
+    lineHeight: 19,
+    fontFamily: "Outfit-Medium",
+    fontStyle: "italic",
+    textAlign: "center",
+  },
+  seaRewardPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEF9C3",
+    borderWidth: 1,
+    borderColor: "#FDE047",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    columnGap: 6,
+    marginBottom: 14,
+  },
+  seaRewardPillText: {
+    color: "#854D0E",
+    fontSize: 12,
+    fontFamily: "Outfit-Bold",
+  },
+  seaRewardCountText: {
+    color: "#A16207",
+    fontSize: 11,
+    fontFamily: "Outfit-Medium",
+  },
+  seaRewardMaxPill: {
+    backgroundColor: "#F1F5F9",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginBottom: 14,
+  },
+  seaRewardMaxText: {
+    color: "#64748B",
+    fontSize: 11,
+    fontFamily: "Outfit-Medium",
+  },
+  seaCollectButton: {
+    backgroundColor: "#73CB47",
+    borderRadius: 999,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  seaCollectButtonText: {
+    color: "#FFFFFF",
+    fontSize: 13.5,
+    fontFamily: "Outfit-Bold",
+  },
   seaDiscoveryModalCard: {
     width: "100%",
     maxWidth: 340,
