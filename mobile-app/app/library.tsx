@@ -8,7 +8,7 @@ import { ActivityIndicator, Animated, Linking, Modal, Pressable, ScrollView,
   RefreshControl, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { Image } from "expo-image";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Circle } from "react-native-svg";
+import Svg, { Circle, G } from "react-native-svg";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { useAuthSession } from "../lib/auth-session";
 import {
@@ -292,6 +292,22 @@ function findShelfMatch(shelfBooks: LibraryBookRecord[], book: LibraryBookRecord
   return shelfBooks.find((shelfBook) => getBookIdentityKeys(shelfBook).some((key) => keys.has(key))) ?? null;
 }
 
+function sortBooksByMostRecent(books: LibraryBookRecord[]): LibraryBookRecord[] {
+  return [...books].sort((a, b) => {
+    const timeA = new Date(a.progress?.updatedAt || a.progress?.lastOpenedAt || 0).getTime();
+    const timeB = new Date(b.progress?.updatedAt || b.progress?.lastOpenedAt || 0).getTime();
+    if (timeA !== timeB) {
+      return timeB - timeA;
+    }
+    const pageA = a.progress?.currentPage || 0;
+    const pageB = b.progress?.currentPage || 0;
+    if (pageA !== pageB) {
+      return pageB - pageA;
+    }
+    return 0;
+  });
+}
+
 function dedupeLibraryBooks(books: LibraryBookRecord[]) {
   const seen = new Set<string>();
   const uniqueBooks: LibraryBookRecord[] = [];
@@ -442,7 +458,8 @@ export default function LibraryScreen() {
 
   const displayedBooks = useMemo(() => {
     if (activeShelf === "my") {
-      return filterBooksByQuery(myShelfBooks, submittedQuery);
+      const filtered = filterBooksByQuery(myShelfBooks, submittedQuery);
+      return sortBooksByMostRecent(filtered);
     }
     return paginatedFeatured.items;
   }, [activeShelf, myShelfBooks, submittedQuery, paginatedFeatured.items]);
@@ -606,10 +623,11 @@ export default function LibraryScreen() {
       }
 
       const downloadedBooks = await mergeLocalEpubFiles(result.books ?? []);
-      setMyShelfBooks(dedupeLibraryBooks([
-        ...buildBuiltInShelfBooks(result.progressByBookId ?? {}, builtInCoverUrls),
+      const allShelf = dedupeLibraryBooks([
         ...downloadedBooks,
-      ]));
+        ...buildBuiltInShelfBooks(result.progressByBookId ?? {}, builtInCoverUrls),
+      ]);
+      setMyShelfBooks(sortBooksByMostRecent(allShelf));
     } catch {
       setMyShelfBooks(buildBuiltInShelfBooks({}, builtInCoverUrls));
       setMyShelfErrorMessage("Unable to reach your shelf right now.");
@@ -883,6 +901,18 @@ export default function LibraryScreen() {
       setLibraryActionMessage("Save this EPUB in the app before opening the reader.");
       return;
     }
+
+    const nowIso = new Date().toISOString();
+    updateBookProgress(book.id, {
+      bookId: book.id,
+      currentPage: book.progress?.currentPage ?? 0,
+      totalPages: book.progress?.totalPages ?? 1,
+      status: book.progress?.status ?? "STARTED",
+      rating: book.progress?.rating,
+      percent: book.progress?.percent ?? 0,
+      lastOpenedAt: nowIso,
+      updatedAt: nowIso,
+    });
 
     setSelectedBookId(bookId);
     setReaderPages([]);
@@ -1614,37 +1644,38 @@ export default function LibraryScreen() {
 
                   {/* Reading Milestone Activity Ring (Apple Activity Style) */}
                   {!isReaderLoading && readerPages.length > 0 && nextReadingAchievement ? (
-                    <View style={[styles.readerRewardBubble, { backgroundColor: activeColors.cardBg, borderColor: activeColors.borderColor }]} pointerEvents="none">
-                      <Svg width={READING_REWARD_RING_SIZE} height={READING_REWARD_RING_SIZE} style={styles.readerRewardRing}>
-                        <Circle
-                          cx={READING_REWARD_RING_SIZE / 2}
-                          cy={READING_REWARD_RING_SIZE / 2}
-                          r={READING_REWARD_RING_RADIUS}
-                          stroke={readerTheme === "night" ? "rgba(255,255,255,0.12)" : "rgba(82, 183, 42, 0.2)"}
-                          strokeWidth={READING_REWARD_RING_STROKE}
-                          fill="transparent"
-                        />
-                        <Circle
-                          cx={READING_REWARD_RING_SIZE / 2}
-                          cy={READING_REWARD_RING_SIZE / 2}
-                          r={READING_REWARD_RING_RADIUS}
-                          stroke="#52B72A"
-                          strokeWidth={READING_REWARD_RING_STROKE}
-                          fill="transparent"
-                          strokeDasharray={'' + READING_REWARD_RING_CIRCUMFERENCE + ' ' + READING_REWARD_RING_CIRCUMFERENCE}
-                          strokeDashoffset={readingRewardStrokeOffset}
-                          strokeLinecap="round"
-                          rotation={-90}
-                          originX={READING_REWARD_RING_SIZE / 2}
-                          originY={READING_REWARD_RING_SIZE / 2}
-                        />
-                      </Svg>
-                      <View style={styles.readerRewardIconWrap}>
-                        {isClaimingReadingReward ? (
-                          <ActivityIndicator size="small" color="#52B72A" />
-                        ) : (
-                          <Image source={TALA_IMAGE} style={styles.readerRewardIcon} contentFit="contain" cachePolicy="memory-disk" />
-                        )}
+                    <View style={styles.readerRewardBubble} pointerEvents="none">
+                      <View style={styles.readerRewardRingBox}>
+                        <Svg width={READING_REWARD_RING_SIZE} height={READING_REWARD_RING_SIZE} style={StyleSheet.absoluteFillObject}>
+                          <Circle
+                            cx={READING_REWARD_RING_SIZE / 2}
+                            cy={READING_REWARD_RING_SIZE / 2}
+                            r={READING_REWARD_RING_RADIUS}
+                            stroke={readerTheme === "night" ? "rgba(255,255,255,0.12)" : "rgba(82, 183, 42, 0.2)"}
+                            strokeWidth={READING_REWARD_RING_STROKE}
+                            fill="transparent"
+                          />
+                          <G rotation="-90" origin={`${READING_REWARD_RING_SIZE / 2}, ${READING_REWARD_RING_SIZE / 2}`}>
+                            <Circle
+                              cx={READING_REWARD_RING_SIZE / 2}
+                              cy={READING_REWARD_RING_SIZE / 2}
+                              r={READING_REWARD_RING_RADIUS}
+                              stroke="#52B72A"
+                              strokeWidth={READING_REWARD_RING_STROKE}
+                              fill="transparent"
+                              strokeDasharray={`${READING_REWARD_RING_CIRCUMFERENCE} ${READING_REWARD_RING_CIRCUMFERENCE}`}
+                              strokeDashoffset={readingRewardStrokeOffset}
+                              strokeLinecap="round"
+                            />
+                          </G>
+                        </Svg>
+                        <View style={styles.readerRewardIconWrap}>
+                          {isClaimingReadingReward ? (
+                            <ActivityIndicator size="small" color="#52B72A" />
+                          ) : (
+                            <Image source={TALA_IMAGE} style={styles.readerRewardIcon} contentFit="contain" cachePolicy="memory-disk" />
+                          )}
+                        </View>
                       </View>
                       <View style={[styles.readerRewardGoalPill, { backgroundColor: activeColors.controlBg, borderColor: activeColors.borderColor }]}>
                         <Text style={[styles.readerRewardGoalText, { color: activeColors.controlText }]}>
@@ -2954,21 +2985,19 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 12,
     bottom: 12,
-    width: READING_REWARD_RING_SIZE,
-    height: READING_REWARD_RING_SIZE + 16,
-    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
   },
-  readerRewardRing: {
-    position: "absolute",
-    left: 0,
-    top: 0,
+  readerRewardRingBox: {
+    width: READING_REWARD_RING_SIZE,
+    height: READING_REWARD_RING_SIZE,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
   },
   readerRewardIconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: READING_REWARD_RING_SIZE,
+    height: READING_REWARD_RING_SIZE,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -2977,8 +3006,7 @@ const styles = StyleSheet.create({
     height: 20,
   },
   readerRewardGoalPill: {
-    position: "absolute",
-    bottom: -12,
+    marginTop: 4,
     paddingHorizontal: 6,
     paddingVertical: 1.5,
     borderRadius: 999,
