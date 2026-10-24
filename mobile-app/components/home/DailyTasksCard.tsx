@@ -21,6 +21,7 @@ import {
   type DailyTaskProgress,
 } from "../../lib/backend-api";
 import { updateAvailableMuniTala } from "../../lib/muni-wardrobe";
+import { ConfirmationModal } from "../ui/ConfirmationModal";
 
 const TALA_STAR_IMAGE = require("../../assets/images/Tala_Star.png");
 
@@ -57,6 +58,41 @@ export function DailyTasksCard({
   const [isGentleSelected, setIsGentleSelected] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [activeFilter, setActiveFilter] = useState<"all" | "gentle">("all");
+
+  const [pendingAction, setPendingAction] = useState<{
+    action: "complete" | "uncomplete" | "delete";
+    task: DailyTask;
+  } | null>(null);
+
+  const handleRequestToggle = (task: DailyTask) => {
+    setPendingAction({
+      action: task.completed ? "uncomplete" : "complete",
+      task,
+    });
+  };
+
+  const handleRequestDelete = (task: DailyTask) => {
+    setPendingAction({
+      action: "delete",
+      task,
+    });
+  };
+
+  const handleConfirmAction = async () => {
+    if (!pendingAction) return;
+    const { action, task } = pendingAction;
+    setPendingAction(null);
+
+    if (action === "delete") {
+      await handleDeleteTask(task.id);
+    } else {
+      await handleToggleTask(task);
+    }
+  };
+
+  const handleCancelAction = () => {
+    setPendingAction(null);
+  };
 
   // Reward Pop-up Modal State
   const [rewardModal, setRewardModal] = useState<TalaRewardModalState>({
@@ -273,7 +309,7 @@ export function DailyTasksCard({
             >
               <Pressable
                 style={styles.checkboxTouch}
-                onPress={() => handleToggleTask(task)}
+                onPress={() => handleRequestToggle(task)}
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: task.completed }}
               >
@@ -307,7 +343,7 @@ export function DailyTasksCard({
               {!task.completed ? (
                 <Pressable
                   style={styles.deleteButton}
-                  onPress={() => handleDeleteTask(task.id)}
+                  onPress={() => handleRequestDelete(task)}
                   hitSlop={8}
                   accessibilityLabel="Tanggalin ang gawain"
                 >
@@ -423,6 +459,28 @@ export function DailyTasksCard({
           </View>
         </View>
       </Modal>
+
+      <ConfirmationModal
+        visible={Boolean(pendingAction)}
+        message={
+          pendingAction?.action === "delete"
+            ? ("Are you sure you want to delete \"" + (pendingAction?.task.title || "") + "\"?")
+            : pendingAction?.action === "uncomplete"
+            ? ("Unmark \"" + (pendingAction?.task.title || "") + "\"?")
+            : ("Mark \"" + (pendingAction?.task.title || "") + "\" as completed?")
+        }
+        confirmLabel={
+          pendingAction?.action === "delete"
+            ? "Delete"
+            : pendingAction?.action === "uncomplete"
+            ? "Unmark"
+            : "Mark Done"
+        }
+        cancelLabel="Cancel"
+        confirmTone={pendingAction?.action === "delete" ? "danger" : "primary"}
+        onCancel={handleCancelAction}
+        onConfirm={() => void handleConfirmAction()}
+      />
     </View>
   );
 }
