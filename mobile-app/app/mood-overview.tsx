@@ -130,7 +130,7 @@ function getMuniEmotionReflection(
       headline: "Muni is holding space for you",
       body: `Sadness has shown up ${sadnessCount} times this month. Heavy feelings can get exhausting to carry alone—would you like to share what's on your mind?`,
       actionLabel: "Chat with Muni",
-      actionRoute: "/muni-avatar",
+      actionRoute: "/home?voice=1",
       actionIcon: "chatbubble-ellipses-outline",
       tone: "support",
     };
@@ -166,7 +166,7 @@ function getMuniEmotionReflection(
       headline: "Be kind to yourself today",
       body: "Muni noticed feelings of guilt or embarrassment weighed on you lately. Everyone stumbles—please remember you deserve forgiveness and gentle warmth.",
       actionLabel: "Talk to Muni",
-      actionRoute: "/muni-avatar",
+      actionRoute: "/home?voice=1",
       actionIcon: "heart-outline",
       tone: "support",
     };

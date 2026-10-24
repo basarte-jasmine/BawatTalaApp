@@ -50,7 +50,7 @@ export const EMOTIONS: EmotionOption[] = [
     id: "joy",
     inactiveImage: INACTIVE_EMOTION_IMAGES.joy,
     image: INACTIVE_EMOTION_IMAGES.joy,
-    label: "Joy",
+    label: "Joyful",
   },
   {
     activeImage: ACTIVE_EMOTION_IMAGES.contentment,
@@ -66,7 +66,7 @@ export const EMOTIONS: EmotionOption[] = [
     id: "relief",
     inactiveImage: INACTIVE_EMOTION_IMAGES.relief,
     image: INACTIVE_EMOTION_IMAGES.relief,
-    label: "Relief",
+    label: "Relieved",
   },
   {
     activeImage: ACTIVE_EMOTION_IMAGES.embarrassment,
@@ -78,11 +78,11 @@ export const EMOTIONS: EmotionOption[] = [
   },
   {
     activeImage: ACTIVE_EMOTION_IMAGES.guilt,
-    color: "#B895C8",
+    color: "#A87C5D",
     id: "guilt",
     inactiveImage: INACTIVE_EMOTION_IMAGES.guilt,
     image: INACTIVE_EMOTION_IMAGES.guilt,
-    label: "Guilt",
+    label: "Guilty",
   },
   {
     activeImage: ACTIVE_EMOTION_IMAGES.disappointment,
@@ -98,15 +98,15 @@ export const EMOTIONS: EmotionOption[] = [
     id: "sadness",
     inactiveImage: INACTIVE_EMOTION_IMAGES.sadness,
     image: INACTIVE_EMOTION_IMAGES.sadness,
-    label: "Sadness",
+    label: "Sad",
   },
   {
     activeImage: ACTIVE_EMOTION_IMAGES.anxiety,
-    color: "#F19137",
+    color: "#B895C8",
     id: "anxiety",
     inactiveImage: INACTIVE_EMOTION_IMAGES.anxiety,
     image: INACTIVE_EMOTION_IMAGES.anxiety,
-    label: "Anxiety",
+    label: "Anxious",
   },
   {
     activeImage: ACTIVE_EMOTION_IMAGES.anger,
@@ -114,7 +114,7 @@ export const EMOTIONS: EmotionOption[] = [
     id: "anger",
     inactiveImage: INACTIVE_EMOTION_IMAGES.anger,
     image: INACTIVE_EMOTION_IMAGES.anger,
-    label: "Anger",
+    label: "Angry",
   },
 ];
 
@@ -124,6 +124,10 @@ export const LEGACY_EMOTION_ALIASES: Record<string, string> = {
   angry: "anger",
   anxious: "anxiety",
   calm: "contentment",
+  content: "contentment",
+  guilty: "guilt",
+  joyful: "joy",
+  relieved: "relief",
   excited: "excitement",
   happy: "joy",
   lonely: "sadness",

@@ -3513,7 +3513,12 @@ Muni saved your space and left a warm cup of cocoa on your desk. Take whatever t
       />
       <MuniVoiceOverlay
         visible={isVoiceOverlayVisible}
-        onClose={() => setIsVoiceOverlayVisible(false)}
+        onClose={() => {
+          setIsVoiceOverlayVisible(false);
+          if (voice) {
+            router.replace("/home");
+          }
+        }}
       />
     </SafeAreaView>
   );
