@@ -390,8 +390,12 @@ export default function WeeklyRecapScreen() {
 
   const handleShare = async () => {
     try {
+      const daysLabel = daysWithCheckIn === 1 ? "1 day" : `${daysWithCheckIn} days`;
       await Share.share({
-        message: "Tala ng Linggo: My Week Under the Stars on Bawat Tala ?\n\nChecked in " + daysWithCheckIn + " days this week with Muni.\n\nNo pressure, no grades�just gentle moments for the mind. #BawatTala #StudentWellness",
+        message:
+          `Tala ng Linggo: My Week Under the Stars on Bawat Tala ✨\n\n` +
+          `Checked in ${daysLabel} this week with Muni.\n\n` +
+          `No pressure, no grades—just gentle moments for the mind.\n#BawatTala #StudentWellness`,
       });
     } catch {
       // ignore
