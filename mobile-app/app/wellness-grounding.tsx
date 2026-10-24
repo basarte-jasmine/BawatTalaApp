@@ -99,6 +99,7 @@ export default function WellnessGroundingScreen() {
     });
   };
 
+  const isAllCompleted = completedSteps.size === SENSE_MOMENTS.length;
   const currentSense = SENSE_MOMENTS[activeStep] || SENSE_MOMENTS[0];
 
   return (
@@ -131,6 +132,24 @@ export default function WellnessGroundingScreen() {
               A gentle self-guided practice for naming what is around you, slowing anxious thoughts, and returning to the present moment.
             </Text>
 
+            {/* Before You Begin Cues */}
+          <View style={[styles.cueCard, compact && styles.cueCardCompact]}>
+            <View style={styles.cueHeaderIcon}>
+              <Ionicons name="leaf-outline" size={20} color="#4F7E5B" />
+            </View>
+            <View style={styles.cueTextWrap}>
+              <Text style={styles.cueTitle}>Before you begin</Text>
+              <View style={styles.cueList}>
+                {MEDITATION_CUES.map((cue) => (
+                  <View key={cue} style={styles.cueItem}>
+                    <View style={styles.cueDot} />
+                    <Text style={styles.cueText}>{cue}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </View>
+
             {/* Active Sense Showcase Card */}
             <View style={[styles.activeSenseCard, { borderColor: currentSense.accent + "55" }]}>
               <View style={styles.activeSenseHeader}>
@@ -149,8 +168,40 @@ export default function WellnessGroundingScreen() {
                 <Text style={styles.activeSenseHintText}>{currentSense.hint}</Text>
               </View>
 
+              {isAllCompleted ? (
+                <View style={styles.completionBanner}>
+                  <View style={styles.completionIconWrap}>
+                    <Ionicons name="checkmark-done" size={18} color="#2D6B3C" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.completionTitle}>You are centered and grounded 🍃</Text>
+                    <Text style={styles.completionText}>
+                      You completed all 5 senses. Take this calm with you.
+                    </Text>
+                  </View>
+                  <Pressable
+                    style={styles.repeatBtn}
+                    onPress={() => {
+                      setCompletedSteps(new Set());
+                      setActiveStep(0);
+                    }}
+                    hitSlop={6}
+                    accessibilityLabel="Practice again"
+                  >
+                    <Ionicons name="refresh" size={13} color="#2D6B3C" />
+                    <Text style={styles.repeatBtnText}>Restart</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+
               <Pressable
-                style={[styles.nextSenseBtn, { backgroundColor: currentSense.accent }]}
+                style={[
+                  styles.nextSenseBtn,
+                  isAllCompleted
+                    ? styles.nextSenseBtnDisabled
+                    : { backgroundColor: currentSense.accent },
+                ]}
+                disabled={isAllCompleted}
                 onPress={() => {
                   setCompletedSteps((prev) => new Set(prev).add(activeStep));
                   if (activeStep < SENSE_MOMENTS.length - 1) {
@@ -158,8 +209,17 @@ export default function WellnessGroundingScreen() {
                   }
                 }}
               >
-                <Text style={styles.nextSenseBtnText}>
-                  {activeStep < SENSE_MOMENTS.length - 1 ? "Next Sense (" + SENSE_MOMENTS[activeStep + 1].sense + ") →" : "Completed Grounding ✓"}
+                <Text
+                  style={[
+                    styles.nextSenseBtnText,
+                    isAllCompleted && styles.nextSenseBtnTextDisabled,
+                  ]}
+                >
+                  {isAllCompleted
+                    ? "Grounding Completed ✓"
+                    : activeStep < SENSE_MOMENTS.length - 1
+                    ? "Next Sense (" + SENSE_MOMENTS[activeStep + 1].sense + ") →"
+                    : "Complete Grounding ✓"}
                 </Text>
               </Pressable>
             </View>
@@ -224,24 +284,6 @@ export default function WellnessGroundingScreen() {
                   </Pressable>
                 );
               })}
-            </View>
-          </View>
-
-          {/* Before You Begin Cues */}
-          <View style={[styles.cueCard, compact && styles.cueCardCompact]}>
-            <View style={styles.cueHeaderIcon}>
-              <Ionicons name="leaf-outline" size={20} color="#4F7E5B" />
-            </View>
-            <View style={styles.cueTextWrap}>
-              <Text style={styles.cueTitle}>Before you begin</Text>
-              <View style={styles.cueList}>
-                {MEDITATION_CUES.map((cue) => (
-                  <View key={cue} style={styles.cueItem}>
-                    <View style={styles.cueDot} />
-                    <Text style={styles.cueText}>{cue}</Text>
-                  </View>
-                ))}
-              </View>
             </View>
           </View>
 
@@ -451,6 +493,60 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     fontFamily: "Outfit",
     color: "#4A5F52",
+  },
+  completionBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EDF7EE",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#CCE5CF",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    columnGap: 10,
+    marginBottom: 10,
+  },
+  completionIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#DCF2DE",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  completionTitle: {
+    fontSize: 13,
+    fontFamily: "Outfit-Bold",
+    color: "#245A30",
+    marginBottom: 2,
+  },
+  completionText: {
+    fontSize: 11,
+    fontFamily: "Outfit-Medium",
+    color: "#4A6E52",
+    lineHeight: 15,
+  },
+  repeatBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#DCF2DE",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    columnGap: 3,
+  },
+  repeatBtnText: {
+    fontSize: 11,
+    fontFamily: "Outfit-Bold",
+    color: "#2D6B3C",
+  },
+  nextSenseBtnDisabled: {
+    backgroundColor: "#E2ECE2",
+    borderColor: "#C5D8C4",
+    borderWidth: 1,
+  },
+  nextSenseBtnTextDisabled: {
+    color: "#607865",
   },
   nextSenseBtn: {
     borderRadius: 12,
