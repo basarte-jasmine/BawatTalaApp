@@ -94,26 +94,7 @@ type DriftingBottleNote = {
 
 type SeaDiscovery = "meteorite" | "starfish" | "stingray";
 
-const SEA_AFFIRMATIONS: Record<SeaDiscovery, string[]> = {
-  starfish: [
-    "Every gentle pause you take is a star you light in your own constellation.",
-    "Tulad ng mga tala sa dagat, manatiling payapa kahit marahan ang agos ng buhay.",
-    "You don't need to rush to be worthy. Showing up today is already enough.",
-    "Even the smallest star shines brightly in the deep. Trust your gentle pace.",
-  ],
-  stingray: [
-    "Glide smoothly through heavy thoughts—not everything requires your immediate reaction.",
-    "Huminga nang malalim. Hayaan mong dalhin ka ng banayad na alon sa kapayapaan.",
-    "Grace is not moving fast; it is navigating deep waters with stillness and calm.",
-    "Let the worries of school and deadlines gently float away for this one breath.",
-  ],
-  meteorite: [
-    "A reminder of where you came from: a long journey through the dark, guided by a sky full of hope.",
-    "Every challenge you faced shaped the quiet resilience you carry inside you right now.",
-    "Ang liwanag na hinahanap mo ay nagmumula sa sarili mong pagsisikap at kabutihan.",
-    "You are made of stardust and quiet strength. Keep shining at your own rhythm.",
-  ],
-};
+
 
 const SEA_OBJECTS = [
   { id: "meteorite", source: require("../assets/images/Sea/Meteorite Piece.webp"), left: 22, top: 172, size: 58, scale: 0.92, drift: 18, duration: 5200 },
@@ -567,21 +548,7 @@ export default function HomeScreen() {
   const [driftingBottlesLoading, setDriftingBottlesLoading] = useState(false);
   const [driftingBottlesError, setDriftingBottlesError] = useState("");
   const [seaDiscovery, setSeaDiscovery] = useState<SeaDiscovery | null>(null);
-  const [tideGiftsToday, setTideGiftsToday] = useState(0);
-  const [seaDiscoveryAffirmation, setSeaDiscoveryAffirmation] = useState("");
-  const [seaDiscoveryRewardTala, setSeaDiscoveryRewardTala] = useState(0);
-
-  useEffect(() => {
-    async function loadTideGifts() {
-      if (!user?.studentNumber) return;
-      const todayIso = getManilaTodayParts().isoDate;
-      const stored = await AsyncStorage.getItem(`@bawat-tala/tide-gifts:${user.studentNumber}:${todayIso}`);
-      if (stored) {
-        setTideGiftsToday(parseInt(stored, 10) || 0);
-      }
-    }
-    void loadTideGifts();
-  }, [user?.studentNumber]);
+  const [seaRewardTala, setSeaRewardTala] = useState(0);
   const [collectedSeaStars, setCollectedSeaStars] = useState(0);
   const [hasConfirmedDriftingBottleWarning, setHasConfirmedDriftingBottleWarning] = useState(false);
   const [skipDriftingBottleWarning, setSkipDriftingBottleWarning] = useState(false);
@@ -1622,9 +1589,12 @@ export default function HomeScreen() {
   };
 
   const openSeaDiscovery = (discovery: SeaDiscovery) => {
-    if (discovery === "starfish") {
-      setCollectedSeaStars((current) => current + 1);
-    }
+    // Award random Tala amount (5, 8, 10, 12, 15, 20, or 25)
+    const amounts = [5, 8, 10, 12, 15, 20, 25];
+    const reward = amounts[Math.floor(Math.random() * amounts.length)];
+    const currentTala = getAvailableMuniTala();
+    updateAvailableMuniTala(currentTala + reward);
+    setSeaRewardTala(reward);
     setSeaDiscovery(discovery);
   };
 
@@ -2868,26 +2838,21 @@ export default function HomeScreen() {
                 cachePolicy="memory-disk"
               />
 
-              {/* Affirmation Box */}
-              <View style={styles.seaAffirmationBox}>
-                <Text style={styles.seaAffirmationQuote}>"{seaDiscoveryAffirmation}"</Text>
+              <View style={styles.seaRewardPill}>
+                <Image source={TALA_IMAGE} style={{ width: 16, height: 16 }} contentFit="contain" />
+                <Text style={styles.seaRewardPillText}>+{seaRewardTala} Tala Earned!</Text>
               </View>
 
-              {/* Tala Reward Status */}
-              {seaDiscoveryRewardTala > 0 ? (
-                <View style={styles.seaRewardPill}>
-                  <Image source={TALA_IMAGE} style={{ width: 14, height: 14 }} contentFit="contain" />
-                  <Text style={styles.seaRewardPillText}>+{seaDiscoveryRewardTala} Tala Earned</Text>
-                  <Text style={styles.seaRewardCountText}>({tideGiftsToday}/10 gifts today)</Text>
-                </View>
-              ) : (
-                <View style={styles.seaRewardMaxPill}>
-                  <Text style={styles.seaRewardMaxText}>10/10 tide gifts collected today ✨</Text>
-                </View>
-              )}
+              <Text style={styles.seaRewardMessage}>
+                {seaDiscovery === "starfish"
+                  ? `The starfish gifted you +${seaRewardTala} Tala from the sea tide!`
+                  : seaDiscovery === "stingray"
+                  ? `The gentle stingray gifted you +${seaRewardTala} Tala as it glided by!`
+                  : `You discovered a fallen star fragment carrying +${seaRewardTala} Tala!`}
+              </Text>
 
               <Pressable style={styles.seaCollectButton} onPress={closeSeaDiscovery}>
-                <Text style={styles.seaCollectButtonText}>Salamat, Muni ✨</Text>
+                <Text style={styles.seaCollectButtonText}>Collect Tala ✨</Text>
               </Pressable>
             </View>
           </View>
@@ -5108,25 +5073,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 23,
     textAlign: "center" },
-  seaAffirmationBox: {
-    backgroundColor: "#F4F9F2",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#DDE9D9",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginTop: 8,
-    marginBottom: 12,
-    width: "100%",
-  },
-  seaAffirmationQuote: {
-    color: "#2C4A35",
-    fontSize: 13.5,
-    lineHeight: 19,
-    fontFamily: "Outfit-Medium",
-    fontStyle: "italic",
-    textAlign: "center",
-  },
+  
+  
   seaRewardPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -5144,22 +5092,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: "Outfit-Bold",
   },
-  seaRewardCountText: {
-    color: "#A16207",
-    fontSize: 11,
+  
+  
+  
+  seaRewardMessage: {
+    color: "#475569",
+    fontSize: 13.5,
+    lineHeight: 20,
     fontFamily: "Outfit-Medium",
-  },
-  seaRewardMaxPill: {
-    backgroundColor: "#F1F5F9",
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    textAlign: "center",
+    paddingHorizontal: 8,
     marginBottom: 14,
-  },
-  seaRewardMaxText: {
-    color: "#64748B",
-    fontSize: 11,
-    fontFamily: "Outfit-Medium",
   },
   seaCollectButton: {
     backgroundColor: "#73CB47",
