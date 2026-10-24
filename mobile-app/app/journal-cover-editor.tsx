@@ -177,6 +177,28 @@ const DraggableElement = ({
     onTransformChange(element.id, translateX.value, translateY.value, scale.value, nextRot);
   };
 
+  const handleCycleZoom = () => {
+    // Tapping any corner handle cycles zoom: 0.8x -> 1.15x -> 1.5x -> 1.85x -> 0.8x
+    const nextScale = scale.value >= 1.8 ? 0.8 : Number((scale.value + 0.35).toFixed(2));
+    scale.value = nextScale;
+    savedScale.value = nextScale;
+    onTransformChange(element.id, translateX.value, translateY.value, nextScale, rotation.value);
+  };
+
+  const cornerZoomGesture = Gesture.Pan()
+    .onStart(() => {
+      savedScale.value = scale.value;
+    })
+    .onUpdate((event) => {
+      const delta = (Math.abs(event.translationX) + Math.abs(event.translationY)) / 100;
+      const sign = (event.translationX + event.translationY) >= 0 ? 1 : -1;
+      scale.value = Math.max(0.5, Math.min(2.5, savedScale.value + delta * sign));
+    })
+    .onEnd(() => {
+      savedScale.value = scale.value;
+      runOnJS(onTransformChange)(element.id, translateX.value, translateY.value, scale.value, rotation.value);
+    });
+
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: translateX.value },
@@ -211,10 +233,22 @@ const DraggableElement = ({
 
           {isActive ? (
             <>
-              <View style={[styles.cornerHandle, styles.cornerTL]} pointerEvents="none" />
-              <View style={[styles.cornerHandle, styles.cornerTR]} pointerEvents="none" />
-              <View style={[styles.cornerHandle, styles.cornerBL]} pointerEvents="none" />
-              <View style={[styles.cornerHandle, styles.cornerBR]} pointerEvents="none" />
+              {/* Interactive corner handles - clicking or dragging zooms/resizes */} 
+              {(['TL', 'TR', 'BL', 'BR'] as const).map((pos) => (
+                <GestureDetector key={pos} gesture={cornerZoomGesture}>
+                  <Pressable
+                    style={[styles.cornerHandleTouch, styles[`corner${pos}`]]}
+                    onPress={(e) => {
+                      e.stopPropagation?.();
+                      handleCycleZoom();
+                    }}
+                    hitSlop={8}
+                    accessibilityLabel="Zoom sticker"
+                  >
+                    <View style={styles.cornerHandleDot} />
+                  </Pressable>
+                </GestureDetector>
+              ))}
 
               <View style={styles.floatingActionToolbar}>
                 <Pressable
@@ -577,19 +611,26 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: "#A855F7",
   },
-  cornerHandle: {
+  cornerHandleTouch: {
     position: "absolute",
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 24,
+    height: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 100,
+  },
+  cornerHandleDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
     backgroundColor: "#FFFFFF",
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: "#A855F7",
   },
-  cornerTL: { top: -5, left: -5 },
-  cornerTR: { top: -5, right: -5 },
-  cornerBL: { bottom: -5, left: -5 },
-  cornerBR: { bottom: -5, right: -5 },
+  cornerTL: { top: -12, left: -12 },
+  cornerTR: { top: -12, right: -12 },
+  cornerBL: { bottom: -12, left: -12 },
+  cornerBR: { bottom: -12, right: -12 },
   floatingActionToolbar: {
     position: "absolute",
     bottom: -50,
