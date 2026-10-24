@@ -105,10 +105,13 @@ const DraggableElement = ({
   element,
   isActive,
   onFocus,
-  onTransformChange}: {
+  onDelete,
+  onTransformChange,
+}: {
   element: CoverElement;
   isActive: boolean;
   onFocus: () => void;
+  onDelete: () => void;
   onTransformChange: (id: string, x: number, y: number, scale: number, rotation: number) => void;
 }) => {
   const translateX = useSharedValue(element.x);
@@ -153,17 +156,38 @@ const DraggableElement = ({
       runOnJS(onTransformChange)(element.id, translateX.value, translateY.value, scale.value, rotation.value);
     });
 
+  const zoomPanGesture = Gesture.Pan()
+    .onStart(() => {
+      savedScale.value = scale.value;
+    })
+    .onUpdate((event) => {
+      const delta = (event.translationX + event.translationY) / 120;
+      scale.value = Math.max(0.5, Math.min(2.5, savedScale.value + delta));
+    })
+    .onEnd(() => {
+      savedScale.value = scale.value;
+      runOnJS(onTransformChange)(element.id, translateX.value, translateY.value, scale.value, rotation.value);
+    });
+
+  const handleCycleZoom = () => {
+    const nextScale = scale.value >= 1.8 ? 0.75 : Number((scale.value + 0.35).toFixed(2));
+    scale.value = nextScale;
+    savedScale.value = nextScale;
+    onTransformChange(element.id, translateX.value, translateY.value, nextScale, rotation.value);
+  };
+
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: translateX.value },
       { translateY: translateY.value },
       { scale: scale.value },
       { rotateZ: `${rotation.value}rad` },
-    ]}));
+    ],
+  }));
 
   return (
     <GestureDetector gesture={Gesture.Simultaneous(panGesture, pinchGesture, rotationGesture)}>
-      <Animated.View style={[styles.elementContainer, animatedStyle]}>
+      <Animated.View style={[styles.elementContainer, animatedStyle, { zIndex: isActive ? 99 : 1 }]}>
         <Pressable
           onPress={onFocus}
           style={[styles.elementTouchTarget, isActive && styles.elementSelected]}
@@ -171,12 +195,65 @@ const DraggableElement = ({
           accessibilityLabel={element.type === "text" ? element.content : `${element.icon} sticker`}
         >
           {element.type === "text" ? (
-            <Text style={[styles.textElement, { color: element.color, fontFamily: element.fontFamily || "Outfit-Bold" }]}>{element.content}</Text>
+            <Text style={[styles.textElement, { color: element.color, fontFamily: element.fontFamily || "Outfit-Bold" }]}>
+              {element.content}
+            </Text>
           ) : element.icon && IMAGE_STICKERS[element.icon as keyof typeof IMAGE_STICKERS] ? (
-            <Image source={IMAGE_STICKERS[element.icon as keyof typeof IMAGE_STICKERS]} style={{ width: 100, height: 100 }} contentFit="contain" />
+            <Image
+              source={IMAGE_STICKERS[element.icon as keyof typeof IMAGE_STICKERS]}
+              style={{ width: 100, height: 100 }}
+              contentFit="contain"
+            />
           ) : (
             <Ionicons name={element.icon as any} size={42} color="#FFF8E8" />
           )}
+
+          {isActive ? (
+            <>
+              <View style={[styles.cornerHandle, styles.cornerTL]} pointerEvents="none" />
+              <View style={[styles.cornerHandle, styles.cornerTR]} pointerEvents="none" />
+              <View style={[styles.cornerHandle, styles.cornerBL]} pointerEvents="none" />
+              <View style={[styles.cornerHandle, styles.cornerBR]} pointerEvents="none" />
+
+              <View style={styles.floatingActionToolbar}>
+                <Pressable
+                  style={styles.floatingActionItem}
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    onDelete();
+                  }}
+                  hitSlop={6}
+                  accessibilityLabel="Delete sticker"
+                >
+                  <View style={styles.floatingActionCircle}>
+                    <Ionicons name="close" size={16} color="#1E293B" />
+                  </View>
+                  <View style={styles.floatingActionPill}>
+                    <Text style={styles.floatingActionPillText}>delete</Text>
+                  </View>
+                </Pressable>
+
+                <GestureDetector gesture={zoomPanGesture}>
+                  <Pressable
+                    style={styles.floatingActionItem}
+                    onPress={(e) => {
+                      e.stopPropagation?.();
+                      handleCycleZoom();
+                    }}
+                    hitSlop={6}
+                    accessibilityLabel="Zoom or resize sticker"
+                  >
+                    <View style={styles.floatingActionCircle}>
+                      <Ionicons name="scan-outline" size={16} color="#1E293B" />
+                    </View>
+                    <View style={styles.floatingActionPill}>
+                      <Text style={styles.floatingActionPillText}>zoom</Text>
+                    </View>
+                  </Pressable>
+                </GestureDetector>
+              </View>
+            </>
+          ) : null}
         </Pressable>
       </Animated.View>
     </GestureDetector>
@@ -260,6 +337,13 @@ export default function JournalCoverEditorScreen() {
     )));
   };
 
+  const removeElementById = (id: string) => {
+    setElements((current) => current.filter((element) => element.id !== id));
+    if (activeElementId === id) {
+      setActiveElementId(null);
+    }
+  };
+
   const removeActiveElement = () => {
 
     if (!activeElementId) return;
@@ -278,7 +362,7 @@ export default function JournalCoverEditorScreen() {
 
     setIsSaving(true);
     setActiveElementId(null);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 150));
 
     try {
       let previewUri: string | null = null;
@@ -333,6 +417,7 @@ export default function JournalCoverEditorScreen() {
                 element={element}
                 isActive={activeElementId === element.id}
                 onFocus={() => setActiveElementId(element.id)}
+                onDelete={() => removeElementById(element.id)}
                 onTransformChange={updateElementTransform}
               />
             ))}
@@ -480,8 +565,69 @@ const styles = StyleSheet.create({
   emptyCoverMessage: { alignItems: "center", width: 150, gap: 8 },
   emptyCoverText: { color: "rgba(255,248,232,0.72)", fontFamily: "Outfit-Medium", fontSize: 13, textAlign: "center", lineHeight: 19 },
   elementContainer: { position: "absolute" },
-  elementTouchTarget: { padding: 7, borderRadius: 10, borderWidth: 1, borderColor: "transparent" },
-  elementSelected: { borderColor: "rgba(255,248,232,0.9)", borderStyle: "dashed" },
+  elementTouchTarget: {
+    padding: 7,
+    borderRadius: 10,
+    borderWidth: 0,
+    borderColor: "transparent",
+    position: "relative",
+  },
+  elementSelected: {
+    borderWidth: 1.5,
+    borderColor: "#A855F7",
+  },
+  cornerHandle: {
+    position: "absolute",
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1.5,
+    borderColor: "#A855F7",
+  },
+  cornerTL: { top: -5, left: -5 },
+  cornerTR: { top: -5, right: -5 },
+  cornerBL: { bottom: -5, left: -5 },
+  cornerBR: { bottom: -5, right: -5 },
+  floatingActionToolbar: {
+    position: "absolute",
+    bottom: -50,
+    right: -4,
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+    zIndex: 999,
+  },
+  floatingActionItem: {
+    alignItems: "center",
+  },
+  floatingActionCircle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
+  floatingActionPill: {
+    backgroundColor: "#22C55E",
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    marginTop: 2,
+  },
+  floatingActionPillText: {
+    color: "#FFFFFF",
+    fontSize: 9,
+    fontFamily: "Outfit-Bold",
+  },
   textElement: { fontFamily: "Outfit-Bold", fontSize: 28, maxWidth: 230, textAlign: "center" },
   
   iconOnlyButton: { width: 32, height: 32, alignItems: "center", justifyContent: "center", borderRadius: 16, backgroundColor: "#EEF3ED" },
