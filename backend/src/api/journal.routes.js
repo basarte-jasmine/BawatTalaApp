@@ -117,7 +117,10 @@ function summarizeJournalMessages(messages) {
     .trim();
   if (!text) return "";
   const excerpt = text.length > 220 ? `${text.slice(0, 217).trim()}...` : text;
-  return `This entry reflects: ${excerpt}`;
+  if (text.includes("natapos ko") || text.includes("munting tala") || text.includes("mga gawaing ito")) {
+    return "Naitala ang mga natapos na gawain at munting tagumpay para sa araw na ito.";
+  }
+  return `Pagninilay: ${excerpt}`;
 }
 
 function normalizeConcernValue(value) {

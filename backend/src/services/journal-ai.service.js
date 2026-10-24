@@ -560,7 +560,10 @@ function getFallbackFinalSummary(studentText, sentimentAnalysis = {}) {
     ? ` around ${dominantEmotion}`
     : "";
 
-  return `This entry reflects${theme} through the thought: ${excerpt}`;
+  if (text.includes("natapos ko") || text.includes("munting tala") || text.includes("mga gawaing ito")) {
+    return "Naitala ang mga natapos na gawain at munting tagumpay para sa araw na ito.";
+  }
+  return `Pagninilay${theme}: ${excerpt}`;
 }
 
 async function unavailableFinalAnalysis(

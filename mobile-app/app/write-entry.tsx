@@ -1195,21 +1195,23 @@ export default function WriteEntryScreen() {
         )}
 
         <View style={[styles.inputCard, liftComposer && styles.inputCardKeyboardVisible]}>
-          <TextInput
-            value={inputValue}
-            onChangeText={setInputValue}
-            onFocus={() => setInputFocused(true)}
-            onBlur={() => setInputFocused(false)}
-            placeholder="Write what happened today..."
-            placeholderTextColor="#7B8893"
-            multiline
-            maxLength={JOURNAL_MESSAGE_MAX_LENGTH}
-            style={styles.input}
-            editable={canWrite}
-          />
-          <Text style={styles.inputCharCount}>
-            {inputValue.length}/{JOURNAL_MESSAGE_MAX_LENGTH}
-          </Text>
+          <View style={styles.inputFieldWrap}>
+            <TextInput
+              value={inputValue}
+              onChangeText={setInputValue}
+              onFocus={() => setInputFocused(true)}
+              onBlur={() => setInputFocused(false)}
+              placeholder="Write what happened today..."
+              placeholderTextColor="#7B8893"
+              multiline
+              maxLength={JOURNAL_MESSAGE_MAX_LENGTH}
+              style={styles.input}
+              editable={canWrite}
+            />
+            <Text style={styles.inputCharCount}>
+              {inputValue.length}/{JOURNAL_MESSAGE_MAX_LENGTH}
+            </Text>
+          </View>
 
           <Pressable
             style={[
@@ -1968,6 +1970,11 @@ const styles = StyleSheet.create({
     marginBottom: 8 },
   inputCardKeyboardVisible: {
     marginBottom: 0 },
+  inputFieldWrap: {
+    flex: 1,
+    minHeight: 50,
+    justifyContent: "space-between",
+  },
   inputCharCount: {
     alignSelf: "flex-end",
     color: "#91A0AB",

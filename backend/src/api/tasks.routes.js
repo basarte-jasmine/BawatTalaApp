@@ -338,7 +338,7 @@ router.get("/reflection", async (req, res) => {
     }
 
     const taskBulletPoints = completedTasks.map((t) => `• ${t.title}`).join("\n");
-    const prompt = `Ngayong araw, ito ang mga munting tala at hakbang na natapos ko:\n${taskBulletPoints}\n\nKamusta ang pakiramdam ko habang ginagawa ang mga ito? Ano ang isang bagay na ipinagpapasalamat ko sa aking sarili ngayon?`;
+    const prompt = `Ngayong araw, ito ang mga munting tala at hakbang na natapos ko:\n${taskBulletPoints}\n\nMasaya ako at naglaan ako ng oras para tapusin ang mga ito nang may tiyaga at hinahon.`;
 
     return res.json({
       hasCompletedTasks: true,

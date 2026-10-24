@@ -201,7 +201,7 @@ export function DailyTasksCard({
     if (!reflectionDraft) {
       const completedList = tasks.filter((t) => t.completed);
       const bullets = completedList.map((t) => `• ${t.title}`).join("\n");
-      reflectionDraft = `Ngayong araw, natapos ko ang mga gawaing ito:\n${bullets || "• Munting tagumpay sa araw na ito"}\n\nKamusta ang pakiramdam ko habang ginagawa ang mga ito?`;
+      reflectionDraft = `Ngayong araw, natapos ko ang mga gawaing ito:\n${bullets || "• Munting tagumpay sa araw na ito"}\n\nMasaya ako at naglaan ako ng oras para tapusin ang mga ito nang may tiyaga at hinahon.`;
     }
 
     router.push({
