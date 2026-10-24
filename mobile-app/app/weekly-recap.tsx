@@ -140,6 +140,7 @@ const CARD_THEMES: CardTheme[] = [
 type DayNode = {
   dayName: string;
   dayNumber: number;
+  monthName: string;
   dateStr: string;
   moodId: string | null;
   moodLabel: string;
@@ -276,6 +277,7 @@ export default function WeeklyRecapScreen() {
   const weeklyDays: DayNode[] = useMemo(() => {
     const days: DayNode[] = [];
     const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const baseDate = new Date();
 
     for (let i = 6; i >= 0; i--) {
@@ -285,6 +287,7 @@ export default function WeeklyRecapScreen() {
       const dayNum = d.getDate();
       const dayName = weekdays[d.getDay()];
 
+      const monthName = months[d.getMonth()];
       const matchingMoods = monthlyMoods.filter((m) => m.moodDate === iso);
       const latestMood = matchingMoods[matchingMoods.length - 1];
       const moodId = latestMood ? normalizeEmotionId(latestMood.moodId) : null;
@@ -299,6 +302,7 @@ export default function WeeklyRecapScreen() {
       days.push({
         dayName,
         dayNumber: dayNum,
+        monthName,
         dateStr: iso,
         moodId: resolvedMoodId,
         moodLabel: meta.label,
@@ -670,8 +674,8 @@ export default function WeeklyRecapScreen() {
                     <View style={[styles.storyPipelineIconWrap, { backgroundColor: "rgba(239, 68, 68, 0.2)" }]}>
                       <Ionicons name="alert-circle" size={24} color="#EF4444" />
                     </View>
-                    <Text style={styles.storyPipelineNum}>{totalJournals}</Text>
-                    <Text style={styles.storyPipelineLbl}>Journals</Text>
+                    <Text style={styles.storyPipelineNum}>{heavyJournalsCount}</Text>
+                    <Text style={styles.storyPipelineLbl}>Stress Detected</Text>
                   </View>
 
                   <Ionicons name="arrow-forward" size={16} color="rgba(255,255,255,0.4)" />
@@ -680,8 +684,8 @@ export default function WeeklyRecapScreen() {
                     <View style={[styles.storyPipelineIconWrap, { backgroundColor: "rgba(245, 158, 11, 0.2)" }]}>
                       <Ionicons name="chatbubbles" size={24} color="#F59E0B" />
                     </View>
-                    <Text style={styles.storyPipelineNum}>{mindfulResetsCount}</Text>
-                    <Text style={styles.storyPipelineLbl}>Gentle Resets</Text>
+                    <Text style={styles.storyPipelineNum}>{interventionsOffered}</Text>
+                    <Text style={styles.storyPipelineLbl}>Muni Prompted</Text>
                   </View>
 
                   <Ionicons name="arrow-forward" size={16} color="rgba(255,255,255,0.4)" />
@@ -690,8 +694,8 @@ export default function WeeklyRecapScreen() {
                     <View style={[styles.storyPipelineIconWrap, { backgroundColor: "rgba(34, 197, 94, 0.2)" }]}>
                       <Ionicons name="checkmark-circle" size={24} color="#22C55E" />
                     </View>
-                    <Text style={styles.storyPipelineNum}>{daysWithCheckIn}</Text>
-                    <Text style={styles.storyPipelineLbl}>Days Paused</Text>
+                    <Text style={styles.storyPipelineNum}>{interventionsAccepted}</Text>
+                    <Text style={styles.storyPipelineLbl}>Pauses Completed</Text>
                   </View>
                 </View>
 
@@ -1049,31 +1053,6 @@ export default function WeeklyRecapScreen() {
 
           {/* SVG Waveform Graph */}
           <View style={styles.graphCard}>
-            <View style={styles.graphLegendRow}>
-              <View style={styles.graphLegendItem}>
-                <View style={[styles.graphLegendDot, { backgroundColor: "#16A34A" }]} />
-                <Text style={styles.graphLegendText}>Thriving</Text>
-              </View>
-            {/* Feelings You Made Space For (Emotional Palette) */}
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginHorizontal: 12, marginBottom: 12 }}>
-              {emotionPalette.map((item) => (
-                <View key={item.id} style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#F7FAF5", borderWidth: 1, borderColor: item.meta.color + "66", borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4, gap: 5 }}>
-                  <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: item.meta.color }} />
-                  <Text style={{ fontSize: 11, fontFamily: "Outfit-Bold", color: "#2A3E31" }}>{item.meta.label}</Text>
-                  <Text style={{ fontSize: 10, fontFamily: "Outfit-Medium", color: "#6A7B70" }}>({item.count}d)</Text>
-                </View>
-              ))}
-            </View>
-              <View style={styles.graphLegendItem}>
-                <View style={[styles.graphLegendDot, { backgroundColor: "#D97706" }]} />
-                <Text style={styles.graphLegendText}>Steady/Calm</Text>
-              </View>
-              <View style={styles.graphLegendItem}>
-                <View style={[styles.graphLegendDot, { backgroundColor: "#DC2626" }]} />
-                <Text style={styles.graphLegendText}>Heavy Stress</Text>
-              </View>
-            </View>
-
             <View style={styles.svgWrap}>
               <Svg width="100%" height={165} viewBox="0 0 350 165">
                 <Defs>
@@ -1212,7 +1191,7 @@ export default function WeeklyRecapScreen() {
             <View style={[styles.dayDetailCard, { borderLeftColor: selectedDay.moodColor }]}>
               <View style={styles.dayDetailHeader}>
                 <Text style={styles.dayDetailDay}>
-                  {selectedDay.dayName}, Day {selectedDay.dayNumber}
+                  {selectedDay.dayName}, {selectedDay.monthName} {selectedDay.dayNumber}
                 </Text>
                 <View style={[styles.dayDetailMoodTag, { backgroundColor: selectedDay.moodColor + "22" }]}>
                   <Text style={[styles.dayDetailMoodText, { color: selectedDay.moodColor }]}>
@@ -1225,7 +1204,7 @@ export default function WeeklyRecapScreen() {
                 <View style={styles.dayDetailBadge}>
                   <Ionicons name="checkmark-done-circle" size={15} color="#2F6F25" />
                   <Text style={styles.dayDetailBadgeText}>
-                    Active reset completed: Nervous system down-regulated
+                    Mindful pause completed
                   </Text>
                 </View>
               ) : null}
@@ -1264,16 +1243,16 @@ export default function WeeklyRecapScreen() {
                   <Ionicons name="chatbubbles-outline" size={18} color="#D97706" />
                 </View>
                 <Text style={styles.flowStepLabel} numberOfLines={1}>Muni Prompted</Text>
-                <Text style={styles.flowStepValue}>{interventionsOffered} resets</Text>
+                <Text style={styles.flowStepValue}>{interventionsOffered} gentle resets</Text>
               </View>
 
               <Ionicons name="arrow-forward" size={14} color="#94A3B8" style={styles.flowArrow} />
 
               <View style={styles.flowStep}>
                 <View style={[styles.flowStepIcon, { backgroundColor: "#DCFCE7" }]}>
-                  <Ionicons name="heart-outline" size={18} color="#16A34A" />
+                  <Ionicons name="checkmark-circle-outline" size={18} color="#16A34A" />
                 </View>
-                <Text style={styles.flowStepLabel} numberOfLines={1}>Accepted</Text>
+                <Text style={styles.flowStepLabel} numberOfLines={1}>Pauses Completed</Text>
                 <Text style={styles.flowStepValue}>{interventionsAccepted} completed</Text>
               </View>
             </View>
@@ -1796,6 +1775,7 @@ const styles = StyleSheet.create({
   },
   storyPipelineLbl: {
     fontSize: 9.5,
+    textAlign: "center",
     fontFamily: "Outfit-Medium",
     color: "#C5E6CE",
     marginTop: 2,
@@ -2438,6 +2418,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   graphLegendRow: {
+    flexWrap: "wrap",
     flexDirection: "row",
     justifyContent: "flex-end",
     gap: 12,
