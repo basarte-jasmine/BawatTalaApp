@@ -832,7 +832,7 @@ export default function WeeklyRecapScreen() {
                     </View>
                   </View>
                   <Text style={styles.storyLetterBody}>
-                    "Magandang gabi! Looking back at our past seven days, I see a student who is not only working hard toward their academic goals, but also learning to honor their own boundaries. When stress tried to pull you under on Wednesday, you paused and let yourself breathe. True productivity isn't working until you burn out—it is protecting your peace so you can shine bright. I'm honored to be by your side."
+                    "Hello! Looking back at our past seven days, I see a student who is not only working hard toward their academic goals, but also learning to honor their own boundaries. When stress tried to pull you under on Wednesday, you paused and let yourself breathe. True productivity isn't working until you burn out—it is protecting your peace so you can shine bright. I'm honored to be by your side."
                   </Text>
                   <View style={styles.storyLetterFooter}>
                     <Image source={TALA_IMAGE} style={styles.storyLetterStar} contentFit="contain" cachePolicy="memory-disk" />
@@ -1297,7 +1297,7 @@ export default function WeeklyRecapScreen() {
               <Ionicons name="book-outline" size={18} color="#2563EB" />
               <Text style={styles.pillarTitle}>Library Learning</Text>
             </View>
-            <Text style={styles.pillarBigVal}>{libraryReadCount} Guides</Text>
+            <Text style={styles.pillarBigVal}>{libraryReadCount} {libraryReadCount === 1 ? "Guide" : "Guides"}</Text>
             <Text style={styles.pillarSub}>Mental models learned</Text>
             <View style={styles.tagWrap}>
               <View style={[styles.pillarChip, { backgroundColor: "#DBEAFE" }]}>
@@ -1318,7 +1318,7 @@ export default function WeeklyRecapScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.sectionTitle}>Mindful Resets & Focus Games</Text>
               <Text style={styles.sectionSubtitle}>
-                Active neurological recharge instead of passive doom-scrolling
+                Mindful activities for daily reset and focus
               </Text>
             </View>
           </View>
@@ -1355,7 +1355,7 @@ export default function WeeklyRecapScreen() {
             </View>
           </View>
           <Text style={styles.muniLetterBody}>
-            "Magandang gabi! Looking back at our past seven days, I see a student who is not only working hard toward their goals, but also learning to honor their own boundaries. When stress tried to pull you under on Wednesday, you paused and let yourself breathe. True productivity isn't working until you burn out—it is protecting your peace so you can shine bright. I'm honored to be by your side."
+            "Hello! Looking back at our past seven days, I see a student who is not only working hard toward their goals, but also learning to honor their own boundaries. When stress tried to pull you under on Wednesday, you paused and let yourself breathe. True productivity isn't working until you burn out—it is protecting your peace so you can shine bright. I'm honored to be by your side."
           </Text>
           <View style={styles.muniLetterFooter}>
             <Image source={TALA_IMAGE} style={styles.muniLetterStar} contentFit="contain" cachePolicy="memory-disk" />
