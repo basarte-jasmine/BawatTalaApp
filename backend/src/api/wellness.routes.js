@@ -134,4 +134,60 @@ router.post("/mini-reset-reward", async (req, res) => {
   } catch (error) { return res.status(500).json({ message: error.message || "Could not add your Tala right now." }); }
 });
 
+router.post("/sea-discovery", async (req, res) => {
+  const studentNumber = String(resolveStudentNumber(req) || "").trim();
+  const discoveryId = String(req.body.discoveryId || "").trim().toLowerCase();
+  if (!/^d{2}-d{4}$/.test(studentNumber)) {
+    return res.status(400).json({ message: "Invalid student number." });
+  }
+
+  const VALID_REWARDS = {
+    starfish: 1,
+    stingray: 2,
+    meteorite: 3,
+  };
+  const rewardTala = VALID_REWARDS[discoveryId] || 1;
+  const nowIso = new Date().toISOString().slice(0, 10);
+  const roundKey = `sea-discovery-${discoveryId}-${nowIso}`;
+
+  try {
+    const saved = await query(
+      `insert into public.student_wellness_game_rewards (student_number, round_key, activity_id, level, reward_tala)
+       values ($1, $2, $3, 1, $4)
+       on conflict (student_number, round_key) do nothing
+       returning reward_tala`,
+      [studentNumber, roundKey, `sea-${discoveryId}`, rewardTala]
+    );
+
+    let actualReward = 0;
+    if (saved.rowCount > 0) {
+      actualReward = rewardTala;
+      await query(
+        `insert into public.student_tala_wallets (student_number, total_tala, updated_at)
+         values ($1, $2, now())
+         on conflict (student_number) do update
+         set total_tala = public.student_tala_wallets.total_tala + excluded.total_tala,
+             updated_at = now()`,
+        [studentNumber, actualReward]
+      );
+    }
+
+    const wallet = await query(
+      `select total_tala from public.student_tala_wallets where student_number = $1 limit 1`,
+      [studentNumber]
+    );
+    const totalTala = Number(wallet.rows[0]?.total_tala || 0);
+
+    return res.json({
+      ok: true,
+      discoveryId,
+      rewardTala: actualReward,
+      alreadyCollectedToday: saved.rowCount === 0,
+      totalTala,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message || "Could not collect tide gift right now." });
+  }
+});
+
 module.exports = router;

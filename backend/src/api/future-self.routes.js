@@ -73,6 +73,7 @@ function mapMessageRow(row) {
     deletedAt: row.deleted_at ?? null,
     deliveryAt: row.delivery_at,
     id: row.id,
+    isOpened: Boolean(row.is_opened),
     message: row.message,
     status: pending ? "PENDING" : "ARRIVED",
     studentNumber: row.student_number,
@@ -83,7 +84,7 @@ function mapMessageRow(row) {
 async function findOwnedMessage(studentNumber, messageId) {
   const result = await query(
     `
-      select id, student_number, message, delivery_at, created_at, updated_at, deleted_at
+      select id, student_number, message, delivery_at, created_at, updated_at, deleted_at, is_opened
       from public.future_self_messages
       where id = $1
         and student_number = $2
@@ -110,6 +111,7 @@ router.get(["/messages/current", "/current"], asyncHandler(async (req, res) => {
   const result = await query(
     `
       select id, student_number, message, delivery_at, created_at, updated_at
+             , is_opened
       from public.future_self_messages
       where student_number = $1
         and deleted_at is null
@@ -132,6 +134,7 @@ router.get(["/messages", "/"], asyncHandler(async (req, res) => {
   const result = await query(
     `
       select id, student_number, message, delivery_at, created_at, updated_at
+             , is_opened
       from public.future_self_messages
       where student_number = $1
         and deleted_at is null
@@ -221,6 +224,31 @@ router.get(["/drifting", "/bottles/drifting", "/messages/drifting"], asyncHandle
   }));
 
   return res.json({ bottles, driftingBottles: bottles });
+}));
+
+router.patch(["/messages/:messageId/open", "/:messageId/open"], asyncHandler(async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  const messageId = String(req.params.messageId || "").trim();
+  if (!STUDENT_NUMBER_PATTERN.test(studentNumber) || !messageId) {
+    return res.status(400).json({ message: "Valid student number and message id required." });
+  }
+
+  const result = await query(
+    `
+      update public.future_self_messages
+      set is_opened = true,
+          updated_at = now()
+      where id = $1
+        and student_number = $2
+        and deleted_at is null
+      returning id, student_number, message, delivery_at, created_at, updated_at, is_opened
+    `,
+    [messageId, studentNumber],
+  );
+  if (!result.rows.length) {
+    return res.status(404).json({ message: "Letter not found." });
+  }
+  return res.json({ ok: true, futureSelfMessage: mapMessageRow(result.rows[0]) });
 }));
 
 router.patch(["/messages/:messageId", "/:messageId"], asyncHandler(async (req, res) => {

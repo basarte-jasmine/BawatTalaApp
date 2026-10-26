@@ -1,6 +1,11 @@
-﻿import AsyncStorage from "@react-native-async-storage/async-storage";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import { getManilaNow, getManilaTodayParts } from "./manila-date";
+import {
+  recordStudentMuniActivity,
+  fetchMuniRemindersPreference,
+  saveMuniRemindersPreference,
+} from "./backend-api";
 
 type MuniReminderPreference = {
   enabled: boolean;
@@ -73,15 +78,24 @@ const LAST_ACTIVE_STORAGE_KEY = "bawat-tala.lastActiveAt";
 export async function recordLastActiveTimestamp(): Promise<void> {
   try {
     await AsyncStorage.setItem(LAST_ACTIVE_STORAGE_KEY, new Date().toISOString());
+    void recordStudentMuniActivity();
   } catch {}
 }
 
 export async function checkDaysSinceLastActive(): Promise<number> {
   try {
     const raw = await AsyncStorage.getItem(LAST_ACTIVE_STORAGE_KEY);
-    if (!raw) return 0;
-    const diffMs = Date.now() - new Date(raw).getTime();
-    return Math.max(0, Math.floor(diffMs / (24 * 60 * 60 * 1000)));
+    const localDiff = raw ? Math.max(0, Math.floor((Date.now() - new Date(raw).getTime()) / (24 * 60 * 60 * 1000))) : 0;
+    try {
+      const serverRes = await fetchMuniRemindersPreference();
+      if (serverRes.ok && typeof serverRes.daysInactive === "number") {
+        if (serverRes.lastActiveAt) {
+          await AsyncStorage.setItem(LAST_ACTIVE_STORAGE_KEY, serverRes.lastActiveAt);
+        }
+        return serverRes.daysInactive;
+      }
+    } catch {}
+    return localDiff;
   } catch {
     return 0;
   }
@@ -238,6 +252,7 @@ async function saveStoredPreference(
     getReminderStorageKey(studentNumber),
     JSON.stringify({ ...preference, updatedAt: new Date().toISOString() }),
   );
+  void saveMuniRemindersPreference(preference);
 }
 
 async function getNotificationsModule() {

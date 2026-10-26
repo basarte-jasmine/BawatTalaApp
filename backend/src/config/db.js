@@ -571,6 +571,77 @@ async function ensureDatabaseSchema() {
   `);
 
   await pool.query(`
+    create table if not exists public.student_weekly_recaps (
+      id uuid primary key default gen_random_uuid(),
+      student_number text not null,
+      week_key text not null,
+      start_date date not null,
+      end_date date not null,
+      days_checked_in integer not null default 0,
+      total_journals integer not null default 0,
+      heavy_journals_count integer not null default 0,
+      total_resets integer not null default 0,
+      total_tala_earned integer not null default 0,
+      tala_breakdown jsonb not null default '{}'::jsonb,
+      emotion_palette jsonb not null default '[]'::jsonb,
+      daily_nodes jsonb not null default '[]'::jsonb,
+      journal_themes jsonb not null default '[]'::jsonb,
+      mindful_resets_breakdown jsonb not null default '[]'::jsonb,
+      muni_letter text,
+      focus_seed text,
+      focus_seed_adopted boolean not null default false,
+      focus_seed_rewarded boolean not null default false,
+      has_viewed boolean not null default false,
+      viewed_at timestamptz,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      constraint student_weekly_recaps_student_week_unique unique (student_number, week_key)
+    );
+  `);
+
+  await pool.query(`
+    alter table public.student_weekly_recaps
+      add column if not exists heavy_journals_count integer not null default 0,
+      add column if not exists tala_breakdown jsonb not null default '{}'::jsonb,
+      add column if not exists journal_themes jsonb not null default '[]'::jsonb,
+      add column if not exists mindful_resets_breakdown jsonb not null default '[]'::jsonb,
+      add column if not exists muni_letter text,
+      add column if not exists focus_seed text,
+      add column if not exists focus_seed_adopted boolean not null default false,
+      add column if not exists focus_seed_rewarded boolean not null default false;
+  `);
+
+  await pool.query(`
+    create index if not exists student_weekly_recaps_student_idx
+      on public.student_weekly_recaps (student_number, week_key desc);
+  `);
+
+  await pool.query(`
+    alter table public.student_profiles
+    add column if not exists last_active_at timestamptz not null default now();
+  `);
+
+  await pool.query(`
+    alter table public.student_profiles
+    add column if not exists muni_reminder_settings jsonb not null default '{"enabled": false}'::jsonb;
+  `);
+
+  await pool.query(`
+    alter table public.future_self_messages
+    add column if not exists is_opened boolean not null default false;
+  `);
+
+  try {
+    await pool.query(`
+      update public.student_muni_wardrobes
+      set loadout = '{"background":"garden","head":null,"eye":null,"outfit":null}'::jsonb,
+          updated_at = now()
+      where loadout->>'outfit' = 'spooky-ghost'
+        and loadout->>'head' = 'beanie';
+    `);
+  } catch {}
+
+  await pool.query(`
     create table if not exists public.student_library_progress (
       id uuid primary key default gen_random_uuid(),
       student_number text not null,
@@ -1866,6 +1937,7 @@ async function ensureDatabaseSchema() {
     "student_wellness_game_rewards",
     "student_daily_tasks",
     "student_daily_task_progress",
+    "student_weekly_recaps",
   ];
 
   for (const tableName of studentOwnedFkTables) {
@@ -1952,6 +2024,7 @@ async function ensureDatabaseSchema() {
   await ensureStudentNumberFk("student_referrals", "student_referrals_student_number_fkey");
   await ensureStudentNumberFk("student_daily_tasks", "student_daily_tasks_student_number_fkey");
   await ensureStudentNumberFk("student_daily_task_progress", "student_daily_task_progress_student_number_fkey");
+  await ensureStudentNumberFk("student_weekly_recaps", "student_weekly_recaps_student_number_fkey");
 
   try {
     await pool.query(`

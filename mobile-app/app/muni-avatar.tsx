@@ -79,6 +79,7 @@ export default function MuniAvatarScreen() {
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
   const [showUnlockTriedModal, setShowUnlockTriedModal] = useState(false);
   const [pendingLeaveRoute, setPendingLeaveRoute] = useState<string | null>(null);
+  const [userHasInteracted, setUserHasInteracted] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [saveSuccessNotice, setSaveSuccessNotice] = useState<string | null>(null);
   const [isSavingLoadout, setIsSavingLoadout] = useState(false);
@@ -112,8 +113,10 @@ export default function MuniAvatarScreen() {
   );
 
   useEffect(() => {
-    setEquippedItems(savedItems);
-  }, [savedItems]);
+    if (!userHasInteracted) {
+      setEquippedItems(savedItems);
+    }
+  }, [savedItems, userHasInteracted]);
 
   // Auto-sync tried-on unowned items into cart
   useEffect(() => {
@@ -181,6 +184,7 @@ export default function MuniAvatarScreen() {
 
   const handleConfirmLeave = () => {
     setShowUnsavedModal(false);
+    setUserHasInteracted(false);
     setEquippedItems(savedItems);
     if (pendingLeaveRoute === "/muni-voice") {
       router.push("/muni-voice" as never);
@@ -199,6 +203,7 @@ export default function MuniAvatarScreen() {
 
   // Equip / Preview an item
   const handleSelectItem = useCallback((sectionId: MuniCollectionSectionId, optionId: string | null) => {
+    setUserHasInteracted(true);
     setEquippedItems((current) => ({
       ...current,
       [sectionId]: optionId,
@@ -209,6 +214,7 @@ export default function MuniAvatarScreen() {
   // Reset Look
   const handleResetLook = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
+    setUserHasInteracted(true);
     if (!areMuniLoadoutsEqual(equippedItems, savedItems)) {
       // Revert back to saved look
       setEquippedItems(savedItems);
@@ -255,6 +261,7 @@ export default function MuniAvatarScreen() {
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
     setSaveSuccessNotice("Look saved!");
     setTimeout(() => setSaveSuccessNotice(null), 2200);
+    setUserHasInteracted(false);
   }, [equippedItems, hasUnsavedChanges, isSavingLoadout, unownedEquippedItems]);
 
   // Cart logic
@@ -1019,7 +1026,8 @@ export default function MuniAvatarScreen() {
       <HomeBottomNav
         activeTab="muni"
         onBeforeLeave={(nextRoute) => {
-          if (!hasUnsavedChanges && unownedEquippedItems.length === 0) {
+          const isDirty = userHasInteracted || !areMuniLoadoutsEqual(equippedItems, savedItems) || unownedEquippedItems.length > 0;
+          if (!isDirty) {
             return true;
           }
           setPendingLeaveRoute(nextRoute);

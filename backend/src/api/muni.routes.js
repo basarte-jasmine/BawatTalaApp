@@ -446,4 +446,97 @@ router.patch("/loadout", async (req, res) => {
   }
 });
 
+/**
+ * POST /api/muni/activity
+ * Records student activity and returns inactivity metrics
+ */
+router.post("/activity", async (req, res) => {
+  const studentNumber = String(resolveStudentNumber(req) || "").trim();
+  if (!/^d{2}-d{4}$/.test(studentNumber)) {
+    return res.status(400).json({ message: "Invalid student number." });
+  }
+
+  try {
+    const existing = await query(
+      `select last_active_at from public.student_profiles where student_number = $1 limit 1`,
+      [studentNumber]
+    );
+    const prevActive = existing.rows[0]?.last_active_at ? new Date(existing.rows[0].last_active_at).getTime() : Date.now();
+    const now = Date.now();
+    const daysInactive = Math.max(0, Math.floor((now - prevActive) / (24 * 60 * 60 * 1000)));
+
+    await query(
+      `update public.student_profiles set last_active_at = now() where student_number = $1`,
+      [studentNumber]
+    );
+
+    return res.json({
+      ok: true,
+      lastActiveAt: new Date(now).toISOString(),
+      daysInactive,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message || "Could not record activity." });
+  }
+});
+
+/**
+ * GET /api/muni/reminders
+ * Fetches student reminder preferences and inactivity status
+ */
+router.get("/reminders", async (req, res) => {
+  const studentNumber = String(resolveStudentNumber(req) || "").trim();
+  if (!/^d{2}-d{4}$/.test(studentNumber)) {
+    return res.status(400).json({ message: "Invalid student number." });
+  }
+
+  try {
+    const result = await query(
+      `select last_active_at, muni_reminder_settings from public.student_profiles where student_number = $1 limit 1`,
+      [studentNumber]
+    );
+    const row = result.rows[0];
+    const prevActive = row?.last_active_at ? new Date(row.last_active_at).getTime() : Date.now();
+    const daysInactive = Math.max(0, Math.floor((Date.now() - prevActive) / (24 * 60 * 60 * 1000)));
+
+    return res.json({
+      ok: true,
+      preference: row?.muni_reminder_settings || { enabled: false },
+      lastActiveAt: row?.last_active_at || new Date().toISOString(),
+      daysInactive,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message || "Could not fetch reminder settings." });
+  }
+});
+
+/**
+ * POST /api/muni/reminders
+ * Saves student reminder preferences
+ */
+router.post("/reminders", async (req, res) => {
+  const studentNumber = String(resolveStudentNumber(req) || "").trim();
+  if (!/^d{2}-d{4}$/.test(studentNumber)) {
+    return res.status(400).json({ message: "Invalid student number." });
+  }
+
+  const preference = req.body || { enabled: false };
+  try {
+    await query(
+      `update public.student_profiles
+       set muni_reminder_settings = $2::jsonb,
+           last_active_at = now()
+       where student_number = $1`,
+      [studentNumber, JSON.stringify(preference)]
+    );
+
+    return res.json({
+      ok: true,
+      preference,
+    });
+  } catch (error) {
+    return res.status(500).json({ message: error.message || "Could not save reminder settings." });
+  }
+});
+
 module.exports = router;

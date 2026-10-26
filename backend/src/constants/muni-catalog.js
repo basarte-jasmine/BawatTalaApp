@@ -29,7 +29,7 @@ const MUNI_CATALOG = {
     { id: "denim-vest", label: "Denim Vest", price: 130 },
     { id: "explorer-vest", label: "Explorer Vest", price: 156 },
     { id: "green-jumper", label: "Green Jumper", price: 130 },
-    { id: "spooky-ghost", label: "Spooky Ghost", price: 0, starter: true },
+      { id: "spooky-ghost", label: "Spooky Ghost", price: 160 },
     { id: "yellow-vest", label: "Yellow Vest", price: 130 },
   ],
   background: [
@@ -43,9 +43,9 @@ const MUNI_CATALOG = {
 
 const DEFAULT_LOADOUT = {
   background: "garden",
-  head: "beanie",
-  eye: "cinema-glasses",
-  outfit: "spooky-ghost",
+  head: null,
+  eye: null,
+  outfit: null,
 };
 
 const REMOVED_PAID_ITEMS = {
@@ -127,12 +127,12 @@ function normalizeLoadout(rawLoadout, ownedItems) {
   const loadout = {};
   for (const sectionId of SECTION_IDS) {
     const value = rawLoadout?.[sectionId];
-    if (value === null || value === "") {
-      loadout[sectionId] = null;
+    if (value === null || value === "" || value === undefined) {
+      loadout[sectionId] = sectionId === "background" ? (DEFAULT_LOADOUT.background || "garden") : null;
       continue;
     }
     const itemId = String(value || "").trim();
-    if (itemId && ownedItems[sectionId].includes(itemId)) {
+    if (itemId && ownedItems[sectionId] && ownedItems[sectionId].includes(itemId)) {
       loadout[sectionId] = itemId;
     } else {
       loadout[sectionId] = DEFAULT_LOADOUT[sectionId];

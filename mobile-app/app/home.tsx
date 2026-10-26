@@ -26,6 +26,7 @@ import {
 import { useAuthSession } from "../lib/auth-session";
 import { useAppPreferences } from "../lib/app-preferences";
 import {
+    claimSeaDiscoveryReward,
     claimDailyCheckIn,
     consumePendingRiskPrompt,
     deleteFutureSelfMessage,
@@ -37,6 +38,7 @@ import {
     fetchLibraryBooks,
     fetchStudentAppointments,
     fetchStudentNotifications,
+    openFutureSelfBottle,
     peekPendingRiskPromptEntryIds,
     saveDailyMood,
     saveFutureSelfMessage,
@@ -1234,6 +1236,22 @@ export default function HomeScreen() {
       const storedValue = await AsyncStorage.getItem(getFutureBottleStorageKey(user.studentNumber));
       const localNotes = parseStoredBottleNotes(storedValue);
 
+      // Sync any unpersisted local bottles to the server
+      for (const localNote of localNotes) {
+        if (localNote.id && localNote.id.startsWith("future-bottle-")) {
+          try {
+            const syncRes = await saveFutureSelfMessage({
+              deliveryAt: localNote.deliveryAt,
+              message: localNote.message,
+              studentNumber: user.studentNumber,
+            });
+            if (syncRes.ok && syncRes.futureSelfMessage?.id) {
+              localNote.id = syncRes.futureSelfMessage.id;
+            }
+          } catch {}
+        }
+      }
+
       try {
         const remoteResult = await fetchFutureSelfMessages(user.studentNumber);
         if (remoteResult.ok) {
@@ -1588,14 +1606,21 @@ export default function HomeScreen() {
     setRememberDriftingBottleWarningChoice(skipDriftingBottleWarning);
   };
 
-  const openSeaDiscovery = (discovery: SeaDiscovery) => {
-    // Award random Tala amount (5, 8, 10, 12, 15, 20, or 25)
-    const amounts = [5, 8, 10, 12, 15, 20, 25];
-    const reward = amounts[Math.floor(Math.random() * amounts.length)];
-    const currentTala = getAvailableMuniTala();
-    updateAvailableMuniTala(currentTala + reward);
-    setSeaRewardTala(reward);
+  const openSeaDiscovery = async (discovery: SeaDiscovery) => {
     setSeaDiscovery(discovery);
+    try {
+      const res = await claimSeaDiscoveryReward(discovery);
+      if (res.ok && res.rewardTala) {
+        setSeaRewardTala(res.rewardTala);
+        if (typeof res.totalTala === "number") {
+          updateAvailableMuniTala(res.totalTala);
+        }
+      } else {
+        setSeaRewardTala(1);
+      }
+    } catch {
+      setSeaRewardTala(1);
+    }
   };
 
   const closeSeaDiscovery = () => {

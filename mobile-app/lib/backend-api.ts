@@ -4791,3 +4791,151 @@ export async function fetchTaskReflectionPrompt(studentNumber: string): Promise<
   }
 }
 
+export async function fetchWeeklyRecap(week?: string): Promise<{
+  ok: boolean;
+  weekKey?: string;
+  startIso?: string;
+  endIso?: string;
+  daysCheckedIn?: number;
+  totalJournals?: number;
+  heavyJournalsCount?: number;
+  totalResets?: number;
+  totalTalaEarned?: number;
+  talaBreakdown?: {
+    checkins?: number;
+    journals?: number;
+    tasks?: number;
+    resets?: number;
+  };
+  libraryReadCount?: number;
+  totalWalletTala?: number;
+  dailyNodes?: Array<{
+    dayName: string;
+    dayNumber: number;
+    monthName: string;
+    dateStr: string;
+    moodId: string | null;
+    hasHeavyJournal: boolean;
+    hasReset: boolean;
+    notes: string;
+  }>;
+  emotionPalette?: Array<{ id: string; count: number }>;
+  journalThemes?: string[];
+  mindfulResetsBreakdown?: Array<{ title: string; sessions?: number; games?: number; minutes: number }>;
+  muniLetter?: string;
+  focusSeed?: string;
+  focusSeedAdopted?: boolean;
+  focusSeedRewarded?: boolean;
+  hasViewed?: boolean;
+  message?: string;
+}> {
+  const queryParam = week ? `?week=${encodeURIComponent(week)}` : "";
+  const { response, data } = await get(`/api/recap/weekly${queryParam}`);
+  return {
+    ok: response.ok,
+    weekKey: data?.weekKey,
+    startIso: data?.startIso,
+    endIso: data?.endIso,
+    daysCheckedIn: data?.daysCheckedIn,
+    totalJournals: data?.totalJournals,
+    heavyJournalsCount: data?.heavyJournalsCount,
+    totalResets: data?.totalResets,
+    totalTalaEarned: data?.totalTalaEarned,
+    talaBreakdown: data?.talaBreakdown,
+    libraryReadCount: data?.libraryReadCount,
+    totalWalletTala: data?.totalWalletTala,
+    dailyNodes: data?.dailyNodes,
+    emotionPalette: data?.emotionPalette,
+    journalThemes: data?.journalThemes,
+    mindfulResetsBreakdown: data?.mindfulResetsBreakdown,
+    muniLetter: data?.muniLetter,
+    focusSeed: data?.focusSeed,
+    focusSeedAdopted: data?.focusSeedAdopted,
+    focusSeedRewarded: data?.focusSeedRewarded,
+    hasViewed: data?.hasViewed,
+    message: data?.message,
+  };
+}
+
+export async function markWeeklyRecapViewed(week?: string): Promise<{ ok: boolean }> {
+  const { response } = await post("/api/recap/weekly/viewed", { week });
+  return { ok: response.ok };
+}
+
+export async function adoptWeeklyFocusSeed(week?: string): Promise<{
+  ok: boolean;
+  alreadyAdopted?: boolean;
+  rewardTala?: number;
+  totalTala?: number;
+  message?: string;
+}> {
+  const { response, data } = await post("/api/recap/weekly/adopt-focus", { week });
+  return {
+    ok: response.ok,
+    alreadyAdopted: Boolean(data?.alreadyAdopted),
+    rewardTala: data?.rewardTala ?? 0,
+    totalTala: typeof data?.totalTala === "number" ? data.totalTala : undefined,
+    message: data?.message,
+  };
+}
+
+export async function claimSeaDiscoveryReward(discoveryId: string): Promise<{
+  ok: boolean;
+  discoveryId?: string;
+  rewardTala?: number;
+  alreadyCollectedToday?: boolean;
+  totalTala?: number;
+  message?: string;
+}> {
+  const { response, data } = await post("/api/wellness/sea-discovery", { discoveryId });
+  return {
+    ok: response.ok,
+    discoveryId: data?.discoveryId,
+    rewardTala: data?.rewardTala ?? 0,
+    alreadyCollectedToday: Boolean(data?.alreadyCollectedToday),
+    totalTala: typeof data?.totalTala === "number" ? data.totalTala : undefined,
+    message: data?.message,
+  };
+}
+
+export async function openFutureSelfBottle(messageId: string): Promise<ApiResult> {
+  const { response, data } = await patch(`/api/future-self/messages/${encodeURIComponent(messageId)}/open`, {});
+  return {
+    ok: response.ok,
+    message: data?.message,
+  };
+}
+
+export async function recordStudentMuniActivity(): Promise<{
+  ok: boolean;
+  lastActiveAt?: string;
+  daysInactive?: number;
+}> {
+  const { response, data } = await post("/api/muni/activity", {});
+  return {
+    ok: response.ok,
+    lastActiveAt: data?.lastActiveAt,
+    daysInactive: data?.daysInactive,
+  };
+}
+
+export async function fetchMuniRemindersPreference(): Promise<{
+  ok: boolean;
+  preference?: any;
+  lastActiveAt?: string;
+  daysInactive?: number;
+}> {
+  const { response, data } = await get("/api/muni/reminders");
+  return {
+    ok: response.ok,
+    preference: data?.preference,
+    lastActiveAt: data?.lastActiveAt,
+    daysInactive: data?.daysInactive,
+  };
+}
+
+export async function saveMuniRemindersPreference(preference: any): Promise<{ ok: boolean }> {
+  const { response } = await post("/api/muni/reminders", preference);
+  return { ok: response.ok };
+}
+
