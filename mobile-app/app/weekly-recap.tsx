@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -24,6 +24,9 @@ import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { useAuthSession } from "../lib/auth-session";
 import {
+  adoptWeeklyFocusSeed,
+  fetchWeeklyRecap,
+  markWeeklyRecapViewed,
   fetchLibraryReadingRewardStatus,
   fetchMonthlyMoods,
   fetchRecentJournalEntries,
@@ -193,6 +196,12 @@ export default function WeeklyRecapScreen() {
   const [selectedDayIndex, setSelectedDayIndex] = useState<number>(6);
   const [showShareModal, setShowShareModal] = useState(false);
   const [habitAdopted, setHabitAdopted] = useState(false);
+  const handleAdoptFocus = useCallback(async () => {
+    setHabitAdopted(true);
+    try {
+      await adoptWeeklyFocusSeed();
+    } catch {}
+  }, []);
 
   // Animations
   const [cardFadeAnim] = useState(() => new Animated.Value(1));
@@ -227,6 +236,7 @@ export default function WeeklyRecapScreen() {
   const [monthlyMoods, setMonthlyMoods] = useState<MoodEntryRecord[]>([]);
   const [journalEntries, setJournalEntries] = useState<any[]>([]);
   const [libraryReadCount, setLibraryReadCount] = useState<number>(2);
+  const [backendRecap, setBackendRecap] = useState<any | null>(null);
 
   const loadWeeklyData = useCallback(async () => {
     if (!user?.studentNumber) {
@@ -234,23 +244,37 @@ export default function WeeklyRecapScreen() {
       return;
     }
     try {
-      const [moodRes, journalRes, libraryRes, hasViewedStr] = await Promise.all([
-        fetchMonthlyMoods(user.studentNumber, todayParts.year, todayParts.monthIndex + 1),
-        fetchRecentJournalEntries(user.studentNumber, 14),
-        fetchLibraryReadingRewardStatus(user.studentNumber),
-        AsyncStorage.getItem(`${RECAP_STORAGE_KEY}:${user.studentNumber}`),
+      const [recapRes, moodRes, journalRes, libraryRes, hasViewedStr] = await Promise.all([
+        fetchWeeklyRecap().catch(() => null),
+        fetchMonthlyMoods(user.studentNumber, todayParts.year, todayParts.monthIndex + 1).catch(() => null),
+        fetchRecentJournalEntries(user.studentNumber, 14).catch(() => null),
+        fetchLibraryReadingRewardStatus(user.studentNumber).catch(() => null),
+        AsyncStorage.getItem(`${RECAP_STORAGE_KEY}:${user.studentNumber}`).catch(() => null),
       ]);
 
-      if (moodRes.ok && moodRes.entries) {
+      if (recapRes && recapRes.ok) {
+        setBackendRecap(recapRes);
+        if (recapRes.focusSeedAdopted) {
+          setHabitAdopted(true);
+        }
+        if (typeof recapRes.libraryReadCount === "number") {
+          setLibraryReadCount(Math.max(1, recapRes.libraryReadCount));
+        }
+      }
+
+      if (moodRes && moodRes.ok && Array.isArray(moodRes.entries)) {
         setMonthlyMoods(moodRes.entries);
       }
-      if (journalRes.ok && journalRes.entries) {
+      if (journalRes && journalRes.ok && Array.isArray(journalRes.entries)) {
         setJournalEntries(journalRes.entries);
       }
-      if (libraryRes.ok && typeof libraryRes.completedCount === "number") {
-        setLibraryReadCount(Math.max(1, libraryRes.completedCount));
+      if (libraryRes && libraryRes.ok && typeof libraryRes.completedCount === "number") {
+        setLibraryReadCount((prev) => Math.max(prev, libraryRes.completedCount));
       }
-      // If user already viewed this week, they still see story first if they want, or we keep story mode default
+
+      if (hasViewedStr === "true" || recapRes?.hasViewed) {
+        setViewMode("ledger");
+      }
     } catch {
       // Demo fallbacks
     } finally {
@@ -275,6 +299,26 @@ export default function WeeklyRecapScreen() {
   }, [loadWeeklyData]);
 
   const weeklyDays: DayNode[] = useMemo(() => {
+    if (backendRecap && Array.isArray(backendRecap.dailyNodes) && backendRecap.dailyNodes.length === 7) {
+      const fallbackMoods = ["contentment", "joy", "anxiety", "sadness", "relief", "contentment", "joy"];
+      return backendRecap.dailyNodes.map((n: any, idx: number) => {
+        const resolvedMoodId = (n.moodId ? normalizeEmotionId(n.moodId) : null) || fallbackMoods[idx] || "contentment";
+        const meta = EMOTION_META[resolvedMoodId] || EMOTION_META.contentment;
+        return {
+          dayName: n.dayName || ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][idx],
+          dayNumber: typeof n.dayNumber === "number" ? n.dayNumber : (idx + 1),
+          monthName: n.monthName || "Oct",
+          dateStr: n.dateStr || "",
+          moodId: resolvedMoodId,
+          moodLabel: meta.label,
+          moodColor: meta.color,
+          hasHeavyJournal: Boolean(n.hasHeavyJournal),
+          hasReset: Boolean(n.hasReset),
+          notes: n.notes || "Steady cognitive balance maintained.",
+        };
+      });
+    }
+
     const days: DayNode[] = [];
     const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -286,9 +330,9 @@ export default function WeeklyRecapScreen() {
       const iso = d.toISOString().slice(0, 10);
       const dayNum = d.getDate();
       const dayName = weekdays[d.getDay()];
-
       const monthName = months[d.getMonth()];
-      const matchingMoods = monthlyMoods.filter((m) => m.moodDate === iso);
+
+      const matchingMoods = (monthlyMoods || []).filter((m) => m && m.moodDate === iso);
       const latestMood = matchingMoods[matchingMoods.length - 1];
       const moodId = latestMood ? normalizeEmotionId(latestMood.moodId) : null;
 
@@ -315,10 +359,11 @@ export default function WeeklyRecapScreen() {
       });
     }
     return days;
-  }, [monthlyMoods]);
+  }, [backendRecap, monthlyMoods]);
 
   // 7-day SVG graph points: left margin x=76 to avoid overlapping Y-axis labels!
   const graphPoints = useMemo(() => {
+    if (!weeklyDays || weeklyDays.length === 0) return [];
     return weeklyDays.map((day, idx) => {
       const x = 76 + idx * 42.5;
       const level = getMoodLevel(day.moodId);
@@ -329,34 +374,52 @@ export default function WeeklyRecapScreen() {
 
   const curvePath = useMemo(() => buildSmoothPath(graphPoints), [graphPoints]);
   const areaPath = useMemo(() => {
-    if (!graphPoints.length) return "";
-    return `${curvePath} L ${graphPoints[graphPoints.length - 1].x} 142 L ${graphPoints[0].x} 142 Z`;
+    if (!graphPoints || graphPoints.length === 0) return "";
+    const lastPoint = graphPoints[graphPoints.length - 1];
+    const firstPoint = graphPoints[0];
+    if (!lastPoint || !firstPoint) return "";
+    return `${curvePath} L ${lastPoint.x} 142 L ${firstPoint.x} 142 Z`;
   }, [curvePath, graphPoints]);
 
   const totalJournals = useMemo(() => {
+    if (typeof backendRecap?.totalJournals === "number") return backendRecap.totalJournals;
     return Math.max(journalEntries.length, 5);
-  }, [journalEntries]);
+  }, [backendRecap, journalEntries]);
 
   const heavyJournalsCount = useMemo(() => {
-    const count = journalEntries.filter((j) => j.riskLevel && j.riskLevel !== "NONE").length;
+    if (typeof backendRecap?.heavyJournalsCount === "number") return backendRecap.heavyJournalsCount;
+    const count = journalEntries.filter((j) => j?.riskLevel && j.riskLevel !== "NONE").length;
     return count > 0 ? count : 3;
-  }, [journalEntries]);
+  }, [backendRecap, journalEntries]);
 
   const checkedInDaysCount = useMemo(() => {
-    const dates = new Set(monthlyMoods.map((m) => m.moodDate));
+    if (typeof backendRecap?.daysCheckedIn === "number") return backendRecap.daysCheckedIn;
+    const dates = new Set((monthlyMoods || []).map((m) => m?.moodDate));
     return weeklyDays.filter((d) => dates.has(d.dateStr)).length;
-  }, [weeklyDays, monthlyMoods]);
+  }, [backendRecap, weeklyDays, monthlyMoods]);
 
   const daysWithCheckIn = Math.min(Math.max(checkedInDaysCount, 1), 7);
-  const mindfulResetsCount = Math.max(journalEntries.length, 2);
+  const mindfulResetsCount = useMemo(() => {
+    if (typeof backendRecap?.totalResets === "number") return Math.max(backendRecap.totalResets, 1);
+    return Math.max(journalEntries.length, 2);
+  }, [backendRecap, journalEntries]);
   const interventionsOffered = heavyJournalsCount;
   const interventionsAccepted = Math.min(mindfulResetsCount, heavyJournalsCount);
 
   const weeklyTalaStars = useMemo(() => {
+    if (typeof backendRecap?.totalTalaEarned === "number" && backendRecap.totalTalaEarned > 0) return backendRecap.totalTalaEarned;
     return daysWithCheckIn * 20 + totalJournals * 15 + libraryReadCount * 25;
-  }, [daysWithCheckIn, totalJournals, libraryReadCount]);
+  }, [backendRecap, daysWithCheckIn, totalJournals, libraryReadCount]);
 
   const emotionPalette = useMemo(() => {
+    if (backendRecap && Array.isArray(backendRecap.emotionPalette) && backendRecap.emotionPalette.length > 0) {
+      return backendRecap.emotionPalette.map((item: any) => ({
+        id: item.id,
+        count: item.count,
+        meta: EMOTION_META[normalizeEmotionId(item.id)] || EMOTION_META.contentment,
+      }));
+    }
+
     const counts: Record<string, number> = {};
     for (const d of weeklyDays) {
       if (d.moodId) {
@@ -376,9 +439,9 @@ export default function WeeklyRecapScreen() {
       .map(([id, count]) => ({
         id,
         count,
-        meta: EMOTION_META[id] || EMOTION_META.contentment,
+        meta: EMOTION_META[normalizeEmotionId(id)] || EMOTION_META.contentment,
       }));
-  }, [weeklyDays]);
+  }, [backendRecap, weeklyDays]);
 
   const emotionNamesSummary = useMemo(() => {
     const names = emotionPalette.map((e) => e.meta.label);
@@ -402,8 +465,9 @@ export default function WeeklyRecapScreen() {
     }
   };
 
-  const selectedDay = weeklyDays[selectedDayIndex] || weeklyDays[weeklyDays.length - 1];
-  const selectedPoint = graphPoints[selectedDayIndex] || graphPoints[graphPoints.length - 1];
+  const safeIndex = Math.min(Math.max(selectedDayIndex, 0), Math.max(0, weeklyDays.length - 1));
+  const selectedDay = weeklyDays[safeIndex] || weeklyDays[0] || { dayName: "Mon", dayNumber: 1, monthName: "Oct", dateStr: "", moodId: "contentment", moodLabel: "Contentment", moodColor: "#73CD44", hasHeavyJournal: false, hasReset: false, notes: "Steady cognitive balance." };
+  const selectedPoint = graphPoints[safeIndex] || graphPoints[0] || null;
   const currentTheme = CARD_THEMES[storyCardIndex] || CARD_THEMES[0];
 
 
@@ -414,6 +478,7 @@ export default function WeeklyRecapScreen() {
       // Completed all cards: mark viewed and switch to ledger
       if (user?.studentNumber) {
         void AsyncStorage.setItem(`${RECAP_STORAGE_KEY}:${user.studentNumber}`, "true");
+        void markWeeklyRecapViewed().catch(() => null);
       }
       setViewMode("ledger");
       return;
@@ -456,6 +521,15 @@ export default function WeeklyRecapScreen() {
     setStoryCardIndex(0);
     setViewMode("story");
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.storyScreen, { backgroundColor: "#0B1D14", alignItems: "center", justifyContent: "center" }]} edges={["top", "bottom"]}>
+        <ActivityIndicator size="large" color="#78F45A" />
+        <Text style={{ marginTop: 14, color: "#A3F7BF", fontFamily: "Outfit-Medium", fontSize: 13 }}>Preparing your weekly reflection...</Text>
+      </SafeAreaView>
+    );
+  }
 
   // -------------------------------------------------------------
   // RENDER: STORY MODE (SPOTIFY WRAPPED / INSTAGRAM STORIES STYLE)
@@ -841,11 +915,11 @@ export default function WeeklyRecapScreen() {
                 </View>
                 <Pressable
                   style={[styles.storyNextWeekSeedBox, habitAdopted && { backgroundColor: "rgba(34, 197, 94, 0.25)", borderColor: "#22C55E" }]}
-                  onPress={() => setHabitAdopted(true)}
+                  onPress={handleAdoptFocus}
                 >
                   <Ionicons name={habitAdopted ? "checkmark-circle" : "sparkles"} size={15} color={habitAdopted ? "#4ADE80" : "#FACC15"} />
                   <Text style={[styles.storyNextWeekSeedText, habitAdopted && { color: "#DCFCE7", fontFamily: "Outfit-Bold" }]}>
-                    {habitAdopted ? "Focus Habit Adopted (+15 Tala) ✨" : "Focus Seed: 10-min quiet buffer before sleep (Tap to Adopt)"}
+                    {habitAdopted ? "Focus Habit Adopted (+15 Tala) '(" : (backendRecap?.focusSeed ? "Focus Seed: " + backendRecap.focusSeed + " (Tap to Adopt)" : "Focus Seed: 10-min quiet buffer before sleep (Tap to Adopt)")}
                   </Text>
                 </Pressable>
                 <View style={styles.storyTapPrompt}>
@@ -1370,11 +1444,11 @@ export default function WeeklyRecapScreen() {
             <Text style={styles.formulaTitle}>Next Week's Focus Formula</Text>
           </View>
           <Text style={styles.formulaText}>
-            "Based on your late-evening workload spikes, protect a 10-minute quiet buffer without screens before you sleep on Wednesday."
+            {backendRecap?.focusSeed ? `"${backendRecap.focusSeed}"` : "Based on your late-evening workload spikes, protect a 10-minute quiet buffer without screens before you sleep on Wednesday."}
           </Text>
           <Pressable
             style={[styles.formulaButton, habitAdopted && styles.formulaButtonAdopted]}
-            onPress={() => setHabitAdopted(true)}
+            onPress={handleAdoptFocus}
           >
             <Ionicons
               name={habitAdopted ? "checkmark-circle" : "add-circle-outline"}

@@ -1,4 +1,5 @@
 import React, { type ErrorInfo, type ReactNode } from "react";
+import { router } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 type Props = {
@@ -6,14 +7,15 @@ type Props = {
 };
 
 type State = {
+  error?: Error | null;
   hasError: boolean;
 };
 
 export class AppErrorBoundary extends React.Component<Props, State> {
   state: State = { hasError: false };
 
-  static getDerivedStateFromError(): State {
-    return { hasError: true };
+  static getDerivedStateFromError(error: Error): State {
+    return { error, hasError: true };
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
@@ -21,7 +23,14 @@ export class AppErrorBoundary extends React.Component<Props, State> {
   }
 
   handleReload = () => {
-    this.setState({ hasError: false });
+    this.setState({ error: null, hasError: false });
+  };
+
+  handleGoHome = () => {
+    this.setState({ error: null, hasError: false });
+    try {
+      router.replace("/home");
+    } catch {}
   };
 
   render() {
@@ -33,9 +42,14 @@ export class AppErrorBoundary extends React.Component<Props, State> {
             <Text style={styles.body}>
               This screen hit an unexpected error. Try again to continue using Bawat Tala.
             </Text>
-            <Pressable style={styles.button} onPress={this.handleReload}>
-              <Text style={styles.buttonText}>Try again</Text>
-            </Pressable>
+            <View style={styles.buttonRow}>
+              <Pressable style={[styles.button, styles.secondaryButton]} onPress={this.handleGoHome}>
+                <Text style={[styles.buttonText, styles.secondaryButtonText]}>Go Home</Text>
+              </Pressable>
+              <Pressable style={styles.button} onPress={this.handleReload}>
+                <Text style={styles.buttonText}>Try again</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       );
@@ -80,12 +94,24 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 16,
   },
+  buttonRow: {
+    flexDirection: "row",
+    gap: 10,
+    width: "100%",
+  },
   button: {
+    flex: 1,
     minHeight: 42,
     borderRadius: 999,
     backgroundColor: "#79C943",
     alignItems: "center",
     justifyContent: "center",
+  },
+  secondaryButton: {
+    backgroundColor: "#EEF6EB",
+  },
+  secondaryButtonText: {
+    color: "#203426",
   },
   buttonText: {
     color: "#FFFFFF",
