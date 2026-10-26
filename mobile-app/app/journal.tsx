@@ -282,22 +282,24 @@ export default function JournalScreen() {
               </Pressable>
 
               <View style={[styles.journalArtWrap, compact && styles.journalArtWrapCompact]}>
-                {coverPreviewUri ? (
-                  <Image
-                    source={{ uri: coverPreviewUri }}
-                    style={[styles.bookPreview, compact && styles.bookPreviewCompact, veryCompact && styles.bookPreviewVeryCompact]}
-                    contentFit="cover"
-                    onError={() => setCoverPreviewUri(null)}
-                    accessibilityLabel="Saved journal cover"
-                  />
-                ) : (
                   <View style={[styles.bookPreview, compact && styles.bookPreviewCompact, veryCompact && styles.bookPreviewVeryCompact]}>
+                    {coverPreviewUri ? (
+                      <Image
+                        source={{ uri: coverPreviewUri }}
+                        style={StyleSheet.absoluteFillObject}
+                        contentFit="cover"
+                        onError={() => setCoverPreviewUri(null)}
+                        accessibilityLabel="Saved journal cover"
+                      />
+                    ) : (
+                      <>
                     <View style={styles.bookPreviewHighlight} />
-                    <View style={styles.bookPreviewSpine} />
-                    <View style={styles.bookPreviewPageEdge} />
                     <Text style={styles.bookPreviewTitle}>My{`\n`}Journal</Text>
+                      </>
+                    )}
+                    <View style={styles.bookPreviewSpine} pointerEvents="none" />
+                    <View style={styles.bookPreviewPageEdge} pointerEvents="none" />
                   </View>
-                )}
                 <Pressable
                   style={{ position: 'absolute', bottom: 10, right: 10, backgroundColor: 'rgba(255,255,255,0.95)', padding: 12, borderRadius: 30, shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 5 }}
                   onPress={() => router.push({ pathname: "/journal-cover-editor", params: { mode: selectedJournalMode } })}
@@ -724,13 +726,11 @@ const styles = StyleSheet.create({
   modalCard: {
     width: "100%",
     maxWidth: 340,
-    maxHeight: "85%",
+    maxHeight: "88%",
     backgroundColor: "transparent",
-    paddingHorizontal: 0,
-    paddingTop: 0,
-    paddingBottom: 0 },
+    justifyContent: "center" },
   modalHeaderRow: {
-    marginBottom: 24,
+    marginBottom: 16,
     alignItems: "center" },
   modalEyebrow: {
     color: "#C2D2B8",
@@ -742,8 +742,8 @@ const styles = StyleSheet.create({
     textAlign: "center" },
   modalTitle: {
     color: "#FFFFFF",
-    fontSize: 22,
-    lineHeight: 28,
+    fontSize: 20,
+    lineHeight: 26,
     fontFamily: "Outfit-Bold",
     textAlign: "center" },
   modalThoughtLayout: {
@@ -751,14 +751,16 @@ const styles = StyleSheet.create({
     marginBottom: 16 },
   modalThoughtBubble: {
     backgroundColor: "#F5F9F1",
-    padding: 18,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
     borderRadius: 24,
     width: "100%",
+    maxHeight: 340,
     shadowColor: "#000",
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.15,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 4 },
+    elevation: 5 },
   modalThoughtFooter: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -798,14 +800,15 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60 },
   modalInsightScroll: {
-    flex: 1,
-    maxHeight: 300 },
+    maxHeight: 290 },
   modalInsightContent: {
-    paddingBottom: 4 },
+    paddingBottom: 8,
+    flexGrow: 1 },
   modalInsightText: {
     color: "#33485B",
-    fontSize: 16,
-    lineHeight: 24 },
+    fontSize: 15,
+    lineHeight: 23,
+    fontFamily: "Outfit-Regular" },
   modalCloseButton: {
     marginTop: 8,
     minHeight: 46,

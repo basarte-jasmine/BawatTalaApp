@@ -47,9 +47,6 @@ export const COLLECTION_SECTIONS: MuniCollectionSection[] = [
     options: [
       { id: "artist-beret", label: "Artist Beret", price: 120, source: require("../assets/images/Muni Customization/Head/Artist_Beret.webp") },
       { id: "beanie", label: "Beanie", price: 90, source: require("../assets/images/Muni Customization/Head/Beanie.webp") },
-      { id: "blue-bandana", label: "Blue Bandana", price: 80, source: require("../assets/images/Muni Customization/Head/Blue bandana.webp") },
-      { id: "green-bandana", label: "Green Bandana", price: 80, source: require("../assets/images/Muni Customization/Head/Green bandana.webp") },
-      { id: "red-bandana", label: "Red Bandana", price: 80, source: require("../assets/images/Muni Customization/Head/Red bandana.webp") },
       { id: "clown-wig", label: "Clown Wig", price: 140, source: require("../assets/images/Muni Customization/Head/Clown.webp") },
       { id: "cowboy-hat", label: "Cowboy Hat", price: 130, source: require("../assets/images/Muni Customization/Head/Cowboy_Hat.webp") },
       { id: "knight-helmet", label: "Knight Helmet", price: 180, source: require("../assets/images/Muni Customization/Head/Knight_Helmet.webp") },
@@ -74,6 +71,9 @@ export const COLLECTION_SECTIONS: MuniCollectionSection[] = [
     id: "outfit",
     label: "Outfit",
     options: [
+      { id: "blue-bandana", label: "Blue Bandana", price: 80, source: require("../assets/images/Muni Customization/Head/Blue bandana.webp") },
+      { id: "green-bandana", label: "Green Bandana", price: 80, source: require("../assets/images/Muni Customization/Head/Green bandana.webp") },
+      { id: "red-bandana", label: "Red Bandana", price: 80, source: require("../assets/images/Muni Customization/Head/Red bandana.webp") },
       { id: "brown-jumper", label: "Brown Jumper", price: 130, source: require("../assets/images/Muni Customization/Outfit/Brown jumper.webp") },
       { id: "denim-jumper", label: "Denim Jumper", price: 143, source: require("../assets/images/Muni Customization/Outfit/Demin jumper.webp") },
       { id: "denim-vest", label: "Denim Vest", price: 130, source: require("../assets/images/Muni Customization/Outfit/Demin vest.webp") },
@@ -591,7 +591,7 @@ export function getEyeAccessoryStyle(_eyeId: string | null) {
 }
 
 export function getOutfitAccessoryStyle(outfitId: string | null) {
-  if (!outfitId || outfitId === "classic" || outfitId === "spooky-ghost") {
+  if (!outfitId || outfitId === "classic" || outfitId === "spooky-ghost" || outfitId.includes("bandana")) {
     return null;
   }
   // Raise clothes so straps and collars rest naturally on Muni's shoulders and arms

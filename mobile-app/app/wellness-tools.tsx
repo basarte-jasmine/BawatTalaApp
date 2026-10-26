@@ -179,11 +179,7 @@ export default function WellnessToolsScreen() {
   const [activeTab, setActiveTab] = useState<FilterTab>("all");
 
   const handleBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace("/home");
-    }
+    router.replace("/home");
   };
 
   const showGuided = activeTab === "all" || activeTab === "guided";

@@ -1509,6 +1509,7 @@ export async function syncOfflineStudentData(studentNumber: string): Promise<Api
     await syncPendingSupportResponses(studentNumber);
     await syncPendingAchievements(studentNumber);
     await syncPendingJournalCovers(studentNumber);
+      await syncPendingTasks(studentNumber);
 
     return {
       ok: preferencesSynced && checkInsSynced,
@@ -4405,11 +4406,12 @@ export async function resendProfileEmailChangeCode(): Promise<ApiResult & { rese
 
 export async function verifyProfileEmailChangeCode(
   token: string,
-): Promise<ApiResult & { resendAfterSeconds?: number; stage?: string }> {
+): Promise<ApiResult & { profile?: StudentProfile | null; resendAfterSeconds?: number; stage?: string }> {
   const { response, data } = await post("/api/auth/profile/email-change/verify-code", { token });
   return {
     ok: response.ok,
     message: data?.message,
+    profile: data?.profile ?? null,
     resendAfterSeconds: Number(data?.resendAfterSeconds ?? 0) || undefined,
     stage: data?.stage,
   };
@@ -4489,6 +4491,50 @@ export type DailyTaskProgress = {
   totalTasks: number;
 };
 
+export async function syncPendingTasks(studentNumber: string): Promise<boolean> {
+  const sn = String(studentNumber || "").trim();
+  if (!sn) return false;
+  const cacheKey = `@bawattala_tasks_${sn}`;
+  try {
+    const cachedRaw = await AsyncStorage.getItem(cacheKey);
+    if (!cachedRaw) return true;
+    const cached = JSON.parse(cachedRaw);
+    const tasks: DailyTask[] = cached.tasks || [];
+
+    let hasChanges = false;
+    for (let i = 0; i < tasks.length; i++) {
+      const task = tasks[i];
+      if (task.id.startsWith("local-task-")) {
+        const { response, data } = await post("/api/tasks", {
+          id: task.id,
+          title: task.title,
+          isGentle: task.is_gentle,
+        });
+        if (response.ok && data?.task) {
+          tasks[i] = data.task;
+          hasChanges = true;
+          if (task.completed) {
+            const toggleRes = await patch(`/api/tasks/${encodeURIComponent(data.task.id)}/toggle`, {
+              completed: true,
+            });
+            if (toggleRes.response.ok && toggleRes.data?.task) {
+              tasks[i] = toggleRes.data.task;
+            }
+          }
+        }
+      }
+    }
+
+    if (hasChanges) {
+      cached.tasks = tasks;
+      await AsyncStorage.setItem(cacheKey, JSON.stringify(cached));
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function fetchTodayTasks(studentNumber: string): Promise<{
   ok: boolean;
   date: string;
@@ -4499,6 +4545,7 @@ export async function fetchTodayTasks(studentNumber: string): Promise<{
   const sn = String(studentNumber || "").trim();
   const cacheKey = `@bawattala_tasks_${sn}`;
   try {
+    await syncPendingTasks(sn);
     const { response, data } = await get("/api/tasks");
     if (response.ok && data) {
       await AsyncStorage.setItem(cacheKey, JSON.stringify(data));

@@ -1,10 +1,11 @@
-import { Ionicons } from "@expo/vector-icons";
+﻿import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import {
     ActivityIndicator,
     Animated,
@@ -24,7 +25,7 @@ import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { showAppNotice } from "../lib/app-notice";
 import { useAppPreferences } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
-import { clearStudentProfilePicture, fetchStudentAppointments, fetchStudentProfile, updateStudentProfilePicture } from "../lib/backend-api";
+import { clearStudentProfilePicture, fetchStudentAppointments, fetchStudentProfile, getStudentAchievements, updateStudentProfilePicture } from "../lib/backend-api";
 import { getMuniCollectionSource, hydrateMuniWardrobe, useSavedMuniLoadout } from "../lib/muni-wardrobe";
 
 type SettingRow = {
@@ -135,13 +136,26 @@ export default function ProfileScreen() {
     setSelectedFrameId(null);
   }, [profileFrameId]);
 
-  useEffect(() => {
+  const loadAchievementsData = useCallback(async () => {
     if (!user?.studentNumber) return;
-    void AsyncStorage.getAllKeys().then((keys) => {
+    try {
       const prefix = `@bawat-tala/achievement:`;
       const suffix = `:${user.studentNumber}`;
-      setAchievementCount(keys.filter((k) => k.startsWith(prefix) && k.endsWith(suffix)).length);
-    }).catch(() => undefined);
+      const keys = await AsyncStorage.getAllKeys();
+      const localCount = keys.filter((k) => k.startsWith(prefix) && k.endsWith(suffix)).length;
+      if (localCount > 0) {
+        setAchievementCount(localCount);
+      }
+
+      const serverRes = await getStudentAchievements();
+      if (serverRes.ok && Array.isArray(serverRes.achievements)) {
+        setAchievementCount(serverRes.achievements.length);
+        for (const item of serverRes.achievements) {
+          const time = item.unlockedAt ? new Date(item.unlockedAt).getTime() : Date.now();
+          await AsyncStorage.setItem(`@bawat-tala/achievement:${item.id}:${user.studentNumber}`, String(time));
+        }
+      }
+    } catch {}
   }, [user?.studentNumber]);
 
   useEffect(() => {
@@ -153,6 +167,16 @@ export default function ProfileScreen() {
       }
     }).catch(() => undefined);
   }, [user?.studentNumber]);
+
+  useEffect(() => {
+    void loadAchievementsData();
+  }, [loadAchievementsData]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadAchievementsData();
+    }, [loadAchievementsData])
+  );
 
   const openFramePicker = () => {
     setShowProfilePictureOptions(false);
@@ -219,11 +243,7 @@ export default function ProfileScreen() {
           setScheduleCount(active);
         }
       }).catch(() => undefined);
-      void AsyncStorage.getAllKeys().then((keys) => {
-        const prefix = `@bawat-tala/achievement:`;
-        const suffix = `:${user.studentNumber}`;
-        setAchievementCount(keys.filter((k) => k.startsWith(prefix) && k.endsWith(suffix)).length);
-      }).catch(() => undefined);
+      await loadAchievementsData();
       if (profileResult && profileResult.ok && profileResult.profile) {
         const nextProfilePictureUrl = profileResult.profile.profilePictureUrl || "";
         const nextNickname = typeof profileResult.profile.nickname === "string" ? profileResult.profile.nickname : "";
@@ -433,6 +453,7 @@ export default function ProfileScreen() {
 
           {/* Overlapping Profile Avatar */}
           <View style={styles.avatarOverlapStage}>
+            <View style={styles.avatarAnchor}>
             <StudentProfileAvatar
               imageUrl={profilePictureUrl}
               frameSource={selectedFrame}
@@ -448,11 +469,16 @@ export default function ProfileScreen() {
                 accessibilityLabel="Update profile picture"
                 disabled={isUploadingProfilePicture}
                 onPress={openProfilePictureOptions}
-                style={({ pressed }) => [styles.cameraButton, pressed && styles.cameraButtonPressed]}
+                style={({ pressed }) => [
+                  styles.cameraButton,
+                  selectedFrame ? styles.cameraButtonWithFrame : styles.cameraButtonNoFrame,
+                  pressed && styles.cameraButtonPressed,
+                ]}
               >
                 <Ionicons name="camera" size={14} color="#FFFFFF" />
               </Pressable>
             </View>
+          </View>
 
           {/* Profile Name & ID */}
           <View style={styles.heroBody}>
@@ -959,6 +985,9 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     marginTop: -96,
     marginBottom: 8,
+    alignItems: "center",
+    justifyContent: "center" },
+  avatarAnchor: {
     position: "relative" },
   avatarCircle: {
     borderRadius: 999,
@@ -1061,12 +1090,10 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit-Bold" },
   cameraButton: {
     position: "absolute",
-    right: 0,
-    bottom: 0,
-    zIndex: 10,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    zIndex: 20,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#52B72A",
@@ -1077,6 +1104,12 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
     elevation: 4 },
+  cameraButtonWithFrame: {
+    right: 18,
+    bottom: 18 },
+  cameraButtonNoFrame: {
+    right: 2,
+    bottom: 2 },
   cameraButtonPressed: {
     opacity: 0.82,
     transform: [{ scale: 0.96 }] },

@@ -51,7 +51,7 @@ type AppPreferencesContextValue = {
 const AppPreferencesContext = createContext<AppPreferencesContextValue | null>(null);
 const DEFAULT_PREFERENCES: StudentPreferences = {
   hasJournalLockPin: false,
-  journalLockAutoLock: true,
+  journalLockAutoLock: false,
   journalLockEnabled: false,
   notificationPreviewsEnabled: true,
   privateJournalModeEnabled: true,

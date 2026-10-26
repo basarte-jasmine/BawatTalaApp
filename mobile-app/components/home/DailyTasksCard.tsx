@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -120,6 +121,12 @@ export function DailyTasksCard({
     void loadTasks();
   }, [loadTasks]);
 
+  useFocusEffect(
+    useCallback(() => {
+      void loadTasks();
+    }, [loadTasks])
+  );
+
   const handleAddTask = async () => {
     const trimmed = newTaskTitle.trim();
     if (!trimmed || isAdding || !studentNumber) return;
@@ -159,6 +166,11 @@ export function DailyTasksCard({
     });
 
     if (res.ok) {
+      if (res.task) {
+        setTasks((prev) =>
+          prev.map((t) => (t.id === task.id ? res.task! : t))
+        );
+      }
       if (typeof res.totalTala === "number") {
         updateAvailableMuniTala(res.totalTala);
       }
@@ -339,8 +351,6 @@ export function DailyTasksCard({
                 </View>
               </Pressable>
 
-              {/* Once task is checked/marked as done, it can't be deleted anymore */}
-              {!task.completed ? (
                 <Pressable
                   style={styles.deleteButton}
                   onPress={() => handleRequestDelete(task)}
@@ -349,7 +359,6 @@ export function DailyTasksCard({
                 >
                   <Ionicons name="close-circle-outline" size={18} color="#9BAAA0" />
                 </Pressable>
-              ) : null}
             </View>
           ))}
         </View>

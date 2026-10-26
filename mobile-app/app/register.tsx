@@ -303,14 +303,6 @@ export default function RegisterScreen() {
     setIsBusy(true);
 
     try {
-      const isLikely = await isLikelySchoolId(asset.uri);
-      if (!isLikely) {
-        setScanMessage(
-          "Image does not appear to be a school ID. Please ensure the full ID card is clearly visible.",
-        );
-        return;
-      }
-
       const ImageManipulator = await import("expo-image-manipulator");
       const manipulated = await ImageManipulator.manipulateAsync(
         asset.uri,
@@ -331,6 +323,14 @@ export default function RegisterScreen() {
       if (!ocrRawText) {
         setScanMessage(
           "No text detected on the scanned ID. The details cannot be empty. Please upload or scan a clear photo of your school ID.",
+        );
+        return;
+      }
+
+      const isLikely = isLikelySchoolId(ocrRawText);
+      if (!isLikely) {
+        setScanMessage(
+          "Image does not appear to be a school ID. Please ensure the full ID card is clearly visible.",
         );
         return;
       }
@@ -631,7 +631,7 @@ export default function RegisterScreen() {
                         <Image
                           source={scanPreviewUri}
                           style={styles.preview}
-                          contentFit="cover"
+                          contentFit="contain"
                         />
                         {hasValidIdScan ? (
                           <View style={styles.previewBadge}>
@@ -1294,12 +1294,18 @@ const styles = StyleSheet.create({
   },
   previewContainer: {
     width: "100%",
-    height: 114,
+    minHeight: 140,
+    maxHeight: 200,
     position: "relative",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    overflow: "hidden",
+    justifyContent: "center",
+    alignItems: "center",
   },
   preview: {
     width: "100%",
-    height: 114,
+    height: 160,
   },
   previewBadge: {
     position: "absolute",

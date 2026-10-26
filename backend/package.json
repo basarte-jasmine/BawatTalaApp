@@ -18,7 +18,7 @@
     "express-rate-limit": "^8.7.0",
     "googleapis": "^144.0.0",
     "helmet": "^8.3.0",
-    "node-edge-tts": "^1.2.10",
+    "node-edge-tts": "^1.2.11",
     "pg": "^8.13.3"
   }
 }

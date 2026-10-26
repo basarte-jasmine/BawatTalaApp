@@ -290,14 +290,11 @@ router.delete("/:id", async (req, res) => {
 
   try {
     const existing = await query(
-      `select completed from public.student_daily_tasks where id = $1 and student_number = $2 limit 1`,
+      `select id, completed, rewarded from public.student_daily_tasks where id = $1 and student_number = $2 limit 1`,
       [taskId, studentNumber]
     );
     if (existing.rows.length === 0) {
       return res.status(404).json({ message: "Task not found." });
-    }
-    if (existing.rows[0].completed) {
-      return res.status(400).json({ message: "Completed tasks cannot be deleted." });
     }
 
     await query(

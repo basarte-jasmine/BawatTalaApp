@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Image } from "expo-image";
 import { router } from "expo-router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -121,6 +122,27 @@ export default function LoginScreen() {
   const isNarrowWidth = width > 0 && width < 360;
   const headerHeight = isCompactHeight ? 180 : 220;
 
+  useEffect(() => {
+    let mounted = true;
+    void (async () => {
+      try {
+        const rememberedPref = await AsyncStorage.getItem("@bawat-tala/remember-me");
+        if (rememberedPref === "false") {
+          if (mounted) setRememberMe(false);
+        } else {
+          const savedId = await AsyncStorage.getItem("@bawat-tala/remembered-student-id");
+          if (savedId && mounted) {
+            setStudentId(savedId);
+            setRememberMe(true);
+          }
+        }
+      } catch {}
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const handleLogin = async () => {
     const studentNumber = normalizeStudentIdInput(studentId);
     const passwordValue = password.trim();
@@ -165,6 +187,16 @@ export default function LoginScreen() {
       return;
     }
 
+    try {
+      if (rememberMe) {
+        await AsyncStorage.setItem("@bawat-tala/remembered-student-id", studentNumber);
+        await AsyncStorage.setItem("@bawat-tala/remember-me", "true");
+      } else {
+        await AsyncStorage.removeItem("@bawat-tala/remembered-student-id");
+        await AsyncStorage.setItem("@bawat-tala/remember-me", "false");
+      }
+    } catch {}
+
     setUser(result.user);
     router.replace({ pathname: "/studio", params: { welcome: "1" } });
   };
@@ -184,6 +216,16 @@ export default function LoginScreen() {
       setReactivationPrompt(null);
       return;
     }
+
+    try {
+      if (rememberMe) {
+        await AsyncStorage.setItem("@bawat-tala/remembered-student-id", studentNumber);
+        await AsyncStorage.setItem("@bawat-tala/remember-me", "true");
+      } else {
+        await AsyncStorage.removeItem("@bawat-tala/remembered-student-id");
+        await AsyncStorage.setItem("@bawat-tala/remember-me", "false");
+      }
+    } catch {}
 
     setReactivationPrompt(null);
     setUser(result.user);

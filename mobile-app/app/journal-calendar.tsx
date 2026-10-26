@@ -105,6 +105,10 @@ export default function JournalCalendarScreen() {
   const [loadingMoreEntries, setLoadingMoreEntries] = useState(false);
   const [showEntriesModal, setShowEntriesModal] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const mainScrollRef = useRef<ScrollView>(null);
+  const monthOffsetsRef = useRef<Record<number, number>>({});
+  const hasInitialScrolledRef = useRef(false);
+  const [activeMonthNav, setActiveMonthNav] = useState(manilaToday.monthIndex);
 
   const months = useMemo(() => buildMonths(selectedYear), [selectedYear]);
 
@@ -218,7 +222,14 @@ export default function JournalCalendarScreen() {
     if (nextYear < MIN_YEAR) {
       return;
     }
+    hasInitialScrolledRef.current = false;
     setSelectedYear(nextYear);
+    if (nextYear === manilaToday.year) {
+      setActiveMonthNav(manilaToday.monthIndex);
+    } else {
+      setActiveMonthNav(0);
+      mainScrollRef.current?.scrollTo({ y: 0, animated: false });
+    }
 
     const nextSelectedDate =
       nextYear === manilaToday.year
@@ -243,9 +254,21 @@ export default function JournalCalendarScreen() {
 
       <JournalLockGate>
         <ScrollView
+          ref={mainScrollRef}
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          onScroll={(e) => {
+            const scrollY = e.nativeEvent.contentOffset.y;
+            for (let m = 11; m >= 0; m--) {
+              const off = monthOffsetsRef.current[m];
+              if (typeof off === "number" && scrollY >= off - 50) {
+                setActiveMonthNav(m);
+                break;
+              }
+            }
+          }}
+          scrollEventThrottle={80}
           refreshControl={
             <RefreshControl
               refreshing={isRefreshing || isSyncing}
@@ -274,6 +297,38 @@ export default function JournalCalendarScreen() {
             </Pressable>
           </View>
 
+          {/* Quick-jump Month Strip */}
+          <View style={styles.monthStripWrap}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.monthStripScroll}
+            >
+              {months.map((m) => {
+                const isActive = activeMonthNav === m.monthIndex;
+                const isCurrentMonth = selectedYear === manilaToday.year && m.monthIndex === manilaToday.monthIndex;
+                return (
+                  <Pressable
+                    key={m.name}
+                    style={[styles.monthTabPill, isActive && styles.monthTabPillActive]}
+                    onPress={() => {
+                      setActiveMonthNav(m.monthIndex);
+                      const targetY = monthOffsetsRef.current[m.monthIndex];
+                      if (typeof targetY === "number") {
+                        mainScrollRef.current?.scrollTo({ y: Math.max(0, targetY - 8), animated: true });
+                      }
+                    }}
+                  >
+                    <Text style={[styles.monthTabPillText, isActive && styles.monthTabPillTextActive]}>
+                      {m.name.slice(0, 3)}
+                    </Text>
+                    {isCurrentMonth ? <View style={[styles.currentMonthDot, isActive && styles.currentMonthDotActive]} /> : null}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+
           {months.map((month) => {
             const entryCounts = entryCountsByMonth[month.monthIndex] ?? {};
             const totalCells = month.firstDay + month.daysInMonth;
@@ -287,7 +342,24 @@ export default function JournalCalendarScreen() {
             });
 
             return (
-              <View key={`${selectedYear}-${month.name}`} style={styles.monthSection}>
+              <View
+                key={`${selectedYear}-${month.name}`}
+                style={styles.monthSection}
+                onLayout={(e) => {
+                  const y = e.nativeEvent.layout.y;
+                  monthOffsetsRef.current[month.monthIndex] = y;
+                  if (
+                    !hasInitialScrolledRef.current &&
+                    selectedYear === manilaToday.year &&
+                    month.monthIndex === manilaToday.monthIndex
+                  ) {
+                    hasInitialScrolledRef.current = true;
+                    setTimeout(() => {
+                      mainScrollRef.current?.scrollTo({ y: Math.max(0, y - 8), animated: false });
+                    }, 60);
+                  }
+                }}
+              >
                 <View style={styles.monthHeader}>
                   <Text style={styles.monthTitle}>{month.name}</Text>
                 </View>
@@ -494,6 +566,46 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit-Bold",
     minWidth: 56,
     textAlign: "center",
+  },
+  monthStripWrap: {
+    marginBottom: 14,
+  },
+  monthStripScroll: {
+    columnGap: 6,
+    paddingHorizontal: 2,
+  },
+  monthTabPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2ECD9",
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 4,
+  },
+  monthTabPillActive: {
+    backgroundColor: "#73CD44",
+    borderColor: "#73CD44",
+  },
+  monthTabPillText: {
+    color: "#5C6E60",
+    fontSize: 12,
+    fontFamily: "Outfit-Medium",
+  },
+  monthTabPillTextActive: {
+    color: "#FFFFFF",
+    fontFamily: "Outfit-Bold",
+  },
+  currentMonthDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: "#73CD44",
+  },
+  currentMonthDotActive: {
+    backgroundColor: "#FFFFFF",
   },
   monthSection: {
     marginBottom: 16,

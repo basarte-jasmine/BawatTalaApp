@@ -1,7 +1,8 @@
-﻿import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+    KeyboardAvoidingView,
     Pressable,
     Platform,
     ScrollView,
@@ -16,6 +17,7 @@ import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-nativ
 import { SafeAreaView } from "react-native-safe-area-context";
 import ViewShot, { captureRef, type ViewShotRef } from "react-native-view-shot";
 import { useAuthSession } from "../lib/auth-session";
+import { ConfirmationModal } from "../components/ui/ConfirmationModal";
 import { loadJournalCover, persistJournalCoverPreview, saveJournalCover, type JournalCoverElement, type JournalCoverSticker } from "../lib/journal-cover";
 
 type CoverElement = JournalCoverElement;
@@ -105,12 +107,14 @@ const DraggableElement = ({
   element,
   isActive,
   onFocus,
+  onEditText,
   onDelete,
   onTransformChange,
 }: {
   element: CoverElement;
   isActive: boolean;
   onFocus: () => void;
+  onEditText?: () => void;
   onDelete: () => void;
   onTransformChange: (id: string, x: number, y: number, scale: number, rotation: number) => void;
 }) => {
@@ -208,11 +212,26 @@ const DraggableElement = ({
     ],
   }));
 
+    const toolbarInverseStyle = useAnimatedStyle(() => {
+      const currentScale = scale.value > 0.05 ? scale.value : 1;
+      return {
+        transform: [
+          { scale: 1 / currentScale },
+          { rotateZ: `${-rotation.value}rad` },
+        ],
+      };
+    });
+
   return (
     <GestureDetector gesture={Gesture.Simultaneous(panGesture, pinchGesture, rotationGesture)}>
       <Animated.View style={[styles.elementContainer, animatedStyle, { zIndex: isActive ? 99 : 1 }]}>
         <Pressable
-          onPress={onFocus}
+            onPress={() => {
+              onFocus();
+              if (element.type === "text") {
+                onEditText?.();
+              }
+            }}
           style={[styles.elementTouchTarget, isActive && styles.elementSelected]}
           accessibilityRole="button"
           accessibilityLabel={element.type === "text" ? element.content : `${element.icon} sticker`}
@@ -250,7 +269,7 @@ const DraggableElement = ({
                 </GestureDetector>
               ))}
 
-              <View style={styles.floatingActionToolbar}>
+                <Animated.View style={[styles.floatingActionToolbar, toolbarInverseStyle]}>
                 <Pressable
                   style={styles.floatingActionItem}
                   onPress={(e) => {
@@ -262,9 +281,6 @@ const DraggableElement = ({
                 >
                   <View style={styles.floatingActionCircle}>
                     <Ionicons name="close" size={16} color="#1E293B" />
-                  </View>
-                  <View style={styles.floatingActionPill}>
-                    <Text style={styles.floatingActionPillText}>delete</Text>
                   </View>
                 </Pressable>
 
@@ -281,12 +297,9 @@ const DraggableElement = ({
                     <View style={styles.floatingActionCircle}>
                       <Ionicons name="sync-outline" size={16} color="#1E293B" />
                     </View>
-                    <View style={styles.floatingActionPill}>
-                      <Text style={styles.floatingActionPillText}>rotate</Text>
-                    </View>
                   </Pressable>
                 </GestureDetector>
-              </View>
+                </Animated.View>
             </>
           ) : null}
         </Pressable>
@@ -304,7 +317,76 @@ export default function JournalCoverEditorScreen() {
   const [activeElementId, setActiveElementId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [showToolbar, setShowToolbar] = useState(true);
+  const [showExitModal, setShowExitModal] = useState(false);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
   const coverShotRef = useRef<ViewShotRef>(null);
+  const textInputRef = useRef<TextInput>(null);
+  const toolbarScrollRef = useRef<ScrollView>(null);
+
+  type HistorySnapshot = {
+    color: string;
+    elements: CoverElement[];
+  };
+  const [history, setHistory] = useState<HistorySnapshot[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const isUndoRedoRef = useRef(false);
+
+  const recordHistory = useCallback((nextElements: CoverElement[], nextColor: string) => {
+    if (isUndoRedoRef.current) return;
+    const snapshot: HistorySnapshot = {
+      color: nextColor,
+      elements: JSON.parse(JSON.stringify(nextElements)),
+    };
+    setHistory((prev) => {
+      const sliced = prev.slice(0, historyIndex + 1);
+      return [...sliced, snapshot];
+    });
+    setHistoryIndex((prev) => prev + 1);
+  }, [historyIndex]);
+
+  const canUndo = historyIndex > 0;
+  const canRedo = historyIndex < history.length - 1;
+
+  const handleUndo = () => {
+    if (!canUndo) return;
+    isUndoRedoRef.current = true;
+    const prevIndex = historyIndex - 1;
+    const prevState = history[prevIndex];
+    if (prevState) {
+      setCoverColor(prevState.color);
+      setElements(JSON.parse(JSON.stringify(prevState.elements)));
+      setHistoryIndex(prevIndex);
+      setActiveElementId(null);
+    }
+    setTimeout(() => {
+      isUndoRedoRef.current = false;
+    }, 50);
+  };
+
+  const handleRedo = () => {
+    if (!canRedo) return;
+    isUndoRedoRef.current = true;
+    const nextIndex = historyIndex + 1;
+    const nextState = history[nextIndex];
+    if (nextState) {
+      setCoverColor(nextState.color);
+      setElements(JSON.parse(JSON.stringify(nextState.elements)));
+      setHistoryIndex(nextIndex);
+      setActiveElementId(null);
+    }
+    setTimeout(() => {
+      isUndoRedoRef.current = false;
+    }, 50);
+  };
+
+  const handleEditText = () => {
+    setShowToolbar(true);
+    setTimeout(() => {
+      textInputRef.current?.focus();
+      toolbarScrollRef.current?.scrollToEnd({ animated: true });
+    }, 120);
+  };
 
   const { height } = useWindowDimensions();
   // Make the book take up as much vertical space as possible, but cap the width
@@ -322,6 +404,8 @@ export default function JournalCoverEditorScreen() {
       if (!mounted || !design) return;
       setCoverColor(design.color);
       setElements(design.elements);
+      setHistory([{ color: design.color, elements: JSON.parse(JSON.stringify(design.elements)) }]);
+      setHistoryIndex(0);
     });
 
     return () => {
@@ -331,65 +415,84 @@ export default function JournalCoverEditorScreen() {
 
   const addText = () => {
     const id = Math.random().toString();
-    setElements((current) => [
-      ...current,
+    const nextElements = [
+      ...elements,
       { id, type: "text", content: "My Journal", color: "#FFF8E8", x: 0, y: -8, scale: 1, rotation: 0 },
-    ]);
+    ];
+    setElements(nextElements);
     setActiveElementId(id);
+    recordHistory(nextElements, coverColor);
+    handleEditText();
   };
 
   const addSticker = (icon: StickerName) => {
     const id = Math.random().toString();
-    setElements((current) => [
-      ...current,
+    const nextElements = [
+      ...elements,
       { id, type: "sticker", content: icon, icon, x: 0, y: 0, scale: 1, rotation: 0 },
-    ]);
+    ];
+    setElements(nextElements);
     setActiveElementId(id);
+    recordHistory(nextElements, coverColor);
   };
 
   const updateElementTransform = (id: string, x: number, y: number, scale: number, rotation: number) => {
-    setElements((current) => current.map((element) => (
+    const nextElements = elements.map((element) => (
       element.id === id ? { ...element, x, y, scale, rotation } : element
-    )));
+    ));
+    setElements(nextElements);
+    recordHistory(nextElements, coverColor);
   };
 
   const updateActiveText = (content: string) => {
-    setElements((current) => current.map((element) => (
+    const nextElements = elements.map((element) => (
       element.id === activeElementId ? { ...element, content } : element
-    )));
+    ));
+    setElements(nextElements);
+    recordHistory(nextElements, coverColor);
   };
 
   
   const updateActiveTextFont = (fontFamily: string) => {
-    setElements((current) => current.map((element) => (
+    const nextElements = elements.map((element) => (
       element.id === activeElementId ? { ...element, fontFamily } : element
-    )));
+    ));
+    setElements(nextElements);
+    recordHistory(nextElements, coverColor);
   };
 
   const updateActiveTextColor = (color: string) => {
-    setElements((current) => current.map((element) => (
+    const nextElements = elements.map((element) => (
       element.id === activeElementId ? { ...element, color } : element
-    )));
+    ));
+    setElements(nextElements);
+    recordHistory(nextElements, coverColor);
   };
 
   const removeElementById = (id: string) => {
-    setElements((current) => current.filter((element) => element.id !== id));
+    const nextElements = elements.filter((element) => element.id !== id);
+    setElements(nextElements);
     if (activeElementId === id) {
       setActiveElementId(null);
     }
+    recordHistory(nextElements, coverColor);
   };
 
   const removeActiveElement = () => {
-
     if (!activeElementId) return;
-    setElements((current) => current.filter((element) => element.id !== activeElementId));
+    const nextElements = elements.filter((element) => element.id !== activeElementId);
+    setElements(nextElements);
     setActiveElementId(null);
+    recordHistory(nextElements, coverColor);
   };
 
   const resetDesign = () => {
-    setCoverColor(COLORS[0].value);
-    setElements([]);
+    const nextColor = COLORS[0].value;
+    const nextElements: CoverElement[] = [];
+    setCoverColor(nextColor);
+    setElements(nextElements);
     setActiveElementId(null);
+    recordHistory(nextElements, nextColor);
   };
 
   const handleSave = async () => {
@@ -417,7 +520,7 @@ export default function JournalCoverEditorScreen() {
         color: coverColor,
         elements,
         previewUri});
-      router.back();
+      router.replace("/journal");
     } finally {
       setIsSaving(false);
     }
@@ -425,15 +528,16 @@ export default function JournalCoverEditorScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.iconButton} accessibilityLabel="Go back">
+        <Pressable onPress={() => setShowExitModal(true)} style={styles.iconButton} accessibilityLabel="Go back">
           <Ionicons name="arrow-back" size={23} color="#20352B" />
         </Pressable>
         <View>
           <Text style={styles.eyebrow}>YOUR JOURNAL</Text>
           <Text style={styles.headerTitle}>Design your cover</Text>
         </View>
-        <Pressable onPress={() => void handleSave()} style={styles.doneButton} accessibilityLabel="Save cover" disabled={isSaving}>
+        <Pressable onPress={() => setShowSaveModal(true)} style={styles.doneButton} accessibilityLabel="Save cover" disabled={isSaving}>
           <Ionicons name="checkmark" size={18} color="#FFF8E8" />
           <Text style={styles.doneText}>{isSaving ? "Saving" : "Done"}</Text>
         </Pressable>
@@ -452,6 +556,7 @@ export default function JournalCoverEditorScreen() {
                 element={element}
                 isActive={activeElementId === element.id}
                 onFocus={() => setActiveElementId(element.id)}
+                onEditText={handleEditText}
                 onDelete={() => removeElementById(element.id)}
                 onTransformChange={updateElementTransform}
               />
@@ -470,14 +575,33 @@ Drag, pinch, or rotate your pieces</Text>
 
       
       {showToolbar ? (
-        <ScrollView style={styles.toolbarContainer} contentContainerStyle={styles.toolbarContent} showsVerticalScrollIndicator={false}>
+        <ScrollView ref={toolbarScrollRef} style={styles.toolbarContainer} contentContainerStyle={styles.toolbarContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <View style={styles.toolbarHeader}>
             <View>
               <Text style={styles.toolTitle}>Make it yours</Text>
               <Text style={styles.toolSubtitle}>Choose a mood, then add your pieces.</Text>
             </View>
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              <Pressable onPress={resetDesign} style={styles.iconOnlyButton} accessibilityLabel="Reset cover design">
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View style={styles.undoRedoSegment}>
+                <Pressable
+                  onPress={handleUndo}
+                  disabled={!canUndo}
+                  style={[styles.undoRedoBtn, !canUndo && styles.undoRedoBtnDisabled]}
+                  accessibilityLabel="Undo"
+                >
+                  <Ionicons name="arrow-undo" size={16} color={canUndo ? "#2D4A3E" : "#B2C1BA"} />
+                </Pressable>
+                <View style={styles.undoRedoDivider} />
+                <Pressable
+                  onPress={handleRedo}
+                  disabled={!canRedo}
+                  style={[styles.undoRedoBtn, !canRedo && styles.undoRedoBtnDisabled]}
+                  accessibilityLabel="Redo"
+                >
+                  <Ionicons name="arrow-redo" size={16} color={canRedo ? "#2D4A3E" : "#B2C1BA"} />
+                </Pressable>
+              </View>
+              <Pressable onPress={() => setShowResetModal(true)} style={styles.iconOnlyButton} accessibilityLabel="Reset cover design">
                 <Ionicons name="refresh-outline" size={20} color="#4D6558" />
               </Pressable>
               <Pressable onPress={() => setShowToolbar(false)} style={styles.iconOnlyButton} accessibilityLabel="Hide tools">
@@ -491,7 +615,10 @@ Drag, pinch, or rotate your pieces</Text>
             {COLORS.map((color) => (
               <Pressable
                 key={color.value}
-                onPress={() => setCoverColor(color.value)}
+                onPress={() => {
+                  setCoverColor(color.value);
+                  recordHistory(elements, color.value);
+                }}
                 style={[styles.colorButton, { backgroundColor: color.value }, coverColor === color.value && styles.colorButtonActive]}
                 accessibilityLabel={`Choose ${color.name} cover`}
                 accessibilityRole="button"
@@ -527,6 +654,7 @@ Drag, pinch, or rotate your pieces</Text>
                 </Pressable>
               </View>
               <TextInput
+                ref={textInputRef}
                 value={activeElement.content}
                 onChangeText={updateActiveText}
                 maxLength={28}
@@ -577,6 +705,45 @@ Drag, pinch, or rotate your pieces</Text>
         </View>
       )}
 
+      <ConfirmationModal
+        visible={showExitModal}
+        message="Discard unsaved changes? Any edits to your journal cover will be lost."
+        confirmLabel="Discard & Exit"
+        cancelLabel="Stay"
+        confirmTone="danger"
+        onConfirm={() => {
+          setShowExitModal(false);
+          router.replace("/journal");
+        }}
+        onCancel={() => setShowExitModal(false)}
+      />
+
+      <ConfirmationModal
+        visible={showSaveModal}
+        message="Save your journal cover? This design will be applied as your active cover."
+        confirmLabel="Save"
+        cancelLabel="Keep Editing"
+        confirmTone="primary"
+        onConfirm={() => {
+          setShowSaveModal(false);
+          void handleSave();
+        }}
+        onCancel={() => setShowSaveModal(false)}
+      />
+
+      <ConfirmationModal
+        visible={showResetModal}
+        message="Reset your journal cover? This will clear all stickers and text from the cover."
+        confirmLabel="Reset"
+        cancelLabel="Cancel"
+        confirmTone="danger"
+        onConfirm={() => {
+          setShowResetModal(false);
+          resetDesign();
+        }}
+        onCancel={() => setShowResetModal(false)}
+      />
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -672,6 +839,30 @@ const styles = StyleSheet.create({
   },
   textElement: { fontFamily: "Outfit-Bold", fontSize: 28, maxWidth: 230, textAlign: "center" },
   
+    undoRedoSegment: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: "#EEF3ED",
+      borderRadius: 16,
+      height: 32,
+      paddingHorizontal: 2,
+      borderWidth: 1,
+      borderColor: "#DCE5DC",
+    },
+    undoRedoBtn: {
+      width: 28,
+      height: 28,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    undoRedoBtnDisabled: {
+      opacity: 0.3,
+    },
+    undoRedoDivider: {
+      width: 1,
+      height: 16,
+      backgroundColor: "#CBD7CB",
+    },
   iconOnlyButton: { width: 32, height: 32, alignItems: "center", justifyContent: "center", borderRadius: 16, backgroundColor: "#EEF3ED" },
   showToolsContainer: { position: "absolute", bottom: 40, left: 0, right: 0, alignItems: "center" },
   showToolsButton: { flexDirection: "row", alignItems: "center", backgroundColor: "#4D6558", paddingHorizontal: 16, paddingVertical: 12, borderRadius: 30, gap: 8, shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 8, elevation: 5 },

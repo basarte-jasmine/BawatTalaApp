@@ -194,7 +194,9 @@ export default function WellnessBreathingScreen() {
                   ]}
                 >
                   <Text style={styles.phaseText}>{isSessionActive ? phase : "READY"}</Text>
-                  <Text style={styles.secondsText}>{isSessionActive ? `${secondsLeft} Seconds` : "Start to begin"}</Text>
+                  {isSessionActive ? (
+                    <Text style={styles.secondsText}>{`${secondsLeft} Seconds`}</Text>
+                  ) : null}
                 </Animated.View>
               </Animated.View>
             </Animated.View>

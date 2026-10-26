@@ -1,3 +1,4 @@
+const https = require("https");
 const { Buffer } = require("buffer");
 const { randomUUID } = require("crypto");
 const fs = require("fs/promises");
@@ -7,6 +8,127 @@ const { EdgeTTS } = require("node-edge-tts");
 
 const GROQ_API_KEY = String(process.env.GROQ_API_KEY || "").trim();
 const BLESSICA_VOICE = "fil-PH-BlessicaNeural";
+
+function splitTextIntoSentences(text, maxLen = 180) {
+  const clean = String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!clean) return [];
+
+  const rawSentences = clean.split(/(?<=[.?!,;:\n])\s+/);
+  const parts = [];
+  let current = "";
+
+  for (const s of rawSentences) {
+    if (!s) continue;
+    if ((current ? current + " " + s : s).length <= maxLen) {
+      current = current ? current + " " + s : s;
+    } else {
+      if (current) parts.push(current);
+      if (s.length <= maxLen) {
+        current = s;
+      } else {
+        const words = s.split(" ");
+        let subCurrent = "";
+        for (const w of words) {
+          if ((subCurrent ? subCurrent + " " + w : w).length <= maxLen) {
+            subCurrent = subCurrent ? subCurrent + " " + w : w;
+          } else {
+            if (subCurrent) parts.push(subCurrent);
+            subCurrent = w;
+          }
+        }
+        current = subCurrent;
+      }
+    }
+  }
+  if (current) parts.push(current);
+  return parts.filter(Boolean);
+}
+
+function fetchGoogleTtsChunk(textChunk, lang = "tl") {
+  return new Promise((resolve, reject) => {
+    const encoded = encodeURIComponent(textChunk);
+    const url =
+      "https://translate.google.com/translate_tts?ie=UTF-8&q=" +
+      encoded +
+      "&tl=" +
+      lang +
+      "&client=tw-ob";
+
+    const req = https.get(
+      url,
+      {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Referer: "https://translate.google.com/",
+        },
+      },
+      (res) => {
+        const chunks = [];
+        res.on("data", (chunk) => chunks.push(chunk));
+        res.on("end", () => {
+          if (res.statusCode === 200) {
+            resolve(Buffer.concat(chunks));
+          } else {
+            reject(new Error("TTS request failed with status: " + res.statusCode));
+          }
+        });
+      }
+    );
+
+    req.on("error", reject);
+    req.setTimeout(8000, () => {
+      req.destroy();
+      reject(new Error("TTS request timed out."));
+    });
+  });
+}
+
+function shouldUseFilipinoVoice(text) {
+  const words =
+    String(text || "")
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .toLowerCase()
+      .match(/[a-z]+/g) || [];
+
+  const strongMarkers = new Set([
+    "ako", "ikaw", "siya", "kami", "tayo", "kayo", "sila",
+    "mga", "niya", "namin", "natin", "ninyo", "nila", "atin",
+    "parang", "kasi", "naman", "talaga", "sobrang", "ngayon",
+    "kumusta", "salamat", "opo", "hindi", "ganyan", "ganito",
+    "gusto", "ayaw", "dapat", "pwede", "puwede", "araw",
+    "linggo", "pasahan", "gawain", "narinig", "handa",
+    "pakiramdam", "naiintindihan", "mahirap", "masaya", "malungkot",
+    "yan", "iyon", "yung", "kapag", "pero", "kung", "sana",
+    "siguro", "baka", "pagod", "bigat", "hirap", "maayos",
+    "makinig", "magbahagi", "nararamdaman", "pinagdadaanan",
+  ]);
+  const ambiguousMarkers = new Set([
+    "ang", "ng", "sa", "ko", "mo", "po", "oo", "ba", "nga",
+    "din", "rin", "daw", "raw", "muna", "lang", "pala", "wala",
+    "meron", "para",
+  ]);
+  const englishMarkers = new Set([
+    "i", "me", "my", "you", "your", "we", "our", "the", "a", "an",
+    "is", "are", "was", "were", "am", "be", "been", "to", "of",
+    "for", "with", "and", "but", "because", "when", "what", "how",
+    "that", "this", "it", "feel", "feels", "sounds", "understand",
+    "really", "have", "has", "had", "can", "could", "would", "week",
+    "sharing", "difficult", "stressed", "tired",
+  ]);
+
+  const filipinoScore = words.reduce((score, word) => {
+    if (strongMarkers.has(word)) return score + 2;
+    if (ambiguousMarkers.has(word)) return score + 1;
+    return score;
+  }, 0);
+  const englishScore = words.filter((word) => englishMarkers.has(word)).length;
+
+  return filipinoScore > 0 && filipinoScore >= englishScore;
+}
 
 function normalizeTranscriptionLanguage(language, text) {
   const sample = String(text || "").toLowerCase();
@@ -33,20 +155,27 @@ function normalizeTranscriptionLanguage(language, text) {
   ) {
     return "fil";
   }
-  return "en";
+  return shouldUseFilipinoVoice(text) ? "fil" : "en";
 }
 
 function getVoiceConfig() {
-  // Use Blessica Neural as Muni's unified voice.
-  // Blessica speaks Tagalog and Filipino natively and handles English & Taglish naturally.
   return { voice: BLESSICA_VOICE, lang: "fil-PH" };
 }
 
+async function synthesizeGoogleFallback(text, lang) {
+  const chunks = splitTextIntoSentences(text);
+  const audioBuffers = [];
+  for (const chunk of chunks) {
+    const fallbackLanguage = lang === "fil-PH" ? "tl" : "en";
+    audioBuffers.push(await fetchGoogleTtsChunk(chunk, fallbackLanguage));
+  }
+  return Buffer.concat(audioBuffers);
+}
+
 /**
- * Synthesizes natural human-like neural speech using BlessicaNeural.
- * Microsoft Edge Neural TTS exclusively provides high-fidelity, natural voice.
+ * Synthesizes natural human-like speech supporting Tagalog, English, and Taglish
  */
-async function synthesizeEdgeSpeech({ text, rate = "+0%", pitch = "+0Hz" }) {
+async function synthesizeEdgeSpeech({ text, voice, rate = "+0%", pitch = "+0Hz" }) {
   const cleanText = String(text || "").trim();
   if (!cleanText) {
     throw new Error("Text is required for speech synthesis.");
@@ -86,7 +215,11 @@ async function synthesizeEdgeSpeech({ text, rate = "+0%", pitch = "+0Hz" }) {
   try {
     return await generateWithEdge(1);
   } catch (edgeError) {
-    throw new Error("Edge Neural TTS failed: " + (edgeError?.message || edgeError));
+    try {
+      return await synthesizeGoogleFallback(cleanText, selected.lang);
+    } catch {
+      throw new Error("Edge Neural TTS failed: " + (edgeError?.message || edgeError));
+    }
   } finally {
     await fs.unlink(audioPath).catch(() => {});
   }

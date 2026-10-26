@@ -27,6 +27,7 @@ export function IdCardCameraModal({ visible, onClose, onCapture }: IdCardCameraM
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const analyzeIntervalRef = useRef<any>(null);
   const videoContainerRef = useRef<any>(null);
+  const hiddenInputRef = useRef<any>(null);
 
   const stopCameraStream = useCallback(() => {
     if (analyzeIntervalRef.current) {
@@ -108,9 +109,25 @@ export function IdCardCameraModal({ visible, onClose, onCapture }: IdCardCameraM
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play().catch(() => {});
+      const container = videoContainerRef.current;
+      let video = videoRef.current;
+      if (!video && container && typeof document !== "undefined") {
+        video = document.createElement("video");
+        video.setAttribute("playsinline", "true");
+        video.setAttribute("webkit-playsinline", "true");
+        video.setAttribute("autoplay", "true");
+        video.muted = true;
+        video.style.width = "100%";
+        video.style.height = "100%";
+        video.style.objectFit = "cover";
+        video.style.borderRadius = "12px";
+        container.appendChild(video);
+        videoRef.current = video;
+      }
+
+      if (video) {
+        video.srcObject = stream;
+        video.play().catch(() => {});
       }
 
       if (!canvasRef.current && typeof document !== "undefined") {
@@ -215,7 +232,12 @@ export function IdCardCameraModal({ visible, onClose, onCapture }: IdCardCameraM
 
     try {
       const video = videoRef.current;
-      if (!video) {
+      if (!video || !video.videoWidth) {
+        if (Platform.OS === "web" && hiddenInputRef.current) {
+          hiddenInputRef.current.click();
+          setIsCapturing(false);
+          return;
+        }
         throw new Error("Camera feed is not ready.");
       }
 
@@ -241,6 +263,22 @@ export function IdCardCameraModal({ visible, onClose, onCapture }: IdCardCameraM
     } finally {
       setIsCapturing(false);
     }
+  };
+
+  const handleFileCaptureInput = (e: any) => {
+    const file = e?.target?.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const base64 = dataUrl.replace(/^data:image\/[a-zA-Z]+;base64,/, "");
+      stopCameraStream();
+      onCapture({
+        base64,
+        uri: dataUrl,
+      });
+    };
+    reader.readAsDataURL(file);
   };
 
   const switchCamera = () => {
@@ -291,25 +329,29 @@ export function IdCardCameraModal({ visible, onClose, onCapture }: IdCardCameraM
                 style={styles.webVideoContainer}
                 ref={(el: any) => {
                   videoContainerRef.current = el;
-                  if (el && !videoRef.current && typeof document !== "undefined") {
-                    const existing = el.querySelector("video");
-                    if (existing) {
-                      videoRef.current = existing;
-                    } else {
-                      const video = document.createElement("video");
-                      video.setAttribute("playsinline", "true");
-                      video.setAttribute("autoplay", "true");
-                      video.muted = true;
-                      video.style.width = "100%";
-                      video.style.height = "100%";
-                      video.style.objectFit = "cover";
-                      video.style.borderRadius = "12px";
-                      el.appendChild(video);
-                      videoRef.current = video;
-                      if (streamRef.current) {
-                        video.srcObject = streamRef.current;
-                        video.play().catch(() => {});
+                  if (el && typeof document !== "undefined") {
+                    let video = videoRef.current;
+                    if (!video) {
+                      const existing = el.querySelector("video");
+                      if (existing) {
+                        video = existing;
+                      } else {
+                        video = document.createElement("video");
+                        video.setAttribute("playsinline", "true");
+                        video.setAttribute("webkit-playsinline", "true");
+                        video.setAttribute("autoplay", "true");
+                        video.muted = true;
+                        video.style.width = "100%";
+                        video.style.height = "100%";
+                        video.style.objectFit = "cover";
+                        video.style.borderRadius = "12px";
+                        el.appendChild(video);
                       }
+                      videoRef.current = video;
+                    }
+                    if (streamRef.current && video && video.srcObject !== streamRef.current) {
+                      video.srcObject = streamRef.current;
+                      video.play().catch(() => {});
                     }
                   }
                 }}
@@ -358,6 +400,17 @@ export function IdCardCameraModal({ visible, onClose, onCapture }: IdCardCameraM
               />
             </View>
           </View>
+
+          {Platform.OS === "web" ? (
+            <input
+              type="file"
+              ref={hiddenInputRef}
+              accept="image/*"
+              capture="environment"
+              style={{ display: "none" }}
+              onChange={handleFileCaptureInput}
+            />
+          ) : null}
 
           {cameraError ? (
             <View style={styles.errorBox}>

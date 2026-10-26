@@ -1662,38 +1662,47 @@ router.post("/profile/email-change/verify-code", requireStudentOnlyAuth, async (
     });
   }
 
-  const now = Date.now();
-  const sendNewResult = await sendNewEmailChangeCode(
-    session.newEmail,
-    `student email change new [${studentNumber}]`,
-    {
-      subject: "Verify your new email",
-      heading: "Verify New Email",
-      intro: "Your current email was confirmed. Use the verification code below to verify your new Bawat Tala email address:",
-      ignoreText: "If you did not request an email change, you can safely ignore this email.",
-    },
-  );
-
-  setEmailChangeSession(studentNumber, {
-    ...session,
-    currentVerifiedAt: now,
-    otpExpiresAt: now + OTP_VALIDITY_MS,
-    resendAvailableAt: now + OTP_COOLDOWN_MS,
-    newEmailVerifyType: sendNewResult.ok ? sendNewResult.verifyType || "email" : "email",
-  });
-
-  if (!sendNewResult.ok) {
-    return res.status(400).json({
-      message: sendNewResult.message || "Unable to send a verification code to the new email. Tap resend to try again.",
-      stage: "new-email",
-      resendAfterSeconds: Math.ceil(OTP_COOLDOWN_MS / 1000),
+  const { data: existingProfile, error: existingProfileError } = await supabaseAdminClient
+    .from("student_profiles")
+    .select("student_number")
+    .eq("email", session.newEmail)
+    .maybeSingle();
+  if (existingProfileError) {
+    return res.status(500).json({
+      message: existingProfileError.message || "Unable to validate email status.",
     });
   }
+  if (existingProfile && existingProfile.student_number !== studentNumber) {
+    return res.status(409).json({ message: "This email is already registered." });
+  }
+
+  const { data, error: updateError } = await supabaseAdminClient
+    .from("student_profiles")
+    .update({ email: session.newEmail, is_email_verified: true })
+    .eq("student_number", studentNumber)
+    .select(STUDENT_PROFILE_SELECT)
+    .maybeSingle();
+  if (updateError) {
+    return res.status(400).json({ message: updateError.message });
+  }
+
+  try {
+    await deleteStaleAuthUsersByEmail(session.currentEmail);
+  } catch (cleanupError) {
+    console.warn(
+      "Unable to remove previous auth email after student email change:",
+      cleanupError?.message || cleanupError,
+    );
+  }
+
+  if (req.session?.student) {
+    req.session.student.email = session.newEmail;
+  }
+  clearEmailChangeSession(studentNumber);
 
   return res.json({
-    message: "Current email verified. Enter the code sent to your new email.",
-    stage: "new-email",
-    resendAfterSeconds: Math.ceil(OTP_COOLDOWN_MS / 1000),
+    message: "Email updated successfully.",
+    profile: mapStudentProfile(data),
   });
 });
 

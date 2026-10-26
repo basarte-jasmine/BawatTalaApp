@@ -1528,34 +1528,21 @@ export default function ProfileSettingsScreen() {
       }
 
       setProfileSaving(true);
-      if (emailChangeStage === "current-email") {
-        const verifyResult = await verifyProfileEmailChangeCode(profileOtpCode);
-        setProfileSaving(false);
-        if (!verifyResult.ok) {
-          setProfileError(verifyResult.message || "The code is invalid. Please check the latest email code and try again.");
-          return;
-        }
-        setEmailChangeStage("new-email");
-        setProfileOtpCode("");
-        setProfileOtpSeconds(verifyResult.resendAfterSeconds ?? 60);
-        setProfileSuccess("Code verified. Enter the code sent to your new email.");
-        return;
-      }
-
-      const confirmResult = await confirmProfileEmailChange(profileOtpCode);
+      const verifyResult = await verifyProfileEmailChangeCode(profileOtpCode);
       setProfileSaving(false);
-      if (!confirmResult.ok) {
-        setProfileError(confirmResult.message || "The code is invalid. Please check the latest email code and try again.");
+      if (!verifyResult.ok) {
+        setProfileError(verifyResult.message || "The code is invalid. Please check the latest email code and try again.");
         return;
       }
-      if (confirmResult.profile) {
-        setProfile(confirmResult.profile);
-        setDraftEmail(confirmResult.profile.email || nextEmail);
+      if (verifyResult.profile) {
+        setProfile(verifyResult.profile);
+        setDraftEmail(verifyResult.profile.email || nextEmail);
         setUser({
           ...user,
-          email: confirmResult.profile.email || nextEmail,
-          firstName: (confirmResult.profile.fullName || profile?.fullName || user.fullName || "").split(/\s+/)[0] || user.firstName,
-          fullName: confirmResult.profile.fullName || profile?.fullName || user.fullName || "" });
+          email: verifyResult.profile.email || nextEmail,
+          firstName: (verifyResult.profile.fullName || profile?.fullName || user.fullName || "").split(/\s+/)[0] || user.firstName,
+          fullName: verifyResult.profile.fullName || profile?.fullName || user.fullName || ""
+        });
       }
       setEmailChangeStage("idle");
       setProfileAwaitingEmailOtp(false);
@@ -2278,7 +2265,7 @@ return (
 
               <PrimaryButton
                 disabled={feedbackSending}
-                label={feedbackSending ? "Submitting..." : "Submit Request"}
+                  label={feedbackSending ? "Submitting..." : "Submit"}
                 onPress={() => void handleFeedback()}
               />
             </>
@@ -2311,8 +2298,13 @@ return (
             <Card title="Lock Preferences">
               <ToggleItem
                 title="Lock journal when app goes to background"
-                description="Useful if you switch apps often or hand your phone to someone else."
-                value={draftAutoLock}
+                description={
+                  !appLockEnabled
+                    ? "Create a PIN or turn on Journal Lock first to enable background auto-lock."
+                    : "Useful if you switch apps often or hand your phone to someone else."
+                }
+                value={appLockEnabled ? draftAutoLock : false}
+                disabled={!appLockEnabled}
                 onValueChange={(value) => {
                   setDraftAutoLock(value);
                   if (appLockEnabled) setAppLockAutoLock(value);
@@ -2608,9 +2600,7 @@ return (
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Verify Email Address</Text>
             <Text style={styles.modalBody}>
-              {emailChangeStage === "new-email"
-                ? "Enter the 8-digit code sent to your new email."
-                : "Enter the 8-digit code sent to your current email address."}
+                Enter the 8-digit code sent to your current email address.
             </Text>
             <OtpCodeInput
               length={OTP_LENGTH}
@@ -2663,9 +2653,7 @@ return (
                 <Text style={styles.modalPrimaryText}>
                   {profileSaving
                     ? "Verifying..."
-                    : emailChangeStage === "current-email"
-                      ? "Verify Current Email"
-                      : "Confirm New Email"}
+                      : "Verify"}
                 </Text>
               </Pressable>
             </View>
@@ -2904,23 +2892,26 @@ function Card({ children, title }: { children: React.ReactNode; title?: string }
 
 function ToggleItem({
   bordered = false,
+  disabled = false,
   description,
   onValueChange,
   title,
   value }: {
   bordered?: boolean;
+  disabled?: boolean;
   description: string;
   onValueChange: (value: boolean) => void;
   title: string;
   value: boolean;
 }) {
   return (
-    <View style={[styles.row, bordered && styles.rowBorder, styles.toggleRow]}>
+    <View style={[styles.row, bordered && styles.rowBorder, styles.toggleRow, disabled && { opacity: 0.55 }]}>
       <View style={styles.toggleText}>
         <Text style={styles.rowValue}>{title}</Text>
         <Text style={styles.helperText}>{description}</Text>
       </View>
       <Switch
+        disabled={disabled}
         value={value}
         onValueChange={onValueChange}
         trackColor={{ false: "#D3D8DE", true: "#AADD8D" }}
@@ -2987,7 +2978,6 @@ function ScheduleStatCard({ label, value }: { label: string; value: number }) {
       <Text style={styles.scheduleStatValue}>{value}</Text>
       <View style={styles.scheduleStatFooter}>
         <Text style={styles.scheduleStatLabel}>{label}</Text>
-        <Ionicons name="chevron-forward" size={16} color="#5E7164" />
       </View>
     </View>
   );

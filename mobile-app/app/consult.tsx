@@ -16,6 +16,7 @@ import {
 import { Image } from "expo-image";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
+import { ConfirmationModal } from "../components/ui/ConfirmationModal";
 import { unlockAchievement } from "../lib/achievements";
 import { useAuthSession } from "../lib/auth-session";
 import {
@@ -256,6 +257,7 @@ export default function ConsultScreen() {
   const [studentNote, setStudentNote] = useState("");
   const [counselorSlotCounts, setCounselorSlotCounts] = useState<Record<string, number | null>>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showExitBookingModal, setShowExitBookingModal] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -356,7 +358,13 @@ export default function ConsultScreen() {
             selectedTrack === "peer" ? "PEER" : "GUIDANCE",
           );
           if (res.ok && Array.isArray(res.days)) {
-            const count = res.days.reduce((acc, d) => acc + (d.availableSlots?.length || 0), 0);
+            const count = res.days.reduce((acc, d) => {
+              if (d.isPast || d.blockedByLeadTime) return acc;
+              const openSlotsCount = (d.slots || []).filter(
+                (slot) => slot.enabled && !slot.booked && !slot.blockedByLeadTime
+              ).length;
+              return acc + openSlotsCount;
+            }, 0);
             updates[counselor.id] = count;
           }
         } catch {}
@@ -576,6 +584,11 @@ export default function ConsultScreen() {
       setStep((current) => current - 1);
       return;
     }
+    setShowExitBookingModal(true);
+  };
+
+  const handleConfirmExitBooking = () => {
+    setShowExitBookingModal(false);
     if (opensWithChooser) {
       setShowChooser(true);
       return;
@@ -1273,6 +1286,16 @@ export default function ConsultScreen() {
           </View>
         </View>
       </Modal>
+
+        <ConfirmationModal
+          visible={showExitBookingModal}
+          message="Are you sure you want to exit? Your consultation schedule and selections will not be saved."
+          confirmLabel="Exit"
+          cancelLabel="Stay"
+          confirmTone="danger"
+          onConfirm={handleConfirmExitBooking}
+          onCancel={() => setShowExitBookingModal(false)}
+        />
 
       <HomeBottomNav activeTab="consult" />
     </View>

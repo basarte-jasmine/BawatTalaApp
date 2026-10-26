@@ -2666,6 +2666,7 @@ router.get("/availability", requireStudentOrAdminAuth, async (req, res) => {
         booked,
         blockedByLeadTime,
         enabled,
+        isPast,
       };
     });
 

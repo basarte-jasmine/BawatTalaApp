@@ -47,6 +47,7 @@ import {
   needsFinishSupportPrompt,
 } from "../../lib/risk-level";
 import { useAppPreferences } from "../../lib/app-preferences";
+import { showAppNotice } from "../../lib/app-notice";
 
 type VoiceState =
   | "unsupported"
@@ -89,7 +90,7 @@ function cleanSpokenText(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
-function getVoiceForSpokenLanguage(_language: string | undefined, _transcript: string) {
+function getVoiceForSpokenLanguage(_language?: string, _transcript?: string) {
   return MUNI_VOICE;
 }
 
@@ -162,7 +163,7 @@ export type MuniVoiceOverlayProps = {
 export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
   const insets = useSafeAreaInsets();
   const { user } = useAuthSession();
-  const { appLockEnabled, isAppLocked } = useAppPreferences();
+  const { appLockEnabled, isAppLocked, suppressJournalAutoLock } = useAppPreferences();
 
   const entryRef = useRef<JournalEntry | null>(null);
   const messagesRef = useRef<JournalMessage[]>([]);
@@ -348,11 +349,17 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
   const stopSpeaking = useCallback(async () => {
     if (Platform.OS === "web") {
       if (webAudioRef.current) {
-        webAudioRef.current.pause();
-        webAudioRef.current.currentTime = 0;
+        try {
+          webAudioRef.current.pause();
+          webAudioRef.current.currentTime = 0;
+          webAudioRef.current.src = "";
+        } catch {}
+        webAudioRef.current = null;
       }
       if (webBlobUrlRef.current) {
-        URL.revokeObjectURL(webBlobUrlRef.current);
+        try {
+          URL.revokeObjectURL(webBlobUrlRef.current);
+        } catch {}
         webBlobUrlRef.current = null;
       }
     } else {
@@ -376,7 +383,8 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
       if (!cleaned || isDisposedRef.current) return;
 
       void stopSpeaking();
-      const chosenVoice = voiceName || getVoiceForSpokenLanguage((entry as any)?.spokenLanguage, cleaned);
+      const chosenVoice = MUNI_VOICE;
+      replyVoiceRef.current = chosenVoice;
 
       try {
         setVoiceState("speaking");
@@ -393,25 +401,28 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
         }
 
         if (Platform.OS === "web") {
-          const blobUrl = base64ToBlobUrl(base64Audio, "audio/mp3");
-          webBlobUrlRef.current = blobUrl;
-          const audio = new window.Audio(blobUrl);
+          const audioSrc = "data:audio/mp3;base64," + base64Audio;
+          const audio = new Audio(audioSrc);
           webAudioRef.current = audio;
           audio.onended = () => {
+            webAudioRef.current = null;
             if (!isDisposedRef.current) {
               setVoiceState("idle");
             }
           };
           audio.onerror = () => {
+            webAudioRef.current = null;
             if (!isDisposedRef.current) {
               setVoiceState("idle");
             }
           };
           await audio.play();
         } else {
-          const player = createAudioPlayer({
-            uri: `data:audio/mp3;base64,${base64Audio}`,
+          await setAudioModeAsync({
+            playsInSilentMode: true,
           });
+          const audioUrl = "data:audio/mp3;base64," + base64Audio;
+          const player = createAudioPlayer(audioUrl);
           nativePlayerRef.current = player;
           player.addListener("playbackStatusUpdate", (status) => {
             if (status.didJustFinish && !isDisposedRef.current) {
@@ -512,9 +523,13 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
         };
 
         mr.onstop = () => {
-          if (shouldCancelRecordingRef.current) return;
+          if (shouldCancelRecordingRef.current || isDisposedRef.current) return;
           const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-          void processRecordedAudio(blob);
+          void blob.arrayBuffer().then((buf) => {
+            if (shouldCancelRecordingRef.current || isDisposedRef.current) return;
+            const base64 = arrayBufferToBase64(buf);
+            void processRecordedAudio(base64, "audio/webm", "recording.webm");
+          });
         };
 
         mr.start();
@@ -532,6 +547,7 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
       }
     } else {
       try {
+          suppressJournalAutoLock(20000);
         const perm = await requestRecordingPermissionsAsync();
         if (!perm.granted) {
           setStatusMessage("Microphone permission denied.");
@@ -572,8 +588,17 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
       try {
         await nativeRecorder.stop();
         const uri = nativeRecorder.uri;
-        if (uri && !shouldCancelRecordingRef.current) {
-          void processRecordedAudio(uri);
+          if (uri && !shouldCancelRecordingRef.current && !isDisposedRef.current) {
+            const file = new File(uri);
+            try {
+              const arrayBuffer = await file.arrayBuffer();
+              const base64 = arrayBufferToBase64(arrayBuffer);
+              void processRecordedAudio(base64, "audio/m4a", "recording.m4a");
+            } finally {
+              try {
+                if (file.exists) file.delete();
+              } catch {}
+            }
         }
       } catch {
         setStatusMessage("Error stopping audio recorder.");
@@ -608,26 +633,18 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
     setStatusMessage("Recording cancelled.");
   };
 
-  const processRecordedAudio = async (audioData: Blob | string) => {
+  const processRecordedAudio = async (base64Audio: string, mimeType = "audio/m4a", filename = "recording.m4a") => {
     if (!user?.studentNumber || !entry?.id) return;
 
     setVoiceState("transcribing");
     setStatusMessage("Transcribing your voice...");
 
     try {
-      let fileToSend: any;
-      if (Platform.OS === "web") {
-        fileToSend = audioData as Blob;
-      } else {
-        const uri = audioData as string;
-        fileToSend = {
-          uri,
-          type: "audio/m4a",
-          name: "voice.m4a",
-        };
-      }
-
-      const txResult = await transcribeAudio(fileToSend);
+      const txResult = await transcribeAudio({
+        audioBase64: base64Audio,
+        mimeType,
+        filename,
+      });
       if (!txResult.text || !txResult.text.trim()) {
         setStatusMessage("No speech was recognized. Tap to try again.");
         setVoiceState("idle");
@@ -635,15 +652,19 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
       }
 
       const spokenText = txResult.text.trim();
+      const replyVoice = getVoiceForSpokenLanguage(txResult.language, spokenText);
+      replyVoiceRef.current = replyVoice;
       setTranscript(spokenText);
       setVoiceState("thinking");
       setStatusMessage("Muni is thinking...");
 
       const sendResult = await sendJournalMessage({
-        entryId: entry.id,
-        studentNumber: user.studentNumber,
-        message: spokenText,
         aiEnabled: true,
+        entryId: entry.id,
+        message: spokenText,
+        messages: messagesRef.current,
+        requireExistingEntry: true,
+        studentNumber: user.studentNumber,
       });
 
       if (!sendResult.ok) {
@@ -653,13 +674,15 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
       }
 
       setActiveEntry(sendResult.entry ?? entry);
-      setConversationMessages(sendResult.messages ?? []);
+      setConversationMessages(
+        mergeMessageHistory(messagesRef.current, sendResult.messages ?? [])
+      );
 
       const latestReply = getLatestAssistantReply(sendResult.messages);
       if (latestReply) {
         setMuniReply(latestReply);
         setStatusMessage("");
-        void speakReply(latestReply);
+        void speakReply(latestReply, replyVoice);
       } else {
         setVoiceState("idle");
         setStatusMessage("");
@@ -740,19 +763,55 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
 
   const handleConfirmSaveTags = async () => {
     if (!user?.studentNumber || !entry?.id || isSavingJournal) return;
+    const finalTags = uniqueTags(selectedTags);
+    if (finalTags.length === 0) {
+      setStatusMessage("Choose at least one tag before saving this voice journal.");
+      return;
+    }
+
     setIsSavingTags(true);
     setIsSavingJournal(true);
+    setStatusMessage("Analyzing and saving your voice journal...");
 
     try {
+      const prioritizedPrimaryConcern =
+        finalTags.find((tag) => CONCERN_TAG_OPTIONS.includes(tag) || INTERPERSONAL_RELATIONSHIP_TAGS.includes(tag)) ||
+        finalTags[0];
+
       const finishResult = await finishJournalEntry({
-        concernTags: selectedTags,
+        concernTags: finalTags,
         entryId: entry.id,
+        forceAnalyze: true,
+        messages: messagesRef.current,
+        primaryConcern: prioritizedPrimaryConcern,
         studentNumber: user.studentNumber,
       });
 
       if (!finishResult.ok) {
         setStatusMessage(finishResult.message ?? "Could not save voice journal.");
         setVoiceState("error");
+        return;
+      }
+
+      await unlockAchievement("voice-beneath-the-stars", user.studentNumber);
+      if (finalTags.some((t: string) => POSITIVE_TAG_OPTIONS.includes(t))) {
+        await unlockAchievement("small-good-thing", user.studentNumber);
+      }
+
+      if (pendingWellnessAfterFinishRef.current) {
+        pendingWellnessAfterFinishRef.current = false;
+        await saveSupportDecision("VIEWED_WELLNESS");
+        void stopSpeaking();
+        setShowTagReviewModal(false);
+        onClose();
+        router.push("/wellness-tools");
+        return;
+      }
+
+      if (finishResult.entry && needsFinishSupportPrompt(finishResult.entry, finishResult.messages)) {
+        setRiskModalRedirectEntryId(finishResult.entry.id);
+        setShowTagReviewModal(false);
+        setShowRiskModal(true);
         return;
       }
 
@@ -770,6 +829,118 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
       setIsSavingJournal(false);
     }
   };
+
+  const saveSupportDecision = useCallback(
+    async (
+      studentAction: "CLICKED_HOTLINE" | "SCHEDULED_COUNSELING" | "VIEWED_WELLNESS" | "DISMISSED"
+    ) => {
+      if (!user?.studentNumber || !entry?.id) {
+        return true;
+      }
+      setIsSavingSupportResponse(true);
+      const supportResult = await saveJournalSupportResponse({
+        entryId: entry.id,
+        studentAction,
+        studentNumber: user.studentNumber,
+      });
+      setIsSavingSupportResponse(false);
+      if (!supportResult.ok) {
+        setStatusMessage(supportResult.message ?? "Unable to save your support response.");
+        return false;
+      }
+      if (supportResult.entry) {
+        setActiveEntry(supportResult.entry);
+      }
+      return true;
+    },
+    [entry?.id, setActiveEntry, user?.studentNumber]
+  );
+
+  const handleDismissRiskModal = useCallback(async () => {
+    if (isSavingSupportResponse) return;
+    setRiskPromptSuppressedUntilFinish(true);
+    const saved = await saveSupportDecision("DISMISSED");
+    if (!saved) return;
+    setShowRiskModal(false);
+    if (riskModalRedirectEntryId) {
+      onClose();
+      router.replace({
+        pathname: "/journal-entry-view",
+        params: { entryId: riskModalRedirectEntryId },
+      });
+    }
+  }, [isSavingSupportResponse, onClose, riskModalRedirectEntryId, saveSupportDecision]);
+
+  const handleCallHotline = useCallback(async () => {
+    if (isSavingSupportResponse) return;
+    const saved = await saveSupportDecision("CLICKED_HOTLINE");
+    if (!saved) return;
+    try {
+      const canOpen = await Linking.canOpenURL(NCMH_HOTLINE_DIAL_URL);
+      if (!canOpen) {
+        showAppNotice(
+          "Call NCMH Hotline",
+          `Please call ${NCMH_HOTLINE_LANDLINE} or ${NCMH_HOTLINE_DISPLAY} for immediate support.`
+        );
+        setShowRiskModal(false);
+        return;
+      }
+      setShowRiskModal(false);
+      await Linking.openURL(NCMH_HOTLINE_DIAL_URL);
+    } catch {
+      showAppNotice(
+        "Call NCMH Hotline",
+        `Please call ${NCMH_HOTLINE_LANDLINE} or ${NCMH_HOTLINE_DISPLAY} for immediate support.`
+      );
+      setShowRiskModal(false);
+    }
+  }, [isSavingSupportResponse, saveSupportDecision]);
+
+  const handleOpenCounseling = useCallback(async () => {
+    if (isSavingSupportResponse) return;
+    const saved = await saveSupportDecision("SCHEDULED_COUNSELING");
+    if (!saved) return;
+    setShowRiskModal(false);
+    setRiskModalRedirectEntryId(null);
+    onClose();
+    router.push("/consult?track=professional&skipIntro=1");
+  }, [isSavingSupportResponse, onClose, saveSupportDecision]);
+
+  const handleOpenWellnessTools = useCallback(async () => {
+    if (isSavingSupportResponse) return;
+    void stopSpeaking();
+    const saved = await saveSupportDecision("VIEWED_WELLNESS");
+    if (!saved) return;
+    setShowRiskModal(false);
+    setRiskModalRedirectEntryId(null);
+    onClose();
+    router.push("/wellness-tools");
+  }, [isSavingSupportResponse, onClose, saveSupportDecision, stopSpeaking]);
+
+  const clearDistressOffer = useCallback(() => {
+    distressWellnessOfferDoneRef.current = true;
+    setDistressOfferPhase(null);
+  }, []);
+
+  const handleDistressWellnessYes = useCallback(() => {
+    distressWellnessOfferDoneRef.current = true;
+    setDistressOfferPhase("save");
+  }, []);
+
+  const handleDistressWellnessNo = useCallback(() => {
+    clearDistressOffer();
+  }, [clearDistressOffer]);
+
+  const handleDistressSaveDecline = useCallback(() => {
+    clearDistressOffer();
+    void handleOpenWellnessTools();
+  }, [clearDistressOffer, handleOpenWellnessTools]);
+
+  const handleDistressSaveAccept = useCallback(() => {
+    setDistressOfferPhase(null);
+    pendingWellnessAfterFinishRef.current = true;
+    void handleRequestTagReview();
+  }, [handleRequestTagReview]);
 
   const handleDiscardJournal = async () => {
     if (isDiscardingJournal || !entry?.id || !user?.studentNumber) {
@@ -962,6 +1133,49 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
                   </Pressable>
                 </View>
                 <Text style={styles.replyText}>{muniReply}</Text>
+                {distressOfferPhase ? (
+                  <View style={styles.distressInlineOffer}>
+                    {distressOfferPhase === "wellness" ? (
+                      <>
+                        <Text style={styles.distressInlineHint}>Open wellness tools?</Text>
+                        <View style={styles.distressYesNoRow}>
+                          <Pressable
+                            style={[styles.distressChoiceButton, styles.distressChoiceNo]}
+                            onPress={handleDistressWellnessNo}
+                          >
+                            <Text style={styles.distressChoiceNoText}>No</Text>
+                          </Pressable>
+                          <Pressable
+                            style={[styles.distressChoiceButton, styles.distressChoiceYes]}
+                            onPress={handleDistressWellnessYes}
+                          >
+                            <Text style={styles.distressChoiceYesText}>Yes</Text>
+                          </Pressable>
+                        </View>
+                      </>
+                    ) : (
+                      <>
+                        <Text style={styles.distressInlineHint}>
+                          Save this entry first? (tags + summary, then wellness tools)
+                        </Text>
+                        <View style={styles.distressYesNoRow}>
+                          <Pressable
+                            style={[styles.distressChoiceButton, styles.distressChoiceNo]}
+                            onPress={handleDistressSaveDecline}
+                          >
+                            <Text style={styles.distressChoiceNoText}>Open now</Text>
+                          </Pressable>
+                          <Pressable
+                            style={[styles.distressChoiceButton, styles.distressChoiceYes]}
+                            onPress={handleDistressSaveAccept}
+                          >
+                            <Text style={styles.distressChoiceYesText}>Save first</Text>
+                          </Pressable>
+                        </View>
+                      </>
+                    )}
+                  </View>
+                ) : null}
               </View>
             ) : null}
 
@@ -1163,6 +1377,155 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
                   <Text style={styles.modalPrimaryText}>
                     {isSavingTags ? "Saving..." : "Save Entry"}
                   </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Relationship Subtype Modal */}
+        <Modal
+          visible={showRelationshipTagModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowRelationshipTagModal(false)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={[styles.modalCard, { maxWidth: 310 }]}>
+              <Text style={styles.concernTitle}>Relationship Focus</Text>
+              <Text style={styles.concernSubtitle}>
+                Select who this reflection primarily concerns:
+              </Text>
+
+              <View style={{ rowGap: 8, marginVertical: 8 }}>
+                {INTERPERSONAL_RELATIONSHIP_TAGS.map((tag) => {
+                  const isSelected = selectedTags.includes(tag);
+                  return (
+                    <Pressable
+                      key={tag}
+                      style={[
+                        styles.relationshipOption,
+                        isSelected && styles.relationshipOptionSelected,
+                      ]}
+                      onPress={() => handleRelationshipTagSelect(tag)}
+                    >
+                      <Text
+                        style={[
+                          styles.relationshipOptionText,
+                          isSelected && styles.relationshipOptionTextSelected,
+                        ]}
+                      >
+                        {tag}
+                      </Text>
+                      {isSelected ? (
+                        <Ionicons name="checkmark-circle" size={18} color="#2E7C1F" />
+                      ) : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              <Pressable
+                style={[styles.modalSecondaryButton, { marginTop: 8 }]}
+                onPress={() => setShowRelationshipTagModal(false)}
+              >
+                <Text style={styles.modalSecondaryText}>Cancel</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Safety / Crisis Support Modal */}
+        <Modal
+          visible={showRiskModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => {
+            void handleDismissRiskModal();
+          }}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={[styles.modalCard, styles.riskModalCard]}>
+              <Pressable
+                style={styles.riskCloseButton}
+                onPress={() => {
+                  void handleDismissRiskModal();
+                }}
+                disabled={isSavingSupportResponse}
+                accessibilityLabel="Dismiss support options"
+              >
+                <Ionicons name="close" size={18} color="#64748B" />
+              </Pressable>
+
+              <View style={styles.riskHeader}>
+                <View style={styles.riskIconBadge}>
+                  <Ionicons name="shield-checkmark" size={22} color="#FFFFFF" />
+                </View>
+                <Text style={styles.riskTitle}>Support is here for you</Text>
+                <Text style={styles.riskBody}>
+                  Muni noticed thoughts that feel heavy or overwhelming. You are not alone, and help is available right now.
+                </Text>
+                <Text style={styles.riskHotlineText}>
+                  24/7 NCMH Crisis Hotline: {NCMH_HOTLINE_LANDLINE} or {NCMH_HOTLINE_DISPLAY}
+                </Text>
+              </View>
+
+              <View style={styles.riskActionStack}>
+                <Pressable
+                  style={[styles.riskActionButton, styles.riskActionButtonHotline]}
+                  onPress={() => {
+                    void handleCallHotline();
+                  }}
+                  disabled={isSavingSupportResponse}
+                >
+                  <View style={styles.riskActionIconWrap}>
+                    <Ionicons name="call" size={20} color="#2E7C1F" />
+                  </View>
+                  <View style={styles.riskActionCopy}>
+                    <Text style={styles.riskActionTitle}>Call Crisis Hotline</Text>
+                    <Text style={styles.riskActionHint}>
+                      Direct call to NCMH 24/7 confidential counselors
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#64748B" />
+                </Pressable>
+
+                <Pressable
+                  style={[styles.riskActionButton, styles.riskActionButtonCounseling]}
+                  onPress={() => {
+                    void handleOpenCounseling();
+                  }}
+                  disabled={isSavingSupportResponse}
+                >
+                  <View style={styles.riskActionIconWrap}>
+                    <Ionicons name="calendar" size={20} color="#1E40AF" />
+                  </View>
+                  <View style={styles.riskActionCopy}>
+                    <Text style={styles.riskActionTitle}>Schedule Guidance Counselor</Text>
+                    <Text style={styles.riskActionHint}>
+                      Book a dedicated session with your school counselor
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#64748B" />
+                </Pressable>
+
+                <Pressable
+                  style={[styles.riskActionButton, styles.riskActionButtonWellness]}
+                  onPress={() => {
+                    void handleOpenWellnessTools();
+                  }}
+                  disabled={isSavingSupportResponse}
+                >
+                  <View style={styles.riskActionIconWrap}>
+                    <Ionicons name="leaf" size={20} color="#059669" />
+                  </View>
+                  <View style={styles.riskActionCopy}>
+                    <Text style={styles.riskActionTitle}>Calming Wellness Tools</Text>
+                    <Text style={styles.riskActionHint}>
+                      Guided 5-4-3-2-1 grounding and breathing resets
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#64748B" />
                 </Pressable>
               </View>
             </View>
@@ -1752,5 +2115,184 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontFamily: "Outfit-Bold",
     fontSize: 13.5,
+  },
+
+  /* Inline Distress Offers */
+  distressInlineOffer: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#D8E9CB",
+    rowGap: 6,
+  },
+  distressInlineHint: {
+    color: "#2E7C1F",
+    fontSize: 12.5,
+    fontFamily: "Outfit-Medium",
+  },
+  distressYesNoRow: {
+    flexDirection: "row",
+    columnGap: 8,
+    marginTop: 2,
+  },
+  distressChoiceButton: {
+    flex: 1,
+    height: 38,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 8,
+  },
+  distressChoiceNo: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#CBD5E1",
+  },
+  distressChoiceYes: {
+    backgroundColor: "#E2F0D8",
+    borderColor: "#B7D8A2",
+  },
+  distressChoiceNoText: {
+    color: "#64748B",
+    fontSize: 13,
+    fontFamily: "Outfit-Bold",
+  },
+  distressChoiceYesText: {
+    color: "#2E7C1F",
+    fontSize: 13,
+    fontFamily: "Outfit-Bold",
+  },
+
+  /* Relationship Option */
+  relationshipOption: {
+    height: 44,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    backgroundColor: "#F8FAFC",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+  },
+  relationshipOptionSelected: {
+    borderColor: "#52B72A",
+    backgroundColor: "#F0FDF4",
+  },
+  relationshipOptionText: {
+    color: "#334155",
+    fontSize: 14,
+    fontFamily: "Outfit-Medium",
+  },
+  relationshipOptionTextSelected: {
+    color: "#2E7C1F",
+    fontFamily: "Outfit-Bold",
+  },
+
+  /* Risk Modal */
+  riskModalCard: {
+    maxWidth: 345,
+    padding: 22,
+  },
+  riskCloseButton: {
+    position: "absolute",
+    top: 14,
+    right: 14,
+    width: 30,
+    height: 30,
+    borderRadius: 999,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 2,
+  },
+  riskHeader: {
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  riskIconBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: 999,
+    backgroundColor: "#52B72A",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+    shadowColor: "#52B72A",
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  riskTitle: {
+    color: "#0F172A",
+    fontSize: 18,
+    fontFamily: "Outfit-Bold",
+    textAlign: "center",
+    marginBottom: 4,
+  },
+  riskBody: {
+    color: "#64748B",
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: "Outfit-Regular",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  riskHotlineText: {
+    color: "#2E7C1F",
+    fontSize: 12,
+    fontFamily: "Outfit-Bold",
+    textAlign: "center",
+  },
+  riskActionStack: {
+    rowGap: 9,
+  },
+  riskActionButton: {
+    minHeight: 58,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 10,
+  },
+  riskActionButtonHotline: {
+    backgroundColor: "#F0FDF4",
+    borderColor: "#BBF7D0",
+  },
+  riskActionButtonCounseling: {
+    backgroundColor: "#EFF6FF",
+    borderColor: "#BFDBFE",
+  },
+  riskActionButtonWellness: {
+    backgroundColor: "#ECFDF5",
+    borderColor: "#A7F3D0",
+  },
+  riskActionIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  riskActionCopy: {
+    flex: 1,
+  },
+  riskActionTitle: {
+    color: "#0F172A",
+    fontSize: 13.5,
+    fontFamily: "Outfit-Bold",
+  },
+  riskActionHint: {
+    marginTop: 1,
+    color: "#64748B",
+    fontSize: 11.5,
+    fontFamily: "Outfit-Regular",
   },
 });

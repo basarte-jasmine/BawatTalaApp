@@ -10,6 +10,7 @@ import { Image } from "expo-image";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, G } from "react-native-svg";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
+import { ConfirmationModal } from "../components/ui/ConfirmationModal";
 import { useAuthSession } from "../lib/auth-session";
 import {
   claimLibraryReadingReward,
@@ -443,6 +444,7 @@ export default function LibraryScreen() {
   const [activeDownloadBookId, setActiveDownloadBookId] = useState<string | null>(null);
   const [libraryActionMessage, setLibraryActionMessage] = useState("");
   const [libraryActionTone, setLibraryActionTone] = useState<"error" | "success">("success");
+  const [pendingExternalRedirect, setPendingExternalRedirect] = useState<{ title: string; url: string } | null>(null);
   const readingRewardClaimRef = useRef(false);
   const readerScrollRef = useRef<ScrollView>(null);
 
@@ -846,6 +848,13 @@ export default function LibraryScreen() {
       return;
     }
 
+    setPendingExternalRedirect({ title: book.title, url });
+  };
+
+  const handleConfirmExternalRedirect = async () => {
+    if (!pendingExternalRedirect) return;
+    const { url } = pendingExternalRedirect;
+    setPendingExternalRedirect(null);
     setLibraryActionTone("success");
     setLibraryActionMessage("Opening Open Library...");
     try {
@@ -1865,6 +1874,15 @@ export default function LibraryScreen() {
           </View>
         </View>
       </Modal>
+
+        <ConfirmationModal
+          visible={Boolean(pendingExternalRedirect)}
+          message={`You are about to leave Bawat Tala to read "${pendingExternalRedirect?.title || "this book"}" on an external site. Do you want to continue?`}
+          confirmLabel="Continue"
+          cancelLabel="Cancel"
+          onConfirm={() => void handleConfirmExternalRedirect()}
+          onCancel={() => setPendingExternalRedirect(null)}
+        />
 
       {/* Floating Apple Bottom Nav */}
       <View style={[styles.bottomNavContainer, { bottom: Math.max(insets.bottom, 12) + 18 }]}>
