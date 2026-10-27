@@ -274,7 +274,7 @@ export default function WeeklyRecapScreen() {
         setJournalEntries(journalRes.entries);
       }
       if (libraryRes && libraryRes.ok && typeof libraryRes.completedCount === "number") {
-        setLibraryReadCount((prev) => Math.max(prev, libraryRes.completedCount));
+        setLibraryReadCount((prev) => Math.max(prev, libraryRes.completedCount ?? 0));
       }
 
       if (hasViewedStr === "true" || recapRes?.hasViewed) {
@@ -453,7 +453,7 @@ export default function WeeklyRecapScreen() {
   }, [backendRecap, weeklyDays]);
 
   const emotionNamesSummary = useMemo(() => {
-    const names = emotionPalette.map((e) => e.meta.label);
+    const names = emotionPalette.map((e: any) => e.meta?.label || "Calm");
     if (names.length === 0) return "peaceful quiet";
     if (names.length === 1) return names[0];
     if (names.length === 2) return names[0] + " and " + names[1];
@@ -463,9 +463,10 @@ export default function WeeklyRecapScreen() {
   const handleShare = async (source: "modal" | "story" = "modal") => {
     if (isSharing) return;
     setIsSharing(true);
-    const daysLabel = daysWithCheckIn === 1 ? "1 day" : "" + daysWithCheckIn + " days";
-    const shareText = "Tala ng Linggo: My Week Under the Stars on Bawat Tala\n\n" +
-      "Checked in " + daysLabel + " this week with Muni. Earned +" + weeklyTalaStars + " Tala.\n\n" +
+    const daysLabel = daysWithCheckIn === 1 ? "1 day" : String(daysWithCheckIn) + " days";
+    const shareText =
+      "Tala ng Linggo: My Week Under the Stars on Bawat Tala\n\n" +
+      "Checked in " + daysLabel + " this week with Muni. Earned +" + String(weeklyTalaStars) + " Tala.\n\n" +
       "No pressure, no grades - just gentle moments for the mind.\n#BawatTala #StudentWellness";
 
     try {
@@ -480,7 +481,17 @@ export default function WeeklyRecapScreen() {
             result: Platform.OS === "web" ? "data-uri" : "tmpfile",
           });
         } catch {
-          capturedUri = null;
+          if (Platform.OS === "web") {
+            try {
+              const html2canvasModule = await import("html2canvas-pro");
+              const h2c = html2canvasModule.default || html2canvasModule;
+              const domNode = targetRef instanceof HTMLElement ? targetRef : (targetRef as any)._nativeTag || document.querySelector(".shareCard") || document.body;
+              if (domNode) {
+                const canvas = await (h2c as any)(domNode, { backgroundColor: "#163422", scale: 2 });
+                capturedUri = canvas.toDataURL("image/png");
+              }
+            } catch {}
+          }
         }
       }
 
@@ -515,7 +526,6 @@ export default function WeeklyRecapScreen() {
         url: capturedUri || undefined,
       });
     } catch {
-      // User cancelled share
     } finally {
       setIsSharing(false);
     }
@@ -771,7 +781,7 @@ export default function WeeklyRecapScreen() {
                 {/* Emotional Palette Chips */}
                 {emotionPalette.length > 0 ? (
                   <View style={styles.storyPaletteRow}>
-                    {emotionPalette.map((item) => (
+                    {emotionPalette.map((item: any) => (
                     <View key={item.id} style={[styles.storyPaletteChip, { borderColor: item.meta.color }]}>
                       <View style={[styles.storyPaletteDot, { backgroundColor: item.meta.color }]} />
                       <Text style={styles.storyPaletteLabel}>{item.meta.label}</Text>
@@ -1064,18 +1074,22 @@ export default function WeeklyRecapScreen() {
           </Animated.View>
 
           {/* Left Tap Zone: Go back to previous card */}
-          <Pressable
-            style={styles.storyNavTapLeft}
+          {storyCardIndex !== 6 && (
+            <Pressable
+              style={styles.storyNavTapLeft}
             onPress={() => changeCard(storyCardIndex - 1)}
             accessibilityLabel="Previous Card"
           />
 
+          )}
           {/* Right Tap Zone: Advance to next card */}
-          <Pressable
-            style={styles.storyNavTapRight}
+          {storyCardIndex !== 6 && (
+            <Pressable
+              style={styles.storyNavTapRight}
             onPress={() => changeCard(storyCardIndex + 1)}
             accessibilityLabel="Next Card"
           />
+          )}
         </View>
 
         {/* Floating Quick Action: Switch directly to Ledger (omitted on finale card where action button is already present) */}
@@ -1550,37 +1564,67 @@ export default function WeeklyRecapScreen() {
         <View style={styles.modalBackdrop}>
           <View style={styles.shareCardContainer}>
             <View ref={shareCardRef} collapsable={false} style={styles.shareCard}>
+              {/* Brand & Date Header */}
               <View style={styles.shareCardHeader}>
                 <Image source={TALA_IMAGE} style={styles.shareTalaIcon} contentFit="contain" cachePolicy="memory-disk" />
-                <View>
-                  <Text style={styles.shareCardBrand}>BAWAT TALA</Text>
-                  <Text style={styles.shareCardTitle}>Tala ng Linggo • Weekly Recap</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.shareCardBrand}>BAWAT TALA  " WEEKLY RECAP</Text>
+                  <Text style={styles.shareCardTitle}>Tala ng Linggo: Full Summary</Text>
                 </View>
               </View>
 
+              {/* Top Score & Rhythm Row */}
               <View style={styles.shareScoreWrap}>
-                <Text style={styles.shareScoreVal}>{daysWithCheckIn}/7</Text>
-                <Text style={styles.shareScoreDesc}>Weekly Student Days You Paused</Text>
+                <View style={styles.shareScoreBadge}>
+                  <Text style={styles.shareScoreVal}>{daysWithCheckIn}/7</Text>
+                </View>
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.shareScoreTitle}>Days Paused Under The Stars</Text>
+                  <Text style={styles.shareScoreDesc}>Honored their mental rhythm with Muni</Text>
+                </View>
               </View>
 
+              {/* Full Metrics Grid */}
               <View style={styles.shareGrid}>
                 <View style={styles.shareGridItem}>
                   <Text style={styles.shareGridVal}>{totalJournals}</Text>
                   <Text style={styles.shareGridLbl}>Journals</Text>
                 </View>
+                <View style={styles.shareGridDivider} />
                 <View style={styles.shareGridItem}>
                   <Text style={styles.shareGridVal}>{mindfulResetsCount}</Text>
                   <Text style={styles.shareGridLbl}>Pauses</Text>
                 </View>
+                <View style={styles.shareGridDivider} />
                 <View style={styles.shareGridItem}>
-                  <Text style={styles.shareGridVal}>28m</Text>
-                  <Text style={styles.shareGridLbl}>Mindful Rest</Text>
+                  <Text style={styles.shareGridVal}>{libraryReadCount}</Text>
+                  <Text style={styles.shareGridLbl}>Guides</Text>
+                </View>
+                <View style={styles.shareGridDivider} />
+                <View style={styles.shareGridItem}>
+                  <Text style={styles.shareGridVal}>+{weeklyTalaStars}</Text>
+                  <Text style={styles.shareGridLbl}>Tala</Text>
                 </View>
               </View>
 
-              <Text style={styles.shareMuniQuote}>
-                "Every step you take to pause and care for yourself matters."
-              </Text>
+              {/* 7-Day Day Nodes Visual Row */}
+              <View style={styles.shareDaysRow}>
+                {weeklyDays.map((d) => (
+                  <View key={d.dateStr} style={[styles.shareDayNode, { borderColor: d.moodColor }]}>
+                    <Text style={styles.shareDayNodeName}>{d.dayName}</Text>
+                    <View style={[styles.shareDayNodeDot, { backgroundColor: d.moodColor }]} />
+                    <Text style={styles.shareDayNodeNum}>{d.dayNumber}</Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Muni Personalized Note Box */}
+              <View style={styles.shareMuniQuoteBox}>
+                <Text style={styles.shareMuniQuoteTitle}>Muni's Weekly Note:</Text>
+                <Text style={styles.shareMuniQuote}>
+                  "{backendRecap?.muniLetter || "True productivity isn't working until burnout it is protecting your peace so you can shine bright."}"
+                </Text>
+              </View>
             </View>
 
             <View style={styles.shareActionRow}>
@@ -3021,6 +3065,66 @@ const styles = StyleSheet.create({
   shareScoreWrap: {
     alignItems: "center",
     marginBottom: 14,
+  },
+  shareScoreBadge: {
+    backgroundColor: "rgba(250, 204, 21, 0.18)",
+    borderWidth: 1.5,
+    borderColor: "#FACC15",
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  shareScoreTitle: {
+    fontSize: 13,
+    fontFamily: "Outfit-Bold",
+    color: "#FFFFFF",
+  },
+  shareGridDivider: {
+    width: 1,
+    height: 22,
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+  },
+  shareDaysRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    marginBottom: 10,
+  },
+  shareDayNode: {
+    alignItems: "center",
+    flex: 1,
+  },
+  shareDayNodeName: {
+    fontSize: 9,
+    fontFamily: "Outfit",
+    color: "#94A3B8",
+  },
+  shareDayNodeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginVertical: 3,
+  },
+  shareDayNodeNum: {
+    fontSize: 9.5,
+    fontFamily: "Outfit-Bold",
+    color: "#FFFFFF",
+  },
+  shareMuniQuoteBox: {
+    backgroundColor: "rgba(255, 255, 255, 0.07)",
+    borderRadius: 10,
+    padding: 8,
+    width: "100%",
+  },
+  shareMuniQuoteTitle: {
+    fontSize: 10,
+    fontFamily: "Outfit-Bold",
+    color: "#FACC15",
+    marginBottom: 2,
   },
   shareScoreVal: {
     fontSize: 38,
