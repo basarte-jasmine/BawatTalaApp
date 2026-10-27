@@ -18,6 +18,7 @@ import { DailyTasksCard } from "../components/home/DailyTasksCard";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { StudentProfileAvatar } from "../components/profile/StudentProfileAvatar";
 import { ConfirmationModal } from "../components/ui/ConfirmationModal";
+import { TalaRewardModal } from "../components/ui/TalaRewardModal";
 import { recordEmotionForAchievement, unlockAchievement } from "../lib/achievements";
 import { playCollectTalaSound } from "../lib/sound-effects";
 import {
@@ -471,6 +472,7 @@ export default function HomeScreen() {
   const [isClaimingCheckIn, setIsClaimingCheckIn] = useState(false);
   const [showCheckInResultModal, setShowCheckInResultModal] = useState(false);
   const [checkInResultMessage, setCheckInResultMessage] = useState("");
+  const [checkInRewardTala, setCheckInRewardTala] = useState(0);
   const [totalTala, setTotalTala] = useState(0);
   const [latestMoodId, setLatestMoodId] = useState<string | null>(null);
   const [todayMoodCheckInCount, setTodayMoodCheckInCount] = useState(0);
@@ -1871,6 +1873,7 @@ export default function HomeScreen() {
     setIsClaimingCheckIn(false);
 
     if (!result.ok) {
+      setCheckInRewardTala(0);
       setCheckInResultMessage(result.message ?? "Unable to claim daily check-in.");
       setShowCheckInResultModal(true);
       void loadCheckInStatus();
@@ -1896,7 +1899,9 @@ export default function HomeScreen() {
     const bonusMessage =
       (result.bonusReward ?? 0) > 0 ? ` Bonus reward: +${result.bonusReward} Tala.` : "";
     const syncMessage = result.savedOffline ? " Saved offline and will sync when you are online." : "";
-    setCheckInResultMessage(`You earned +${result.totalReward ?? result.todayReward ?? 0} Tala today.${bonusMessage}${syncMessage}`);
+    const rewardTala = result.totalReward ?? result.todayReward ?? 0;
+    setCheckInRewardTala(rewardTala);
+    setCheckInResultMessage(`You earned +${rewardTala} Tala today.${bonusMessage}${syncMessage}`);
     setShowCheckInResultModal(true);
   };
 
@@ -3478,24 +3483,33 @@ Muni saved your space and left a warm cup of cocoa on your desk. Take whatever t
         </View>
       </Modal>
 
-      <Modal
-        visible={showCheckInResultModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowCheckInResultModal(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalBody}>{checkInResultMessage}</Text>
-
-            <View style={styles.modalActions}>
-              <Pressable style={styles.modalPrimaryButtonSingle} onPress={() => setShowCheckInResultModal(false)}>
-                <Text style={styles.modalPrimaryText}>OK</Text>
-              </Pressable>
+      {checkInRewardTala > 0 ? (
+        <TalaRewardModal
+          visible={showCheckInResultModal}
+          rewardTala={checkInRewardTala}
+          title="Daily check-in complete"
+          message={checkInResultMessage}
+          onClose={() => setShowCheckInResultModal(false)}
+        />
+      ) : (
+        <Modal
+          visible={showCheckInResultModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowCheckInResultModal(false)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalBody}>{checkInResultMessage}</Text>
+              <View style={styles.modalActions}>
+                <Pressable style={styles.modalPrimaryButtonSingle} onPress={() => setShowCheckInResultModal(false)}>
+                  <Text style={styles.modalPrimaryText}>OK</Text>
+                </Pressable>
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
 
       <ConfirmationModal
         visible={Boolean(pendingDeleteBottleNote)}

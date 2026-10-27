@@ -4,7 +4,6 @@ import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -24,6 +23,7 @@ import {
 import { updateAvailableMuniTala } from "../../lib/muni-wardrobe";
 import { playCollectTalaSound } from "../../lib/sound-effects";
 import { ConfirmationModal } from "../ui/ConfirmationModal";
+import { TalaRewardModal } from "../ui/TalaRewardModal";
 
 const TALA_STAR_IMAGE = require("../../assets/images/Tala_Star.png");
 
@@ -183,12 +183,10 @@ export function DailyTasksCard({
           visible: true,
           rewardTala: res.rewardTala,
           bonusClaimed: Boolean(res.bonusClaimed),
-          title: res.bonusClaimed
-            ? "Araw ng Tagumpay! 🎉"
-            : `+${res.rewardTala} Tala Nakuha! ✨`,
+          title: res.bonusClaimed ? "A day well done" : "Task completed",
           message: res.bonusClaimed
-            ? "Kahanga-hanga! Natapos mo ang lahat ng iyong mga tala ngayong araw.\nNakuha mo ang buong 50/50 Tala para kay Muni!"
-            : `Nakatanggap ka ng +${res.rewardTala} Tala para sa iyong natapos na gawain. Patuloy lang sa pagsulong!`,
+            ? "You completed all of today’s tasks and reached your daily Tala goal."
+            : "Your completed task earned Tala for Muni.",
         });
       }
 
@@ -438,38 +436,13 @@ export function DailyTasksCard({
         </Pressable>
       ) : null}
 
-      {/* Tala Reward Pop-up Modal */}
-      <Modal
+      <TalaRewardModal
         visible={rewardModal.visible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setRewardModal((prev) => ({ ...prev, visible: false }))}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalIconWrap}>
-              <Image source={TALA_STAR_IMAGE} style={styles.modalStarImage} contentFit="contain" cachePolicy="memory-disk" />
-            </View>
-
-            <Text style={styles.modalTitle}>{rewardModal.title}</Text>
-
-            <View style={styles.modalRewardPill}>
-              <Text style={styles.modalRewardPillText}>
-                +{rewardModal.rewardTala} Tala Earned
-              </Text>
-            </View>
-
-            <Text style={styles.modalMessage}>{rewardModal.message}</Text>
-
-            <Pressable
-              style={styles.modalButton}
-              onPress={() => setRewardModal((prev) => ({ ...prev, visible: false }))}
-            >
-              <Text style={styles.modalButtonText}>Ipagpatuloy</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+        rewardTala={rewardModal.rewardTala}
+        title={rewardModal.title}
+        message={rewardModal.message}
+        onClose={() => setRewardModal((prev) => ({ ...prev, visible: false }))}
+      />
 
       <ConfirmationModal
         visible={Boolean(pendingAction)}
