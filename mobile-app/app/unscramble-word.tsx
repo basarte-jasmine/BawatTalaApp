@@ -16,6 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { claimMiniResetReward } from "../lib/backend-api";
 import { WORD_DESCRIPTIONS } from "../lib/word-descriptions";
 import { getGameScore, saveGameScore } from "../lib/game-scores";
+import { startBgmTrack, playSoundEffect, playGameOverSound, playCollectTalaSound, SOUND_ASSETS } from "../lib/sound-effects";
 
 const COVER = require("../assets/images/Mini Reset/Unscramble Word/Unscramble Word Cover.webp");
 
@@ -79,6 +80,15 @@ export default function UnscrambleWordScreen() {
   const [isError, setIsError] = useState(false);
   const [showExitPrompt, setShowExitPrompt] = useState(false);
   const [rewardTala, setRewardTala] = useState(0);
+  // Looping Muni Games BGM
+  useEffect(() => {
+    if (gameState === "PLAYING") {
+      const bgm = startBgmTrack(SOUND_ASSETS.muniGamesBgm, 0.22);
+      return () => bgm.stop();
+    }
+  }, [gameState]);
+
+
   const rewardClaimedRef = useRef(false);
 
   const shakeAnim = useRef(new Animated.Value(0)).current;

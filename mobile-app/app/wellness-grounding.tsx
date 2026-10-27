@@ -12,6 +12,7 @@ import {
 import { useAuthSession } from "../lib/auth-session";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { unlockAchievement } from "../lib/achievements";
+import { startBgmTrack, SOUND_ASSETS } from "../lib/sound-effects";
 
 type IoniconName = ComponentProps<typeof Ionicons>["name"];
 
@@ -77,6 +78,11 @@ export default function WellnessGroundingScreen() {
   const { user } = useAuthSession();
   const [activeStep, setActiveStep] = useState<number>(0);
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    const bgm = startBgmTrack(SOUND_ASSETS.wellnessToolsBgm, 0.28);
+    return () => bgm.stop();
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {

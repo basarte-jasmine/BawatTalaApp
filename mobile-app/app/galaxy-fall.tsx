@@ -17,6 +17,7 @@ import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { claimMiniResetReward } from "../lib/backend-api";
 import { getGameScore, saveGameScore } from "../lib/game-scores";
+import { startBgmTrack, playSoundEffect, playGameOverSound, playCollectTalaSound, SOUND_ASSETS } from "../lib/sound-effects";
 
 const ASSETS = {
   bg: require("../assets/images/Mini Reset/Galaxy Fall/bg.png"),
@@ -95,6 +96,15 @@ export default function GalaxyFallScreen() {
 
   const bestScoreRef = useRef(0);
   const bestCoinsRef = useRef(0);
+  // Looping Galaxy Fall BGM
+  useEffect(() => {
+    if (gameState === "PLAYING") {
+      const bgm = startBgmTrack(SOUND_ASSETS.galaxyFallBgm, 0.25);
+      return () => bgm.stop();
+    }
+  }, [gameState]);
+
+
   const [, forceUpdate] = useState(0);
 
   // Animation & Physics Refs

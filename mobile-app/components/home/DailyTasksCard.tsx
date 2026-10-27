@@ -22,6 +22,7 @@ import {
   type DailyTaskProgress,
 } from "../../lib/backend-api";
 import { updateAvailableMuniTala } from "../../lib/muni-wardrobe";
+import { playCollectTalaSound } from "../../lib/sound-effects";
 import { ConfirmationModal } from "../ui/ConfirmationModal";
 
 const TALA_STAR_IMAGE = require("../../assets/images/Tala_Star.png");
@@ -177,6 +178,7 @@ export function DailyTasksCard({
 
       // Show celebratory reward pop-up modal when Tala is earned
       if (res.rewardTala && res.rewardTala > 0) {
+        void playCollectTalaSound(0.85);
         setRewardModal({
           visible: true,
           rewardTala: res.rewardTala,

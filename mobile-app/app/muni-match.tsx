@@ -15,6 +15,7 @@ import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { claimMiniResetReward } from "../lib/backend-api";
 import { getGameScore, saveGameScore } from "../lib/game-scores";
+import { startBgmTrack, playSoundEffect, playGameOverSound, playCollectTalaSound, SOUND_ASSETS } from "../lib/sound-effects";
 
 const ASSETS = {
   orig: require("../assets/images/Mini Reset/Muni Match/Orig.webp"),
@@ -143,6 +144,15 @@ export default function MuniMatchScreen() {
   const [timeLeft, setTimeLeft] = useState(GAME_DURATION);
   const [targetBonusGranted, setTargetBonusGranted] = useState(false);
   const [rewardTala, setRewardTala] = useState(0);
+  // Looping Muni Games BGM
+  useEffect(() => {
+    if (gameState === "PLAYING") {
+      const bgm = startBgmTrack(SOUND_ASSETS.muniGamesBgm, 0.22);
+      return () => bgm.stop();
+    }
+  }, [gameState]);
+
+
   const [popups, setPopups] = useState<Popup[]>([]);
   const [board, setBoard] = useState<Tile[][]>([]);
   const [wobbleCoord, setWobbleCoord] = useState<{ r: number; c: number } | null>(null);

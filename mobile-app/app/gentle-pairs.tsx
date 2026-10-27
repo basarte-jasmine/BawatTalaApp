@@ -13,6 +13,7 @@ import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { claimMiniResetReward } from "../lib/backend-api";
 import { getGameScore, saveGameScore } from "../lib/game-scores";
+import { startBgmTrack, playSoundEffect, playGameOverSound, playCollectTalaSound, SOUND_ASSETS } from "../lib/sound-effects";
 
 const ASSETS = [
   require("../assets/images/Mini Reset/Gentle Pairs/Muni_Dizzy.webp"),
@@ -58,6 +59,15 @@ export default function GentlePairsScreen() {
 
   const [showExitPrompt, setShowExitPrompt] = useState(false);
   const [rewardTala, setRewardTala] = useState(0);
+  // Looping Muni Games BGM
+  useEffect(() => {
+    if (gameState === "PLAYING") {
+      const bgm = startBgmTrack(SOUND_ASSETS.muniGamesBgm, 0.22);
+      return () => bgm.stop();
+    }
+  }, [gameState]);
+
+
   const rewardClaimedRef = useRef(false);
 
   const bestScoreRef = useRef(0);

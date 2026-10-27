@@ -19,6 +19,7 @@ import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { StudentProfileAvatar } from "../components/profile/StudentProfileAvatar";
 import { ConfirmationModal } from "../components/ui/ConfirmationModal";
 import { recordEmotionForAchievement, unlockAchievement } from "../lib/achievements";
+import { playCollectTalaSound } from "../lib/sound-effects";
 import {
     fetchAffirmationFromApi,
     getStoredAffirmations,
@@ -1877,6 +1878,7 @@ export default function HomeScreen() {
     }
 
     setHasCheckedInToday(Boolean(result.todayCheckedIn));
+    void playCollectTalaSound(0.85);
     buildCheckInRewards(
       result.completedDays ?? 0,
       result.activeDay ?? 1,

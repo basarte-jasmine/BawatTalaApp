@@ -10,6 +10,7 @@ import { Image } from "expo-image";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, G } from "react-native-svg";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
+import { playCollectTalaSound } from "../lib/sound-effects";
 import { ConfirmationModal } from "../components/ui/ConfirmationModal";
 import { useAuthSession } from "../lib/auth-session";
 import {
@@ -1121,6 +1122,7 @@ export default function LibraryScreen() {
         );
         setReadingRewardMessage(result.message ?? `${claimedAchievement.title} unlocked. You earned +${claimedAchievement.rewardTala} Tala.`);
         setShowReadingRewardModal(true);
+        void playCollectTalaSound(0.85);
       } else if (result.nextAchievement !== undefined) {
         setNextReadingAchievement(result.nextAchievement ?? null);
       }

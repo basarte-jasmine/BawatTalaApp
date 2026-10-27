@@ -17,6 +17,7 @@ import { unlockAchievement } from "../lib/achievements";
 import { useAuthSession } from "../lib/auth-session";
 import { claimMiniResetReward } from "../lib/backend-api";
 import { getGameScore, saveGameScore } from "../lib/game-scores";
+import { startBgmTrack, playSoundEffect, playGameOverSound, playCollectTalaSound, SOUND_ASSETS } from "../lib/sound-effects";
 
 const BASKET_WIDTH = 100;
 const BASKET_HEIGHT = 80;

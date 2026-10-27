@@ -17,6 +17,7 @@ import { unlockAchievement } from "../lib/achievements";
 import { useAuthSession } from "../lib/auth-session";
 import { claimMiniResetReward } from "../lib/backend-api";
 import { getGameScore, saveGameScore } from "../lib/game-scores";
+import { startBgmTrack, playSoundEffect, playGameOverSound, playCollectTalaSound, SOUND_ASSETS } from "../lib/sound-effects";
 
 const ASSETS = [
   require("../assets/images/Mini Reset/Puzzle/Muni_Flower_Thief.webp"),
@@ -63,6 +64,15 @@ export default function ImagePuzzleScreen() {
   const [showReferenceModal, setShowReferenceModal] = useState(false);
   const [showExitPrompt, setShowExitPrompt] = useState(false);
   const [rewardTala, setRewardTala] = useState(0);
+  // Looping Muni Games BGM
+  useEffect(() => {
+    if (gameState === "playing" || gameState === "transition") {
+      const bgm = startBgmTrack(SOUND_ASSETS.muniGamesBgm, 0.22);
+      return () => bgm.stop();
+    }
+  }, [gameState]);
+
+
   const rewardClaimedRef = useRef(false);
 
   const [bestScore, setBestScore] = useState(0);

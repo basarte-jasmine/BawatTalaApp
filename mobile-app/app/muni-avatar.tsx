@@ -18,6 +18,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { unlockAchievement } from "../lib/achievements";
+import { startBgmTrack, SOUND_ASSETS } from "../lib/sound-effects";
 import { useAuthSession } from "../lib/auth-session";
 import {
   areMuniLoadoutsEqual,
@@ -150,6 +151,12 @@ export default function MuniAvatarScreen() {
     }
     router.replace("/home");
   };
+
+  // Looping Wardrobe BGM
+  useEffect(() => {
+    const bgm = startBgmTrack(SOUND_ASSETS.wardrobeBgm, 0.28);
+    return () => bgm.stop();
+  }, []);
 
   const hasUnsavedChanges = !areMuniLoadoutsEqual(equippedItems, savedItems);
 

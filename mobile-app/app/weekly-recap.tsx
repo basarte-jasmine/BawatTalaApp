@@ -18,6 +18,7 @@ import {
   View,
 } from "react-native";
 import { Image } from "expo-image";
+import { startBgmTrack, playCollectTalaSound, SOUND_ASSETS } from "../lib/sound-effects";
 import { captureRef } from "react-native-view-shot";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
@@ -203,12 +204,21 @@ export default function WeeklyRecapScreen() {
   const finaleCardRef = useRef<any>(null);
   const handleAdoptFocus = useCallback(async () => {
     setHabitAdopted(true);
+    void playCollectTalaSound(0.85);
     try {
       await adoptWeeklyFocusSeed();
     } catch {}
   }, []);
 
   // Animations
+  // Play weekly wrap BGM exclusively during Story mode
+  useEffect(() => {
+    if (viewMode === "story") {
+      const bgm = startBgmTrack(SOUND_ASSETS.weeklyWrapBgm, 0.35);
+      return () => bgm.stop();
+    }
+  }, [viewMode]);
+
   const [cardFadeAnim] = useState(() => new Animated.Value(1));
   const [cardScaleAnim] = useState(() => new Animated.Value(1));
   const [floatAnim] = useState(() => new Animated.Value(0));
