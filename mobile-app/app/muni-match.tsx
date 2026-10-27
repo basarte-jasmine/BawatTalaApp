@@ -537,10 +537,7 @@ export default function MuniMatchScreen() {
                 </View>
               </View>
 
-              {/* Target Progress Bar */}
-              <View style={styles.targetProgressBar}>
-                <View style={[styles.targetProgressFill, { width: `${targetProgress}%` }]} />
-              </View>
+
 
               {/* Time Track */}
               <View style={styles.timeTrack}>
@@ -955,7 +952,9 @@ const styles = StyleSheet.create({
   tileImage: {
     width: "82%",
     height: "82%",
-  },
+    pointerEvents: "none",
+    userSelect: "none",
+  } as any,
   popupText: {
     position: "absolute",
     fontSize: 15,

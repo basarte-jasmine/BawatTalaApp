@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -11,12 +11,14 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
+  Platform,
   Share,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 import { Image } from "expo-image";
+import { captureRef } from "react-native-view-shot";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
 import Svg, { Circle, Defs, G, Line, LinearGradient, Path, Rect, Stop, Text as SvgText } from "react-native-svg";
@@ -196,6 +198,9 @@ export default function WeeklyRecapScreen() {
   const [selectedDayIndex, setSelectedDayIndex] = useState<number>(6);
   const [showShareModal, setShowShareModal] = useState(false);
   const [habitAdopted, setHabitAdopted] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const shareCardRef = useRef<any>(null);
+  const finaleCardRef = useRef<any>(null);
   const handleAdoptFocus = useCallback(async () => {
     setHabitAdopted(true);
     try {
@@ -455,17 +460,64 @@ export default function WeeklyRecapScreen() {
     return names.slice(0, names.length - 1).join(", ") + ", and " + names[names.length - 1];
   }, [emotionPalette]);
 
-  const handleShare = async () => {
+  const handleShare = async (source: "modal" | "story" = "modal") => {
+    if (isSharing) return;
+    setIsSharing(true);
+    const daysLabel = daysWithCheckIn === 1 ? "1 day" : "" + daysWithCheckIn + " days";
+    const shareText = "Tala ng Linggo: My Week Under the Stars on Bawat Tala\n\n" +
+      "Checked in " + daysLabel + " this week with Muni. Earned +" + weeklyTalaStars + " Tala.\n\n" +
+      "No pressure, no grades - just gentle moments for the mind.\n#BawatTala #StudentWellness";
+
     try {
-      const daysLabel = daysWithCheckIn === 1 ? "1 day" : `${daysWithCheckIn} days`;
+      const targetRef = source === "story" ? (finaleCardRef.current || shareCardRef.current) : (shareCardRef.current || finaleCardRef.current);
+      let capturedUri: string | null = null;
+
+      if (targetRef) {
+        try {
+          capturedUri = await captureRef(targetRef, {
+            format: "png",
+            quality: 0.95,
+            result: Platform.OS === "web" ? "data-uri" : "tmpfile",
+          });
+        } catch {
+          capturedUri = null;
+        }
+      }
+
+      if (Platform.OS === "web" && typeof navigator !== "undefined") {
+        if (capturedUri) {
+          const res = await fetch(capturedUri);
+          const blob = await res.blob();
+          const file = new File([blob], "tala-ng-linggo-weekly-recap.png", { type: "image/png" });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              title: "Tala ng Linggo - Weekly Recap",
+              text: shareText,
+              files: [file],
+            });
+            setIsSharing(false);
+            return;
+          }
+          const a = document.createElement("a");
+          a.href = capturedUri;
+          a.download = "tala-ng-linggo-weekly-recap.png";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setIsSharing(false);
+          return;
+        }
+      }
+
       await Share.share({
-        message:
-          `Tala ng Linggo: My Week Under the Stars on Bawat Tala ✨\n\n` +
-          `Checked in ${daysLabel} this week with Muni.\n\n` +
-          `No pressure, no grades—just gentle moments for the mind.\n#BawatTala #StudentWellness`,
+        title: "Tala ng Linggo - Weekly Recap",
+        message: shareText,
+        url: capturedUri || undefined,
       });
     } catch {
-      // ignore
+      // User cancelled share
+    } finally {
+      setIsSharing(false);
     }
   };
 
@@ -951,7 +1003,7 @@ export default function WeeklyRecapScreen() {
                 <Text style={styles.storyHeroTitle}>Ready for Monday's new stars.</Text>
 
                 {/* Aesthetic Export Card */}
-                <View style={[styles.storyFinaleCard, { backgroundColor: currentTheme.cardBg, borderColor: currentTheme.cardBorder }]}>
+                <View ref={finaleCardRef} collapsable={false} style={[styles.storyFinaleCard, { backgroundColor: currentTheme.cardBg, borderColor: currentTheme.cardBorder }]}>
                   <View style={styles.storyFinaleHeader}>
                     <Image source={TALA_IMAGE} style={styles.storyFinaleStar} contentFit="contain" cachePolicy="memory-disk" />
                     <Text style={styles.storyFinaleBrand}>BAWAT TALA • WEEKLY WRAPPED</Text>
@@ -997,7 +1049,7 @@ export default function WeeklyRecapScreen() {
 
                 {/* Final Interactive Action Buttons */}
                 <View style={styles.storyFinaleActions}>
-                  <Pressable style={[styles.storyShareButton, { backgroundColor: currentTheme.accentColor }]} onPress={handleShare}>
+                  <Pressable style={[styles.storyShareButton, { backgroundColor: currentTheme.accentColor }]} onPress={() => handleShare("story")}>
                     <Ionicons name="share-social" size={17} color="#FFFFFF" />
                     <Text style={styles.storyShareButtonText}>Share My Constellation</Text>
                   </Pressable>
@@ -1497,7 +1549,7 @@ export default function WeeklyRecapScreen() {
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.shareCardContainer}>
-            <View style={styles.shareCard}>
+            <View ref={shareCardRef} collapsable={false} style={styles.shareCard}>
               <View style={styles.shareCardHeader}>
                 <Image source={TALA_IMAGE} style={styles.shareTalaIcon} contentFit="contain" cachePolicy="memory-disk" />
                 <View>
@@ -1538,9 +1590,13 @@ export default function WeeklyRecapScreen() {
               >
                 <Text style={styles.shareCancelText}>Close</Text>
               </Pressable>
-              <Pressable style={styles.shareConfirmBtn} onPress={handleShare}>
+              <Pressable style={styles.shareConfirmBtn} onPress={() => handleShare("modal")} disabled={isSharing}>
                 <Ionicons name="share-outline" size={17} color="#FFFFFF" />
-                <Text style={styles.shareConfirmText}>Share Progress</Text>
+                {isSharing ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.shareConfirmText}>Share Image</Text>
+                )}
               </Pressable>
             </View>
           </View>
