@@ -166,13 +166,6 @@ function getCounselingTypeLabel(type: CounselingSessionType) {
   return type === "group" ? "Group" : "1-on-1";
 }
 
-function getPeerGenderDescription(gender: string) {
-  const normalizedGender = String(gender || "").trim();
-  if (normalizedGender === "Female" || normalizedGender === "Male") {
-    return `${normalizedGender} peer counselor`;
-  }
-  return "Peer counselor";
-}
 
 function ApplePressableCard({
   children,
@@ -255,8 +248,7 @@ export default function ConsultScreen() {
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [selectedTime, setSelectedTime] = useState("");
   const [studentNote, setStudentNote] = useState("");
-  const [counselorSlotCounts, setCounselorSlotCounts] = useState<Record<string, number | null>>({});
-  const [isRefreshing, setIsRefreshing] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
   const [showExitBookingModal, setShowExitBookingModal] = useState(false);
 
   useEffect(() => {
@@ -341,43 +333,6 @@ export default function ConsultScreen() {
     }
     return counselorPool;
   }, [activeCounselors, selectedGender]);
-
-  useEffect(() => {
-    if (step !== 3 || !filteredCounselors.length) return;
-    let isMounted = true;
-    const monthKey = toMonthKey(selectedMonthYear.year, selectedMonthYear.monthIndex);
-
-    async function checkAvailabilities() {
-      const updates: Record<string, number> = {};
-      for (const counselor of filteredCounselors) {
-        try {
-          const res = await fetchAppointmentAvailability(
-            counselor.id,
-            monthKey,
-            user?.studentNumber,
-            selectedTrack === "peer" ? "PEER" : "GUIDANCE",
-          );
-          if (res.ok && Array.isArray(res.days)) {
-            const count = res.days.reduce((acc, d) => {
-              if (d.isPast || d.blockedByLeadTime) return acc;
-              const openSlotsCount = (d.slots || []).filter(
-                (slot) => slot.enabled && !slot.booked && !slot.blockedByLeadTime
-              ).length;
-              return acc + openSlotsCount;
-            }, 0);
-            updates[counselor.id] = count;
-          }
-        } catch {}
-      }
-      if (isMounted) {
-        setCounselorSlotCounts((prev) => ({ ...prev, ...updates }));
-      }
-    }
-    void checkAvailabilities();
-    return () => {
-      isMounted = false;
-    };
-  }, [filteredCounselors, selectedMonthYear.monthIndex, selectedMonthYear.year, selectedTrack, step, user?.studentNumber]);
 
   const peerConcerns = useMemo(
     () => peerConcernOptions.filter((item) => !PEER_EXCLUDED_CONCERNS.has(item)),
@@ -1044,42 +999,9 @@ export default function ConsultScreen() {
                               <View style={styles.counselorInfo}>
                                 <Text style={styles.counselorName}>{item.fullName}</Text>
                                 <Text style={styles.counselorRole}>{item.role}</Text>
-                                <Text style={styles.counselorFocus}>
-                                  {selectedTrack === "peer"
-                                    ? getPeerGenderDescription(item.gender)
-                                    : item.specialties?.length
-                                      ? item.specialties.join(", ")
-                                      : "General guidance and student support"}
-                                </Text>
-                                {selectedTrack === "peer" ? (
-                                  <Text style={styles.counselorMeta}>
-                                    {[item.studentNumber, item.program].filter(Boolean).join(" · ")}
-                                  </Text>
+                                {selectedTrack === "peer" && item.program ? (
+                                  <Text style={styles.counselorMeta}>{item.program}</Text>
                                 ) : null}
-                                <View style={styles.availBadgeWrap}>
-                                  <View
-                                    style={[
-                                      styles.availBadgeDot,
-                                      counselorSlotCounts[item.id] === 0
-                                        ? styles.availBadgeDotEmpty
-                                        : styles.availBadgeDotOpen,
-                                    ]}
-                                  />
-                                  <Text
-                                    style={[
-                                      styles.availBadgeText,
-                                      counselorSlotCounts[item.id] === 0
-                                        ? styles.availBadgeTextEmpty
-                                        : styles.availBadgeTextOpen,
-                                    ]}
-                                  >
-                                    {counselorSlotCounts[item.id] === null || counselorSlotCounts[item.id] === undefined
-                                      ? "Checking schedule..."
-                                      : counselorSlotCounts[item.id]! > 0
-                                        ? `${counselorSlotCounts[item.id]} slot${counselorSlotCounts[item.id] === 1 ? "" : "s"} open this month`
-                                        : "No open slots this month"}
-                                  </Text>
-                                </View>
                               </View>
 
                               {selected ? <Ionicons name="checkmark-circle" size={24} color="#52B72A" /> : <View style={styles.radioEmpty} />}
