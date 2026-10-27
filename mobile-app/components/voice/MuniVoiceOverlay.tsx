@@ -464,6 +464,7 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
       const session = await createJournalSession({
         studentNumber: user.studentNumber,
         aiEnabled: true,
+        forceNew: true,
       });
 
       if (isDisposedRef.current) return;
@@ -942,8 +943,35 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
     void handleRequestTagReview();
   }, [handleRequestTagReview]);
 
+  const resetVoiceOverlayState = useCallback(() => {
+    setEntry(null);
+    setMessages([]);
+    setTranscript("");
+    setMuniReply("");
+    setStatusMessage("");
+    setSelectedTags([]);
+    setVoiceState("idle");
+    setShowExitModal(false);
+    setShowTagReviewModal(false);
+    setShowRelationshipTagModal(false);
+    setShowRiskModal(false);
+    setDistressOfferPhase(null);
+    distressWellnessOfferDoneRef.current = false;
+    pendingWellnessAfterFinishRef.current = false;
+    sessionStartedRef.current = false;
+  }, []);
+
+  const handleRequestDiscard = () => {
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
+    setShowExitModal(true);
+  };
+
   const handleDiscardJournal = async () => {
-    if (isDiscardingJournal || !entry?.id || !user?.studentNumber) {
+    clearRecordingTimeout();
+    void stopSpeaking();
+
+    if (isDiscardingJournal || !user?.studentNumber) {
+      resetVoiceOverlayState();
       onClose();
       return;
     }
@@ -951,14 +979,17 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
 
     setIsDiscardingJournal(true);
     try {
-      await discardJournalEntry({
-        entryId: entry.id,
-        studentNumber: user.studentNumber,
-      });
+      if (entry?.id) {
+        await discardJournalEntry({
+          entryId: entry.id,
+          studentNumber: user.studentNumber,
+        });
+      }
     } catch {
       // silently catch
     } finally {
       setIsDiscardingJournal(false);
+      resetVoiceOverlayState();
       onClose();
     }
   };
@@ -1252,7 +1283,7 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
                   isDiscardingJournal && styles.actionButtonDisabled,
                 ]}
                 disabled={isDiscardingJournal || isSavingJournal || isAnalyzingTags}
-                onPress={handleDiscardJournal}
+                onPress={handleRequestDiscard}
               >
                 {isDiscardingJournal ? (
                   <ActivityIndicator color="#64748B" size="small" />

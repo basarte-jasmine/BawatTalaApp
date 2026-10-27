@@ -415,9 +415,9 @@ export default function JournalCoverEditorScreen() {
 
   const addText = () => {
     const id = Math.random().toString();
-    const nextElements = [
+    const nextElements: CoverElement[] = [
       ...elements,
-      { id, type: "text", content: "My Journal", color: "#FFF8E8", x: 0, y: -8, scale: 1, rotation: 0 },
+      { id, type: "text" as const, content: "My Journal", color: "#FFF8E8", x: 0, y: -8, scale: 1, rotation: 0 },
     ];
     setElements(nextElements);
     setActiveElementId(id);
@@ -427,9 +427,9 @@ export default function JournalCoverEditorScreen() {
 
   const addSticker = (icon: StickerName) => {
     const id = Math.random().toString();
-    const nextElements = [
+    const nextElements: CoverElement[] = [
       ...elements,
-      { id, type: "sticker", content: icon, icon, x: 0, y: 0, scale: 1, rotation: 0 },
+      { id, type: "sticker" as const, content: icon, icon, x: 0, y: 0, scale: 1, rotation: 0 },
     ];
     setElements(nextElements);
     setActiveElementId(id);
