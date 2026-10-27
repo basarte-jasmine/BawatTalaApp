@@ -262,24 +262,20 @@ const styles = StyleSheet.create({
   characterStage: {
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 10,
-    marginBottom: 4,
+    marginTop: 26,
+    marginBottom: 6,
   },
   characterStageCompact: {
-    marginTop: 4,
-    marginBottom: 0,
+    marginTop: 14,
+    marginBottom: 2,
   },
   muniImage: {
-    width: 170,
-    height: 170,
-    shadowColor: "#0D3523",
-    shadowOpacity: 0.14,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
+    width: 204,
+    height: 204,
   },
   muniImageCompact: {
-    width: 130,
-    height: 130,
+    width: 156,
+    height: 156,
   },
   bottomCard: {
     paddingHorizontal: 24,
