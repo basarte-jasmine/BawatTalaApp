@@ -16,17 +16,6 @@ export type GroundingVibe = {
   title: string;
 };
 
-export type GroundingAudioTrack = {
-  durationLabel: string;
-  durationSeconds: number;
-  icon: IoniconName;
-  id: string;
-  note: string;
-  source: number;
-  title: string;
-  tone: string;
-};
-
 export type GroundingStep = {
   count: number;
   examples: string[];
@@ -84,49 +73,6 @@ export const GROUNDING_VIBES: GroundingVibe[] = [
     overlay: "rgba(28, 27, 56, 0.42)",
     animation: "twinkle",
     backgroundImage: require("../assets/images/Background/Museum.webp"),
-  },
-];
-
-export const GROUNDING_AUDIO_TRACKS: GroundingAudioTrack[] = [
-  {
-    id: "rain-hush",
-    title: "Rain Hush",
-    tone: "Fine rain and soft room tone",
-    note: "A steady sound bed for naming what you see and feel.",
-    icon: "rainy-outline",
-    durationLabel: "0:26 loop",
-    durationSeconds: 26,
-    source: require("../assets/audio/rain-hush.wav"),
-  },
-  {
-    id: "ocean-tide",
-    title: "Ocean Tide",
-    tone: "Slow surf with wide breathing space",
-    note: "Best when you want something broader and more spacious.",
-    icon: "water-outline",
-    durationLabel: "0:26 loop",
-    durationSeconds: 26,
-    source: require("../assets/audio/ocean-tide.wav"),
-  },
-  {
-    id: "forest-breeze",
-    title: "Forest Breeze",
-    tone: "Leafy air with gentle movement",
-    note: "A softer soundscape for settling back into the room around you.",
-    icon: "leaf-outline",
-    durationLabel: "0:26 loop",
-    durationSeconds: 26,
-    source: require("../assets/audio/forest-breeze.wav"),
-  },
-  {
-    id: "night-lantern",
-    title: "Night Lantern",
-    tone: "Low glow with subtle shimmer",
-    note: "Quieter and darker when you want the scene to feel more sheltered.",
-    icon: "moon-outline",
-    durationLabel: "0:26 loop",
-    durationSeconds: 26,
-    source: require("../assets/audio/night-lantern.wav"),
   },
 ];
 

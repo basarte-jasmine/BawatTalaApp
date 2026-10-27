@@ -27,7 +27,7 @@ import {
   type ReadingAchievementReward } from "../lib/backend-api";
 import { BUILT_IN_LIBRARY_BOOK_IDS, BUILT_IN_LIBRARY_BOOKS } from "../lib/builtin-library-books";
 import { getPaginationPageNumbers, paginateBooks } from "../lib/library-filter";
-import { LIBRARY_MATCHA, matchaAccentFor, titleInitial } from "../lib/library-theme";
+import { LIBRARY_MATCHA, titleInitial } from "../lib/library-theme";
 import {
   deleteCachedEpubFile,
   downloadEpubToLibrary,
@@ -1162,6 +1162,20 @@ export default function LibraryScreen() {
     const isDownloading = activeDownloadBookId === book.id;
     const externalReaderUrl = getExternalReaderUrl(book);
     const actionLabel = getBookActionLabel(book);
+    const fallbackAccessLabel = [book.accessLabel, actionLabel].find(
+      (label) => label && label.trim().toLowerCase() !== "borrowable",
+    ) || "Available";
+    const accessStatusLabel = book.provider === "builtin"
+      ? "Ready in app"
+      : isDownloaded
+        ? "Saved in app"
+        : canDownloadEpubInApp(book) || actionLabel === "Download EPUB"
+          ? "Free EPUB"
+          : isOpenLibraryBorrow(book) || actionLabel === "Borrow on Open Library"
+            ? "Open Library"
+            : isPreviewOrCatalogOnly(book)
+              ? "Preview only"
+              : fallbackAccessLabel;
     const accessIconName = (
       isDownloaded
         ? "cloud-done-outline"
@@ -1176,19 +1190,12 @@ export default function LibraryScreen() {
 
     return (
       <AppleBookCard key={book.id} compact={compact} onPress={() => void handlePrimaryBookAction(book)}>
-        <View style={styles.bookCardTopRow}>
-          <View style={styles.bookTag}>
-            <Text style={styles.bookTagText}>{book.shelfLabel}</Text>
-          </View>
-        </View>
-
         <View style={[styles.bookCardBody, compact && styles.bookCardBodyStacked]}>
           <View
             style={[
               styles.bookCoverWrap,
               compact && styles.bookCoverWrapCompact,
               compact && styles.bookCoverWrapStacked,
-              { backgroundColor: matchaAccentFor(book.id || book.title, 0) },
             ]}
           >
             {book.coverImageUrl ? (
@@ -1224,7 +1231,7 @@ export default function LibraryScreen() {
               </View>
               <View style={styles.bookMetaPill}>
                 <Ionicons name={accessIconName} size={14} color="#5C655B" />
-                <Text style={styles.bookMetaText}>{book.provider === "builtin" ? "Ready in app" : isDownloaded ? "Saved in app" : canDownloadEpubInApp(book) || actionLabel === "Download EPUB" ? "Free EPUB" : isOpenLibraryBorrow(book) || actionLabel === "Borrow on Open Library" ? "Open Library" : isPreviewOrCatalogOnly(book) ? "Preview only" : book.accessLabel || actionLabel || "Open online"}</Text>
+                <Text style={styles.bookMetaText}>{accessStatusLabel}</Text>
               </View>
               {isDownloaded || progressPercent > 0 ? (
                 <View style={styles.bookMetaPill}>
@@ -2626,26 +2633,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 13,
     paddingBottom: 13 },
-  bookCardTopRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    justifyContent: "space-between",
-    columnGap: 8,
-    rowGap: 6,
-    marginBottom: 12 },
-  bookTag: {
-    borderRadius: 999,
-    backgroundColor: "#F7FAF6",
-    borderWidth: 1,
-    borderColor: "#D5E8CB",
-    paddingHorizontal: 10,
-    paddingVertical: 6 },
-  bookTagText: {
-    color: "#5C655B",
-    fontSize: 11,
-    lineHeight: 14,
-    fontFamily: "Outfit-Bold" },
   bookCardBody: {
     flexDirection: "row",
     alignItems: "flex-start",
