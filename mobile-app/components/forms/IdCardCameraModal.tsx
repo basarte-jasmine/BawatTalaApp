@@ -19,6 +19,7 @@ type IdCardCameraModalProps = {
 export function IdCardCameraModal({ visible, onClose, onCapture }: IdCardCameraModalProps) {
   const [cameraError, setCameraError] = useState("");
   const [isAligned, setIsAligned] = useState(false);
+  const [alignmentMessage, setAlignmentMessage] = useState("Align ID inside frame");
   const [isCapturing, setIsCapturing] = useState(false);
   const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
 
@@ -150,54 +151,94 @@ export function IdCardCameraModal({ visible, onClose, onCapture }: IdCardCameraM
         try {
           const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const data = imgData.data;
+          const w = canvas.width;
+          const h = canvas.height;
 
-          let centerLumaSum = 0;
-          let centerSamples = 0;
-          const startX = Math.floor(canvas.width * 0.25);
-          const endX = Math.floor(canvas.width * 0.75);
-          const startY = Math.floor(canvas.height * 0.25);
-          const endY = Math.floor(canvas.height * 0.75);
-
-          for (let y = startY; y < endY; y += 4) {
-            for (let x = startX; x < endX; x += 4) {
-              const idx = (y * canvas.width + x) * 4;
-              const r = data[idx];
-              const g = data[idx + 1];
-              const b = data[idx + 2];
-              const luma = 0.299 * r + 0.587 * g + 0.114 * b;
-              centerLumaSum += luma;
-              centerSamples++;
-            }
+          let totalLuma = 0;
+          const sampleStep = 3;
+          let sampleCount = 0;
+          for (let i = 0; i < data.length; i += 4 * sampleStep) {
+            totalLuma += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            sampleCount++;
           }
+          const avgLuma = sampleCount > 0 ? totalLuma / sampleCount : 0;
 
-          let borderLumaSum = 0;
-          let borderSamples = 0;
-          for (let x = 0; x < canvas.width; x += 4) {
-            const topIdx = x * 4;
-            const btmIdx = ((canvas.height - 1) * canvas.width + x) * 4;
-            borderLumaSum += 0.299 * data[topIdx] + 0.587 * data[topIdx + 1] + 0.114 * data[topIdx + 2];
-            borderLumaSum += 0.299 * data[btmIdx] + 0.587 * data[btmIdx + 1] + 0.114 * data[btmIdx + 2];
-            borderSamples += 2;
-          }
-
-          const avgCenter = centerSamples > 0 ? centerLumaSum / centerSamples : 0;
-          const avgBorder = borderSamples > 0 ? borderLumaSum / borderSamples : 0;
-
-          const diff = Math.abs(avgCenter - avgBorder);
-          const hasSufficientLight = avgCenter > 35 && avgCenter < 240;
-          const cardDetected = hasSufficientLight && (diff > 10 || avgCenter > 70);
-
-          if (cardDetected) {
-            steadyFrames++;
-            if (steadyFrames >= 2) {
-              setIsAligned(true);
-            }
-          } else {
+          if (avgLuma < 30) {
             steadyFrames = 0;
             setIsAligned(false);
+            setAlignmentMessage("Too dark - Move to better lighting");
+            return;
+          }
+          if (avgLuma > 235) {
+            steadyFrames = 0;
+            setIsAligned(false);
+            setAlignmentMessage("Too bright - Avoid glare on ID");
+            return;
+          }
+
+          let lapSum = 0;
+          let lapSqSum = 0;
+          let lapCount = 0;
+          const startX = Math.floor(w * 0.15);
+          const endX = Math.floor(w * 0.85);
+          const startY = Math.floor(h * 0.18);
+          const endY = Math.floor(h * 0.82);
+
+          for (let y = startY; y < endY; y += 3) {
+            for (let x = startX; x < endX; x += 3) {
+              const idx = (y * w + x) * 4;
+              const center = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+              const upIdx = ((y - 1) * w + x) * 4;
+              const downIdx = ((y + 1) * w + x) * 4;
+              const leftIdx = (y * w + (x - 1)) * 4;
+              const rightIdx = (y * w + (x + 1)) * 4;
+              const lUp = 0.299 * data[upIdx] + 0.587 * data[upIdx + 1] + 0.114 * data[upIdx + 2];
+              const lDown = 0.299 * data[downIdx] + 0.587 * data[downIdx + 1] + 0.114 * data[downIdx + 2];
+              const lLeft = 0.299 * data[leftIdx] + 0.587 * data[leftIdx + 1] + 0.114 * data[leftIdx + 2];
+              const lRight = 0.299 * data[rightIdx] + 0.587 * data[rightIdx + 1] + 0.114 * data[rightIdx + 2];
+              const lap = Math.abs(4 * center - lUp - lDown - lLeft - lRight);
+              lapSum += lap;
+              lapSqSum += lap * lap;
+              lapCount++;
+            }
+          }
+
+          const meanLap = lapCount > 0 ? lapSum / lapCount : 0;
+          const varLap = lapCount > 0 ? (lapSqSum / lapCount) - (meanLap * meanLap) : 0;
+
+          if (varLap < 20) {
+            steadyFrames = 0;
+            setIsAligned(false);
+            setAlignmentMessage("Image is blurry - Hold steady and focus");
+            return;
+          }
+
+          let edgeCount = 0;
+          for (let x = startX; x < endX; x += 4) {
+            const topY1 = (startY * w + x) * 4;
+            const topY0 = (Math.max(0, startY - 3) * w + x) * 4;
+            if (Math.abs(data[topY1] - data[topY0]) > 22) edgeCount++;
+            const btmY1 = (endY * w + x) * 4;
+            const btmY0 = (Math.min(h - 1, endY + 3) * w + x) * 4;
+            if (Math.abs(data[btmY1] - data[btmY0]) > 22) edgeCount++;
+          }
+
+          const isCardFit = edgeCount >= 4 || varLap >= 42;
+          if (!isCardFit) {
+            steadyFrames = 0;
+            setIsAligned(false);
+            setAlignmentMessage("Fit ID edges inside the frame");
+            return;
+          }
+
+          steadyFrames++;
+          if (steadyFrames >= 2) {
+            setIsAligned(true);
+            setAlignmentMessage("ID Aligned - Ready to capture");
           }
         } catch {
-          setIsAligned(true);
+          setIsAligned(false);
+          setAlignmentMessage("Align ID inside frame");
         }
       }, 150);
     } catch (err: any) {
@@ -241,13 +282,22 @@ export function IdCardCameraModal({ visible, onClose, onCapture }: IdCardCameraM
         throw new Error("Camera feed is not ready.");
       }
 
+      const vidW = video.videoWidth || 1280;
+      const vidH = video.videoHeight || 720;
+
+      // Crop to the central guide frame (85% width, aspect ratio 1.58)
+      const cropWidth = Math.round(vidW * 0.85);
+      const cropHeight = Math.min(vidH, Math.round(cropWidth / 1.58));
+      const cropX = Math.round((vidW - cropWidth) / 2);
+      const cropY = Math.round((vidH - cropHeight) / 2);
+
       const snapCanvas = document.createElement("canvas");
-      snapCanvas.width = video.videoWidth || 1280;
-      snapCanvas.height = video.videoHeight || 720;
+      snapCanvas.width = cropWidth;
+      snapCanvas.height = cropHeight;
       const ctx = snapCanvas.getContext("2d");
       if (!ctx) throw new Error("Could not prepare image canvas.");
 
-      ctx.drawImage(video, 0, 0, snapCanvas.width, snapCanvas.height);
+      ctx.drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
       const dataUrl = snapCanvas.toDataURL("image/jpeg", 0.85);
       const base64 = dataUrl.replace(/^data:image\/jpeg;base64,/, "");
 

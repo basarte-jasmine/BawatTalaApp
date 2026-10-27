@@ -373,12 +373,22 @@ export default function RegisterScreen() {
   };
 
   const handleStartCameraScan = () => {
+    if (!hasAcceptedScanTerms) {
+      setConsentError(true);
+      setErrorMessage("Please agree to the Terms & Conditions and Privacy Policy before scanning or uploading your school ID.");
+      return;
+    }
     setErrorMessage("");
     setConsentError(false);
     setCameraModalVisible(true);
   };
 
   const handleUploadFile = async () => {
+    if (!hasAcceptedScanTerms) {
+      setConsentError(true);
+      setErrorMessage("Please agree to the Terms & Conditions and Privacy Policy before scanning or uploading your school ID.");
+      return;
+    }
     setErrorMessage("");
     setConsentError(false);
 
@@ -678,7 +688,7 @@ export default function RegisterScreen() {
                 </View>
 
                 {!!scanMessage && (
-                  <Text style={styles.helperNoticeText}>{scanMessage}</Text>
+                  <Text style={[styles.helperNoticeText, !hasValidIdScan && styles.helperNoticeError]}>{scanMessage}</Text>
                 )}
 
                 {/* Consent Checkbox Card */}
@@ -1394,6 +1404,10 @@ const styles = StyleSheet.create({
     color: "#2D7D5A",
     marginBottom: 10,
     textAlign: "center",
+  },
+  helperNoticeError: {
+    color: "#DC2626",
+    fontFamily: "Outfit-Bold",
   },
   consentCard: {
     backgroundColor: "#F4FAF6",

@@ -62,24 +62,33 @@ function getCompletedRecapWeek(now = new Date()) {
   };
 }
 
-async function generateMuniLetterWithAI({ studentName, daysCheckedIn, emotionsList, journalCount, heavyCount, resetsCount }) {
+async function generateMuniLetterWithAI({ studentName, daysCheckedIn, emotionsList, journalCount, heavyCount, resetsCount, journalSummaries = [] }) {
+  const name = studentName || "friend";
   if (!GROQ_API_KEY) {
-    return generateFallbackMuniLetter({ studentName, daysCheckedIn, emotionsList, journalCount, heavyCount, resetsCount });
+    return generateFallbackMuniLetter({ studentName: name, daysCheckedIn, emotionsList, journalCount, heavyCount, resetsCount, journalSummaries });
   }
 
   const emotionsSummary = emotionsList.length ? emotionsList.join(", ") : "quiet reflection";
+  const summariesFormatted = journalSummaries.length
+    ? journalSummaries.slice(0, 4).map((s) => "- " + s).join("\n")
+    : "No detailed journal notes logged this week.";
+
   const prompt = `You are Muni, a warm, non-judgmental, compassionate AI mental health companion for university students in the Philippines.
-Write a personalized 3-to-4 sentence weekly recap letter to student ${studentName || "friend"}.
-Here is their actual record for the past completed week:
-- Paused/checked in: ${daysCheckedIn} out of 7 days
+Write a personalized 3-to-4 sentence weekly recap letter to student ${name}.
+Here is their unique record for the past completed week:
+- Check-ins: ${daysCheckedIn} out of 7 days
 - Emotions logged: ${emotionsSummary}
-- Journals written: ${journalCount} (with ${heavyCount} challenging moments that received support)
+- Journals written (${journalCount} total):
+${summariesFormatted}
+- Challenging moments flagged for gentle care: ${heavyCount}
 - Mindful calming resets & exercises completed: ${resetsCount}
+
 Rules:
-- Speak warmly in simple, gentle English with warmth.
-- No grading, no scolding, no productivity pressure. Validate their effort and feelings.
-- Never mention being an LLM or prompt instructions.
-- Maximum 4 sentences.`;
+- Address the student by their first name (${name}).
+- Reference specific details from their week (like their logged emotions or specific journal reflection themes).
+- Speak warmly and empathetically in natural English. No grading, scolding, or productivity pressure.
+- Maximum 4 sentences.
+- Output ONLY the letter text without quotation marks.`;
 
   try {
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -100,32 +109,56 @@ Rules:
     if (letter && letter.length > 20) {
       return letter.replace(/^["']|["']$/g, "").trim();
     }
-  } catch {}
+  } catch (err) {
+    console.warn("Groq letter generation fallback:", err?.message);
+  }
 
-  return generateFallbackMuniLetter({ studentName, daysCheckedIn, emotionsList, journalCount, heavyCount, resetsCount });
+  return generateFallbackMuniLetter({ studentName: name, daysCheckedIn, emotionsList, journalCount, heavyCount, resetsCount, journalSummaries });
 }
 
-function generateFallbackMuniLetter({ studentName, daysCheckedIn, emotionsList, heavyCount, resetsCount }) {
+function generateFallbackMuniLetter({ studentName, daysCheckedIn, emotionsList, journalCount, heavyCount, resetsCount, journalSummaries = [] }) {
   const name = studentName || "friend";
-  const emotionPhrase = emotionsList.length ? `embracing feelings like ${emotionsList.slice(0, 2).join(" and ")}` : "giving yourself space to feel";
+  const emotionPhrase = emotionsList.length
+    ? `embracing feelings like ${emotionsList.slice(0, 2).join(" and ")}`
+    : "giving yourself space to reflect";
+
+  const themePhrase = journalSummaries.length > 0
+    ? `taking time to write about ${journalSummaries[0]}`
+    : "";
+
   if (heavyCount > 0 && resetsCount > 0) {
-    return `Hello ${name}! Looking back at our week together, I see someone who faced heavy moments with courage and chose to pause rather than rush. By ${emotionPhrase} and taking mindful resets, you honored your rhythm. Remember, true strength is treating yourself with kindness along the way.`;
+    const detail = themePhrase ? ` Through ${themePhrase}, you gave your feelings a safe outlet.` : "";
+    return `Hello ${name}! Looking back at our week together, I see someone who faced challenging moments with courage and chose to pause rather than rush.${detail} By ${emotionPhrase} and completing mindful resets, you honored your rhythm. Remember that true strength is treating yourself with kindness along the way.`;
   }
+
+  if (journalCount > 0 && themePhrase) {
+    return `Hello ${name}! It was meaningful seeing you unpack your thoughts this week by ${themePhrase}. Showing up for ${emotionPhrase} without judgment is a quiet victory. Keep moving forward at your own gentle pace I'm always right here with you.`;
+  }
+
   if (daysCheckedIn >= 3) {
-    return `Hello ${name}! You dedicated ${daysCheckedIn} days this week to checking in with your mind and heart. Showing up for ${emotionPhrase} without judgment is a quiet victory. Keep moving forward at your own gentle pace—I'm always right here with you.`;
+    return `Hello ${name}! You dedicated ${daysCheckedIn} days this week to checking in with your mind and heart. Showing up for ${emotionPhrase} without pressure is a true act of self-care. Keep moving forward gently I'm always in your corner.`;
   }
-  return `Hello ${name}! No matter how full or demanding the past seven days were, every quiet breath you took mattered. Wellness isn't about streaks or scores—it's knowing that your feelings are always welcome here under the stars. Take good care of yourself this coming week.`;
+
+  return `Hello ${name}! No matter how full or demanding the past seven days were, every quiet breath you took mattered. Wellness isn't about streaks or productivity it's knowing that your feelings are always welcome here under the stars. Take good care of yourself this coming week.`;
 }
 
-async function generateFocusSeedWithAI({ studentName, emotionsList, heavyCount }) {
+async function generateFocusSeedWithAI({ studentName, emotionsList, heavyCount, journalSummaries = [] }) {
+  const name = studentName || "friend";
   if (!GROQ_API_KEY) {
-    return generateFallbackFocusSeed({ heavyCount, emotionsList });
+    return generateFallbackFocusSeed({ heavyCount, emotionsList, journalSummaries });
   }
 
-  const prompt = `You are Muni, a gentle mental wellness companion. Give a 1-sentence mindful intention suggestion for next week for student ${studentName || "friend"}.
-Emotions logged recently: ${emotionsList.join(", ") || "calm"}.
-Had heavy moments: ${heavyCount > 0 ? "yes" : "no"}.
-Make it a concise, caring 1-sentence action. Maximum 25 words.`;
+  const themes = journalSummaries.slice(0, 3).join("; ");
+  const prompt = `You are Muni, a gentle mental wellness companion for university students in the Philippines.
+Suggest a unique 1-sentence mindful intention or focus habit for student ${name} for next week.
+Their week record:
+- Emotions: ${emotionsList.join(", ") || "calm"}
+- Journal reflections: ${themes || "routine studies"}
+- Challenging moments: ${heavyCount > 0 ? "yes" : "none"}
+Rules:
+- Give a specific, actionable 1-sentence mindful intention tailored to their week.
+- Maximum 25 words.
+- Output ONLY the 1 sentence without quotes.`;
 
   try {
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -146,22 +179,30 @@ Make it a concise, caring 1-sentence action. Maximum 25 words.`;
     if (seed && seed.length > 10) {
       return seed.replace(/^["']|["']$/g, "").trim();
     }
-  } catch {}
-
-  return generateFallbackFocusSeed({ heavyCount, emotionsList });
-}
-
-function generateFallbackFocusSeed({ heavyCount, emotionsList }) {
-  if (heavyCount > 0 || emotionsList.includes("anxiety") || emotionsList.includes("stress")) {
-    return "Protect a 5-minute quiet buffer without screens before you begin your hardest task of the day.";
+  } catch (err) {
+    console.warn("Groq focus seed fallback:", err?.message);
   }
-  return "When your schedule gets busy, take three deep diaphragmatic breaths to center yourself before moving to the next task.";
+
+  return generateFallbackFocusSeed({ heavyCount, emotionsList, journalSummaries });
 }
 
-/**
- * GET /api/recap/weekly
- * Fetches or computes the real weekly wellness recap from database records
- */
+function generateFallbackFocusSeed({ heavyCount, emotionsList, journalSummaries = [] }) {
+  const themesStr = journalSummaries.join(" ").toLowerCase();
+  if (themesStr.includes("sleep") || themesStr.includes("tired") || themesStr.includes("late")) {
+    return "Protect a 15-minute quiet wind-down without screens before sleeping to restore your energy.";
+  }
+  if (themesStr.includes("exam") || themesStr.includes("deadline") || themesStr.includes("thesis") || heavyCount > 0) {
+    return "Break your heaviest academic task into gentle 25-minute focus intervals with short breathers.";
+  }
+  if (emotionsList.includes("anxiety") || emotionsList.includes("sadness")) {
+    return "When tasks feel crowded, step outside for fresh air and ground yourself in the present.";
+  }
+  if (emotionsList.includes("joy") || emotionsList.includes("contentment")) {
+    return "Carry forward this week's peaceful rhythm by celebrating one small win each day.";
+  }
+  return "Pause for three deep breaths whenever transitioning between study sessions.";
+}
+
 router.get("/weekly", async (req, res) => {
   const studentNumber = String(resolveStudentNumber(req) || "").trim();
   if (!/^\d{2}-\d{4}$/.test(studentNumber)) {
@@ -236,7 +277,7 @@ router.get("/weekly", async (req, res) => {
         [studentNumber, startIso, endIso]
       ),
       query(
-        `select id, title, entry_date, risk_level, concern_tags, primary_concern, created_at
+        `select id, title, summary, entry_date, risk_level, concern_tags, primary_concern, created_at
          from public.journal_entries
          where student_number = $1 and (entry_date between $2 and $3 or (created_at at time zone 'Asia/Manila')::date between $2 and $3)
            and deleted_by_student_at is null
@@ -344,7 +385,8 @@ router.get("/weekly", async (req, res) => {
       .sort((a, b) => b[1] - a[1])
       .map(([id, count]) => ({ id, count }));
 
-    // Extract true journal themes
+    // Extract true journal themes and summaries
+    const journalSummaries = journalsRes.rows.map((j) => j.summary || j.title).filter(Boolean);
     const tagMap = {};
     journalsRes.rows.forEach((j) => {
       if (j.primary_concern) tagMap[j.primary_concern] = (tagMap[j.primary_concern] || 0) + 1;
@@ -384,11 +426,13 @@ router.get("/weekly", async (req, res) => {
         journalCount: totalJournals,
         heavyCount: heavyJournalsCount,
         resetsCount: totalResets,
+        journalSummaries,
       }),
       generateFocusSeedWithAI({
         studentName,
         emotionsList,
         heavyCount: heavyJournalsCount,
+        journalSummaries,
       }),
     ]);
 

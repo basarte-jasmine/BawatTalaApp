@@ -300,21 +300,20 @@ export default function WeeklyRecapScreen() {
 
   const weeklyDays: DayNode[] = useMemo(() => {
     if (backendRecap && Array.isArray(backendRecap.dailyNodes) && backendRecap.dailyNodes.length === 7) {
-      const fallbackMoods = ["contentment", "joy", "anxiety", "sadness", "relief", "contentment", "joy"];
       return backendRecap.dailyNodes.map((n: any, idx: number) => {
-        const resolvedMoodId = (n.moodId ? normalizeEmotionId(n.moodId) : null) || fallbackMoods[idx] || "contentment";
-        const meta = EMOTION_META[resolvedMoodId] || EMOTION_META.contentment;
+        const resolvedMoodId = n.moodId ? normalizeEmotionId(n.moodId) : null;
+        const meta = resolvedMoodId && EMOTION_META[resolvedMoodId] ? EMOTION_META[resolvedMoodId] : null;
         return {
           dayName: n.dayName || ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][idx],
           dayNumber: typeof n.dayNumber === "number" ? n.dayNumber : (idx + 1),
           monthName: n.monthName || "Oct",
           dateStr: n.dateStr || "",
           moodId: resolvedMoodId,
-          moodLabel: meta.label,
-          moodColor: meta.color,
+          moodLabel: meta ? meta.label : "No Check-in",
+          moodColor: meta ? meta.color : "#94A3B8",
           hasHeavyJournal: Boolean(n.hasHeavyJournal),
           hasReset: Boolean(n.hasReset),
-          notes: n.notes || "Steady cognitive balance maintained.",
+          notes: n.notes || (resolvedMoodId ? "Logged " + resolvedMoodId + " on this day." : "Quiet day. No active reflections recorded."),
         };
       });
     }
@@ -335,27 +334,24 @@ export default function WeeklyRecapScreen() {
       const matchingMoods = (monthlyMoods || []).filter((m) => m && m.moodDate === iso);
       const latestMood = matchingMoods[matchingMoods.length - 1];
       const moodId = latestMood ? normalizeEmotionId(latestMood.moodId) : null;
+      const meta = moodId && EMOTION_META[moodId] ? EMOTION_META[moodId] : null;
 
-      const fallbackMoods = ["contentment", "joy", "anxiety", "sadness", "relief", "contentment", "joy"];
-      const resolvedMoodId = moodId || fallbackMoods[6 - i] || "contentment";
-      const meta = EMOTION_META[resolvedMoodId] || EMOTION_META.contentment;
-
-      const hasHeavy = resolvedMoodId === "anxiety" || resolvedMoodId === "sadness" || resolvedMoodId === "anger";
-      const hasReset = hasHeavy || i % 2 === 0;
+      const hasHeavy = moodId === "anxiety" || moodId === "sadness" || moodId === "anger";
+      const hasReset = hasHeavy;
 
       days.push({
         dayName,
         dayNumber: dayNum,
         monthName,
         dateStr: iso,
-        moodId: resolvedMoodId,
-        moodLabel: meta.label,
-        moodColor: meta.color,
+        moodId,
+        moodLabel: meta ? meta.label : "No Check-in",
+        moodColor: meta ? meta.color : "#94A3B8",
         hasHeavyJournal: hasHeavy,
         hasReset,
         notes: hasHeavy
-          ? "Heavy academic workload logged. Muni initiated a calming reset."
-          : "Steady cognitive balance. Active study focus maintained.",
+          ? "Challenging emotions surfaced. Muni soft-offered calming support."
+          : (moodId ? "Steady cognitive balance. Active study focus maintained." : "Quiet day. No active reflections recorded."),
       });
     }
     return days;
@@ -398,7 +394,7 @@ export default function WeeklyRecapScreen() {
     return weeklyDays.filter((d) => dates.has(d.dateStr)).length;
   }, [backendRecap, weeklyDays, monthlyMoods]);
 
-  const daysWithCheckIn = Math.min(Math.max(checkedInDaysCount, 1), 7);
+  const daysWithCheckIn = Math.min(Math.max(checkedInDaysCount, 0), 7);
   const mindfulResetsCount = useMemo(() => {
     if (typeof backendRecap?.totalResets === "number") return Math.max(backendRecap.totalResets, 1);
     return Math.max(journalEntries.length, 2);
@@ -407,13 +403,25 @@ export default function WeeklyRecapScreen() {
   const interventionsAccepted = Math.min(mindfulResetsCount, heavyJournalsCount);
 
   const weeklyTalaStars = useMemo(() => {
-    if (typeof backendRecap?.totalTalaEarned === "number" && backendRecap.totalTalaEarned > 0) return backendRecap.totalTalaEarned;
-    return daysWithCheckIn * 20 + totalJournals * 15 + libraryReadCount * 25;
+    if (typeof backendRecap?.totalTalaEarned === "number") return backendRecap.totalTalaEarned;
+    return daysWithCheckIn * 20 + libraryReadCount * 25;
   }, [backendRecap, daysWithCheckIn, totalJournals, libraryReadCount]);
 
+  const checkinTalaEarned = useMemo(() => {
+    if (typeof backendRecap?.talaBreakdown?.checkins === "number") return backendRecap.talaBreakdown.checkins;
+    return daysWithCheckIn * 20;
+  }, [backendRecap, daysWithCheckIn]);
+
+  const libraryTalaEarned = useMemo(() => {
+    if (typeof backendRecap?.totalTalaEarned === "number") {
+      return Math.max(0, backendRecap.totalTalaEarned - checkinTalaEarned);
+    }
+    return libraryReadCount * 25;
+  }, [backendRecap, checkinTalaEarned, libraryReadCount]);
+
   const emotionPalette = useMemo(() => {
-    if (backendRecap && Array.isArray(backendRecap.emotionPalette) && backendRecap.emotionPalette.length > 0) {
-      return backendRecap.emotionPalette.map((item: any) => ({
+    if (backendRecap && Array.isArray(backendRecap.emotionPalette)) {
+      return backendRecap.emotionPalette.filter((item: any) => item && item.id).map((item: any) => ({
         id: item.id,
         count: item.count,
         meta: EMOTION_META[normalizeEmotionId(item.id)] || EMOTION_META.contentment,
@@ -428,11 +436,7 @@ export default function WeeklyRecapScreen() {
     }
     const entries = Object.entries(counts);
     if (!entries.length) {
-      return [
-        { id: "contentment", count: 3, meta: EMOTION_META.contentment },
-        { id: "relief", count: 2, meta: EMOTION_META.relief },
-        { id: "anxiety", count: 2, meta: EMOTION_META.anxiety },
-      ];
+      return [];
     }
     return entries
       .sort((a, b) => b[1] - a[1])
@@ -445,7 +449,7 @@ export default function WeeklyRecapScreen() {
 
   const emotionNamesSummary = useMemo(() => {
     const names = emotionPalette.map((e) => e.meta.label);
-    if (names.length === 0) return "contentment and calm";
+    if (names.length === 0) return "peaceful quiet";
     if (names.length === 1) return names[0];
     if (names.length === 2) return names[0] + " and " + names[1];
     return names.slice(0, names.length - 1).join(", ") + ", and " + names[names.length - 1];
@@ -699,7 +703,11 @@ export default function WeeklyRecapScreen() {
                         {pt.day.hasReset && (
                           <Circle cx={pt.x} cy={pt.y} r={9} fill="none" stroke="#34D399" strokeWidth="2" />
                         )}
-                        <Circle cx={pt.x} cy={pt.y} r={4.5} fill={pt.day.moodColor} stroke="#FFFFFF" strokeWidth={1.5} />
+                        {pt.day.moodId ? (
+                          <Circle cx={pt.x} cy={pt.y} r={4.5} fill={pt.day.moodColor} stroke="#FFFFFF" strokeWidth={1.5} />
+                        ) : (
+                          <Circle cx={pt.x} cy={pt.y} r={3} fill="#94A3B8" opacity={0.4} />
+                        )}
                         <SvgText x={pt.x} y="152" fontSize="9" fontFamily="Outfit-Bold" fill="#D1D5DB" textAnchor="middle">
                           {pt.day.dayName}
                         </SvgText>
@@ -709,15 +717,21 @@ export default function WeeklyRecapScreen() {
                 </View>
 
                 {/* Emotional Palette Chips */}
-                <View style={styles.storyPaletteRow}>
-                  {emotionPalette.map((item) => (
+                {emotionPalette.length > 0 ? (
+                  <View style={styles.storyPaletteRow}>
+                    {emotionPalette.map((item) => (
                     <View key={item.id} style={[styles.storyPaletteChip, { borderColor: item.meta.color }]}>
                       <View style={[styles.storyPaletteDot, { backgroundColor: item.meta.color }]} />
                       <Text style={styles.storyPaletteLabel}>{item.meta.label}</Text>
                       <Text style={styles.storyPaletteCount}>x{item.count}</Text>
                     </View>
-                  ))}
-                </View>
+                    ))}
+                  </View>
+                ) : (
+                  <View style={[styles.storyHighlightCard, { backgroundColor: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.12)", marginVertical: 14 }]}>
+                    <Text style={[styles.storyHighlightDesc, { textAlign: "center" }]}>No mood check-ins logged for this week yet. Every day is a fresh opportunity to pause and reflect with Muni.</Text>
+                  </View>
+                )}
 
                 <View style={[styles.storyHighlightCard, { backgroundColor: currentTheme.cardBg, borderColor: currentTheme.cardBorder }]}>
                   <View style={[styles.storyHighlightDot, { backgroundColor: currentTheme.accentColor }]} />
@@ -858,14 +872,14 @@ export default function WeeklyRecapScreen() {
                 <View style={styles.storyRestDuoGrid}>
                   <View style={styles.storyRestDuoCard}>
                     <Ionicons name="sunny" size={22} color="#FBBF24" />
-                    <Text style={styles.storyRestDuoVal}>+{daysWithCheckIn * 20} Tala</Text>
+                    <Text style={styles.storyRestDuoVal}>+{checkinTalaEarned} Tala</Text>
                     <Text style={styles.storyRestDuoLbl}>Daily Check-ins</Text>
                     <Text style={styles.storyRestDuoDesc}>{daysWithCheckIn === 1 ? "1 day showing up" : (daysWithCheckIn + " days showing up")}</Text>
                   </View>
 
                   <View style={styles.storyRestDuoCard}>
                     <Ionicons name="book" size={22} color="#60A5FA" />
-                    <Text style={styles.storyRestDuoVal}>+{libraryReadCount * 25} Tala</Text>
+                    <Text style={styles.storyRestDuoVal}>+{libraryTalaEarned} Tala</Text>
                     <Text style={styles.storyRestDuoLbl}>Wellness Library</Text>
                     <Text style={styles.storyRestDuoDesc}>{libraryReadCount === 1 ? "1 guide explored" : (libraryReadCount + " guides explored")}</Text>
                   </View>
@@ -906,7 +920,7 @@ export default function WeeklyRecapScreen() {
                     </View>
                   </View>
                   <Text style={styles.storyLetterBody}>
-                    "Hello! Looking back at our past seven days, I see a student who is not only working hard toward their academic goals, but also learning to honor their own boundaries. When stress tried to pull you under on Wednesday, you paused and let yourself breathe. True productivity isn't working until you burn out—it is protecting your peace so you can shine bright. I'm honored to be by your side."
+                    {backendRecap?.muniLetter || "Hello! Looking back at our past seven days, I see a student who is not only working hard toward their goals, but also learning to honor their own boundaries. When stress tried to pull you under on Wednesday, you paused and let yourself breathe. True productivity isn't working until you burn out it is protecting your peace so you can shine bright. I'm honored to be by your side."}
                   </Text>
                   <View style={styles.storyLetterFooter}>
                     <Image source={TALA_IMAGE} style={styles.storyLetterStar} contentFit="contain" cachePolicy="memory-disk" />
@@ -1171,14 +1185,24 @@ export default function WeeklyRecapScreen() {
                         />
                       ) : null}
 
-                      <Circle
-                        cx={pt.x}
-                        cy={pt.y}
-                        r={isSelected ? 5.5 : 4}
-                        fill={pt.day.moodColor}
-                        stroke="#FFFFFF"
-                        strokeWidth={isSelected ? 2.5 : 1.5}
-                      />
+                      {pt.day.moodId ? (
+                        <Circle
+                          cx={pt.x}
+                          cy={pt.y}
+                          r={isSelected ? 5.5 : 4}
+                          fill={pt.day.moodColor}
+                          stroke="#FFFFFF"
+                          strokeWidth={isSelected ? 2.5 : 1.5}
+                        />
+                      ) : (
+                        <Circle
+                          cx={pt.x}
+                          cy={pt.y}
+                          r={isSelected ? 4 : 2.5}
+                          fill="#94A3B8"
+                          opacity={isSelected ? 0.8 : 0.35}
+                        />
+                      )}
 
                       <SvgText
                         x={pt.x}
@@ -1231,8 +1255,8 @@ export default function WeeklyRecapScreen() {
           <View style={styles.daysRow}>
             {weeklyDays.map((day, idx) => {
               const isSelected = idx === selectedDayIndex;
-              const emotionOpt = EMOTIONS.find((e) => e.id === day.moodId) || null;
-              const emotionImg = getEmotionImageSource(emotionOpt, isSelected);
+              const emotionOpt = day.moodId ? (EMOTIONS.find((e) => e.id === day.moodId) || null) : null;
+              const emotionImg = emotionOpt ? getEmotionImageSource(emotionOpt, isSelected) : null;
 
               return (
                 <Pressable
@@ -1251,7 +1275,7 @@ export default function WeeklyRecapScreen() {
                     {emotionImg ? (
                       <Image source={emotionImg} style={styles.dayNodeAvatarImg} contentFit="contain" cachePolicy="memory-disk" />
                     ) : (
-                      <Ionicons name="star" size={14} color={day.moodColor} />
+                      <Ionicons name={day.moodId ? "star" : "remove-outline"} size={14} color={day.moodColor} />
                     )}
                   </View>
                   <Text style={styles.dayNodeNumber}>{day.dayNumber}</Text>
@@ -1358,7 +1382,7 @@ export default function WeeklyRecapScreen() {
             <Text style={styles.pillarSub}>Stars gathered this week</Text>
             <View style={styles.tagWrap}>
               <View style={[styles.pillarChip, { backgroundColor: "#FEF9C3" }]}>
-                <Text style={[styles.pillarChipText, { color: "#854D0E" }]}>+{daysWithCheckIn * 20} Check-ins</Text>
+                <Text style={[styles.pillarChipText, { color: "#854D0E" }]}>+{checkinTalaEarned} Check-ins</Text>
               </View>
               <View style={[styles.pillarChip, { backgroundColor: "#FEF9C3" }]}>
                 <Text style={[styles.pillarChipText, { color: "#854D0E" }]}>+{totalJournals * 15} Journals</Text>
@@ -1429,7 +1453,7 @@ export default function WeeklyRecapScreen() {
             </View>
           </View>
           <Text style={styles.muniLetterBody}>
-            "Hello! Looking back at our past seven days, I see a student who is not only working hard toward their goals, but also learning to honor their own boundaries. When stress tried to pull you under on Wednesday, you paused and let yourself breathe. True productivity isn't working until you burn out—it is protecting your peace so you can shine bright. I'm honored to be by your side."
+                    {backendRecap?.muniLetter || "Hello! Looking back at our past seven days, I see a student who is not only working hard toward their goals, but also learning to honor their own boundaries. When stress tried to pull you under on Wednesday, you paused and let yourself breathe. True productivity isn't working until you burn out it is protecting your peace so you can shine bright. I'm honored to be by your side."}
           </Text>
           <View style={styles.muniLetterFooter}>
             <Image source={TALA_IMAGE} style={styles.muniLetterStar} contentFit="contain" cachePolicy="memory-disk" />
