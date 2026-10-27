@@ -18,6 +18,7 @@
         "monochromeImage": "./assets/images/Logo_BT.png"
       },
       "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "resize",
       "predictiveBackGestureEnabled": false,
       "package": "com.bawattala.app",
       "permissions": [

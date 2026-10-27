@@ -1007,7 +1007,10 @@ export default function WriteEntryScreen() {
       <JournalLockGate>
         <KeyboardAvoidingView
           style={[styles.content, liftComposer && styles.contentKeyboardVisible]}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          // Android resizes the app window (configured in app.json). Applying a
+          // second height adjustment here made the composer jump or disappear
+          // behind the keyboard on some devices.
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
         {aiEnabled ? (
           <View style={[styles.pageWrap, liftComposer && styles.pageWrapKeyboardVisible]}>
@@ -1221,6 +1224,8 @@ export default function WriteEntryScreen() {
               placeholder="Write what happened today..."
               placeholderTextColor="#7B8893"
               multiline
+              scrollEnabled
+              textAlignVertical="top"
               maxLength={JOURNAL_MESSAGE_MAX_LENGTH}
               style={styles.input}
               editable={canWrite}
