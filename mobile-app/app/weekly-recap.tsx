@@ -999,16 +999,7 @@ export default function WeeklyRecapScreen() {
                     <Text style={styles.storyLetterSign}>Always in your corner, Muni ✨</Text>
                   </View>
                 </View>
-                <Pressable
-                  style={[styles.storyNextWeekSeedBox, habitAdopted && { backgroundColor: "rgba(34, 197, 94, 0.25)", borderColor: "#22C55E" }]}
-                  onPress={handleAdoptFocus}
-                >
-                  <Ionicons name={habitAdopted ? "checkmark-circle" : "sparkles"} size={15} color={habitAdopted ? "#4ADE80" : "#FACC15"} />
-                  <Text style={[styles.storyNextWeekSeedText, habitAdopted && { color: "#DCFCE7", fontFamily: "Outfit-Bold" }]}>
-                    {habitAdopted ? "Focus Habit Adopted (+15 Tala) '(" : (backendRecap?.focusSeed ? "Focus Seed: " + backendRecap.focusSeed + " (Tap to Adopt)" : "Focus Seed: 10-min quiet buffer before sleep (Tap to Adopt)")}
-                  </Text>
-                </Pressable>
-                <View style={styles.storyTapPrompt}>
+<View style={styles.storyTapPrompt}>
                   <Ionicons name="chevron-back" size={12} color="rgba(255,255,255,0.45)" style={{ marginRight: 4 }} /><Text style={styles.storyTapPromptText}>Back  •  Tap right to reveal your finale</Text>
                   <Ionicons name="chevron-forward" size={14} color="#A7E892" />
                 </View>
@@ -1546,20 +1537,7 @@ export default function WeeklyRecapScreen() {
           <Text style={styles.formulaText}>
             {backendRecap?.focusSeed ? `"${backendRecap.focusSeed}"` : "Based on your late-evening workload spikes, protect a 10-minute quiet buffer without screens before you sleep on Wednesday."}
           </Text>
-          <Pressable
-            style={[styles.formulaButton, habitAdopted && styles.formulaButtonAdopted]}
-            onPress={handleAdoptFocus}
-          >
-            <Ionicons
-              name={habitAdopted ? "checkmark-circle" : "add-circle-outline"}
-              size={18}
-              color="#FFFFFF"
-            />
-            <Text style={styles.formulaButtonText}>
-              {habitAdopted ? "Focus Intention Set (+15 Tala) ✨" : "Adopt This Focus Habit"}
-            </Text>
-          </Pressable>
-        </View>
+</View>
 
         <View style={styles.bottomSpacer} />
       </ScrollView>
@@ -2149,6 +2127,7 @@ const styles = StyleSheet.create({
     color: "#A7D5B2",
   },
   storyLetterBody: {
+    textAlign: "left",
     fontSize: 12,
     lineHeight: 17.5,
     fontFamily: "Outfit",
@@ -2960,6 +2939,7 @@ const styles = StyleSheet.create({
     color: "#A7D5B2",
   },
   muniLetterBody: {
+    textAlign: "left",
     fontSize: 12.5,
     lineHeight: 18,
     fontFamily: "Outfit",
@@ -3169,11 +3149,12 @@ const styles = StyleSheet.create({
     color: "#A0D5B0",
   },
   shareMuniQuote: {
-    fontSize: 10.5,
+    fontSize: 11,
     fontStyle: "italic",
     fontFamily: "Outfit",
     color: "#E2F0E6",
-    textAlign: "center",
+    textAlign: "left",
+    lineHeight: 16,
   },
   shareActionRow: {
     flexDirection: "row",
