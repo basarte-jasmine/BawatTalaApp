@@ -263,6 +263,11 @@ export default function GalaxyFallScreen() {
   };
 
   const finishGame = (survived: boolean, finalCoins: number, finalLives: number) => {
+    if (!survived) {
+      void playGameOverSound(0.8);
+    } else {
+      void playCollectTalaSound(0.85);
+    }
     setGameState("GAMEOVER");
     setIsVictory(survived);
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
@@ -427,6 +432,7 @@ export default function GalaxyFallScreen() {
         if (item.type === "coin") {
           updatedCoins += 1;
           setCoins(updatedCoins);
+          void playCollectTalaSound(0.85);
           setPopups((prev) => [
             ...prev,
             { id: Math.random().toString(), text: "+1 Tala", x: item.x, y: item.y - 10, color: "#F5C447" },
@@ -449,6 +455,7 @@ export default function GalaxyFallScreen() {
             triggerShake();
             triggerInvulnerability();
             Vibration.vibrate(100);
+            void playSoundEffect(SOUND_ASSETS.galaxyCrash, 0.85);
 
             setPopups((prev) => [
               ...prev,

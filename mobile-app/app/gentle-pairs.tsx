@@ -121,6 +121,7 @@ export default function GentlePairsScreen() {
     const timer = setInterval(() => {
       setTimeLeft((current) => {
         if (current <= 1) {
+          void playGameOverSound(0.8);
           setGameState("GAMEOVER");
           triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
           if (!rewardClaimedRef.current) {
@@ -171,6 +172,7 @@ export default function GentlePairsScreen() {
       if (newCards[firstIdx].pairId === newCards[secondIdx].pairId) {
         setTimeout(() => {
           triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+          void playSoundEffect(SOUND_ASSETS.correctPair, 0.85);
           setCards((prev) => {
             const matchedCards = [...prev];
             matchedCards[firstIdx].isMatched = true;

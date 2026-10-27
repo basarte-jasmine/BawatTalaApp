@@ -9,6 +9,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  Vibration,
   View,
 } from "react-native";
 import { Image } from "expo-image";
@@ -69,6 +70,14 @@ export default function FruitCatcherScreen() {
   const [highestLevel, setHighestLevel] = useState(0);
   const gameStateRef = useRef(gameState);
   gameStateRef.current = gameState;
+
+  // Looping Muni Games BGM
+  useEffect(() => {
+    if (gameState === "playing") {
+      const bgm = startBgmTrack(SOUND_ASSETS.muniGamesBgm, 0.22);
+      return () => bgm.stop();
+    }
+  }, [gameState]);
 
   useEffect(() => {
     getGameScore("fruit-catcher").then((data) => {
@@ -202,6 +211,7 @@ export default function FruitCatcherScreen() {
 
           setFruitsCaught((prev) => prev + 1);
           triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
+          void playSoundEffect(SOUND_ASSETS.fruitCollected, 0.85);
 
           const p = {
             id: Math.random().toString(),
@@ -230,6 +240,8 @@ export default function FruitCatcherScreen() {
           currentHearts -= 1;
           currentCombo = 0;
           triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
+          try { Vibration.vibrate(120); } catch {}
+          void playSoundEffect(SOUND_ASSETS.shellCollected, 0.85);
           setPopups((prev) => [
             ...prev,
             { id: Math.random().toString(), text: "-1 ❤️", x: item.x, y: basketY - 20, type: "damage" },
@@ -253,6 +265,7 @@ export default function FruitCatcherScreen() {
     if (currentHearts !== hearts) {
       setHearts(currentHearts);
       if (currentHearts <= 0) {
+        void playGameOverSound(0.8);
         setGameState("gameover");
         const curScore = currentScore;
         const curLevel = level;

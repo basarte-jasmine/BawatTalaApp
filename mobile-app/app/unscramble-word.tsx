@@ -177,6 +177,7 @@ export default function UnscrambleWordScreen() {
   }, [gameState, score, level]);
 
   const handleGameOver = () => {
+    void playGameOverSound(0.8);
     setGameState("GAMEOVER");
     triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
     if (!rewardClaimedRef.current) {
@@ -268,6 +269,7 @@ export default function UnscrambleWordScreen() {
 
     if (builtWord === currentWord) {
       triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+      void playSoundEffect(SOUND_ASSETS.correctWord, 0.85);
       const points = 10 * currentWord.length + combo * 5;
       setScore((prev) => prev + points);
       setCombo((prev) => prev + 1);
@@ -282,6 +284,7 @@ export default function UnscrambleWordScreen() {
       triggerErrorShake();
       setCombo(0);
       Vibration.vibrate(100);
+      void playSoundEffect(SOUND_ASSETS.wrongWord, 0.85);
 
       setTimeout(() => {
         const newPool = scrambledPool.map((t) => ({ ...t, used: false }));

@@ -66,7 +66,7 @@ export default function ImagePuzzleScreen() {
   const [rewardTala, setRewardTala] = useState(0);
   // Looping Muni Games BGM
   useEffect(() => {
-    if (gameState === "playing" || gameState === "transition") {
+    if (gameState === "playing") {
       const bgm = startBgmTrack(SOUND_ASSETS.muniGamesBgm, 0.22);
       return () => bgm.stop();
     }
@@ -128,6 +128,7 @@ export default function ImagePuzzleScreen() {
     setHearts(newHearts);
 
     if (newHearts <= 0) {
+      void playGameOverSound(0.8);
       setGameState("gameover");
       if (!rewardClaimedRef.current) {
         rewardClaimedRef.current = true;
@@ -270,6 +271,7 @@ export default function ImagePuzzleScreen() {
   const checkWinCondition = () => {
     const allPlaced = piecesRef.current.every((p) => p.isPlaced);
     if (allPlaced && stateRef.current.gameState === "playing") {
+      void playSoundEffect(SOUND_ASSETS.puzzleAccomplished, 0.85);
       setGameState("transition");
       triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
 
@@ -377,14 +379,14 @@ export default function ImagePuzzleScreen() {
         >
           <Image
             source={ASSETS[currentImageIndex]}
-            style={{
+            style={[{
               position: "absolute",
               width: BOARD_SIZE,
               height: BOARD_SIZE,
               left: -piece.correctCol * pieceSize,
               top: -piece.correctRow * pieceSize,
               opacity: piece.isPlaced && gameState === "playing" ? 0.92 : 1,
-            }}
+            }, { pointerEvents: "none", userSelect: "none" } as any]}
             contentFit="cover"
             cachePolicy="memory-disk"
           />

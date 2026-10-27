@@ -1,4 +1,4 @@
-import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from "expo-audio";
+import { createAudioPlayer, setAudioModeAsync, type AudioPlayer, type AudioSource } from "expo-audio";
 import { Platform } from "react-native";
 
 // Audio Asset Catalog
@@ -10,14 +10,14 @@ export const SOUND_ASSETS = {
   muniGamesBgm: require("../assets/audio/BGM/muni games_.mp3"),
   gameOver: require("../assets/audio/BGM/game over.mp3"),
   galaxyFallBgm: require("../assets/audio/BGM/galaxy fall/galaxy fall bgm.mp3"),
-  galaxyCrash: require("../assets/audio/BGM/galaxy fall/asteroid_rocket crash.mp3"),
+  galaxyCrash: require("../assets/audio/BGM/galaxy fall/asteroid_rocket crash.wav"),
   fruitCollected: require("../assets/audio/BGM/catcher/fruit collected.mp3"),
-  shellCollected: require("../assets/audio/BGM/catcher/shell collected.mp3"),
+  shellCollected: require("../assets/audio/BGM/catcher/shell collected.wav"),
   matchedMunis: require("../assets/audio/BGM/muni match/matched munis.mp3"),
   correctPair: require("../assets/audio/BGM/gentle pairs/correct pair.mp3"),
   puzzleAccomplished: require("../assets/audio/BGM/puzzle/puzzle accomplished.mp3"),
   correctWord: require("../assets/audio/BGM/unscramble/correct word.mp3"),
-  wrongWord: require("../assets/audio/BGM/unscramble/wrong word.mp3"),
+  wrongWord: require("../assets/audio/BGM/unscramble/wrong word.wav"),
 
   // Feature BGM
   wellnessToolsBgm: require("../assets/audio/BGM/wellness tools.mp3"),
@@ -41,13 +41,49 @@ async function ensureAudioMode() {
   }
 }
 
+function createPlayer(source: AudioSource): AudioPlayer {
+  return createAudioPlayer(source, { downloadFirst: Platform.OS === "web" });
+}
+
+function playAudioElementDirectlyOnWeb(source: any, volume: number, loop: boolean) {
+  try {
+    const { Asset } = require("expo-asset");
+    const asset = typeof source === "number" ? Asset.fromModule(source) : null;
+    const uri = asset?.localUri || asset?.uri || (typeof source === "string" ? source : source?.uri);
+    if (uri) {
+      const audio = new Audio(uri);
+      audio.volume = Math.max(0, Math.min(1, volume));
+      audio.loop = loop;
+      audio.play().catch(() => {});
+      return audio;
+    }
+  } catch {}
+  return null;
+}
+
 /**
  * Plays a one-shot sound effect (non-looping, self-releasing)
  */
 export async function playSoundEffect(source: any, volume = 0.8) {
+  if (!source) return;
   try {
     await ensureAudioMode();
-    const player = createAudioPlayer(source);
+    if (Platform.OS === "web" && typeof Audio !== "undefined") {
+      const audio = playAudioElementDirectlyOnWeb(source, volume, false);
+      if (audio) {
+        const cleanup = () => {
+          try {
+            audio.pause();
+            audio.remove();
+          } catch {}
+        };
+        audio.addEventListener("ended", cleanup, { once: true });
+        setTimeout(cleanup, 8000);
+        return;
+      }
+    }
+
+    const player = createPlayer(source);
     player.volume = Math.max(0, Math.min(1, volume));
     player.loop = false;
     player.play();
@@ -97,13 +133,18 @@ export function playGameOverSound(volume = 0.8) {
  */
 export function startBgmTrack(source: any, volume = 0.25): { stop: () => void; setVolume: (v: number) => void } {
   let player: AudioPlayer | null = null;
+  let webAudio: HTMLAudioElement | null = null;
   let isStopped = false;
 
   void (async () => {
     try {
       await ensureAudioMode();
       if (isStopped) return;
-      player = createAudioPlayer(source);
+      if (Platform.OS === "web" && typeof Audio !== "undefined") {
+        webAudio = playAudioElementDirectlyOnWeb(source, volume, true);
+        if (webAudio) return;
+      }
+      player = createPlayer(source);
       player.volume = Math.max(0, Math.min(1, volume));
       player.loop = true;
       player.play();
@@ -115,6 +156,13 @@ export function startBgmTrack(source: any, volume = 0.25): { stop: () => void; s
   return {
     stop() {
       isStopped = true;
+      if (webAudio) {
+        try {
+          webAudio.pause();
+          webAudio.remove();
+        } catch {}
+        webAudio = null;
+      }
       if (player) {
         try {
           player.pause();
@@ -124,6 +172,9 @@ export function startBgmTrack(source: any, volume = 0.25): { stop: () => void; s
       }
     },
     setVolume(v: number) {
+      if (webAudio) {
+        webAudio.volume = Math.max(0, Math.min(1, v));
+      }
       if (player) {
         player.volume = Math.max(0, Math.min(1, v));
       }

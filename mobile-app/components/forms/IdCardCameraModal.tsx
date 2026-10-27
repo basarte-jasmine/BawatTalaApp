@@ -223,7 +223,7 @@ export function IdCardCameraModal({ visible, onClose, onCapture }: IdCardCameraM
             if (Math.abs(data[btmY1] - data[btmY0]) > 22) edgeCount++;
           }
 
-          const isCardFit = edgeCount >= 4 || varLap >= 42;
+          const isCardFit = edgeCount >= 8;
           if (!isCardFit) {
             steadyFrames = 0;
             setIsAligned(false);
@@ -369,7 +369,7 @@ export function IdCardCameraModal({ visible, onClose, onCapture }: IdCardCameraM
                 isAligned ? styles.statusTextAligned : styles.statusTextUnaligned,
               ]}
             >
-              {isAligned ? "ID Aligned \u2022 Keep steady" : "Align ID completely inside the frame"}
+              {alignmentMessage}
             </Text>
           </View>
 

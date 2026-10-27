@@ -95,11 +95,7 @@ function HeaderBackdrop({ width, height }: { width: number; height: number }) {
 
 function GradientButtonBg() {
   return (
-    <Svg
-      width="100%"
-      height="100%"
-      style={StyleSheet.absoluteFillObject}
-    >
+    <Svg width="100%" height="100%" style={StyleSheet.absoluteFillObject} pointerEvents="none">
       <Defs>
         <LinearGradient id="regBtnGrad" x1="0" y1="0" x2="1" y2="0">
           <Stop offset="0" stopColor="#257A54" />
@@ -1591,6 +1587,7 @@ const styles = StyleSheet.create({
     color: "#B91C1C",
   },
   actionBtn: {
+    backgroundColor: "#2D7D5A",
     height: 50,
     borderRadius: 16,
     overflow: "hidden",

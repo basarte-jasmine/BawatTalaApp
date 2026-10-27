@@ -185,6 +185,7 @@ export default function MuniMatchScreen() {
   }, []);
 
   const finishGame = useCallback((finalScore: number, finalCoins: number, reachedTarget: boolean) => {
+    void playGameOverSound(0.8);
     setGameState("GAMEOVER");
     triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
     if (timerRef.current) clearInterval(timerRef.current);
@@ -352,6 +353,7 @@ export default function MuniMatchScreen() {
     }
 
     triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
+    void playSoundEffect(SOUND_ASSETS.matchedMunis, 0.85);
     const count = group.length;
 
     let earnedCoins = 1;
