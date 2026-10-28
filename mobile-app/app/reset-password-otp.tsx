@@ -17,6 +17,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import Svg, { Circle, Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { OtpCodeInput } from "../components/forms/OtpCodeInput";
 import { forgotPasswordResendCode, forgotPasswordVerifyCode } from "../lib/backend-api";
+import { useAndroidKeyboardInset, useKeyboardStableHeight } from "../lib/keyboard-layout";
 
 const OTP_LENGTH = 8;
 const APP_MAX_WIDTH = 412;
@@ -93,7 +94,12 @@ export default function ResetPasswordOtpScreen() {
   const [errorMessage, setErrorMessage] = useState("");
   const [isBusy, setIsBusy] = useState(false);
 
-  const isCompactHeight = height > 0 && height < 720;
+  // The IME resizes the Android window, so layout breakpoints must not follow the live
+  // height or the whole screen reflows while the keyboard is animating. See lib/keyboard-layout.
+  const referenceHeight = useKeyboardStableHeight(height);
+  const keyboardInset = useAndroidKeyboardInset();
+
+  const isCompactHeight = referenceHeight > 0 && referenceHeight < 720;
   const isNarrowWidth = width > 0 && width < 360;
   const headerHeight = isCompactHeight ? 180 : 220;
   const frameWidth = Math.min(width && width > 0 ? width : APP_MAX_WIDTH, APP_MAX_WIDTH);
@@ -181,7 +187,7 @@ export default function ResetPasswordOtpScreen() {
           contentContainerStyle={[
             styles.scrollContent,
             isNarrowWidth && styles.scrollContentNarrow,
-            { paddingBottom: Math.max(insets.bottom + 16, 28) },
+            { paddingBottom: Math.max(insets.bottom + 16, 28) + keyboardInset },
           ]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="none"

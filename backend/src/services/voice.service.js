@@ -1,4 +1,3 @@
-const https = require("https");
 const { Buffer } = require("buffer");
 const { randomUUID } = require("crypto");
 const fs = require("fs/promises");
@@ -6,84 +5,60 @@ const os = require("os");
 const path = require("path");
 const { EdgeTTS } = require("node-edge-tts");
 
-const GROQ_API_KEY = String(process.env.GROQ_API_KEY || "").trim();
+/**
+ * Muni speaks with Blessica Neural and nothing else.
+ *
+ * Microsoft's Edge Read Aloud voice catalog exposes exactly one Blessica voice:
+ *   fil-PH-BlessicaNeural  (Friendly, Positive, GA)
+ * There is no `en-PH-BlessicaNeural` in the catalog (en-PH only ships James/Rosa), so the
+ * same Blessica voice reads both Tagalog and English replies. Do not add a second voice
+ * here: `MUNI_VOICES` is the allow-list enforced by every synthesis request.
+ */
 const BLESSICA_VOICE = "fil-PH-BlessicaNeural";
+const BLESSICA_LANG = "fil-PH";
+const MUNI_VOICES = Object.freeze([BLESSICA_VOICE]);
 
-function splitTextIntoSentences(text, maxLen = 180) {
-  const clean = String(text || "")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!clean) return [];
+/**
+ * The single Groq Whisper model used for Bawat Tala transcription.
+ * Verified against GET https://api.groq.com/openai/v1/models for this project's key.
+ */
+const GROQ_WHISPER_MODEL = "whisper-large-v3-turbo";
+const GROQ_TRANSCRIPTION_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
 
-  const rawSentences = clean.split(/(?<=[.?!,;:\n])\s+/);
-  const parts = [];
-  let current = "";
+/** Accepted recording MIME types mapped to the file extension Groq expects. */
+const SUPPORTED_AUDIO_TYPES = Object.freeze({
+  "audio/m4a": "m4a",
+  "audio/x-m4a": "m4a",
+  "audio/mp4": "m4a",
+  "audio/aac": "m4a",
+  "audio/webm": "webm",
+  "audio/wav": "wav",
+  "audio/x-wav": "wav",
+  "audio/mpeg": "mp3",
+  "audio/mp3": "mp3",
+  "audio/ogg": "ogg",
+  "audio/flac": "flac",
+  "audio/x-flac": "flac",
+});
 
-  for (const s of rawSentences) {
-    if (!s) continue;
-    if ((current ? current + " " + s : s).length <= maxLen) {
-      current = current ? current + " " + s : s;
-    } else {
-      if (current) parts.push(current);
-      if (s.length <= maxLen) {
-        current = s;
-      } else {
-        const words = s.split(" ");
-        let subCurrent = "";
-        for (const w of words) {
-          if ((subCurrent ? subCurrent + " " + w : w).length <= maxLen) {
-            subCurrent = subCurrent ? subCurrent + " " + w : w;
-          } else {
-            if (subCurrent) parts.push(subCurrent);
-            subCurrent = w;
-          }
-        }
-        current = subCurrent;
-      }
-    }
+class VoiceSynthesisError extends Error {
+  constructor(message, options = {}) {
+    super(message);
+    this.name = "VoiceSynthesisError";
+    this.code = "MUNI_VOICE_UNAVAILABLE";
+    this.status = 502;
+    if (options.cause) this.cause = options.cause;
   }
-  if (current) parts.push(current);
-  return parts.filter(Boolean);
 }
 
-function fetchGoogleTtsChunk(textChunk, lang = "tl") {
-  return new Promise((resolve, reject) => {
-    const encoded = encodeURIComponent(textChunk);
-    const url =
-      "https://translate.google.com/translate_tts?ie=UTF-8&q=" +
-      encoded +
-      "&tl=" +
-      lang +
-      "&client=tw-ob";
-
-    const req = https.get(
-      url,
-      {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          Referer: "https://translate.google.com/",
-        },
-      },
-      (res) => {
-        const chunks = [];
-        res.on("data", (chunk) => chunks.push(chunk));
-        res.on("end", () => {
-          if (res.statusCode === 200) {
-            resolve(Buffer.concat(chunks));
-          } else {
-            reject(new Error("TTS request failed with status: " + res.statusCode));
-          }
-        });
-      }
-    );
-
-    req.on("error", reject);
-    req.setTimeout(8000, () => {
-      req.destroy();
-      reject(new Error("TTS request timed out."));
-    });
-  });
+class TranscriptionError extends Error {
+  constructor(message, { code = "TRANSCRIPTION_FAILED", status = 502, cause } = {}) {
+    super(message);
+    this.name = "TranscriptionError";
+    this.code = code;
+    this.status = status;
+    if (cause) this.cause = cause;
+  }
 }
 
 function shouldUseFilipinoVoice(text) {
@@ -158,30 +133,32 @@ function normalizeTranscriptionLanguage(language, text) {
   return shouldUseFilipinoVoice(text) ? "fil" : "en";
 }
 
+/**
+ * The only voice Muni may use, for both Tagalog and English replies.
+ * Text/language is intentionally ignored: there is no per-language voice selection.
+ */
 function getVoiceConfig() {
-  return { voice: BLESSICA_VOICE, lang: "fil-PH" };
-}
-
-async function synthesizeGoogleFallback(text, lang) {
-  const chunks = splitTextIntoSentences(text);
-  const audioBuffers = [];
-  for (const chunk of chunks) {
-    const fallbackLanguage = lang === "fil-PH" ? "tl" : "en";
-    audioBuffers.push(await fetchGoogleTtsChunk(chunk, fallbackLanguage));
-  }
-  return Buffer.concat(audioBuffers);
+  return { voice: BLESSICA_VOICE, lang: BLESSICA_LANG };
 }
 
 /**
- * Synthesizes natural human-like speech supporting Tagalog, English, and Taglish
+ * Synthesizes Muni's speech with Blessica Neural.
+ *
+ * There is deliberately no fallback voice or fallback provider. If Edge TTS cannot render
+ * Blessica, this throws so the route can return a controlled error instead of silently
+ * playing Muni in a different voice.
  */
-async function synthesizeEdgeSpeech({ text, voice, rate = "+0%", pitch = "+0Hz" }) {
+async function synthesizeEdgeSpeech({ text, rate = "+0%", pitch = "+0Hz" }) {
   const cleanText = String(text || "").trim();
   if (!cleanText) {
-    throw new Error("Text is required for speech synthesis.");
+    throw new VoiceSynthesisError("Text is required for speech synthesis.");
   }
 
   const selected = getVoiceConfig();
+  if (!MUNI_VOICES.includes(selected.voice)) {
+    throw new VoiceSynthesisError("Refusing to synthesize with a non-Blessica voice.");
+  }
+
   const audioPath = path.join(
     os.tmpdir(),
     "muni-edge-tts-" + process.pid + "-" + randomUUID() + ".mp3",
@@ -205,6 +182,7 @@ async function synthesizeEdgeSpeech({ text, voice, rate = "+0%", pitch = "+0Hz" 
       }
       return audioBuffer;
     } catch (err) {
+      // One retry with the SAME voice (transient socket failures). No voice fallback.
       if (attempt < 2) {
         return generateWithEdge(attempt + 1);
       }
@@ -215,95 +193,145 @@ async function synthesizeEdgeSpeech({ text, voice, rate = "+0%", pitch = "+0Hz" 
   try {
     return await generateWithEdge(1);
   } catch (edgeError) {
-    try {
-      return await synthesizeGoogleFallback(cleanText, selected.lang);
-    } catch {
-      throw new Error("Edge Neural TTS failed: " + (edgeError?.message || edgeError));
-    }
+    throw new VoiceSynthesisError(
+      "Muni's Blessica Neural voice is unavailable right now. Please try again.",
+      { cause: edgeError },
+    );
   } finally {
     await fs.unlink(audioPath).catch(() => {});
   }
 }
 
-const GROQ_WHISPER_MODELS = [
-  "whisper-large-v3-turbo",
-  "whisper-large-v3",
-];
+function normalizeAudioType(mimeType) {
+  const base = String(mimeType || "audio/m4a")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+  const extension = SUPPORTED_AUDIO_TYPES[base];
+  if (!extension) {
+    throw new TranscriptionError(
+      "Unsupported audio format: " + base + ". Expected one of: " +
+        Object.keys(SUPPORTED_AUDIO_TYPES).join(", ") + ".",
+      { code: "UNSUPPORTED_AUDIO_TYPE", status: 415 },
+    );
+  }
+  return { mimeType: base, extension };
+}
+
+function normalizeAudioFilename(filename, extension) {
+  const fallback = "recording." + extension;
+  const raw = String(filename || "").trim();
+  if (!raw) return fallback;
+
+  const dot = raw.lastIndexOf(".");
+  const hasMatchingExtension =
+    dot > 0 && raw.slice(dot + 1).toLowerCase() === extension;
+  if (hasMatchingExtension) return raw;
+
+  const stem = (dot > 0 ? raw.slice(0, dot) : raw).replace(/[^\w.-]+/g, "_").slice(0, 80);
+  return (stem || "recording") + "." + extension;
+}
 
 /**
- * Transcribes voice audio using Groq Whisper Large v3 Turbo with Whisper Large v3 fallback
- * Accurately recognizes Tagalog, Filipino, English, and Taglish speech.
+ * Transcribes a recording with Groq Whisper (whisper-large-v3-turbo).
+ *
+ * This is the only transcription path in Bawat Tala. There is no provider fallback and no
+ * model fallback: a failure throws a TranscriptionError with a code and HTTP status so the
+ * client sees a real error instead of a quietly different result.
  */
-async function transcribeWithGroqWhisper({
-  audioBase64,
-  mimeType = "audio/m4a",
-  filename = "recording.m4a",
-  models = GROQ_WHISPER_MODELS,
-}) {
+async function transcribeWithGroqWhisper({ audioBase64, mimeType, filename }) {
   const apiKey = String(process.env.GROQ_API_KEY || "").trim();
   if (!apiKey) {
-    throw new Error("GROQ_API_KEY is not configured on the server.");
+    throw new TranscriptionError("GROQ_API_KEY is not configured on the server.", {
+      code: "TRANSCRIPTION_NOT_CONFIGURED",
+      status: 500,
+    });
   }
 
-  const audioBuffer = Buffer.from(audioBase64, "base64");
-  const prompt = "Kumusta Muni? Medyo pagod at stressed ako ngayon sa school and personal life, gusto ko sanang mag-share tungkol sa nararamdaman ko. I feel overwhelmed with my exams and feelings today.";
-  const targetModels = Array.isArray(models) && models.length > 0 ? models : GROQ_WHISPER_MODELS;
-
-  let lastError = null;
-
-  for (const model of targetModels) {
-    const formData = new FormData();
-    const blob = new Blob([audioBuffer], { type: mimeType });
-    formData.append("file", blob, filename);
-    formData.append("model", model);
-    formData.append("response_format", "verbose_json");
-    formData.append("temperature", "0");
-    formData.append("prompt", prompt);
-
-    try {
-      const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
-        method: "POST",
-        headers: {
-          Authorization: "Bearer " + apiKey,
-        },
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text().catch(() => "");
-        lastError = new Error(
-          "Whisper transcription failed (" + response.status + "): " + errorBody
-        );
-        console.warn("Groq Whisper transcription failed, trying next model if available.", {
-          model,
-          status: response.status,
-          error: errorBody,
-        });
-        continue;
-      }
-
-      const data = await response.json();
-      const text = String(data?.text || "").trim();
-      return {
-        text,
-        language: normalizeTranscriptionLanguage(data?.language, text),
-      };
-    } catch (err) {
-      lastError = err;
-      console.warn("Groq Whisper transcription request error, trying next model if available.", {
-        model,
-        error: err?.message || err,
-      });
-      continue;
-    }
+  const rawAudio = String(audioBase64 || "").replace(/^data:[^;,]+;base64,/, "").trim();
+  if (!rawAudio) {
+    throw new TranscriptionError("The audio recording was empty.", {
+      code: "EMPTY_AUDIO",
+      status: 400,
+    });
   }
 
-  throw lastError || new Error("Whisper transcription failed for all configured models.");
+  const audioBuffer = Buffer.from(rawAudio, "base64");
+  if (!audioBuffer.length) {
+    throw new TranscriptionError("The audio recording was empty.", {
+      code: "EMPTY_AUDIO",
+      status: 400,
+    });
+  }
+
+  const audio = normalizeAudioType(mimeType);
+  const uploadName = normalizeAudioFilename(filename, audio.extension);
+
+  const formData = new FormData();
+  const blob = new Blob([audioBuffer], { type: audio.mimeType });
+  formData.append("file", blob, uploadName);
+  formData.append("model", GROQ_WHISPER_MODEL);
+  formData.append("response_format", "verbose_json");
+  formData.append("temperature", "0");
+  formData.append(
+    "prompt",
+    "Kumusta Muni? Medyo pagod at stressed ako ngayon sa school and personal life, gusto ko sanang mag-share tungkol sa nararamdaman ko. I feel overwhelmed with my exams and feelings today.",
+  );
+
+  let response;
+  try {
+    response = await fetch(GROQ_TRANSCRIPTION_URL, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + apiKey },
+      body: formData,
+    });
+  } catch (err) {
+    throw new TranscriptionError("Could not reach the transcription service.", {
+      code: "TRANSCRIPTION_UNREACHABLE",
+      status: 502,
+      cause: err,
+    });
+  }
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => "");
+    throw new TranscriptionError(
+      "Whisper transcription failed (" + response.status + "): " + errorBody,
+      { code: "TRANSCRIPTION_UPSTREAM_ERROR", status: 502 },
+    );
+  }
+
+  let data;
+  try {
+    data = await response.json();
+  } catch (err) {
+    throw new TranscriptionError("Transcription service returned an invalid response.", {
+      code: "TRANSCRIPTION_INVALID_RESPONSE",
+      status: 502,
+      cause: err,
+    });
+  }
+
+  const text = String(data?.text || "").trim();
+  return {
+    text,
+    language: normalizeTranscriptionLanguage(data?.language, text),
+    model: GROQ_WHISPER_MODEL,
+    contentType: audio.mimeType,
+  };
 }
 
 module.exports = {
-  GROQ_WHISPER_MODELS,
+  BLESSICA_VOICE,
+  BLESSICA_LANG,
+  GROQ_WHISPER_MODEL,
+  MUNI_VOICES,
+  SUPPORTED_AUDIO_TYPES,
+  TranscriptionError,
+  VoiceSynthesisError,
   getVoiceConfig,
+  normalizeAudioFilename,
+  normalizeAudioType,
   synthesizeEdgeSpeech,
   transcribeWithGroqWhisper,
 };

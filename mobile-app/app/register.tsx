@@ -39,6 +39,7 @@ import {
   PROGRAM_OPTIONS,
 } from "../lib/register-data";
 import { useAuthSession } from "../lib/auth-session";
+import { useAndroidKeyboardInset, useKeyboardStableHeight } from "../lib/keyboard-layout";
 import {
   isLikelySchoolId,
   isValidBirthdate,
@@ -232,7 +233,12 @@ export default function RegisterScreen() {
   const [errorMessage, setErrorMessage] = useState("");
   const [isBusy, setIsBusy] = useState(false);
 
-  const isCompactHeight = height > 0 && height < 720;
+  // The IME resizes the Android window, so layout breakpoints must not follow the live
+  // height or the whole screen reflows while the keyboard is animating. See lib/keyboard-layout.
+  const referenceHeight = useKeyboardStableHeight(height);
+  const keyboardInset = useAndroidKeyboardInset();
+
+  const isCompactHeight = referenceHeight > 0 && referenceHeight < 720;
   const isNarrowWidth = width > 0 && width < 360;
   const headerHeight = isCompactHeight ? 160 : 190;
 
@@ -599,7 +605,7 @@ export default function RegisterScreen() {
           contentContainerStyle={[
             styles.scrollContent,
             isNarrowWidth && styles.scrollContentNarrow,
-            { paddingBottom: Math.max(insets.bottom + 20, 36) },
+            { paddingBottom: Math.max(insets.bottom + 20, 36) + keyboardInset },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}

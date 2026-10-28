@@ -19,6 +19,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { useAuthSession } from "../lib/auth-session";
+import { useAndroidKeyboardInset, useKeyboardStableHeight } from "../lib/keyboard-layout";
 import {
   AUTH_MESSAGES,
   isValidStudentId,
@@ -119,7 +120,11 @@ export default function LoginScreen() {
 
   const passwordInputRef = useRef<TextInput>(null);
 
-  const isCompactHeight = height > 0 && height < 720;
+  // The IME resizes the Android window, so layout breakpoints must not follow the live
+  // height or the whole screen reflows while the keyboard is animating. See lib/keyboard-layout.
+  const referenceHeight = useKeyboardStableHeight(height);
+
+  const isCompactHeight = referenceHeight > 0 && referenceHeight < 720;
   const isNarrowWidth = width > 0 && width < 360;
   const headerHeight = isCompactHeight ? 180 : 220;
 
@@ -143,6 +148,10 @@ export default function LoginScreen() {
       mounted = false;
     };
   }, []);
+
+  // Bottom slack so the ScrollView can move the focused field above the IME without
+  // double-compensating the container. See lib/keyboard-layout.
+  const keyboardInset = useAndroidKeyboardInset();
 
   const handleLogin = async () => {
     const studentNumber = normalizeStudentIdInput(studentId);
@@ -265,7 +274,7 @@ export default function LoginScreen() {
           contentContainerStyle={[
             styles.scrollContent,
             isNarrowWidth && styles.scrollContentNarrow,
-            { paddingBottom: Math.max(insets.bottom + 16, 28) },
+            { paddingBottom: Math.max(insets.bottom + 16, 28) + keyboardInset },
           ]}
           keyboardShouldPersistTaps="always"
           keyboardDismissMode="none"
@@ -312,7 +321,8 @@ export default function LoginScreen() {
                 maxLength={10}
                 editable={!isBusy}
                 style={styles.textInput}
-                
+                onFocus={() => setFocusedField("studentId")}
+                onBlur={() => setFocusedField(null)}
                 returnKeyType="next"
                 onSubmitEditing={() => passwordInputRef.current?.focus()}
               />
@@ -348,7 +358,8 @@ export default function LoginScreen() {
                 secureTextEntry={!showPassword}
                 editable={!isBusy}
                 style={styles.textInput}
-                
+                onFocus={() => setFocusedField("password")}
+                onBlur={() => setFocusedField(null)}
                 returnKeyType="done"
                 onSubmitEditing={handleLogin}
               />

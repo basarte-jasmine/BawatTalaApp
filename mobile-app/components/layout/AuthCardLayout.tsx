@@ -24,8 +24,10 @@ export function AuthCardLayout({
   return (
     <KeyboardAvoidingView
       style={styles.screen}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+      // Android already resizes the window for the IME (`adjustResize`). Adding `height`
+      // compensation on top squeezes the layout twice and pushes the focused field off
+      // screen, which makes Android dismiss the keyboard. iOS needs `padding`.
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView
         contentContainerStyle={[
@@ -33,7 +35,7 @@ export function AuthCardLayout({
           centerContent && styles.centeredContent,
           contentContainerStyle,
         ]}
-        keyboardShouldPersistTaps="handled"
+        keyboardShouldPersistTaps="always"
         showsVerticalScrollIndicator={false}
       >
         <View style={[styles.card, cardStyle]}>{children}</View>

@@ -15,6 +15,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import Svg, { Circle, Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { forgotPasswordReset } from "../lib/backend-api";
 import { useAuthSession } from "../lib/auth-session";
+import { useAndroidKeyboardInset, useKeyboardStableHeight } from "../lib/keyboard-layout";
 
 const STRONG_PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
 const APP_MAX_WIDTH = 412;
@@ -112,7 +113,12 @@ export default function ResetPasswordNewScreen() {
   const [isBusy, setIsBusy] = useState(false);
   const passwordStrength = getPasswordStrength(newPassword);
 
-  const isCompactHeight = height > 0 && height < 720;
+  // The IME resizes the Android window, so layout breakpoints must not follow the live
+  // height or the whole screen reflows while the keyboard is animating. See lib/keyboard-layout.
+  const referenceHeight = useKeyboardStableHeight(height);
+  const keyboardInset = useAndroidKeyboardInset();
+
+  const isCompactHeight = referenceHeight > 0 && referenceHeight < 720;
   const isNarrowWidth = width > 0 && width < 360;
   const headerHeight = isCompactHeight ? 180 : 220;
   const frameWidth = Math.min(width && width > 0 ? width : APP_MAX_WIDTH, APP_MAX_WIDTH);
@@ -190,7 +196,7 @@ export default function ResetPasswordNewScreen() {
           contentContainerStyle={[
             styles.scrollContent,
             isNarrowWidth && styles.scrollContentNarrow,
-            { paddingBottom: Math.max(insets.bottom + 16, 28) },
+            { paddingBottom: Math.max(insets.bottom + 16, 28) + keyboardInset },
           ]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="none"

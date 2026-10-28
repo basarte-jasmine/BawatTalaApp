@@ -257,7 +257,10 @@ export default function ProfileResetPasswordScreen() {
 
       <KeyboardAvoidingView
         style={styles.keyboardView}
-        behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+        // Android resizes the window for the IME already; `height` here double-compensates
+        // and pushes the focused field out of the window, which dismisses the keyboard.
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={0}
       >
         <ScrollView
           style={styles.scroll}
