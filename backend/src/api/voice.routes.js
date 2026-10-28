@@ -73,16 +73,7 @@ router.post('/speak', async (req, res) => {
   } catch (error) {
     return res
       .status(error?.status || 500)
-      .json({
-        ...errorPayload(error, 'TTS_FAILED', 'Speech synthesis failed.'),
-        // TEMPORARY DIAGNOSTICS — removed immediately after root-causing the Vercel failure.
-        detail: {
-          provider: 'node-edge-tts@' + require('node-edge-tts/package.json').version,
-          hasV2: typeof require('node-edge-tts/dist/drm').generateSecMsGecToken_V2 === 'function',
-          cause: String(error?.cause?.message || error?.cause || ''),
-          attempts: error?.cause?.attempts || [],
-        },
-      });
+      .json(errorPayload(error, 'TTS_FAILED', 'Speech synthesis failed.'));
   }
 });
 
