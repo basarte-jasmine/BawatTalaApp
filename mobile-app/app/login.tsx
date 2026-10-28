@@ -44,6 +44,7 @@ function HeaderBackdrop({ width, height }: { width: number; height: number }) {
       height={headerHeight}
       style={StyleSheet.absoluteFillObject}
       viewBox={"0 0 " + sceneWidth + " " + headerHeight}
+      pointerEvents="none"
     >
       <Defs>
         <LinearGradient id="headerGradient" x1="0" y1="0" x2="1" y2="1">
@@ -233,12 +234,12 @@ export default function LoginScreen() {
   };
 
   const frameWidth = Math.min(width && width > 0 ? width : APP_MAX_WIDTH, APP_MAX_WIDTH);
+  const Container = Platform.OS === "ios" ? KeyboardAvoidingView : View;
 
   return (
-    <KeyboardAvoidingView
+    <Container
       style={styles.screen}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+      {...(Platform.OS === "ios" ? { behavior: "padding" as const, keyboardVerticalOffset: 0 } : {})}
     >
       {/* Top Graphic Header */}
       <View style={[styles.headerContainer, { width: frameWidth, height: headerHeight }]}>
@@ -266,7 +267,8 @@ export default function LoginScreen() {
             isNarrowWidth && styles.scrollContentNarrow,
             { paddingBottom: Math.max(insets.bottom + 16, 28) },
           ]}
-          keyboardShouldPersistTaps="handled"
+          keyboardShouldPersistTaps="always"
+          keyboardDismissMode="none"
           showsVerticalScrollIndicator={false}
         >
           {/* Brand Logo & Welcome Headings */}
@@ -310,8 +312,7 @@ export default function LoginScreen() {
                 maxLength={10}
                 editable={!isBusy}
                 style={styles.textInput}
-                onFocus={() => setFocusedField("studentId")}
-                onBlur={() => setFocusedField(null)}
+                
                 returnKeyType="next"
                 onSubmitEditing={() => passwordInputRef.current?.focus()}
               />
@@ -347,8 +348,7 @@ export default function LoginScreen() {
                 secureTextEntry={!showPassword}
                 editable={!isBusy}
                 style={styles.textInput}
-                onFocus={() => setFocusedField("password")}
-                onBlur={() => setFocusedField(null)}
+                
                 returnKeyType="done"
                 onSubmitEditing={handleLogin}
               />
@@ -421,7 +421,7 @@ export default function LoginScreen() {
             {/* Register / Sign Up Link */}
             <View style={styles.registerWrap}>
               <Text style={styles.registerPrompt}>
-                Don't have an account?{" "}
+                Don&apos;t have an account?{" "}
                 <Text
                   style={styles.registerLink}
                   onPress={() => !isBusy && router.push("/register")}
@@ -469,7 +469,7 @@ export default function LoginScreen() {
           </View>
         </View>
       </Modal>
-    </KeyboardAvoidingView>
+    </Container>
   );
 }
 
@@ -501,7 +501,7 @@ const styles = StyleSheet.create({
   },
   sheetCard: {
     flex: 1,
-    marginTop: -32,
+    marginTop: 0,
     backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 36,
     borderTopRightRadius: 36,
@@ -515,8 +515,8 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
-    paddingTop: 24,
-    justifyContent: "center",
+    paddingTop: 32,
+    justifyContent: "flex-start",
   },
   scrollContentNarrow: {
     paddingHorizontal: 16,

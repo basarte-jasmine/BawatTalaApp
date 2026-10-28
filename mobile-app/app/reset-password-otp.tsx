@@ -155,7 +155,7 @@ export default function ResetPasswordOtpScreen() {
     <KeyboardAvoidingView
       style={styles.screen}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+      keyboardVerticalOffset={0}
     >
       {/* Top Graphic Header */}
       <View style={[styles.headerContainer, { width: frameWidth, height: headerHeight }]}>
@@ -184,6 +184,7 @@ export default function ResetPasswordOtpScreen() {
             { paddingBottom: Math.max(insets.bottom + 16, 28) },
           ]}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="none"
           showsVerticalScrollIndicator={false}
         >
           {/* Brand Logo & Headings */}
@@ -310,8 +311,8 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
-    paddingTop: 24,
-    justifyContent: "center",
+    paddingTop: 32,
+    justifyContent: "flex-start",
   },
   scrollContentNarrow: {
     paddingHorizontal: 16,
