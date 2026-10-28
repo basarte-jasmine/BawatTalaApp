@@ -149,7 +149,7 @@ describe("Muni voice selection", () => {
     assert.equal(fetchCalls.length, 0);
   });
 
-  it("retries once with the same voice and then fails clearly — never another voice", async () => {
+  it("tries every known Edge endpoint with the same voice, then fails clearly — never another voice", async () => {
     edgeBehaviour = "throw";
 
     await assert.rejects(
@@ -158,12 +158,13 @@ describe("Muni voice selection", () => {
         assert.equal(error.name, "VoiceSynthesisError");
         assert.equal(error.code, "MUNI_VOICE_UNAVAILABLE");
         assert.match(error.message, /Blessica Neural/);
+        assert.ok(Array.isArray(error.cause?.attempts) && error.cause.attempts.length >= 2);
         return true;
       },
     );
 
-    // Two attempts, both Blessica. No Google Translate (https.get) and no other voice.
-    assert.equal(edgeCalls.length, 2);
+    // One attempt per endpoint, all Blessica. No Google Translate (https.get) and no other voice.
+    assert.equal(edgeCalls.length, 3);
     assert.ok(edgeCalls.every((call) => call.voice === "fil-PH-BlessicaNeural"));
     assert.equal(fetchCalls.length, 0);
   });

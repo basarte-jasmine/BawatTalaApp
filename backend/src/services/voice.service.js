@@ -3,7 +3,9 @@ const { randomUUID } = require("crypto");
 const fs = require("fs/promises");
 const os = require("os");
 const path = require("path");
+const WebSocket = require("ws");
 const { EdgeTTS } = require("node-edge-tts");
+const edgeDrm = require("node-edge-tts/dist/drm");
 
 /**
  * Muni speaks with Blessica Neural and nothing else.
@@ -142,6 +144,110 @@ function getVoiceConfig() {
 }
 
 /**
+ * Edge Read Aloud moved to `api.msedgeservices.com` on 2026-10-24 and now returns
+ * `HTTP 200` (instead of `101 Switching Protocols`) to some networks, which `ws` reports as
+ * "Unexpected server response: 200". The public Read Aloud gateway still answers on
+ * `speech.platform.bing.com` for many callers, and the same v2 token works on both. Try the
+ * known-good hosts in order instead of depending on a single rollout state.
+ */
+const EDGE_WS_HEADERS = Object.freeze({
+  Pragma: "no-cache",
+  "Cache-Control": "no-cache",
+  "Accept-Encoding": "gzip, deflate, br, zstd",
+  "Accept-Language": "en-US,en;q=0.9",
+});
+
+const EDGE_ENDPOINTS = Object.freeze([
+  {
+    label: "speech.platform.bing.com/readaloud",
+    url: (connectionId, gec) =>
+      "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1" +
+      `?TrustedClientToken=${edgeDrm.TRUSTED_CLIENT_TOKEN}` +
+      `&ConnectionId=${connectionId}` +
+      `&Sec-MS-GEC=${gec}` +
+      `&Sec-MS-GEC-Version=${edgeDrm.SEC_MS_GEC_VERSION_V2}`,
+  },
+  {
+    label: "api.msedgeservices.com",
+    url: (connectionId, gec) =>
+      "wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1" +
+      `?Ocp-Apim-Subscription-Key=${edgeDrm.TRUSTED_CLIENT_TOKEN}` +
+      `&ConnectionId=${connectionId}` +
+      `&Sec-MS-GEC=${gec}` +
+      `&Sec-MS-GEC-Version=${edgeDrm.SEC_MS_GEC_VERSION_V2}`,
+  },
+  {
+    label: "api.msedgeservices.com (bing Host)",
+    host: "speech.platform.bing.com",
+    url: (connectionId, gec) =>
+      "wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1" +
+      `?Ocp-Apim-Subscription-Key=${edgeDrm.TRUSTED_CLIENT_TOKEN}` +
+      `&ConnectionId=${connectionId}` +
+      `&Sec-MS-GEC=${gec}` +
+      `&Sec-MS-GEC-Version=${edgeDrm.SEC_MS_GEC_VERSION_V2}`,
+  },
+]);
+
+/**
+ * `node-edge-tts` owns the message framing and MP3 reassembly, but hard-codes the endpoint.
+ * This subclass only replaces the connection step so synthesis itself stays identical.
+ */
+class MuniEdgeTTS extends EdgeTTS {
+  constructor(options, endpoint) {
+    super(options);
+    this.endpoint = endpoint;
+  }
+
+  _connectWebSocket() {
+    const connectionId = randomUUID().replace(/-/g, "");
+    const gec = edgeDrm.generateSecMsGecToken_V2();
+    const userAgent =
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+      `(KHTML, like Gecko) Chrome/${edgeDrm.CHROMIUM_FULL_VERSION.split(".")[0]}.0.0.0 ` +
+      `Safari/537.36 Edg/${edgeDrm.CHROMIUM_FULL_VERSION.split(".")[0]}.0.0.0`;
+
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(this.endpoint.url(connectionId, gec), {
+        host: this.endpoint.host,
+        origin: "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold",
+        handshakeTimeout: 6000,
+        headers: { ...EDGE_WS_HEADERS, "User-Agent": userAgent },
+      });
+
+      const timer = setTimeout(() => {
+        try {
+          ws.terminate();
+        } catch {}
+        reject(new Error(`${this.endpoint.label}: timed out during the WebSocket handshake`));
+      }, 6000);
+
+      ws.once("open", () => {
+        clearTimeout(timer);
+        resolve(ws);
+      });
+      ws.once("unexpected-response", (_req, res) => {
+        clearTimeout(timer);
+        const headers = res.headers || {};
+        const marker = headers["x-cdn-traceid"] || headers["x-msedge-ref"] || headers.server || "";
+        const error = new Error(
+          `${this.endpoint.label}: HTTP ${res.statusCode} instead of 101` +
+            (marker ? ` (${marker})` : ""),
+        );
+        error.httpStatus = res.statusCode;
+        try {
+          ws.terminate();
+        } catch {}
+        reject(error);
+      });
+      ws.once("error", (error) => {
+        clearTimeout(timer);
+        reject(new Error(`${this.endpoint.label}: ${error.message}`));
+      });
+    });
+  }
+}
+
+/**
  * Synthesizes Muni's speech with Blessica Neural.
  *
  * There is deliberately no fallback voice or fallback provider. If Edge TTS cannot render
@@ -159,49 +265,56 @@ async function synthesizeEdgeSpeech({ text, rate = "+0%", pitch = "+0Hz" }) {
     throw new VoiceSynthesisError("Refusing to synthesize with a non-Blessica voice.");
   }
 
-  const audioPath = path.join(
+  const audioBasePath = path.join(
     os.tmpdir(),
-    "muni-edge-tts-" + process.pid + "-" + randomUUID() + ".mp3",
+    "muni-edge-tts-" + process.pid + "-" + randomUUID(),
   );
 
-  async function generateWithEdge(attempt = 1) {
-    const tts = new EdgeTTS({
-      voice: selected.voice,
-      lang: selected.lang,
-      outputFormat: "audio-24khz-96kbitrate-mono-mp3",
-      rate,
-      pitch,
-      volume: "+0%",
-      timeout: 25000,
-    });
-    try {
-      await tts.ttsPromise(cleanText, audioPath);
-      const audioBuffer = await fs.readFile(audioPath);
-      if (!audioBuffer.length) {
-        throw new Error("Edge Neural TTS returned empty audio.");
+  async function generateWithEdge() {
+    const attempts = [];
+    for (const endpoint of EDGE_ENDPOINTS) {
+      // Fresh path per attempt: a failed attempt can leave a partial file behind.
+      const audioFile = `${audioBasePath}-${randomUUID()}.mp3`;
+      const tts = new MuniEdgeTTS(
+        {
+          voice: selected.voice,
+          lang: selected.lang,
+          outputFormat: "audio-24khz-96kbitrate-mono-mp3",
+          rate,
+          pitch,
+          volume: "+0%",
+          timeout: 25000,
+        },
+        endpoint,
+      );
+      try {
+        await tts.ttsPromise(cleanText, audioFile);
+        const audioBuffer = await fs.readFile(audioFile);
+        await fs.unlink(audioFile).catch(() => {});
+        if (!audioBuffer.length) {
+          throw new Error(`${endpoint.label}: returned empty audio`);
+        }
+        return audioBuffer;
+      } catch (err) {
+        await fs.unlink(audioFile).catch(() => {});
+        attempts.push(String(err?.message || err));
       }
-      return audioBuffer;
-    } catch (err) {
-      // One retry with the SAME voice (transient socket failures). No voice fallback.
-      if (attempt < 2) {
-        return generateWithEdge(attempt + 1);
-      }
-      throw err;
     }
+    const error = new Error(attempts.join(" | "));
+    error.attempts = attempts;
+    throw error;
   }
 
   try {
-    return await generateWithEdge(1);
+    return await generateWithEdge();
   } catch (edgeError) {
-    // Keep the provider's own message in the server logs (Vercel dashboard). The client gets
-    // the controlled MUNI_VOICE_UNAVAILABLE message, never a raw socket/handshake error.
+    // Keep the provider's own message in the server logs. The client gets the controlled
+    // MUNI_VOICE_UNAVAILABLE message, never a raw socket/handshake error.
     console.error("[voice] Blessica synthesis failed:", edgeError?.message || edgeError);
     throw new VoiceSynthesisError(
       "Muni's Blessica Neural voice is unavailable right now. Please try again.",
       { cause: edgeError },
     );
-  } finally {
-    await fs.unlink(audioPath).catch(() => {});
   }
 }
 

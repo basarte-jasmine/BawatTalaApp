@@ -80,6 +80,7 @@ router.post('/speak', async (req, res) => {
           provider: 'node-edge-tts@' + require('node-edge-tts/package.json').version,
           hasV2: typeof require('node-edge-tts/dist/drm').generateSecMsGecToken_V2 === 'function',
           cause: String(error?.cause?.message || error?.cause || ''),
+          attempts: error?.cause?.attempts || [],
         },
       });
   }
