@@ -193,6 +193,9 @@ async function synthesizeEdgeSpeech({ text, rate = "+0%", pitch = "+0Hz" }) {
   try {
     return await generateWithEdge(1);
   } catch (edgeError) {
+    // Keep the provider's own message in the server logs (Vercel dashboard). The client gets
+    // the controlled MUNI_VOICE_UNAVAILABLE message, never a raw socket/handshake error.
+    console.error("[voice] Blessica synthesis failed:", edgeError?.message || edgeError);
     throw new VoiceSynthesisError(
       "Muni's Blessica Neural voice is unavailable right now. Please try again.",
       { cause: edgeError },
