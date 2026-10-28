@@ -615,11 +615,16 @@ const styles = StyleSheet.create({
   },
   inputWrapperFocused: {
     borderColor: "#2D7D5A",
-    borderWidth: 1.5,
-    shadowColor: "#2D7D5A",
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 1 },
+    // iOS-only: on Android these shadow props made the focused TextInput drop focus
+    // (keyboard closed immediately). Android draws no drop shadow here anyway.
+    ...Platform.select({
+      ios: {
+        shadowColor: "#2D7D5A",
+        shadowOpacity: 0.12,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 1 },
+      },
+    }),
   },
   textInput: {
     flex: 1,
