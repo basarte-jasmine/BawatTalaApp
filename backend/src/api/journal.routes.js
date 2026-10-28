@@ -391,17 +391,15 @@ async function cleanupStaleEmptyDrafts(studentNumber) {
     return 0;
   }
 
+  // Only abandoned drafts are removed. A freshly created draft is legitimately empty while the
+  // student is still recording their first message, and deleting it out from under the voice
+  // overlay turns that first message into a 404 (Muni's reply never arrives).
   const result = await query(
     `
       delete from public.journal_entries je
       where je.student_number = $1
         and je.is_finished = false
-        and (
-          je.created_at < now() - interval '30 minutes'
-          or not exists (
-            select 1 from public.journal_entry_messages jem where jem.entry_id = je.id limit 1
-          )
-        )
+        and je.created_at < now() - interval '30 minutes'
         and not exists (
           select 1
           from public.journal_entry_messages jem
@@ -1633,15 +1631,18 @@ router.post("/message", asyncHandler(async (req, res) => {
     );
     entry = entryResult.rows[0] || null;
     if (!entry && requireExistingEntry) {
-      if (submittedMessages.length === 0) {
-        return res.status(404).json({ message: "Voice journal session was not found." });
-      }
+      // The draft can disappear between session creation and the first message (e.g. a newer
+      // voice session cleaned up the old empty draft). If the client has no earlier messages,
+      // there is nothing to lose: recreate the entry and continue. Returning 404 here aborted
+      // the turn after the message was already transcribed, so Muni never replied.
       entry = await createEntry(studentNumber, today, aiEnabled);
-      await replaceEntryMessagesFromTranscript({
-        entryId: entry.id,
-        messages: submittedMessages,
-        studentNumber,
-      });
+      if (submittedMessages.length > 0) {
+        await replaceEntryMessagesFromTranscript({
+          entryId: entry.id,
+          messages: submittedMessages,
+          studentNumber,
+        });
+      }
     }
     if (entry?.is_finished) {
       return res.status(400).json({ message: "This journal entry is already finished." });

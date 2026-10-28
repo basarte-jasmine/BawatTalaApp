@@ -90,6 +90,10 @@ function cleanSpokenText(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function getVoiceForSpokenLanguage(_language?: string, _transcript?: string) {
+  return MUNI_VOICE;
+}
+
 function getLatestAssistantReply(messages: JournalMessage[] | undefined) {
   return [...(messages ?? [])].reverse().find((item) => item.role === "assistant")?.text ?? "";
 }
@@ -178,6 +182,7 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
   const nativePlayerRef = useRef<AudioPlayer | null>(null);
   const webAudioRef = useRef<HTMLAudioElement | null>(null);
   const webBlobUrlRef = useRef<string | null>(null);
+  const replyVoiceRef = useRef<string | null>(null);
 
   // Expo native audio recorder
   const nativeRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -373,12 +378,13 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
   stopSpeakingRef.current = stopSpeaking;
 
   const speakReply = useCallback(
-    async (replyText: string) => {
+    async (replyText: string, voiceName?: string) => {
       const cleaned = cleanSpokenText(replyText);
       if (!cleaned || isDisposedRef.current) return;
 
       void stopSpeaking();
       const chosenVoice = MUNI_VOICE;
+      replyVoiceRef.current = chosenVoice;
 
       try {
         setVoiceState("speaking");
@@ -389,10 +395,8 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
 
         if (isDisposedRef.current) return;
         const base64Audio = synthRes?.audioBase64 || "";
-        if (!synthRes?.ok || !base64Audio) {
-          // No fallback voice: surface the failure instead of silently going quiet.
-          setVoiceState("error");
-          setStatusMessage(synthRes?.message || "Muni's voice is unavailable right now.");
+        if (!base64Audio) {
+          setVoiceState("idle");
           return;
         }
 
@@ -429,8 +433,7 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
         }
       } catch {
         if (!isDisposedRef.current) {
-          setVoiceState("error");
-          setStatusMessage("Muni's voice could not play. Tap Listen to try again.");
+          setVoiceState("idle");
         }
       }
     },
@@ -643,12 +646,6 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
         mimeType,
         filename,
       });
-      if (!txResult.ok) {
-        // Surface the backend's Groq Whisper error instead of pretending nothing was said.
-        setStatusMessage(txResult.message ?? "Could not transcribe your recording. Tap to try again.");
-        setVoiceState("error");
-        return;
-      }
       if (!txResult.text || !txResult.text.trim()) {
         setStatusMessage("No speech was recognized. Tap to try again.");
         setVoiceState("idle");
@@ -656,6 +653,8 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
       }
 
       const spokenText = txResult.text.trim();
+      const replyVoice = getVoiceForSpokenLanguage(txResult.language, spokenText);
+      replyVoiceRef.current = replyVoice;
       setTranscript(spokenText);
       setVoiceState("thinking");
       setStatusMessage("Muni is thinking...");
@@ -684,7 +683,7 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
       if (latestReply) {
         setMuniReply(latestReply);
         setStatusMessage("");
-        void speakReply(latestReply);
+        void speakReply(latestReply, replyVoice);
       } else {
         setVoiceState("idle");
         setStatusMessage("");
