@@ -16,13 +16,17 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View } from "react-native";
+  View,
+  useWindowDimensions } from "react-native";
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { recordEmotionForAchievement, unlockAchievement } from "../lib/achievements";
 import { ConfirmationModal } from "../components/ui/ConfirmationModal";
+import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { JournalLockGate, useAppPreferences } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
+import * as ScreenOrientation from "expo-screen-orientation";
+import { loadJournalCover } from "../lib/journal-cover";
 import {
     createJournalSession,
     discardEmptyJournalEntry,
@@ -291,6 +295,29 @@ export default function WriteEntryScreen() {
   const [showEmotionPicker, setShowEmotionPicker] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+  const [coverPreviewUri, setCoverPreviewUri] = useState<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      void ScreenOrientation.unlockAsync().catch(() => undefined);
+      return () => {
+        void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => undefined);
+      };
+    }, [])
+  );
+
+  useEffect(() => {
+    if (!user?.studentNumber) return;
+    let mounted = true;
+    void loadJournalCover(user.studentNumber, isSoloMode ? "solo" : "muni").then((design) => {
+      if (mounted) setCoverPreviewUri(design?.previewUri ?? null);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [user?.studentNumber, isSoloMode]);
 
   const selectedJournalEmotion = useMemo(
     () => EMOTIONS.find((emotion) => emotion.id === selectedJournalEmotionId) ?? EMOTIONS[0],
@@ -318,6 +345,10 @@ export default function WriteEntryScreen() {
   const loadJournalSession = useCallback(async () => {
     if (!user?.studentNumber) {
       setIsLoading(false);
+      return;
+    }
+
+    if (sessionStartedRef.current && entryRef.current) {
       return;
     }
 
@@ -1003,8 +1034,195 @@ export default function WriteEntryScreen() {
   const liftComposer = keyboardVisible || inputFocused;
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top"]}>
+    <SafeAreaView style={styles.screen} edges={isLandscape ? ["top", "bottom", "left", "right"] : ["top"]}>
       <JournalLockGate>
+        {isLandscape ? (
+          <View style={styles.landscapeContainer}>
+            <View style={styles.landscapeSpread}>
+              {/* LEFT SIDE: Journal Cover & Visual Elements */}
+              <View style={styles.landscapeLeftColumn}>
+                <View style={styles.landscapeCoverCard}>
+                  <View style={styles.landscapeBookPreview}>
+                    {coverPreviewUri ? (
+                      <Image
+                        source={{ uri: coverPreviewUri }}
+                        style={StyleSheet.absoluteFillObject}
+                        contentFit="cover"
+                        accessibilityLabel="Saved journal cover"
+                      />
+                    ) : (
+                      <>
+                        <View style={styles.landscapeBookHighlight} />
+                        <Text style={styles.landscapeBookTitle}>My{`\n`}Journal</Text>
+                      </>
+                    )}
+                    <View style={styles.landscapeBookSpine} pointerEvents="none" />
+                    <View style={styles.landscapeBookEdge} pointerEvents="none" />
+                  </View>
+
+                  <View style={styles.landscapeCoverMeta}>
+                    <Text style={styles.landscapeCoverDate}>
+                      {formatJournalHeaderDate(entry?.entryDate)}
+                    </Text>
+                    <View style={styles.landscapeModeBadge}>
+                      <Ionicons
+                        name={aiEnabled ? "sparkles" : "book-outline"}
+                        size={12}
+                        color={aiEnabled ? "#2E6B23" : "#5F7065"}
+                      />
+                      <Text style={styles.landscapeModeText}>
+                        {aiEnabled ? "With Muni" : "Solo Journal"}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+
+              {/* Center Spine Divider */}
+              <View style={styles.landscapeSpineDivider}>
+                {NOTEBOOK_RINGS.slice(0, 8).map((ring) => (
+                  <View key={`spine-ring-${ring}`} style={styles.landscapeSpineRing}>
+                    <View style={styles.ringHole} />
+                    <View style={styles.ringArc} />
+                  </View>
+                ))}
+              </View>
+
+              {/* RIGHT SIDE: Journal Title, Editor, and Controls */}
+              <View style={styles.landscapeRightColumn}>
+                <View style={styles.landscapeEditorHeader}>
+                  <Text style={styles.landscapeEditorTitle}>Journal Editor</Text>
+                  <Text style={styles.landscapeEditorSubtitle}>
+                    {formatJournalHeaderDate(entry?.entryDate)}
+                  </Text>
+                </View>
+
+                <View style={styles.landscapeEditorBody}>
+                  <ScrollView
+                    style={styles.landscapeContentScroll}
+                    contentContainerStyle={styles.landscapeContentScrollContainer}
+                    showsVerticalScrollIndicator={true}
+                  >
+                    {isLoading ? (
+                      <View style={styles.loadingWrap}>
+                        <ActivityIndicator color="#5AA63D" size="small" />
+                        <Text style={styles.loadingText}>Loading your journal...</Text>
+                      </View>
+                    ) : aiEnabled ? (
+                      displayMessages.length > 0 ? (
+                        displayMessages.map((line) =>
+                          line.role === "assistant" ? (
+                            <View key={line.id} style={styles.leftMessageRow}>
+                              <Text style={styles.messageRoleLabel}>Muni</Text>
+                              <Text style={styles.leftMessageText}>{line.text}</Text>
+                            </View>
+                          ) : (
+                            <View key={line.id} style={styles.rightMessageRow}>
+                              <Text style={[styles.messageRoleLabel, styles.messageRoleLabelSelf]}>You</Text>
+                              <Text style={styles.rightMessageText}>{line.text}</Text>
+                            </View>
+                          )
+                        )
+                      ) : (
+                        <Text style={styles.emptyText}>Start writing about how your day went.</Text>
+                      )
+                    ) : userParagraphs.length > 0 ? (
+                      userParagraphs.map((paragraph, index) => (
+                        <Text key={`${index}-${paragraph.slice(0, 12)}`} style={styles.plainParagraph}>
+                          {paragraph}
+                        </Text>
+                      ))
+                    ) : (
+                      <Text style={styles.plainPlaceholder}>Start writing about how your day went.</Text>
+                    )}
+                  </ScrollView>
+                </View>
+
+                <View style={styles.landscapeInputCard}>
+                  <View style={styles.inputFieldWrap}>
+                    <TextInput
+                      value={inputValue}
+                      onChangeText={setInputValue}
+                      onFocus={() => setInputFocused(true)}
+                      onBlur={() => setInputFocused(false)}
+                      placeholder="Write what happened today..."
+                      placeholderTextColor="#7B8893"
+                      multiline
+                      scrollEnabled
+                      textAlignVertical="top"
+                      maxLength={JOURNAL_MESSAGE_MAX_LENGTH}
+                      style={styles.landscapeInput}
+                      editable={canWrite}
+                    />
+                    <Text style={styles.inputCharCount}>
+                      {inputValue.length}/{JOURNAL_MESSAGE_MAX_LENGTH}
+                    </Text>
+                  </View>
+
+                  <Pressable
+                    style={[
+                      styles.emotionMenuButton,
+                      selectedJournalEmotion && { borderColor: selectedJournalEmotion.color },
+                      (!canWrite || isSavingJournalEmotion) && styles.emotionMenuButtonDisabled,
+                    ]}
+                    onPress={() => setShowEmotionPicker(true)}
+                    disabled={!canWrite || isSavingJournalEmotion}
+                    accessibilityLabel="Choose journal emotion"
+                  >
+                    {isSavingJournalEmotion ? (
+                      <ActivityIndicator color="#5AA63D" size="small" />
+                    ) : selectedJournalEmotionImageSource ? (
+                      <Image
+                        source={selectedJournalEmotionImageSource}
+                        style={styles.emotionMenuImage}
+                        contentFit="contain"
+                      />
+                    ) : (
+                      <Ionicons name="menu-outline" size={20} color="#53685A" />
+                    )}
+                  </Pressable>
+
+                  <Pressable
+                    style={[
+                      styles.sendButton,
+                      (isSending || isAiRetryLocked || !canWrite) && styles.sendButtonDisabled,
+                    ]}
+                    onPress={() => {
+                      void handleSendMessage();
+                    }}
+                    disabled={isSending || isAiRetryLocked || !canWrite}
+                  >
+                    <Ionicons name="send" size={18} color="#FFFFFF" />
+                  </Pressable>
+                </View>
+
+                <View style={styles.landscapeActionRow}>
+                  <Pressable
+                    style={[styles.finishButton, !canFinishEntry && styles.finishButtonDisabled]}
+                    onPress={() => {
+                      void handleRequestFinish();
+                    }}
+                    disabled={!canFinishEntry}
+                  >
+                    <Text style={styles.finishButtonText}>
+                      {isAnalyzingTags ? "Analyzing..." : isFinishing ? "Saving..." : "Finish Entry"}
+                    </Text>
+                  </Pressable>
+
+                  <Pressable style={styles.exitButton} onPress={handleRequestExit}>
+                    <Text style={styles.exitButtonText}>Exit</Text>
+                  </Pressable>
+                </View>
+
+                {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+                {!errorMessage && statusMessage ? <Text style={styles.statusText}>{statusMessage}</Text> : null}
+                {!isEntryFinished && finishValidationMessage ? (
+                  <Text style={styles.helperText}>{finishValidationMessage}</Text>
+                ) : null}
+              </View>
+            </View>
+          </View>
+        ) : (
         <KeyboardAvoidingView
           style={[styles.content, liftComposer && styles.contentKeyboardVisible]}
           // Android resizes the app window (configured in app.json). Applying a
@@ -1317,6 +1535,8 @@ export default function WriteEntryScreen() {
             <Text style={styles.newEntryButtonText}>Start New Entry</Text>
           </Pressable>
         ) : null}
+        </KeyboardAvoidingView>
+        )}
 
         <Modal
           visible={showEmotionPicker}
@@ -1670,7 +1890,6 @@ export default function WriteEntryScreen() {
             </View>
           </View>
         </Modal>
-        </KeyboardAvoidingView>
       </JournalLockGate>
     </SafeAreaView>
   );
@@ -2491,6 +2710,198 @@ const styles = StyleSheet.create({
   modalPrimaryText: {
     color: "#FFFFFF",
     fontSize: 13,
-    fontFamily: "Outfit-Bold" } });
+    fontFamily: "Outfit-Bold" },
+  landscapeContainer: {
+    flex: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  landscapeSpread: {
+    flex: 1,
+    flexDirection: "row",
+    backgroundColor: "#EFF5EC",
+    borderRadius: 20,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(100, 140, 110, 0.2)",
+    elevation: 4,
+    shadowColor: "#1A3020",
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  landscapeLeftColumn: {
+    width: "36%",
+    backgroundColor: "#F7FAF5",
+    borderRightWidth: 1,
+    borderRightColor: "rgba(100, 140, 110, 0.15)",
+    padding: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  landscapeCoverCard: {
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  landscapeBookPreview: {
+    width: 140,
+    height: 180,
+    borderRadius: 12,
+    borderTopLeftRadius: 4,
+    borderBottomLeftRadius: 4,
+    backgroundColor: "#AFC4B1",
+    overflow: "hidden",
+    position: "relative",
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    marginBottom: 8,
+  },
+  landscapeBookHighlight: {
+    position: "absolute",
+    top: -10,
+    right: -10,
+    width: "90%",
+    height: 60,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    transform: [{ rotate: "-8deg" }],
+  },
+  landscapeBookSpine: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 14,
+    backgroundColor: "rgba(22,48,37,0.14)",
+  },
+  landscapeBookEdge: {
+    position: "absolute",
+    right: 0,
+    top: 6,
+    bottom: 6,
+    width: 3,
+    backgroundColor: "rgba(255,248,232,0.32)",
+  },
+  landscapeBookTitle: {
+    color: "#FFF8E8",
+    fontSize: 20,
+    lineHeight: 24,
+    fontFamily: "Outfit-Bold",
+    textAlign: "center",
+  },
+  landscapeCoverMeta: {
+    alignItems: "center",
+    marginTop: 4,
+  },
+  landscapeCoverDate: {
+    fontSize: 11,
+    fontFamily: "Outfit-Bold",
+    color: "#46594C",
+    textAlign: "center",
+    marginBottom: 4,
+  },
+  landscapeModeBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#E2EFE0",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  landscapeModeText: {
+    fontSize: 10,
+    fontFamily: "Outfit-SemiBold",
+    color: "#385A32",
+  },
+  landscapeSpineDivider: {
+    width: 14,
+    backgroundColor: "#DCE7D8",
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: "rgba(80, 120, 90, 0.15)",
+    alignItems: "center",
+    justifyContent: "space-around",
+    paddingVertical: 10,
+  },
+  landscapeSpineRing: {
+    width: 10,
+    height: 14,
+    position: "relative",
+  },
+  landscapeRightColumn: {
+    flex: 1,
+    backgroundColor: "#FCFDFB",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    display: "flex",
+    flexDirection: "column",
+  },
+  landscapeEditorHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(100, 140, 110, 0.12)",
+    marginBottom: 4,
+  },
+  landscapeEditorTitle: {
+    fontSize: 14,
+    fontFamily: "Outfit-Bold",
+    color: "#2C3E33",
+  },
+  landscapeEditorSubtitle: {
+    fontSize: 11,
+    fontFamily: "Outfit",
+    color: "#6D8073",
+  },
+  landscapeEditorBody: {
+    flex: 1,
+    minHeight: 80,
+    marginBottom: 6,
+  },
+  landscapeContentScroll: {
+    flex: 1,
+  },
+  landscapeContentScrollContainer: {
+    paddingVertical: 4,
+    paddingRight: 4,
+  },
+  landscapeInputCard: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    backgroundColor: "#F4F8F3",
+    borderRadius: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: "rgba(100, 140, 110, 0.2)",
+    gap: 6,
+    marginBottom: 6,
+  },
+  landscapeInput: {
+    flex: 1,
+    minHeight: 34,
+    maxHeight: 70,
+    fontSize: 13,
+    fontFamily: "Outfit",
+    color: "#27362E",
+    paddingTop: 4,
+    paddingBottom: 4,
+  },
+  landscapeActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 8,
+    paddingTop: 2,
+  },
+});
 
 

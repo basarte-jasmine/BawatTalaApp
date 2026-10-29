@@ -6,6 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import {
   LogBox,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -18,6 +19,7 @@ import { AppNoticeProvider } from "../lib/app-notice";
 import { AppErrorBoundary } from "../components/ui/AppErrorBoundary";
 import { AppPreferencesProvider } from "../lib/app-preferences";
 import { warmBackend } from "../lib/backend-api";
+import * as ScreenOrientation from "expo-screen-orientation";
 import { configureMuniNotificationBehavior, requestInitialNotificationPermissions } from "../lib/muni-reminders";
 import { OfflineSyncProvider } from "../lib/offline-sync";
 import { AppointmentStatusWatcher } from "../components/appointments/AppointmentStatusWatcher";
@@ -81,6 +83,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     void warmBackend();
+    void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -110,7 +113,7 @@ export default function RootLayout() {
 
   if ((!fontsLoaded && !fontError) || (!assetsLoaded && !fontError)) return null;
 
-  const useDesktopFrame = width >= DESKTOP_FRAME_BREAKPOINT;
+  const useDesktopFrame = Platform.OS === "web" && width >= DESKTOP_FRAME_BREAKPOINT;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

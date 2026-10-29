@@ -15,6 +15,7 @@ import { CounselorAvatar } from "../components/appointments/CounselorAvatar";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { MuniVoiceOverlay } from "../components/voice/MuniVoiceOverlay";
 import { DailyTasksCard } from "../components/home/DailyTasksCard";
+import { WeatherCard } from "../components/home/WeatherCard";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { StudentProfileAvatar } from "../components/profile/StudentProfileAvatar";
 import { ConfirmationModal } from "../components/ui/ConfirmationModal";
@@ -2187,6 +2188,8 @@ export default function HomeScreen() {
             </Svg>
           </Animated.View>
         </View>
+
+        <WeatherCard />
 
         <Animated.View
           style={[
