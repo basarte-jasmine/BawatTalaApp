@@ -170,6 +170,10 @@ export default function MuniMatchScreen() {
   const scoreRef = useRef(score);
   const coinsRef = useRef(coins);
   const targetBonusGrantedRef = useRef(targetBonusGranted);
+  const boardViewRef = useRef<View>(null);
+  const boardScreenRef = useRef<{ pageX: number; pageY: number }>({ pageX: 0, pageY: 0 });
+  const isDraggingRef = useRef(false);
+  const dragStartPointRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   gameStateRef.current = gameState;
   boardRef.current = board;
   scoreRef.current = score;
@@ -298,46 +302,88 @@ export default function MuniMatchScreen() {
   const pathRef = useRef<{ r: number; c: number }[]>([]);
   const pathColorRef = useRef<MuniColor | null>(null);
 
-  const getTileAtPoint = (locationX: number, locationY: number) => {
+  const measureBoard = () => {
+    boardViewRef.current?.measure((_x, _y, _w, _h, pageX, pageY) => {
+      if (typeof pageX === "number" && typeof pageY === "number" && (pageX > 0 || pageY > 0)) {
+        boardScreenRef.current = { pageX, pageY };
+      }
+    });
+  };
+
+  const getTileAtPoint = (localX: number, localY: number) => {
     const stride = tileSize + GAP;
-    const c = Math.floor((locationX - GRID_PADDING) / stride);
-    const r = Math.floor((locationY - GRID_PADDING) / stride);
+    const c = Math.floor((localX - GRID_PADDING + GAP / 2) / stride);
+    const r = Math.floor((localY - GRID_PADDING + GAP / 2) / stride);
     if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return null;
-    const tileLeft = GRID_PADDING + c * stride;
-    const tileTop = GRID_PADDING + r * stride;
-    if (locationX > tileLeft + tileSize || locationY > tileTop + tileSize) return null;
     return { r, c };
   };
 
-  const addPathTile = (position: { r: number; c: number }) => {
+  const resolvePoint = (event: any) => {
+    const native = event.nativeEvent;
+    if (boardScreenRef.current.pageX > 0) {
+      const pageX = typeof native.pageX === "number" ? native.pageX : native.locationX;
+      const pageY = typeof native.pageY === "number" ? native.pageY : native.locationY;
+      return {
+        x: pageX - boardScreenRef.current.pageX,
+        y: pageY - boardScreenRef.current.pageY,
+      };
+    }
+    return { x: native.locationX, y: native.locationY };
+  };
+
+  const addPathTile = (position: { r: number; c: number }, isTap = false) => {
     const tile = boardRef.current[position.r]?.[position.c];
     if (!tile) return;
     const path = pathRef.current;
     const last = path[path.length - 1];
 
-    if (!pathColorRef.current) {
-      pathColorRef.current = tile.color;
+    // If tapping an already selected tile that is the tail of a valid >=3 line, finish it!
+    if (isTap && last && last.r === position.r && last.c === position.c && path.length >= 3) {
+      finishPath();
+      return;
     }
+
+    // If starting a fresh line or switching to a new tile/color on tap
+    if (!pathColorRef.current || (isTap && tile.color !== pathColorRef.current)) {
+      pathColorRef.current = tile.color;
+      pathRef.current = [position];
+      setSelectedPath([position]);
+      triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
+      return;
+    }
+
     if (tile.color !== pathColorRef.current) return;
     if (last && last.r === position.r && last.c === position.c) return;
 
+    // Backtracking support: return to previous tile
     if (path.length > 1) {
       const previous = path[path.length - 2];
       if (previous.r === position.r && previous.c === position.c) {
         path.pop();
         setSelectedPath([...path]);
+        triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
         return;
       }
     }
 
-    if (last && Math.abs(last.r - position.r) + Math.abs(last.c - position.c) !== 1) return;
+    // Must be adjacent
+    if (last && Math.abs(last.r - position.r) + Math.abs(last.c - position.c) !== 1) {
+      if (isTap) {
+        // Tapping a non-adjacent same-color tile restarts the selection at the new tile
+        pathRef.current = [position];
+        setSelectedPath([position]);
+        triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
+      }
+      return;
+    }
+
     if (path.some((item) => item.r === position.r && item.c === position.c)) return;
     path.push(position);
     setSelectedPath([...path]);
     triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
   };
 
-  const finishPath = (pageX: number, pageY: number) => {
+  const finishPath = () => {
     const group = pathRef.current;
     pathRef.current = [];
     pathColorRef.current = null;
@@ -355,6 +401,11 @@ export default function MuniMatchScreen() {
     triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
     void playSoundEffect(SOUND_ASSETS.matchedMunis, 0.85);
     const count = group.length;
+    // Popups live inside the board, so anchor them to the last matched tile
+    // instead of mixing page coordinates with board-local layout offsets.
+    const lastTile = group[group.length - 1];
+    const popupX = GRID_PADDING + lastTile.c * (tileSize + GAP) + tileSize / 2;
+    const popupY = GRID_PADDING + lastTile.r * (tileSize + GAP) + tileSize / 2;
 
     let earnedCoins = 1;
     if (count === 4) earnedCoins = 2;
@@ -378,8 +429,8 @@ export default function MuniMatchScreen() {
         {
           id: `popup_target_${Date.now()}`,
           text: "+10 Target Bonus!",
-          x: pageX - 60,
-          y: pageY - 40,
+          x: popupX - 60,
+          y: popupY - 40,
           color: "#2E7C1F",
         },
       ]);
@@ -393,8 +444,8 @@ export default function MuniMatchScreen() {
       {
         id: `popup_${Date.now()}_${Math.random()}`,
         text: `+${earnedCoins} Tala`,
-        x: pageX - 30,
-        y: pageY - 10,
+        x: popupX - 30,
+        y: popupY - 10,
         color: "#D97706",
       },
     ]);
@@ -430,22 +481,64 @@ export default function MuniMatchScreen() {
   const boardPanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => gameStateRef.current === "PLAYING",
-      onMoveShouldSetPanResponder: () => gameStateRef.current === "PLAYING",
+      onMoveShouldSetPanResponder: (_event, gesture) =>
+        gameStateRef.current === "PLAYING" && (Math.abs(gesture.dx) > 4 || Math.abs(gesture.dy) > 4),
       onPanResponderGrant: (event) => {
-        pathRef.current = [];
-        pathColorRef.current = null;
-        setSelectedPath([]);
-        const position = getTileAtPoint(event.nativeEvent.locationX, event.nativeEvent.locationY);
-        if (position) addPathTile(position);
+        measureBoard();
+        isDraggingRef.current = false;
+        const pt = resolvePoint(event);
+        dragStartPointRef.current = pt;
+        const position = getTileAtPoint(pt.x, pt.y);
+        if (position) {
+          // If we already have a selected path of same color and this is adjacent, connect it!
+          const currentPath = pathRef.current;
+          const last = currentPath[currentPath.length - 1];
+          if (
+            currentPath.length > 0 &&
+            last &&
+            Math.abs(last.r - position.r) + Math.abs(last.c - position.c) === 1 &&
+            boardRef.current[position.r]?.[position.c]?.color === pathColorRef.current
+          ) {
+            addPathTile(position, true);
+          } else if (
+            currentPath.length > 0 &&
+            last &&
+            last.r === position.r &&
+            last.c === position.c
+          ) {
+            // Tapped the same tile again: if path is valid >= 3, finish!
+            if (currentPath.length >= 3) {
+              finishPath();
+              return;
+            }
+          } else {
+            // Fresh tap on a new piece
+            pathRef.current = [];
+            pathColorRef.current = null;
+            setSelectedPath([]);
+            addPathTile(position, true);
+          }
+        }
       },
-      onPanResponderMove: (event) => {
-        const position = getTileAtPoint(event.nativeEvent.locationX, event.nativeEvent.locationY);
-        if (position) addPathTile(position);
+      onPanResponderMove: (event, gesture) => {
+        if (Math.abs(gesture.dx) > 6 || Math.abs(gesture.dy) > 6) {
+          isDraggingRef.current = true;
+        }
+        const pt = resolvePoint(event);
+        const position = getTileAtPoint(pt.x, pt.y);
+        if (position) addPathTile(position, false);
       },
-      onPanResponderRelease: (event) => {
-        finishPath(event.nativeEvent.pageX, event.nativeEvent.pageY);
+      onPanResponderRelease: () => {
+        // If the player dragged across tiles, automatically resolve on finger release!
+        if (isDraggingRef.current) {
+          finishPath();
+        } else if (pathRef.current.length >= 3) {
+          // If they reached 3 or more pieces, match and clear!
+          finishPath();
+        }
+        // If it was a single tap, keep the piece highlighted so they can tap the next one!
       },
-      onPanResponderTerminate: () => finishPath(0, 0),
+      onPanResponderTerminate: () => finishPath(),
     })
   ).current;
 
@@ -599,9 +692,14 @@ export default function MuniMatchScreen() {
                 );
               })}
               {board.map((row, r) => (
-                <View key={`row_${r}`} style={[styles.gridRow, { gap: GAP }]}>
+                <View
+                  key={`row_${r}`}
+                  style={[styles.gridRow, { gap: GAP }]}
+                  pointerEvents="none"
+                >
                   {row.map((tile, c) => {
                     const isWobbling = wobbleCoord?.r === r && wobbleCoord?.c === c;
+                    const isSelected = selectedPath.some((pos) => pos.r === r && pos.c === c);
                     return (
                       <View
                         key={tile ? tile.id : `empty_${r}_${c}`}
@@ -611,9 +709,11 @@ export default function MuniMatchScreen() {
                             width: tileSize,
                             height: tileSize,
                           },
+                          isSelected && styles.tileSelected,
                           isWobbling && styles.tileWobble,
                         ]}
                         accessibilityLabel={`Muni tile ${tile?.color || "empty"}`}
+                        pointerEvents="none"
                       >
                         {tile && (
                           <Image
@@ -628,14 +728,18 @@ export default function MuniMatchScreen() {
                   })}
                 </View>
               ))}
-            </View>
 
-            {/* Floating Popups */}
-            {popups.map((p) => (
-              <Text key={p.id} style={[styles.popupText, { left: p.x, top: p.y, color: p.color }]}>
-                {p.text}
-              </Text>
-            ))}
+              {/* Floating Popups: board-relative coordinates so they land on the matched tile */}
+              {popups.map((p) => (
+                <Text
+                  key={p.id}
+                  pointerEvents="none"
+                  style={[styles.popupText, { left: p.x, top: p.y, color: p.color }]}
+                >
+                  {p.text}
+                </Text>
+              ))}
+            </View>
           </View>
         )}
 
@@ -944,6 +1048,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
     borderColor: "#EEF3EC",
+  },
+  tileSelected: {
+    borderColor: "#8B5CF6",
+    borderWidth: 2.5,
+    backgroundColor: "#F3E8FF",
+    transform: [{ scale: 1.08 }],
+    elevation: 4,
+    shadowColor: "#8B5CF6",
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
   },
   tileWobble: {
     transform: [{ scale: 1.15 }],

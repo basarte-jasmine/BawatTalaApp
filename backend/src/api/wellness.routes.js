@@ -137,7 +137,7 @@ router.post("/mini-reset-reward", async (req, res) => {
 router.post("/sea-discovery", async (req, res) => {
   const studentNumber = String(resolveStudentNumber(req) || "").trim();
   const discoveryId = String(req.body.discoveryId || "").trim().toLowerCase();
-  if (!/^d{2}-d{4}$/.test(studentNumber)) {
+  if (!/^\d{2}-\d{4}$/.test(studentNumber)) {
     return res.status(400).json({ message: "Invalid student number." });
   }
 

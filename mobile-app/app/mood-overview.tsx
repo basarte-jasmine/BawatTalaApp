@@ -152,7 +152,7 @@ function getMuniEmotionReflection(
   if (angerCount >= 2 || mostCommonId === "anger") {
     return {
       headline: "It's okay to feel upset",
-      body: `Tension and frustration have been present ${angerCount} times. Bottling it up feels heavy—writing it all down in your journal can release that pressure.`,
+      body: `You've recorded feeling angry ${angerCount} times recently. Bottling it up feels heavy—writing it all down in your journal can release that pressure.`,
       actionLabel: "Write in Journal",
       actionRoute: "/journal",
       actionIcon: "create-outline",
@@ -384,11 +384,20 @@ export default function MoodOverviewScreen() {
     }
 
     setMonthlyEntries(result.entries ?? []);
-    setMonthlyCounts({
-      ...createEmotionCounts(),
-      ...(result.counts ?? {}),
+    // Keep summaries inside the ten supported emotion choices. Historical rows
+    // with an unknown mood id remain in `entries`, but they must not create a
+    // new emotion category in the breakdown or in Muni's reflection.
+    const nextCounts = createEmotionCounts();
+    EMOTION_ORDER.forEach((emotionId) => {
+      nextCounts[emotionId] = Math.max(0, Number(result.counts?.[emotionId] ?? 0));
     });
-    setMostCommonMoodId(result.mostCommonMoodId ?? null);
+    const nextMostCommonMoodId = EMOTION_ORDER.reduce<string | null>(
+      (bestId, emotionId) =>
+        nextCounts[emotionId] > (bestId ? nextCounts[bestId] : 0) ? emotionId : bestId,
+      null,
+    );
+    setMonthlyCounts(nextCounts);
+    setMostCommonMoodId(nextMostCommonMoodId);
     setTotalCheckIns(result.totalCheckIns ?? 0);
   }, [displayMonthIndex, displayYear, user?.studentNumber]);
 
@@ -940,7 +949,7 @@ export default function MoodOverviewScreen() {
                       </View>
 
                       <View style={styles.timelineInfo}>
-                        <Text style={styles.timelineMoodLabel}>{moodMeta?.label ?? entry.moodLabel}</Text>
+                        <Text style={styles.timelineMoodLabel}>{moodMeta?.label ?? "Emotion"}</Text>
                         <Text style={styles.timelineTimeText}>{formatCheckInTime(entry.createdAt) || "Logged"}</Text>
                       </View>
 

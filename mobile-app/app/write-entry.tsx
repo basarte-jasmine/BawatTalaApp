@@ -291,6 +291,7 @@ export default function WriteEntryScreen() {
   const [showEmotionPicker, setShowEmotionPicker] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const selectedJournalEmotion = useMemo(
     () => EMOTIONS.find((emotion) => emotion.id === selectedJournalEmotionId) ?? EMOTIONS[0],
@@ -403,9 +404,15 @@ export default function WriteEntryScreen() {
   useEffect(() => {
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-    const showSubscription = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const showSubscription = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardVisible(true);
+      if (event && event.endCoordinates && typeof event.endCoordinates.height === "number") {
+        setKeyboardHeight(event.endCoordinates.height);
+      }
+    });
     const hideSubscription = Keyboard.addListener(hideEvent, () => {
       setKeyboardVisible(false);
+      setKeyboardHeight(0);
       setInputFocused(false);
     });
 
@@ -1214,7 +1221,7 @@ export default function WriteEntryScreen() {
           </View>
         )}
 
-        <View style={[styles.inputCard, liftComposer && styles.inputCardKeyboardVisible]}>
+        <View style={[styles.inputCard, liftComposer && styles.inputCardKeyboardVisible, keyboardHeight > 0 && { marginBottom: keyboardHeight }]}>
           <View style={styles.inputFieldWrap}>
             <TextInput
               value={inputValue}
@@ -2004,7 +2011,7 @@ const styles = StyleSheet.create({
     marginBottom: 0 },
   inputFieldWrap: {
     flex: 1,
-    minHeight: 50,
+    minHeight: 52,
     justifyContent: "space-between",
   },
   inputCharCount: {
@@ -2012,16 +2019,20 @@ const styles = StyleSheet.create({
     color: "#91A0AB",
     fontSize: 11,
     lineHeight: 14,
-    marginTop: 6,
-    marginBottom: 4},
+    marginTop: 2,
+    marginBottom: 2,
+  },
   input: {
     flex: 1,
-    minHeight: 50,
+    minHeight: 44,
     maxHeight: 110,
     color: "#2E4155",
     fontSize: 15,
-    lineHeight: 20,
-    paddingVertical: 0 },
+    fontFamily: "Outfit-Regular",
+    paddingTop: Platform.OS === "android" ? 4 : 6,
+    paddingBottom: 4,
+    paddingHorizontal: 4,
+  },
   emotionMenuButton: {
     width: 44,
     height: 44,

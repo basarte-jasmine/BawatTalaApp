@@ -24,7 +24,6 @@ export function StudentProfileAvatar({
   const hasFrame = Boolean(frameSource);
   const outerSize = hasFrame ? Math.round(size * FRAME_SCALE) : size;
   const radius = size / 2;
-  const inset = hasFrame ? Math.round((outerSize - size) / 2) : 0;
   const validImageUrl = typeof imageUrl === "string" && imageUrl.trim().length > 0 ? imageUrl.trim() : null;
 
   return (
@@ -32,7 +31,8 @@ export function StudentProfileAvatar({
       pointerEvents="box-none"
       style={[
         styles.container,
-        { height: outerSize, width: outerSize, borderRadius: hasFrame ? 0 : radius },
+        { height: outerSize, width: outerSize },
+        !hasFrame && style,
       ]}
     >
       <View
@@ -43,11 +43,8 @@ export function StudentProfileAvatar({
             borderRadius: radius,
             height: size,
             width: size,
-            top: inset,
-            left: inset,
-            zIndex: 1,
           },
-          hasFrame ? undefined : style,
+          hasFrame ? undefined : styles.unframedBorder,
         ]}
       >
         {validImageUrl ? (
@@ -57,7 +54,6 @@ export function StudentProfileAvatar({
             source={{ uri: validImageUrl }}
             style={{ borderRadius: radius, height: size, width: size }}
             cachePolicy="memory-disk"
-            transition={150}
             pointerEvents="none"
           />
         ) : (
@@ -69,7 +65,7 @@ export function StudentProfileAvatar({
           source={frameSource}
           contentFit="contain"
           pointerEvents="none"
-          style={[styles.frame, { height: outerSize, width: outerSize, top: 0, left: 0, zIndex: 2 }]}
+          style={[styles.frame, { height: outerSize, width: outerSize, top: 0, left: 0 }]}
         />
       ) : null}
     </View>
@@ -83,10 +79,12 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   photo: {
-    position: "absolute",
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
+    backgroundColor: "#EEF3EF",
+  },
+  unframedBorder: {
     backgroundColor: "#EEF3EF",
   },
   frame: {

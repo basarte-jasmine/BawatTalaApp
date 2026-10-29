@@ -2,7 +2,7 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -67,6 +67,7 @@ const CATEGORY_TABS: TabMeta[] = [
 ];
 
 const DEFAULT_BG_SOURCE = require("../assets/images/Background/Garden.webp");
+const WARDROBE_BGM_VOLUME = 0.28;
 
 export default function MuniAvatarScreen() {
   const { user } = useAuthSession();
@@ -93,6 +94,8 @@ export default function MuniAvatarScreen() {
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [isWardrobeLoading, setIsWardrobeLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isBgmMuted, setIsBgmMuted] = useState(false);
+  const bgmRef = useRef<ReturnType<typeof startBgmTrack> | null>(null);
 
   const loadWardrobe = useCallback(async () => {
     if (!user?.studentNumber) {
@@ -154,8 +157,22 @@ export default function MuniAvatarScreen() {
 
   // Looping Wardrobe BGM
   useEffect(() => {
-    const bgm = startBgmTrack(SOUND_ASSETS.wardrobeBgm, 0.28);
-    return () => bgm.stop();
+    const bgm = startBgmTrack(SOUND_ASSETS.wardrobeBgm, WARDROBE_BGM_VOLUME);
+    bgmRef.current = bgm;
+    return () => {
+      bgmRef.current = null;
+      bgm.stop();
+    };
+  }, []);
+
+  const toggleBgmMuted = useCallback(() => {
+    setIsBgmMuted((current) => {
+      const nextMuted = !current;
+      // Mute the existing loop instead of stopping/restarting it, so the track
+      // keeps its position when sound comes back.
+      bgmRef.current?.setVolume(nextMuted ? 0 : WARDROBE_BGM_VOLUME);
+      return nextMuted;
+    });
   }, []);
 
   const hasUnsavedChanges = !areMuniLoadoutsEqual(equippedItems, savedItems);
@@ -446,19 +463,35 @@ export default function MuniAvatarScreen() {
             <Text style={styles.talaText}>{availableTala.toLocaleString("en-US")}</Text>
           </View>
 
-          {/* Cart Button */}
-          <Pressable
-            style={styles.roundCartButton}
-            accessibilityLabel="Shopping Cart"
-            onPress={() => setShowCartModal(true)}
-          >
-            <Ionicons name="cart" size={20} color="#384E3F" />
-            {cartItems.length > 0 ? (
-              <View style={styles.cartBadge}>
-                <Text style={styles.cartBadgeText}>{cartItems.length}</Text>
-              </View>
-            ) : null}
-          </Pressable>
+          {/* Top Right Controls: BGM Speaker & Cart */}
+          <View style={styles.stageTopBarRight}>
+            <Pressable
+              style={styles.roundSoundButton}
+              accessibilityRole="button"
+              accessibilityLabel={isBgmMuted ? "Unmute background sound" : "Mute background sound"}
+              onPress={toggleBgmMuted}
+              hitSlop={8}
+            >
+              <Ionicons
+                name={isBgmMuted ? "volume-mute" : "volume-high"}
+                size={20}
+                color={isBgmMuted ? "#8F9D93" : "#384E3F"}
+              />
+            </Pressable>
+
+            <Pressable
+              style={styles.roundCartButton}
+              accessibilityLabel="Shopping Cart"
+              onPress={() => setShowCartModal(true)}
+            >
+              <Ionicons name="cart" size={20} color="#384E3F" />
+              {cartItems.length > 0 ? (
+                <View style={styles.cartBadge}>
+                  <Text style={styles.cartBadgeText}>{cartItems.length}</Text>
+                </View>
+              ) : null}
+            </Pressable>
+          </View>
         </View>
 
         {/* Character Stage with Circular Floor Rug */}
@@ -1106,6 +1139,26 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 20,
     fontFamily: "Outfit-Bold",
+  },
+  stageTopBarRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 8,
+  },
+  roundSoundButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "rgba(255, 255, 255, 0.94)",
+    borderWidth: 1.5,
+    borderColor: "#E5ECE0",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#2F3E34",
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
   roundCartButton: {
     width: 42,

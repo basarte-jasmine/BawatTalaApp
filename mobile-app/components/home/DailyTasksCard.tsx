@@ -183,7 +183,7 @@ export function DailyTasksCard({
           visible: true,
           rewardTala: res.rewardTala,
           bonusClaimed: Boolean(res.bonusClaimed),
-          title: res.bonusClaimed ? "A day well done" : "Task completed",
+          title: res.bonusClaimed ? "A day well done" : "Task done",
           message: res.bonusClaimed
             ? "You completed all of today’s tasks and reached your daily Tala goal."
             : "Your completed task earned Tala for Muni.",
@@ -348,6 +348,13 @@ export function DailyTasksCard({
                       <Text style={styles.gentleTagText}>Magaan</Text>
                     </View>
                   ) : null}
+
+                  {task.completed ? (
+                    <View style={styles.doneTag}>
+                      <Ionicons name="checkmark-circle" size={10} color="#357A2A" />
+                      <Text style={styles.doneTagText}>Done</Text>
+                    </View>
+                  ) : null}
                 </View>
               </Pressable>
 
@@ -451,7 +458,7 @@ export function DailyTasksCard({
             ? ("Are you sure you want to delete \"" + (pendingAction?.task.title || "") + "\"?")
             : pendingAction?.action === "uncomplete"
             ? ("Unmark \"" + (pendingAction?.task.title || "") + "\"?")
-            : ("Mark \"" + (pendingAction?.task.title || "") + "\" as completed?")
+            : ("Mark \"" + (pendingAction?.task.title || "") + "\" as done?")
         }
         confirmLabel={
           pendingAction?.action === "delete"
@@ -670,6 +677,20 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit-Medium",
     fontSize: 10,
     color: "#2E5825",
+  },
+  doneTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#E4F4DC",
+    borderRadius: 999,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    gap: 3,
+  },
+  doneTagText: {
+    fontFamily: "Outfit-Medium",
+    fontSize: 10,
+    color: "#2C6822",
   },
   deleteButton: {
     padding: 4,

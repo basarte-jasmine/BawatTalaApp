@@ -135,17 +135,21 @@ export function startBgmTrack(source: any, volume = 0.25): { stop: () => void; s
   let player: AudioPlayer | null = null;
   let webAudio: HTMLAudioElement | null = null;
   let isStopped = false;
+  // The player is created asynchronously. Remember the latest requested volume so
+  // an early setVolume() call (for example, muting right after the screen opens)
+  // still applies once playback starts.
+  let desiredVolume = Math.max(0, Math.min(1, volume));
 
   void (async () => {
     try {
       await ensureAudioMode();
       if (isStopped) return;
       if (Platform.OS === "web" && typeof Audio !== "undefined") {
-        webAudio = playAudioElementDirectlyOnWeb(source, volume, true);
+        webAudio = playAudioElementDirectlyOnWeb(source, desiredVolume, true);
         if (webAudio) return;
       }
       player = createPlayer(source);
-      player.volume = Math.max(0, Math.min(1, volume));
+      player.volume = desiredVolume;
       player.loop = true;
       player.play();
     } catch {
@@ -172,11 +176,12 @@ export function startBgmTrack(source: any, volume = 0.25): { stop: () => void; s
       }
     },
     setVolume(v: number) {
+      desiredVolume = Math.max(0, Math.min(1, v));
       if (webAudio) {
-        webAudio.volume = Math.max(0, Math.min(1, v));
+        webAudio.volume = desiredVolume;
       }
       if (player) {
-        player.volume = Math.max(0, Math.min(1, v));
+        player.volume = desiredVolume;
       }
     },
   };

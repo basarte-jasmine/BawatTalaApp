@@ -79,7 +79,6 @@ export const COLLECTION_SECTIONS: MuniCollectionSection[] = [
       { id: "denim-vest", label: "Denim Vest", price: 130, source: require("../assets/images/Muni Customization/Outfit/Demin vest.webp") },
       { id: "explorer-vest", label: "Explorer Vest", price: 156, source: require("../assets/images/Muni Customization/Outfit/Explorer vest.webp") },
       { id: "green-jumper", label: "Green Jumper", price: 130, source: require("../assets/images/Muni Customization/Outfit/Green jumper.webp") },
-      { id: "spooky-ghost", label: "Spooky Ghost", price: 160, source: require("../assets/images/Muni Customization/Outfit/Spooky_Ghost_Sheet.webp") },
       { id: "yellow-vest", label: "Yellow Vest", price: 130, source: require("../assets/images/Muni Customization/Outfit/Yellow vest.webp") },
     ],
   },
@@ -120,7 +119,10 @@ function wardrobeCacheKey(studentNumber: string) {
 }
 
 function cloneLoadout(loadout: MuniLoadout): MuniLoadout {
-  return { ...loadout };
+  return {
+    ...loadout,
+    outfit: loadout.outfit === "spooky-ghost" ? null : loadout.outfit,
+  };
 }
 
 function isMuniLoadout(value: unknown): value is MuniLoadout {

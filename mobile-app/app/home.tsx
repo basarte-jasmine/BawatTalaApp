@@ -5,7 +5,7 @@ import DateTimePicker, { DateTimePickerAndroid, type DateTimePickerEvent } from 
 import { useFocusEffect } from "@react-navigation/native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Easing,  KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { Animated, ActivityIndicator, Easing,  KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
 import { Image } from "expo-image";
 const AnimatedExpoImage = Animated.createAnimatedComponent(Image);
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -555,6 +555,8 @@ export default function HomeScreen() {
   const [driftingBottlesError, setDriftingBottlesError] = useState("");
   const [seaDiscovery, setSeaDiscovery] = useState<SeaDiscovery | null>(null);
   const [seaRewardTala, setSeaRewardTala] = useState(0);
+  const [seaRewardState, setSeaRewardState] = useState<"loading" | "success" | "already" | "error">("loading");
+  const seaClaimInFlightRef = useRef(false);
   const [collectedSeaStars, setCollectedSeaStars] = useState(0);
   const [hasConfirmedDriftingBottleWarning, setHasConfirmedDriftingBottleWarning] = useState(false);
   const [skipDriftingBottleWarning, setSkipDriftingBottleWarning] = useState(false);
@@ -1611,24 +1613,44 @@ export default function HomeScreen() {
   };
 
   const openSeaDiscovery = async (discovery: SeaDiscovery) => {
+    if (seaClaimInFlightRef.current) return;
+    seaClaimInFlightRef.current = true;
     setSeaDiscovery(discovery);
+    setSeaRewardTala(0);
+    setSeaRewardState("loading");
     try {
       const res = await claimSeaDiscoveryReward(discovery);
-      if (res.ok && res.rewardTala) {
-        setSeaRewardTala(res.rewardTala);
-        if (typeof res.totalTala === "number") {
-          updateAvailableMuniTala(res.totalTala);
-        }
-      } else {
-        setSeaRewardTala(1);
+      if (!res.ok) {
+        setSeaRewardState("error");
+        return;
       }
+      // The backend is the source of truth for the wallet; mirror its balance
+      // instead of adding locally so a failed or duplicate claim cannot drift.
+      if (typeof res.totalTala === "number") {
+        updateAvailableMuniTala(res.totalTala);
+      }
+      if (res.alreadyCollectedToday || !res.rewardTala) {
+        setSeaRewardState("already");
+        return;
+      }
+      setSeaRewardTala(res.rewardTala);
+      setSeaRewardState("success");
+      void playCollectTalaSound(0.85);
     } catch {
-      setSeaRewardTala(1);
+      setSeaRewardState("error");
+    } finally {
+      seaClaimInFlightRef.current = false;
     }
   };
 
   const closeSeaDiscovery = () => {
     setSeaDiscovery(null);
+  };
+
+  const retrySeaDiscovery = () => {
+    if (seaDiscovery) {
+      void openSeaDiscovery(seaDiscovery);
+    }
   };
 
   const handleOpenDriftingBottle = async () => {
@@ -2314,7 +2336,6 @@ export default function HomeScreen() {
               style={[
                 styles.moodConfirmBar,
                 {
-                  borderColor: `${pendingMood.color}80`,
                   backgroundColor: `${pendingMood.color}14`,
                   opacity: moodConfirmAnim,
                   transform: [
@@ -2653,9 +2674,10 @@ export default function HomeScreen() {
 
               {seaObjects.map((object, index) => {
                 const motion = seaObjectMotion[index];
-                const isInteractive = true; // Star, meteor, and stingray are all interactive tide visitors
-                const objectContent = (
+                return (
                   <Animated.View
+                    key={object.id}
+                    pointerEvents="box-none"
                     style={[
                       styles.seaObject,
                       {
@@ -2663,29 +2685,28 @@ export default function HomeScreen() {
                         top: object.top,
                         width: object.size,
                         height: object.size,
+                        zIndex: 4,
                         transform: [
                           { translateX: motion.interpolate({ inputRange: [0, 1], outputRange: [-object.drift, object.drift] }) },
                           { translateY: motion.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, -10, 0] }) },
                           { rotate: motion.interpolate({ inputRange: [0, 0.5, 1], outputRange: ["-5deg", "5deg", "-5deg"] }) },
                           { scale: object.scale },
-                        ]},
+                        ],
+                      },
                     ]}
                   >
-                    <Image source={object.source} style={styles.seaObjectImage} contentFit="contain" cachePolicy="memory-disk" />
+                    {/* The touch target lives inside the positioned wrapper so it always
+                        covers the visible sea object instead of sitting at the sea's origin. */}
+                    <Pressable
+                      onPress={() => openSeaDiscovery(object.id as SeaDiscovery)}
+                      style={styles.seaObjectTouch}
+                      hitSlop={10}
+                      accessibilityRole="button"
+                      accessibilityLabel={object.id === "meteorite" ? "Discover a meteorite piece" : object.id === "stingray" ? "Greet the gentle stingray" : "Collect a starfish star"}
+                    >
+                      <Image source={object.source} style={styles.seaObjectImage} contentFit="contain" cachePolicy="memory-disk" />
+                    </Pressable>
                   </Animated.View>
-                );
-
-                return isInteractive ? (
-                  <Pressable
-                    key={object.id}
-                    onPress={() => openSeaDiscovery(object.id as SeaDiscovery)}
-                    style={styles.seaObjectButton}
-                    accessibilityLabel={object.id === "meteorite" ? "Discover a meteorite piece" : object.id === "stingray" ? "Greet the gentle stingray" : "Collect a starfish star"}
-                  >
-                    {objectContent}
-                  </Pressable>
-                ) : (
-                  <View key={object.id} pointerEvents="none">{objectContent}</View>
                 );
               })}
 
@@ -2873,22 +2894,57 @@ export default function HomeScreen() {
                 cachePolicy="memory-disk"
               />
 
-              <View style={styles.seaRewardPill}>
-                <Image source={TALA_IMAGE} style={{ width: 16, height: 16 }} contentFit="contain" />
-                <Text style={styles.seaRewardPillText}>+{seaRewardTala} Tala Earned!</Text>
-              </View>
+              {seaRewardState === "loading" ? (
+                <View style={styles.seaLoadingWrap}>
+                  <ActivityIndicator size="small" color="#52B72A" />
+                  <Text style={styles.seaRewardMessage}>Checking the tide...</Text>
+                </View>
+              ) : seaRewardState === "success" ? (
+                <>
+                  <View style={styles.seaRewardPill}>
+                    <Image source={TALA_IMAGE} style={{ width: 16, height: 16 }} contentFit="contain" />
+                    <Text style={styles.seaRewardPillText}>+{seaRewardTala} Tala Earned!</Text>
+                  </View>
 
-              <Text style={styles.seaRewardMessage}>
-                {seaDiscovery === "starfish"
-                  ? `The starfish gifted you +${seaRewardTala} Tala from the sea tide!`
-                  : seaDiscovery === "stingray"
-                  ? `The gentle stingray gifted you +${seaRewardTala} Tala as it glided by!`
-                  : `You discovered a fallen star fragment carrying +${seaRewardTala} Tala!`}
-              </Text>
+                  <Text style={styles.seaRewardMessage}>
+                    {seaDiscovery === "starfish"
+                      ? `The starfish gifted you +${seaRewardTala} Tala from the sea tide!`
+                      : seaDiscovery === "stingray"
+                      ? `The gentle stingray gifted you +${seaRewardTala} Tala as it glided by!`
+                      : `You discovered a fallen star fragment carrying +${seaRewardTala} Tala!`}
+                  </Text>
 
-              <Pressable style={styles.seaCollectButton} onPress={closeSeaDiscovery}>
-                <Text style={styles.seaCollectButtonText}>Collect Tala ✨</Text>
-              </Pressable>
+                  <Pressable style={styles.seaCollectButton} onPress={closeSeaDiscovery}>
+                    <Text style={styles.seaCollectButtonText}>Collect Tala ✨</Text>
+                  </Pressable>
+                </>
+              ) : seaRewardState === "already" ? (
+                <>
+                  <Text style={styles.seaRewardMessage}>
+                    You already collected this tide gift today. Come back tomorrow for another little surprise from the sea.
+                  </Text>
+                  <Pressable style={styles.seaCollectButton} onPress={closeSeaDiscovery}>
+                    <Text style={styles.seaCollectButtonText}>Close</Text>
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.seaRewardMessage}>
+                    The tide could not be reached right now. Check your connection and try again.
+                  </Text>
+                  <View style={styles.seaActionRow}>
+                    <Pressable
+                      style={[styles.seaActionButton, styles.seaActionButtonSecondary]}
+                      onPress={closeSeaDiscovery}
+                    >
+                      <Text style={styles.seaActionButtonSecondaryText}>Close</Text>
+                    </Pressable>
+                    <Pressable style={styles.seaActionButton} onPress={retrySeaDiscovery}>
+                      <Text style={styles.seaCollectButtonText}>Try Again</Text>
+                    </Pressable>
+                  </View>
+                </>
+              )}
             </View>
           </View>
         </View>
@@ -4017,7 +4073,6 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit-Medium" },
   moodConfirmBar: {
     borderRadius: 20,
-    borderWidth: 1,
     backgroundColor: "#F9FCF7",
     paddingHorizontal: 14,
     paddingVertical: 12,
@@ -5026,11 +5081,9 @@ const styles = StyleSheet.create({
   seaFloorbedImage: {
     width: "100%",
     height: "100%" },
-  seaObjectButton: {
-    position: "absolute",
-    zIndex: 4,
-    minWidth: 52,
-    minHeight: 52,
+  seaObjectTouch: {
+    width: "100%",
+    height: "100%",
     alignItems: "center",
     justifyContent: "center" },
   seaObject: {
@@ -5159,6 +5212,35 @@ const styles = StyleSheet.create({
   },
   seaCollectButtonText: {
     color: "#FFFFFF",
+    fontSize: 13.5,
+    fontFamily: "Outfit-Bold",
+  },
+  seaLoadingWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+    rowGap: 6,
+  },
+  seaActionRow: {
+    flexDirection: "row",
+    columnGap: 10,
+    width: "100%",
+  },
+  seaActionButton: {
+    flex: 1,
+    backgroundColor: "#73CB47",
+    borderRadius: 999,
+    paddingVertical: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  seaActionButtonSecondary: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#DDE5D6",
+  },
+  seaActionButtonSecondaryText: {
+    color: "#475569",
     fontSize: 13.5,
     fontFamily: "Outfit-Bold",
   },

@@ -684,8 +684,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     marginBottom: 12,
-    borderLeftWidth: 3,
-    borderLeftColor: "#73CD44",
   },
   gentleNoteIcon: {
     marginRight: 6,
