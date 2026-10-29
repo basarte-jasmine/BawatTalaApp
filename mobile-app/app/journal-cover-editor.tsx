@@ -18,6 +18,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import ViewShot, { captureRef, type ViewShotRef } from "react-native-view-shot";
 import { useAuthSession } from "../lib/auth-session";
 import { ConfirmationModal } from "../components/ui/ConfirmationModal";
+import * as ScreenOrientation from "expo-screen-orientation";
 import { loadJournalCover, persistJournalCoverPreview, saveJournalCover, type JournalCoverElement, type JournalCoverSticker } from "../lib/journal-cover";
 
 type CoverElement = JournalCoverElement;
@@ -311,7 +312,8 @@ const DraggableElement = ({
 export default function JournalCoverEditorScreen() {
   const { mode = "solo" } = useLocalSearchParams<{ mode: "muni" | "solo" }>();
   const { user } = useAuthSession();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
   const [coverColor, setCoverColor] = useState(COLORS[0].value);
   const [elements, setElements] = useState<CoverElement[]>([]);
   const [activeElementId, setActiveElementId] = useState<string | null>(null);
@@ -388,12 +390,22 @@ export default function JournalCoverEditorScreen() {
     }, 120);
   };
 
-  const { height } = useWindowDimensions();
+  useEffect(() => {
+    void ScreenOrientation.unlockAsync().catch(() => undefined);
+    return () => {
+      void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => undefined);
+    };
+  }, []);
+
   // Make the book take up as much vertical space as possible, but cap the width
-  const maxAvailableHeight = height - (showToolbar ? 420 : 180); 
+  const maxAvailableHeight = isLandscape
+    ? Math.max(220, Math.min(height - 74, 360))
+    : height - (showToolbar ? 420 : 180); 
   const calculatedWidth = maxAvailableHeight / 1.4;
-  const bookWidth = Math.min(width - 48, Math.max(300, calculatedWidth));
-  const bookHeight = bookWidth * 1.4;
+  const bookWidth = isLandscape
+    ? Math.min(Math.round(width * 0.44), Math.round(calculatedWidth))
+    : Math.min(width - 48, Math.max(300, calculatedWidth));
+  const bookHeight = Math.round(bookWidth * 1.4);
   const activeElement = elements.find((element) => element.id === activeElementId);
 
   useEffect(() => {
@@ -526,16 +538,174 @@ export default function JournalCoverEditorScreen() {
     }
   };
 
+  const renderCoverPreview = () => (
+    <ViewShot
+      ref={coverShotRef}
+      options={{ format: "webp", quality: 0.88 }}
+      style={[styles.notebookBase, { backgroundColor: coverColor, width: bookWidth, height: bookHeight }]}
+    >
+      <View style={styles.coverHighlight} />
+      <View style={styles.spine} />
+      <View style={styles.spineLine} />
+      <View style={styles.pageEdge} />
+      <View style={styles.elementsCanvas}>
+        {elements.map((element) => (
+          <DraggableElement
+            key={element.id}
+            element={element}
+            isActive={activeElementId === element.id}
+            onFocus={() => setActiveElementId(element.id)}
+            onEditText={handleEditText}
+            onDelete={() => removeElementById(element.id)}
+            onTransformChange={updateElementTransform}
+          />
+        ))}
+        {elements.length === 0 && (
+          <View pointerEvents="none" style={styles.emptyCoverMessage}>
+            <Ionicons name="add-circle-outline" size={30} color="rgba(255,248,232,0.7)" />
+            <Text style={styles.emptyCoverText}>Start with a title or a little detail{`\n\n`}Drag, pinch, or rotate your pieces</Text>
+          </View>
+        )}
+      </View>
+    </ViewShot>
+  );
+
+  const renderToolbarBody = () => (
+    <>
+      <View style={styles.toolbarHeader}>
+        <View>
+          <Text style={styles.toolTitle}>Make it yours</Text>
+          <Text style={styles.toolSubtitle}>Choose a mood, then add your pieces.</Text>
+        </View>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <View style={styles.undoRedoSegment}>
+            <Pressable
+              onPress={handleUndo}
+              disabled={!canUndo}
+              style={[styles.undoRedoBtn, !canUndo && styles.undoRedoBtnDisabled]}
+              accessibilityLabel="Undo"
+            >
+              <Ionicons name="arrow-undo" size={16} color={canUndo ? "#2D4A3E" : "#B2C1BA"} />
+            </Pressable>
+            <View style={styles.undoRedoDivider} />
+            <Pressable
+              onPress={handleRedo}
+              disabled={!canRedo}
+              style={[styles.undoRedoBtn, !canRedo && styles.undoRedoBtnDisabled]}
+              accessibilityLabel="Redo"
+            >
+              <Ionicons name="arrow-redo" size={16} color={canRedo ? "#2D4A3E" : "#B2C1BA"} />
+            </Pressable>
+          </View>
+          <Pressable onPress={() => setShowResetModal(true)} style={styles.iconOnlyButton} accessibilityLabel="Reset cover design">
+            <Ionicons name="refresh-outline" size={20} color="#4D6558" />
+          </Pressable>
+          {!isLandscape && (
+            <Pressable onPress={() => setShowToolbar(false)} style={styles.iconOnlyButton} accessibilityLabel="Hide tools">
+              <Ionicons name="chevron-down-outline" size={22} color="#4D6558" />
+            </Pressable>
+          )}
+        </View>
+      </View>
+
+      <Text style={styles.sectionLabel}>Cover color</Text>
+      <View style={styles.colorRow}>
+        {COLORS.map((color) => (
+          <Pressable
+            key={color.value}
+            onPress={() => {
+              setCoverColor(color.value);
+              recordHistory(elements, color.value);
+            }}
+            style={[styles.colorButton, { backgroundColor: color.value }, coverColor === color.value && styles.colorButtonActive]}
+            accessibilityLabel={`Choose ${color.name} cover`}
+            accessibilityRole="button"
+          />
+        ))}
+      </View>
+
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionLabel}>Add to cover</Text>
+        <Pressable onPress={addText} style={styles.textToolButton} accessibilityLabel="Add title text">
+          <Ionicons name="text-outline" size={18} color="#FFF8E8" />
+          <Text style={styles.textToolLabel}>Title</Text>
+        </Pressable>
+      </View>
+      <View style={styles.stickerRow}>
+        {STICKERS.map((sticker) => (
+          <Pressable key={sticker.icon} onPress={() => addSticker(sticker.icon)} style={styles.stickerButton} accessibilityLabel={`Add ${sticker.label} sticker`}>
+            {sticker.isImage ? (
+              <Image source={IMAGE_STICKERS[sticker.icon as keyof typeof IMAGE_STICKERS]} style={{ width: 30, height: 30 }} contentFit="contain" />
+            ) : (
+              <Ionicons name={sticker.icon as any} size={23} color="#4D6558" />
+            )}
+          </Pressable>
+        ))}
+      </View>
+
+      {activeElement?.type === "text" && (
+        <View style={styles.editPanel}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionLabel}>Edit title</Text>
+            <Pressable onPress={removeActiveElement} accessibilityLabel="Delete selected element" hitSlop={8}>
+              <Ionicons name="trash-outline" size={20} color="#A85D5D" />
+            </Pressable>
+          </View>
+          <TextInput
+            ref={textInputRef}
+            value={activeElement.content}
+            onChangeText={updateActiveText}
+            maxLength={28}
+            style={styles.titleInput}
+            placeholder="Type a title"
+            placeholderTextColor="#9BA89F"
+            accessibilityLabel="Cover title"
+          />
+          
+          <Text style={[styles.sectionLabel, { marginTop: 12, marginBottom: 8 }]}>Font Style</Text>
+          <View style={styles.fontRow}>
+            {FONTS.map((font) => (
+              <Pressable
+                key={font.value}
+                onPress={() => updateActiveTextFont(font.value)}
+                style={[styles.fontButton, activeElement.fontFamily === font.value || (!activeElement.fontFamily && font.value === "Outfit-Bold") ? styles.fontButtonActive : null]}
+              >
+                <Text style={[styles.fontButtonText, { fontFamily: font.value }]}>{font.name}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <Text style={[styles.sectionLabel, { marginTop: 12, marginBottom: 8 }]}>Text Color</Text>
+          <View style={styles.colorRow}>
+            {TEXT_COLORS.map((color) => (
+              <Pressable
+                key={color}
+                onPress={() => updateActiveTextColor(color)}
+                style={[styles.textColorButton, { backgroundColor: color }, activeElement.color === color && styles.textColorButtonActive]}
+              />
+            ))}
+          </View>
+        </View>
+      )}
+      {activeElement?.type === "sticker" && (
+        <Pressable onPress={removeActiveElement} style={styles.deleteButton} accessibilityLabel="Delete selected sticker">
+          <Ionicons name="trash-outline" size={18} color="#A85D5D" />
+          <Text style={styles.deleteText}>Remove selected sticker</Text>
+        </Pressable>
+      )}
+    </>
+  );
+
   return (
-    <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
+    <SafeAreaView style={styles.container} edges={isLandscape ? ["top", "bottom", "left", "right"] : ["top", "bottom"]}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <View style={styles.header}>
+      <View style={[styles.header, isLandscape && styles.headerLandscape]}>
         <Pressable onPress={() => setShowExitModal(true)} style={styles.iconButton} accessibilityLabel="Go back">
           <Ionicons name="arrow-back" size={23} color="#20352B" />
         </Pressable>
         <View>
           <Text style={styles.eyebrow}>YOUR JOURNAL</Text>
-          <Text style={styles.headerTitle}>Design your cover</Text>
+          <Text style={[styles.headerTitle, isLandscape && styles.headerTitleLandscape]}>Design your cover</Text>
         </View>
         <Pressable onPress={() => setShowSaveModal(true)} style={styles.doneButton} accessibilityLabel="Save cover" disabled={isSaving}>
           <Ionicons name="checkmark" size={18} color="#FFF8E8" />
@@ -543,158 +713,35 @@ export default function JournalCoverEditorScreen() {
         </Pressable>
       </View>
 
-      <View style={styles.previewArea}>
-        <ViewShot ref={coverShotRef} options={{ format: "webp", quality: 0.88 }} style={[styles.notebookBase, { backgroundColor: coverColor, width: bookWidth, height: bookHeight }]}>
-          <View style={styles.coverHighlight} />
-          <View style={styles.spine} />
-          <View style={styles.spineLine} />
-          <View style={styles.pageEdge} />
-          <View style={styles.elementsCanvas}>
-            {elements.map((element) => (
-              <DraggableElement
-                key={element.id}
-                element={element}
-                isActive={activeElementId === element.id}
-                onFocus={() => setActiveElementId(element.id)}
-                onEditText={handleEditText}
-                onDelete={() => removeElementById(element.id)}
-                onTransformChange={updateElementTransform}
-              />
-            ))}
-            {elements.length === 0 && (
-              <View pointerEvents="none" style={styles.emptyCoverMessage}>
-                <Ionicons name="add-circle-outline" size={30} color="rgba(255,248,232,0.7)" />
-                <Text style={styles.emptyCoverText}>Start with a title or a little detail
-
-Drag, pinch, or rotate your pieces</Text>
-              </View>
-            )}
+      {isLandscape ? (
+        <View style={styles.landscapeBody}>
+          {/* LEFT SIDE: Journal Cover */}
+          <View style={styles.landscapePreviewArea}>
+            {renderCoverPreview()}
           </View>
-        </ViewShot>
+
+          {/* RIGHT SIDE: Editing Elements & Tools */}
+          <View style={styles.landscapeToolbarArea}>
+            <ScrollView
+              ref={toolbarScrollRef}
+              style={styles.landscapeToolbarScroll}
+              contentContainerStyle={styles.landscapeToolbarContent}
+              showsVerticalScrollIndicator={true}
+              keyboardShouldPersistTaps="handled"
+            >
+              {renderToolbarBody()}
+            </ScrollView>
+          </View>
+        </View>
+      ) : (
+        <>
+      <View style={styles.previewArea}>
+        {renderCoverPreview()}
       </View>
 
-      
       {showToolbar ? (
         <ScrollView ref={toolbarScrollRef} style={styles.toolbarContainer} contentContainerStyle={styles.toolbarContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          <View style={styles.toolbarHeader}>
-            <View>
-              <Text style={styles.toolTitle}>Make it yours</Text>
-              <Text style={styles.toolSubtitle}>Choose a mood, then add your pieces.</Text>
-            </View>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <View style={styles.undoRedoSegment}>
-                <Pressable
-                  onPress={handleUndo}
-                  disabled={!canUndo}
-                  style={[styles.undoRedoBtn, !canUndo && styles.undoRedoBtnDisabled]}
-                  accessibilityLabel="Undo"
-                >
-                  <Ionicons name="arrow-undo" size={16} color={canUndo ? "#2D4A3E" : "#B2C1BA"} />
-                </Pressable>
-                <View style={styles.undoRedoDivider} />
-                <Pressable
-                  onPress={handleRedo}
-                  disabled={!canRedo}
-                  style={[styles.undoRedoBtn, !canRedo && styles.undoRedoBtnDisabled]}
-                  accessibilityLabel="Redo"
-                >
-                  <Ionicons name="arrow-redo" size={16} color={canRedo ? "#2D4A3E" : "#B2C1BA"} />
-                </Pressable>
-              </View>
-              <Pressable onPress={() => setShowResetModal(true)} style={styles.iconOnlyButton} accessibilityLabel="Reset cover design">
-                <Ionicons name="refresh-outline" size={20} color="#4D6558" />
-              </Pressable>
-              <Pressable onPress={() => setShowToolbar(false)} style={styles.iconOnlyButton} accessibilityLabel="Hide tools">
-                <Ionicons name="chevron-down-outline" size={22} color="#4D6558" />
-              </Pressable>
-            </View>
-          </View>
-
-          <Text style={styles.sectionLabel}>Cover color</Text>
-          <View style={styles.colorRow}>
-            {COLORS.map((color) => (
-              <Pressable
-                key={color.value}
-                onPress={() => {
-                  setCoverColor(color.value);
-                  recordHistory(elements, color.value);
-                }}
-                style={[styles.colorButton, { backgroundColor: color.value }, coverColor === color.value && styles.colorButtonActive]}
-                accessibilityLabel={`Choose ${color.name} cover`}
-                accessibilityRole="button"
-              />
-            ))}
-          </View>
-
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionLabel}>Add to cover</Text>
-            <Pressable onPress={addText} style={styles.textToolButton} accessibilityLabel="Add title text">
-              <Ionicons name="text-outline" size={18} color="#FFF8E8" />
-              <Text style={styles.textToolLabel}>Title</Text>
-            </Pressable>
-          </View>
-          <View style={styles.stickerRow}>
-            {STICKERS.map((sticker) => (
-              <Pressable key={sticker.icon} onPress={() => addSticker(sticker.icon)} style={styles.stickerButton} accessibilityLabel={`Add ${sticker.label} sticker`}>
-                {sticker.isImage ? (
-                  <Image source={IMAGE_STICKERS[sticker.icon as keyof typeof IMAGE_STICKERS]} style={{ width: 30, height: 30 }} contentFit="contain" />
-                ) : (
-                  <Ionicons name={sticker.icon as any} size={23} color="#4D6558" />
-                )}
-              </Pressable>
-            ))}
-          </View>
-
-          {activeElement?.type === "text" && (
-            <View style={styles.editPanel}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionLabel}>Edit title</Text>
-                <Pressable onPress={removeActiveElement} accessibilityLabel="Delete selected element" hitSlop={8}>
-                  <Ionicons name="trash-outline" size={20} color="#A85D5D" />
-                </Pressable>
-              </View>
-              <TextInput
-                ref={textInputRef}
-                value={activeElement.content}
-                onChangeText={updateActiveText}
-                maxLength={28}
-                style={styles.titleInput}
-                placeholder="Type a title"
-                placeholderTextColor="#9BA89F"
-                accessibilityLabel="Cover title"
-              />
-              
-              <Text style={[styles.sectionLabel, { marginTop: 12, marginBottom: 8 }]}>Font Style</Text>
-              <View style={styles.fontRow}>
-                {FONTS.map((font) => (
-                  <Pressable
-                    key={font.value}
-                    onPress={() => updateActiveTextFont(font.value)}
-                    style={[styles.fontButton, activeElement.fontFamily === font.value || (!activeElement.fontFamily && font.value === "Outfit-Bold") ? styles.fontButtonActive : null]}
-                  >
-                    <Text style={[styles.fontButtonText, { fontFamily: font.value }]}>{font.name}</Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              <Text style={[styles.sectionLabel, { marginTop: 12, marginBottom: 8 }]}>Text Color</Text>
-              <View style={styles.colorRow}>
-                {TEXT_COLORS.map((color) => (
-                  <Pressable
-                    key={color}
-                    onPress={() => updateActiveTextColor(color)}
-                    style={[styles.textColorButton, { backgroundColor: color }, activeElement.color === color && styles.textColorButtonActive]}
-                  />
-                ))}
-              </View>
-            </View>
-          )}
-          {activeElement?.type === "sticker" && (
-            <Pressable onPress={removeActiveElement} style={styles.deleteButton} accessibilityLabel="Delete selected sticker">
-              <Ionicons name="trash-outline" size={18} color="#A85D5D" />
-              <Text style={styles.deleteText}>Remove selected sticker</Text>
-            </Pressable>
-          )}
+          {renderToolbarBody()}
         </ScrollView>
       ) : (
         <View style={styles.showToolsContainer}>
@@ -703,6 +750,8 @@ Drag, pinch, or rotate your pieces</Text>
             <Text style={styles.showToolsText}>Show Tools</Text>
           </Pressable>
         </View>
+      )}
+      </>
       )}
 
       <ConfirmationModal
@@ -894,4 +943,43 @@ const styles = StyleSheet.create({
   fontButtonActive: { borderColor: "#4D6558", backgroundColor: "#E3EBE4" },
   fontButtonText: { color: "#20352B", fontSize: 13 },
   textColorButton: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: "#E6EDE7", shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 2, elevation: 2 },
-  textColorButtonActive: { borderColor: "#20352B", transform: [{ scale: 1.1 }] }});
+  textColorButtonActive: { borderColor: "#20352B", transform: [{ scale: 1.1 }] },
+  headerLandscape: {
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+  },
+  headerTitleLandscape: {
+    fontSize: 16,
+  },
+  landscapeBody: {
+    flex: 1,
+    flexDirection: "row",
+    paddingHorizontal: 12,
+    paddingBottom: 6,
+    gap: 12,
+  },
+  landscapePreviewArea: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  landscapeToolbarArea: {
+    width: "50%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    shadowColor: "#20352B",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 6,
+    overflow: "hidden",
+  },
+  landscapeToolbarScroll: {
+    flex: 1,
+  },
+  landscapeToolbarContent: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 24,
+  },
+});
