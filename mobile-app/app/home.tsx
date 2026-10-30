@@ -77,6 +77,8 @@ const WEATHER_CHECKIN_STORAGE_PREFIX = "@bawat-tala/checkin-weather";
 const WEATHER_ASSETS = {
   morning: require("../assets/images/WEATHER/morning bg.webp"),
   night: require("../assets/images/WEATHER/night bg.webp"),
+  sunnyBackground: require("../assets/images/WEATHER/sunny bg.webp"),
+  rainBackground: require("../assets/images/WEATHER/rain bg.webp"),
   clear: require("../assets/images/WEATHER/morning_sunny.webp"),
   clouds: require("../assets/images/WEATHER/overcast.webp"),
   rain: require("../assets/images/WEATHER/rainy.webp"),
@@ -98,9 +100,12 @@ function getWeatherAsset(weatherCode: number, isDay: boolean) {
 function getCheckinBackground(weather: WeatherData | null) {
   if (!weather) return WEATHER_ASSETS.morning;
   const category = weather.condition.category;
-  return !weather.isDay || category === "rain" || category === "thunder"
-    ? WEATHER_ASSETS.night
-    : WEATHER_ASSETS.morning;
+  if (category === "rain" || category === "thunder") {
+    return WEATHER_ASSETS.rainBackground;
+  }
+  if (!weather.isDay) return WEATHER_ASSETS.night;
+  if (category === "clear") return WEATHER_ASSETS.sunnyBackground;
+  return WEATHER_ASSETS.morning;
 }
 
 function getWeatherSummary(weather: WeatherData | null) {
@@ -112,10 +117,13 @@ function getWeatherSummary(weather: WeatherData | null) {
 
 function getWeatherSupportPrompt(weather: WeatherData | null) {
   if (!weather) return "";
+  if (!weather.isDay) return "A quiet night. Muni is here for a gentle check-in.";
   if (weather.condition.category === "rain") return "Rainy skies. Want to talk to Muni?";
   if (weather.condition.category === "thunder") return "Stormy skies. Muni is here with you.";
   if (weather.condition.category === "clouds") return "A softer sky today. How are you feeling?";
-  return "";
+  if (weather.condition.category === "clear") return "Sunny skies today. A little light for your check-in.";
+  if (weather.condition.category === "snow") return "A cool day outside. Take your check-in gently.";
+  return "Muni is here for a small moment with you.";
 }
 
 type ScheduledBottleNote = {
@@ -2657,12 +2665,6 @@ export default function HomeScreen() {
             onPressIn={() => !isClaimingCheckIn && !hasCheckedInToday && handleButtonPressIn(dailyCheckInScale, 0.96)}
             onPressOut={() => handleButtonPressOut(dailyCheckInScale)}
           >
-            <Ionicons
-              name={hasCheckedInToday ? "checkmark-circle" : "sparkles"}
-              size={17}
-              color="#FFFFFF"
-              style={{ marginRight: 6 }}
-            />
             <Text style={styles.dailyCheckinButtonText}>
               {isClaimingCheckIn ? "Checking in..." : hasCheckedInToday ? "Checked in today" : "Check-in today"}
             </Text>
@@ -4668,25 +4670,25 @@ const styles = StyleSheet.create({
   dailyRewardDayLabelDone: {
     color: "#16A34A" },
   dailyCheckinButton: {
-    height: 44,
+    minHeight: 40,
     borderRadius: 999,
     backgroundColor: "#52B72A",
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
-    marginHorizontal: "12%",
+    marginHorizontal: "18%",
     shadowColor: "#3F931E",
-    shadowOpacity: 0.24,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3 },
+    shadowOpacity: 0.28,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2 },
   dailyCheckinButtonDisabled: {
-    backgroundColor: "#A7DCA3",
+    backgroundColor: "#A8D88E",
     shadowOpacity: 0 },
   dailyCheckinButtonText: {
     color: "#FFFFFF",
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: 14,
+    lineHeight: 18,
     fontFamily: "Outfit-Bold" },
   pauseCard: {
     borderRadius: 26,
