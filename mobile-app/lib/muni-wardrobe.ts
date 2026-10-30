@@ -62,7 +62,6 @@ export const COLLECTION_SECTIONS: MuniCollectionSection[] = [
     id: "eye",
     label: "Eye",
     options: [
-      { id: "cinema-glasses", label: "Cinema Glasses", price: 110, source: require("../assets/images/Muni Customization/Eyes/Cinema_Glasses.webp") },
       { id: "circle-sunglasses", label: "Circle Sunglasses", price: 95, source: require("../assets/images/Muni Customization/Eyes/Circle_Sunglasses.webp") },
       { id: "cyber-visor", label: "Cyber Visor", price: 140, source: require("../assets/images/Muni Customization/Eyes/Cyber_Visor.webp") },
     ],
@@ -71,11 +70,7 @@ export const COLLECTION_SECTIONS: MuniCollectionSection[] = [
     id: "outfit",
     label: "Outfit",
     options: [
-      { id: "blue-bandana", label: "Blue Bandana", price: 80, source: require("../assets/images/Muni Customization/Head/Blue bandana.webp") },
-      { id: "green-bandana", label: "Green Bandana", price: 80, source: require("../assets/images/Muni Customization/Head/Green bandana.webp") },
-      { id: "red-bandana", label: "Red Bandana", price: 80, source: require("../assets/images/Muni Customization/Head/Red bandana.webp") },
       { id: "brown-jumper", label: "Brown Jumper", price: 130, source: require("../assets/images/Muni Customization/Outfit/Brown jumper.webp") },
-      { id: "denim-jumper", label: "Denim Jumper", price: 143, source: require("../assets/images/Muni Customization/Outfit/Demin jumper.webp") },
       { id: "denim-vest", label: "Denim Vest", price: 130, source: require("../assets/images/Muni Customization/Outfit/Demin vest.webp") },
       { id: "explorer-vest", label: "Explorer Vest", price: 156, source: require("../assets/images/Muni Customization/Outfit/Explorer vest.webp") },
       { id: "green-jumper", label: "Green Jumper", price: 130, source: require("../assets/images/Muni Customization/Outfit/Green jumper.webp") },
@@ -119,10 +114,19 @@ function wardrobeCacheKey(studentNumber: string) {
 }
 
 function cloneLoadout(loadout: MuniLoadout): MuniLoadout {
-  return {
+  const nextLoadout = {
     ...loadout,
     outfit: loadout.outfit === "spooky-ghost" ? null : loadout.outfit,
   };
+
+  for (const section of SECTION_IDS) {
+    const optionId = nextLoadout[section];
+    if (optionId && !getMuniCollectionOption(section, optionId)) {
+      nextLoadout[section] = null;
+    }
+  }
+
+  return nextLoadout;
 }
 
 function isMuniLoadout(value: unknown): value is MuniLoadout {
