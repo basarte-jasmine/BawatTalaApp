@@ -307,7 +307,6 @@ export function DailyTasksCard({
               ? "Walang magaang gawain sa listahan."
               : "Wala pang nakatalang gawain para sa araw na ito."}
           </Text>
-          <Text style={styles.emptySubtext}>Maglagay ng 1 hanggang 3 munting gagawin sa ibaba.</Text>
         </View>
       ) : (
         <View style={styles.taskList}>
@@ -598,13 +597,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#4B614E",
     marginTop: 4,
-    textAlign: "center",
-  },
-  emptySubtext: {
-    fontFamily: "Outfit-Regular",
-    fontSize: 11,
-    color: "#7E9482",
-    marginTop: 2,
     textAlign: "center",
   },
   taskList: {

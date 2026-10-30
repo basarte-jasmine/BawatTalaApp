@@ -11,7 +11,7 @@ import { Image } from "expo-image";
 const AnimatedExpoImage = Animated.createAnimatedComponent(Image);
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Defs, Ellipse, LinearGradient, Path, Rect, Stop } from "react-native-svg";
-import { checkDaysSinceLastActive, recordLastActiveTimestamp } from "../lib/muni-reminders";
+import { checkDaysSinceLastActive, recordLastActiveTimestamp, saveWeatherReminderContext } from "../lib/muni-reminders";
 import { CounselorAvatar } from "../components/appointments/CounselorAvatar";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { MuniVoiceOverlay } from "../components/voice/MuniVoiceOverlay";
@@ -115,15 +115,46 @@ function getWeatherSummary(weather: WeatherData | null) {
   return `${location} · ${temperature}`;
 }
 
-function getWeatherSupportPrompt(weather: WeatherData | null) {
+function getWeatherSupportPrompt(weather: WeatherData | null, quoteSeed: number) {
   if (!weather) return "";
-  if (!weather.isDay) return "A quiet night. Muni is here for a gentle check-in.";
-  if (weather.condition.category === "rain") return "Rainy skies. Want to talk to Muni?";
-  if (weather.condition.category === "thunder") return "Stormy skies. Muni is here with you.";
-  if (weather.condition.category === "clouds") return "A softer sky today. How are you feeling?";
-  if (weather.condition.category === "clear") return "Sunny skies today. A little light for your check-in.";
-  if (weather.condition.category === "snow") return "A cool day outside. Take your check-in gently.";
-  return "Muni is here for a small moment with you.";
+  const quotes = !weather.isDay
+    ? [
+        "Even under a quiet night sky, you still deserve a gentle moment.",
+        "The night is calm, so let yourself slow down and breathe.",
+        "The sky is resting tonight. You can give yourself permission to rest too.",
+      ]
+    : weather.condition.category === "rain"
+      ? [
+          "It’s quite gloomy, but don’t forget to be a ray of sunshine.",
+          "Rainy skies can make the day feel heavy. Take it softly, one moment at a time.",
+          "Let the rain fall gently while you make a little space for yourself.",
+        ]
+      : weather.condition.category === "thunder"
+        ? [
+            "Even when the skies are loud, you can take things one gentle moment at a time.",
+            "The thunder may be loud, but you are safe to pause and find your calm.",
+            "Stormy skies pass in time. For now, take a slow breath with Muni.",
+          ]
+        : weather.condition.category === "clouds"
+          ? [
+              "Soft clouds make room for soft moments. Be gentle with yourself.",
+              "The sky feels quiet today. Maybe you can move through the day gently too.",
+              "Cloudy days are still worth noticing. What small comfort can you give yourself?",
+            ]
+          : weather.condition.category === "clear"
+            ? [
+                "The skies are bright, and so is the little light you carry.",
+                "There is a little sunshine in the sky today. I hope you find some within you too.",
+                "A clear sky can be a gentle reminder that brighter moments are always possible.",
+              ]
+            : weather.condition.category === "snow"
+              ? [
+                  "Keep warm and take your time. You deserve a cozy moment.",
+                  "The air is chilly, so be extra kind and patient with yourself today.",
+                  "Cold weather calls for a softer pace. Muni is here while you warm up.",
+                ]
+              : ["Whatever the weather, there is always room for one gentle moment."];
+  return quotes[Math.floor(quoteSeed * quotes.length) % quotes.length];
 }
 
 type ScheduledBottleNote = {
@@ -531,6 +562,7 @@ export default function HomeScreen() {
   const [checkInRewardTala, setCheckInRewardTala] = useState(0);
   const [totalTala, setTotalTala] = useState(0);
   const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [weatherQuoteSeed, setWeatherQuoteSeed] = useState(() => Math.random());
   const [checkinWeather, setCheckinWeather] = useState<StoredCheckinWeather>({});
   const [latestMoodId, setLatestMoodId] = useState<string | null>(null);
   const [todayMoodCheckInCount, setTodayMoodCheckInCount] = useState(0);
@@ -570,7 +602,10 @@ export default function HomeScreen() {
           location.coords.longitude,
           locationInfo,
         );
-        if (!cancelled) setWeather(nextWeather);
+        if (!cancelled) {
+          setWeather(nextWeather);
+          await saveWeatherReminderContext(nextWeather.condition.category, nextWeather.isDay);
+        }
       } catch {
         // Weather is an optional enhancement; the check-in remains usable without it.
       }
@@ -1499,6 +1534,7 @@ export default function HomeScreen() {
 
   const handleRefreshHome = useCallback(async () => {
     setIsRefreshing(true);
+    setWeatherQuoteSeed(Math.random());
     await syncNow();
     await loadHomeData();
     setIsRefreshing(false);
@@ -2586,11 +2622,11 @@ export default function HomeScreen() {
                   {getWeatherSummary(weather)}
                 </Text>
               </View>
-              {getWeatherSupportPrompt(weather) ? (
+              {getWeatherSupportPrompt(weather, weatherQuoteSeed) ? (
                 <View style={styles.dailyWeatherPrompt}>
                   <Ionicons name="sparkles" size={13} color="#356E25" />
                   <Text style={styles.dailyWeatherPromptText}>
-                    {getWeatherSupportPrompt(weather)}
+                    {getWeatherSupportPrompt(weather, weatherQuoteSeed)}
                   </Text>
                 </View>
               ) : null}
@@ -2666,7 +2702,7 @@ export default function HomeScreen() {
             onPressOut={() => handleButtonPressOut(dailyCheckInScale)}
           >
             <Text style={styles.dailyCheckinButtonText}>
-              {isClaimingCheckIn ? "Checking in..." : hasCheckedInToday ? "Checked in today" : "Check-in today"}
+              {isClaimingCheckIn ? "Tinatala..." : hasCheckedInToday ? "Naitala na ngayon" : "Mag tala ngayon"}
             </Text>
           </Pressable>
           </Animated.View>
@@ -3622,7 +3658,7 @@ Muni saved your space and left a warm cup of cocoa on your desk. Take whatever t
                   });
                 }}
               >
-                <Text style={styles.reconnectPrimaryText}>Check in today</Text>
+                <Text style={styles.reconnectPrimaryText}>Mag tala ngayon</Text>
               </Pressable>
             </View>
           </View>

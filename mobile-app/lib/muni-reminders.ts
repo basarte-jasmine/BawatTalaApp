@@ -13,6 +13,14 @@ type MuniReminderPreference = {
   updatedAt: string;
 };
 
+type WeatherReminderCategory = "clear" | "clouds" | "rain" | "snow" | "thunder";
+
+type WeatherReminderContext = {
+  category: WeatherReminderCategory;
+  isDay: boolean;
+  savedAt: number;
+};
+
 type ReminderTemplate = {
   hour: number;
   id: string;
@@ -46,12 +54,72 @@ export const INACTIVITY_REMINDER_TEMPLATE = {
 
 export const COZY_AMBIENT_REMINDER_TEMPLATE = {
   id: "muni-cozy-ambient",
-  title: "Rainy afternoon or cozy break? 🌧️",
-  body: (name: string) =>
-    (name ? name + ", stay" : "Stay") +
-    " cozy. Muni has peaceful rain and ocean sounds ready whenever you want a breather.",
   route: "/wellness-tools?mood=cozy",
 };
+
+export async function saveWeatherReminderContext(
+  category: WeatherReminderCategory,
+  isDay: boolean,
+) {
+  await AsyncStorage.setItem(
+    WEATHER_REMINDER_CONTEXT_KEY,
+    JSON.stringify({ category, isDay, savedAt: Date.now() } satisfies WeatherReminderContext),
+  );
+}
+
+async function getWeatherReminderCopy(name: string) {
+  const fallback = {
+    title: "A cozy moment or a quiet break? 🌤️",
+    body: (name ? name + ", stay" : "Stay") +
+      " cozy. Muni has peaceful nature and ocean sounds ready whenever you want a breather.",
+  };
+
+  try {
+    const raw = await AsyncStorage.getItem(WEATHER_REMINDER_CONTEXT_KEY);
+    if (!raw) return fallback;
+    const context = JSON.parse(raw) as Partial<WeatherReminderContext>;
+    if (
+      typeof context.savedAt !== "number" ||
+      Date.now() - context.savedAt > 6 * 60 * 60 * 1000 ||
+      typeof context.category !== "string"
+    ) {
+      return fallback;
+    }
+
+    const prefix = name ? name + ", " : "";
+    switch (context.category) {
+      case "rain":
+        return {
+          title: "A rainy little pause 🌧️",
+          body: prefix + "it’s gloomy outside, but you can still make a little space for yourself today.",
+        };
+      case "thunder":
+        return {
+          title: "Loud skies, soft moments ⛈️",
+          body: prefix + "the storm may be loud, but you can take things one calm breath at a time.",
+        };
+      case "clouds":
+        return {
+          title: "A softer sky today ☁️",
+          body: prefix + "cloudy days are still worth noticing. Take the day gently.",
+        };
+      case "clear":
+        return {
+          title: "A little sunshine for you ☀️",
+          body: prefix + "the skies are bright today. I hope you find a little brightness within you too.",
+        };
+      case "snow":
+        return {
+          title: "Keep cozy today 🧣",
+          body: prefix + "the air is chilly, so take your time and be extra kind to yourself.",
+        };
+      default:
+        return fallback;
+    }
+  } catch {
+    return fallback;
+  }
+}
 
 export function getInactivityTriggerDate(days = INACTIVITY_DAYS, now = new Date()): Date {
   const targetDate = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
@@ -106,6 +174,7 @@ export async function checkDaysSinceLastActive(): Promise<number> {
 }
 
 const MUNI_REMINDER_STORAGE_PREFIX = "bawat-tala.muniReminders.";
+const WEATHER_REMINDER_CONTEXT_KEY = "bawat-tala.weatherReminderContext";
 
 export const DAILY_RHYTHM_TEMPLATES: ReminderTemplate[] = [
   {
@@ -113,27 +182,27 @@ export const DAILY_RHYTHM_TEMPLATES: ReminderTemplate[] = [
     hour: 8,
     minute: 30,
     route: "/home",
-    title: "Magandang umaga from Muni ☀️",
+    title: "A little light for your morning ☀️",
     body: (name) =>
-      (name ? "Hi " + name + " — b" : "B") + "efore the day gets noisy, how’s your heart feeling this morning?",
+      (name ? name + ", e" : "E") + "ven when the skies feel heavy, don’t forget to be a little ray of sunshine, Dearie.",
   },
   {
     id: "midday-transition",
     hour: 13,
     minute: 30,
     route: "/home",
-    title: "Heavy morning classes? 🌱",
+    title: "A gentle weather note from Muni 🌱",
     body: (name) =>
-      (name ? name + ", drop" : "Drop") + " your school bag for a second. Even a 30-second exhale counts.",
+      (name ? name + ", w" : "W") + "hatever the weather brings, you can take one gentle moment for yourself.",
   },
   {
     id: "evening-journal",
     hour: 20,
     minute: 30,
     route: "/home",
-    title: "Muni saved a quiet space for you ✨",
+    title: "A cozy sky for your evening ✨",
     body: (name) =>
-      (name ? "Done with homework, " + name + "? " : "") + "Let’s close the tabs in your head before bed.",
+      (name ? name + ", l" : "L") + "et the quiet sky remind you: you deserve a soft place to land tonight.",
   },
 ];
 
@@ -342,10 +411,11 @@ export async function scheduleMuniReminders(studentNumber: string, firstName?: s
     } as any,
   }).catch(() => null);
 
+  const weatherReminder = await getWeatherReminderCopy(name);
   const cozyId = await Notifications.scheduleNotificationAsync({
     content: {
-      title: COZY_AMBIENT_REMINDER_TEMPLATE.title,
-      body: COZY_AMBIENT_REMINDER_TEMPLATE.body(name),
+      title: weatherReminder.title,
+      body: weatherReminder.body,
       data: {
         route: COZY_AMBIENT_REMINDER_TEMPLATE.route,
         reminderId: COZY_AMBIENT_REMINDER_TEMPLATE.id,
