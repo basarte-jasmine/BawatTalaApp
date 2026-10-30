@@ -103,12 +103,18 @@ function getCheckinBackground(weather: WeatherData | null) {
     : WEATHER_ASSETS.morning;
 }
 
-function getWeatherPrompt(weather: WeatherData | null) {
+function getWeatherSummary(weather: WeatherData | null) {
   if (!weather) return "";
-  const category = weather.condition.category;
-  if (category === "rain") return "Rainy skies today. Want to tell Muni how you’re feeling?";
-  if (category === "thunder") return "Stormy skies today. Muni is here if you need a little calm.";
-  if (category === "clouds") return "A cloudy day today. How is your inner weather?";
+  const temperature = `${weather.temperature}°C`;
+  const location = weather.cityName || weather.locationLabel || "your area";
+  return `${location} · ${temperature}`;
+}
+
+function getWeatherSupportPrompt(weather: WeatherData | null) {
+  if (!weather) return "";
+  if (weather.condition.category === "rain") return "Rainy skies. Want to talk to Muni?";
+  if (weather.condition.category === "thunder") return "Stormy skies. Muni is here with you.";
+  if (weather.condition.category === "clouds") return "A softer sky today. How are you feeling?";
   return "";
 }
 
@@ -2565,10 +2571,21 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          {getWeatherPrompt(weather) ? (
-            <View style={styles.dailyWeatherPrompt}>
-              <Ionicons name="sparkles" size={13} color="#356E25" />
-              <Text style={styles.dailyWeatherPromptText}>{getWeatherPrompt(weather)}</Text>
+          {weather ? (
+            <View style={styles.dailyWeatherInfo}>
+              <View style={styles.dailyWeatherSummary}>
+                <Text style={styles.dailyWeatherSummaryText} numberOfLines={1}>
+                  {getWeatherSummary(weather)}
+                </Text>
+              </View>
+              {getWeatherSupportPrompt(weather) ? (
+                <View style={styles.dailyWeatherPrompt}>
+                  <Ionicons name="sparkles" size={13} color="#356E25" />
+                  <Text style={styles.dailyWeatherPromptText}>
+                    {getWeatherSupportPrompt(weather)}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           ) : null}
 
@@ -4563,15 +4580,30 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     columnGap: 4,
     marginBottom: 14 },
-  dailyWeatherPrompt: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
+  dailyWeatherInfo: {
     marginBottom: 12,
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 12,
     backgroundColor: "rgba(255, 255, 255, 0.72)" },
+  dailyWeatherSummary: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7 },
+  dailyWeatherSummaryText: {
+    flex: 1,
+    color: "#356E25",
+    fontSize: 11,
+    lineHeight: 15,
+    fontFamily: "Outfit-Bold" },
+  dailyWeatherPrompt: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    marginTop: 5,
+    paddingTop: 5,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(53, 110, 37, 0.12)" },
   dailyWeatherPromptText: {
     flex: 1,
     color: "#356E25",
