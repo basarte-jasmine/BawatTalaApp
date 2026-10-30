@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as Location from "expo-location";
 import * as Haptics from "expo-haptics";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import DateTimePicker, { DateTimePickerAndroid, type DateTimePickerEvent } from "@react-native-community/datetimepicker";
@@ -15,7 +16,6 @@ import { CounselorAvatar } from "../components/appointments/CounselorAvatar";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { MuniVoiceOverlay } from "../components/voice/MuniVoiceOverlay";
 import { DailyTasksCard } from "../components/home/DailyTasksCard";
-import { WeatherCard } from "../components/home/WeatherCard";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { StudentProfileAvatar } from "../components/profile/StudentProfileAvatar";
 import { ConfirmationModal } from "../components/ui/ConfirmationModal";
@@ -54,11 +54,13 @@ import { getManilaNow, getManilaStartOfToday, getManilaTodayParts } from "../lib
 import { getAvailableMuniTala, updateAvailableMuniTala, hydrateMuniWardrobe, subscribeAvailableMuniTala } from "../lib/muni-wardrobe";
 import { isAdminMessageNotification } from "../lib/notification-utils";
 import { useOfflineSync } from "../lib/offline-sync";
+import { fetchOpenMeteoWeather, getWeatherCondition, resolveUserLocationName, type WeatherData } from "../lib/weather";
 
 type DailyCheckinReward = {
   id: string;
   state: "active" | "done" | "locked";
   value: string;
+  weatherCode?: number;
 };
 
 const DAILY_CHECKIN_REWARDS: DailyCheckinReward[] = [
@@ -70,6 +72,45 @@ const DAILY_CHECKIN_REWARDS: DailyCheckinReward[] = [
   { id: "r100", value: "+100", state: "locked" },
   { id: "r150", value: "+150", state: "locked" },
 ];
+
+const WEATHER_CHECKIN_STORAGE_PREFIX = "@bawat-tala/checkin-weather";
+const WEATHER_ASSETS = {
+  morning: require("../assets/images/WEATHER/morning bg.webp"),
+  night: require("../assets/images/WEATHER/night bg.webp"),
+  clear: require("../assets/images/WEATHER/morning_sunny.webp"),
+  clouds: require("../assets/images/WEATHER/overcast.webp"),
+  rain: require("../assets/images/WEATHER/rainy.webp"),
+  thunder: require("../assets/images/WEATHER/thunderstorm.webp"),
+  snow: require("../assets/images/WEATHER/windy.webp"),
+} as const;
+
+type StoredCheckinWeather = Record<string, number>;
+
+function getCheckinWeatherStorageKey(studentNumber: string) {
+  return `${WEATHER_CHECKIN_STORAGE_PREFIX}:${studentNumber}`;
+}
+
+function getWeatherAsset(weatherCode: number, isDay: boolean) {
+  const category = getWeatherCondition(weatherCode, isDay).category;
+  return WEATHER_ASSETS[category] ?? (isDay ? WEATHER_ASSETS.morning : WEATHER_ASSETS.night);
+}
+
+function getCheckinBackground(weather: WeatherData | null) {
+  if (!weather) return WEATHER_ASSETS.morning;
+  const category = weather.condition.category;
+  return !weather.isDay || category === "rain" || category === "thunder"
+    ? WEATHER_ASSETS.night
+    : WEATHER_ASSETS.morning;
+}
+
+function getWeatherPrompt(weather: WeatherData | null) {
+  if (!weather) return "";
+  const category = weather.condition.category;
+  if (category === "rain") return "Rainy skies today. Want to tell Muni how you’re feeling?";
+  if (category === "thunder") return "Stormy skies today. Muni is here if you need a little calm.";
+  if (category === "clouds") return "A cloudy day today. How is your inner weather?";
+  return "";
+}
 
 type ScheduledBottleNote = {
   createdAt: string;
@@ -475,11 +516,56 @@ export default function HomeScreen() {
   const [checkInResultMessage, setCheckInResultMessage] = useState("");
   const [checkInRewardTala, setCheckInRewardTala] = useState(0);
   const [totalTala, setTotalTala] = useState(0);
+  const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [checkinWeather, setCheckinWeather] = useState<StoredCheckinWeather>({});
   const [latestMoodId, setLatestMoodId] = useState<string | null>(null);
   const [todayMoodCheckInCount, setTodayMoodCheckInCount] = useState(0);
   const contentScrollRef = useRef<ScrollView>(null);
   const moodCardYRef = useRef(0);
   const moodHighlightAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!user?.studentNumber) {
+      setWeather(null);
+      setCheckinWeather({});
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const storedWeather = await AsyncStorage.getItem(getCheckinWeatherStorageKey(user.studentNumber));
+        if (!cancelled && storedWeather) {
+          const parsed = JSON.parse(storedWeather) as StoredCheckinWeather;
+          if (parsed && typeof parsed === "object") setCheckinWeather(parsed);
+        }
+
+        let permission = await Location.getForegroundPermissionsAsync();
+        if (permission.status !== Location.PermissionStatus.GRANTED && permission.canAskAgain) {
+          permission = await Location.requestForegroundPermissionsAsync();
+        }
+        if (permission.status !== Location.PermissionStatus.GRANTED) return;
+        if (!(await Location.hasServicesEnabledAsync())) return;
+
+        const location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        const locationInfo = await resolveUserLocationName(location.coords.latitude, location.coords.longitude);
+        const nextWeather = await fetchOpenMeteoWeather(
+          location.coords.latitude,
+          location.coords.longitude,
+          locationInfo,
+        );
+        if (!cancelled) setWeather(nextWeather);
+      } catch {
+        // Weather is an optional enhancement; the check-in remains usable without it.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.studentNumber]);
 
   useEffect(() => {
     void recordLastActiveTimestamp();
@@ -1140,20 +1226,28 @@ export default function HomeScreen() {
     }
   }, [user?.studentNumber]);
 
-  const buildCheckInRewards = useCallback((completedDays: number, activeDay: number, todayCheckedIn: boolean) => {
+  const buildCheckInRewards = useCallback((
+    completedDays: number,
+    activeDay: number,
+    todayCheckedIn: boolean,
+    weatherHistory: StoredCheckinWeather = checkinWeather,
+  ) => {
     setCheckInRewards(
       DAILY_CHECKIN_REWARDS.map((reward, index) => {
         const day = index + 1;
+        const weatherCode =
+          weatherHistory[String(day)] ??
+          (day === activeDay ? weather?.weatherCode : weather?.dailyWeatherCodes[index]);
         if (day <= completedDays) {
-          return { ...reward, state: "done" };
+         return { ...reward, state: "done", weatherCode };
         }
         if (!todayCheckedIn && day === activeDay) {
-          return { ...reward, state: "active" };
+         return { ...reward, state: "active", weatherCode };
         }
-        return { ...reward, state: "locked" };
+       return { ...reward, state: "locked", weatherCode };
       }),
     );
-  }, []);
+  }, [checkinWeather, weather]);
 
   const loadCheckInStatus = useCallback(async () => {
     if (!user?.studentNumber) {
@@ -1169,6 +1263,7 @@ export default function HomeScreen() {
         result.completedDays ?? 0,
         result.activeDay ?? 1,
         Boolean(result.todayCheckedIn),
+        checkinWeather,
       );
     }
 
@@ -1176,7 +1271,7 @@ export default function HomeScreen() {
     if (typeof wardrobe?.totalTala === "number" && Number.isFinite(wardrobe.totalTala)) {
       setTotalTala(wardrobe.totalTala);
     }
-  }, [buildCheckInRewards, user?.studentNumber]);
+  }, [buildCheckInRewards, checkinWeather, user?.studentNumber]);
 
   useEffect(() => subscribeAvailableMuniTala(setTotalTala), []);
 
@@ -1891,6 +1986,7 @@ export default function HomeScreen() {
       return;
     }
 
+    const claimedDay = checkInRewards.findIndex((reward) => reward.state === "active") + 1;
     setIsClaimingCheckIn(true);
     const result = await claimDailyCheckIn(user.studentNumber);
     setIsClaimingCheckIn(false);
@@ -1905,10 +2001,22 @@ export default function HomeScreen() {
 
     setHasCheckedInToday(Boolean(result.todayCheckedIn));
     void playCollectTalaSound(0.85);
+    const nextWeatherHistory =
+      claimedDay > 0 && weather?.weatherCode !== undefined
+        ? { ...checkinWeather, [String(claimedDay)]: weather.weatherCode }
+        : checkinWeather;
+    if (claimedDay > 0 && weather?.weatherCode !== undefined) {
+      setCheckinWeather(nextWeatherHistory);
+      await AsyncStorage.setItem(
+        getCheckinWeatherStorageKey(user.studentNumber),
+        JSON.stringify(nextWeatherHistory),
+      );
+    }
     buildCheckInRewards(
       result.completedDays ?? 0,
       result.activeDay ?? 1,
       Boolean(result.todayCheckedIn),
+      nextWeatherHistory,
     );
     if ((result.completedDays ?? 0) >= 7) {
       await unlockAchievement("seven-little-stars", user.studentNumber);
@@ -2211,8 +2319,6 @@ export default function HomeScreen() {
           </Animated.View>
         </View>
 
-        <WeatherCard />
-
         <Animated.View
           style={[
             styles.moodCard,
@@ -2417,7 +2523,7 @@ export default function HomeScreen() {
         >
           <View style={styles.weeklyRecapGlow} />
           <View style={styles.weeklyRecapHeader}>
-            <Text style={[styles.weeklyRecapTitle, { marginBottom: 0, flex: 1, marginRight: 10 }]}>Tala ng Linggo: A Week's Recap</Text>
+            <Text style={[styles.weeklyRecapTitle, { marginBottom: 0, flex: 1, marginRight: 10 }]}>Tala ng Linggo: A Week&apos;s Recap</Text>
             <View style={styles.weeklyRecapArrowPill}>
               <Text style={styles.weeklyRecapArrowPillText}>Open</Text>
               <Ionicons name="arrow-forward" size={12} color="#166534" />
@@ -2444,6 +2550,12 @@ export default function HomeScreen() {
         </Animated.View>
 
         <View style={styles.dailyCheckinCard}>
+          <Image
+            source={getCheckinBackground(weather)}
+            style={styles.dailyCheckinBackground}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+          />
           <View style={styles.surfaceGlow} />
           <View style={styles.dailyCheckinHeader}>
             <Text style={styles.dailyCheckinTitle}>Daily Check-in</Text>
@@ -2452,6 +2564,13 @@ export default function HomeScreen() {
               <Text style={styles.dailyTalaPillText}>{totalTala.toLocaleString("en-US")}</Text>
             </View>
           </View>
+
+          {getWeatherPrompt(weather) ? (
+            <View style={styles.dailyWeatherPrompt}>
+              <Ionicons name="sparkles" size={13} color="#356E25" />
+              <Text style={styles.dailyWeatherPromptText}>{getWeatherPrompt(weather)}</Text>
+            </View>
+          ) : null}
 
           <View style={styles.dailyRewardsRow}>
             {checkInRewards.map((reward, index) => (
@@ -2468,26 +2587,22 @@ export default function HomeScreen() {
                   reward.state === "locked" && styles.dailyRewardBoxLocked,
                 ]}
               >
+              <View style={{ width: rewardTileIconSize, height: rewardTileIconSize }}>
+                <Image
+                  source={getWeatherAsset(
+                    reward.weatherCode ?? weather?.weatherCode ?? 0,
+                    index === 0 ? weather?.isDay !== false : true,
+                  )}
+                  style={[styles.dailyRewardTalaIcon, { width: rewardTileIconSize, height: rewardTileIconSize }]}
+                  contentFit="contain"
+                  cachePolicy="memory-disk"
+                />
                 {reward.state === "done" ? (
-                  <View
-                    style={[
-                      styles.dailyRewardDoneCircle,
-                      {
-                        width: rewardTileIconSize,
-                        height: rewardTileIconSize,
-                        borderRadius: rewardTileIconSize / 2 },
-                    ]}
-                  >
-                    <Ionicons name="checkmark" size={20} color="#FFFFFF" />
+                  <View style={styles.dailyRewardDoneBadge}>
+                    <Ionicons name="checkmark" size={10} color="#FFFFFF" />
                   </View>
-                ) : (
-                  <Image
-                    source={TALA_IMAGE}
-                    style={[styles.dailyRewardTalaIcon, { width: rewardTileIconSize, height: rewardTileIconSize }]}
-                    contentFit="contain"
-                    cachePolicy="memory-disk"
-                  />
-                )}
+                ) : null}
+              </View>
                 <Text
                   style={[
                     styles.dailyRewardValue,
@@ -4410,6 +4525,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(110, 160, 120, 0.14)",
     overflow: "hidden" },
+  dailyCheckinBackground: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.22 },
   dailyCheckinHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -4445,6 +4563,21 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     columnGap: 4,
     marginBottom: 14 },
+  dailyWeatherPrompt: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    marginBottom: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.72)" },
+  dailyWeatherPromptText: {
+    flex: 1,
+    color: "#356E25",
+    fontSize: 11,
+    lineHeight: 15,
+    fontFamily: "Outfit-SemiBold" },
   dailyRewardBox: {
     borderRadius: 14,
     alignItems: "center",
@@ -4471,6 +4604,18 @@ const styles = StyleSheet.create({
     backgroundColor: "#22C55E",
     alignItems: "center",
     justifyContent: "center" },
+  dailyRewardDoneBadge: {
+    position: "absolute",
+    right: -2,
+    bottom: -1,
+    width: 15,
+    height: 15,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#22C55E",
+    borderWidth: 1,
+    borderColor: "#FFFFFF" },
   dailyRewardTalaIcon: {
     marginTop: 2 },
   dailyRewardValue: {

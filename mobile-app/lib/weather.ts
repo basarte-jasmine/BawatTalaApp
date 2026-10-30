@@ -29,6 +29,7 @@ export type WeatherData = {
   condition: WeatherCondition;
   dailyHigh: number;
   dailyLow: number;
+  dailyWeatherCodes: number[];
   hourly: HourlyForecastItem[];
   cityName: string;
   regionName: string;
@@ -387,6 +388,11 @@ export async function fetchOpenMeteoWeather(
   if (data.daily && Array.isArray(data.daily.temperature_2m_max) && data.daily.temperature_2m_max.length > 0) {
     dailyHigh = Math.round(Number(data.daily.temperature_2m_max[0]));
   }
+
+  const dailyWeatherCodes =
+    data.daily && Array.isArray(data.daily.weather_code)
+      ? data.daily.weather_code.map((code: unknown) => Number(code))
+      : [];
   if (data.daily && Array.isArray(data.daily.temperature_2m_min) && data.daily.temperature_2m_min.length > 0) {
     dailyLow = Math.round(Number(data.daily.temperature_2m_min[0]));
   }
@@ -439,6 +445,7 @@ export async function fetchOpenMeteoWeather(
     condition,
     dailyHigh,
     dailyLow,
+    dailyWeatherCodes,
     hourly: hourlyList,
     cityName: resolvedLoc.cityName,
     regionName: resolvedLoc.regionName,
@@ -448,4 +455,3 @@ export async function fetchOpenMeteoWeather(
     fetchedAt: Date.now(),
   };
 }
-

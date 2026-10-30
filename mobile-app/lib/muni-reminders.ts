@@ -78,7 +78,11 @@ const LAST_ACTIVE_STORAGE_KEY = "bawat-tala.lastActiveAt";
 export async function recordLastActiveTimestamp(): Promise<void> {
   try {
     await AsyncStorage.setItem(LAST_ACTIVE_STORAGE_KEY, new Date().toISOString());
-    void recordStudentMuniActivity();
+    try {
+      await recordStudentMuniActivity();
+    } catch {
+      // Activity tracking is optional and must not interrupt Home when the API is unavailable.
+    }
   } catch {}
 }
 
