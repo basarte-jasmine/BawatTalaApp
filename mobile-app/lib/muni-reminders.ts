@@ -206,6 +206,12 @@ export const DAILY_RHYTHM_TEMPLATES: ReminderTemplate[] = [
   },
 ];
 
+const MUNI_REMINDER_IDS = new Set([
+  ...DAILY_RHYTHM_TEMPLATES.map((template) => template.id),
+  INACTIVITY_REMINDER_TEMPLATE.id,
+  COZY_AMBIENT_REMINDER_TEMPLATE.id,
+]);
+
 export function getDailyRhythmInfo(date = new Date(), preferredKind?: string | null): DailyRhythmInfo {
   if (preferredKind === "morning" || preferredKind === "midday" || preferredKind === "evening") {
     return getDailyRhythmByKind(preferredKind);
@@ -270,7 +276,6 @@ function normalizeName(value?: string | null) {
 // from Asia/Manila, so reminders are scheduled as exact dates instead.
 function getNextManilaTriggerDate(hour: number, minute: number, now = new Date()): Date {
   const manilaNowMs = now.getTime() + 8 * 60 * 60 * 1000;
-  const manilaNow = new Date(manilaNowMs);
   const todayParts = getManilaTodayParts(now);
   const [year, month, day] = todayParts.isoDate.split("-").map(Number);
   const todayTargetMs = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
@@ -337,8 +342,21 @@ async function cancelReminderIds(notificationIds: string[]) {
   const Notifications = await getNotificationsModule();
   if (!Notifications) return;
 
+  const pending = await Notifications.getAllScheduledNotificationsAsync().catch(() => []);
+  const ids = new Set(notificationIds);
+  for (const item of pending) {
+    const identifier =
+      (item as { identifier?: string; id?: string }).identifier ||
+      (item as { identifier?: string; id?: string }).id ||
+      "";
+    const reminderId = (item as { content?: { data?: { reminderId?: unknown } } }).content?.data?.reminderId;
+    if (identifier && (ids.has(identifier) || (typeof reminderId === "string" && MUNI_REMINDER_IDS.has(reminderId)))) {
+      ids.add(identifier);
+    }
+  }
+
   await Promise.all(
-    notificationIds.map((id) =>
+    Array.from(ids, (id) =>
       Notifications.cancelScheduledNotificationAsync(id).catch(() => undefined),
     ),
   );
@@ -389,9 +407,10 @@ export async function scheduleMuniReminders(studentNumber: string, firstName?: s
           data: { route: template.route, reminderId: template.id },
         },
         trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
           channelId: Platform.OS === "android" ? "muni-reminders" : undefined,
           date: getNextManilaTriggerDate(template.hour, template.minute, now),
-        } as any,
+        },
       }),
     ),
   );
@@ -406,9 +425,10 @@ export async function scheduleMuniReminders(studentNumber: string, firstName?: s
       },
     },
     trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
       channelId: Platform.OS === "android" ? "muni-reminders" : undefined,
       date: getInactivityTriggerDate(INACTIVITY_DAYS, now),
-    } as any,
+    },
   }).catch(() => null);
 
   const weatherReminder = await getWeatherReminderCopy(name);
@@ -422,9 +442,10 @@ export async function scheduleMuniReminders(studentNumber: string, firstName?: s
       },
     },
     trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DATE,
       channelId: Platform.OS === "android" ? "muni-reminders" : undefined,
       date: getNextWeekendTriggerDate(now),
-    } as any,
+    },
   }).catch(() => null);
 
   const notificationIds = [
@@ -447,7 +468,9 @@ export async function syncMuniReminderSchedule(studentNumber: string, firstName?
     try {
       const pending = await Notifications.getAllScheduledNotificationsAsync();
       const pendingById = new Set(pending.map((item) => (item as { identifier?: string; id?: string }).identifier || (item as { identifier?: string; id?: string }).id || ""));
-      const stillCovered = preference.notificationIds.every((id) => pendingById.has(id));
+      const stillCovered =
+        preference.notificationIds.length > 0 &&
+        preference.notificationIds.every((id) => pendingById.has(id));
       if (stillCovered) return;
     } catch {
       // Fall through to a full reschedule.

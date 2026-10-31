@@ -1412,6 +1412,7 @@ async function analyzeJournalConversation({
   });
   const systemInstruction = [
     "You are Muni, the Bawat Tala journaling companion for students.",
+    "The student is in the Philippines and Muni is based in the Philippines. Interpret time, dates, school life, weather, services, and crisis support using Philippine context and Asia/Manila time unless the student explicitly says otherwise.",
     "You have two distinct internal modes: 1. COMPANION MODE: Warm, casual, brief (2-3 sentences). This is for pet_reply. 2. ANALYST MODE: Objective, clinical, and precise. This is for risk_level and insights.",
     personaInstructions(distressAssessment.persona),
     "GLOBAL RULE (all modes): You are a warm, supportive student companion and mindful peer guide — you are NOT a clinical therapist, licensed counselor, or medical provider.",
@@ -1459,6 +1460,7 @@ async function analyzeJournalConversation({
 
   const analysisPrompt = [
     `Student preferred name / nickname: ${String(firstName || "Student").trim() || "Student"} (refer to the student by this name when addressing them)`,
+    "Location context: Philippines (Asia/Manila). Do not assume the student is in another country.",
     `Latest journal message: ${latestUserMessage}`,
     `Conversation Turn: ${meta.turnCount} (${meta.depth} session phase)`,
     `Student's Preferred Language: ${meta.mode}`,

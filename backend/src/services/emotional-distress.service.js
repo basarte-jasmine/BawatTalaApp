@@ -104,6 +104,12 @@ const CONFIRM_INTENT_PATTERNS = [
   /\bayoko\s+na(?:\s+talaga)?\b/i,
   /\b(?:end|finish)\s+(?:it\s+all|everything|my\s+life)\b/i,
   /\bi\s+mean\s+it\b/i,
+  /\b(?:i'?m|i am|i'm)\s+(?:really\s+)?(?:going|gonna)\s+to\s+(?:do\s+it|act\s+on\s+it|end\s+it|kill\s+myself|hurt\s+myself)\b/i,
+  /\b(?:i\s+will|i'll)\s+(?:do\s+it|act\s+on\s+it|end\s+it|kill\s+myself|hurt\s+myself)\b/i,
+  /\b(?:it'?s|it is)\s+(?:true|real|literal|serious)\b/i,
+  /\b(?:i'?m|i am|i'm)\s+serious\b/i,
+  /\b(?:i'?m|i am|i'm)\s+not\s+(?:joking|kidding|playing)\b/i,
+  /\bwhat\s+i\s+said\s+is\s+(?:true|real|serious)\b/i,
   /\bfor\s+real\b/i,
 ];
 
@@ -442,4 +448,3 @@ module.exports = {
   normalizeSafetyStatus,
   toCompatRiskLevel,
 };
-
