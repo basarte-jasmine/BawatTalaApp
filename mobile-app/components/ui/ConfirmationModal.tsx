@@ -1,41 +1,93 @@
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 
 type ConfirmationModalProps = {
   cancelLabel?: string;
   confirmLabel?: string;
   confirmTone?: "danger" | "primary";
+  title?: string;
   message: string;
   onCancel: () => void;
   onConfirm: () => void;
   visible: boolean;
+  secondaryActionLabel?: string;
+  onSecondaryAction?: () => void;
+  isConfirming?: boolean;
 };
 
 export function ConfirmationModal({
   cancelLabel = "Cancel",
   confirmLabel = "Confirm",
   confirmTone = "primary",
+  title,
   message,
   onCancel,
   onConfirm,
-  visible }: ConfirmationModalProps) {
+  visible,
+  secondaryActionLabel,
+  onSecondaryAction,
+  isConfirming = false }: ConfirmationModalProps) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <View style={styles.modalBackdrop}>
         <View style={styles.modalCard}>
-          <Text style={styles.modalBody}>{message}</Text>
+          {Boolean(title) && <Text style={styles.modalTitle}>{title}</Text>}
+          <Text style={[styles.modalBody, Boolean(title) && styles.modalBodyWithTitle]}>{message}</Text>
 
-          <View style={styles.modalActions}>
-            <Pressable style={styles.modalSecondaryButton} onPress={onCancel}>
-              <Text style={styles.modalSecondaryText}>{cancelLabel}</Text>
-            </Pressable>
+          {secondaryActionLabel && onSecondaryAction ? (
+            <View style={styles.modalActionsStacked}>
+              <Pressable
+                style={[
+                  styles.modalConfirmButtonStacked,
+                  confirmTone === "danger" ? styles.modalConfirmButtonDanger : styles.modalConfirmButtonPrimary,
+                ]}
+                onPress={onConfirm}
+                disabled={isConfirming}
+              >
+                {isConfirming ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.modalConfirmText}>{confirmLabel}</Text>
+                )}
+              </Pressable>
 
-            <Pressable
-              style={[styles.modalConfirmButton, confirmTone === "danger" ? styles.modalConfirmButtonDanger : styles.modalConfirmButtonPrimary]}
-              onPress={onConfirm}
-            >
-              <Text style={styles.modalConfirmText}>{confirmLabel}</Text>
-            </Pressable>
-          </View>
+              <Pressable
+                style={styles.modalSecondaryActionButton}
+                onPress={onSecondaryAction}
+                disabled={isConfirming}
+              >
+                <Text style={styles.modalSecondaryActionText}>{secondaryActionLabel}</Text>
+              </Pressable>
+
+              <Pressable
+                style={styles.modalCancelLink}
+                onPress={onCancel}
+                disabled={isConfirming}
+              >
+                <Text style={styles.modalCancelLinkText}>{cancelLabel}</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.modalActions}>
+              <Pressable style={styles.modalSecondaryButton} onPress={onCancel} disabled={isConfirming}>
+                <Text style={styles.modalSecondaryText}>{cancelLabel}</Text>
+              </Pressable>
+
+              <Pressable
+                style={[
+                  styles.modalConfirmButton,
+                  confirmTone === "danger" ? styles.modalConfirmButtonDanger : styles.modalConfirmButtonPrimary,
+                ]}
+                onPress={onConfirm}
+                disabled={isConfirming}
+              >
+                {isConfirming ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.modalConfirmText}>{confirmLabel}</Text>
+                )}
+              </Pressable>
+            </View>
+          )}
         </View>
       </View>
     </Modal>
@@ -62,6 +114,13 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
     elevation: 4 },
+  modalTitle: {
+    color: "#243324",
+    fontSize: 18,
+    lineHeight: 24,
+    fontFamily: "Outfit-Bold",
+    textAlign: "center",
+    marginBottom: 6 },
   modalBody: {
     color: "#52606C",
     fontSize: 17,
@@ -69,9 +128,18 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit-SemiBold",
     textAlign: "center",
     marginBottom: 16 },
+  modalBodyWithTitle: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: "#5F6E7B",
+    marginBottom: 18 },
   modalActions: {
     flexDirection: "row",
     columnGap: 10 },
+  modalActionsStacked: {
+    width: "100%",
+    rowGap: 10,
+    marginTop: 2 },
   modalSecondaryButton: {
     flex: 1,
     minHeight: 40,
@@ -91,6 +159,35 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center" },
+  modalConfirmButtonStacked: {
+    width: "100%",
+    minHeight: 42,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center" },
+  modalSecondaryActionButton: {
+    width: "100%",
+    minHeight: 42,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#CDD5C7",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center" },
+  modalSecondaryActionText: {
+    color: "#4F5D6B",
+    fontSize: 13,
+    fontFamily: "Outfit-Bold" },
+  modalCancelLink: {
+    width: "100%",
+    minHeight: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 4 },
+  modalCancelLinkText: {
+    color: "#81909E",
+    fontSize: 13,
+    fontFamily: "Outfit-SemiBold" },
   modalConfirmButtonPrimary: {
     backgroundColor: "#79C943" },
   modalConfirmButtonDanger: {

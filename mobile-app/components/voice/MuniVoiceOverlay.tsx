@@ -25,6 +25,7 @@ import {
   type AudioPlayer,
 } from "expo-audio";
 import { File } from "expo-file-system";
+import { ConfirmationModal } from "../ui/ConfirmationModal";
 import { MuniAvatar } from "../muni/MuniAvatar";
 import { JournalLockGate, useAppPreferences } from "../../lib/app-preferences";
 import {
@@ -46,6 +47,7 @@ import {
   needsCrisisTrioPrompt,
   needsDistressWellnessOffer,
   needsFinishSupportPrompt,
+  StudentSupportAction,
 } from "../../lib/risk-level";
 import { showAppNotice } from "../../lib/app-notice";
 
@@ -205,6 +207,9 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
   const [isSavingSupportResponse, setIsSavingSupportResponse] = useState(false);
   const [riskModalRedirectEntryId, setRiskModalRedirectEntryId] = useState<string | null>(null);
   const [riskPromptSuppressedUntilFinish, setRiskPromptSuppressedUntilFinish] = useState(false);
+  const [showCrisisSaveConfirmModal, setShowCrisisSaveConfirmModal] = useState(false);
+  const [pendingCrisisAction, setPendingCrisisAction] = useState<"HOTLINE" | "COUNSELING" | "WELLNESS" | "DISMISS" | null>(null);
+  const [isSavingCrisisEntry, setIsSavingCrisisEntry] = useState(false);
   const [distressOfferPhase, setDistressOfferPhase] = useState<"wellness" | "save" | null>(null);
   const distressWellnessOfferDoneRef = useRef(false);
   const pendingWellnessAfterFinishRef = useRef(false);
@@ -496,7 +501,9 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
   useEffect(() => {
     if (visible) {
       isDisposedRef.current = false;
-      sessionStartedRef.current = false;
+      setShowCrisisSaveConfirmModal(false);
+    setPendingCrisisAction(null);
+    sessionStartedRef.current = false;
       if (!(appLockEnabled && isAppLocked)) {
         void loadSession();
       }
@@ -860,23 +867,7 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
     [entry?.id, setActiveEntry, user?.studentNumber]
   );
 
-  const handleDismissRiskModal = useCallback(async () => {
-    if (isSavingSupportResponse) return;
-    setRiskPromptSuppressedUntilFinish(true);
-    const saved = await saveSupportDecision("DISMISSED");
-    if (!saved) return;
-    setShowRiskModal(false);
-    if (riskModalRedirectEntryId) {
-      onClose();
-      router.replace({
-        pathname: "/journal-entry-view",
-        params: { entryId: riskModalRedirectEntryId },
-      });
-    }
-  }, [isSavingSupportResponse, onClose, riskModalRedirectEntryId, saveSupportDecision]);
-
-  const handleCallHotline = useCallback(async () => {
-    if (isSavingSupportResponse) return;
+  const executeHotlineAction = useCallback(async () => {
     const saved = await saveSupportDecision("CLICKED_HOTLINE");
     if (!saved) return;
     try {
@@ -898,20 +889,18 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
       );
       setShowRiskModal(false);
     }
-  }, [isSavingSupportResponse, saveSupportDecision]);
+  }, [saveSupportDecision]);
 
-  const handleOpenCounseling = useCallback(async () => {
-    if (isSavingSupportResponse) return;
+  const executeCounselingAction = useCallback(async () => {
     const saved = await saveSupportDecision("SCHEDULED_COUNSELING");
     if (!saved) return;
     setShowRiskModal(false);
     setRiskModalRedirectEntryId(null);
     onClose();
     router.push("/consult?track=professional&skipIntro=1");
-  }, [isSavingSupportResponse, onClose, saveSupportDecision]);
+  }, [onClose, saveSupportDecision]);
 
-  const handleOpenWellnessTools = useCallback(async () => {
-    if (isSavingSupportResponse) return;
+  const executeWellnessAction = useCallback(async () => {
     void stopSpeaking();
     const saved = await saveSupportDecision("VIEWED_WELLNESS");
     if (!saved) return;
@@ -919,7 +908,189 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
     setRiskModalRedirectEntryId(null);
     onClose();
     router.push("/wellness-tools");
-  }, [isSavingSupportResponse, onClose, saveSupportDecision, stopSpeaking]);
+  }, [onClose, saveSupportDecision, stopSpeaking]);
+
+  const executeDismissRiskModal = useCallback(async () => {
+    setRiskPromptSuppressedUntilFinish(true);
+    const saved = await saveSupportDecision("DISMISSED");
+    if (!saved) return;
+    setShowRiskModal(false);
+    if (riskModalRedirectEntryId) {
+      onClose();
+      router.replace({
+        pathname: "/journal-entry-view",
+        params: { entryId: riskModalRedirectEntryId },
+      });
+    }
+  }, [onClose, riskModalRedirectEntryId, saveSupportDecision]);
+
+  const handleDismissRiskModal = useCallback(async () => {
+    if (isSavingSupportResponse || isSavingCrisisEntry) return;
+    if (entry?.isFinished || riskModalRedirectEntryId) {
+      await executeDismissRiskModal();
+      return;
+    }
+    setPendingCrisisAction("DISMISS");
+    setShowCrisisSaveConfirmModal(true);
+  }, [entry?.isFinished, executeDismissRiskModal, isSavingCrisisEntry, isSavingSupportResponse, riskModalRedirectEntryId]);
+
+  const handleCallHotline = useCallback(async () => {
+    if (isSavingSupportResponse || isSavingCrisisEntry) return;
+    if (entry?.isFinished || riskModalRedirectEntryId) {
+      await executeHotlineAction();
+      return;
+    }
+    setPendingCrisisAction("HOTLINE");
+    setShowCrisisSaveConfirmModal(true);
+  }, [entry?.isFinished, executeHotlineAction, isSavingCrisisEntry, isSavingSupportResponse, riskModalRedirectEntryId]);
+
+  const handleOpenCounseling = useCallback(async () => {
+    if (isSavingSupportResponse || isSavingCrisisEntry) return;
+    if (entry?.isFinished || riskModalRedirectEntryId) {
+      await executeCounselingAction();
+      return;
+    }
+    setPendingCrisisAction("COUNSELING");
+    setShowCrisisSaveConfirmModal(true);
+  }, [entry?.isFinished, executeCounselingAction, isSavingCrisisEntry, isSavingSupportResponse, riskModalRedirectEntryId]);
+
+  const handleOpenWellnessTools = useCallback(async () => {
+    if (isSavingSupportResponse || isSavingCrisisEntry) return;
+    if (entry?.isFinished || riskModalRedirectEntryId) {
+      await executeWellnessAction();
+      return;
+    }
+    setPendingCrisisAction("WELLNESS");
+    setShowCrisisSaveConfirmModal(true);
+  }, [entry?.isFinished, executeWellnessAction, isSavingCrisisEntry, isSavingSupportResponse, riskModalRedirectEntryId]);
+
+  const handleCancelCrisisConfirm = useCallback(() => {
+    setShowCrisisSaveConfirmModal(false);
+    setPendingCrisisAction(null);
+  }, []);
+
+  const handleProceedWithoutSavingCrisis = useCallback(async () => {
+    const action = pendingCrisisAction;
+    setShowCrisisSaveConfirmModal(false);
+    setPendingCrisisAction(null);
+
+    if (action === "HOTLINE") {
+      await executeHotlineAction();
+    } else if (action === "COUNSELING") {
+      await executeCounselingAction();
+    } else if (action === "WELLNESS") {
+      await executeWellnessAction();
+    } else if (action === "DISMISS") {
+      await executeDismissRiskModal();
+    }
+  }, [executeCounselingAction, executeDismissRiskModal, executeHotlineAction, executeWellnessAction, pendingCrisisAction]);
+
+  const handleSaveAndProceedCrisis = useCallback(async () => {
+    if (isSavingCrisisEntry) return;
+
+    const action = pendingCrisisAction;
+    setIsSavingCrisisEntry(true);
+    void stopSpeaking();
+
+    try {
+      let supportAction: StudentSupportAction = "DISMISSED";
+      if (action === "HOTLINE") supportAction = "CLICKED_HOTLINE";
+      else if (action === "COUNSELING") supportAction = "SCHEDULED_COUNSELING";
+      else if (action === "WELLNESS") supportAction = "VIEWED_WELLNESS";
+
+      if (user?.studentNumber && entry?.id) {
+        await saveJournalSupportResponse({
+          entryId: entry.id,
+          studentAction: supportAction,
+          studentNumber: user.studentNumber,
+        });
+      }
+
+      let finishedEntryId = entry?.id;
+      if (user?.studentNumber && entry?.id) {
+        const finalTags = entry.concernTags?.length ? entry.concernTags : ["Support"];
+        const prioritizedPrimaryConcern = entry.primaryConcern || finalTags[0] || "Others";
+
+        const finishResult = await finishJournalEntry({
+          concernTags: finalTags,
+          entryId: entry.id,
+          forceAnalyze: true,
+          messages: messagesRef.current,
+          primaryConcern: prioritizedPrimaryConcern,
+          studentNumber: user.studentNumber,
+        });
+
+        if (finishResult.entry) {
+          finishedEntryId = finishResult.entry.id;
+          setEntry(finishResult.entry);
+        }
+      }
+
+      setShowCrisisSaveConfirmModal(false);
+      setShowRiskModal(false);
+      setPendingCrisisAction(null);
+      sessionStartedRef.current = false;
+
+      if (action === "HOTLINE") {
+        onClose();
+        try {
+          const canOpen = await Linking.canOpenURL(NCMH_HOTLINE_DIAL_URL);
+          if (!canOpen) {
+            showAppNotice(
+              "Call NCMH Hotline",
+              `Please call ${NCMH_HOTLINE_LANDLINE} or ${NCMH_HOTLINE_DISPLAY} for immediate support.`
+            );
+          } else {
+            await Linking.openURL(NCMH_HOTLINE_DIAL_URL);
+          }
+        } catch {
+          showAppNotice(
+            "Call NCMH Hotline",
+            `Please call ${NCMH_HOTLINE_LANDLINE} or ${NCMH_HOTLINE_DISPLAY} for immediate support.`
+          );
+        }
+        if (finishedEntryId) {
+          router.replace({
+            pathname: "/journal-entry-view",
+            params: { entryId: finishedEntryId },
+          });
+        }
+      } else if (action === "COUNSELING") {
+        onClose();
+        router.push("/consult?track=professional&skipIntro=1");
+      } else if (action === "WELLNESS") {
+        onClose();
+        router.push("/wellness-tools");
+      } else if (action === "DISMISS") {
+        onClose();
+        if (finishedEntryId) {
+          router.replace({
+            pathname: "/journal-entry-view",
+            params: { entryId: finishedEntryId },
+          });
+        }
+      }
+    } catch {
+      setStatusMessage("Could not save voice journal before proceeding.");
+    } finally {
+      setIsSavingCrisisEntry(false);
+    }
+  }, [entry, isSavingCrisisEntry, onClose, pendingCrisisAction, stopSpeaking, user?.studentNumber]);
+
+  const crisisConfirmMessage = useMemo(() => {
+    switch (pendingCrisisAction) {
+      case "HOTLINE":
+        return "Would you like to save your journal before calling the crisis hotline?";
+      case "COUNSELING":
+        return "Would you like to save your journal before scheduling counseling?";
+      case "WELLNESS":
+        return "Would you like to save your journal before opening wellness tools?";
+      case "DISMISS":
+        return "Would you like to save your journal before closing?";
+      default:
+        return "Would you like to save your journal before proceeding?";
+    }
+  }, [pendingCrisisAction]);
 
   const clearDistressOffer = useCallback(() => {
     distressWellnessOfferDoneRef.current = true;
@@ -1570,6 +1741,20 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
             </View>
           </View>
         </Modal>
+
+        <ConfirmationModal
+          visible={showCrisisSaveConfirmModal}
+          title="Save Journal?"
+          message={crisisConfirmMessage}
+          confirmLabel="Save & Proceed"
+          secondaryActionLabel="Proceed without Saving"
+          cancelLabel="Cancel"
+          confirmTone="primary"
+          isConfirming={isSavingCrisisEntry}
+          onConfirm={() => void handleSaveAndProceedCrisis()}
+          onSecondaryAction={() => void handleProceedWithoutSavingCrisis()}
+          onCancel={handleCancelCrisisConfirm}
+        />
 
         {/* Exit Confirmation Modal */}
         <Modal
