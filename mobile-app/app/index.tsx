@@ -2,6 +2,7 @@ import { router } from "expo-router";
 import { Image } from "expo-image";
 import { useEffect } from "react";
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +12,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Defs, Ellipse, G, LinearGradient, Path, Rect, Stop } from "react-native-svg";
+import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { useAuthSession } from "../lib/auth-session";
 
 const APP_MAX_WIDTH = 412;
@@ -127,6 +129,20 @@ function ZenSanctuaryBackdrop({
   );
 }
 
+function AppLoadingScreen({ compact }: { compact: boolean }) {
+  return (
+    <View style={styles.loadingScreen}>
+      <View style={[styles.loadingGlow, compact && styles.loadingGlowCompact]} />
+      <View style={styles.loadingMuniWrap}>
+        <MuniAvatar animated={false} style={[styles.loadingMuni, compact && styles.loadingMuniCompact]} />
+      </View>
+      <Text style={styles.loadingTitle}>Bawat Tala</Text>
+      <Text style={styles.loadingSubtitle}>Preparing your gentle space</Text>
+      <ActivityIndicator size="small" color="#2D7D5A" style={styles.loadingIndicator} />
+    </View>
+  );
+}
+
 export default function Index() {
   const { isHydrated, user } = useAuthSession();
   const { width, height } = useWindowDimensions();
@@ -142,6 +158,10 @@ export default function Index() {
       router.replace("/home");
     }
   }, [isHydrated, user]);
+
+  if (!isHydrated) {
+    return <AppLoadingScreen compact={isCompact} />;
+  }
 
   return (
     <View style={styles.screen}>
@@ -219,6 +239,67 @@ export default function Index() {
 }
 
 const styles = StyleSheet.create({
+  loadingScreen: {
+    flex: 1,
+    width: "100%",
+    maxWidth: APP_MAX_WIDTH,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    backgroundColor: "#F7FAF4",
+  },
+  loadingGlow: {
+    position: "absolute",
+    width: 310,
+    height: 310,
+    borderRadius: 155,
+    backgroundColor: "#E4F4D8",
+    opacity: 0.72,
+  },
+  loadingGlowCompact: {
+    width: 250,
+    height: 250,
+    borderRadius: 125,
+  },
+  loadingMuniWrap: {
+    width: 154,
+    height: 154,
+    borderRadius: 52,
+    backgroundColor: "#EAF8DF",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#2D7D5A",
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
+  },
+  loadingMuni: {
+    width: 142,
+    height: 142,
+  },
+  loadingMuniCompact: {
+    width: 118,
+    height: 118,
+  },
+  loadingTitle: {
+    marginTop: 24,
+    color: "#18362B",
+    fontFamily: "Outfit-Bold",
+    fontSize: 28,
+    lineHeight: 34,
+    letterSpacing: -0.2,
+  },
+  loadingSubtitle: {
+    marginTop: 4,
+    color: "#527365",
+    fontFamily: "Outfit-Medium",
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  loadingIndicator: {
+    marginTop: 22,
+  },
   screen: {
     flex: 1,
     backgroundColor: "#5EBFA4",
