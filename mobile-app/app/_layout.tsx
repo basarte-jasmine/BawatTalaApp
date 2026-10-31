@@ -5,6 +5,7 @@ import { useFonts } from "expo-font";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import {
+  ActivityIndicator,
   LogBox,
   Platform,
   StyleSheet,
@@ -14,6 +15,7 @@ import {
   useWindowDimensions,
   type TextInputProps,
   type TextProps } from "react-native";
+import { BlurView } from "expo-blur";
 import { AuthSessionProvider } from "../lib/auth-session";
 import { AppNoticeProvider } from "../lib/app-notice";
 import { AppErrorBoundary } from "../components/ui/AppErrorBoundary";
@@ -26,6 +28,7 @@ import { AppointmentStatusWatcher } from "../components/appointments/Appointment
 import { installSafeOutfitTypography } from "../lib/typography";
 import { getNavigationAnimationConfig } from "../lib/navigation-config";
 import { preloadCoreAssetsAsync } from "../lib/preload-assets";
+import { MuniAvatar } from "../components/muni/MuniAvatar";
 
 const APP_MAX_WIDTH = 412;
 const DESKTOP_FRAME_BREAKPOINT = 768;
@@ -56,6 +59,22 @@ function applyGlobalTypography() {
   textInputComponent.defaultProps.style = [{ fontFamily: "Outfit" }, textInputComponent.defaultProps.style];
 }
 
+function AppLoadingScreen() {
+  return (
+    <View style={styles.loadingRoot}>
+      <View style={styles.loadingOrb} />
+      <BlurView intensity={38} tint="light" style={styles.loadingGlassCard}>
+        <View style={styles.loadingAvatar}>
+          <MuniAvatar animated={false} style={styles.loadingAvatarArt} />
+        </View>
+        <Text style={styles.loadingTitle}>Bawat Tala</Text>
+        <Text style={styles.loadingSubtitle}>Opening your gentle space</Text>
+        <ActivityIndicator size="small" color="#2D7D5A" style={styles.loadingIndicator} />
+      </BlurView>
+    </View>
+  );
+}
+
 export default function RootLayout() {
   const { width } = useWindowDimensions();
   const [assetsLoaded, setAssetsLoaded] = useState(false);
@@ -75,11 +94,11 @@ export default function RootLayout() {
       void SplashScreen.hideAsync();
       return;
     }
-    if (fontsLoaded && assetsLoaded) {
+    if (fontsLoaded) {
       applyGlobalTypography();
       void SplashScreen.hideAsync();
     }
-  }, [fontError, fontsLoaded, assetsLoaded]);
+  }, [fontError, fontsLoaded]);
 
   useEffect(() => {
     void warmBackend();
@@ -111,7 +130,9 @@ export default function RootLayout() {
     };
   }, []);
 
-  if ((!fontsLoaded && !fontError) || (!assetsLoaded && !fontError)) return null;
+  if ((!fontsLoaded && !fontError) || (!assetsLoaded && !fontError)) {
+    return <AppLoadingScreen />;
+  }
 
   const useDesktopFrame = Platform.OS === "web" && width >= DESKTOP_FRAME_BREAKPOINT;
 
@@ -152,6 +173,67 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
+  loadingRoot: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    backgroundColor: "#EAF5EF",
+  },
+  loadingOrb: {
+    position: "absolute",
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    backgroundColor: "#C9E9D1",
+    opacity: 0.72,
+  },
+  loadingGlassCard: {
+    width: "82%",
+    maxWidth: 320,
+    minHeight: 270,
+    borderRadius: 30,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.72)",
+    backgroundColor: "rgba(255, 255, 255, 0.34)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    shadowColor: "#47765A",
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 5,
+  },
+  loadingAvatar: {
+    width: 128,
+    height: 128,
+    borderRadius: 44,
+    backgroundColor: "rgba(255, 255, 255, 0.28)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loadingAvatarArt: {
+    width: 118,
+    height: 118,
+  },
+  loadingTitle: {
+    marginTop: 16,
+    color: "#18362B",
+    fontFamily: "Outfit-Bold",
+    fontSize: 26,
+    lineHeight: 32,
+  },
+  loadingSubtitle: {
+    marginTop: 3,
+    color: "#527365",
+    fontFamily: "Outfit-Medium",
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  loadingIndicator: {
+    marginTop: 18,
+  },
   root: {
     flex: 1,
     alignItems: "center",
