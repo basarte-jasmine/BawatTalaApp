@@ -2,7 +2,7 @@
   "expo": {
     "name": "Bawat Tala",
     "slug": "bawat-tala",
-    "version": "2.0.2",
+    "version": "2.2.3",
   "orientation": "default",
     "icon": "./assets/images/Logo_BT.png",
     "scheme": "bawattala",
