@@ -598,7 +598,9 @@ export function getHeadAccessoryStyle(_headId: string | null) {
 }
 
 export function getEyeAccessoryStyle(_eyeId: string | null) {
-  return null;
+  return {
+    transform: [{ translateY: 7 }],
+  } as const;
 }
 
 export function getOutfitAccessoryStyle(outfitId: string | null) {

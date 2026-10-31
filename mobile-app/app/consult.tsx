@@ -870,9 +870,6 @@ export default function ConsultScreen() {
                         placeholderTextColor="#596878"
                         maxLength={OTHER_CONCERN_MAX_LENGTH}
                       />
-                      <Text style={styles.fieldCounter}>
-                        {otherConcern.length}/{OTHER_CONCERN_MAX_LENGTH}
-                      </Text>
                     </View>
                   ) : null}
 
@@ -1895,12 +1892,6 @@ const styles = StyleSheet.create({
   concernChipTextActive: {
     color: "#2E6F24",
     fontFamily: "Outfit-Bold" },
-  fieldCounter: {
-    marginTop: 4,
-    alignSelf: "flex-end",
-    color: "#73808B",
-    fontSize: 11,
-  },
   otherInput: {
     minHeight: 42,
     borderRadius: 14,
