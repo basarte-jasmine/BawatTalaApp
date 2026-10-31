@@ -126,7 +126,8 @@ export default function LoginScreen() {
 
   const isCompactHeight = referenceHeight > 0 && referenceHeight < 720;
   const isNarrowWidth = width > 0 && width < 360;
-  const headerHeight = isCompactHeight ? 180 : 220;
+  const visualScale = Math.min(1, Math.max(0.84, width > 0 ? width / 390 : 1));
+  const headerHeight = Math.round((isCompactHeight ? 180 : 220) * visualScale);
 
   useEffect(() => {
     let mounted = true;
@@ -274,7 +275,10 @@ export default function LoginScreen() {
           contentContainerStyle={[
             styles.scrollContent,
             isNarrowWidth && styles.scrollContentNarrow,
-            { paddingBottom: Math.max(insets.bottom + 16, 28) + keyboardInset },
+            {
+              paddingTop: Math.max(24, Math.round(32 * visualScale)),
+              paddingBottom: Math.max(insets.bottom + 16, 28) + keyboardInset,
+            },
           ]}
           keyboardShouldPersistTaps="always"
           keyboardDismissMode="none"
@@ -285,7 +289,13 @@ export default function LoginScreen() {
             <View style={[styles.logoBadge, isCompactHeight && styles.logoBadgeCompact]}>
               <Image
                 source={require("../assets/images/Logo_BT.png")}
-                style={[styles.logoImage, isCompactHeight && styles.logoImageCompact]}
+                style={[
+                  isCompactHeight && styles.logoImageCompact,
+                  {
+                    width: Math.round((isCompactHeight ? 38 : 48) * visualScale),
+                    height: Math.round((isCompactHeight ? 38 : 48) * visualScale),
+                  },
+                ]}
                 contentFit="contain"
               />
             </View>
@@ -812,6 +822,5 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit-SemiBold",
   },
 });
-
 
 

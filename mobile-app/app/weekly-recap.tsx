@@ -875,6 +875,13 @@ export default function WeeklyRecapScreen() {
 
         {/* Full-Screen Story Deck Container */}
         <View style={styles.storyTouchContainer}>
+          <ScrollView
+            style={styles.storyVerticalScroll}
+            contentContainerStyle={styles.storyVerticalContent}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+            nestedScrollEnabled
+          >
           <Animated.View style={[styles.storyCardContainer, { opacity: cardFadeAnim, transform: [{ scale: cardScaleAnim }] }]}>
             {/* CARD 0: INTRO & RESILIENCE GRADE */}
             {storyCardIndex === 0 && (
@@ -1243,6 +1250,7 @@ export default function WeeklyRecapScreen() {
               </View>
             )}
           </Animated.View>
+          </ScrollView>
 
           {/* Left Tap Zone: Go back to previous card */}
           {storyCardIndex !== 6 && (
@@ -1849,6 +1857,13 @@ const styles = StyleSheet.create({
   },
   storyTouchContainer: {
     flex: 1,
+  },
+  storyVerticalScroll: {
+    flex: 1,
+  },
+  storyVerticalContent: {
+    flexGrow: 1,
+    paddingBottom: 18,
   },
   storyCardContainer: {
     flex: 1,

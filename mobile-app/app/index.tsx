@@ -2,7 +2,6 @@ import { router } from "expo-router";
 import { Image } from "expo-image";
 import { useEffect } from "react";
 import {
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -136,6 +135,7 @@ export default function Index() {
   const isCompact = height > 0 && height < 720;
   const isNarrow = width > 0 && width < 360;
   const domeY = height * (isCompact ? 0.46 : 0.52);
+  const visualScale = Math.min(1, Math.max(0.82, frameWidth / 390));
 
   useEffect(() => {
     if (isHydrated && user) {
@@ -159,7 +159,13 @@ export default function Index() {
         showsVerticalScrollIndicator={false}
       >
         {/* Top Header Typography */}
-        <View style={[styles.topHeader, isCompact && styles.topHeaderCompact]}>
+        <View
+          style={[
+            styles.topHeader,
+            isCompact && styles.topHeaderCompact,
+            { paddingHorizontal: Math.max(20, 26 * visualScale) },
+          ]}
+        >
           <Text style={[styles.welcomeTo, isCompact && styles.welcomeToCompact]}>Welcome To,</Text>
           <Text style={[styles.brandTitle, isCompact && styles.brandTitleCompact]}>Bawat Tala</Text>
           <Text style={[styles.tagline, isCompact && styles.taglineCompact]}>A softer space for your thoughts.</Text>
@@ -169,7 +175,14 @@ export default function Index() {
         <View style={[styles.characterStage, isCompact && styles.characterStageCompact]}>
           <Image
             source={require("../assets/images/MUNI_default.png")}
-            style={[styles.muniImage, isCompact && styles.muniImageCompact]}
+            style={[
+              styles.muniImage,
+              isCompact && styles.muniImageCompact,
+              {
+                width: (isCompact ? 156 : 204) * visualScale,
+                height: (isCompact ? 156 : 204) * visualScale,
+              },
+            ]}
             contentFit="contain"
           />
         </View>

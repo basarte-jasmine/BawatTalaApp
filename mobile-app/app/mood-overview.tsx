@@ -20,7 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { useAuthSession } from "../lib/auth-session";
 import { fetchMonthlyMoods, type MoodEntryRecord } from "../lib/backend-api";
-import { EMOTION_META, EMOTION_ORDER, createEmotionCounts, getEmotionImageSource, normalizeEmotionId } from "../lib/emotions";
+import { EMOTION_META, EMOTION_ORDER, createEmotionCounts, getEmotionImageSource } from "../lib/emotions";
 import { InformedConsentGate } from "../lib/informed-consent";
 import { getManilaTodayParts } from "../lib/manila-date";
 import { useOfflineSync } from "../lib/offline-sync";
@@ -220,7 +220,7 @@ function getMuniEmotionReflection(
 export default function MoodOverviewScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAuthSession();
-  const { isSyncing, refreshKey, syncNow } = useOfflineSync();
+  const { isSyncing, syncNow } = useOfflineSync();
   const [now, setNow] = useState(() => getManilaTodayParts());
 
   const initialMonth = useMemo(() => {
@@ -407,12 +407,6 @@ export default function MoodOverviewScreen() {
       void loadMonth();
     }, [loadMonth]),
   );
-
-  useEffect(() => {
-    if (!user?.studentNumber) return;
-    setNow(getManilaTodayParts());
-    void loadMonth();
-  }, [loadMonth, refreshKey, user?.studentNumber]);
 
   const handleRefreshMoods = useCallback(async () => {
     if (isRefreshing || isSyncing) return;
@@ -1469,7 +1463,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 14,
-    borderWidth: 1.5,
+    borderWidth: 0,
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
