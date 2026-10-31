@@ -5,6 +5,7 @@ import { Image } from "expo-image";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { useAuthSession } from "../lib/auth-session";
 import { getStudentAchievements, syncPendingAchievements } from "../lib/backend-api";
@@ -90,6 +91,8 @@ const ACHIEVEMENTS = [
 ];
 
 export default function AchievementsScreen() {
+  const insets = useSafeAreaInsets();
+  const topBarOffset = Math.max(insets.top, 14) + 48 + 14;
   const { user } = useAuthSession();
   const [unlockedMap, setUnlockedMap] = useState<Record<string, number>>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -182,7 +185,7 @@ export default function AchievementsScreen() {
     <View style={styles.screen}>
       <AppleTopBar title="Achievements" onBack={() => router.back()} />
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingTop: topBarOffset }]}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}

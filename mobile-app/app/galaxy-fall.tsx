@@ -16,6 +16,8 @@ import {
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { claimMiniResetReward } from "../lib/backend-api";
+import { useAuthSession } from "../lib/auth-session";
+import { updateAvailableMuniTala } from "../lib/muni-wardrobe";
 import { getGameScore, saveGameScore } from "../lib/game-scores";
 import { startBgmTrack, playSoundEffect, playGameOverSound, playCollectTalaSound, SOUND_ASSETS } from "../lib/sound-effects";
 
@@ -60,7 +62,6 @@ type ScorePopup = {
   color: string;
 };
 
-const GAME_DURATION = 60; // 60 seconds flight
 const MUNI_SIZE = 72;
 const MUNI_TOP_OFFSET = MUNI_SIZE / 2 + 8;
 const COIN_SIZE = 36;
@@ -77,13 +78,13 @@ function triggerHaptic(style = Haptics.ImpactFeedbackStyle.Light) {
 }
 
 export default function GalaxyFallScreen() {
+  const { user } = useAuthSession();
   const { width: screenW, height: screenH } = useWindowDimensions();
   const appWidth = Math.min(screenW, 430);
 
   const [gameState, setGameState] = useState<GameState>("START");
   const [coins, setCoins] = useState(0);
   const [lives, setLives] = useState(INITIAL_LIVES);
-  const [timeLeft, setTimeLeft] = useState(GAME_DURATION);
   const [isVictory, setIsVictory] = useState(false);
   const [rewardTala, setRewardTala] = useState(0);
   const [showExitPrompt, setShowExitPrompt] = useState(false);
@@ -220,7 +221,6 @@ export default function GalaxyFallScreen() {
     setGameState("PLAYING");
     setCoins(0);
     setLives(INITIAL_LIVES);
-    setTimeLeft(GAME_DURATION);
     setIsVictory(false);
     setRewardTala(0);
     setPopups([]);
@@ -288,10 +288,18 @@ export default function GalaxyFallScreen() {
       claimMiniResetReward({
         activityId: "galaxy-fall",
         level: 1,
-        roundKey: `galaxy-fall-${Date.now()}`,
+        roundKey: `galaxy-fall-${user?.studentNumber || "student"}-${Date.now()}`,
         score: totalEarned,
+        coins: finalCoins,
+        rewardTala: finalCoins,
+        studentNumber: user?.studentNumber,
       })
-        .then((reward) => setRewardTala(reward.rewardTala ?? 0))
+        .then((reward) => {
+          setRewardTala(reward.rewardTala ?? finalCoins);
+          if (typeof reward.totalTala === "number") {
+            updateAvailableMuniTala(reward.totalTala);
+          }
+        })
         .catch(() => undefined);
     }
 
@@ -312,17 +320,6 @@ export default function GalaxyFallScreen() {
     lastTimeRef.current = time;
 
     frameCount.current++;
-
-    // 1. Countdown Timer (exact 1-second cadence)
-    if (frameCount.current % 60 === 0) {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          finishGame(true, coins, lives);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }
 
     // Keep Muni near the top while the world moves upward to create the falling illusion.
     const dx = targetMuniX.current - muniX.current;
@@ -485,7 +482,7 @@ export default function GalaxyFallScreen() {
     return () => {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
-  }, [gameState, coins, lives, timeLeft]);
+  }, [gameState, coins, lives]);
 
   // Clean Up Popups after brief display
   useEffect(() => {
@@ -496,12 +493,6 @@ export default function GalaxyFallScreen() {
       return () => clearTimeout(t);
     }
   }, [popups]);
-
-  const formatTime = (secs: number) => {
-    const mins = Math.floor(secs / 60);
-    const rem = secs % 60;
-    return mins > 0 ? `${mins}m ${rem < 10 ? "0" : ""}${rem}s` : `${rem}s`;
-  };
 
   const handleHeaderBack = () => {
     triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
@@ -611,23 +602,6 @@ export default function GalaxyFallScreen() {
                   <Text style={styles.hudStatLabel}>SCORE</Text>
                   <Text style={styles.hudStatValue}>{coins}</Text>
                 </View>
-              </View>
-
-              {/* Time Track */}
-              <View style={styles.timeTrack}>
-                <View
-                  style={[
-                    styles.timeFill,
-                    {
-                      width: `${Math.min(Math.max((timeLeft / GAME_DURATION) * 100, 0), 100)}%`,
-                      backgroundColor: timeLeft <= 10 ? "#EF4444" : timeLeft <= 20 ? "#F59E0B" : "#52B72A",
-                    },
-                  ]}
-                />
-              </View>
-              <View style={styles.timeLabelRow}>
-                <Ionicons name="time-outline" size={11.5} color="rgba(255,255,255,0.6)" />
-                <Text style={styles.timeLabelText}>{formatTime(timeLeft)}</Text>
               </View>
             </View>
 

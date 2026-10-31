@@ -16,6 +16,7 @@ import {
   View,
   useWindowDimensions } from "react-native";
 import { Image } from "expo-image";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { consumePendingRiskPrompt, fetchJournalEntryById, JournalEntry, JournalMessage, rateJournalEntrySummary, saveJournalSupportResponse } from "../lib/backend-api";
@@ -134,6 +135,8 @@ function countWords(value: string) {
 }
 
 export default function JournalEntryViewScreen() {
+  const insets = useSafeAreaInsets();
+  const topBarOffset = Math.max(insets.top, 14) + 48 + 14;
   const { user } = useAuthSession();
   const { isSyncing, refreshKey, syncNow } = useOfflineSync();
   const { entryId, fromCalendar, calendarDate, promptSupport } = useLocalSearchParams<{
@@ -488,7 +491,7 @@ export default function JournalEntryViewScreen() {
   ) : null;
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { paddingTop: topBarOffset }]}>
       <AppleTopBar
         title="Journal Entry"
         onBack={() => {

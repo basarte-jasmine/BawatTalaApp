@@ -16,8 +16,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { unlockAchievement } from "../lib/achievements";
 import { useAuthSession } from "../lib/auth-session";
 import { claimMiniResetReward } from "../lib/backend-api";
+import { updateAvailableMuniTala } from "../lib/muni-wardrobe";
 import { getGameScore, saveGameScore } from "../lib/game-scores";
 import { startBgmTrack, playSoundEffect, playGameOverSound, playCollectTalaSound, SOUND_ASSETS } from "../lib/sound-effects";
+
+const TALA_IMAGE = require("../assets/images/Tala_Star.png");
 
 const ASSETS = [
   require("../assets/images/Mini Reset/Puzzle/Muni_Flower_Thief.webp"),
@@ -64,6 +67,8 @@ export default function ImagePuzzleScreen() {
   const [showReferenceModal, setShowReferenceModal] = useState(false);
   const [showExitPrompt, setShowExitPrompt] = useState(false);
   const [rewardTala, setRewardTala] = useState(0);
+  const puzzleStartTimeRef = useRef(Date.now());
+  const rewardedPuzzlesRef = useRef<Set<number>>(new Set());
   // Looping Muni Games BGM
   useEffect(() => {
     if (gameState === "playing") {
@@ -130,17 +135,6 @@ export default function ImagePuzzleScreen() {
     if (newHearts <= 0) {
       void playGameOverSound(0.8);
       setGameState("gameover");
-      if (!rewardClaimedRef.current) {
-        rewardClaimedRef.current = true;
-        claimMiniResetReward({
-          activityId: "image-puzzle",
-          level: currentLevel,
-          roundKey: `image-puzzle-${Date.now()}`,
-          score: currentScore,
-        })
-          .then((reward) => setRewardTala(reward.rewardTala ?? 0))
-          .catch(() => undefined);
-      }
       const newBest = Math.max(currentScore, bestScore);
       const newHigh = Math.max(currentLevel, highestLevel);
       setBestScore(newBest);
@@ -161,6 +155,7 @@ export default function ImagePuzzleScreen() {
     setCombo(0);
     setRewardTala(0);
     rewardClaimedRef.current = false;
+    rewardedPuzzlesRef.current = new Set();
     startPuzzle(1, 3, 0, 0);
   };
 
@@ -178,6 +173,7 @@ export default function ImagePuzzleScreen() {
     setGameState("playing");
     setTimeLeft(timeLimit);
     setTotalTime(timeLimit);
+    puzzleStartTimeRef.current = Date.now();
 
     const newPieces = [];
     const pieceCount = grid * grid;
@@ -295,6 +291,35 @@ export default function ImagePuzzleScreen() {
 
       setScore(nextScore);
       setCombo(nextCombo);
+
+      // Bug 7: Time-based Tala rewards per completed puzzle
+      // 30 seconds or less: 3 Tala
+      // More than 30 seconds and up to 60 seconds: 2 Tala
+      // More than 60 seconds: 1 Tala
+      // Guard so the same puzzle can never credit Tala twice.
+      if (!rewardedPuzzlesRef.current.has(lvl)) {
+        rewardedPuzzlesRef.current.add(lvl);
+        const elapsedSeconds = Math.max(1, Math.ceil((Date.now() - puzzleStartTimeRef.current) / 1000));
+        const earnedTala = elapsedSeconds <= 30 ? 3 : elapsedSeconds <= 60 ? 2 : 1;
+        setRewardTala((prev) => prev + earnedTala);
+        void playCollectTalaSound(0.85);
+
+        void claimMiniResetReward({
+          activityId: "image-puzzle",
+          level: lvl,
+          roundKey: `image-puzzle-${user?.studentNumber || "student"}-${lvl}-${Date.now()}`,
+          score: nextScore,
+          elapsedSeconds,
+          rewardTala: earnedTala,
+          studentNumber: user?.studentNumber,
+        })
+          .then((reward) => {
+            if (typeof reward.totalTala === "number") {
+              updateAvailableMuniTala(reward.totalTala);
+            }
+          })
+          .catch(() => undefined);
+      }
 
       if (user?.studentNumber) {
         unlockAchievement("a-softer-minute", user.studentNumber).catch(() => {});
@@ -516,6 +541,12 @@ export default function ImagePuzzleScreen() {
                 <View style={styles.hudStatGroup}>
                   <Text style={styles.hudStatLabel}>SCORE</Text>
                   <Text style={styles.hudStatValue}>{score}</Text>
+                </View>
+
+                {/* Visible Tala Coin Tracker */}
+                <View style={styles.hudTalaTracker}>
+                  <Image source={TALA_IMAGE} style={styles.hudTalaIcon} contentFit="contain" />
+                  <Text style={styles.hudTalaValue}>+{rewardTala}</Text>
                 </View>
 
                 <View style={styles.heartsRow}>
@@ -820,6 +851,26 @@ const styles = StyleSheet.create({
     color: "#0F172A",
     fontSize: 16,
     fontFamily: "Outfit-Bold",
+  },
+  hudTalaTracker: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(250, 204, 21, 0.15)",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(250, 204, 21, 0.4)",
+    gap: 3,
+  },
+  hudTalaIcon: {
+    width: 13,
+    height: 13,
+  },
+  hudTalaValue: {
+    fontSize: 11.5,
+    fontFamily: "Outfit-Bold",
+    color: "#B45309",
   },
   heartsRow: {
     flexDirection: "row",

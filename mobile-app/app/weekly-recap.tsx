@@ -20,7 +20,7 @@ import {
 import { Image } from "expo-image";
 import { startBgmTrack, playCollectTalaSound, SOUND_ASSETS } from "../lib/sound-effects";
 import { captureRef } from "react-native-view-shot";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
 import Svg, { Circle, Defs, G, Line, LinearGradient, Path, Rect, Stop, Text as SvgText } from "react-native-svg";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
@@ -35,7 +35,7 @@ import {
   fetchRecentJournalEntries,
   type MoodEntryRecord,
 } from "../lib/backend-api";
-import { EMOTION_META, EMOTIONS, getEmotionImageSource, normalizeEmotionId } from "../lib/emotions";
+import { EMOTION_META, EMOTIONS, getEmotionImageSource, normalizeEmotionId, resolveRepresentativeEmotion } from "../lib/emotions";
 import { getManilaTodayParts } from "../lib/manila-date";
 
 const TALA_IMAGE = require("../assets/images/Tala_Star.png");
@@ -154,6 +154,14 @@ type DayNode = {
   hasHeavyJournal: boolean;
   hasReset: boolean;
   notes: string;
+  checkIns: {
+    id?: string;
+    moodId: string;
+    moodLabel: string;
+    moodColor: string;
+    createdAt?: string;
+    timeLabel?: string;
+  }[];
 };
 
 function getMoodLevel(moodId: string | null): number {
@@ -191,6 +199,8 @@ function buildSmoothPath(points: { x: number; y: number }[]) {
 }
 
 export default function WeeklyRecapScreen() {
+  const insets = useSafeAreaInsets();
+  const topBarOffset = Math.max(insets.top, 14) + 48 + 14;
   const { user } = useAuthSession();
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -314,21 +324,65 @@ export default function WeeklyRecapScreen() {
   }, [loadWeeklyData]);
 
   const weeklyDays: DayNode[] = useMemo(() => {
+    const formatCheckInTime = (rawDate?: string) => {
+      if (!rawDate) return "";
+      try {
+        const d = new Date(rawDate);
+        if (Number.isNaN(d.getTime())) return "";
+        return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      } catch {
+        return "";
+      }
+    };
+
     if (backendRecap && Array.isArray(backendRecap.dailyNodes) && backendRecap.dailyNodes.length === 7) {
       return backendRecap.dailyNodes.map((n: any, idx: number) => {
-        const resolvedMoodId = n.moodId ? normalizeEmotionId(n.moodId) : null;
+        const dateIso = n.dateStr || "";
+        const matchingMoods = (monthlyMoods || []).filter((m) => m && m.moodDate === dateIso);
+        // Combine backend checkIns or matching monthly moods
+        const sourceEntries = matchingMoods.length > 0
+          ? matchingMoods
+          : Array.isArray(n.checkIns) && n.checkIns.length > 0
+            ? n.checkIns
+            : n.moodId ? [{ moodId: n.moodId, createdAt: n.created_at || "" }] : [];
+
+        const resolvedMoodId = resolveRepresentativeEmotion(sourceEntries) || (n.moodId ? normalizeEmotionId(n.moodId) : null);
         const meta = resolvedMoodId && EMOTION_META[resolvedMoodId] ? EMOTION_META[resolvedMoodId] : null;
+
+        // Build all check-ins chronologically (earliest to latest)
+        const checkIns = (sourceEntries as any[])
+          .slice()
+          .sort((a, b) => {
+            const ta = a.createdAt || a.created_at ? new Date(a.createdAt || a.created_at).getTime() : 0;
+            const tb = b.createdAt || b.created_at ? new Date(b.createdAt || b.created_at).getTime() : 0;
+            return ta - tb;
+          })
+          .map((item) => {
+            const id = normalizeEmotionId(item.moodId || item.mood_id || "");
+            const mMeta = EMOTION_META[id];
+            const rawTime = item.createdAt || item.created_at;
+            return {
+              id: item.id,
+              moodId: id,
+              moodLabel: mMeta ? mMeta.label : (item.moodLabel || item.mood_label || id),
+              moodColor: mMeta ? mMeta.color : "#94A3B8",
+              createdAt: rawTime,
+              timeLabel: formatCheckInTime(rawTime),
+            };
+          });
+
         return {
           dayName: n.dayName || ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][idx],
           dayNumber: typeof n.dayNumber === "number" ? n.dayNumber : (idx + 1),
           monthName: n.monthName || "Oct",
-          dateStr: n.dateStr || "",
+          dateStr: dateIso,
           moodId: resolvedMoodId,
           moodLabel: meta ? meta.label : "No Check-in",
           moodColor: meta ? meta.color : "#94A3B8",
           hasHeavyJournal: Boolean(n.hasHeavyJournal),
           hasReset: Boolean(n.hasReset),
           notes: n.notes || (resolvedMoodId ? "Logged " + resolvedMoodId + " on this day." : "Quiet day. No active reflections recorded."),
+          checkIns,
         };
       });
     }
@@ -347,12 +401,31 @@ export default function WeeklyRecapScreen() {
       const monthName = months[d.getMonth()];
 
       const matchingMoods = (monthlyMoods || []).filter((m) => m && m.moodDate === iso);
-      const latestMood = matchingMoods[matchingMoods.length - 1];
-      const moodId = latestMood ? normalizeEmotionId(latestMood.moodId) : null;
+      const moodId = resolveRepresentativeEmotion(matchingMoods);
       const meta = moodId && EMOTION_META[moodId] ? EMOTION_META[moodId] : null;
 
       const hasHeavy = moodId === "anxiety" || moodId === "sadness" || moodId === "anger";
       const hasReset = hasHeavy;
+
+      const checkIns = matchingMoods
+        .slice()
+        .sort((a, b) => {
+          const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return ta - tb;
+        })
+        .map((item) => {
+          const id = normalizeEmotionId(item.moodId);
+          const mMeta = EMOTION_META[id];
+          return {
+            id: item.id,
+            moodId: id,
+            moodLabel: mMeta ? mMeta.label : (item.moodLabel || id),
+            moodColor: mMeta ? mMeta.color : "#94A3B8",
+            createdAt: item.createdAt,
+            timeLabel: formatCheckInTime(item.createdAt),
+          };
+        });
 
       days.push({
         dayName,
@@ -367,6 +440,7 @@ export default function WeeklyRecapScreen() {
         notes: hasHeavy
           ? "Challenging emotions surfaced. Muni soft-offered calming support."
           : (moodId ? "Steady cognitive balance. Active study focus maintained." : "Quiet day. No active reflections recorded."),
+        checkIns,
       });
     }
     return days;
@@ -435,6 +509,24 @@ export default function WeeklyRecapScreen() {
   }, [backendRecap, checkinTalaEarned, libraryReadCount]);
 
   const emotionPalette = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const d of weeklyDays) {
+      if (d.moodId) {
+        counts[d.moodId] = (counts[d.moodId] || 0) + 1;
+      }
+    }
+    const entries = Object.entries(counts);
+    if (entries.length) {
+      return entries
+        .sort((a, b) => b[1] - a[1])
+        .map(([id, count]) => ({
+          id,
+          count,
+          meta: EMOTION_META[normalizeEmotionId(id)] || EMOTION_META.contentment,
+        }));
+    }
+
+    // Fall back to the server palette only when no weekly day resolved locally.
     if (backendRecap && Array.isArray(backendRecap.emotionPalette)) {
       return backendRecap.emotionPalette.filter((item: any) => item && item.id).map((item: any) => ({
         id: item.id,
@@ -443,23 +535,7 @@ export default function WeeklyRecapScreen() {
       }));
     }
 
-    const counts: Record<string, number> = {};
-    for (const d of weeklyDays) {
-      if (d.moodId) {
-        counts[d.moodId] = (counts[d.moodId] || 0) + 1;
-      }
-    }
-    const entries = Object.entries(counts);
-    if (!entries.length) {
-      return [];
-    }
-    return entries
-      .sort((a, b) => b[1] - a[1])
-      .map(([id, count]) => ({
-        id,
-        count,
-        meta: EMOTION_META[normalizeEmotionId(id)] || EMOTION_META.contentment,
-      }));
+    return [];
   }, [backendRecap, weeklyDays]);
 
   const emotionNamesSummary = useMemo(() => {
@@ -480,7 +556,8 @@ export default function WeeklyRecapScreen() {
       "No pressure, no grades - just gentle moments for the mind.\n#BawatTala #StudentWellness";
 
     try {
-      const targetRef = source === "story" ? (finaleCardRef.current || shareCardRef.current) : (shareCardRef.current || finaleCardRef.current);
+      // Both "Share Image" and "Share My Constellation" capture the complete intended Full Summary design
+      const targetRef = shareCardRef.current || finaleCardRef.current;
       let capturedUri: string | null = null;
 
       if (targetRef) {
@@ -527,6 +604,24 @@ export default function WeeklyRecapScreen() {
           document.body.removeChild(a);
           setIsSharing(false);
           return;
+        }
+      }
+
+      // React Native's Share ignores `url` on Android, so the captured image was never
+      // attached there. Share the actual PNG file through the OS share sheet instead.
+      if (Platform.OS !== "web" && capturedUri) {
+        try {
+          const Sharing = await import("expo-sharing");
+          if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(capturedUri, {
+              dialogTitle: "Share your Tala ng Linggo",
+              mimeType: "image/png",
+              UTI: "public.png",
+            });
+            return;
+          }
+        } catch {
+          // Fall back to a text share below if the native share sheet is unavailable.
         }
       }
 
@@ -598,6 +693,76 @@ export default function WeeklyRecapScreen() {
     setViewMode("story");
   };
 
+  const renderFullSummaryCard = (isCapturingRef = false) => (
+    <View
+      ref={isCapturingRef ? shareCardRef : undefined}
+      collapsable={false}
+      style={styles.shareCard}
+    >
+      {/* Brand & Date Header */}
+      <View style={styles.shareCardHeader}>
+        <Image source={TALA_IMAGE} style={styles.shareTalaIcon} contentFit="contain" cachePolicy="memory-disk" />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.shareCardBrand}>BAWAT TALA • WEEKLY RECAP</Text>
+          <Text style={styles.shareCardTitle}>Tala ng Linggo: Full Summary</Text>
+        </View>
+      </View>
+
+      {/* Top Score & Rhythm Row */}
+      <View style={styles.shareScoreWrap}>
+        <View style={styles.shareScoreBadge}>
+          <Text style={styles.shareScoreVal}>{daysWithCheckIn}/7</Text>
+        </View>
+        <View style={{ flex: 1, marginLeft: 10 }}>
+          <Text style={styles.shareScoreTitle}>Days Paused Under The Stars</Text>
+          <Text style={styles.shareScoreDesc}>Honored their mental rhythm with Muni</Text>
+        </View>
+      </View>
+
+      {/* Full Metrics Grid */}
+      <View style={styles.shareGrid}>
+        <View style={styles.shareGridItem}>
+          <Text style={styles.shareGridVal}>{totalJournals}</Text>
+          <Text style={styles.shareGridLbl}>Journals</Text>
+        </View>
+        <View style={styles.shareGridDivider} />
+        <View style={styles.shareGridItem}>
+          <Text style={styles.shareGridVal}>{mindfulResetsCount}</Text>
+          <Text style={styles.shareGridLbl}>Pauses</Text>
+        </View>
+        <View style={styles.shareGridDivider} />
+        <View style={styles.shareGridItem}>
+          <Text style={styles.shareGridVal}>{libraryReadCount}</Text>
+          <Text style={styles.shareGridLbl}>Guides</Text>
+        </View>
+        <View style={styles.shareGridDivider} />
+        <View style={styles.shareGridItem}>
+          <Text style={styles.shareGridVal}>+{weeklyTalaStars}</Text>
+          <Text style={styles.shareGridLbl}>Tala</Text>
+        </View>
+      </View>
+
+      {/* 7-Day Day Nodes Visual Row */}
+      <View style={styles.shareDaysRow}>
+        {weeklyDays.map((d) => (
+          <View key={d.dateStr} style={[styles.shareDayNode, { borderColor: d.moodColor }]}>
+            <Text style={styles.shareDayNodeName}>{d.dayName}</Text>
+            <View style={[styles.shareDayNodeDot, { backgroundColor: d.moodColor }]} />
+            <Text style={styles.shareDayNodeNum}>{d.dayNumber}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Muni Personalized Note Box */}
+      <View style={styles.shareMuniQuoteBox}>
+        <Text style={styles.shareMuniQuoteTitle}>Muni's Weekly Note:</Text>
+        <Text style={styles.shareMuniQuote}>
+          "{backendRecap?.muniLetter || "True productivity isn't working until burnout — it is protecting your peace so you can shine bright."}"
+        </Text>
+      </View>
+    </View>
+  );
+
   if (loading) {
     return (
       <SafeAreaView style={[styles.storyScreen, { backgroundColor: "#0B1D14", alignItems: "center", justifyContent: "center" }]} edges={["top", "bottom"]}>
@@ -613,6 +778,11 @@ export default function WeeklyRecapScreen() {
   if (viewMode === "story") {
     return (
       <SafeAreaView style={[styles.storyScreen, { backgroundColor: currentTheme.bgGradient[0] }]} edges={["top", "bottom"]}>
+        {/* Hidden full summary card for captureRef in Story Mode */}
+        <View style={styles.offscreenShareWrap} pointerEvents="none">
+          {renderFullSummaryCard(true)}
+        </View>
+
         {/* Dynamic Atmospheric Nebula Background */}
         <Svg style={StyleSheet.absoluteFillObject} width="100%" height="100%">
           <Defs>
@@ -1111,6 +1281,10 @@ export default function WeeklyRecapScreen() {
   // -------------------------------------------------------------
   return (
     <View style={styles.screen}>
+      {/* Dedicated offscreen card for capturing Full Summary on Android without modal clipping */}
+      <View style={styles.offscreenShareWrap} pointerEvents="none">
+        {renderFullSummaryCard(true)}
+      </View>
       <AppleTopBar
         title="Tala ng Linggo"
         subtitle="A Week's Recap & Resilience"
@@ -1128,7 +1302,7 @@ export default function WeeklyRecapScreen() {
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: topBarOffset }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -1357,17 +1531,55 @@ export default function WeeklyRecapScreen() {
           </View>
 
           {selectedDay ? (
-            <View style={[styles.dayDetailCard, { borderLeftColor: selectedDay.moodColor }]}>
+            <View style={styles.dayDetailCard}>
               <View style={styles.dayDetailHeader}>
                 <Text style={styles.dayDetailDay}>
                   {selectedDay.dayName}, {selectedDay.monthName} {selectedDay.dayNumber}
                 </Text>
+                {selectedDay.checkIns && selectedDay.checkIns.length > 1 ? (
+                  <View style={styles.checkInsCountBadge}>
+                    <Text style={styles.checkInsCountBadgeText}>
+                      {selectedDay.checkIns.length} check-ins
+                    </Text>
+                  </View>
+                ) : (
                 <View style={[styles.dayDetailMoodTag, { backgroundColor: selectedDay.moodColor + "22" }]}>
                   <Text style={[styles.dayDetailMoodText, { color: selectedDay.moodColor }]}>
                     {selectedDay.moodLabel}
                   </Text>
                 </View>
+                )}
               </View>
+
+              {/* Display all recorded emotion check-ins for the day */}
+              {selectedDay.checkIns && selectedDay.checkIns.length > 0 ? (
+                <View style={styles.multiCheckInsContainer}>
+                  {selectedDay.checkIns.map((ci, cIdx) => {
+                    const ciEmotion = EMOTIONS.find((e) => e.id === ci.moodId);
+                    const ciImg = getEmotionImageSource(ciEmotion, false);
+                    return (
+                      <View key={ci.id || cIdx} style={styles.checkInRowItem}>
+                        <View style={styles.checkInRowLeft}>
+                          {ciImg ? (
+                            <Image source={ciImg} style={styles.checkInSmallImg} contentFit="contain" cachePolicy="memory-disk" />
+                          ) : (
+                            <View style={[styles.checkInDot, { backgroundColor: ci.moodColor }]} />
+                          )}
+                          <View style={[styles.dayDetailMoodTag, { backgroundColor: ci.moodColor + "22" }]}>
+                            <Text style={[styles.dayDetailMoodText, { color: ci.moodColor }]}>
+                              {ci.moodLabel}
+                            </Text>
+                          </View>
+                        </View>
+                        {ci.timeLabel ? (
+                          <Text style={styles.checkInTimeText}>{ci.timeLabel}</Text>
+                        ) : null}
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : null}
+
               <Text style={styles.dayDetailBody}>{selectedDay.notes}</Text>
               {selectedDay.hasReset ? (
                 <View style={styles.dayDetailBadge}>
@@ -1551,69 +1763,7 @@ export default function WeeklyRecapScreen() {
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.shareCardContainer}>
-            <View ref={shareCardRef} collapsable={false} style={styles.shareCard}>
-              {/* Brand & Date Header */}
-              <View style={styles.shareCardHeader}>
-                <Image source={TALA_IMAGE} style={styles.shareTalaIcon} contentFit="contain" cachePolicy="memory-disk" />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.shareCardBrand}>BAWAT TALA  " WEEKLY RECAP</Text>
-                  <Text style={styles.shareCardTitle}>Tala ng Linggo: Full Summary</Text>
-                </View>
-              </View>
-
-              {/* Top Score & Rhythm Row */}
-              <View style={styles.shareScoreWrap}>
-                <View style={styles.shareScoreBadge}>
-                  <Text style={styles.shareScoreVal}>{daysWithCheckIn}/7</Text>
-                </View>
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={styles.shareScoreTitle}>Days Paused Under The Stars</Text>
-                  <Text style={styles.shareScoreDesc}>Honored their mental rhythm with Muni</Text>
-                </View>
-              </View>
-
-              {/* Full Metrics Grid */}
-              <View style={styles.shareGrid}>
-                <View style={styles.shareGridItem}>
-                  <Text style={styles.shareGridVal}>{totalJournals}</Text>
-                  <Text style={styles.shareGridLbl}>Journals</Text>
-                </View>
-                <View style={styles.shareGridDivider} />
-                <View style={styles.shareGridItem}>
-                  <Text style={styles.shareGridVal}>{mindfulResetsCount}</Text>
-                  <Text style={styles.shareGridLbl}>Pauses</Text>
-                </View>
-                <View style={styles.shareGridDivider} />
-                <View style={styles.shareGridItem}>
-                  <Text style={styles.shareGridVal}>{libraryReadCount}</Text>
-                  <Text style={styles.shareGridLbl}>Guides</Text>
-                </View>
-                <View style={styles.shareGridDivider} />
-                <View style={styles.shareGridItem}>
-                  <Text style={styles.shareGridVal}>+{weeklyTalaStars}</Text>
-                  <Text style={styles.shareGridLbl}>Tala</Text>
-                </View>
-              </View>
-
-              {/* 7-Day Day Nodes Visual Row */}
-              <View style={styles.shareDaysRow}>
-                {weeklyDays.map((d) => (
-                  <View key={d.dateStr} style={[styles.shareDayNode, { borderColor: d.moodColor }]}>
-                    <Text style={styles.shareDayNodeName}>{d.dayName}</Text>
-                    <View style={[styles.shareDayNodeDot, { backgroundColor: d.moodColor }]} />
-                    <Text style={styles.shareDayNodeNum}>{d.dayNumber}</Text>
-                  </View>
-                ))}
-              </View>
-
-              {/* Muni Personalized Note Box */}
-              <View style={styles.shareMuniQuoteBox}>
-                <Text style={styles.shareMuniQuoteTitle}>Muni's Weekly Note:</Text>
-                <Text style={styles.shareMuniQuote}>
-                  "{backendRecap?.muniLetter || "True productivity isn't working until burnout it is protecting your peace so you can shine bright."}"
-                </Text>
-              </View>
-            </View>
+            {renderFullSummaryCard(false)}
 
             <View style={styles.shareActionRow}>
               <Pressable
@@ -2714,13 +2864,57 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAF7",
     padding: 12,
     borderRadius: 12,
-    borderLeftWidth: 4,
   },
   dayDetailHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 4,
+  },
+  checkInsCountBadge: {
+    backgroundColor: "#E2E8F0",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  checkInsCountBadgeText: {
+    fontSize: 11,
+    fontFamily: "Outfit-Bold",
+    color: "#475569",
+  },
+  multiCheckInsContainer: {
+    marginVertical: 6,
+    gap: 6,
+  },
+  checkInRowItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E5ECE3",
+  },
+  checkInRowLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  checkInSmallImg: {
+    width: 20,
+    height: 20,
+  },
+  checkInDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  checkInTimeText: {
+    fontSize: 11,
+    fontFamily: "Outfit-Medium",
+    color: "#64748B",
   },
   dayDetailDay: {
     fontSize: 13,
@@ -3023,6 +3217,14 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     padding: 16,
     alignItems: "center",
+  },
+  offscreenShareWrap: {
+    position: "absolute",
+    left: -9999,
+    top: 0,
+    width: 340,
+    opacity: 0.99,
+    zIndex: -100,
   },
   shareCard: {
     width: "100%",

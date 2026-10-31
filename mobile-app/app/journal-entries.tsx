@@ -3,6 +3,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Swipeable } from "react-native-gesture-handler";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
@@ -136,6 +137,8 @@ function SwipeSafeEntryCard({
 }
 
 export default function JournalEntriesScreen() {
+  const insets = useSafeAreaInsets();
+  const topBarOffset = Math.max(insets.top, 14) + 48 + 14;
   const { user } = useAuthSession();
   const { isSyncing, refreshKey, syncNow } = useOfflineSync();
   const [entries, setEntries] = useState<RecentEntryItem[]>([]);
@@ -236,7 +239,7 @@ export default function JournalEntriesScreen() {
       <JournalLockGate>
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: topBarOffset }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl

@@ -16,6 +16,7 @@ import {
   TextInput,
   View } from "react-native";
 import { Image } from "expo-image";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { OtpCodeInput } from "../components/forms/OtpCodeInput";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { ConfirmationModal } from "../components/ui/ConfirmationModal";
@@ -480,6 +481,9 @@ const FEEDBACK_MESSAGE_MAX_LENGTH = 2000;
 const DELETE_PASSWORD_MAX_LENGTH = 128;
 
 export default function ProfileSettingsScreen() {
+  const insets = useSafeAreaInsets();
+  const topBarOffset = Math.max(insets.top, 14) + 48 + 14;
+  const modalSafeAreaPadding = { paddingBottom: Math.max(20, insets.bottom + 12) };
   const { resetPin, section, view } = useLocalSearchParams<{ resetPin?: string; section?: string; view?: string }>();
   const activeSection: SettingsSection = resolveSettingsSection(section);
   const [showContactForm, setShowContactForm] = useState(view === "contact" || view === "form");
@@ -493,6 +497,7 @@ export default function ProfileSettingsScreen() {
     enableAppLock,
     enableExistingAppLock,
     hasAppLockPin,
+    isAppLocked,
     muniRemindersEnabled,
     notificationPreviewsEnabled,
     privateJournalModeEnabled,
@@ -505,6 +510,7 @@ export default function ProfileSettingsScreen() {
     setNotificationPreviewsEnabled,
     setPrivateJournalModeEnabled,
     updateAppLockPin } = useAppPreferences();
+  const journalContentLocked = appLockEnabled && isAppLocked;
 
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
@@ -1628,7 +1634,7 @@ return (
         onBack={handleBack}
       />
 
-      <ScrollView keyboardShouldPersistTaps="handled" style={styles.scroll} contentContainerStyle={[styles.scrollContent, deletedSelectionMode && selectedDeletedIds.length > 0 ? { paddingBottom: 110 } : null]} showsVerticalScrollIndicator={false}>
+      <ScrollView keyboardShouldPersistTaps="handled" style={styles.scroll} contentContainerStyle={[styles.scrollContent, { paddingTop: topBarOffset }, deletedSelectionMode && selectedDeletedIds.length > 0 ? { paddingBottom: 110 } : null]} showsVerticalScrollIndicator={false}>
         {activeSection !== "schedule" && activeSection !== "app-lock" ? (
           <Text style={styles.subtitle}>
             {activeSection === "help-support" && showContactForm
@@ -1948,22 +1954,29 @@ return (
               <StatBox label="Unread" value={String(notifications.filter((item) => !item.isRead).length)} />
               <StatBox label="Support" value={appointment ? "1" : "0"} />
             </View>
-            <Card title={`Journal Activity · ${(recentEntriesTotalCount || recentEntries.length)} ${(recentEntriesTotalCount || recentEntries.length) === 1 ? "entry" : "entries"}`}>
-              {recentEntries.length ? (
-                recentEntries.map((entry, index) => (
-                  <ActionRow
-                    key={entry.id}
-                    bordered={index > 0}
-                    title={entry.title}
-                    meta={formatDateTime(entry.createdAt)}
-                    body={privateJournalModeEnabled ? "Journal entry saved. Open it to read the full details." : entry.preview}
-                    onPress={() => router.push(`/journal-entry-view?entryId=${entry.id}`)}
-                  />
-                ))
-              ) : (
-                <EmptyText text="No recent journal activity yet." />
-              )}
-            </Card>
+            {journalContentLocked ? (
+              <Card title="Journal Activity · Locked">
+                <EmptyText text="Journal is locked. Unlock it to view your recent journal activity." />
+                <SecondaryButton label="Unlock Journal" onPress={() => router.push("/journal")} />
+              </Card>
+            ) : (
+              <Card title={`Journal Activity · ${(recentEntriesTotalCount || recentEntries.length)} ${(recentEntriesTotalCount || recentEntries.length) === 1 ? "entry" : "entries"}`}>
+                {recentEntries.length ? (
+                  recentEntries.map((entry, index) => (
+                    <ActionRow
+                      key={entry.id}
+                      bordered={index > 0}
+                      title={entry.title}
+                      meta={formatDateTime(entry.createdAt)}
+                      body={privateJournalModeEnabled ? "Journal entry saved. Open it to read the full details." : entry.preview}
+                      onPress={() => router.push(`/journal-entry-view?entryId=${entry.id}`)}
+                    />
+                  ))
+                ) : (
+                  <EmptyText text="No recent journal activity yet." />
+                )}
+              </Card>
+            )}
             <Card title={`Recent Notifications (${notificationsTotalCount || notifications.length})`}>
               {notifications.length ? (
                 notifications.map((item, index) => (
@@ -2004,6 +2017,13 @@ return (
 
         {activeSection === "recently-deleted" ? (
           <>
+            {journalContentLocked ? (
+              <Card title="Deleted Entries · Locked">
+                <EmptyText text="Journal is locked. Unlock it to view recently deleted entries." />
+                <SecondaryButton label="Unlock Journal" onPress={() => router.push("/journal")} />
+              </Card>
+            ) : (
+            <>
             {deletedLoading ? <ActivityIndicator color="#70C943" style={styles.loader} /> : null}
             {deletedSelectionMode ? (
               <View style={styles.deletedSelectHintRow}>
@@ -2056,6 +2076,8 @@ return (
                 <EmptyText text="No recently deleted journal entries." />
               )}
             </Card>
+            </>
+            )}
           </>
         ) : null}
 
@@ -2338,7 +2360,7 @@ return (
           </>
         ) : null}
 
-        {(!showContactForm || activeSection !== "help-support") && activeSection !== "recently-deleted" ? (
+        {activeSection !== "recent-activity" && activeSection !== "app-lock" && activeSection !== "help-support" && activeSection !== "recently-deleted" ? (
         <Pressable
           style={styles.shareFooter}
           onPress={() => router.push("/referral" as never)}
@@ -2355,8 +2377,8 @@ return (
         transparent
         visible={activeSection === "app-lock" && pinConfirmAction !== null}
       >
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalBackdrop}>
-          <ScrollView contentContainerStyle={styles.modalScrollWrap} keyboardShouldPersistTaps="handled" bounces={false} showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.modalBackdrop}>
+        <ScrollView style={styles.modalScroll} contentContainerStyle={[styles.modalScrollWrap, modalSafeAreaPadding]} keyboardShouldPersistTaps="handled" bounces={false} showsVerticalScrollIndicator={false}>
             <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>
               {pinConfirmAction === "turn-off" ? "Turn Off Journal Lock" : "Turn On Journal Lock"}
@@ -2435,8 +2457,8 @@ return (
         transparent
         visible={activeSection === "app-lock" && showPinEditor}
       >
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalBackdrop}>
-          <ScrollView contentContainerStyle={styles.modalScrollWrap} keyboardShouldPersistTaps="handled" bounces={false} showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.modalBackdrop}>
+        <ScrollView style={styles.modalScroll} contentContainerStyle={[styles.modalScrollWrap, modalSafeAreaPadding]} keyboardShouldPersistTaps="handled" bounces={false} showsVerticalScrollIndicator={false}>
             <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>{appLockEnabled ? "Change Journal PIN" : "Create Journal PIN"}</Text>
             <Text style={styles.modalBody}>
@@ -2511,8 +2533,8 @@ return (
         transparent
         visible={activeSection === "app-lock" && showPinReset}
       >
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalBackdrop}>
-          <ScrollView contentContainerStyle={styles.modalScrollWrap} keyboardShouldPersistTaps="handled" bounces={false} showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.modalBackdrop}>
+        <ScrollView style={styles.modalScroll} contentContainerStyle={[styles.modalScrollWrap, modalSafeAreaPadding]} keyboardShouldPersistTaps="handled" bounces={false} showsVerticalScrollIndicator={false}>
             <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Reset Forgotten PIN</Text>
             <Text style={styles.modalBody}>
@@ -2727,8 +2749,8 @@ return (
           if (!nicknameModalSaving) setShowNicknameModal(false);
         }}
       >
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalBackdrop}>
-          <ScrollView contentContainerStyle={styles.modalScrollWrap} keyboardShouldPersistTaps="handled" bounces={false} showsVerticalScrollIndicator={false}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.modalBackdrop}>
+          <ScrollView style={styles.modalScroll} contentContainerStyle={[styles.modalScrollWrap, modalSafeAreaPadding]} keyboardShouldPersistTaps="handled" bounces={false} showsVerticalScrollIndicator={false}>
             <View style={styles.modalCard}>
               <Text style={styles.modalTitle}>Change Nickname</Text>
               {(() => {
@@ -3422,7 +3444,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     paddingVertical: 20,
-    paddingHorizontal: 16 },
+    paddingHorizontal: 8 },
+  modalScroll: {
+    flexShrink: 1,
+    width: "100%",
+  },
   changeEmailTextBtn: {
     color: "#4F7A35",
     fontSize: 13,
@@ -3433,10 +3459,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(33, 43, 52, 0.42)",
-    paddingHorizontal: 18 },
+    paddingHorizontal: 16 },
   modalCard: {
     width: "100%",
-    maxWidth: 430,
+    maxWidth: 360,
+    alignSelf: "center",
     borderRadius: 22,
     backgroundColor: "#FFFFFF",
     borderWidth: 1,

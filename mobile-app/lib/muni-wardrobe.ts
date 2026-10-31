@@ -4,6 +4,8 @@ import { ImageSourcePropType } from "react-native";
 import {
     fetchMuniWardrobe,
     purchaseMuniWardrobeItem,
+    registerWalletBalanceReader,
+    registerWalletBalanceUpdater,
     saveMuniLoadoutRemote,
 } from "./backend-api";
 
@@ -342,6 +344,9 @@ export function updateAvailableMuniTala(totalTala: number) {
   state.totalTala = Math.max(0, Number(totalTala) || 0);
   notifyAll(state);
 }
+
+registerWalletBalanceUpdater(updateAvailableMuniTala);
+registerWalletBalanceReader(getAvailableMuniTala);
 
 export function subscribeOwnedMuniItems(listener: (ownedItems: MuniOwnedItems) => void) {
   ownedItemsListeners.add(listener);

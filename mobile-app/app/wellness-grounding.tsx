@@ -1,6 +1,6 @@
 ﻿import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useCallback, useEffect, useState, type ComponentProps } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
 import {
   Pressable,
   ScrollView,
@@ -9,6 +9,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthSession } from "../lib/auth-session";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { unlockAchievement } from "../lib/achievements";
@@ -75,13 +76,29 @@ const MEDITATION_CUES = [
 ];
 
 export default function WellnessGroundingScreen() {
+  const insets = useSafeAreaInsets();
+  const topBarOffset = Math.max(insets.top, 14) + 48 + 14;
   const { user } = useAuthSession();
   const [activeStep, setActiveStep] = useState<number>(0);
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
+  const [isBgmMuted, setIsBgmMuted] = useState(false);
+  const bgmRef = useRef<ReturnType<typeof startBgmTrack> | null>(null);
 
   useEffect(() => {
     const bgm = startBgmTrack(SOUND_ASSETS.wellnessToolsBgm, 0.28);
-    return () => bgm.stop();
+    bgmRef.current = bgm;
+    return () => {
+      bgm.stop();
+      bgmRef.current = null;
+    };
+  }, []);
+
+  const toggleBgmMute = useCallback(() => {
+    setIsBgmMuted((current) => {
+      const nextMuted = !current;
+      bgmRef.current?.setVolume(nextMuted ? 0 : 0.28);
+      return nextMuted;
+    });
   }, []);
 
   useEffect(() => {
@@ -110,11 +127,29 @@ export default function WellnessGroundingScreen() {
 
   return (
     <View style={styles.screen}>
-      <AppleTopBar title="5-4-3-2-1 Sensory Grounding" onBack={() => router.back()} />
+      <AppleTopBar
+        title="5-4-3-2-1 Sensory Grounding"
+        onBack={() => router.back()}
+        rightAction={
+          <Pressable
+            onPress={toggleBgmMute}
+            accessibilityRole="button"
+            accessibilityLabel={isBgmMuted ? "Unmute background music" : "Mute background music"}
+            style={styles.speakerButton}
+            hitSlop={8}
+          >
+            <Ionicons
+              name={isBgmMuted ? "volume-mute" : "volume-high"}
+              size={20}
+              color={isBgmMuted ? "#8F9D93" : "#2E6B74"}
+            />
+          </Pressable>
+        }
+      />
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.scrollContent, compact && styles.scrollContentCompact]}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: topBarOffset }, compact && styles.scrollContentCompact]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.contentFrame}>
@@ -310,6 +345,21 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: "#EFF5F2",
+  },
+  speakerButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
   topBar: {
     height: 52,

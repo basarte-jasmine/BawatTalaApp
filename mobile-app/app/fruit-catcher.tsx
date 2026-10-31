@@ -17,8 +17,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { unlockAchievement } from "../lib/achievements";
 import { useAuthSession } from "../lib/auth-session";
 import { claimMiniResetReward } from "../lib/backend-api";
+import { updateAvailableMuniTala } from "../lib/muni-wardrobe";
 import { getGameScore, saveGameScore } from "../lib/game-scores";
 import { startBgmTrack, playSoundEffect, playGameOverSound, playCollectTalaSound, SOUND_ASSETS } from "../lib/sound-effects";
+
+const TALA_IMAGE = require("../assets/images/Tala_Star.png");
 
 const BASKET_WIDTH = 100;
 const BASKET_HEIGHT = 80;
@@ -269,15 +272,25 @@ export default function FruitCatcherScreen() {
         setGameState("gameover");
         const curScore = currentScore;
         const curLevel = level;
+        // Bug 10: 1 Tala for every 2 fruits collected
+        const earnedTala = Math.floor(fruitsCaught / 2);
         if (!rewardClaimedRef.current) {
           rewardClaimedRef.current = true;
           claimMiniResetReward({
             activityId: "fruit-catcher",
             level: curLevel,
-            roundKey: "fruit-catcher-" + Date.now(),
+            roundKey: "fruit-catcher-" + (user?.studentNumber || "student") + "-" + Date.now(),
             score: curScore,
+            fruits: fruitsCaught,
+            rewardTala: earnedTala,
+            studentNumber: user?.studentNumber,
           })
-            .then((reward) => setRewardTala(reward.rewardTala ?? 0))
+            .then((reward) => {
+              setRewardTala(reward.rewardTala ?? earnedTala);
+              if (typeof reward.totalTala === "number") {
+                updateAvailableMuniTala(reward.totalTala);
+              }
+            })
             .catch(() => undefined);
         }
         let newBest = bestScore;
@@ -418,6 +431,11 @@ export default function FruitCatcherScreen() {
               <View style={styles.hudStatPill}>
                 <Text style={styles.hudStatLabel}>SCORE</Text>
                 <Text style={styles.hudStatValue}>{score}</Text>
+              </View>
+              {/* Visible Tala Coin Tracker */}
+              <View style={styles.hudTalaTracker}>
+                <Image source={TALA_IMAGE} style={styles.hudTalaIcon} contentFit="contain" />
+                <Text style={styles.hudTalaValue}>+{Math.floor(fruitsCaught / 2)}</Text>
               </View>
               <View style={styles.hudLevelPill}>
                 <Text style={styles.hudLevelText}>LVL {level}</Text>
@@ -710,6 +728,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "baseline",
     columnGap: 5,
+  },
+  hudTalaTracker: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(250, 204, 21, 0.15)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(250, 204, 21, 0.4)",
+    gap: 4,
+  },
+  hudTalaIcon: {
+    width: 14,
+    height: 14,
+  },
+  hudTalaValue: {
+    fontSize: 12,
+    fontFamily: "Outfit-Bold",
+    color: "#B45309",
   },
   hudStatLabel: {
     color: "#64748B",

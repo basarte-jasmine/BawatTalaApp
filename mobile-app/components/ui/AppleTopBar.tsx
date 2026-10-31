@@ -15,6 +15,15 @@ export type AppleTopBarProps = {
   tint?: "light" | "dark" | "default";
 };
 
+export function getAppleTopBarHeight(topInset: number = 0) {
+  return Math.max(topInset, 14) + 48;
+}
+
+export function useAppleTopBarHeight(extraSpacing: number = 12) {
+  const insets = useSafeAreaInsets();
+  return Math.max(insets.top, 14) + 48 + extraSpacing;
+}
+
 export function AppleTopBar({
   title,
   subtitle,

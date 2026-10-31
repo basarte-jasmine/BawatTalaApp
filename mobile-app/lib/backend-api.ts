@@ -1500,6 +1500,8 @@ export async function isBackendReachable(timeoutMs = 25000): Promise<boolean> {
 
 export async function syncOfflineStudentData(studentNumber: string): Promise<ApiResult> {
   try {
+    // Sync durable game rewards first so a failure in another step can never strand Tala.
+    await syncPendingGameRewards(studentNumber);
     const [preferencesSynced, checkInsSynced] = await Promise.all([
       syncPendingStudentPreferences(studentNumber),
       syncPendingCheckIns(studentNumber),
@@ -1509,7 +1511,7 @@ export async function syncOfflineStudentData(studentNumber: string): Promise<Api
     await syncPendingSupportResponses(studentNumber);
     await syncPendingAchievements(studentNumber);
     await syncPendingJournalCovers(studentNumber);
-      await syncPendingTasks(studentNumber);
+    await syncPendingTasks(studentNumber);
 
     return {
       ok: preferencesSynced && checkInsSynced,
@@ -2497,19 +2499,218 @@ export async function saveLibraryBookProgress(payload: {
   };
 }
 
-export async function claimMiniResetReward(payload: {
+type WalletBalanceUpdater = (totalTala: number) => void;
+let registeredWalletUpdater: WalletBalanceUpdater | null = null;
+let registeredWalletReader: (() => number) | null = null;
+let localCachedWalletBalance: number | null = null;
+
+export function registerWalletBalanceUpdater(fn: WalletBalanceUpdater) {
+  registeredWalletUpdater = fn;
+}
+
+export function registerWalletBalanceReader(fn: () => number) {
+  registeredWalletReader = fn;
+}
+
+export function notifyWalletBalanceUpdated(totalTala: number) {
+  localCachedWalletBalance = totalTala;
+  registeredWalletUpdater?.(totalTala);
+}
+
+const PENDING_GAME_REWARDS_PREFIX = "@bawat-tala/pending-game-rewards";
+
+function getPendingGameRewardsKey(studentNumber: string) {
+  return `${PENDING_GAME_REWARDS_PREFIX}:${studentNumber}`;
+}
+
+export type PendingGameRewardItem = {
   activityId: string;
+  coins?: number;
   distance?: number;
+  elapsedSeconds?: number;
+  fruits?: number;
   leaves?: number;
   level?: number;
+  rewardTala: number;
+  roundKey: string;
+  rounds?: number;
+  score?: number;
+  timestamp: number;
+  words?: number;
+};
+
+export async function enqueuePendingGameReward(
+  studentNumber: string,
+  item: PendingGameRewardItem,
+): Promise<void> {
+  const sn = String(studentNumber || "").trim();
+  if (!sn || !item?.roundKey) return;
+  const key = getPendingGameRewardsKey(sn);
+  try {
+    const stored = await AsyncStorage.getItem(key);
+    const list: PendingGameRewardItem[] = stored ? (JSON.parse(stored) as PendingGameRewardItem[]) : [];
+    if (!Array.isArray(list)) {
+      await AsyncStorage.setItem(key, JSON.stringify([item]));
+      return;
+    }
+    const exists = list.some((r) => r.roundKey === item.roundKey);
+    if (!exists) {
+      list.push(item);
+      await AsyncStorage.setItem(key, JSON.stringify(list));
+    }
+  } catch {}
+}
+
+export async function syncPendingGameRewards(studentNumber: string): Promise<boolean> {
+  const sn = String(studentNumber || "").trim();
+  if (!sn) return true;
+  const key = getPendingGameRewardsKey(sn);
+  try {
+    const stored = await AsyncStorage.getItem(key);
+    if (!stored) return true;
+    const list = JSON.parse(stored) as PendingGameRewardItem[];
+    if (!Array.isArray(list) || list.length === 0) {
+      await AsyncStorage.removeItem(key);
+      return true;
+    }
+    const remaining: PendingGameRewardItem[] = [];
+    let sawServerResponse = false;
+    for (const item of list) {
+      try {
+        const { response, data } = await post("/api/wellness/mini-reset-reward", {
+          activityId: item.activityId,
+          roundKey: item.roundKey,
+          level: item.level,
+          score: item.score,
+          distance: item.distance,
+          leaves: item.leaves,
+          rounds: item.rounds,
+          words: item.words,
+          fruits: item.fruits,
+          elapsedSeconds: item.elapsedSeconds,
+          coins: item.coins,
+          rewardTala: item.rewardTala,
+        });
+        if (response.ok) {
+          sawServerResponse = true;
+          if (typeof data?.totalTala === "number") {
+            notifyWalletBalanceUpdated(data.totalTala);
+          }
+        } else if (response.status === 409) {
+          // Already counted on server, safe to discard from queue
+          sawServerResponse = true;
+        } else {
+          remaining.push(item);
+        }
+      } catch {
+        remaining.push(item);
+      }
+    }
+    if (sawServerResponse) {
+      // Reconcile the locally displayed balance with the authoritative wallet so
+      // optimistic offline credit is corrected after synchronization.
+      try {
+        const wallet = await fetchMuniWardrobe(sn);
+        if (typeof wallet.totalTala === "number") {
+          notifyWalletBalanceUpdated(wallet.totalTala);
+        }
+      } catch {}
+    }
+    if (remaining.length === 0) {
+      await AsyncStorage.removeItem(key);
+      return true;
+    }
+    await AsyncStorage.setItem(key, JSON.stringify(remaining));
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+export async function claimMiniResetReward(payload: {
+  activityId: string;
+  coins?: number;
+  distance?: number;
+  elapsedSeconds?: number;
+  fruits?: number;
+  leaves?: number;
+  level?: number;
+  rewardTala?: number;
   roundKey: string;
   rounds?: number;
   score?: number;
   studentNumber?: string;
-}): Promise<ApiResult & { dailyCapReached?: boolean; rewardTala?: number; totalTala?: number }> {
-  const { studentNumber: _studentNumber, ...body } = payload;
-  const { response, data } = await post("/api/wellness/mini-reset-reward", body);
-  return { ok: response.ok, message: data?.message, dailyCapReached: data?.dailyCapReached, rewardTala: data?.rewardTala, totalTala: data?.totalTala };
+  words?: number;
+}): Promise<ApiResult & { dailyCapReached?: boolean; queued?: boolean; rewardTala?: number; totalTala?: number }> {
+  const { studentNumber, ...body } = payload;
+  const sn = String(studentNumber || "").trim();
+  try {
+    const { response, data } = await post("/api/wellness/mini-reset-reward", body);
+    if (response.ok) {
+      if (typeof data?.totalTala === "number") {
+        notifyWalletBalanceUpdated(data.totalTala);
+      }
+      return {
+        ok: true,
+        message: data?.message,
+        dailyCapReached: data?.dailyCapReached,
+        rewardTala: data?.rewardTala ?? payload.rewardTala ?? 0,
+        totalTala: data?.totalTala,
+      };
+    }
+    if (response.status === 409) {
+      return { ok: false, message: data?.message || "This round was already counted.", rewardTala: 0 };
+    }
+  } catch {
+    // Network failure / offline gameplay: queue reward durable locally and credit available wallet
+  }
+
+  const earnedReward = typeof payload.rewardTala === "number"
+    ? payload.rewardTala
+    : payload.activityId === "fruit-catcher"
+      ? Math.floor((payload.fruits ?? 0) / 2)
+      : payload.activityId === "unscramble-word"
+        ? (payload.words ?? Math.max(0, (payload.level ?? 1) - 1))
+        : (payload.activityId === "image-puzzle" || payload.activityId === "gentle-pairs")
+          ? ((payload.elapsedSeconds ?? 0) <= 30 ? 3 : (payload.elapsedSeconds ?? 0) <= 60 ? 2 : 1)
+          : payload.activityId === "galaxy-fall"
+            ? (payload.coins ?? 0)
+            : 1;
+
+  if (sn && earnedReward > 0) {
+    await enqueuePendingGameReward(sn, {
+      activityId: payload.activityId,
+      roundKey: payload.roundKey,
+      level: payload.level,
+      score: payload.score,
+      distance: payload.distance,
+      leaves: payload.leaves,
+      rounds: payload.rounds,
+      words: payload.words,
+      fruits: payload.fruits,
+      elapsedSeconds: payload.elapsedSeconds,
+      coins: payload.coins,
+      rewardTala: earnedReward,
+      timestamp: Date.now(),
+    });
+  }
+
+  // Reflect the pending reward in the single existing wallet balance right away so
+  // the visible balance does not lag behind gameplay. The authoritative server
+  // balance replaces this value as soon as the queued reward syncs.
+  if (earnedReward > 0) {
+    const currentBalance = registeredWalletReader?.() ?? localCachedWalletBalance;
+    if (typeof currentBalance === "number" && Number.isFinite(currentBalance)) {
+      notifyWalletBalanceUpdated(currentBalance + earnedReward);
+    }
+  }
+
+  return {
+    ok: true,
+    queued: true,
+    rewardTala: earnedReward,
+    message: `+${earnedReward} Tala earned! Recorded offline and will sync automatically.`,
+  };
 }
 
 const PENDING_ACHIEVEMENTS_PREFIX = "@bawat-tala/pending-achievements";

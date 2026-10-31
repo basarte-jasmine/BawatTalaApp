@@ -14,11 +14,14 @@ import {
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { claimMiniResetReward } from "../lib/backend-api";
+import { useAuthSession } from "../lib/auth-session";
+import { updateAvailableMuniTala } from "../lib/muni-wardrobe";
 import { WORD_DESCRIPTIONS } from "../lib/word-descriptions";
 import { getGameScore, saveGameScore } from "../lib/game-scores";
 import { startBgmTrack, playSoundEffect, playGameOverSound, playCollectTalaSound, SOUND_ASSETS } from "../lib/sound-effects";
 
 const COVER = require("../assets/images/Mini Reset/Unscramble Word/Unscramble Word Cover.webp");
+const TALA_IMAGE = require("../assets/images/Tala_Star.png");
 
 type GameState = "START" | "PLAYING" | "PAUSED" | "GAMEOVER";
 
@@ -64,6 +67,7 @@ function triggerHaptic(style = Haptics.ImpactFeedbackStyle.Light) {
 }
 
 export default function UnscrambleWordScreen() {
+  const { user } = useAuthSession();
   const { width: screenW } = useWindowDimensions();
   const appWidth = Math.min(screenW, 420);
 
@@ -180,15 +184,24 @@ export default function UnscrambleWordScreen() {
     void playGameOverSound(0.8);
     setGameState("GAMEOVER");
     triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
+    const wordsSolved = Math.max(0, level - 1);
     if (!rewardClaimedRef.current) {
       rewardClaimedRef.current = true;
       claimMiniResetReward({
         activityId: "unscramble-word",
         level: level,
+        words: wordsSolved,
+        rewardTala: wordsSolved,
         roundKey: "unscramble-word-" + Date.now(),
         score: score,
+        studentNumber: user?.studentNumber,
       })
-        .then((reward) => setRewardTala(reward.rewardTala ?? 0))
+        .then((reward) => {
+          setRewardTala(reward.rewardTala ?? wordsSolved);
+          if (typeof reward.totalTala === "number") {
+            updateAvailableMuniTala(reward.totalTala);
+          }
+        })
         .catch(() => undefined);
     }
 
@@ -386,6 +399,11 @@ export default function UnscrambleWordScreen() {
                 <View style={styles.hudStatGroup}>
                   <Text style={styles.hudStatLabel}>SCORE</Text>
                   <Text style={styles.hudStatValue}>{score}</Text>
+                </View>
+                {/* Visible Tala Coin Tracker */}
+                <View style={styles.hudTalaTracker}>
+                  <Image source={TALA_IMAGE} style={styles.hudTalaIcon} contentFit="contain" />
+                  <Text style={styles.hudTalaValue}>+{Math.max(0, level - 1)}</Text>
                 </View>
                 <View style={styles.hudLevelPill}>
                   <Text style={styles.hudLevelText}>WORD {level}</Text>
@@ -674,6 +692,26 @@ const styles = StyleSheet.create({
     color: "#0F172A",
     fontSize: 17,
     fontFamily: "Outfit-Bold",
+  },
+  hudTalaTracker: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(250, 204, 21, 0.15)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(250, 204, 21, 0.4)",
+    gap: 4,
+  },
+  hudTalaIcon: {
+    width: 14,
+    height: 14,
+  },
+  hudTalaValue: {
+    fontSize: 12,
+    fontFamily: "Outfit-Bold",
+    color: "#B45309",
   },
   hudLevelPill: {
     paddingHorizontal: 9,

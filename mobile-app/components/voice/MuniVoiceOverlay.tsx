@@ -26,6 +26,7 @@ import {
 } from "expo-audio";
 import { File } from "expo-file-system";
 import { MuniAvatar } from "../muni/MuniAvatar";
+import { JournalLockGate, useAppPreferences } from "../../lib/app-preferences";
 import {
   createJournalSession,
   discardEmptyJournalEntry,
@@ -46,7 +47,6 @@ import {
   needsDistressWellnessOffer,
   needsFinishSupportPrompt,
 } from "../../lib/risk-level";
-import { useAppPreferences } from "../../lib/app-preferences";
 import { showAppNotice } from "../../lib/app-notice";
 
 type VoiceState =
@@ -441,6 +441,7 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
   );
 
   const loadSession = useCallback(async () => {
+    if (appLockEnabled && isAppLocked) return;
     if (!user?.studentNumber) {
       setIsLoadingSession(false);
       setStatusMessage("Please log in to start talking to Muni.");
@@ -490,19 +491,21 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
         setVoiceState("error");
       }
     }
-  }, [setActiveEntry, setConversationMessages, speakReply, user?.studentNumber]);
+  }, [appLockEnabled, isAppLocked, setActiveEntry, setConversationMessages, speakReply, user?.studentNumber]);
 
   useEffect(() => {
     if (visible) {
       isDisposedRef.current = false;
       sessionStartedRef.current = false;
-      void loadSession();
+      if (!(appLockEnabled && isAppLocked)) {
+        void loadSession();
+      }
     } else {
       isDisposedRef.current = true;
       clearRecordingTimeout();
       void stopSpeaking();
     }
-  }, [visible, clearRecordingTimeout, loadSession, stopSpeaking]);
+  }, [visible, appLockEnabled, isAppLocked, clearRecordingTimeout, loadSession, stopSpeaking]);
 
   const handleStartListening = async () => {
     if (!canListen) return;
@@ -1049,7 +1052,11 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
         <BlurView intensity={25} tint="dark" style={StyleSheet.absoluteFillObject} />
         <Pressable style={styles.backdropDismissArea} onPress={handleCloseOverlay} />
 
-        {/* Siri / Apple Intelligence Voice Floating Sheet */}
+        {appLockEnabled && isAppLocked ? (
+          <View style={styles.lockGateWrapper}>
+            <JournalLockGate onBack={handleCloseOverlay} />
+          </View>
+        ) : (
         <Animated.View
           style={[
             styles.voiceSheet,
@@ -1320,6 +1327,7 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
             </View>
           </ScrollView>
         </Animated.View>
+        )}
 
         {/* Tag Review Modal Sheet */}
         <Modal
@@ -1603,6 +1611,13 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "flex-end",
     backgroundColor: "transparent",
+  },
+  lockGateWrapper: {
+    flex: 1,
+    width: "100%",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 10,
   },
   backdropDismissArea: {
     ...StyleSheet.absoluteFillObject,

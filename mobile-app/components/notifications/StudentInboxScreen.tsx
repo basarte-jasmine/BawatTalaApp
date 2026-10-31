@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Pressable, ScrollView,
   RefreshControl, StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Swipeable } from "react-native-gesture-handler";
 import { ConfirmationModal } from "../ui/ConfirmationModal";
 import { AppleTopBar } from "../ui/AppleTopBar";
@@ -156,6 +157,8 @@ function matchesCategoryFilter(item: AppNotification, filter: StudentNotificatio
 
 export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
   const { user } = useAuthSession();
+  const insets = useSafeAreaInsets();
+  const topBarOffset = Math.max(insets.top, 14) + 48 + 14;
   const [notificationFilter, setNotificationFilter] = useState<StudentNotificationCategory>("notifications");
   const requestCategory = variant === "messages" ? "messages" : notificationFilter;
   const cacheKey = user?.studentNumber ? `${user.studentNumber}:${requestCategory}` : "";
@@ -663,7 +666,7 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
       />
 
       {showingThread ? null : (
-        <View style={styles.summaryWrap}>
+        <View style={[styles.summaryWrap, { paddingTop: topBarOffset }]}>
           <View
             style={[
               styles.summaryCard,
@@ -737,7 +740,7 @@ export function StudentInboxScreen({ variant }: StudentInboxScreenProps) {
         <ScrollView
           ref={threadScrollRef}
           style={styles.scroll}
-          contentContainerStyle={styles.threadScrollContent}
+          contentContainerStyle={[styles.threadScrollContent, { paddingTop: topBarOffset }]}
           showsVerticalScrollIndicator={false}
           onContentSizeChange={() => threadScrollRef.current?.scrollToEnd({ animated: false })}
           refreshControl={

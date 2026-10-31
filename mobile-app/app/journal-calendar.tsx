@@ -13,6 +13,7 @@ import {
   View,
 } from "react-native";
 import { fetchJournalCalendar, fetchJournalEntriesByDate } from "../lib/backend-api";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { JournalLockGate } from "../lib/app-preferences";
 import { useAuthSession } from "../lib/auth-session";
@@ -88,6 +89,8 @@ function formatEntryTime(createdAt: string) {
 }
 
 export default function JournalCalendarScreen() {
+  const insets = useSafeAreaInsets();
+  const topBarOffset = Math.max(insets.top, 14) + 48 + 14;
   const { user } = useAuthSession();
   const { isSyncing, refreshKey, syncNow } = useOfflineSync();
   const manilaToday = getManilaTodayParts();
@@ -256,7 +259,7 @@ export default function JournalCalendarScreen() {
         <ScrollView
           ref={mainScrollRef}
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: topBarOffset }]}
           showsVerticalScrollIndicator={false}
           onScroll={(e) => {
             const scrollY = e.nativeEvent.contentOffset.y;

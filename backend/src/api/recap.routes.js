@@ -1,6 +1,7 @@
 const express = require("express");
 const { query } = require("../config/db");
 const { requireStudentOnlyAuth, resolveStudentNumber } = require("../middleware/auth.middleware");
+const { normalizeEmotionId, getEmotionLabel, resolveRepresentativeEmotion } = require("../constants/emotions");
 
 const router = express.Router();
 router.use(requireStudentOnlyAuth);
@@ -223,7 +224,14 @@ router.get("/weekly", async (req, res) => {
     );
 
     const existingRow = existing.rows[0];
-    if (existingRow && existingRow.muni_letter && existingRow.daily_nodes) {
+    const cachedDailyNodes = Array.isArray(existingRow?.daily_nodes) ? existingRow.daily_nodes : [];
+    // Older cached recaps only stored the latest emotion per day and no per-day
+    // check-in history. Regenerate those so the graph and story reflect the new
+    // frequency-based representative emotion and the full daily history.
+    const cacheHasCheckInHistory =
+      cachedDailyNodes.length === 0 ||
+      cachedDailyNodes.every((node) => Array.isArray(node?.checkIns));
+    if (existingRow && existingRow.muni_letter && cachedDailyNodes.length && cacheHasCheckInHistory) {
       return res.json({
         ok: true,
         weekKey: existingRow.week_key,
@@ -235,7 +243,7 @@ router.get("/weekly", async (req, res) => {
         totalResets: existingRow.total_resets,
         totalTalaEarned: existingRow.total_tala_earned,
         talaBreakdown: existingRow.tala_breakdown || {},
-        dailyNodes: existingRow.daily_nodes || [],
+        dailyNodes: cachedDailyNodes,
         emotionPalette: existingRow.emotion_palette || [],
         journalThemes: existingRow.journal_themes || [],
         mindfulResetsBreakdown: existingRow.mindful_resets_breakdown || [],
@@ -270,7 +278,7 @@ router.get("/weekly", async (req, res) => {
         [studentNumber, startIso, endIso]
       ),
       query(
-        `select mood_date::text as mood_date, mood_id, mood_label, created_at
+        `select id, mood_date::text as mood_date, mood_id, mood_label, created_at
          from public.student_moods
          where student_number = $1 and mood_date between $2 and $3
          order by created_at asc`,
@@ -343,8 +351,13 @@ router.get("/weekly", async (req, res) => {
       const monthName = months[currentDayDate.getUTCMonth()];
 
       const dayMoods = moodsRes.rows.filter((m) => m.mood_date === dateStr);
-      const latestMood = dayMoods[dayMoods.length - 1];
-      const moodId = latestMood ? latestMood.mood_id : null;
+      const moodId = resolveRepresentativeEmotion(dayMoods);
+      const checkIns = dayMoods.map((m) => ({
+        id: m.id,
+        moodId: normalizeEmotionId(m.mood_id),
+        moodLabel: getEmotionLabel(m.mood_id) || m.mood_label,
+        createdAt: m.created_at,
+      }));
 
       if (moodId) {
         emotionCounts[moodId] = (emotionCounts[moodId] || 0) + 1;
@@ -364,7 +377,8 @@ router.get("/weekly", async (req, res) => {
       if (hasHeavy) {
         notes = "Challenging emotions surfaced. Muni soft-offered breathing and grounding support.";
       } else if (moodId) {
-        notes = `Logged ${moodId} on this day. Maintained mindful awareness.`;
+        const repLabel = getEmotionLabel(moodId) || moodId;
+        notes = `Logged ${repLabel.toLowerCase()} on this day. Maintained mindful awareness.`;
       } else {
         notes = "Quiet day. No active reflections recorded.";
       }
@@ -375,6 +389,7 @@ router.get("/weekly", async (req, res) => {
         monthName,
         dateStr,
         moodId,
+        checkIns,
         hasHeavyJournal: hasHeavy,
         hasReset,
         notes,

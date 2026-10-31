@@ -5,7 +5,9 @@ import { useFocusEffect } from "@react-navigation/native";
 import { router } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, BackHandler, Easing, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
+import { startBgmTrack, SOUND_ASSETS } from "../lib/sound-effects";
 
 const PHASE_SECONDS = 4;
 const CYCLE_SECONDS = PHASE_SECONDS * 2;
@@ -22,6 +24,8 @@ function getCycleState(startedAt: number) {
 }
 
 export default function WellnessBreathingScreen() {
+  const insets = useSafeAreaInsets();
+  const topBarOffset = Math.max(insets.top, 14) + 48 + 14;
   const { user } = useAuthSession();
   const { width } = useWindowDimensions();
   const frame = Math.min(width, 412);
@@ -33,6 +37,25 @@ export default function WellnessBreathingScreen() {
   const [secondsLeft, setSecondsLeft] = useState(PHASE_SECONDS);
   const [isSessionActive, setIsSessionActive] = useState(false);
   const breathPulse = useRef(new Animated.Value(0)).current;
+  const [isBgmMuted, setIsBgmMuted] = useState(false);
+  const bgmRef = useRef<ReturnType<typeof startBgmTrack> | null>(null);
+
+  useEffect(() => {
+    const bgm = startBgmTrack(SOUND_ASSETS.wellnessToolsBgm, 0.28);
+    bgmRef.current = bgm;
+    return () => {
+      bgm.stop();
+      bgmRef.current = null;
+    };
+  }, []);
+
+  const toggleBgmMute = useCallback(() => {
+    setIsBgmMuted((current) => {
+      const nextMuted = !current;
+      bgmRef.current?.setVolume(nextMuted ? 0 : 0.28);
+      return nextMuted;
+    });
+  }, []);
 
   useEffect(() => {
     let loop: Animated.CompositeAnimation | null = null;
@@ -131,11 +154,29 @@ export default function WellnessBreathingScreen() {
 
   return (
     <View style={styles.screen}>
-      <AppleTopBar title="Diaphragmatic Breathing" onBack={handleBack} />
+      <AppleTopBar
+        title="Diaphragmatic Breathing"
+        onBack={handleBack}
+        rightAction={
+          <Pressable
+            onPress={toggleBgmMute}
+            accessibilityRole="button"
+            accessibilityLabel={isBgmMuted ? "Unmute background music" : "Mute background music"}
+            style={styles.speakerButton}
+            hitSlop={8}
+          >
+            <Ionicons
+              name={isBgmMuted ? "volume-mute" : "volume-high"}
+              size={20}
+              color={isBgmMuted ? "#8F9D93" : "#2E6B74"}
+            />
+          </Pressable>
+        }
+      />
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: topBarOffset }]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.heroCard}>
@@ -235,6 +276,21 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: "#F7FAF6" },
+  speakerButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#0F172A",
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
   topBar: {
     height: 52,
     borderBottomWidth: 1,

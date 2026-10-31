@@ -11,6 +11,7 @@ import {
   TextInput,
   View } from "react-native";
 import { PasswordField } from "../components/forms/PasswordField";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
 import {
   forgotPasswordResendCode,
@@ -65,6 +66,8 @@ function getPasswordStrength(value: string) {
 }
 
 export default function ProfileResetPasswordScreen() {
+  const insets = useSafeAreaInsets();
+  const topBarOffset = Math.max(insets.top, 14) + 48 + 14;
   const { returnSection: returnSectionParam } = useLocalSearchParams<{ returnSection?: string }>();
   const { user } = useAuthSession();
   const returnSection = getReturnSection(returnSectionParam);
@@ -264,7 +267,7 @@ export default function ProfileResetPasswordScreen() {
       >
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingTop: topBarOffset }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >

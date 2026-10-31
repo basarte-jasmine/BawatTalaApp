@@ -156,9 +156,7 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
     if (!studentNumber || !muniRemindersEnabled) return undefined;
 
     const subscription = AppState.addEventListener("change", (nextState) => {
-      const previousState = appStateRef.current;
-      appStateRef.current = nextState;
-      if (nextState === "active" && previousState !== "active") {
+      if (nextState === "active") {
         void syncMuniReminderSchedule(studentNumber, user?.firstName);
       }
     });
@@ -193,51 +191,31 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
   );
 
   useEffect(() => {
-    const clearPendingAutoLock = () => {
-      if (autoLockTimerRef.current) {
-        clearTimeout(autoLockTimerRef.current);
-        autoLockTimerRef.current = null;
-      }
-    };
-
     const subscription = AppState.addEventListener("change", (nextState) => {
       const currentState = appStateRef.current;
-      // Ignore inactive on native (permission sheets). Debounce true background so
-      // mic/notification permission dialogs that briefly report "background" on Android
-      // cannot bounce an unlocked journal session back to the PIN gate forever.
-      const leavingForeground =
-        currentState === "active" &&
-        (nextState === "background" || (Platform.OS === "web" && nextState === "inactive"));
+      const isEnteringBackground =
+        nextState === "background" || (Platform.OS === "web" && nextState === "inactive");
+      const isReturningForeground =
+        nextState === "active" && (currentState === "background" || (Platform.OS === "web" && currentState === "inactive"));
 
-      if (leavingForeground && appLockEnabled && appLockAutoLock) {
-        clearPendingAutoLock();
-        autoLockTimerRef.current = setTimeout(function attemptAutoLock() {
-          autoLockTimerRef.current = null;
-          const suppressRemaining = suppressAutoLockUntilRef.current - Date.now();
-          if (suppressRemaining > 0) {
-            // Permission handoff still protected — re-arm so a real background after
-            // suppress expires still locks the journal.
-            autoLockTimerRef.current = setTimeout(attemptAutoLock, suppressRemaining + 50);
-            return;
-          }
-          if (AppState.currentState === "active") {
-            return;
-          }
-          if (!(appLockEnabled && appLockAutoLock)) {
-            return;
-          }
+      if (isEnteringBackground && appLockEnabled && appLockAutoLock) {
+        const suppressRemaining = suppressAutoLockUntilRef.current - Date.now();
+        if (suppressRemaining <= 0) {
           journalUnlockedThisSessionRef.current = false;
           setIsAppLocked(true);
-        }, 2500);
-      } else if (nextState === "active") {
-        clearPendingAutoLock();
+        }
+      } else if (isReturningForeground && appLockEnabled && appLockAutoLock) {
+        const suppressRemaining = suppressAutoLockUntilRef.current - Date.now();
+        if (suppressRemaining <= 0) {
+          journalUnlockedThisSessionRef.current = false;
+          setIsAppLocked(true);
+        }
       }
 
       appStateRef.current = nextState;
     });
 
     return () => {
-      clearPendingAutoLock();
       subscription.remove();
     };
   }, [appLockAutoLock, appLockEnabled]);
@@ -374,11 +352,7 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
         const result = await verifyJournalLockPin(studentNumber, pin);
         if (!result.ok || !result.unlocked) return false;
         journalUnlockedThisSessionRef.current = true;
-        // Keep unlock sticky through the next permission/navigation handoff.
-        suppressAutoLockUntilRef.current = Math.max(
-          suppressAutoLockUntilRef.current,
-          Date.now() + 20000,
-        );
+        suppressAutoLockUntilRef.current = 0;
         if (autoLockTimerRef.current) {
           clearTimeout(autoLockTimerRef.current);
           autoLockTimerRef.current = null;
@@ -426,7 +400,7 @@ export function useAppPreferences() {
   return context;
 }
 
-export function JournalLockGate({ children }: PropsWithChildren) {
+export function JournalLockGate({ children, onBack }: PropsWithChildren<{ onBack?: () => void }>) {
   const { appLockEnabled, isAppLocked, unlockApp } = useAppPreferences();
   const [pinInput, setPinInput] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -496,6 +470,10 @@ export function JournalLockGate({ children }: PropsWithChildren) {
   };
 
   const handleLeave = () => {
+    if (onBack) {
+      onBack();
+      return;
+    }
     try {
       if (router.canGoBack()) {
         router.back();

@@ -20,6 +20,7 @@ import {
     View
 } from "react-native";
 import { Image } from "expo-image";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StudentProfileAvatar } from "../components/profile/StudentProfileAvatar";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { showAppNotice } from "../lib/app-notice";
@@ -74,6 +75,8 @@ function getImageMimeType(asset: ImagePicker.ImagePickerAsset) {
 
 
 export default function ProfileScreen() {
+  const insets = useSafeAreaInsets();
+  const topBarOffset = Math.max(insets.top, 14) + 48 + 14;
   const { clearUser, setUser, user } = useAuthSession();
   const { clearPreferences, profileFrameId, setProfileFrameId } = useAppPreferences();
   const [showSignOutModal, setShowSignOutModal] = useState(false);
@@ -427,7 +430,7 @@ export default function ProfileScreen() {
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: topBarOffset }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl

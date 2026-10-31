@@ -14,6 +14,7 @@ import {
     TextInput,
     View } from "react-native";
 import { Image } from "expo-image";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { HomeBottomNav } from "../components/home/HomeBottomNav";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
 import { ConfirmationModal } from "../components/ui/ConfirmationModal";
@@ -218,6 +219,8 @@ function ApplePressableCard({
 }
 
 export default function ConsultScreen() {
+  const insets = useSafeAreaInsets();
+  const topBarOffset = Math.max(insets.top, 14) + 48 + 14;
   const { track, skipIntro } = useLocalSearchParams<{ skipIntro?: string; track?: string }>();
   const { user } = useAuthSession();
   const initialTrack = normalizeSupportTrack(track);
@@ -656,7 +659,7 @@ export default function ConsultScreen() {
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: topBarOffset }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl

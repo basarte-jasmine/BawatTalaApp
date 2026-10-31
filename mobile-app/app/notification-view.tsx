@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator,  Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 import { useAuthSession } from "../lib/auth-session";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
@@ -68,6 +69,8 @@ const ACHIEVEMENT_TRIVIA: Record<string, string> = {
   "voice-beneath-the-stars": "Muni’s favorite sound on the island is someone finally saying what they feel."};
 
 export default function NotificationViewScreen() {
+  const insets = useSafeAreaInsets();
+  const topBarOffset = Math.max(insets.top, 14) + 48 + 14;
   const { id, createdAt, kind, message, timeLabel, title, metadata: metadataParam } = useLocalSearchParams<{
     id?: string;
     createdAt?: string;
@@ -181,7 +184,7 @@ export default function NotificationViewScreen() {
     <View style={styles.screen}>
       <AppleTopBar title={detailTitle} onBack={handleBack} />
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.scroll} contentContainerStyle={[styles.content, { paddingTop: topBarOffset }]} showsVerticalScrollIndicator={false}>
         {loading ? (
           <View style={{ paddingVertical: 40, alignItems: "center" }}>
             <ActivityIndicator size="small" color="#229365" />

@@ -143,6 +143,47 @@ export function normalizeEmotionId(value: string) {
   return LEGACY_EMOTION_ALIASES[emotionId] || emotionId;
 }
 
+/**
+ * Resolves the single representative emotion for a day from all its emotion check-in records.
+ * Rule 1: Most frequently recorded emotion for the day.
+ * Rule 2: If tie in frequency, the latest recorded emotion among the tied emotions wins.
+ * Rule 3: Single check-in uses that emotion.
+ * Rule 4: No check-in preserves empty state (returns null).
+ */
+export function resolveRepresentativeEmotion(
+  entries: Array<{ moodId?: string | null; mood_id?: string | null; createdAt?: string | null; created_at?: string | null; timestamp?: string | number | null }> = []
+): string | null {
+  if (!Array.isArray(entries) || entries.length === 0) return null;
+  const counts = new Map<string, number>();
+  const latestTimeMap = new Map<string, number>();
+  for (const entry of entries) {
+    const rawId = entry.moodId || entry.mood_id;
+    if (!rawId) continue;
+    const normId = normalizeEmotionId(rawId);
+    if (!normId) continue;
+    counts.set(normId, (counts.get(normId) || 0) + 1);
+    const rawTime = entry.createdAt || entry.created_at || entry.timestamp || 0;
+    const timeMs = rawTime ? new Date(rawTime).getTime() : 0;
+    const prevTime = latestTimeMap.get(normId) || 0;
+    if (timeMs >= prevTime) {
+      latestTimeMap.set(normId, timeMs);
+    }
+  }
+  if (counts.size === 0) return null;
+  let bestMoodId: string | null = null;
+  let maxCount = -1;
+  let latestTiedTime = -1;
+  for (const [moodId, count] of counts.entries()) {
+    const latestTime = latestTimeMap.get(moodId) || 0;
+    if (count > maxCount || (count === maxCount && latestTime >= latestTiedTime)) {
+      bestMoodId = moodId;
+      maxCount = count;
+      latestTiedTime = latestTime;
+    }
+  }
+  return bestMoodId;
+}
+
 export function getEmotionImageSource(emotion: EmotionOption | null | undefined, active = false) {
   if (!emotion) return null;
   // Animated GIFs can fail or blank out in Android release builds where native Fresco GIF is not linked.

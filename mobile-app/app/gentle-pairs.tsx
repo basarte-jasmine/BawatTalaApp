@@ -12,6 +12,8 @@ import {
 import { Image } from "expo-image";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { claimMiniResetReward } from "../lib/backend-api";
+import { useAuthSession } from "../lib/auth-session";
+import { updateAvailableMuniTala } from "../lib/muni-wardrobe";
 import { getGameScore, saveGameScore } from "../lib/game-scores";
 import { startBgmTrack, playSoundEffect, playGameOverSound, playCollectTalaSound, SOUND_ASSETS } from "../lib/sound-effects";
 
@@ -24,6 +26,7 @@ const ASSETS = [
 ];
 
 const TEMP_COVER = require("../assets/images/Mini Reset/Gentle Pairs/Gentle Pairs Cover.webp");
+const TALA_IMAGE = require("../assets/images/Tala_Star.png");
 const ROUND_TIME = 120;
 
 type GameState = "START" | "PLAYING" | "PAUSED" | "GAMEOVER";
@@ -43,6 +46,7 @@ function triggerHaptic(style = Haptics.ImpactFeedbackStyle.Light) {
 }
 
 export default function GentlePairsScreen() {
+  const { user } = useAuthSession();
   const { width: screenW, height: screenH } = useWindowDimensions();
   const appWidth = Math.min(screenW, 420);
 
@@ -59,6 +63,8 @@ export default function GentlePairsScreen() {
 
   const [showExitPrompt, setShowExitPrompt] = useState(false);
   const [rewardTala, setRewardTala] = useState(0);
+  const roundStartTimeRef = useRef(Date.now());
+  const rewardedRoundsRef = useRef<Set<number>>(new Set());
   // Looping Muni Games BGM
   useEffect(() => {
     if (gameState === "PLAYING") {
@@ -112,6 +118,8 @@ export default function GentlePairsScreen() {
     setTimeLeft(ROUND_TIME);
     setRewardTala(0);
     rewardClaimedRef.current = false;
+    roundStartTimeRef.current = Date.now();
+    rewardedRoundsRef.current = new Set();
     generateDeck(1);
   };
 
@@ -124,18 +132,6 @@ export default function GentlePairsScreen() {
           void playGameOverSound(0.8);
           setGameState("GAMEOVER");
           triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
-          if (!rewardClaimedRef.current) {
-            rewardClaimedRef.current = true;
-            claimMiniResetReward({
-              activityId: "gentle-pairs",
-              level,
-              roundKey: `gentle-pairs-${Date.now()}`,
-              rounds: Math.max(0, round - 1),
-              score,
-            })
-              .then((reward) => setRewardTala(reward.rewardTala ?? 0))
-              .catch(() => undefined);
-          }
           if (score > bestScoreRef.current) bestScoreRef.current = score;
           if (round > bestRoundRef.current) bestRoundRef.current = round;
           saveGameScore("gentle-pairs", {
@@ -203,6 +199,37 @@ export default function GentlePairsScreen() {
   const checkLevelComplete = (currentCards: Card[], idx1: number, idx2: number) => {
     const isComplete = currentCards.every((c, i) => c.isMatched || i === idx1 || i === idx2);
     if (isComplete) {
+      const completedRound = round;
+      // Bug 8: Time-based Tala rewards per completed round
+      // 30 seconds or less: 3 Tala
+      // More than 30 seconds and up to 60 seconds: 2 Tala
+      // More than 60 seconds and up to 120 seconds: 1 Tala
+      // Guard so the same round can never credit Tala twice.
+      if (!rewardedRoundsRef.current.has(completedRound)) {
+        rewardedRoundsRef.current.add(completedRound);
+        const elapsed = Math.max(1, Math.ceil((Date.now() - roundStartTimeRef.current) / 1000));
+        const earnedTala = elapsed <= 30 ? 3 : elapsed <= 60 ? 2 : 1;
+        setRewardTala((prev) => prev + earnedTala);
+        void playCollectTalaSound(0.85);
+
+        void claimMiniResetReward({
+          activityId: "gentle-pairs",
+          level,
+          roundKey: `gentle-pairs-${user?.studentNumber || "student"}-${completedRound}-${Date.now()}`,
+          rounds: completedRound,
+          score,
+          elapsedSeconds: elapsed,
+          rewardTala: earnedTala,
+          studentNumber: user?.studentNumber,
+        })
+          .then((reward) => {
+            if (typeof reward.totalTala === "number") {
+              updateAvailableMuniTala(reward.totalTala);
+            }
+          })
+          .catch(() => undefined);
+      }
+
       setTimeout(() => {
         triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
         setLevel((l) => {
@@ -210,6 +237,7 @@ export default function GentlePairsScreen() {
           setRound((r) => r + 1);
           setMoves(0);
           setTimeLeft(ROUND_TIME);
+          roundStartTimeRef.current = Date.now();
           generateDeck(nextLvl);
           return nextLvl;
         });
@@ -345,6 +373,11 @@ export default function GentlePairsScreen() {
                 <View style={styles.hudStatGroup}>
                   <Text style={styles.hudStatLabel}>SCORE</Text>
                   <Text style={styles.hudStatValue}>{score}</Text>
+                </View>
+                {/* Visible Tala Coin Tracker */}
+                <View style={styles.hudTalaTracker}>
+                  <Image source={TALA_IMAGE} style={styles.hudTalaIcon} contentFit="contain" />
+                  <Text style={styles.hudTalaValue}>+{rewardTala}</Text>
                 </View>
                 <View style={styles.hudRoundPill}>
                   <Text style={styles.hudRoundText}>ROUND {round}</Text>
@@ -612,6 +645,26 @@ const styles = StyleSheet.create({
     color: "#0F172A",
     fontSize: 17,
     fontFamily: "Outfit-Bold",
+  },
+  hudTalaTracker: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(250, 204, 21, 0.15)",
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(250, 204, 21, 0.4)",
+    gap: 4,
+  },
+  hudTalaIcon: {
+    width: 14,
+    height: 14,
+  },
+  hudTalaValue: {
+    fontSize: 12,
+    fontFamily: "Outfit-Bold",
+    color: "#B45309",
   },
   hudRoundPill: {
     paddingHorizontal: 10,

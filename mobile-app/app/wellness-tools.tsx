@@ -12,6 +12,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { Image } from "expo-image";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
 
 type ToolItem = {
@@ -172,6 +173,8 @@ function AppleCardPressable({
 }
 
 export default function WellnessToolsScreen() {
+  const insets = useSafeAreaInsets();
+  const topBarOffset = Math.max(insets.top, 14) + 48 + 14;
   const { mood } = useLocalSearchParams<{ mood?: string }>();
   const { width } = useWindowDimensions();
   const compact = width < 390;
@@ -195,7 +198,7 @@ export default function WellnessToolsScreen() {
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[styles.scrollContent, compact && styles.scrollContentCompact]}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: topBarOffset }, compact && styles.scrollContentCompact]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.contentFrame}>

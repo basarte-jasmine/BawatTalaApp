@@ -109,19 +109,29 @@ router.post("/mini-reset-reward", async (req, res) => {
   try {
     const today = await query(`select coalesce(sum(reward_tala), 0)::int as total from public.student_wellness_game_rewards where student_number = $1 and created_at >= date_trunc('day', now() at time zone 'Asia/Manila') at time zone 'Asia/Manila'`, [studentNumber]);
     const claimedToday = Number(today.rows[0]?.total || 0);
-    const calculatedReward = activityId === "fruit-catcher"
-      ? Math.max(1, Math.floor(score / 25))
-      : activityId === "image-puzzle"
-        ? Math.max(1, Math.floor(score / 30))
-        : activityId === "gentle-pairs"
-          ? Math.max(1, Math.floor(score / 50) + rounds)
-            : activityId === "unscramble-word"
-              ? Math.max(1, Math.floor(score / 40) + Math.max(0, level - 1))
-              : activityId === "galaxy-fall"
-                ? Math.max(1, Math.min(Math.floor(score / 3), 12))
-                : activityId === "muni-match"
-                  ? Math.max(1, Math.min(Math.floor(score / 3), 12))
-                  : 1;
+    const fruits = Math.max(0, Math.min(Number(req.body.fruits ?? req.body.fruitsCaught) || 0, 10000));
+    const words = Math.max(0, Math.min(Number(req.body.words) || 0, 1000));
+    const elapsedSeconds = Math.max(0, Math.min(Number(req.body.elapsedSeconds ?? req.body.elapsed) || 0, 60 * 60));
+    const coins = Math.max(0, Math.min(Number(req.body.coins) || 0, 10000));
+
+    // Rewards are derived from the game inputs on the server so a client cannot
+    // inflate its own wallet balance by sending an arbitrary reward value.
+    let calculatedReward = 0;
+    if (activityId === "fruit-catcher") {
+      calculatedReward = Math.floor(fruits / 2);
+    } else if (activityId === "unscramble-word") {
+      calculatedReward = words;
+    } else if (activityId === "image-puzzle" || activityId === "gentle-pairs") {
+      calculatedReward = elapsedSeconds > 0
+        ? elapsedSeconds <= 30 ? 3 : elapsedSeconds <= 60 ? 2 : 1
+        : 0;
+    } else if (activityId === "galaxy-fall") {
+      calculatedReward = coins;
+    } else if (activityId === "muni-match") {
+      calculatedReward = Math.max(1, Math.min(Math.floor(score / 3), 12));
+    } else {
+      calculatedReward = 1;
+    }
     const rewardTala = Math.max(0, Math.min(calculatedReward, DAILY_TALA_CAP - claimedToday));
     const saved = await query(`insert into public.student_wellness_game_rewards (student_number, round_key, activity_id, level, reward_tala) values ($1,$2,$3,$4,$5) on conflict (student_number, round_key) do nothing returning reward_tala`, [studentNumber, roundKey, activityId, level, rewardTala]);
     if (!saved.rowCount) return res.status(409).json({ message: "This gentle round was already counted." });
@@ -130,7 +140,7 @@ router.post("/mini-reset-reward", async (req, res) => {
       const wallet = await query(`insert into public.student_tala_wallets (student_number, total_tala, updated_at) values ($1,$2,now()) on conflict (student_number) do update set total_tala = public.student_tala_wallets.total_tala + excluded.total_tala, updated_at = now() returning total_tala`, [studentNumber, rewardTala]);
       totalTala = Number(wallet.rows[0]?.total_tala || 0);
     }
-    return res.json({ rewardTala, totalTala, dailyCapReached: !rewardTala, message: rewardTala ? "A calm win—+1 Tala added to your wallet." : "Lovely focus. Your daily Tala for mini resets is complete, but you can keep playing." });
+    return res.json({ rewardTala, totalTala, dailyCapReached: !rewardTala, message: rewardTala ? `A calm win—+${rewardTala} Tala added to your wallet.` : "Lovely focus. Your daily Tala for mini resets is complete, but you can keep playing." });
   } catch (error) { return res.status(500).json({ message: error.message || "Could not add your Tala right now." }); }
 });
 

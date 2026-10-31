@@ -7,8 +7,7 @@
     "dev": "node src/server.js --skip-startup-tasks",
     "dev:schema": "node src/server.js",
     "start": "node src/server.js",
-    "seed:student": "node scripts/seed-default-student.js",
-    "test": "node --test \"test/*.test.js\""
+    "seed:student": "node scripts/seed-default-student.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",

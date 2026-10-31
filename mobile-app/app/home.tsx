@@ -545,7 +545,7 @@ export default function HomeScreen() {
   const tiny = height < 680;
   const frameWidth = Math.min(width, 412);
   const stickyHeaderTop = Math.max(insets.top + 8, 12);
-  const headerHeight = tiny ? 72 : compact ? 78 : 84;
+  const headerHeight = Math.max(stickyHeaderTop + 54, tiny ? 72 : compact ? 78 : 84);
   const islandSceneHeight = tiny ? 218 : compact ? 238 : 256;
   const waterSceneHeight = Math.max(520, Math.round(height * 0.95));
   const futureBottleSceneHeight = islandSceneHeight + waterSceneHeight - 2;
@@ -4248,11 +4248,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     marginBottom: 14,
     rowGap: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2 },
+    borderWidth: 0,
+    elevation: 0 },
   moodConfirmHeadingRow: {
     flexDirection: "row",
     alignItems: "center",

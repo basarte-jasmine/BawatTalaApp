@@ -16,6 +16,7 @@ import {
   TextInput,
   View } from "react-native";
 import { Image } from "expo-image";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppleTopBar } from "../components/ui/AppleTopBar";
 import {
   fetchStudentReferral,
@@ -32,6 +33,8 @@ function normalizeReferralCode(value: string) {
 }
 
 export default function ReferralScreen() {
+  const insets = useSafeAreaInsets();
+  const topBarOffset = Math.max(insets.top, 14) + 48 + 14;
   const { user } = useAuthSession();
   const [referral, setReferral] = useState<StudentReferral | null>(null);
   const [loading, setLoading] = useState(true);
@@ -148,7 +151,7 @@ export default function ReferralScreen() {
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: topBarOffset }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
