@@ -566,7 +566,10 @@ export function AppLockOverlay() {
 
 const styles = StyleSheet.create({
   journalGateHost: {
-    flex: 1 },
+    flex: 1,
+    width: "100%",
+    position: "relative",
+  },
   journalLockWrap: {
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",

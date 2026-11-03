@@ -1892,6 +1892,12 @@ const styles = StyleSheet.create({
   concernChipTextActive: {
     color: "#2E6F24",
     fontFamily: "Outfit-Bold" },
+  fieldCounter: {
+    marginTop: 4,
+    alignSelf: "flex-end",
+    color: "#73808B",
+    fontSize: 11,
+  },
   otherInput: {
     minHeight: 42,
     borderRadius: 14,

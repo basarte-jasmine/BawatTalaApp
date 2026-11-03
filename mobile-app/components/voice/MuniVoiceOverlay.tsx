@@ -27,7 +27,7 @@ import {
 import { File } from "expo-file-system";
 import { ConfirmationModal } from "../ui/ConfirmationModal";
 import { MuniAvatar } from "../muni/MuniAvatar";
-import { JournalLockGate, useAppPreferences } from "../../lib/app-preferences";
+import { useAppPreferences } from "../../lib/app-preferences";
 import {
   createJournalSession,
   discardEmptyJournalEntry,
@@ -165,7 +165,7 @@ export type MuniVoiceOverlayProps = {
 export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
   const insets = useSafeAreaInsets();
   const { user } = useAuthSession();
-  const { appLockEnabled, isAppLocked, suppressJournalAutoLock } = useAppPreferences();
+  const { suppressJournalAutoLock } = useAppPreferences();
 
   const entryRef = useRef<JournalEntry | null>(null);
   const messagesRef = useRef<JournalMessage[]>([]);
@@ -446,7 +446,7 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
   );
 
   const loadSession = useCallback(async () => {
-    if (appLockEnabled && isAppLocked) return;
+    
     if (!user?.studentNumber) {
       setIsLoadingSession(false);
       setStatusMessage("Please log in to start talking to Muni.");
@@ -496,7 +496,7 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
         setVoiceState("error");
       }
     }
-  }, [appLockEnabled, isAppLocked, setActiveEntry, setConversationMessages, speakReply, user?.studentNumber]);
+  }, [setActiveEntry, setConversationMessages, speakReply, user?.studentNumber]);
 
   useEffect(() => {
     if (visible) {
@@ -504,15 +504,13 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
       setShowCrisisSaveConfirmModal(false);
     setPendingCrisisAction(null);
     sessionStartedRef.current = false;
-      if (!(appLockEnabled && isAppLocked)) {
-        void loadSession();
-      }
+      void loadSession();
     } else {
       isDisposedRef.current = true;
       clearRecordingTimeout();
       void stopSpeaking();
     }
-  }, [visible, appLockEnabled, isAppLocked, clearRecordingTimeout, loadSession, stopSpeaking]);
+  }, [visible, clearRecordingTimeout, loadSession, stopSpeaking]);
 
   const handleStartListening = async () => {
     if (!canListen) return;
@@ -1223,11 +1221,6 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
         <BlurView intensity={25} tint="dark" style={StyleSheet.absoluteFillObject} />
         <Pressable style={styles.backdropDismissArea} onPress={handleCloseOverlay} />
 
-        {appLockEnabled && isAppLocked ? (
-          <View style={styles.lockGateWrapper}>
-            <JournalLockGate onBack={handleCloseOverlay} />
-          </View>
-        ) : (
         <Animated.View
           style={[
             styles.voiceSheet,
@@ -1498,7 +1491,6 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
             </View>
           </ScrollView>
         </Animated.View>
-        )}
 
         {/* Tag Review Modal Sheet */}
         <Modal
@@ -1796,13 +1788,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "flex-end",
     backgroundColor: "transparent",
-  },
-  lockGateWrapper: {
-    flex: 1,
-    width: "100%",
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 10,
   },
   backdropDismissArea: {
     ...StyleSheet.absoluteFillObject,

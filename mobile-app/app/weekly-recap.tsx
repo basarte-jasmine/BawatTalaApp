@@ -210,8 +210,9 @@ export default function WeeklyRecapScreen() {
   const [showShareModal, setShowShareModal] = useState(false);
   const [habitAdopted, setHabitAdopted] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
-  const shareCardRef = useRef<any>(null);
-  const finaleCardRef = useRef<any>(null);
+  const storyShareCardRef = useRef<any>(null);
+  const ledgerShareCardRef = useRef<any>(null);
+  const modalShareCardRef = useRef<any>(null);
   const handleAdoptFocus = useCallback(async () => {
     setHabitAdopted(true);
     void playCollectTalaSound(0.85);
@@ -556,46 +557,78 @@ export default function WeeklyRecapScreen() {
       "No pressure, no grades - just gentle moments for the mind.\n#BawatTala #StudentWellness";
 
     try {
-      // Both "Share Image" and "Share My Constellation" capture the complete intended Full Summary design
-      const targetRef = shareCardRef.current || finaleCardRef.current;
+      // Prioritize the mounted card corresponding to the trigger source, then fall back to the other mounted full summary card
+      const targetRef = source === "modal"
+        ? (modalShareCardRef.current || ledgerShareCardRef.current || storyShareCardRef.current)
+        : (storyShareCardRef.current || ledgerShareCardRef.current || modalShareCardRef.current);
+
       let capturedUri: string | null = null;
 
       if (targetRef) {
         try {
           capturedUri = await captureRef(targetRef, {
             format: "png",
-            quality: 0.95,
+            quality: 1,
             result: Platform.OS === "web" ? "data-uri" : "tmpfile",
           });
-        } catch {
+        } catch (captureErr) {
           if (Platform.OS === "web") {
             try {
+              if (typeof document !== "undefined" && document.fonts && document.fonts.ready) {
+                await document.fonts.ready;
+              }
               const html2canvasModule = await import("html2canvas-pro");
-              const h2c = html2canvasModule.default || html2canvasModule;
-              const domNode = targetRef instanceof HTMLElement ? targetRef : (targetRef as any)._nativeTag || document.querySelector(".shareCard") || document.body;
+              const h2c = html2canvasModule.default || (html2canvasModule as any).html2canvas || html2canvasModule;
+              const domNode = (targetRef instanceof HTMLElement ? targetRef : null) ||
+                (targetRef as any)?._nativeTag ||
+                (typeof (targetRef as any)?.getNativeScrollRef === "function" && (targetRef as any).getNativeScrollRef()) ||
+                (targetRef as any)?.node ||
+                (typeof document !== "undefined" ? document.querySelector("[data-share-card='true']") : null);
+
               if (domNode) {
-                const canvas = await (h2c as any)(domNode, { backgroundColor: "#163422", scale: 2 });
+                const canvas = await (h2c as any)(domNode, {
+                  backgroundColor: "#163422",
+                  scale: 2,
+                  useCORS: true,
+                  allowTaint: true,
+                  logging: false,
+                });
                 capturedUri = canvas.toDataURL("image/png");
               }
-            } catch {}
+            } catch (h2cErr) {
+              console.warn("html2canvas capture error:", h2cErr);
+            }
           }
         }
       }
 
       if (Platform.OS === "web" && typeof navigator !== "undefined") {
         if (capturedUri) {
-          const res = await fetch(capturedUri);
-          const blob = await res.blob();
-          const file = new File([blob], "tala-ng-linggo-weekly-recap.png", { type: "image/png" });
-          if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            await navigator.share({
-              title: "Tala ng Linggo - Weekly Recap",
-              text: shareText,
-              files: [file],
-            });
-            setIsSharing(false);
-            return;
+          try {
+            const res = await fetch(capturedUri);
+            const blob = await res.blob();
+            const file = new File([blob], "tala-ng-linggo-weekly-recap.png", { type: "image/png" });
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+              try {
+                await navigator.share({
+                  title: "Tala ng Linggo - Weekly Recap",
+                  text: shareText,
+                  files: [file],
+                });
+                setIsSharing(false);
+                return;
+              } catch (shareErr: any) {
+                if (shareErr?.name === "AbortError") {
+                  setIsSharing(false);
+                  return;
+                }
+              }
+            }
+          } catch {
+            // Fall back to direct download below
           }
+
+          // Working fallback: download image directly
           const a = document.createElement("a");
           a.href = capturedUri;
           a.download = "tala-ng-linggo-weekly-recap.png";
@@ -607,8 +640,7 @@ export default function WeeklyRecapScreen() {
         }
       }
 
-      // React Native's Share ignores `url` on Android, so the captured image was never
-      // attached there. Share the actual PNG file through the OS share sheet instead.
+      // React Native: Share captured PNG on mobile through expo-sharing
       if (Platform.OS !== "web" && capturedUri) {
         try {
           const Sharing = await import("expo-sharing");
@@ -618,10 +650,11 @@ export default function WeeklyRecapScreen() {
               mimeType: "image/png",
               UTI: "public.png",
             });
+            setIsSharing(false);
             return;
           }
-        } catch {
-          // Fall back to a text share below if the native share sheet is unavailable.
+        } catch (sharingErr) {
+          console.warn("expo-sharing error:", sharingErr);
         }
       }
 
@@ -630,7 +663,8 @@ export default function WeeklyRecapScreen() {
         message: shareText,
         url: capturedUri || undefined,
       });
-    } catch {
+    } catch (err) {
+      console.warn("Weekly recap share error:", err);
     } finally {
       setIsSharing(false);
     }
@@ -693,29 +727,39 @@ export default function WeeklyRecapScreen() {
     setViewMode("story");
   };
 
-  const renderFullSummaryCard = (isCapturingRef = false) => (
+  const weekDateRangeStr = useMemo(() => {
+    if (weeklyDays && weeklyDays.length >= 7) {
+      const first = weeklyDays[0];
+      const last = weeklyDays[6];
+      return first.monthName + " " + first.dayNumber + " – " + last.monthName + " " + last.dayNumber;
+    }
+    return "Weekly Reflection";
+  }, [weeklyDays]);
+
+  const renderFullSummaryCard = () => (
     <View
-      ref={isCapturingRef ? shareCardRef : undefined}
       collapsable={false}
       style={styles.shareCard}
+      {...({ dataSet: { shareCard: "true" } } as any)}
     >
-      {/* Brand & Date Header */}
+      {/* 1. Brand & Date Header */}
       <View style={styles.shareCardHeader}>
         <Image source={TALA_IMAGE} style={styles.shareTalaIcon} contentFit="contain" cachePolicy="memory-disk" />
         <View style={{ flex: 1 }}>
           <Text style={styles.shareCardBrand}>BAWAT TALA • WEEKLY RECAP</Text>
           <Text style={styles.shareCardTitle}>Tala ng Linggo: Full Summary</Text>
+          <Text style={styles.shareCardDateRange}>{weekDateRangeStr}</Text>
         </View>
       </View>
 
-      {/* Top Score & Rhythm Row */}
+      {/* 2. Days Paused Under the Stars */}
       <View style={styles.shareScoreWrap}>
         <View style={styles.shareScoreBadge}>
           <Text style={styles.shareScoreVal}>{daysWithCheckIn}/7</Text>
         </View>
         <View style={{ flex: 1, marginLeft: 10 }}>
           <Text style={styles.shareScoreTitle}>Days Paused Under The Stars</Text>
-          <Text style={styles.shareScoreDesc}>Honored their mental rhythm with Muni</Text>
+          <Text style={styles.shareScoreDesc}>Honored mental rhythm with Muni</Text>
         </View>
       </View>
 
@@ -753,13 +797,99 @@ export default function WeeklyRecapScreen() {
         ))}
       </View>
 
-      {/* Muni Personalized Note Box */}
+      {/* 3. Emotion Recap: Complete week recorded emotions */}
+      <View style={styles.shareSectionBox}>
+        <View style={styles.shareSectionHeader}>
+          <Ionicons name="heart-outline" size={13} color="#F472B6" />
+          <Text style={styles.shareSectionTitle}>Weekly Emotion Recap</Text>
+        </View>
+        <Text style={styles.shareSectionSubtitle}>
+          {emotionPalette.length > 0
+            ? "Primary rhythm: " + emotionNamesSummary
+            : "Steady, reflective moments recorded with Muni"}
+        </Text>
+        <View style={styles.shareEmotionPillsRow}>
+          {emotionPalette.length > 0 ? (
+            emotionPalette.map((ep: any) => (
+              <View key={ep.id} style={styles.shareEmotionPill}>
+                <View style={[styles.shareEmotionDot, { backgroundColor: ep.meta?.color || "#73CD44" }]} />
+                <Text style={styles.shareEmotionLabel}>{ep.meta?.label || ep.id}</Text>
+                <Text style={styles.shareEmotionCount}>×{ep.count}</Text>
+              </View>
+            ))
+          ) : (
+            <View style={styles.shareEmotionPill}>
+              <View style={[styles.shareEmotionDot, { backgroundColor: "#73CD44" }]} />
+              <Text style={styles.shareEmotionLabel}>Peaceful & Calm</Text>
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* 4. Proactive Interventions Statistics & Summary */}
+      <View style={styles.shareSectionBox}>
+        <View style={styles.shareSectionHeader}>
+          <Ionicons name="shield-outline" size={13} color="#FBBF24" />
+          <Text style={styles.shareSectionTitle}>Muni&apos;s Proactive Interventions</Text>
+        </View>
+        <View style={styles.shareInterventionRow}>
+          <View style={styles.shareInterventionStep}>
+            <Text style={styles.shareInterventionVal}>{heavyJournalsCount}</Text>
+            <Text style={styles.shareInterventionLbl}>Stress Detected</Text>
+          </View>
+          <Ionicons name="arrow-forward" size={11} color="rgba(255,255,255,0.3)" />
+          <View style={styles.shareInterventionStep}>
+            <Text style={styles.shareInterventionVal}>{interventionsOffered}</Text>
+            <Text style={styles.shareInterventionLbl}>Resets Offered</Text>
+          </View>
+          <Ionicons name="arrow-forward" size={11} color="rgba(255,255,255,0.3)" />
+          <View style={styles.shareInterventionStep}>
+            <Text style={styles.shareInterventionVal}>{interventionsAccepted}</Text>
+            <Text style={styles.shareInterventionLbl}>Completed</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* 5. Tala Constellation: Progress & Stars */}
+      <View style={styles.shareSectionBox}>
+        <View style={styles.shareSectionHeader}>
+          <Image source={TALA_IMAGE} style={{ width: 13, height: 13 }} contentFit="contain" cachePolicy="memory-disk" />
+          <Text style={styles.shareSectionTitle}>Tala Constellation Growth</Text>
+        </View>
+        <View style={styles.shareConstellationRow}>
+          <View>
+            <Text style={styles.shareConstellationBigVal}>+{weeklyTalaStars} Tala</Text>
+            <Text style={styles.shareConstellationSub}>Stars gathered this week</Text>
+          </View>
+          <View style={styles.shareConstellationChips}>
+            <View style={styles.shareChipBadge}>
+              <Text style={styles.shareChipText}>+{checkinTalaEarned} Check-ins</Text>
+            </View>
+            <View style={styles.shareChipBadge}>
+              <Text style={styles.shareChipText}>+{totalJournals * 15} Journals</Text>
+            </View>
+          </View>
+        </View>
+      </View>
+
+      {/* 6. Muni's Complete Reflection */}
       <View style={styles.shareMuniQuoteBox}>
-        <Text style={styles.shareMuniQuoteTitle}>Muni's Weekly Note:</Text>
+        <View style={styles.shareMuniQuoteHeader}>
+          <Ionicons name="sparkles" size={12} color="#FACC15" />
+          <Text style={styles.shareMuniQuoteTitle}>Muni&apos;s Weekly Reflection</Text>
+        </View>
         <Text style={styles.shareMuniQuote}>
-          "{backendRecap?.muniLetter || "True productivity isn't working until burnout — it is protecting your peace so you can shine bright."}"
+          &ldquo;{backendRecap?.muniLetter || "Hello! Looking back at our past seven days, I see a student who is not only working hard toward their goals, but also learning to honor their own boundaries. When stress tried to pull you under on Wednesday, you paused and let yourself breathe. True productivity isn't working until you burn out — it is protecting your peace so you can shine bright. I'm honored to be by your side."}&rdquo;
         </Text>
       </View>
+
+      {/* 7. Weekly Focus Intention */}
+      {backendRecap?.focusSeed ? (
+        <View style={styles.shareFocusSeedBox}>
+          <Text style={styles.shareFocusSeedTitle}>WEEKLY INTENTION</Text>
+          <Text style={styles.shareFocusSeedText}>&ldquo;{backendRecap.focusSeed}&rdquo;</Text>
+        </View>
+      ) : null}
     </View>
   );
 
@@ -779,8 +909,8 @@ export default function WeeklyRecapScreen() {
     return (
       <SafeAreaView style={[styles.storyScreen, { backgroundColor: currentTheme.bgGradient[0] }]} edges={["top", "bottom"]}>
         {/* Hidden full summary card for captureRef in Story Mode */}
-        <View style={styles.offscreenShareWrap} pointerEvents="none">
-          {renderFullSummaryCard(true)}
+        <View ref={storyShareCardRef} collapsable={false} style={styles.offscreenShareWrap} pointerEvents="none">
+          {renderFullSummaryCard()}
         </View>
 
         {/* Dynamic Atmospheric Nebula Background */}
@@ -1191,7 +1321,7 @@ export default function WeeklyRecapScreen() {
                 <Text style={styles.storyHeroTitle}>Ready for Monday's new stars.</Text>
 
                 {/* Aesthetic Export Card */}
-                <View ref={finaleCardRef} collapsable={false} style={[styles.storyFinaleCard, { backgroundColor: currentTheme.cardBg, borderColor: currentTheme.cardBorder }]}>
+                <View collapsable={false} style={[styles.storyFinaleCard, { backgroundColor: currentTheme.cardBg, borderColor: currentTheme.cardBorder }]}>
                   <View style={styles.storyFinaleHeader}>
                     <Image source={TALA_IMAGE} style={styles.storyFinaleStar} contentFit="contain" cachePolicy="memory-disk" />
                     <Text style={styles.storyFinaleBrand}>BAWAT TALA • WEEKLY WRAPPED</Text>
@@ -1290,8 +1420,8 @@ export default function WeeklyRecapScreen() {
   return (
     <View style={styles.screen}>
       {/* Dedicated offscreen card for capturing Full Summary on Android without modal clipping */}
-      <View style={styles.offscreenShareWrap} pointerEvents="none">
-        {renderFullSummaryCard(true)}
+      <View ref={ledgerShareCardRef} collapsable={false} style={styles.offscreenShareWrap} pointerEvents="none">
+        {renderFullSummaryCard()}
       </View>
       <AppleTopBar
         title="Tala ng Linggo"
@@ -1608,7 +1738,7 @@ export default function WeeklyRecapScreen() {
               <Ionicons name="shield-outline" size={18} color="#D97706" />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.sectionTitle}>Muni's Proactive Interventions</Text>
+              <Text style={styles.sectionTitle}>Muni&apos;s Proactive Interventions</Text>
               <Text style={styles.sectionSubtitle}>
                 Gentle steps taken whenever thoughts needed space
               </Text>
@@ -1735,7 +1865,7 @@ export default function WeeklyRecapScreen() {
           <View style={styles.muniLetterHeader}>
             <MuniAvatar style={styles.muniLetterAvatar} />
             <View>
-              <Text style={styles.muniLetterAuthor}>Muni's Weekly Reflection</Text>
+              <Text style={styles.muniLetterAuthor}>Muni&apos;s Weekly Reflection</Text>
               <Text style={styles.muniLetterSub}>Written with care for you</Text>
             </View>
           </View>
@@ -1771,7 +1901,9 @@ export default function WeeklyRecapScreen() {
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.shareCardContainer}>
-            {renderFullSummaryCard(false)}
+            <View ref={modalShareCardRef} collapsable={false} style={{ width: "100%", alignItems: "center" }}>
+              {renderFullSummaryCard()}
+            </View>
 
             <View style={styles.shareActionRow}>
               <Pressable
@@ -3235,28 +3367,34 @@ const styles = StyleSheet.create({
   },
   offscreenShareWrap: {
     position: "absolute",
-    left: -9999,
+    left: 0,
     top: 0,
     width: 340,
     opacity: 0.99,
-    zIndex: -100,
+    zIndex: -1000,
   },
   shareCard: {
-    width: "100%",
+    width: 350,
     backgroundColor: "#163422",
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
     alignItems: "center",
   },
   shareCardHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    marginBottom: 14,
+    columnGap: 10,
+    marginBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.1)",
+    paddingBottom: 10,
+    width: "100%",
   },
   shareTalaIcon: {
-    width: 26,
-    height: 26,
+    width: 28,
+    height: 28,
   },
   shareCardBrand: {
     fontSize: 9.5,
@@ -3265,12 +3403,181 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
   },
   shareCardTitle: {
-    fontSize: 13.5,
+    fontSize: 14.5,
+    fontFamily: "Outfit-Bold",
+    color: "#FFFFFF",
+    letterSpacing: -0.2,
+  },
+  shareCardDateRange: {
+    fontSize: 10.5,
+    fontFamily: "Outfit-Medium",
+    color: "#C5E6CE",
+    marginTop: 1,
+  },
+  shareSectionBox: {
+    width: "100%",
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderRadius: 12,
+    padding: 9,
+    marginBottom: 8,
+  },
+  shareSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 5,
+    marginBottom: 4,
+  },
+  shareSectionTitle: {
+    fontSize: 10,
+    fontFamily: "Outfit-Bold",
+    color: "#A7E892",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  shareSectionSubtitle: {
+    fontSize: 9.5,
+    fontFamily: "Outfit",
+    color: "#D8F3DC",
+    marginBottom: 4,
+  },
+  shareEmotionPillsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 5,
+    marginTop: 2,
+  },
+  shareEmotionPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 999,
+    paddingVertical: 2,
+    paddingHorizontal: 7,
+    columnGap: 4,
+  },
+  shareEmotionDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  shareEmotionLabel: {
+    fontSize: 10,
+    fontFamily: "Outfit-Medium",
+    color: "#FFFFFF",
+  },
+  shareEmotionCount: {
+    fontSize: 9.5,
+    fontFamily: "Outfit-Bold",
+    color: "#FACC15",
+  },
+  shareInterventionRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingTop: 2,
+  },
+  shareInterventionStep: {
+    alignItems: "center",
+    flex: 1,
+  },
+  shareInterventionVal: {
+    fontSize: 13,
     fontFamily: "Outfit-Bold",
     color: "#FFFFFF",
   },
-  shareScoreWrap: {
+  shareInterventionLbl: {
+    fontSize: 8,
+    fontFamily: "Outfit",
+    color: "#A0D5B0",
+    marginTop: 1,
+    textAlign: "center",
+  },
+  shareConstellationRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
+    paddingTop: 2,
+  },
+  shareConstellationBigVal: {
+    fontSize: 14,
+    fontFamily: "Outfit-Bold",
+    color: "#FACC15",
+  },
+  shareConstellationSub: {
+    fontSize: 9,
+    fontFamily: "Outfit",
+    color: "#C5E6CE",
+  },
+  shareConstellationChips: {
+    flexDirection: "row",
+    gap: 5,
+  },
+  shareChipBadge: {
+    backgroundColor: "rgba(250, 204, 21, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(250, 204, 21, 0.4)",
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  shareChipText: {
+    fontSize: 9,
+    fontFamily: "Outfit-Bold",
+    color: "#FACC15",
+  },
+  shareMuniQuoteBox: {
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 12,
+    padding: 10,
+    width: "100%",
+    marginBottom: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: "#FACC15",
+  },
+  shareMuniQuoteHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 5,
+    marginBottom: 4,
+  },
+  shareMuniQuoteTitle: {
+    fontSize: 10,
+    fontFamily: "Outfit-Bold",
+    color: "#FACC15",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  shareMuniQuote: {
+    fontSize: 10,
+    fontStyle: "italic",
+    fontFamily: "Outfit",
+    color: "#E2F0E6",
+    textAlign: "left",
+    lineHeight: 14.5,
+  },
+  shareFocusSeedBox: {
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 10,
+    padding: 7,
+    width: "100%",
+  },
+  shareFocusSeedTitle: {
+    fontSize: 8.5,
+    fontFamily: "Outfit-Bold",
+    color: "#A7E892",
+    letterSpacing: 0.8,
+    marginBottom: 2,
+  },
+  shareFocusSeedText: {
+    fontSize: 9.5,
+    fontFamily: "Outfit",
+    color: "#FFFFFF",
+    lineHeight: 13,
+  },
+  shareScoreWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: "100%",
     marginBottom: 14,
   },
   shareScoreBadge: {
@@ -3321,18 +3628,8 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit-Bold",
     color: "#FFFFFF",
   },
-  shareMuniQuoteBox: {
-    backgroundColor: "rgba(255, 255, 255, 0.07)",
-    borderRadius: 10,
-    padding: 8,
-    width: "100%",
-  },
-  shareMuniQuoteTitle: {
-    fontSize: 10,
-    fontFamily: "Outfit-Bold",
-    color: "#FACC15",
-    marginBottom: 2,
-  },
+
+
   shareScoreVal: {
     fontSize: 38,
     fontFamily: "Outfit-Bold",
@@ -3365,14 +3662,7 @@ const styles = StyleSheet.create({
     fontFamily: "Outfit",
     color: "#A0D5B0",
   },
-  shareMuniQuote: {
-    fontSize: 11,
-    fontStyle: "italic",
-    fontFamily: "Outfit",
-    color: "#E2F0E6",
-    textAlign: "left",
-    lineHeight: 16,
-  },
+
   shareActionRow: {
     flexDirection: "row",
     gap: 10,

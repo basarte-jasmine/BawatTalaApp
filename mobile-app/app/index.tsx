@@ -3,6 +3,7 @@ import { Image } from "expo-image";
 import { useEffect } from "react";
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,6 +17,8 @@ import { MuniAvatar } from "../components/muni/MuniAvatar";
 import { useAuthSession } from "../lib/auth-session";
 
 const APP_MAX_WIDTH = 412;
+const REF_WIDTH = 412;
+const REF_HEIGHT = 800;
 
 function ZenSanctuaryBackdrop({
   width,
@@ -26,13 +29,16 @@ function ZenSanctuaryBackdrop({
   height: number;
   domeY: number;
 }) {
-  const sceneWidth = Math.min(width && width > 0 ? width : APP_MAX_WIDTH, APP_MAX_WIDTH);
-  const sceneHeight = Math.max(height && height > 0 ? height : 760, 680);
+  const sceneWidth = width && width > 0 ? width : REF_WIDTH;
+  const sceneHeight = height && height > 0 ? height : REF_HEIGHT;
+  const xScale = sceneWidth / REF_WIDTH;
+  const yScale = sceneHeight / REF_HEIGHT;
+  const geomScale = Math.min(xScale, yScale);
 
   return (
     <Svg
-      width={sceneWidth}
-      height={sceneHeight}
+      width="100%"
+      height="100%"
       style={StyleSheet.absoluteFillObject}
       viewBox={"0 0 " + sceneWidth + " " + sceneHeight}
     >
@@ -55,76 +61,183 @@ function ZenSanctuaryBackdrop({
 
       {/* Flowing Organic Swirl Waves */}
       <Path
-        d={"M -20 180 C " + (sceneWidth * 0.3) + " 80, " + (sceneWidth * 0.6) + " 240, " + (sceneWidth + 40) + " 140 L " + (sceneWidth + 40) + " " + sceneHeight + " L -20 " + sceneHeight + " Z"}
+        d={
+          "M -20 " + (180 * yScale) +
+          " C " + (sceneWidth * 0.3) + " " + (80 * yScale) + ", " +
+          (sceneWidth * 0.6) + " " + (240 * yScale) + ", " +
+          (sceneWidth + 40) + " " + (140 * yScale) +
+          " L " + (sceneWidth + 40) + " " + sceneHeight +
+          " L -20 " + sceneHeight + " Z"
+        }
         fill="url(#softWave)"
       />
       <Path
-        d={"M -40 280 C " + (sceneWidth * 0.35) + " 180, " + (sceneWidth * 0.7) + " 310, " + (sceneWidth + 40) + " 220 L " + (sceneWidth + 40) + " " + sceneHeight + " L -40 " + sceneHeight + " Z"}
+        d={
+          "M -40 " + (280 * yScale) +
+          " C " + (sceneWidth * 0.35) + " " + (180 * yScale) + ", " +
+          (sceneWidth * 0.7) + " " + (310 * yScale) + ", " +
+          (sceneWidth + 40) + " " + (220 * yScale) +
+          " L " + (sceneWidth + 40) + " " + sceneHeight +
+          " L -40 " + sceneHeight + " Z"
+        }
         fill="rgba(255, 255, 255, 0.12)"
       />
 
       {/* Zen Spiral Swirl Contour (Pic 2 motif in bright white) */}
       <Path
-        d={"M " + (sceneWidth * 0.14) + " 260 C " + (sceneWidth * 0.02) + " 220, " + (sceneWidth * 0.08) + " 160, " + (sceneWidth * 0.28) + " 165 C " + (sceneWidth * 0.44) + " 170, " + (sceneWidth * 0.45) + " 230, " + (sceneWidth * 0.32) + " 245 C " + (sceneWidth * 0.22) + " 255, " + (sceneWidth * 0.18) + " 235, " + (sceneWidth * 0.25) + " 215 C " + (sceneWidth * 0.3) + " 200, " + (sceneWidth * 0.38) + " 205, " + (sceneWidth * 0.35) + " 220"}
+        d={
+          "M " + (sceneWidth * 0.14) + " " + (260 * yScale) +
+          " C " + (sceneWidth * 0.02) + " " + (220 * yScale) + ", " +
+          (sceneWidth * 0.08) + " " + (160 * yScale) + ", " +
+          (sceneWidth * 0.28) + " " + (165 * yScale) +
+          " C " + (sceneWidth * 0.44) + " " + (170 * yScale) + ", " +
+          (sceneWidth * 0.45) + " " + (230 * yScale) + ", " +
+          (sceneWidth * 0.32) + " " + (245 * yScale) +
+          " C " + (sceneWidth * 0.22) + " " + (255 * yScale) + ", " +
+          (sceneWidth * 0.18) + " " + (235 * yScale) + ", " +
+          (sceneWidth * 0.25) + " " + (215 * yScale) +
+          " C " + (sceneWidth * 0.3) + " " + (200 * yScale) + ", " +
+          (sceneWidth * 0.38) + " " + (205 * yScale) + ", " +
+          (sceneWidth * 0.35) + " " + (220 * yScale)
+        }
         stroke="rgba(255, 255, 255, 0.35)"
-        strokeWidth="3"
+        strokeWidth={Math.max(2, 3 * geomScale)}
         strokeLinecap="round"
         fill="none"
       />
 
       {/* Floating Tala Sparkles */}
       <Path
-        d={"M " + (sceneWidth * 0.82) + " 65 L " + (sceneWidth * 0.835) + " 73 L " + (sceneWidth * 0.86) + " 75 L " + (sceneWidth * 0.835) + " 77 L " + (sceneWidth * 0.82) + " 85 L " + (sceneWidth * 0.805) + " 77 L " + (sceneWidth * 0.78) + " 75 L " + (sceneWidth * 0.805) + " 73 Z"}
+        d={
+          "M " + (sceneWidth * 0.82) + " " + (65 * yScale) +
+          " L " + (sceneWidth * 0.835) + " " + (73 * yScale) +
+          " L " + (sceneWidth * 0.86) + " " + (75 * yScale) +
+          " L " + (sceneWidth * 0.835) + " " + (77 * yScale) +
+          " L " + (sceneWidth * 0.82) + " " + (85 * yScale) +
+          " L " + (sceneWidth * 0.805) + " " + (77 * yScale) +
+          " L " + (sceneWidth * 0.78) + " " + (75 * yScale) +
+          " L " + (sceneWidth * 0.805) + " " + (73 * yScale) + " Z"
+        }
         fill="#F59E0B"
         opacity="0.7"
       />
       <Path
-        d={"M " + (sceneWidth * 0.18) + " 115 L " + (sceneWidth * 0.19) + " 120 L " + (sceneWidth * 0.21) + " 121 L " + (sceneWidth * 0.19) + " 122 L " + (sceneWidth * 0.18) + " 127 L " + (sceneWidth * 0.17) + " 122 L " + (sceneWidth * 0.15) + " 121 L " + (sceneWidth * 0.17) + " 120 Z"}
+        d={
+          "M " + (sceneWidth * 0.18) + " " + (115 * yScale) +
+          " L " + (sceneWidth * 0.19) + " " + (120 * yScale) +
+          " L " + (sceneWidth * 0.21) + " " + (121 * yScale) +
+          " L " + (sceneWidth * 0.19) + " " + (122 * yScale) +
+          " L " + (sceneWidth * 0.18) + " " + (127 * yScale) +
+          " L " + (sceneWidth * 0.17) + " " + (122 * yScale) +
+          " L " + (sceneWidth * 0.15) + " " + (121 * yScale) +
+          " L " + (sceneWidth * 0.17) + " " + (120 * yScale) + " Z"
+        }
         fill="#FFFFFF"
         opacity="0.8"
       />
 
       {/* White Sanctuary Arched Mound */}
       <Path
-        d={"M -10 " + domeY + " C " + (sceneWidth * 0.24) + " " + (domeY - 72) + ", " + (sceneWidth * 0.76) + " " + (domeY - 72) + ", " + (sceneWidth + 10) + " " + domeY + " L " + (sceneWidth + 10) + " " + sceneHeight + " L -10 " + sceneHeight + " Z"}
+        d={
+          "M -10 " + domeY +
+          " C " + (sceneWidth * 0.24) + " " + (domeY - 72 * yScale) + ", " +
+          (sceneWidth * 0.76) + " " + (domeY - 72 * yScale) + ", " +
+          (sceneWidth + 10) + " " + domeY +
+          " L " + (sceneWidth + 10) + " " + sceneHeight +
+          " L -10 " + sceneHeight + " Z"
+        }
         fill="#FFFFFF"
       />
 
       {/* Botanical Garden Flowers around character base */}
       {/* Left Red Flower */}
       <G>
-        <Path d={"M " + (sceneWidth * 0.18) + " " + (domeY + 32) + " Q " + (sceneWidth * 0.17) + " " + (domeY + 12) + " " + (sceneWidth * 0.19) + " " + (domeY - 6)} stroke="#2D7D5A" strokeWidth="2.5" fill="none" />
-        <Path d={"M " + (sceneWidth * 0.18) + " " + (domeY + 14) + " Q " + (sceneWidth * 0.14) + " " + (domeY + 10) + " " + (sceneWidth * 0.15) + " " + (domeY + 6)} stroke="#2D7D5A" strokeWidth="2" fill="none" />
-        <Circle cx={sceneWidth * 0.19} cy={domeY - 6} r={11} fill="#EF4444" />
-        <Circle cx={sceneWidth * 0.19} cy={domeY - 6} r={5} fill="#FCD34D" />
+        <Path
+          d={
+            "M " + (sceneWidth * 0.18) + " " + (domeY + 32 * yScale) +
+            " Q " + (sceneWidth * 0.17) + " " + (domeY + 12 * yScale) +
+            " " + (sceneWidth * 0.19) + " " + (domeY - 6 * yScale)
+          }
+          stroke="#2D7D5A"
+          strokeWidth={2.5 * geomScale}
+          fill="none"
+        />
+        <Path
+          d={
+            "M " + (sceneWidth * 0.18) + " " + (domeY + 14 * yScale) +
+            " Q " + (sceneWidth * 0.14) + " " + (domeY + 10 * yScale) +
+            " " + (sceneWidth * 0.15) + " " + (domeY + 6 * yScale)
+          }
+          stroke="#2D7D5A"
+          strokeWidth={2 * geomScale}
+          fill="none"
+        />
+        <Circle cx={sceneWidth * 0.19} cy={domeY - 6 * yScale} r={11 * geomScale} fill="#EF4444" />
+        <Circle cx={sceneWidth * 0.19} cy={domeY - 6 * yScale} r={5 * geomScale} fill="#FCD34D" />
       </G>
 
       {/* Left Coral Blossom */}
       <G>
-        <Path d={"M " + (sceneWidth * 0.28) + " " + (domeY + 28) + " Q " + (sceneWidth * 0.29) + " " + (domeY + 14) + " " + (sceneWidth * 0.28) + " " + (domeY + 2)} stroke="#2D7D5A" strokeWidth="2" fill="none" />
-        <Circle cx={sceneWidth * 0.28} cy={domeY + 2} r={8} fill="#F87171" />
-        <Circle cx={sceneWidth * 0.28} cy={domeY + 2} r={3.5} fill="#FFFBEB" />
+        <Path
+          d={
+            "M " + (sceneWidth * 0.28) + " " + (domeY + 28 * yScale) +
+            " Q " + (sceneWidth * 0.29) + " " + (domeY + 14 * yScale) +
+            " " + (sceneWidth * 0.28) + " " + (domeY + 2 * yScale)
+          }
+          stroke="#2D7D5A"
+          strokeWidth={2 * geomScale}
+          fill="none"
+        />
+        <Circle cx={sceneWidth * 0.28} cy={domeY + 2 * yScale} r={8 * geomScale} fill="#F87171" />
+        <Circle cx={sceneWidth * 0.28} cy={domeY + 2 * yScale} r={3.5 * geomScale} fill="#FFFBEB" />
       </G>
 
       {/* Right Coral Tulip Flower */}
       <G>
-        <Path d={"M " + (sceneWidth * 0.74) + " " + (domeY + 30) + " Q " + (sceneWidth * 0.73) + " " + (domeY + 10) + " " + (sceneWidth * 0.75) + " " + (domeY - 8)} stroke="#2D7D5A" strokeWidth="2.5" fill="none" />
-        <Path d={"M " + (sceneWidth * 0.74) + " " + (domeY + 16) + " Q " + (sceneWidth * 0.78) + " " + (domeY + 12) + " " + (sceneWidth * 0.78) + " " + (domeY + 6)} stroke="#2D7D5A" strokeWidth="2" fill="none" />
-        <Ellipse cx={sceneWidth * 0.75} cy={domeY - 8} rx={8.5} ry={11} fill="#F97316" />
-        <Circle cx={sceneWidth * 0.75} cy={domeY - 14} r={4.5} fill="#FDE68A" />
+        <Path
+          d={
+            "M " + (sceneWidth * 0.74) + " " + (domeY + 30 * yScale) +
+            " Q " + (sceneWidth * 0.73) + " " + (domeY + 10 * yScale) +
+            " " + (sceneWidth * 0.75) + " " + (domeY - 8 * yScale)
+          }
+          stroke="#2D7D5A"
+          strokeWidth={2.5 * geomScale}
+          fill="none"
+        />
+        <Path
+          d={
+            "M " + (sceneWidth * 0.74) + " " + (domeY + 16 * yScale) +
+            " Q " + (sceneWidth * 0.78) + " " + (domeY + 12 * yScale) +
+            " " + (sceneWidth * 0.78) + " " + (domeY + 6 * yScale)
+          }
+          stroke="#2D7D5A"
+          strokeWidth={2 * geomScale}
+          fill="none"
+        />
+        <Ellipse cx={sceneWidth * 0.75} cy={domeY - 8 * yScale} rx={8.5 * geomScale} ry={11 * geomScale} fill="#F97316" />
+        <Circle cx={sceneWidth * 0.75} cy={domeY - 14 * yScale} r={4.5 * geomScale} fill="#FDE68A" />
       </G>
 
       {/* Right Blossom Flower */}
       <G>
-        <Path d={"M " + (sceneWidth * 0.83) + " " + (domeY + 34) + " Q " + (sceneWidth * 0.84) + " " + (domeY + 18) + " " + (sceneWidth * 0.83) + " " + (domeY + 6)} stroke="#2D7D5A" strokeWidth="2" fill="none" />
-        <Circle cx={sceneWidth * 0.83} cy={domeY + 6} r={7.5} fill="#FB7185" />
-        <Circle cx={sceneWidth * 0.83} cy={domeY + 6} r={3} fill="#FEF3C7" />
+        <Path
+          d={
+            "M " + (sceneWidth * 0.83) + " " + (domeY + 34 * yScale) +
+            " Q " + (sceneWidth * 0.84) + " " + (domeY + 18 * yScale) +
+            " " + (sceneWidth * 0.83) + " " + (domeY + 6 * yScale)
+          }
+          stroke="#2D7D5A"
+          strokeWidth={2 * geomScale}
+          fill="none"
+        />
+        <Circle cx={sceneWidth * 0.83} cy={domeY + 6 * yScale} r={7.5 * geomScale} fill="#FB7185" />
+        <Circle cx={sceneWidth * 0.83} cy={domeY + 6 * yScale} r={3 * geomScale} fill="#FEF3C7" />
       </G>
 
       {/* Fresh Grass Sprigs */}
-      <Path d={"M " + (sceneWidth * 0.22) + " " + (domeY + 26) + " L " + (sceneWidth * 0.21) + " " + (domeY + 16)} stroke="#34D399" strokeWidth="2" strokeLinecap="round" />
-      <Path d={"M " + (sceneWidth * 0.23) + " " + (domeY + 26) + " L " + (sceneWidth * 0.24) + " " + (domeY + 15)} stroke="#34D399" strokeWidth="2" strokeLinecap="round" />
-      <Path d={"M " + (sceneWidth * 0.79) + " " + (domeY + 26) + " L " + (sceneWidth * 0.8) + " " + (domeY + 16)} stroke="#34D399" strokeWidth="2" strokeLinecap="round" />
+      <Path d={"M " + (sceneWidth * 0.22) + " " + (domeY + 26 * yScale) + " L " + (sceneWidth * 0.21) + " " + (domeY + 16 * yScale)} stroke="#34D399" strokeWidth={2 * geomScale} strokeLinecap="round" />
+      <Path d={"M " + (sceneWidth * 0.23) + " " + (domeY + 26 * yScale) + " L " + (sceneWidth * 0.24) + " " + (domeY + 15 * yScale)} stroke="#34D399" strokeWidth={2 * geomScale} strokeLinecap="round" />
+      <Path d={"M " + (sceneWidth * 0.79) + " " + (domeY + 26 * yScale) + " L " + (sceneWidth * 0.8) + " " + (domeY + 16 * yScale)} stroke="#34D399" strokeWidth={2 * geomScale} strokeLinecap="round" />
     </Svg>
   );
 }
@@ -147,10 +260,12 @@ export default function Index() {
   const { isHydrated, user } = useAuthSession();
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const frameWidth = Math.min(width && width > 0 ? width : APP_MAX_WIDTH, APP_MAX_WIDTH);
-  const isCompact = height > 0 && height < 720;
-  const isNarrow = width > 0 && width < 360;
-  const domeY = height * (isCompact ? 0.46 : 0.52);
+  const isDesktopWeb = Platform.OS === "web" && width >= 768;
+  const frameWidth = isDesktopWeb ? Math.min(width, APP_MAX_WIDTH) : (width > 0 ? width : APP_MAX_WIDTH);
+  const frameHeight = height > 0 ? height : REF_HEIGHT;
+  const isCompact = frameHeight < 720;
+  const isNarrow = frameWidth < 360;
+  const domeY = frameHeight * (isCompact ? 0.46 : 0.52);
   const visualScale = Math.min(1, Math.max(0.82, frameWidth / 390));
 
   useEffect(() => {
@@ -165,7 +280,7 @@ export default function Index() {
 
   return (
     <View style={styles.screen}>
-      <ZenSanctuaryBackdrop width={frameWidth} height={height} domeY={domeY} />
+      <ZenSanctuaryBackdrop width={frameWidth} height={frameHeight} domeY={domeY} />
 
       <ScrollView
         contentContainerStyle={[
@@ -304,6 +419,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#5EBFA4",
     alignItems: "center",
+    width: "100%",
   },
   scrollContainer: {
     flexGrow: 1,
@@ -436,3 +552,4 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
 });
+

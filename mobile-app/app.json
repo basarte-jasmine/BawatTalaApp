@@ -2,8 +2,8 @@
   "expo": {
     "name": "Bawat Tala",
     "slug": "bawat-tala",
-    "version": "2.2.3",
-  "orientation": "default",
+    "version": "2.2.4",
+    "orientation": "default",
     "icon": "./assets/images/Logo_BT.png",
     "scheme": "bawattala",
     "userInterfaceStyle": "automatic",
@@ -24,8 +24,8 @@
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
-      "android.permission.ACCESS_FINE_LOCATION",
-      "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.POST_NOTIFICATIONS"
       ],
       "allowBackup": false,
