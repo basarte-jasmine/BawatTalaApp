@@ -50,6 +50,10 @@ export type RiskPromptEntry = {
   safetyStatus?: RawSafetyStatus;
   emotionalDistressSignal?: RawEmotionalDistressSignal;
   studentAction?: string | null;
+  wellnessOfferCount?: number;
+  lastWellnessOfferTurn?: number | null;
+  wellnessOfferStatus?: "NOT_OFFERED" | "OFFERED" | "ACCEPTED" | "DECLINED" | null;
+  concernType?: string | null;
 } | null | undefined;
 
 export type SafetyMessageHint = {
@@ -288,13 +292,58 @@ export function needsFinishSupportPrompt(
  * Requires DISTRESS signal; excludes CONFIRMED_CRITICAL so crisis trio stays intact;
  * skips when a resource support action already exists.
  */
+/**
+ * Mid-chat Yes/No wellness offer for emotional DISTRESS (not crisis).
+ * Rules:
+ * - A maximum of TWO Wellness popup appearances per journal entry.
+ * - The two appearances must NEVER be on consecutive Muni turns.
+ * - At least one intervening Muni turn required.
+ * - Requires DISTRESS signal; excludes CONFIRMED_CRITICAL and CLARIFICATION_NEEDED so crisis triage stays intact.
+ * - Excludes non-distress safeguarding concerns (BULLYING_HARASSMENT, ABUSE, GROOMING, etc.) which use SAFETY_SUPPORT.
+ * - Skips when student already accepted a resource support action (VIEWED_WELLNESS).
+ */
 export function needsDistressWellnessOffer(
   entry?: RiskPromptEntry,
   messages?: SafetyMessageHint[] | null,
+  currentAssistantTurn?: number,
 ): boolean {
   const gated = entryForSafetyPrompt(entry, messages);
   if (!gated) return false;
   if (hasResourceSupportAction(gated)) return false;
-  if (normalizeSafetyStatus(gated.safetyStatus) === "CONFIRMED_CRITICAL") return false;
-  return normalizeEmotionalDistressSignal(gated.emotionalDistressSignal) === "DISTRESS";
+
+  // Crisis safety or clarification takes precedence - never show wellness popup during active crisis check
+  const safetyStatus = normalizeSafetyStatus(gated.safetyStatus);
+  if (safetyStatus === "CONFIRMED_CRITICAL" || safetyStatus === "CLARIFICATION_NEEDED") return false;
+
+  // Safeguarding interpersonal concerns (bullying, abuse, grooming, coercion, etc.) use safety support, not wellness popup
+  const concern = String(gated.concernType || "").toUpperCase();
+  if (concern && concern !== "NONE" && concern !== "EMOTIONAL_DISTRESS") return false;
+
+  // Must have DISTRESS signal
+  if (normalizeEmotionalDistressSignal(gated.emotionalDistressSignal) !== "DISTRESS") return false;
+
+  // Never exceed max 2 offers
+  const offerCount = Number(gated.wellnessOfferCount || 0);
+  if (offerCount > 2) return false;
+
+  // Resolve the current assistant turn count
+  const turn = currentAssistantTurn != null
+    ? currentAssistantTurn
+    : (messages ?? []).filter((m) => m?.role === "assistant").length;
+
+  if (!turn) return false;
+
+  // 1. If an offer is active and awaiting student decision, show the Yes/No buttons!
+  if (gated.wellnessOfferStatus === "OFFERED") {
+    return true;
+  }
+
+  // 2. If student already declined or accepted, enforce max 2 offers and non-consecutive turn spacing
+  if (offerCount >= 2) return false;
+  if (gated.lastWellnessOfferTurn != null && turn != null) {
+    const turnsSince = turn - gated.lastWellnessOfferTurn;
+    if (turnsSince <= 1) return false;
+  }
+
+  return true;
 }

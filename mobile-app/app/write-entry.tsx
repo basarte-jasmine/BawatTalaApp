@@ -35,6 +35,7 @@ import {
     JournalMessage,
     saveDailyMood,
     saveJournalSupportResponse,
+    saveWellnessDecision,
     sendJournalMessage,
     suggestJournalTags
 } from "../lib/backend-api";
@@ -598,19 +599,38 @@ export default function WriteEntryScreen() {
     ) {
       setRiskPromptSuppressedUntilFinish(true);
       setShowRiskModal(true);
-    } else if (
-      result.entry &&
-      !distressWellnessOfferDoneRef.current &&
-      needsDistressWellnessOffer(result.entry, result.messages)
-    ) {
-      // DISTRESS: persona reply already suggests wellness; show inline Yes/No once under that turn.
-      const latestAssistant = [...(result.messages ?? [])]
-        .reverse()
-        .find((item) => item.role === "assistant");
-      if (latestAssistant?.id) {
-        distressWellnessOfferDoneRef.current = true;
-        setDistressOfferMessageId(latestAssistant.id);
-        setDistressOfferPhase("wellness");
+    } else if (result.entry) {
+      const assistantTurns = (result.messages ?? []).filter((m) => m.role === "assistant").length;
+      const offerStatus = result.entry.wellnessOfferStatus;
+      // A server offer is only "active" for the turn it was registered on.
+      // Otherwise a stale OFFERED status could re-open the popup on a later turn.
+      const offerTurnMatches =
+        result.entry.lastWellnessOfferTurn != null &&
+        result.entry.lastWellnessOfferTurn === assistantTurns;
+      const offerActiveFromServer =
+        Boolean(result.wellnessOfferTriggered) ||
+        (offerStatus === "OFFERED" && offerTurnMatches);
+      const alreadyDecided = offerStatus === "DECLINED" || offerStatus === "ACCEPTED";
+      // Fallback for older/offline responses: only attach to a brand-new Muni reply.
+      const fallbackOffer =
+        Boolean(result.aiReply) &&
+        !alreadyDecided &&
+        offerStatus !== "OFFERED" &&
+        !offerActiveFromServer &&
+        needsDistressWellnessOffer(result.entry, result.messages, assistantTurns);
+      const isOfferActive = offerActiveFromServer || fallbackOffer;
+
+      if (isOfferActive) {
+        const latestAssistant = [...(result.messages ?? [])]
+          .reverse()
+          .find((item) => item.role === "assistant");
+        if (latestAssistant?.id) {
+          setDistressOfferMessageId(latestAssistant.id);
+          setDistressOfferPhase("wellness");
+        }
+      } else {
+        setDistressOfferMessageId(null);
+        setDistressOfferPhase(null);
       }
     }
   };
@@ -1017,15 +1037,37 @@ export default function WriteEntryScreen() {
     setDistressOfferPhase(null);
   }, []);
 
-  const handleDistressWellnessYes = useCallback(() => {
-    // Keep the same reply turn; swap inline controls to "save first?"
-    distressWellnessOfferDoneRef.current = true;
+  const handleDistressWellnessYes = useCallback(async () => {
+    const assistantTurns = (messages ?? []).filter((m) => m.role === "assistant").length;
+    if (user?.studentNumber && entry?.id) {
+      const res = await saveWellnessDecision({
+        entryId: entry.id,
+        studentNumber: user.studentNumber,
+        decision: "ACCEPTED",
+        turn: assistantTurns,
+      });
+      if (res.entry) {
+        setEntry(res.entry);
+      }
+    }
     setDistressOfferPhase("save");
-  }, []);
+  }, [entry?.id, messages, user?.studentNumber]);
 
-  const handleDistressWellnessNo = useCallback(() => {
+  const handleDistressWellnessNo = useCallback(async () => {
+    const assistantTurns = (messages ?? []).filter((m) => m.role === "assistant").length;
+    if (user?.studentNumber && entry?.id) {
+      const res = await saveWellnessDecision({
+        entryId: entry.id,
+        studentNumber: user.studentNumber,
+        decision: "DECLINED",
+        turn: assistantTurns,
+      });
+      if (res.entry) {
+        setEntry(res.entry);
+      }
+    }
     clearDistressInlineOffer();
-  }, [clearDistressInlineOffer]);
+  }, [clearDistressInlineOffer, entry?.id, messages, user?.studentNumber]);
 
   const handleDistressSaveDecline = useCallback(() => {
     // Stay in conversation; do not force finish; offer will not reappear this session.

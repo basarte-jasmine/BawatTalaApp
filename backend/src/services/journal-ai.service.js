@@ -52,11 +52,20 @@ function personaInstructions(persona) {
         "Drop chit-chat and goal coaching. Acknowledge seriousness, urge human/emergency support, stay present. For exploitation, blackmail, or assault disclosures, reassure the student that they are not to blame and support seeking help immediately.",
         "Write a natural supportive reply — do not use a canned template. Do not diagnose. No productivity questions.",
       ].join(" ");
+    case "SAFETY_SUPPORT":
+      return [
+        "PERSONA OBJECTIVE: Trauma-informed supportive listener for bullying, abuse, harassment, grooming, coercion, or unsafe environment disclosures.",
+        "Validate the student feelings without blame. Reassure the student that harmful treatment or abuse is NEVER their fault.",
+        "Gently check if they are in a safe place right now when appropriate.",
+        "Warmly encourage reaching out to a guidance counselor, trusted adult, or human support.",
+        "Do not offer wellness tools or breathing exercises in place of safety support. No productivity questions.",
+        "One warm, grounding, supportive reply (2-3 sentences).",
+      ].join(" ");
     case "DISTRESS_SUPPORT":
       return [
-        "PERSONA OBJECTIVE: Empathic supporter for emotional distress, heartbreak, or burnout (not crisis modal).",
-        "Validate overwhelm without diagnosing. No hotline spam unless they confirm danger.",
-        "REQUIRED in every DISTRESS_SUPPORT reply: after a short validation, include one natural sentence that soft-offers the in-app Wellness tools (Diaphragmatic Breathing exercise or 5-4-3-2-1 Grounding exercise tool) as an optional next step — vary the wording each time; never paste a fixed canned line; never hotline scripts; never pressure.",
+        "PERSONA OBJECTIVE: Empathic supporter for emotional distress, overwhelm, or burnout (not crisis modal).",
+        "Validate overwhelm without diagnosing. Prioritize presence, warmth, and active listening.",
+        "Do not force Wellness suggestions into every reply. Only mention in-app wellness tools if contextually relevant and permitted by offer eligibility.",
         "Do not pressure the student with rigid task-breakdown questions. Prefer short validating sentences.",
         "If the student refuses questions, use zero question marks.",
       ].join(" ");
@@ -163,23 +172,13 @@ function replyMentionsWellnessTools(text) {
   );
 }
 
-const DISTRESS_WELLNESS_SOFT_OFFERS = [
-  "If it helps, the in-app Wellness tools have gentle Diaphragmatic Breathing and the 5-4-3-2-1 Grounding exercise you can try anytime.",
-  "Whenever you want a soft pause, the Wellness tools in the app have Diaphragmatic Breathing and 5-4-3-2-1 Grounding options.",
-  "There are also quiet Wellness tools here in the app — Diaphragmatic Breathing and the 5-4-3-2-1 Grounding exercise tool — if you want a moment to center yourself.",
-  "If a tiny pause sounds okay, the in-app Wellness tools include Diaphragmatic Breathing and 5-4-3-2-1 Grounding that you can open when ready.",
-];
+const DISTRESS_WELLNESS_SOFT_OFFERS = [];
 
 function ensureDistressWellnessMention(rawReply, persona) {
-  const text = String(rawReply || "").trim();
-  if (String(persona || "").toUpperCase() !== "DISTRESS_SUPPORT") return text;
-  if (!text) return text;
-  if (replyMentionsWellnessTools(text)) return text;
-  const pick = DISTRESS_WELLNESS_SOFT_OFFERS[Math.floor(Math.random() * DISTRESS_WELLNESS_SOFT_OFFERS.length)];
-  return `${text.replace(/\s+$/, "")} ${pick}`.trim();
+  // Canned fallback injection removed per Requirements 5 and 9.
+  // Structured wellness offer eligibility is tracked and validated server-side.
+  return String(rawReply || "").trim();
 }
-
-
 
 function normalizeBaseUrl(value) {
   const compact = String(value || "")
@@ -509,6 +508,7 @@ async function unavailableConversationAnalysis(
     history,
     previousDistressSignal,
     previousSafetyStatus,
+    previousConcernType,
   });
 
   let riskLevel = distressAssessment.risk_level;
@@ -533,6 +533,8 @@ async function unavailableConversationAnalysis(
     admin_flag_reason: adminFlagReason,
     distress_signal: distressAssessment.distress_signal,
     safety_status: distressAssessment.safety_status,
+    concern_type: distressAssessment.concern_type || "NONE",
+    wellness_offer_eligible: false,
     unavailable_reason: "ai_temporarily_unavailable",
   };
 }
@@ -1397,6 +1399,8 @@ async function analyzeJournalConversation({
   history,
   previousDistressSignal = "NONE",
   previousSafetyStatus = "NOT_NEEDED",
+  previousConcernType = "NONE",
+  wellnessEligibility = null,
 }) {
   const recentAssistantOpenings = getRecentAssistantOpenings(history);
   const recentAssistantFirstWords = getRecentAssistantFirstWords(history);
@@ -1438,7 +1442,11 @@ async function analyzeJournalConversation({
     studentRefusedQuestions(latestUserMessage)
       ? "Do not push reflection with coaching questions. Validate only. If the student refused questions, reply with zero question marks."
       : distressAssessment.persona === "DISTRESS_SUPPORT"
-        ? "DISTRESS_SUPPORT this turn: validate in 1-2 short sentences, then MUST include one soft natural sentence offering in-app Wellness tools (Diaphragmatic Breathing exercise or 5-4-3-2-1 Grounding exercise tool). Vary wording. No productivity pressure. Prefer zero question marks unless a gentle check-in is needed."
+        ? (wellnessEligibility?.eligible
+            ? "DISTRESS_SUPPORT with Wellness Offer: After 1-2 sentences validating their feelings, explicitly and naturally recommend taking a pause to try the in-app wellness tools (such as breathing exercise or grounding) to match the Yes/No popup shown below. Write this recommendation in natural, conversational words matching the student's language (Tagalog/English/Taglish) without using fixed canned templates. Do not ask task-coaching questions."
+            : "DISTRESS_SUPPORT without Wellness Offer: Validate warmly in 2-3 short sentences. Focus entirely on emotional presence and active listening. Do NOT mention, suggest, or recommend wellness tools or exercises this turn.")
+        : distressAssessment.persona === "SAFETY_SUPPORT"
+        ? "SAFETY_SUPPORT this turn: validate feelings without blame. Reassure the student that mistreatment is not their fault. Gently ask if they are safe right now and encourage reaching out to a guidance counselor or trusted adult."
         : "Most replies should help the reflection move forward. If the latest message is short, closed, or simply agrees, keep the conversation alive with a gentle follow-up, grounded encouragement, or an approachable perspective.",
     "If a question would feel forced, you may respond with a brief natural reaction, but avoid ending several turns in a row with only observations.",
     "Vary your sentence openings and rhythm. Do not reuse the same opening phrase or same reflection structure from recent Muni replies.",
@@ -1484,6 +1492,9 @@ async function analyzeJournalConversation({
     `Recent Muni replies all ended in questions: ${patterns.endedInQuestion ? "yes" : "no"}`,
     `Recent Muni reply started with Parang: ${patterns.startedWithParang ? "yes" : "no"}`,
     `Latest message is feedback about Muni's reply: ${latestMessageIsMuniFeedback ? "yes" : "no"}`,
+    wellnessEligibility?.eligible
+      ? "WELLNESS POPUP ACTIVE THIS TURN: An inline 'Open wellness tools?' popup with Yes/No buttons is being shown directly under your reply. Your pet_reply MUST contain your normal empathetic validation PLUS an explicit, natural sentence recommending taking a gentle pause with the in-app wellness tools (such as breathing or grounding) so your reply directly introduces the popup. Write naturally in their language without canned templates. Do NOT ask task-coaching questions."
+      : "NO WELLNESS OFFER THIS TURN: Do NOT suggest or recommend wellness tools, breathing exercises, or mini-resets in pet_reply.",
     "Return a JSON object with this exact shape:",
     "{",
     '  "pet_reply": "string",',
@@ -1614,6 +1625,14 @@ async function analyzeJournalConversation({
     petReply = sanitizeSafeguardingText(petReply);
     petReply = ensureDistressWellnessMention(petReply, persona);
 
+    // Safety net: if Muni still recommends wellness tools even though the
+    // keyword signal missed the distress, honor the recommendation so the
+    // Yes/No popup is not silently skipped. All other eligibility gates
+    // (crisis, safeguarding, max offers, turn spacing) still apply.
+    const replyRecommendsWellness =
+      replyMentionsWellnessTools(petReply) &&
+      wellnessEligibility?.reason === "not_in_distress";
+
     return {
       pet_reply: petReply,
       summary: "",
@@ -1622,6 +1641,10 @@ async function analyzeJournalConversation({
       admin_flag_reason: finalReason,
       distress_signal: distressAssessment.distress_signal,
       safety_status: distressAssessment.safety_status,
+      concern_type: distressAssessment.concern_type || "NONE",
+      // The route uses this to register the offer + persist OFFERED state.
+      // Without it, Muni recommends wellness tools but the Yes/No popup never opens.
+      wellness_offer_eligible: Boolean(wellnessEligibility?.eligible) || replyRecommendsWellness,
     };
   } catch (error) {
     console.error("analyzeJournalConversation failed.", {

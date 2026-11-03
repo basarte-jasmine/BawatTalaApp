@@ -2082,6 +2082,8 @@ async function ensureDatabaseSchema() {
 
 
   try {
+    const { ensureSafetySchema } = require("../services/safety-schema-migration.service");
+    await ensureSafetySchema(pool);
     const { ensureDefaultSafetyRiskIndicators } = require("../services/safety-risk-indicators.service");
     await ensureDefaultSafetyRiskIndicators(pool);
   } catch (error) {

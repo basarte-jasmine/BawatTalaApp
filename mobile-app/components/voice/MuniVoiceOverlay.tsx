@@ -34,6 +34,7 @@ import {
   discardJournalEntry,
   finishJournalEntry,
   saveJournalSupportResponse,
+  saveWellnessDecision,
   sendJournalMessage,
   suggestJournalTags,
   synthesizeVoiceSpeech,
@@ -699,13 +700,29 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
 
       if (sendResult.entry && !riskPromptSuppressedUntilFinish && needsCrisisTrioPrompt(sendResult.entry)) {
         setShowRiskModal(true);
-      } else if (
-        sendResult.entry &&
-        !distressWellnessOfferDoneRef.current &&
-        needsDistressWellnessOffer(sendResult.entry)
-      ) {
-        distressWellnessOfferDoneRef.current = true;
-        setDistressOfferPhase("wellness");
+      } else if (sendResult.entry) {
+        const assistantTurns = messagesRef.current.filter((m) => m.role === "assistant").length;
+        const offerStatus = sendResult.entry.wellnessOfferStatus;
+        const offerTurnMatches =
+          sendResult.entry.lastWellnessOfferTurn != null &&
+          sendResult.entry.lastWellnessOfferTurn === assistantTurns;
+        const offerActiveFromServer =
+          Boolean(sendResult.wellnessOfferTriggered) ||
+          (offerStatus === "OFFERED" && offerTurnMatches);
+        const alreadyDecided = offerStatus === "DECLINED" || offerStatus === "ACCEPTED";
+        const fallbackOffer =
+          Boolean(latestReply) &&
+          !alreadyDecided &&
+          offerStatus !== "OFFERED" &&
+          !offerActiveFromServer &&
+          needsDistressWellnessOffer(sendResult.entry, sendResult.messages, assistantTurns);
+
+        if (offerActiveFromServer || fallbackOffer) {
+          distressWellnessOfferDoneRef.current = true;
+          setDistressOfferPhase("wellness");
+        } else {
+          setDistressOfferPhase(null);
+        }
       }
     } catch {
       setStatusMessage("Error processing audio. Check your connection.");
@@ -1095,14 +1112,34 @@ export function MuniVoiceOverlay({ visible, onClose }: MuniVoiceOverlayProps) {
     setDistressOfferPhase(null);
   }, []);
 
-  const handleDistressWellnessYes = useCallback(() => {
-    distressWellnessOfferDoneRef.current = true;
-    setDistressOfferPhase("save");
-  }, []);
+  const saveDistressWellnessDecision = useCallback(
+    async (decision: "ACCEPTED" | "DECLINED") => {
+      if (!user?.studentNumber || !entry?.id) return;
+      const assistantTurns = messagesRef.current.filter((m) => m.role === "assistant").length;
+      const res = await saveWellnessDecision({
+        entryId: entry.id,
+        studentNumber: user.studentNumber,
+        decision,
+        turn: assistantTurns,
+      });
+      if (res.entry) {
+        setActiveEntry(res.entry);
+      }
+    },
+    [entry?.id, setActiveEntry, user?.studentNumber],
+  );
 
-  const handleDistressWellnessNo = useCallback(() => {
-    clearDistressOffer();
-  }, [clearDistressOffer]);
+  const handleDistressWellnessYes = useCallback(async () => {
+    distressWellnessOfferDoneRef.current = true;
+    await saveDistressWellnessDecision("ACCEPTED");
+    setDistressOfferPhase("save");
+  }, [saveDistressWellnessDecision]);
+
+  const handleDistressWellnessNo = useCallback(async () => {
+    distressWellnessOfferDoneRef.current = true;
+    await saveDistressWellnessDecision("DECLINED");
+    setDistressOfferPhase(null);
+  }, [saveDistressWellnessDecision]);
 
   const handleDistressSaveDecline = useCallback(() => {
     clearDistressOffer();

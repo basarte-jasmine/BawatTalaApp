@@ -104,6 +104,11 @@ export type JournalEntry = {
   counselorResolvedAt?: string | null;
   counselorResolvedByEmail?: string | null;
   counselorResolvedByName?: string | null;
+  wellnessOfferCount?: number;
+  lastWellnessOfferTurn?: number | null;
+  wellnessOfferStatus?: "NOT_OFFERED" | "OFFERED" | "ACCEPTED" | "DECLINED" | null;
+  wellnessOfferHistory?: Array<{ turn?: number; decision?: string; status?: string; timestamp?: string }>;
+  concernType?: string | null;
   title: string;
   updatedAt: string;
 };
@@ -3192,6 +3197,7 @@ export async function sendJournalMessage(payload: {
     aiReply?: string | null;
     entry?: JournalEntry;
     messages?: JournalMessage[];
+    wellnessOfferTriggered?: boolean;
   }
 > {
   try {
@@ -3223,6 +3229,7 @@ export async function sendJournalMessage(payload: {
       entry: normalizedEntry ?? undefined,
       message: data?.message,
       messages: normalizedMessages,
+      wellnessOfferTriggered: Boolean(data?.wellnessOfferTriggered),
     };
   } catch {
     const data = await readLocalJournalData(payload.studentNumber);
@@ -3399,6 +3406,34 @@ export async function suggestJournalTags(payload: {
       suggestedTags: record.entry.concernTags,
       tagOptions: [],
     };
+  }
+}
+
+export async function saveWellnessDecision(payload: {
+  entryId: string;
+  studentNumber: string;
+  decision: "ACCEPTED" | "DECLINED";
+  turn?: number | null;
+}): Promise<ApiResult & { entry?: JournalEntry }> {
+  try {
+    if (payload.entryId.startsWith("local-")) {
+      const local = await getLocalJournalRecord(payload.studentNumber, payload.entryId);
+      if (local?.entry) {
+        const nextEntry = {
+          ...local.entry,
+          wellnessOfferStatus: payload.decision,
+        } as JournalEntry;
+        await upsertLocalJournalRecord(payload.studentNumber, nextEntry, local.messages, local.entry.syncStatus || "synced");
+        return { ok: true, entry: nextEntry };
+      }
+    }
+    const { response, data } = await post("/api/journal/session/wellness-decision", payload);
+    if (response.ok && data?.entry) {
+      return { ok: true, entry: data.entry as JournalEntry, message: data.message };
+    }
+    return { ok: response.ok, message: data?.message || "Failed to record wellness decision." };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "Failed to record wellness decision." };
   }
 }
 

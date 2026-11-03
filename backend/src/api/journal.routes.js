@@ -4,6 +4,7 @@ const { requireStudentOnlyAuth, resolveStudentNumber } = require("../middleware/
 const { supabaseAdminClient } = require("../config/supabase");
 const { analyzeJournalConversation, analyzeJournalEntryFinal } = require("../services/journal-ai.service");
 const { encryptField, decryptField } = require("../services/journal-encryption.service");
+const { checkWellnessOfferEligibility, recordWellnessOfferDecision, registerWellnessOfferPresented } = require("../services/wellness-offer.service");
 const {
   assessSafeguarding,
 } = require("../services/safeguarding-assessor.service");
@@ -175,6 +176,7 @@ async function getOpenEntryByStudentAndDate(studentNumber, entryDate) {
              ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
              student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
              distress_signal, safety_status, safeguarding_status, safeguarding_families,
+             wellness_offer_count, last_wellness_offer_turn, wellness_offer_status, wellness_offer_history, concern_type,
              created_at, updated_at
       from public.journal_entries
       where student_number = $1 and entry_date = $2 and is_finished = false and deleted_by_student_at is null
@@ -199,6 +201,7 @@ async function createEntry(studentNumber, entryDate, aiEnabled) {
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
                 distress_signal, safety_status, safeguarding_status, safeguarding_families,
+             wellness_offer_count, last_wellness_offer_turn, wellness_offer_status, wellness_offer_history, concern_type,
                 created_at, updated_at
     `,
     [studentNumber, entryDate, aiEnabled],
@@ -258,6 +261,7 @@ async function getEntryById(studentNumber, entryId) {
              ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
              student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
              distress_signal, safety_status, safeguarding_status, safeguarding_families,
+             wellness_offer_count, last_wellness_offer_turn, wellness_offer_status, wellness_offer_history, concern_type,
              created_at, updated_at
       from public.journal_entries
       where id = $1 and student_number = $2 and deleted_by_student_at is null
@@ -312,6 +316,11 @@ function mapEntryRow(row) {
     safetyStatus: String(row.safety_status || "NOT_NEEDED"),
     safeguardingStatus: String(row.safeguarding_status || "NONE").toUpperCase(),
     safeguardingFamilies: Array.isArray(row.safeguarding_families) ? row.safeguarding_families : [],
+    wellnessOfferCount: Number(row.wellness_offer_count || 0),
+    lastWellnessOfferTurn: row.last_wellness_offer_turn == null ? null : Number(row.last_wellness_offer_turn),
+    wellnessOfferStatus: String(row.wellness_offer_status || 'NOT_OFFERED'),
+    wellnessOfferHistory: Array.isArray(row.wellness_offer_history) ? row.wellness_offer_history : [],
+    concernType: row.concern_type || null,
     counselorResolvedAt: row.counselor_resolved_at || null,
     counselorResolvedByEmail: row.counselor_resolved_by_email || null,
     counselorResolvedByName: row.counselor_resolved_by_name || null,
@@ -1117,6 +1126,7 @@ router.post("/entries/:entryId/summary-rating", asyncHandler(async (req, res) =>
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
                 distress_signal, safety_status, safeguarding_status, safeguarding_families,
+             wellness_offer_count, last_wellness_offer_turn, wellness_offer_status, wellness_offer_history, concern_type,
                 created_at, updated_at
     `,
     [entryId, studentNumber, summaryRating, summaryRating === "NEEDS_WORK" ? feedbackReason : null],
@@ -1327,6 +1337,7 @@ router.post("/session/tag-suggestions", asyncHandler(async (req, res) => {
              ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
              student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
              distress_signal, safety_status, safeguarding_status, safeguarding_families,
+             wellness_offer_count, last_wellness_offer_turn, wellness_offer_status, wellness_offer_history, concern_type,
              created_at, updated_at
       from public.journal_entries
       where id = $1 and student_number = $2
@@ -1423,6 +1434,7 @@ router.post("/session/finish", asyncHandler(async (req, res) => {
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
                 distress_signal, safety_status, safeguarding_status, safeguarding_families,
+             wellness_offer_count, last_wellness_offer_turn, wellness_offer_status, wellness_offer_history, concern_type,
                 created_at, updated_at
     `,
     [entryId, studentNumber, primaryConcern, JSON.stringify(finalTags)],
@@ -1516,6 +1528,7 @@ router.post("/session/concerns", asyncHandler(async (req, res) => {
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
                 distress_signal, safety_status, safeguarding_status, safeguarding_families,
+             wellness_offer_count, last_wellness_offer_turn, wellness_offer_status, wellness_offer_history, concern_type,
                 created_at, updated_at
     `,
     [entryId, studentNumber, primaryConcern, JSON.stringify(normalizedTags)],
@@ -1528,6 +1541,34 @@ router.post("/session/concerns", asyncHandler(async (req, res) => {
   return res.json({
     entry: mapEntryRow(result.rows[0]),
     message: "Journal concern saved.",
+  });
+}));
+
+router.post("/session/wellness-decision", asyncHandler(async (req, res) => {
+  const studentNumber = resolveRequestStudentNumber(req);
+  const entryId = String(req.body.entryId || "").trim();
+  const decision = String(req.body.decision || "").trim().toUpperCase();
+  const turn = req.body.turn != null ? Number(req.body.turn) : null;
+
+  if (!studentNumber || !entryId) {
+    return res.status(400).json({ message: "Student number and entry id are required." });
+  }
+  if (decision !== "ACCEPTED" && decision !== "DECLINED") {
+    return res.status(400).json({ message: "Decision must be ACCEPTED or DECLINED." });
+  }
+
+  await recordWellnessOfferDecision({
+    entryId,
+    studentNumber,
+    decision,
+    turn,
+  });
+
+  const fullEntry = await getEntryById(studentNumber, entryId);
+  return res.json({
+    ok: true,
+    entry: mapEntryRow(fullEntry),
+    message: decision === "ACCEPTED" ? "Wellness offer accepted." : "Wellness offer declined.",
   });
 }));
 
@@ -1581,6 +1622,7 @@ router.post("/session/support-response", asyncHandler(async (req, res) => {
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
                 distress_signal, safety_status, safeguarding_status, safeguarding_families,
+             wellness_offer_count, last_wellness_offer_turn, wellness_offer_status, wellness_offer_history, concern_type,
                 created_at, updated_at
     `,
     [entryId, studentNumber, studentAction],
@@ -1661,6 +1703,7 @@ router.post("/message", asyncHandler(async (req, res) => {
                ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
                distress_signal, safety_status, safeguarding_status, safeguarding_families,
+             wellness_offer_count, last_wellness_offer_turn, wellness_offer_status, wellness_offer_history, concern_type,
                created_at, updated_at
         from public.journal_entries
         where id = $1 and student_number = $2
@@ -1709,6 +1752,7 @@ router.post("/message", asyncHandler(async (req, res) => {
                   ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                   student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
                   distress_signal, safety_status, safeguarding_status, safeguarding_families,
+             wellness_offer_count, last_wellness_offer_turn, wellness_offer_status, wellness_offer_history, concern_type,
                   created_at, updated_at
       `,
       [entry.id, aiEnabled],
@@ -1751,9 +1795,39 @@ router.post("/message", asyncHandler(async (req, res) => {
   let safetyStatus = String(entry.safety_status || "NOT_NEEDED");
   let safeguardingStatus = String(entry.safeguarding_status || "NONE");
   let safeguardingFamilies = Array.isArray(entry.safeguarding_families) ? entry.safeguarding_families : [];
+  let analysis = null;
+  let wellnessOfferTriggered = false;
+  let concernType = entry.concern_type || "NONE";
+  let wellnessOfferCount = Number(entry.wellness_offer_count || 0);
+  let lastWellnessOfferTurn = entry.last_wellness_offer_turn == null ? null : Number(entry.last_wellness_offer_turn);
+  let wellnessOfferStatus = String(entry.wellness_offer_status || "NOT_OFFERED");
+  let wellnessOfferHistory = Array.isArray(entry.wellness_offer_history) ? entry.wellness_offer_history : [];
+
+  const currentAssistantTurns = currentMessages.filter((m) => m.role === "assistant").length;
+  const currentMuniTurn = currentAssistantTurns + 1;
+
+  // Pre-assess distress & concern to evaluate offer eligibility accurately
+  const { assessEmotionalDistress } = require("../services/emotional-distress.service");
+  const preDistress = assessEmotionalDistress({
+    latestUserMessage: message,
+    history: currentMessages.map((item) => ({ role: item.role, text: item.text })),
+    previousDistressSignal: entry.distress_signal || "NONE",
+    previousSafetyStatus: entry.safety_status || "NOT_NEEDED",
+    previousConcernType: entry.concern_type || "NONE",
+  });
+
+  const wellnessEligibility = await checkWellnessOfferEligibility({
+    wellnessOfferCount,
+    lastWellnessOfferTurn,
+    currentMuniTurn,
+    distressSignal: preDistress.distress_signal,
+    safetyStatus: preDistress.safety_status,
+    persona: preDistress.persona,
+    concernType: preDistress.concern_type,
+  });
 
   if (aiEnabled) {
-    const analysis = await analyzeJournalConversation({
+    analysis = await analyzeJournalConversation({
       firstName: profile.firstName,
       history: currentMessages.map((item) => ({
         role: item.role,
@@ -1762,7 +1836,23 @@ router.post("/message", asyncHandler(async (req, res) => {
       latestUserMessage: message,
       previousDistressSignal: entry.distress_signal || "NONE",
       previousSafetyStatus: entry.safety_status || "NOT_NEEDED",
+      previousConcernType: entry.concern_type || "NONE",
+      wellnessEligibility,
     });
+
+    concernType = analysis.concern_type || preDistress.concern_type || "NONE";
+    // Only register an offer when Muni actually produced a reply to attach it to.
+    if (analysis.wellness_offer_eligible && analysis.pet_reply) {
+      wellnessOfferTriggered = true;
+      wellnessOfferCount += 1;
+      lastWellnessOfferTurn = currentMuniTurn;
+      wellnessOfferStatus = "OFFERED";
+      wellnessOfferHistory.push({
+        turn: currentMuniTurn,
+        status: "OFFERED",
+        timestamp: new Date().toISOString(),
+      });
+    }
 
     aiReply = analysis.pet_reply;
     aiMessage = analysis.unavailable_reason || null;
@@ -1834,6 +1924,11 @@ router.post("/message", asyncHandler(async (req, res) => {
         safety_status = $9,
         safeguarding_status = $10,
         safeguarding_families = $11::jsonb,
+        wellness_offer_count = $12,
+        last_wellness_offer_turn = $13,
+        wellness_offer_status = $14,
+        wellness_offer_history = $15::jsonb,
+        concern_type = $16,
         updated_at = now()
       where id = $1
       returning id, student_number, entry_date, title, summary, summary_rating, summary_feedback_reason, summary_rated_at,
@@ -1843,9 +1938,10 @@ router.post("/message", asyncHandler(async (req, res) => {
                 ai_enabled, is_finished, finished_at, support_prompt_shown_at, support_response, support_response_at,
                 student_action, student_action_at, counselor_resolved_at, counselor_resolved_by_email, counselor_resolved_by_name,
                 distress_signal, safety_status, safeguarding_status, safeguarding_families,
+             wellness_offer_count, last_wellness_offer_turn, wellness_offer_status, wellness_offer_history, concern_type,
                 created_at, updated_at
     `,
-    [entry.id, encTitle, encSummary, JSON.stringify(encInsights), riskLevel, encAdminFlagReason, aiEnabled, distressSignal, safetyStatus, safeguardingStatus, JSON.stringify(safeguardingFamilies || [])],
+    [entry.id, encTitle, encSummary, JSON.stringify(encInsights), riskLevel, encAdminFlagReason, aiEnabled, distressSignal, safetyStatus, safeguardingStatus, JSON.stringify(safeguardingFamilies || []), wellnessOfferCount, lastWellnessOfferTurn, wellnessOfferStatus, JSON.stringify(wellnessOfferHistory), concernType],
   );
 
   const updatedEntry = updatedEntryResult.rows[0];
@@ -1859,6 +1955,7 @@ router.post("/message", asyncHandler(async (req, res) => {
         ? "Muni is temporarily unavailable. Please try again in a bit."
         : undefined,
     messages,
+    wellnessOfferTriggered,
   });
 }));
 

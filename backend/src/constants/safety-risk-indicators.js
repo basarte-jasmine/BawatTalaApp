@@ -23,7 +23,11 @@ const SAFETY_INDICATOR_CATEGORIES = {
   "POWER_IMBALANCE": "POWER_IMBALANCE",
   "SECRECY": "SECRECY",
   "BOUNDARY_CROSSING": "BOUNDARY_CROSSING",
-  "AI_ATTACHMENT": "AI_ATTACHMENT"
+  "AI_ATTACHMENT": "AI_ATTACHMENT",
+  "PLAN_MEANS_TIMEFRAME": "PLAN_MEANS_TIMEFRAME",
+  "ACTION_TAKEN": "ACTION_TAKEN",
+  "DEESCALATION_REASSURANCE": "DEESCALATION_REASSURANCE",
+  "WORSENING_DISTRESS": "WORSENING_DISTRESS"
 };
 
 const SAFETY_INDICATOR_SEVERITY_TIERS = {
@@ -55,7 +59,11 @@ const SAFETY_INDICATOR_CATEGORY_LABELS = {
   "POWER_IMBALANCE": "Power Imbalance / Authority Gap",
   "SECRECY": "Secrecy Demands",
   "BOUNDARY_CROSSING": "Boundary Crossing",
-  "AI_ATTACHMENT": "AI Attachment / Parasocial"
+  "AI_ATTACHMENT": "AI Attachment / Parasocial",
+  "PLAN_MEANS_TIMEFRAME": "Explicit Suicide Plan / Means / Timeframe",
+  "ACTION_TAKEN": "Suicide Attempt / Harmful Action Taken",
+  "DEESCALATION_REASSURANCE": "De-escalation & Reassurance",
+  "WORSENING_DISTRESS": "Worsening Distress / Overwhelm"
 };
 
 const SAFETY_INDICATOR_CATEGORY_DESCRIPTIONS = {
@@ -79,7 +87,11 @@ const SAFETY_INDICATOR_CATEGORY_DESCRIPTIONS = {
   "POWER_IMBALANCE": "Authority-student or power-gap romantic/sexual dynamics (counselor-configured).",
   "SECRECY": "Pressure to keep relationships or contact secret (counselor-configured).",
   "BOUNDARY_CROSSING": "Inappropriate boundary crossing by an authority figure (counselor-configured).",
-  "AI_ATTACHMENT": "Romantic/parasocial attachment toward the AI companion (counselor-configured)."
+  "AI_ATTACHMENT": "Romantic/parasocial attachment toward the AI companion (counselor-configured).",
+  "PLAN_MEANS_TIMEFRAME": "Explicit combinations of suicidal intent, concrete plan, available means, and near-term timeframe.",
+  "ACTION_TAKEN": "Statements indicating a suicide attempt or harmful self-action has already occurred.",
+  "DEESCALATION_REASSURANCE": "Statements communicating genuine improvement, coping capability, and emotional stabilization.",
+  "WORSENING_DISTRESS": "Statements communicating deepening overwhelm, collapse of coping capacity, or giving up."
 };
 
 const DEFAULT_INDICATORS_BY_CATEGORY = {
@@ -224,7 +236,24 @@ const DEFAULT_INDICATORS_BY_CATEGORY = {
     "i want to quit everything",
     "quit everything",
     "don't want to do this anymore",
-    "dont want to do this anymore"
+    "dont want to do this anymore",
+    "panic",
+    "panicking",
+    "panicked",
+    "panic attack",
+    "nagpapanic",
+    "nag-panic",
+    "nagpanic",
+    "napanic",
+    "anxious",
+    "anxiety",
+    "worried",
+    "worrying",
+    "nervous",
+    "kinakabahan",
+    "kabado",
+    "nag-aalala",
+    "nagwoworry"
   ],
   "CONFIRMATION_SIGNAL": [
     "i mean it",
@@ -368,7 +397,24 @@ const DEFAULT_INDICATORS_BY_CATEGORY = {
     "i can't cope",
     "i cant cope",
     "giving up",
-    "want to give up"
+    "want to give up",
+    "panic",
+    "panicking",
+    "panicked",
+    "panic attack",
+    "nagpapanic",
+    "nag-panic",
+    "nagpanic",
+    "napanic",
+    "anxious",
+    "anxiety",
+    "worried",
+    "worrying",
+    "nervous",
+    "kinakabahan",
+    "kabado",
+    "nag-aalala",
+    "nagwoworry"
   ],
   "CONFIRM_LITERAL": [
     "i mean it",
@@ -460,9 +506,9 @@ function normalizeIndicatorSeverity(value, category = "") {
     return SAFETY_INDICATOR_SEVERITY_TIERS[normalized];
   }
   const normCat = normalizeIndicatorCategory(category);
-  if (normCat === "EXPRESSION_HYPERBOLE" || normCat === "DENY_HYPERBOLE") return "FILTER";
+  if (normCat === "EXPRESSION_HYPERBOLE" || normCat === "DENY_HYPERBOLE" || normCat === "DEESCALATION_REASSURANCE") return "FILTER";
   if (normCat === "CONFIRMATION_SIGNAL" || normCat === "CONFIRM_LITERAL") return "CONFIRMATION";
-  if (normCat === "EMOTIONAL_DISTRESS" || normCat === "DISTRESS" || normCat === "UNSAFE_ENVIRONMENT" || normCat === "SUBSTANCE") return "DISTRESS";
+  if (normCat === "EMOTIONAL_DISTRESS" || normCat === "DISTRESS" || normCat === "UNSAFE_ENVIRONMENT" || normCat === "SUBSTANCE" || normCat === "WORSENING_DISTRESS") return "DISTRESS";
   if (normCat === "CRITICAL_AMBIGUOUS") return "AMBIGUOUS";
   return "CRITICAL";
 }
