@@ -30,19 +30,21 @@ import { loginWithStudentId } from "../lib/backend-api";
 const APP_MAX_WIDTH = 412;
 
 function HeaderBackdrop({ width, height }: { width: number; height: number }) {
-  const sceneWidth = Math.min(width && width > 0 ? width : APP_MAX_WIDTH, APP_MAX_WIDTH);
+  const isDesktopWeb = Platform.OS === "web" && width >= 768;
+  const sceneWidth = isDesktopWeb ? Math.min(width, APP_MAX_WIDTH) : (width && width > 0 ? width : APP_MAX_WIDTH);
   const headerHeight = Math.max(height, 160);
   const cx = sceneWidth * 0.88;
   const cy = -15;
   const rings: number[] = [];
-  for (let r = 24; r <= 380; r += 16) {
+  const maxRadius = Math.max(sceneWidth * 1.5, 580);
+  for (let r = 24; r <= maxRadius; r += 16) {
     rings.push(r);
   }
 
   return (
     <Svg
-      width={sceneWidth}
-      height={headerHeight}
+      width="100%"
+      height="100%"
       style={StyleSheet.absoluteFillObject}
       viewBox={"0 0 " + sceneWidth + " " + headerHeight}
       pointerEvents="none"
@@ -252,8 +254,8 @@ export default function LoginScreen() {
       {...(Platform.OS === "ios" ? { behavior: "padding" as const, keyboardVerticalOffset: 0 } : {})}
     >
       {/* Top Graphic Header */}
-      <View style={[styles.headerContainer, { width: frameWidth, height: headerHeight }]}>
-        <HeaderBackdrop width={frameWidth} height={headerHeight} />
+      <View style={[styles.headerContainer, { width: Platform.OS === "web" && width >= 768 ? frameWidth : "100%", height: headerHeight }]}>
+        <HeaderBackdrop width={Platform.OS === "web" && width >= 768 ? frameWidth : width} height={headerHeight} />
         <SafeAreaView edges={["top"]} style={styles.headerSafeArea}>
           <Pressable
             style={styles.backButton}
