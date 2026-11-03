@@ -2,7 +2,7 @@
   "expo": {
     "name": "Bawat Tala",
     "slug": "bawat-tala",
-    "version": "2.2.4",
+    "version": "2.3.0",
     "orientation": "default",
     "icon": "./assets/images/Logo_BT.png",
     "scheme": "bawattala",
@@ -29,7 +29,7 @@
         "android.permission.POST_NOTIFICATIONS"
       ],
       "allowBackup": false,
-      "versionCode": 7
+      "versionCode": 9
     },
     "web": {
       "output": "static",
