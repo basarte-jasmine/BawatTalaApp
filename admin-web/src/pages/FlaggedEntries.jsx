@@ -31,6 +31,7 @@ import {
   fetchAdminRiskFlags,
   fetchAdminStudentProfile,
   openAdminStudentJournalEntry,
+  emergencyBypassAdminStudentJournalEntry,
   sendAdminStudentNotification,
   updateAdminJournalFlag,
   fetchAdminStudentFollowUps,
@@ -609,7 +610,7 @@ function EntryCard({ entry, isSelected, onSelect }) {
   );
 }
 
-function JournalEntryViewer({ entry, onOpenJournal }) {
+function JournalEntryViewer({ entry, onOpenJournal, onEmergencyBypass }) {
   const visibleMessages = Array.isArray(entry?.messages) ? entry.messages.filter((message) => message.text) : [];
 
   if (visibleMessages.length) {
@@ -655,16 +656,28 @@ function JournalEntryViewer({ entry, onOpenJournal }) {
           <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <span>Journal Lock is on for this student. Conversation stays locked by default — summary and risk details remain available until the Journal Lock PIN is entered.</span>
         </div>
-        {onOpenJournal ? (
-          <button
-            type="button"
-            onClick={() => onOpenJournal(entry)}
-            className="inline-flex items-center gap-2 rounded-xl bg-[#229365] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1b7b54]"
-          >
-            <Lock className="h-4 w-4" />
-            Enter PIN to Unlock Journal
-          </button>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-3">
+          {onOpenJournal ? (
+            <button
+              type="button"
+              onClick={() => onOpenJournal(entry)}
+              className="inline-flex items-center gap-2 rounded-xl bg-[#229365] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1b7b54]"
+            >
+              <Lock className="h-4 w-4" />
+              Enter PIN to Unlock Journal
+            </button>
+          ) : null}
+          {onEmergencyBypass ? (
+            <button
+              type="button"
+              onClick={() => onEmergencyBypass(entry)}
+              className="inline-flex items-center gap-2 rounded-xl border border-red-300 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 shadow-sm transition hover:bg-red-100"
+            >
+              <AlertTriangle className="h-4 w-4 text-red-600" />
+              Emergency Bypass & Unlock
+            </button>
+          ) : null}
+        </div>
       </div>
     );
   }
@@ -745,6 +758,7 @@ function SummaryNotes({ entry }) {
 }
 
 function FlagHistory({ entry }) {
+  if (!entry) return null;
   const items = entry?.flagHistory || entry?.history || [];
 
   function formatRiskName(level) {
@@ -827,6 +841,7 @@ function FlagHistory({ entry }) {
 
 
 function FlagDetails({ entry, isEditing, editState, saving, onChange, onEdit, onCancel, onSave }) {
+  if (!entry) return null;
   const flag = getEntryFlag(entry);
   const actionLabel = getStudentActionLabel(entry);
 
@@ -978,11 +993,13 @@ function ReviewModal({
   onMarkResolved,
   onRemoveFlag,
   onOpenJournal,
+  onEmergencyBypass,
   maskStudentNumbers = false,
   followUpInfo = null,
 }) {
   const [modalInspectTab, setModalInspectTab] = useState("incident");
   if (!student) return null;
+  const safeEntries = Array.isArray(entries) ? entries : [];
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm">
@@ -1003,7 +1020,7 @@ function ReviewModal({
                   </>
                 ) : null}
                 <span>•</span>
-                <span className="font-black text-[#EF4444]">{entries.length} Flagged Entries</span>
+                <span className="font-black text-[#EF4444]">{safeEntries.length} Flagged Entries</span>
               </div>
             </div>
             <button type="button" onClick={onClose} className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition">
@@ -1019,7 +1036,7 @@ function ReviewModal({
           <div className="h-full overflow-y-auto pr-2 space-y-4">
             {loading ? <div className="rounded-xl border border-slate-200 p-4 text-sm text-slate-500">Loading flagged entries...</div> : null}
             {error ? <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
-            {entries.map((entry) => (
+            {safeEntries.map((entry) => (
               <EntryCard
                 key={entry.id}
                 entry={entry}
@@ -1063,7 +1080,7 @@ function ReviewModal({
                   <div className="space-y-6">
                     <div>
                       <h3 className="text-sm font-bold text-slate-800 mb-2.5">Flagged Journal Entry</h3>
-                      <JournalEntryViewer entry={selectedEntry} onOpenJournal={onOpenJournal} />
+                      <JournalEntryViewer entry={selectedEntry} onOpenJournal={onOpenJournal} onEmergencyBypass={onEmergencyBypass} />
                     </div>
 
                     <SummaryNotes entry={selectedEntry} />
@@ -1328,7 +1345,7 @@ function MessageModal({
               </div>
               <p className="text-sm font-bold text-slate-700">No previous messages</p>
               <p className="max-w-sm text-xs font-medium text-slate-500">
-                Send a check-in message to {student.fullName?.split(" ")[0] || "this student"}. They will receive it directly in their app.
+                Send a check-in message to {String(student?.fullName || "").split(" ")[0] || "this student"}. They will receive it directly in their app.
               </p>
             </div>
           )}
@@ -1404,6 +1421,10 @@ export default function FlaggedEntries({ onLogout, session }) {
   const [resolveNote, setResolveNote] = useState("");
   const [removeCandidate, setRemoveCandidate] = useState(null);
   const [journalUnlockTarget, setJournalUnlockTarget] = useState(null);
+  const [emergencyBypassTarget, setEmergencyBypassTarget] = useState(null);
+  const [emergencyBypassReason, setEmergencyBypassReason] = useState("");
+  const [emergencyBypassError, setEmergencyBypassError] = useState("");
+  const [emergencyBypassSaving, setEmergencyBypassSaving] = useState(false);
   const [journalUnlockPin, setJournalUnlockPin] = useState("");
   const [journalUnlockError, setJournalUnlockError] = useState("");
   const [journalUnlockSaving, setJournalUnlockSaving] = useState(false);
@@ -1746,6 +1767,35 @@ export default function FlaggedEntries({ onLogout, session }) {
     }
   }
 
+  async function handleEmergencyBypassJournal() {
+    const studentNumber = selectedStudent?.studentNumber || emergencyBypassTarget?.studentNumber;
+    if (!emergencyBypassTarget?.id || !studentNumber) return;
+    const trimmedReason = String(emergencyBypassReason || "").trim();
+    if (!trimmedReason || trimmedReason.length < 5) {
+      setEmergencyBypassError("Please provide a detailed justification for emergency access.");
+      return;
+    }
+    try {
+      setEmergencyBypassSaving(true);
+      setEmergencyBypassError("");
+      const data = await emergencyBypassAdminStudentJournalEntry(
+        studentNumber,
+        emergencyBypassTarget.id,
+        trimmedReason,
+      );
+      if (data?.entry) {
+        reconcileUpdatedEntry(data.entry);
+      }
+      setEmergencyBypassTarget(null);
+      setEmergencyBypassReason("");
+      setSuccessMessage("Emergency journal access granted and recorded in institutional audit log.");
+    } catch (error) {
+      setEmergencyBypassError(error instanceof Error ? error.message : "Failed to authorize emergency access.");
+    } finally {
+      setEmergencyBypassSaving(false);
+    }
+  }
+
   async function handleOpenStudentJournal() {
     const studentNumber = selectedStudent?.studentNumber || journalUnlockTarget?.studentNumber;
     if (!journalUnlockTarget?.id || !studentNumber) return;
@@ -1946,8 +1996,41 @@ export default function FlaggedEntries({ onLogout, session }) {
           setJournalUnlockError("");
           setJournalUnlockTarget(targetEntry);
         }}
+        onEmergencyBypass={(targetEntry) => {
+          setEmergencyBypassReason("");
+          setEmergencyBypassError("");
+          setEmergencyBypassTarget(targetEntry);
+        }}
         maskStudentNumbers={shouldMaskStudentNumbers}
         followUpInfo={selectedStudent ? followUpsByStudent[selectedStudent.studentNumber] : null}
+      />
+
+      <ConfirmActionModal
+        isOpen={Boolean(emergencyBypassTarget)}
+        onClose={() => {
+          if (emergencyBypassSaving) return;
+          setEmergencyBypassTarget(null);
+          setEmergencyBypassReason("");
+          setEmergencyBypassError("");
+        }}
+        onConfirm={() => void handleEmergencyBypassJournal()}
+        title="Emergency Journal Access"
+        description={
+          emergencyBypassError
+            ? "Unable to authorize emergency access right now. Please ensure the database schema is up-to-date or contact technical support."
+            : "This action provides exceptional access to a student's protected journal for an authorized crisis/emergency. This action and your justification will be permanently recorded in the institutional audit log."
+        }
+        confirmLabel={emergencyBypassSaving ? "Authorizing..." : "Confirm Emergency Access"}
+        confirmTone="rose"
+        inputLabel="Reason for Emergency Access"
+        inputPlaceholder="Describe the student crisis or safety reason requiring emergency journal access..."
+        inputRequired
+        inputType="textarea"
+        inputValue={emergencyBypassReason}
+        onInputChange={(value) => {
+          setEmergencyBypassError("");
+          setEmergencyBypassReason(value);
+        }}
       />
 
       <ConfirmActionModal

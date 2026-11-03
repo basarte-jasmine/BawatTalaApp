@@ -3,6 +3,7 @@ const { query } = require("../config/db");
 const { requireStudentOnlyAuth, resolveStudentNumber } = require("../middleware/auth.middleware");
 const { supabaseAdminClient } = require("../config/supabase");
 const { analyzeJournalConversation, analyzeJournalEntryFinal } = require("../services/journal-ai.service");
+const { encryptField, decryptField } = require("../services/journal-encryption.service");
 const {
   assessSafeguarding,
 } = require("../services/safeguarding-assessor.service");
@@ -221,7 +222,7 @@ async function listEntryMessages(entryId) {
     createdAt: row.created_at,
     id: row.id,
     role: row.role,
-    text: row.message_text,
+    text: decryptField(row.message_text, { table: "journal_entry_messages", column: "message_text", id: entryId, altId: row.id }),
   }));
 }
 
@@ -269,16 +270,28 @@ async function getEntryById(studentNumber, entryId) {
 }
 
 function mapEntryRow(row) {
+  if (!row) return null;
   const concernTags = resolveJournalEntryTags(row);
+  const decryptedTitle = decryptField(row.title, { table: "journal_entries", column: "title", id: row.id });
+  const decryptedSummary = decryptField(row.summary, { table: "journal_entries", column: "summary", id: row.id });
+  const decryptedAdminFlagReason = decryptField(row.admin_flag_reason, { table: "journal_entries", column: "admin_flag_reason", id: row.id });
+
+  let decryptedInsights = [];
+  if (Array.isArray(row.insights)) {
+    decryptedInsights = row.insights.map((insight, idx) =>
+      decryptField(insight, { table: "journal_entries", column: "insights_" + idx, id: row.id })
+    );
+  }
+
   return {
-    adminFlagReason: row.admin_flag_reason || null,
+    adminFlagReason: decryptedAdminFlagReason || null,
     aiEnabled: Boolean(row.ai_enabled),
     concernTags,
     createdAt: row.created_at,
     entryDate: formatEntryDateLabel(row.entry_date),
     finishedAt: row.finished_at || null,
     id: row.id,
-    insights: Array.isArray(row.insights) ? row.insights : [],
+    insights: decryptedInsights,
     isFinished: Boolean(row.is_finished),
     primaryConcern: normalizeConcernValue(row.primary_concern) || concernTags[0] || null,
     riskLevel: String(row.risk_level || "NONE"),
@@ -286,7 +299,7 @@ function mapEntryRow(row) {
     sentimentConfidence: row.sentiment_confidence == null ? null : Number(row.sentiment_confidence),
     sentimentLabel: row.sentiment_label || null,
     sentimentScore: row.sentiment_score == null ? null : Number(row.sentiment_score),
-    summary: row.summary || "",
+    summary: decryptedSummary || "",
     summaryFeedbackReason: row.summary_feedback_reason || null,
     summaryRatedAt: row.summary_rated_at || null,
     summaryRating: row.summary_rating || null,
@@ -302,7 +315,7 @@ function mapEntryRow(row) {
     counselorResolvedAt: row.counselor_resolved_at || null,
     counselorResolvedByEmail: row.counselor_resolved_by_email || null,
     counselorResolvedByName: row.counselor_resolved_by_name || null,
-    title: row.title || "",
+    title: decryptedTitle || "",
     updatedAt: row.updated_at,
   };
 }
@@ -834,15 +847,22 @@ router.get("/entries/recent", asyncHandler(async (req, res) => {
   const totalCount = Number(progressRow.total_count || 0);
 
   return res.json({
-    entries: entriesResult.rows.map((row) => ({
-      createdAt: row.created_at,
-      entryDate: formatEntryDateLabel(row.entry_date),
-      id: row.id,
-      isFinished: Boolean(row.is_finished),
-      preview: row.preview || "",
-      summary: row.summary || "",
-      title: row.title || "",
-    })),
+    entries: entriesResult.rows.map((row) => {
+      const decTitle = decryptField(row.title, { table: "journal_entries", column: "title", id: row.id });
+      const decSummary = decryptField(row.summary, { table: "journal_entries", column: "summary", id: row.id });
+      const rawPreview = row.preview || "";
+      const decPreview = decryptField(rawPreview, { table: "journal_entry_messages", column: "message_text", id: row.id });
+      const preview = decPreview || decSummary || decTitle || "";
+      return {
+        createdAt: row.created_at,
+        entryDate: formatEntryDateLabel(row.entry_date),
+        id: row.id,
+        isFinished: Boolean(row.is_finished),
+        preview,
+        summary: decSummary || "",
+        title: decTitle || "",
+      };
+    }),
     progress: {
       monthlyCount: Number(progressRow.monthly_count || 0),
       todayCount: Number(progressRow.today_count || 0),
@@ -907,16 +927,29 @@ router.get("/entries/by-date", asyncHandler(async (req, res) => {
     pageSize,
     totalCount,
     hasMore: offset + result.rows.length < totalCount,
-    entries: result.rows.map((row) => ({
-      createdAt: row.created_at,
-      entryDate: formatEntryDateLabel(row.entry_date),
-      id: row.id,
-      insights: Array.isArray(row.insights) ? row.insights : [],
-      isFinished: Boolean(row.is_finished),
-      preview: row.preview || "",
-      summary: row.summary || "",
-      title: row.title || "",
-    })),
+    entries: result.rows.map((row) => {
+      const decTitle = decryptField(row.title, { table: "journal_entries", column: "title", id: row.id });
+      const decSummary = decryptField(row.summary, { table: "journal_entries", column: "summary", id: row.id });
+      const rawPreview = row.preview || "";
+      const decPreview = decryptField(rawPreview, { table: "journal_entry_messages", column: "message_text", id: row.id });
+      const preview = decPreview || decSummary || decTitle || "";
+      let decryptedInsights = [];
+      if (Array.isArray(row.insights)) {
+        decryptedInsights = row.insights.map((ins, idx) =>
+          decryptField(ins, { table: "journal_entries", column: "insights_" + idx, id: row.id })
+        );
+      }
+      return {
+        createdAt: row.created_at,
+        entryDate: formatEntryDateLabel(row.entry_date),
+        id: row.id,
+        insights: decryptedInsights,
+        isFinished: Boolean(row.is_finished),
+        preview,
+        summary: decSummary || "",
+        title: decTitle || "",
+      };
+    }),
   });
 }));
 
@@ -1196,6 +1229,12 @@ async function analyzeFinalEntry({ entryId, studentNumber, existingMessages, pre
     console.warn("safeguarding assess (finish) failed", sgErr instanceof Error ? sgErr.message : String(sgErr));
   }
 
+  const encFinalSummary = encryptField(analysis.summary, { table: "journal_entries", column: "summary", id: entryId });
+  const encFinalFlagReason = encryptField(analysis.admin_flag_reason, { table: "journal_entries", column: "admin_flag_reason", id: entryId });
+  const encFinalInsights = (Array.isArray(analysis.insights) ? analysis.insights : []).map((ins, idx) =>
+    encryptField(ins, { table: "journal_entries", column: "insights_" + idx, id: entryId })
+  );
+
   await query(
     `
       update public.journal_entries
@@ -1217,10 +1256,10 @@ async function analyzeFinalEntry({ entryId, studentNumber, existingMessages, pre
     `,
     [
       entryId,
-      analysis.summary,
-      JSON.stringify(analysis.insights),
+      encFinalSummary,
+      JSON.stringify(encFinalInsights),
       analysis.risk_level,
-      analysis.admin_flag_reason,
+      encFinalFlagReason,
       analysis.sentiment_label,
       analysis.sentiment_score,
       analysis.dominant_emotion,
@@ -1677,13 +1716,29 @@ router.post("/message", asyncHandler(async (req, res) => {
     entry = updateAiResult.rows[0];
   }
 
-  await query(
-    `
-      insert into public.journal_entry_messages (entry_id, student_number, role, message_text)
-      values ($1, $2, 'user', $3)
-    `,
-    [entry.id, studentNumber, message],
-  );
+  const userMsgId = (typeof crypto.randomUUID === "function" ? crypto.randomUUID() : null);
+  const encryptedUserMessage = encryptField(message, {
+    table: "journal_entry_messages",
+    column: "message_text",
+    id: entry.id,
+  });
+  if (userMsgId) {
+    await query(
+      `
+        insert into public.journal_entry_messages (id, entry_id, student_number, role, message_text)
+        values ($1, $2, $3, 'user', $4)
+      `,
+      [userMsgId, entry.id, studentNumber, encryptedUserMessage],
+    );
+  } else {
+    await query(
+      `
+        insert into public.journal_entry_messages (entry_id, student_number, role, message_text)
+        values ($1, $2, 'user', $3)
+      `,
+      [entry.id, studentNumber, encryptedUserMessage],
+    );
+  }
 
   const currentMessages = await listEntryMessages(entry.id);
   let aiReply = null;
@@ -1719,13 +1774,29 @@ router.post("/message", asyncHandler(async (req, res) => {
     safetyStatus = analysis.safety_status || "NOT_NEEDED";
 
     if (aiReply) {
-      await query(
-        `
-          insert into public.journal_entry_messages (entry_id, student_number, role, message_text)
-          values ($1, $2, 'assistant', $3)
-        `,
-        [entry.id, studentNumber, aiReply],
-      );
+      const aiMsgId = (typeof crypto.randomUUID === "function" ? crypto.randomUUID() : null);
+      const encryptedAiReply = encryptField(aiReply, {
+        table: "journal_entry_messages",
+        column: "message_text",
+        id: entry.id,
+      });
+      if (aiMsgId) {
+        await query(
+          `
+            insert into public.journal_entry_messages (id, entry_id, student_number, role, message_text)
+            values ($1, $2, $3, 'assistant', $4)
+          `,
+          [aiMsgId, entry.id, studentNumber, encryptedAiReply],
+        );
+      } else {
+        await query(
+          `
+            insert into public.journal_entry_messages (entry_id, student_number, role, message_text)
+            values ($1, $2, 'assistant', $3)
+          `,
+          [entry.id, studentNumber, encryptedAiReply],
+        );
+      }
     }
   }
 
@@ -1741,7 +1812,14 @@ router.post("/message", asyncHandler(async (req, res) => {
     console.warn("safeguarding assess failed", sgErr instanceof Error ? sgErr.message : String(sgErr));
   }
 
-  const title = entry.title || buildEntryTitle(message);
+  const rawTitle = entry.title || buildEntryTitle(message);
+  const encTitle = encryptField(rawTitle, { table: "journal_entries", column: "title", id: entry.id });
+  const encSummary = encryptField(summary, { table: "journal_entries", column: "summary", id: entry.id });
+  const encAdminFlagReason = encryptField(adminFlagReason, { table: "journal_entries", column: "admin_flag_reason", id: entry.id });
+  const encInsights = (Array.isArray(insights) ? insights : []).map((ins, idx) =>
+    encryptField(ins, { table: "journal_entries", column: "insights_" + idx, id: entry.id })
+  );
+
   const updatedEntryResult = await query(
     `
       update public.journal_entries
@@ -1767,7 +1845,7 @@ router.post("/message", asyncHandler(async (req, res) => {
                 distress_signal, safety_status, safeguarding_status, safeguarding_families,
                 created_at, updated_at
     `,
-    [entry.id, title, summary, JSON.stringify(insights), riskLevel, adminFlagReason, aiEnabled, distressSignal, safetyStatus, safeguardingStatus, JSON.stringify(safeguardingFamilies || [])],
+    [entry.id, encTitle, encSummary, JSON.stringify(encInsights), riskLevel, encAdminFlagReason, aiEnabled, distressSignal, safetyStatus, safeguardingStatus, JSON.stringify(safeguardingFamilies || [])],
   );
 
   const updatedEntry = updatedEntryResult.rows[0];

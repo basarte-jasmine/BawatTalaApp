@@ -1422,7 +1422,7 @@ export default function ProfileSettingsScreen() {
     setProfileAwaitingEmailOtp(true);
     setProfileOtpCode("");
     setProfileOtpSeconds(result.resendAfterSeconds ?? 60);
-    setProfileSuccess(result.message || "Verification code sent to your current email address.");
+    setProfileSuccess(result.message || "Verification code sent to your new email address.");
     return true;
   };
 
@@ -2622,7 +2622,7 @@ return (
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Verify Email Address</Text>
             <Text style={styles.modalBody}>
-                Enter the 8-digit code sent to your current email address.
+                Enter the 8-digit code sent to your new email address.
             </Text>
             <OtpCodeInput
               length={OTP_LENGTH}

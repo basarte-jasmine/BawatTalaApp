@@ -15,6 +15,7 @@ const http = require("http");
 const app = require("./app");
 const { ensureDatabaseSchema, ensureStudentProfilePictureSchema } = require("./config/db");
 const { ensureDefaultAdminAccount } = require("./api/admin.routes");
+const { validateEncryptionKeyOnStartup } = require("./services/journal-encryption.service");
 const appointmentRoutes = require("./api/appointment.routes");
 
 const port = Number(process.env.PORT || 4000);
@@ -38,6 +39,7 @@ async function runStartupTasks() {
   }
 
   try {
+    validateEncryptionKeyOnStartup();
     await ensureDatabaseSchema();
     await ensureDefaultAdminAccount();
     if (typeof appointmentRoutes.startPendingAppointmentExpiryWorker === "function") {

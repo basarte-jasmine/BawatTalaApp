@@ -890,9 +890,16 @@ async function getLocalJournalRecord(studentNumber: string, entryId: string) {
     return data.entries[entryId];
   }
   const remapped = Object.values(data.entries).find(
-    (item) => (item.entry as any).localId === entryId,
+    (item) => (item.entry as any).localId === entryId || (item.entry as any).id === entryId,
   );
-  return remapped ?? null;
+  if (remapped) return remapped;
+  // If entryId was remapped, also check if entryId itself has a localId or remote pointer
+  for (const record of Object.values(data.entries)) {
+    if ((record.entry as any).localId === entryId || (record.entry as any).remoteId === entryId) {
+      return record;
+    }
+  }
+  return null;
 }
 
 async function getLocalJournalRecords(studentNumber: string) {
@@ -998,21 +1005,22 @@ async function syncPendingJournalEntries(studentNumber: string) {
           remoteEntry = createResult.data.entry as JournalEntry;
           remoteMessages = createResult.data?.messages ?? [];
 
-          // Remap immediately so a retry cannot forceNew another duplicate.
-          delete data.entries[localEntryId];
-          data.entries[remoteEntry.id] = {
-            entry: {
-              ...remoteEntry,
-              localId: localEntryId,
-              concernTags: record.entry.concernTags,
-              isFinished: record.entry.isFinished,
-              primaryConcern: record.entry.primaryConcern,
-              summary: record.entry.summary || remoteEntry.summary,
-              syncStatus: "pending",
-              title: record.entry.title || remoteEntry.title,
-            },
-            messages: record.messages.length ? record.messages : remoteMessages,
+          // Remap immediately so a retry cannot forceNew another duplicate,
+          // while retaining localEntryId mapped so navigation never encounters a dead-end
+          const mappedEntry: StoredJournalEntry = {
+            ...remoteEntry,
+            localId: localEntryId,
+            concernTags: record.entry.concernTags,
+            isFinished: record.entry.isFinished,
+            primaryConcern: record.entry.primaryConcern,
+            summary: record.entry.summary || remoteEntry.summary,
+            syncStatus: "pending",
+            title: record.entry.title || remoteEntry.title,
           };
+          const workingMessages = record.messages.length ? record.messages : remoteMessages;
+          data.entries[remoteEntry.id] = { entry: mappedEntry, messages: workingMessages };
+          // Keep local alias pointing to the same record
+          data.entries[localEntryId] = { entry: mappedEntry, messages: workingMessages };
           await writeLocalJournalData(studentNumber, data);
         }
 
@@ -3158,12 +3166,14 @@ export async function createJournalSession(payload: {
       messages: data?.messages ?? [],
     };
   } catch {
-    // Offline / queued journals default to solo (no Muni co-journal).
-    const entry = createLocalJournalEntry(payload.studentNumber, false);
+    // Local-first: preserve Muni mode (aiEnabled) even when offline so student intent is not lost
+    const entry = createLocalJournalEntry(payload.studentNumber, Boolean(payload.aiEnabled));
     await upsertLocalJournalRecord(payload.studentNumber, entry, [], "pending");
     return {
       ok: true,
-      message: "Offline journal started. It will sync when your connection returns.",
+      message: payload.aiEnabled
+        ? "Journal started offline. Your entry is saved on this device. Muni replies will resume when you're back online."
+        : "Offline journal started. It will sync when your connection returns.",
       entry,
       messages: [],
     };
@@ -3225,8 +3235,8 @@ export async function sendJournalMessage(payload: {
         messages: [],
       };
     }
-    const entry = existingRecord?.entry ?? createLocalJournalEntry(payload.studentNumber, false);
-    const offlineAiEnabled = existingRecord?.entry?.aiEnabled ?? false;
+    const entry = existingRecord?.entry ?? createLocalJournalEntry(payload.studentNumber, Boolean(payload.aiEnabled));
+    const offlineAiEnabled = Boolean(existingRecord?.entry?.aiEnabled ?? payload.aiEnabled);
     const now = getNowIsoString();
     const messages = [
       ...(submittedMessages.length ? submittedMessages : existingRecord?.messages ?? []),

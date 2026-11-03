@@ -1617,6 +1617,40 @@ async function ensureDatabaseSchema() {
   `);
 
   await pool.query(`
+    create table if not exists public.emergency_journal_audit_logs (
+      id uuid primary key default gen_random_uuid(),
+      admin_id uuid,
+      actor_email text not null,
+      actor_name text not null,
+      actor_role text not null,
+      target_user_id text not null,
+      journal_entry_id uuid not null,
+      action_type text not null default 'EMERGENCY_JOURNAL_BYPASS',
+      reason_text text not null,
+      request_id text,
+      metadata jsonb not null default '{}'::jsonb,
+      created_at timestamptz not null default now()
+    );
+
+    create index if not exists emergency_journal_audit_logs_student_idx
+      on public.emergency_journal_audit_logs (target_user_id, created_at desc);
+
+    create index if not exists emergency_journal_audit_logs_entry_idx
+      on public.emergency_journal_audit_logs (journal_entry_id);
+
+    -- Immutability: prevent UPDATE and DELETE on emergency audit records
+    create or replace function public.prevent_emergency_audit_tampering()
+    returns trigger as $audit_fn$
+    begin
+      raise exception 'Emergency journal audit logs are immutable and cannot be updated or deleted.';
+    end;
+    $audit_fn$ language plpgsql;
+
+    drop trigger if exists trg_prevent_emergency_audit_update on public.emergency_journal_audit_logs;
+    create trigger trg_prevent_emergency_audit_update
+      before update or delete on public.emergency_journal_audit_logs
+      for each row execute function public.prevent_emergency_audit_tampering();
+
     create table if not exists public.admin_activity_logs (
       id uuid primary key default gen_random_uuid(),
       actor_email text,

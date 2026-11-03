@@ -34,6 +34,7 @@ import {
     fetchAdminStudentProfile,
     fetchAdminStudents,
     openAdminStudentJournalEntry,
+  emergencyBypassAdminStudentJournalEntry,
     sendAdminStudentNotification,
 } from "../lib/admin-api";
 import { maskStudentNumber, useAdminPreferences } from "../lib/admin-preferences";
@@ -759,7 +760,7 @@ function RecentEntriesModal({
     </div>
   );
 }
-function EntryConversation({ entry, studentName, onOpenJournal }) {
+function EntryConversation({ entry, studentName, onOpenJournal, onEmergencyBypass }) {
   const messages = Array.isArray(entry.messages) ? entry.messages : [];
   const canViewConversation = canViewEntryConversation(entry);
   if (!canViewConversation) {
@@ -771,16 +772,28 @@ function EntryConversation({ entry, studentName, onOpenJournal }) {
             ? "Journal Lock is on for this student. Conversation stays locked by default - summary and risk details remain available until the Journal Lock PIN is entered."
             : "Journal content is protected for privacy. Summary and risk details remain available."}
         </div>
-        {canUnlock ? (
-          <button
-            type="button"
-            onClick={() => onOpenJournal?.(entry)}
-            className="mt-4 inline-flex items-center gap-2 rounded-lg bg-[#229365] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1b7b54]"
-          >
-            <Lock className="h-4 w-4" />
-            Open Journal
-          </button>
-        ) : null}
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          {canUnlock ? (
+            <button
+              type="button"
+              onClick={() => onOpenJournal?.(entry)}
+              className="inline-flex items-center gap-2 rounded-lg bg-[#229365] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1b7b54]"
+            >
+              <Lock className="h-4 w-4" />
+              Open Journal
+            </button>
+          ) : null}
+          {canUnlock && onEmergencyBypass ? (
+            <button
+              type="button"
+              onClick={() => onEmergencyBypass(entry)}
+              className="inline-flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100"
+            >
+              <AlertTriangle className="h-4 w-4 text-red-600" />
+              Emergency Bypass & Unlock
+            </button>
+          ) : null}
+        </div>
       </div>
     );
   }
@@ -853,6 +866,10 @@ export default function StudentDirectory({ onLogout, session }) {
   const [profileEntryTypeFilter, setProfileEntryTypeFilter] = useState("all");
   const [profileTab, setProfileTab] = useState("overview");
   const [journalUnlockTarget, setJournalUnlockTarget] = useState(null);
+  const [emergencyBypassTarget, setEmergencyBypassTarget] = useState(null);
+  const [emergencyBypassReason, setEmergencyBypassReason] = useState("");
+  const [emergencyBypassError, setEmergencyBypassError] = useState("");
+  const [emergencyBypassSaving, setEmergencyBypassSaving] = useState(false);
   const [journalUnlockPin, setJournalUnlockPin] = useState("");
   const [journalUnlockError, setJournalUnlockError] = useState("");
   const [journalUnlockSaving, setJournalUnlockSaving] = useState(false);
@@ -957,6 +974,42 @@ export default function StudentDirectory({ onLogout, session }) {
       setProfileLoading(false);
     }
   }
+  async function handleEmergencyBypassJournal() {
+    if (!emergencyBypassTarget?.id || !studentProfile?.profile?.studentNumber) return;
+    const trimmedReason = String(emergencyBypassReason || "").trim();
+    if (!trimmedReason || trimmedReason.length < 5) {
+      setEmergencyBypassError("Please provide a detailed justification for emergency access.");
+      return;
+    }
+    try {
+      setEmergencyBypassSaving(true);
+      setEmergencyBypassError("");
+      const data = await emergencyBypassAdminStudentJournalEntry(
+        studentProfile.profile.studentNumber,
+        emergencyBypassTarget.id,
+        trimmedReason,
+      );
+      if (data?.entry) {
+        setStudentProfile((current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            journalEntries: (current.journalEntries || []).map((item) =>
+              item.id === data.entry.id ? data.entry : item,
+            ),
+          };
+        });
+      }
+      setEmergencyBypassTarget(null);
+      setEmergencyBypassReason("");
+      setSuccessMessage("Emergency journal access granted and recorded in institutional audit log.");
+    } catch (error) {
+      setEmergencyBypassError(error instanceof Error ? error.message : "Failed to authorize emergency access.");
+    } finally {
+      setEmergencyBypassSaving(false);
+    }
+  }
+
   async function handleOpenStudentJournal() {
     if (!journalUnlockTarget?.id || !studentProfile?.profile?.studentNumber) return;
     if (String(journalUnlockPin || "").length < 4) {
@@ -1443,6 +1496,11 @@ export default function StudentDirectory({ onLogout, session }) {
                                     <EntryConversation
                                       entry={entry}
                                       studentName={toTitleCase(studentProfile.profile.fullName)}
+                                      onEmergencyBypass={(targetEntry) => {
+                                        setEmergencyBypassReason("");
+                                        setEmergencyBypassError("");
+                                        setEmergencyBypassTarget(targetEntry);
+                                      }}
                                       onOpenJournal={(targetEntry) => {
                                         setJournalUnlockPin("");
                                         setJournalUnlockError("");
@@ -1563,6 +1621,34 @@ export default function StudentDirectory({ onLogout, session }) {
           onConcernChange={setEntryConcern}
           onClose={() => setIsEntriesModalOpen(false)}
         />
+        <ConfirmActionModal
+          isOpen={Boolean(emergencyBypassTarget)}
+          onClose={() => {
+            if (emergencyBypassSaving) return;
+            setEmergencyBypassTarget(null);
+            setEmergencyBypassReason("");
+            setEmergencyBypassError("");
+          }}
+          onConfirm={() => void handleEmergencyBypassJournal()}
+          title="Emergency Journal Access"
+          description={
+          emergencyBypassError
+            ? "Unable to authorize emergency access right now. Please ensure the database schema is up-to-date or contact technical support."
+            : "This action provides exceptional access to a student's protected journal for an authorized crisis/emergency. This action and your justification will be permanently recorded in the institutional audit log."
+        }
+          confirmLabel={emergencyBypassSaving ? "Authorizing..." : "Confirm Emergency Access"}
+          confirmTone="rose"
+          inputLabel="Reason for Emergency Access"
+          inputPlaceholder="Describe the student crisis or safety reason requiring emergency journal access..."
+          inputRequired
+          inputType="textarea"
+          inputValue={emergencyBypassReason}
+          onInputChange={(value) => {
+            setEmergencyBypassError("");
+            setEmergencyBypassReason(value);
+          }}
+        />
+
         <ConfirmActionModal
           isOpen={Boolean(journalUnlockTarget)}
           onClose={() => {

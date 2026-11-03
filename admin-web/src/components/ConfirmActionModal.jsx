@@ -109,7 +109,7 @@ export default function ConfirmActionModal({
                 onChange={(event) => onInputChange?.(event.target.value)}
                 rows={3}
                 placeholder={inputPlaceholder}
-                className={sharedInputClassName}
+                className={sharedInputClassName + " resize-none"}
               />
             ) : (
               <input

@@ -1,8 +1,9 @@
 import { router } from "expo-router";
 import { Image } from "expo-image";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,

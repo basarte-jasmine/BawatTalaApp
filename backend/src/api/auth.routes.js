@@ -13,6 +13,7 @@ const {
 const { requireStudentOnlyAuth, resolveStudentNumber } = require("../middleware/auth.middleware");
 const { createStudentToken } = require("../services/auth-token.service");
 const { sendAuthCodeEmail, sendPasswordResetCodeEmail } = require("../services/auth-email.service");
+const { decryptField } = require("../services/journal-encryption.service");
 const {
   BARANGAY_OPTIONS,
   GENDER_OPTIONS,
@@ -1534,13 +1535,13 @@ router.post("/profile/email-change/send-code", requireStudentOnlyAuth, async (re
     return res.status(409).json({ message: "This email is already registered." });
   }
 
-  const sendResult = await sendVerificationCodeEmail(
-    currentEmail,
-    `student email change current [${studentNumber}]`,
+  const sendResult = await sendNewEmailChangeCode(
+    newEmail,
+    `student email change new [${studentNumber}]`,
     {
-      subject: "Confirm your email change",
-      heading: "Confirm Email Change",
-      intro: "We received a request to change the email on your Bawat Tala account. Use the verification code below to confirm this request:",
+      subject: "Verify your new email",
+      heading: "Verify New Email",
+      intro: "Use the verification code below to confirm your new Bawat Tala email address:",
       ignoreText: "If you did not request an email change, you can safely ignore this email.",
     },
   );
@@ -1553,14 +1554,14 @@ router.post("/profile/email-change/send-code", requireStudentOnlyAuth, async (re
     studentNumber,
     currentEmail,
     newEmail,
-    currentVerifiedAt: 0,
+    newEmailVerifyType: sendResult.verifyType || "recovery",
     otpExpiresAt: now + OTP_VALIDITY_MS,
     resendAvailableAt: now + OTP_COOLDOWN_MS,
   });
 
   return res.json({
-    message: "Verification code sent to your current email.",
-    stage: "current-email",
+    message: "Verification code sent to your new email.",
+    stage: "new-email",
     resendAfterSeconds: Math.ceil(OTP_COOLDOWN_MS / 1000),
   });
 });
@@ -1580,49 +1581,32 @@ router.post("/profile/email-change/resend-code", requireStudentOnlyAuth, async (
     return res.status(429).json({ message: `Please wait ${remaining}s before resending.` });
   }
 
-  if (session.currentVerifiedAt) {
-    const sendResult = await sendNewEmailChangeCode(
-      session.newEmail,
-      `student email change new resend [${studentNumber}]`,
-      {
-        subject: "Verify your new email",
-        heading: "Verify New Email",
-        intro: "Use the verification code below to confirm your new Bawat Tala email address:",
-        ignoreText: "If you did not request an email change, you can safely ignore this email.",
-      },
-    );
-    if (!sendResult.ok) {
-      return res.status(400).json({ message: sendResult.message || "Failed to send verification code." });
-    }
-    session.newEmailVerifyType = sendResult.verifyType || "email";
-  } else {
-    const sendResult = await sendVerificationCodeEmail(
-      session.currentEmail,
-      `student email change current resend [${studentNumber}]`,
-      {
-        subject: "Confirm your email change",
-        heading: "Confirm Email Change",
-        intro: "We received a request to change the email on your Bawat Tala account. Use the verification code below to confirm this request:",
-        ignoreText: "If you did not request an email change, you can safely ignore this email.",
-      },
-    );
-    if (!sendResult.ok) {
-      return res.status(400).json({ message: sendResult.message || "Failed to send verification code." });
-    }
+  const sendResult = await sendNewEmailChangeCode(
+    session.newEmail,
+    `student email change new resend [${studentNumber}]`,
+    {
+      subject: "Verify your new email",
+      heading: "Verify New Email",
+      intro: "Use the verification code below to confirm your new Bawat Tala email address:",
+      ignoreText: "If you did not request an email change, you can safely ignore this email.",
+    },
+  );
+  if (!sendResult.ok) {
+    return res.status(400).json({ message: sendResult.message || "Failed to send verification code." });
   }
+  const nextVerifyType = sendResult.verifyType || session.newEmailVerifyType || "recovery";
 
   const now = Date.now();
   setEmailChangeSession(studentNumber, {
     ...session,
+    newEmailVerifyType: nextVerifyType,
     otpExpiresAt: now + OTP_VALIDITY_MS,
     resendAvailableAt: now + OTP_COOLDOWN_MS,
   });
 
   return res.json({
-    message: session.currentVerifiedAt
-      ? "Verification code sent to your new email."
-      : "Verification code sent to your current email.",
-    stage: session.currentVerifiedAt ? "new-email" : "current-email",
+    message: "Verification code sent to your new email.",
+    stage: "new-email",
     resendAfterSeconds: Math.ceil(OTP_COOLDOWN_MS / 1000),
   });
 });
@@ -1638,12 +1622,6 @@ router.post("/profile/email-change/verify-code", requireStudentOnlyAuth, async (
   if (!session) {
     return res.status(400).json({ message: "Please request an email change first." });
   }
-  if (session.currentVerifiedAt) {
-    return res.status(400).json({
-      message: "Current email is already verified. Enter the code sent to your new email.",
-      stage: "new-email",
-    });
-  }
   if (Date.now() > session.otpExpiresAt) {
     clearEmailChangeSession(studentNumber);
     return res.status(400).json({
@@ -1651,12 +1629,12 @@ router.post("/profile/email-change/verify-code", requireStudentOnlyAuth, async (
     });
   }
 
-  const { error } = await supabaseAuthClient.auth.verifyOtp({
-    email: session.currentEmail,
+  const verifyResult = await verifyEmailChangeOtp(
+    session.newEmail,
     token,
-    type: "recovery",
-  });
-  if (error) {
+    session.newEmailVerifyType || "recovery",
+  );
+  if (!verifyResult.ok) {
     return res.status(400).json({
       message: "The code is invalid. Please check the latest email code and try again.",
     });
@@ -3430,14 +3408,21 @@ router.get("/activity", requireStudentOnlyAuth, async (req, res) => {
       : null;
 
     return res.json({
-      entries: entriesResult.rows.map((row) => ({
-        id: row.id,
-        title: row.title || "",
-        preview: row.preview || "",
-        summary: row.summary || "",
-        createdAt: row.created_at,
-        entryDate: formatEntryDateLabel(row.entry_date),
-      })),
+      entries: entriesResult.rows.map((row) => {
+        const decTitle = decryptField(row.title, { table: "journal_entries", column: "title", id: row.id });
+        const decSummary = decryptField(row.summary, { table: "journal_entries", column: "summary", id: row.id });
+        const rawPreview = row.preview || "";
+        const decPreview = decryptField(rawPreview, { table: "journal_entry_messages", column: "message_text", id: row.id });
+        const preview = decPreview || decSummary || decTitle || "";
+        return {
+          id: row.id,
+          title: decTitle || "",
+          preview,
+          summary: decSummary || "",
+          createdAt: row.created_at,
+          entryDate: formatEntryDateLabel(row.entry_date),
+        };
+      }),
       totalCount: Number(entryCountResult.rows[0]?.total_count || 0),
       notifications: notificationsResult.rows.map((row) => {
         const metadata = row.metadata || {};

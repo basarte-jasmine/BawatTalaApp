@@ -282,10 +282,9 @@ export default function JournalEntryViewScreen() {
   }, [loadEntry, syncNow]);
 
   const visibleMessages = useMemo(() => {
-    const nonEmptyMessages = messages.filter((message) => String(message.text || "").trim());
-    const withoutSyntheticPreviews = nonEmptyMessages.filter((message) => !isSyntheticSummaryPreview(message, entry));
-    return withoutSyntheticPreviews.length > 0 ? withoutSyntheticPreviews : nonEmptyMessages;
-  }, [entry, messages]);
+    // Show all messages with text in chronological conversation order
+    return messages.filter((message) => String(message.text || "").trim());
+  }, [messages]);
   const fallbackParagraphs = useMemo(() => getEntryFallbackParagraphs(entry), [entry]);
   const messageParagraphs = useMemo(() => getUserParagraphs(visibleMessages), [visibleMessages]);
   const paragraphs = messageParagraphs.length > 0 ? messageParagraphs : fallbackParagraphs;

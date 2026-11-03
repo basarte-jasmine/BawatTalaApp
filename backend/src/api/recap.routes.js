@@ -2,6 +2,7 @@ const express = require("express");
 const { query } = require("../config/db");
 const { requireStudentOnlyAuth, resolveStudentNumber } = require("../middleware/auth.middleware");
 const { normalizeEmotionId, getEmotionLabel, resolveRepresentativeEmotion } = require("../constants/emotions");
+const { decryptField } = require("../services/journal-encryption.service");
 
 const router = express.Router();
 router.use(requireStudentOnlyAuth);
@@ -401,7 +402,11 @@ router.get("/weekly", async (req, res) => {
       .map(([id, count]) => ({ id, count }));
 
     // Extract true journal themes and summaries
-    const journalSummaries = journalsRes.rows.map((j) => j.summary || j.title).filter(Boolean);
+    const journalSummaries = journalsRes.rows.map((j) => {
+      const decTitle = decryptField(j.title, { table: "journal_entries", column: "title", id: j.id });
+      const decSummary = decryptField(j.summary, { table: "journal_entries", column: "summary", id: j.id });
+      return decSummary || decTitle;
+    }).filter(Boolean);
     const tagMap = {};
     journalsRes.rows.forEach((j) => {
       if (j.primary_concern) tagMap[j.primary_concern] = (tagMap[j.primary_concern] || 0) + 1;

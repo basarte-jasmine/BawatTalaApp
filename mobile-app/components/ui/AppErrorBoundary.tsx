@@ -40,7 +40,7 @@ export class AppErrorBoundary extends React.Component<Props, State> {
           <View style={styles.card}>
             <Text style={styles.title}>Something went wrong</Text>
             <Text style={styles.body}>
-              {this.state.error?.message ? String(this.state.error.message) : "This screen hit an unexpected error. Try again to continue using Bawat Tala."}
+              The screen hit an unexpected error, please try again later.
             </Text>
             <View style={styles.buttonRow}>
               <Pressable style={[styles.button, styles.secondaryButton]} onPress={this.handleGoHome}>

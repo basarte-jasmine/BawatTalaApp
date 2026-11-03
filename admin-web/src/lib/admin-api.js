@@ -404,6 +404,13 @@ export async function fetchAdminStudentProfile(studentNumber) {
   return request(`/api/admin/students/${encodeURIComponent(studentNumber)}`);
 }
 
+export async function emergencyBypassAdminStudentJournalEntry(studentNumber, entryId, reason) {
+  return request(`/api/admin/students/${encodeURIComponent(studentNumber)}/journal-entries/${encodeURIComponent(entryId)}/emergency-open`, {
+    method: "POST",
+    body: JSON.stringify({ reason: String(reason || "").trim() }),
+  });
+}
+
 export async function openAdminStudentJournalEntry(studentNumber, entryId, pin) {
   return request(`/api/admin/students/${encodeURIComponent(studentNumber)}/journal-entries/${encodeURIComponent(entryId)}/open`, {
     method: "POST",

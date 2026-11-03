@@ -89,6 +89,7 @@ const {
 const { getAuthenticatedAdmin, requireAdminAuth, requireRoles } = require("../middleware/auth.middleware");
 const { mapFeedbackRow } = require("./feedback.routes");
 const { sendAuthCodeEmail, sendPasswordResetCodeEmail } = require("../services/auth-email.service");
+const { decryptField, encryptField } = require("../services/journal-encryption.service");
 const {
   createAdminToken,
   createOAuthState,
@@ -4998,6 +4999,195 @@ router.get("/students/recent-entries", async (req, res) => {
     .sort((a, b) => a.localeCompare(b));
 
   return res.json({ entries, concerns });
+});
+
+router.post("/students/:studentNumber/journal-entries/:entryId/emergency-open", async (req, res) => {
+  const studentNumber = normalizeCompactSpaces(req.params.studentNumber || "");
+  const entryId = normalizeCompactSpaces(req.params.entryId || "");
+  const reasonText = String(req.body?.reason || "").trim();
+
+  // 1. Authenticate & Authorize requester role (counselor or superadmin/HEAD_COUNSELOR)
+  const admin = req.admin;
+  if (!admin?.id || !admin?.email) {
+    return res.status(401).json({ message: "Admin authentication required." });
+  }
+
+  const role = String(admin.role || "").toUpperCase();
+  if (role !== "COUNSELOR" && role !== "HEAD_COUNSELOR") {
+    return res.status(403).json({ message: "Only counselors and superadmins can authorize emergency journal access." });
+  }
+
+  // 2. Validate parameters
+  if (!studentNumber) {
+    return res.status(400).json({ message: "Student number is required." });
+  }
+  if (!entryId) {
+    return res.status(400).json({ message: "Journal entry id is required." });
+  }
+  if (!reasonText || reasonText.length < 5) {
+    return res.status(400).json({ message: "A detailed justification reason is mandatory for emergency journal access." });
+  }
+  if (reasonText.length > 2000) {
+    return res.status(400).json({ message: "Reason exceeds maximum length of 2000 characters." });
+  }
+
+  // 3. Verify student exists
+  const studentCheck = await query(
+    "select student_number from public.student_profiles where student_number = $1 limit 1",
+    [studentNumber],
+  );
+  if (studentCheck.rowCount === 0) {
+    return res.status(404).json({ message: "Student profile not found." });
+  }
+
+  // 4. Query entry and messages
+  const entryResult = await query(
+    `
+      select
+        je.id,
+        je.entry_date,
+        je.title,
+        je.summary,
+        je.insights,
+        je.risk_level,
+        je.admin_flag_reason,
+        je.primary_concern,
+        je.concern_tags,
+        je.support_response,
+        je.support_response_at,
+        je.created_at,
+        je.updated_at,
+        coalesce(
+          jsonb_agg(
+            jsonb_build_object(
+              'id', jem.id,
+              'role', jem.role,
+              'text', jem.message_text,
+              'createdAt', jem.created_at
+            )
+            order by jem.created_at asc, jem.id asc
+          ) filter (where jem.id is not null),
+          '[]'::jsonb
+        ) as messages
+      from public.journal_entries je
+      left join public.journal_entry_messages jem on jem.entry_id = je.id
+      where je.id = $1
+        and je.student_number = $2
+        and (je.deleted_by_student_at is null OR upper(coalesce(je.risk_level,'NONE')) in ('HIGH','CRITICAL'))
+      group by je.id
+      limit 1
+    `,
+    [entryId, studentNumber],
+  );
+
+  if (entryResult.rowCount === 0) {
+    return res.status(404).json({ message: "Journal entry not found." });
+  }
+
+  const row = entryResult.rows[0];
+  const requestId = req.headers["x-request-id"] || (typeof crypto.randomUUID === "function" ? crypto.randomUUID() : String(Date.now()));
+
+  // 5. Fail closed: Record immutable emergency audit log FIRST before granting any decrypted content
+  try {
+    await query(
+      `
+        insert into public.emergency_journal_audit_logs (
+          admin_id,
+          actor_email,
+          actor_name,
+          actor_role,
+          target_user_id,
+          journal_entry_id,
+          action_type,
+          reason_text,
+          request_id,
+          metadata
+        ) values ($1, $2, $3, $4, $5, $6, 'EMERGENCY_JOURNAL_BYPASS', $7, $8, $9::jsonb)
+      `,
+      [
+        admin.id,
+        admin.email,
+        admin.fullName || admin.email,
+        role,
+        studentNumber,
+        row.id,
+        reasonText,
+        requestId,
+        JSON.stringify({ ip: req.ip, userAgent: req.headers["user-agent"] || "" }),
+      ],
+    );
+
+    // Also record standard admin activity log
+    await writeAdminActivityLog({
+      actionType: "EMERGENCY_JOURNAL_BYPASS",
+      actorEmail: admin.email,
+      actorName: admin.fullName || admin.email,
+      actorRole: role,
+      entityType: "journal_entry",
+      title: `${admin.fullName || "Counselor"} emergency bypassed journal PIN`,
+      description: `Reason: ${reasonText.slice(0, 100)}`,
+      metadata: { studentNumber, entryId: row.id, requestId },
+    });
+  } catch (auditError) {
+    console.error("FATAL: Failed to write emergency audit log. Denying access:", auditError?.message || auditError);
+    return res.status(500).json({ message: "Emergency access denied: security audit recording failed." });
+  }
+
+  // 6. Decrypt journal content through trusted backend service (no PIN modification)
+  const decryptedTitle = decryptField(row.title, { table: "journal_entries", column: "title", id: row.id });
+  const decryptedSummary = decryptField(row.summary, { table: "journal_entries", column: "summary", id: row.id });
+  const decryptedAdminFlagReason = decryptField(row.admin_flag_reason, { table: "journal_entries", column: "admin_flag_reason", id: row.id });
+
+  let decryptedInsights = [];
+  if (Array.isArray(row.insights)) {
+    decryptedInsights = row.insights.map((insight, idx) =>
+      decryptField(insight, { table: "journal_entries", column: "insights_" + idx, id: row.id })
+    );
+  }
+
+  const rawMessages = Array.isArray(row.messages) ? row.messages : [];
+  const messages = rawMessages.map((m) => {
+    const serialized = serializeAdminJournalMessage(m);
+    return {
+      ...serialized,
+      text: decryptField(serialized.text, { table: "journal_entry_messages", column: "message_text", id: row.id }),
+    };
+  });
+
+  const isAiAssisted = messages.some((m) => String(m.role || "").toLowerCase() === "assistant");
+  const riskLevel = String(row.risk_level || "NONE").toUpperCase();
+
+  return res.json({
+    emergencyAccessGranted: true,
+    requestId,
+    entry: {
+      mode: isAiAssisted ? "ai" : "manual",
+      isAiAssisted,
+      adminFlagReason: decryptedAdminFlagReason || null,
+      canOpenJournal: false,
+      canViewConversation: true,
+      concernTags: getJournalTagsForAdmin(row),
+      conversationHidden: false,
+      createdAt: row.created_at,
+      entryDate: normalizeDateValue(row.entry_date),
+      id: row.id,
+      insights: decryptedInsights,
+      journalLockEnabled: true,
+      journalLockRequired: false,
+      journalUnlocked: true,
+      messageCount: messages.length,
+      messages,
+      primaryConcern: row.primary_concern || null,
+      riskLevel,
+      studentNumber,
+      summary: decryptedSummary || "",
+      supportResponse: row.support_response || null,
+      supportResponseAt: row.support_response_at || null,
+      title: decryptedTitle || "",
+      updatedAt: row.updated_at,
+    },
+    message: "Emergency access authorized and recorded in institutional audit log.",
+  });
 });
 
 router.post("/students/:studentNumber/journal-entries/:entryId/open", async (req, res) => {

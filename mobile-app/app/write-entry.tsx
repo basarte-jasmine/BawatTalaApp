@@ -338,11 +338,9 @@ export default function WriteEntryScreen() {
 
     if (mode === "new" || mode === "new-muni" || mode === "new-solo") {
       if (targetAiEnabled) {
-        const reachable = await isBackendReachable();
+        const reachable = await isBackendReachable(5000);
         if (!reachable) {
-          setShowOfflineSwitchModal(true);
-          setIsLoading(false);
-          return;
+          setStatusMessage("Muni can't reply right now. Your entry is saved on this device.");
         }
       }
 
