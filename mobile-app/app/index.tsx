@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import { Image } from "expo-image";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -29,105 +29,112 @@ function ZenSanctuaryBackdrop({
 }) {
   const isDesktopWeb = Platform.OS === "web" && width >= 768;
   const sceneWidth = isDesktopWeb ? Math.min(width, APP_MAX_WIDTH) : (width && width > 0 ? width : APP_MAX_WIDTH);
-  const sceneHeight = Math.max(height && height > 0 ? height : 760, 680);
+  const sceneHeight = height && height > 0 ? height : 760;
 
   return (
-    <Svg
-      width="100%"
-      height="100%"
-      style={StyleSheet.absoluteFillObject}
-      viewBox={"0 0 " + sceneWidth + " " + sceneHeight}
+    <View
+      style={[
+        StyleSheet.absoluteFillObject,
+        isDesktopWeb && { width: sceneWidth, alignSelf: "center", overflow: "hidden" },
+      ]}
+      pointerEvents="none"
     >
-      <Defs>
-        <LinearGradient id="zenLivelySky" x1="0" y1="0" x2="1" y2="1">
-          <Stop offset="0" stopColor="#5EBFA4" />
-          <Stop offset="0.42" stopColor="#7CD49F" />
-          <Stop offset="0.82" stopColor="#C8E8B6" />
-          <Stop offset="1" stopColor="#FCE3A1" />
-        </LinearGradient>
-        <LinearGradient id="softWave" x1="0" y1="0" x2="1" y2="0">
-          <Stop offset="0" stopColor="rgba(255, 255, 255, 0.08)" />
-          <Stop offset="0.5" stopColor="rgba(255, 255, 255, 0.22)" />
-          <Stop offset="1" stopColor="rgba(255, 255, 255, 0.06)" />
-        </LinearGradient>
-      </Defs>
+      <Svg
+        width="100%"
+        height="100%"
+        viewBox={"0 0 " + sceneWidth + " " + sceneHeight}
+      >
+        <Defs>
+          <LinearGradient id="zenLivelySky" x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0" stopColor="#5EBFA4" />
+            <Stop offset="0.42" stopColor="#7CD49F" />
+            <Stop offset="0.82" stopColor="#C8E8B6" />
+            <Stop offset="1" stopColor="#FCE3A1" />
+          </LinearGradient>
+          <LinearGradient id="softWave" x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0" stopColor="rgba(255, 255, 255, 0.08)" />
+            <Stop offset="0.5" stopColor="rgba(255, 255, 255, 0.22)" />
+            <Stop offset="1" stopColor="rgba(255, 255, 255, 0.06)" />
+          </LinearGradient>
+        </Defs>
 
-      {/* Sky Base */}
-      <Rect width={sceneWidth} height={sceneHeight} fill="url(#zenLivelySky)" />
+        {/* Sky Base */}
+        <Rect width={sceneWidth} height={sceneHeight} fill="url(#zenLivelySky)" />
 
-      {/* Flowing Organic Swirl Waves */}
-      <Path
-        d={"M -20 180 C " + (sceneWidth * 0.3) + " 80, " + (sceneWidth * 0.6) + " 240, " + (sceneWidth + 40) + " 140 L " + (sceneWidth + 40) + " " + sceneHeight + " L -20 " + sceneHeight + " Z"}
-        fill="url(#softWave)"
-      />
-      <Path
-        d={"M -40 280 C " + (sceneWidth * 0.35) + " 180, " + (sceneWidth * 0.7) + " 310, " + (sceneWidth + 40) + " 220 L " + (sceneWidth + 40) + " " + sceneHeight + " L -40 " + sceneHeight + " Z"}
-        fill="rgba(255, 255, 255, 0.12)"
-      />
+        {/* Flowing Organic Swirl Waves */}
+        <Path
+          d={"M -20 180 C " + (sceneWidth * 0.3) + " 80, " + (sceneWidth * 0.6) + " 240, " + (sceneWidth + 40) + " 140 L " + (sceneWidth + 40) + " " + sceneHeight + " L -20 " + sceneHeight + " Z"}
+          fill="url(#softWave)"
+        />
+        <Path
+          d={"M -40 280 C " + (sceneWidth * 0.35) + " 180, " + (sceneWidth * 0.7) + " 310, " + (sceneWidth + 40) + " 220 L " + (sceneWidth + 40) + " " + sceneHeight + " L -40 " + sceneHeight + " Z"}
+          fill="rgba(255, 255, 255, 0.12)"
+        />
 
-      {/* Zen Spiral Swirl Contour (Pic 2 motif in bright white) */}
-      <Path
-        d={"M " + (sceneWidth * 0.14) + " 260 C " + (sceneWidth * 0.02) + " 220, " + (sceneWidth * 0.08) + " 160, " + (sceneWidth * 0.28) + " 165 C " + (sceneWidth * 0.44) + " 170, " + (sceneWidth * 0.45) + " 230, " + (sceneWidth * 0.32) + " 245 C " + (sceneWidth * 0.22) + " 255, " + (sceneWidth * 0.18) + " 235, " + (sceneWidth * 0.25) + " 215 C " + (sceneWidth * 0.3) + " 200, " + (sceneWidth * 0.38) + " 205, " + (sceneWidth * 0.35) + " 220"}
-        stroke="rgba(255, 255, 255, 0.35)"
-        strokeWidth="3"
-        strokeLinecap="round"
-        fill="none"
-      />
+        {/* Zen Spiral Swirl Contour (Pic 2 motif in bright white) */}
+        <Path
+          d={"M " + (sceneWidth * 0.14) + " 260 C " + (sceneWidth * 0.02) + " 220, " + (sceneWidth * 0.08) + " 160, " + (sceneWidth * 0.28) + " 165 C " + (sceneWidth * 0.44) + " 170, " + (sceneWidth * 0.45) + " 230, " + (sceneWidth * 0.32) + " 245 C " + (sceneWidth * 0.22) + " 255, " + (sceneWidth * 0.18) + " 235, " + (sceneWidth * 0.25) + " 215 C " + (sceneWidth * 0.3) + " 200, " + (sceneWidth * 0.38) + " 205, " + (sceneWidth * 0.35) + " 220"}
+          stroke="rgba(255, 255, 255, 0.35)"
+          strokeWidth="3"
+          strokeLinecap="round"
+          fill="none"
+        />
 
-      {/* Floating Tala Sparkles */}
-      <Path
-        d={"M " + (sceneWidth * 0.82) + " 65 L " + (sceneWidth * 0.835) + " 73 L " + (sceneWidth * 0.86) + " 75 L " + (sceneWidth * 0.835) + " 77 L " + (sceneWidth * 0.82) + " 85 L " + (sceneWidth * 0.805) + " 77 L " + (sceneWidth * 0.78) + " 75 L " + (sceneWidth * 0.805) + " 73 Z"}
-        fill="#F59E0B"
-        opacity="0.7"
-      />
-      <Path
-        d={"M " + (sceneWidth * 0.18) + " 115 L " + (sceneWidth * 0.19) + " 120 L " + (sceneWidth * 0.21) + " 121 L " + (sceneWidth * 0.19) + " 122 L " + (sceneWidth * 0.18) + " 127 L " + (sceneWidth * 0.17) + " 122 L " + (sceneWidth * 0.15) + " 121 L " + (sceneWidth * 0.17) + " 120 Z"}
-        fill="#FFFFFF"
-        opacity="0.8"
-      />
+        {/* Floating Tala Sparkles */}
+        <Path
+          d={"M " + (sceneWidth * 0.82) + " 65 L " + (sceneWidth * 0.835) + " 73 L " + (sceneWidth * 0.86) + " 75 L " + (sceneWidth * 0.835) + " 77 L " + (sceneWidth * 0.82) + " 85 L " + (sceneWidth * 0.805) + " 77 L " + (sceneWidth * 0.78) + " 75 L " + (sceneWidth * 0.805) + " 73 Z"}
+          fill="#F59E0B"
+          opacity="0.7"
+        />
+        <Path
+          d={"M " + (sceneWidth * 0.18) + " 115 L " + (sceneWidth * 0.19) + " 120 L " + (sceneWidth * 0.21) + " 121 L " + (sceneWidth * 0.19) + " 122 L " + (sceneWidth * 0.18) + " 127 L " + (sceneWidth * 0.17) + " 122 L " + (sceneWidth * 0.15) + " 121 L " + (sceneWidth * 0.17) + " 120 Z"}
+          fill="#FFFFFF"
+          opacity="0.8"
+        />
 
-      {/* White Sanctuary Arched Mound */}
-      <Path
-        d={"M -10 " + domeY + " C " + (sceneWidth * 0.24) + " " + (domeY - 72) + ", " + (sceneWidth * 0.76) + " " + (domeY - 72) + ", " + (sceneWidth + 10) + " " + domeY + " L " + (sceneWidth + 10) + " " + sceneHeight + " L -10 " + sceneHeight + " Z"}
-        fill="#FFFFFF"
-      />
+        {/* White Sanctuary Arched Mound */}
+        <Path
+          d={"M -10 " + domeY + " C " + (sceneWidth * 0.24) + " " + (domeY - 72) + ", " + (sceneWidth * 0.76) + " " + (domeY - 72) + ", " + (sceneWidth + 10) + " " + domeY + " L " + (sceneWidth + 10) + " " + sceneHeight + " L -10 " + sceneHeight + " Z"}
+          fill="#FFFFFF"
+        />
 
-      {/* Botanical Garden Flowers around character base */}
-      {/* Left Red Flower */}
-      <G>
-        <Path d={"M " + (sceneWidth * 0.18) + " " + (domeY + 32) + " Q " + (sceneWidth * 0.17) + " " + (domeY + 12) + " " + (sceneWidth * 0.19) + " " + (domeY - 6)} stroke="#2D7D5A" strokeWidth="2.5" fill="none" />
-        <Path d={"M " + (sceneWidth * 0.18) + " " + (domeY + 14) + " Q " + (sceneWidth * 0.14) + " " + (domeY + 10) + " " + (sceneWidth * 0.15) + " " + (domeY + 6)} stroke="#2D7D5A" strokeWidth="2" fill="none" />
-        <Circle cx={sceneWidth * 0.19} cy={domeY - 6} r={11} fill="#EF4444" />
-        <Circle cx={sceneWidth * 0.19} cy={domeY - 6} r={5} fill="#FCD34D" />
-      </G>
+        {/* Botanical Garden Flowers around character base */}
+        {/* Left Red Flower */}
+        <G>
+          <Path d={"M " + (sceneWidth * 0.18) + " " + (domeY + 32) + " Q " + (sceneWidth * 0.17) + " " + (domeY + 12) + " " + (sceneWidth * 0.19) + " " + (domeY - 6)} stroke="#2D7D5A" strokeWidth="2.5" fill="none" />
+          <Path d={"M " + (sceneWidth * 0.18) + " " + (domeY + 14) + " Q " + (sceneWidth * 0.14) + " " + (domeY + 10) + " " + (sceneWidth * 0.15) + " " + (domeY + 6)} stroke="#2D7D5A" strokeWidth="2" fill="none" />
+          <Circle cx={sceneWidth * 0.19} cy={domeY - 6} r={11} fill="#EF4444" />
+          <Circle cx={sceneWidth * 0.19} cy={domeY - 6} r={5} fill="#FCD34D" />
+        </G>
 
-      {/* Left Coral Blossom */}
-      <G>
-        <Path d={"M " + (sceneWidth * 0.28) + " " + (domeY + 28) + " Q " + (sceneWidth * 0.29) + " " + (domeY + 14) + " " + (sceneWidth * 0.28) + " " + (domeY + 2)} stroke="#2D7D5A" strokeWidth="2" fill="none" />
-        <Circle cx={sceneWidth * 0.28} cy={domeY + 2} r={8} fill="#F87171" />
-        <Circle cx={sceneWidth * 0.28} cy={domeY + 2} r={3.5} fill="#FFFBEB" />
-      </G>
+        {/* Left Coral Blossom */}
+        <G>
+          <Path d={"M " + (sceneWidth * 0.28) + " " + (domeY + 28) + " Q " + (sceneWidth * 0.29) + " " + (domeY + 14) + " " + (sceneWidth * 0.28) + " " + (domeY + 2)} stroke="#2D7D5A" strokeWidth="2" fill="none" />
+          <Circle cx={sceneWidth * 0.28} cy={domeY + 2} r={8} fill="#F87171" />
+          <Circle cx={sceneWidth * 0.28} cy={domeY + 2} r={3.5} fill="#FFFBEB" />
+        </G>
 
-      {/* Right Coral Tulip Flower */}
-      <G>
-        <Path d={"M " + (sceneWidth * 0.74) + " " + (domeY + 30) + " Q " + (sceneWidth * 0.73) + " " + (domeY + 10) + " " + (sceneWidth * 0.75) + " " + (domeY - 8)} stroke="#2D7D5A" strokeWidth="2.5" fill="none" />
-        <Path d={"M " + (sceneWidth * 0.74) + " " + (domeY + 16) + " Q " + (sceneWidth * 0.78) + " " + (domeY + 12) + " " + (sceneWidth * 0.78) + " " + (domeY + 6)} stroke="#2D7D5A" strokeWidth="2" fill="none" />
-        <Ellipse cx={sceneWidth * 0.75} cy={domeY - 8} rx={8.5} ry={11} fill="#F97316" />
-        <Circle cx={sceneWidth * 0.75} cy={domeY - 14} r={4.5} fill="#FDE68A" />
-      </G>
+        {/* Right Coral Tulip Flower */}
+        <G>
+          <Path d={"M " + (sceneWidth * 0.74) + " " + (domeY + 30) + " Q " + (sceneWidth * 0.73) + " " + (domeY + 10) + " " + (sceneWidth * 0.75) + " " + (domeY - 8)} stroke="#2D7D5A" strokeWidth="2.5" fill="none" />
+          <Path d={"M " + (sceneWidth * 0.74) + " " + (domeY + 16) + " Q " + (sceneWidth * 0.78) + " " + (domeY + 12) + " " + (sceneWidth * 0.78) + " " + (domeY + 6)} stroke="#2D7D5A" strokeWidth="2" fill="none" />
+          <Ellipse cx={sceneWidth * 0.75} cy={domeY - 8} rx={8.5} ry={11} fill="#F97316" />
+          <Circle cx={sceneWidth * 0.75} cy={domeY - 14} r={4.5} fill="#FDE68A" />
+        </G>
 
-      {/* Right Blossom Flower */}
-      <G>
-        <Path d={"M " + (sceneWidth * 0.83) + " " + (domeY + 34) + " Q " + (sceneWidth * 0.84) + " " + (domeY + 18) + " " + (sceneWidth * 0.83) + " " + (domeY + 6)} stroke="#2D7D5A" strokeWidth="2" fill="none" />
-        <Circle cx={sceneWidth * 0.83} cy={domeY + 6} r={7.5} fill="#FB7185" />
-        <Circle cx={sceneWidth * 0.83} cy={domeY + 6} r={3} fill="#FEF3C7" />
-      </G>
+        {/* Right Blossom Flower */}
+        <G>
+          <Path d={"M " + (sceneWidth * 0.83) + " " + (domeY + 34) + " Q " + (sceneWidth * 0.84) + " " + (domeY + 18) + " " + (sceneWidth * 0.83) + " " + (domeY + 6)} stroke="#2D7D5A" strokeWidth="2" fill="none" />
+          <Circle cx={sceneWidth * 0.83} cy={domeY + 6} r={7.5} fill="#FB7185" />
+          <Circle cx={sceneWidth * 0.83} cy={domeY + 6} r={3} fill="#FEF3C7" />
+        </G>
 
-      {/* Fresh Grass Sprigs */}
-      <Path d={"M " + (sceneWidth * 0.22) + " " + (domeY + 26) + " L " + (sceneWidth * 0.21) + " " + (domeY + 16)} stroke="#34D399" strokeWidth="2" strokeLinecap="round" />
-      <Path d={"M " + (sceneWidth * 0.23) + " " + (domeY + 26) + " L " + (sceneWidth * 0.24) + " " + (domeY + 15)} stroke="#34D399" strokeWidth="2" strokeLinecap="round" />
-      <Path d={"M " + (sceneWidth * 0.79) + " " + (domeY + 26) + " L " + (sceneWidth * 0.8) + " " + (domeY + 16)} stroke="#34D399" strokeWidth="2" strokeLinecap="round" />
-    </Svg>
+        {/* Fresh Grass Sprigs */}
+        <Path d={"M " + (sceneWidth * 0.22) + " " + (domeY + 26) + " L " + (sceneWidth * 0.21) + " " + (domeY + 16)} stroke="#34D399" strokeWidth="2" strokeLinecap="round" />
+        <Path d={"M " + (sceneWidth * 0.23) + " " + (domeY + 26) + " L " + (sceneWidth * 0.24) + " " + (domeY + 15)} stroke="#34D399" strokeWidth="2" strokeLinecap="round" />
+        <Path d={"M " + (sceneWidth * 0.79) + " " + (domeY + 26) + " L " + (sceneWidth * 0.8) + " " + (domeY + 16)} stroke="#34D399" strokeWidth="2" strokeLinecap="round" />
+      </Svg>
+    </View>
   );
 }
 
@@ -149,16 +156,11 @@ export default function Index() {
   const { isHydrated, user } = useAuthSession();
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const isDesktopWeb = Platform.OS === "web" && width >= 768;
-  const frameWidth = isDesktopWeb ? Math.min(width, APP_MAX_WIDTH) : (width > 0 ? width : APP_MAX_WIDTH);
+  const frameWidth = Math.min(width && width > 0 ? width : APP_MAX_WIDTH, APP_MAX_WIDTH);
   const isCompact = height > 0 && height < 720;
-  const isNarrow = frameWidth < 360;
+  const isNarrow = width > 0 && width < 360;
+  const domeY = height * (isCompact ? 0.46 : 0.52);
   const visualScale = Math.min(1, Math.max(0.82, frameWidth / 390));
-
-  const [characterBottom, setCharacterBottom] = useState<number | null>(null);
-  const domeY = characterBottom
-    ? characterBottom + 54
-    : (height > 0 ? height * (isCompact ? 0.48 : 0.52) : 420);
 
   useEffect(() => {
     if (isHydrated && user) {
@@ -199,15 +201,7 @@ export default function Index() {
         </View>
 
         {/* Center Muni Character on the White Mound Crest */}
-        <View
-          style={[styles.characterStage, isCompact && styles.characterStageCompact]}
-          onLayout={(e) => {
-            const { y, height: h } = e.nativeEvent.layout;
-            if (y > 0 && h > 0) {
-              setCharacterBottom(y + h);
-            }
-          }}
-        >
+        <View style={[styles.characterStage, isCompact && styles.characterStageCompact]}>
           <Image
             source={require("../assets/images/MUNI_default.png")}
             style={[
@@ -319,12 +313,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#5EBFA4",
     alignItems: "center",
-    width: "100%",
   },
   scrollContainer: {
     flexGrow: 1,
     width: "100%",
     maxWidth: APP_MAX_WIDTH,
+    justifyContent: "space-between",
   },
   topHeader: {
     paddingHorizontal: 26,
@@ -387,7 +381,6 @@ const styles = StyleSheet.create({
     height: 156,
   },
   bottomCard: {
-    marginTop: "auto",
     paddingHorizontal: 24,
     alignItems: "center",
   },
