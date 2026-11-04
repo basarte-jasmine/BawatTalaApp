@@ -1184,20 +1184,18 @@ export default function WriteEntryScreen() {
      setIsAnalyzingTags(true);
      const sendResult = await sendJournalMessage({
        aiEnabled,
-       entryId: entry.id,
+       entryId: activeEntry.id,
        message: inputValue.trim(),
        studentNumber });
 
-     if (!sendResult.ok || !sendResult.entry) {
-       setIsAnalyzingTags(false);
-       setErrorMessage(sendResult.message ?? "Unable to save your journal entry.");
-       return;
+     if (sendResult.entry) {
+       activeEntry = sendResult.entry;
+       setEntry(sendResult.entry);
      }
-
-     activeEntry = sendResult.entry;
+     if (sendResult.messages) {
+       setMessages(sendResult.messages);
+     }
      setInputValue("");
-     setEntry(sendResult.entry);
-     setMessages(sendResult.messages ?? []);
    }
 
    const isOffline = !aiEnabled || activeEntry.id.startsWith("local-");
@@ -1249,11 +1247,9 @@ export default function WriteEntryScreen() {
 
   const isEntryFinished = Boolean(entry?.isFinished);
   const canWrite = !isEntryFinished;
-  const finishValidationMessage = !entry?.id
-    ? "Start a journal entry first."
-    : !hasTypedContent
-      ? "Write something first before finishing."
-      : "";
+  const finishValidationMessage = !hasTypedContent
+    ? "Write something first before finishing."
+    : "";
   const canFinishEntry = !isEntryFinished && !isFinishing && !isSending && !isAnalyzingTags && !isSavingTags && !finishValidationMessage;
   const liftComposer = keyboardVisible || inputFocused;
 

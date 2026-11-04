@@ -1,24 +1,34 @@
 import * as SecureStore from "expo-secure-store";
 import CryptoJS from "crypto-js";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const DEVICE_KEY_SECURE = "bawat-tala.local-data-aes-key";
+const DEVICE_KEY_FALLBACK = "bawat-tala.local-data-aes-key-fallback";
 const CIPHER_PREFIX = "btenc:v1:";
 
+let memoryDeviceKey: string | null = null;
+
 async function getOrCreateDeviceKey(): Promise<string> {
+  if (memoryDeviceKey && memoryDeviceKey.length >= 32) return memoryDeviceKey;
   try {
     const existing = await SecureStore.getItemAsync(DEVICE_KEY_SECURE);
     if (existing && existing.length >= 32) {
+      memoryDeviceKey = existing;
       return existing;
     }
-  } catch {
-    // Fall through and create a new key.
-  }
-  const key = CryptoJS.lib.WordArray.random(32).toString(CryptoJS.enc.Hex);
+  } catch {}
   try {
-    await SecureStore.setItemAsync(DEVICE_KEY_SECURE, key);
-  } catch {
-    // SecureStore unavailable (e.g. some web contexts) — still encrypt in-process.
-  }
+    const fallback = await AsyncStorage.getItem(DEVICE_KEY_FALLBACK);
+    if (fallback && fallback.length >= 32) {
+      memoryDeviceKey = fallback;
+      try { await SecureStore.setItemAsync(DEVICE_KEY_SECURE, fallback); } catch {}
+      return fallback;
+    }
+  } catch {}
+  const key = CryptoJS.lib.WordArray.random(32).toString(CryptoJS.enc.Hex);
+  memoryDeviceKey = key;
+  try { await SecureStore.setItemAsync(DEVICE_KEY_SECURE, key); } catch {}
+  try { await AsyncStorage.setItem(DEVICE_KEY_FALLBACK, key); } catch {}
   return key;
 }
 

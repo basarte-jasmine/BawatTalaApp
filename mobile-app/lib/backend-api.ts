@@ -844,12 +844,17 @@ async function readLocalJournalData(studentNumber: string): Promise<StoredJourna
           ? parsed.entries
           : {},
     };
-    // Migrate legacy plaintext blobs to encrypted at rest.
     if (!looksLikeEncryptedPayload(storedValue)) {
       await writeLocalJournalData(studentNumber, data);
     }
     return data;
   } catch {
+    try {
+      const parsed = JSON.parse(storedValue);
+      if (parsed?.entries && typeof parsed.entries === "object") {
+        return parsed;
+      }
+    } catch {}
     return { entries: {} };
   }
 }
@@ -868,9 +873,9 @@ async function upsertLocalJournalRecord(
   messages: JournalMessage[] = [],
   syncStatus: "pending" | "synced" = "synced",
 ) {
-  if (!entry?.id) return;
+  if (!entry?.id || !studentNumber) return;
   const data = await readLocalJournalData(studentNumber);
-  const existingRecord = data.entries[entry.id];
+  const existingRecord = await getLocalJournalRecord(studentNumber, entry.id);
   const normalizedMessages = normalizeJournalMessages(messages);
   const nextMessages = normalizedMessages.length > 0
     ? normalizedMessages
@@ -886,6 +891,13 @@ async function upsertLocalJournalRecord(
     entry: nextEntry,
     messages: nextMessages,
   };
+  const localId = (entry as any).localId || (existingRecord?.entry as any)?.localId;
+  if (localId && localId !== entry.id) {
+    data.entries[localId] = {
+      entry: nextEntry,
+      messages: nextMessages,
+    };
+  }
   await writeLocalJournalData(studentNumber, data);
 }
 
@@ -963,22 +975,28 @@ function mergeJournalEntryLists<
 
 async function getLocalFinishedJournalEntries(studentNumber: string) {
   const records = await getLocalJournalRecords(studentNumber);
-  return records
-    .filter((record) => record.entry.isFinished)
-    .map((record) => {
-      const preview = pickJournalPreviewText(record.entry, record.messages);
-      return {
-        createdAt: record.entry.createdAt,
-        entryDate: record.entry.entryDate,
-        id: record.entry.id,
-        insights: record.entry.insights,
-        isFinished: record.entry.isFinished,
-        preview,
-        summary: record.entry.summary,
-        syncStatus: record.entry.syncStatus,
-        title: record.entry.title || "Journal entry",
-      };
+  const seen = new Set();
+  const results = [];
+  for (const record of records) {
+    if (!record.entry.isFinished) continue;
+    const id = record.entry.id;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    if (record.entry.localId) seen.add(record.entry.localId);
+    const preview = pickJournalPreviewText(record.entry, record.messages);
+    results.push({
+      createdAt: record.entry.createdAt,
+      entryDate: record.entry.entryDate,
+      id: record.entry.id,
+      insights: record.entry.insights,
+      isFinished: record.entry.isFinished,
+      preview,
+      summary: record.entry.summary,
+      syncStatus: record.entry.syncStatus,
+      title: record.entry.title || "Journal entry",
     });
+  }
+  return results;
 }
 
 let journalSyncInFlight: Promise<void> | null = null;
@@ -1038,8 +1056,19 @@ async function syncPendingJournalEntries(studentNumber: string) {
           await writeLocalJournalData(studentNumber, data);
         }
 
-        const working = data.entries[remoteEntry.id];
+        const working = data.entries[remoteEntry.id] || data.entries[localEntryId];
         const userMessages = (working?.messages ?? record.messages).filter((message) => message.role === "user");
+        if (userMessages.length === 0) {
+          const fallbackText = record.entry.contentText || record.entry.preview || record.entry.summary || "";
+          if (fallbackText) {
+            userMessages.push({
+              createdAt: record.entry.createdAt || getNowIsoString(),
+              id: "user-msg-" + Date.now(),
+              role: "user",
+              text: fallbackText,
+            });
+          }
+        }
         // Only treat server-backed messages as already synced. Local placeholder ids
         // must still be uploaded after a remapped resume, or content stays blank remotely.
         const syncedUserTexts = new Set(
@@ -3309,78 +3338,106 @@ export async function finishJournalEntry(payload: {
   // Always persist finish state locally first so nothing is lost if offline or network drops
   const record = await getLocalJournalRecord(payload.studentNumber, payload.entryId);
   const now = getNowIsoString();
-  const submittedMessages = normalizeJournalMessages(payload.messages);
-  const messages = submittedMessages.length ? submittedMessages : record?.messages ?? [];
-  const summary = record?.entry?.summary || summarizeLocalMessages(messages);
+  const baseEntry = record?.entry ?? createLocalJournalEntry(payload.studentNumber, false);
+  const resolvedId = baseEntry.id || payload.entryId;
+
+  let submittedMessages = normalizeJournalMessages(payload.messages);
+  if (submittedMessages.length === 0 && record?.messages?.length) {
+    submittedMessages = normalizeJournalMessages(record.messages);
+  }
+  // Ensure user content is represented in messages so backend never deletes as empty
+  if (submittedMessages.length === 0) {
+    const fallbackText = baseEntry.contentText || baseEntry.preview || baseEntry.summary || "";
+    if (fallbackText) {
+      submittedMessages = [
+        {
+          createdAt: now,
+          id: "msg-" + Date.now(),
+          role: "user",
+          text: fallbackText,
+        },
+      ];
+    }
+  }
+
+  const summary = baseEntry.summary || summarizeLocalMessages(submittedMessages);
   const localEntry: StoredJournalEntry = {
-    ...(record?.entry ?? createLocalJournalEntry(payload.studentNumber, false)),
-    concernTags: payload.concernTags ?? record?.entry?.concernTags ?? [],
+    ...baseEntry,
+    id: resolvedId,
+    concernTags: payload.concernTags ?? baseEntry.concernTags ?? [],
     finishedAt: now,
-    insights: record?.entry?.insights?.length ? record.entry.insights : summary ? [summary] : [],
+    insights: baseEntry.insights?.length ? baseEntry.insights : summary ? [summary] : [],
     isFinished: true,
-    primaryConcern: payload.primaryConcern ?? payload.concernTags?.[0] ?? record?.entry?.primaryConcern ?? "Others",
+    primaryConcern: payload.primaryConcern ?? payload.concernTags?.[0] ?? baseEntry.primaryConcern ?? "Others",
     summary,
     syncStatus: "pending",
     updatedAt: now,
   };
-  await upsertLocalJournalRecord(payload.studentNumber, localEntry, messages, "pending");
+  await upsertLocalJournalRecord(payload.studentNumber, localEntry, submittedMessages, "pending");
+
+  if (payload.entryId && payload.entryId !== resolvedId) {
+    const data = await readLocalJournalData(payload.studentNumber);
+    data.entries[payload.entryId] = { entry: localEntry, messages: submittedMessages };
+    await writeLocalJournalData(payload.studentNumber, data);
+  }
 
   try {
     await syncPendingJournalEntries(payload.studentNumber);
 
+    const updatedRecord = await getLocalJournalRecord(payload.studentNumber, resolvedId);
+    if (updatedRecord && !updatedRecord.entry.id.startsWith("local-") && updatedRecord.entry.syncStatus === "synced") {
+      return {
+        ok: true,
+        message: "Journal entry finished.",
+        entry: updatedRecord.entry,
+        messages: updatedRecord.messages,
+      };
+    }
+
     if (isLocal) {
-      const updatedRecord = await getLocalJournalRecord(payload.studentNumber, payload.entryId);
-      if (updatedRecord && !updatedRecord.entry.id.startsWith("local-") && updatedRecord.entry.syncStatus === "synced") {
-        return {
-          ok: true,
-          message: "Journal entry finished.",
-          entry: updatedRecord.entry,
-          messages: updatedRecord.messages,
-        };
-      }
       return {
         ok: true,
         message: "Your entry is saved on this device. Muni's summary will be available when you're back online.",
         entry: updatedRecord?.entry ?? localEntry,
-        messages: updatedRecord?.messages ?? messages,
+        messages: updatedRecord?.messages ?? submittedMessages,
       };
     }
 
     const { response, data } = await post("/api/journal/session/finish", {
       concernTags: payload.concernTags,
-      entryId: payload.entryId,
+      entryId: resolvedId,
       forceAnalyze: payload.forceAnalyze,
-      messages,
+      messages: submittedMessages,
       primaryConcern: payload.primaryConcern,
       studentNumber: payload.studentNumber,
     });
 
     const normalizedEntry = normalizeJournalEntrySafety(data?.entry as JournalEntry | null | undefined) ?? null;
-    const localRecord = await getLocalJournalRecord(payload.studentNumber, payload.entryId);
     const normalizedMessages = data?.messages?.length
       ? normalizeJournalMessages(data.messages)
-      : normalizeJournalMessages(localRecord?.messages ?? messages);
+      : submittedMessages;
 
-    if (response.ok) {
+    if (response.ok && normalizedEntry) {
       await upsertLocalJournalRecord(
         payload.studentNumber,
         normalizedEntry,
         normalizedMessages,
+        "synced",
       );
     }
 
     return {
       ok: response.ok,
-      message: data?.message,
+      message: data?.message || "Journal entry finished.",
       entry: normalizedEntry ?? localEntry,
-      messages: data?.messages?.length ? normalizedMessages : messages,
+      messages: normalizedMessages,
     };
   } catch {
     return {
       ok: true,
       message: "Your entry is saved on this device. Muni's summary will be available when you're back online.",
       entry: localEntry,
-      messages,
+      messages: submittedMessages,
     };
   }
 }
