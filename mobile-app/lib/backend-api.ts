@@ -891,16 +891,24 @@ async function upsertLocalJournalRecord(
 
 async function getLocalJournalRecord(studentNumber: string, entryId: string) {
   const data = await readLocalJournalData(studentNumber);
-  if (data.entries[entryId]) {
-    return data.entries[entryId];
-  }
-  const remapped = Object.values(data.entries).find(
-    (item) => (item.entry as any).localId === entryId || (item.entry as any).id === entryId,
-  );
-  if (remapped) return remapped;
-  // If entryId was remapped, also check if entryId itself has a localId or remote pointer
+  const rawId = String(entryId || "").trim();
+  if (!rawId) return null;
+  const decodedId = decodeURIComponent(rawId);
+
+  if (data.entries[rawId]) return data.entries[rawId];
+  if (data.entries[decodedId]) return data.entries[decodedId];
+
   for (const record of Object.values(data.entries)) {
-    if ((record.entry as any).localId === entryId || (record.entry as any).remoteId === entryId) {
+    const entry = record?.entry;
+    if (!entry) continue;
+    if (
+      entry.id === rawId ||
+      entry.id === decodedId ||
+      (entry as any).localId === rawId ||
+      (entry as any).localId === decodedId ||
+      (entry as any).remoteId === rawId ||
+      (entry as any).remoteId === decodedId
+    ) {
       return record;
     }
   }
@@ -967,6 +975,7 @@ async function getLocalFinishedJournalEntries(studentNumber: string) {
         isFinished: record.entry.isFinished,
         preview,
         summary: record.entry.summary,
+        syncStatus: record.entry.syncStatus,
         title: record.entry.title || "Journal entry",
       };
     });
@@ -1084,6 +1093,12 @@ async function syncPendingJournalEntries(studentNumber: string) {
           entry: { ...remoteEntry, syncStatus: "synced" },
           messages: remoteMessages,
         };
+        if (localEntryId && localEntryId !== remoteEntry.id) {
+          data.entries[localEntryId] = {
+            entry: { ...remoteEntry, syncStatus: "synced", localId: localEntryId },
+            messages: remoteMessages,
+          };
+        }
         await writeLocalJournalData(studentNumber, data);
         if (needsSupportPrompt(remoteEntry)) {
           await enqueuePendingRiskPrompt(studentNumber, remoteEntry.id);
@@ -3177,8 +3192,8 @@ export async function createJournalSession(payload: {
     return {
       ok: true,
       message: payload.aiEnabled
-        ? "Journal started offline. Your entry is saved on this device. Muni replies will resume when you're back online."
-        : "Offline journal started. It will sync when your connection returns.",
+        ? "Muni can't reply right now. Your entry is saved on this device."
+        : "Your entry is saved on this device. It will sync when your connection returns.",
       entry,
       messages: [],
     };
@@ -3266,11 +3281,16 @@ export async function sendJournalMessage(payload: {
     data.entries[nextEntry.id] = { entry: nextEntry, messages };
     await writeLocalJournalData(payload.studentNumber, data);
 
+    if ((entry as any).localId && (entry as any).localId !== nextEntry.id) {
+      data.entries[(entry as any).localId] = { entry: nextEntry, messages };
+    }
+    await writeLocalJournalData(payload.studentNumber, data);
+
     return {
       ok: true,
       aiReply: null,
       entry: nextEntry,
-      message: "Saved offline. Muni replies will resume when you are online.",
+      message: "Muni can't reply right now.",
       messages,
     };
   }
@@ -3310,7 +3330,7 @@ export async function finishJournalEntry(payload: {
 
     if (isLocal) {
       const updatedRecord = await getLocalJournalRecord(payload.studentNumber, payload.entryId);
-      if (updatedRecord && !updatedRecord.entry.id.startsWith("local-")) {
+      if (updatedRecord && !updatedRecord.entry.id.startsWith("local-") && updatedRecord.entry.syncStatus === "synced") {
         return {
           ok: true,
           message: "Journal entry finished.",
@@ -3320,9 +3340,9 @@ export async function finishJournalEntry(payload: {
       }
       return {
         ok: true,
-        message: "Journal entry finished offline and queued to sync.",
-        entry: localEntry,
-        messages,
+        message: "Your entry is saved on this device. Muni's summary will be available when you're back online.",
+        entry: updatedRecord?.entry ?? localEntry,
+        messages: updatedRecord?.messages ?? messages,
       };
     }
 
@@ -3358,7 +3378,7 @@ export async function finishJournalEntry(payload: {
   } catch {
     return {
       ok: true,
-      message: "Journal entry finished offline and queued to sync.",
+      message: "Your entry is saved on this device. Muni's summary will be available when you're back online.",
       entry: localEntry,
       messages,
     };
@@ -3770,28 +3790,26 @@ export async function fetchJournalEntryById(
     };
   };
 
+  const localRecord = await getLocalJournalRecord(studentNumber, entryId);
+  const localMessages = normalizeJournalMessages(localRecord?.messages);
+  const fallbackMessages = localMessages.length ? localMessages : buildPreviewJournalMessages(localRecord?.entry);
+
   if (entryId.startsWith("local-")) {
-    const record = await getLocalJournalRecord(studentNumber, entryId);
-    const localMessages = normalizeJournalMessages(record?.messages);
-    const messages = localMessages.length ? localMessages : buildPreviewJournalMessages(record?.entry);
     return {
-      ok: Boolean(record),
-      message: record ? "Loaded offline journal entry." : "Unable to load this offline entry.",
-      entry: enrichJournalEntry(record?.entry ?? null, messages),
-      messages,
+      ok: Boolean(localRecord),
+      message: localRecord ? "Loaded offline journal entry." : "Unable to load this offline entry.",
+      entry: enrichJournalEntry(localRecord?.entry ?? null, fallbackMessages),
+      messages: fallbackMessages,
     };
   }
 
   try {
-    await syncPendingJournalEntries(studentNumber);
-    const localRecord = await getLocalJournalRecord(studentNumber, entryId);
     const targetId = (localRecord?.entry && !localRecord.entry.id.startsWith("local-"))
       ? localRecord.entry.id
       : entryId;
     const params = new URLSearchParams({ studentNumber });
     const { response, data } = await get(`/api/journal/entries/${targetId}?${params.toString()}`);
     const remoteMessages = normalizeJournalMessages(data?.messages);
-    const localMessages = normalizeJournalMessages(localRecord?.messages);
     const remoteEntry = (data?.entry ?? null) as JournalEntry | null;
     const seedEntry = remoteEntry
       ? {
@@ -3815,34 +3833,44 @@ export async function fetchJournalEntryById(
           ? remoteMessages
           : buildPreviewJournalMessages(seedEntry);
     if (!response.ok) {
-      const fallbackMessages = localMessages.length ? localMessages : buildPreviewJournalMessages(localRecord?.entry);
+      if (localRecord) {
+        return {
+          ok: true,
+          message: "Loaded journal entry saved on this device.",
+          entry: enrichJournalEntry(localRecord.entry, fallbackMessages),
+          messages: fallbackMessages,
+        };
+      }
       return {
-        ok: Boolean(localRecord),
-        message: localRecord ? "Loaded journal entry saved on this device." : data?.message,
-        entry: enrichJournalEntry(localRecord?.entry ?? null, fallbackMessages),
-        messages: fallbackMessages,
+        ok: false,
+        message: data?.message || "Journal entry not found.",
+        entry: null,
+        messages: [],
       };
     }
     const enrichedEntry = enrichJournalEntry(seedEntry, responseMessages);
-    if (response.ok) {
-      await upsertLocalJournalRecord(studentNumber, enrichedEntry, responseMessages);
-    }
+    await upsertLocalJournalRecord(studentNumber, enrichedEntry, responseMessages, "synced");
 
     return {
-      ok: response.ok,
+      ok: true,
       message: data?.message,
       entry: enrichedEntry,
       messages: responseMessages,
     };
   } catch {
-    const record = await getLocalJournalRecord(studentNumber, entryId);
-    const localMessages = normalizeJournalMessages(record?.messages);
-    const messages = localMessages.length ? localMessages : buildPreviewJournalMessages(record?.entry);
+    if (localRecord) {
+      return {
+        ok: true,
+        message: "Loaded journal entry saved on this device.",
+        entry: enrichJournalEntry(localRecord.entry, fallbackMessages),
+        messages: fallbackMessages,
+      };
+    }
     return {
-      ok: Boolean(record),
-      message: record ? "Loaded journal entry saved on this device." : "Unable to load this journal entry offline.",
-      entry: enrichJournalEntry(record?.entry ?? null, messages),
-      messages,
+      ok: false,
+      message: "Unable to load this journal entry offline.",
+      entry: null,
+      messages: [],
     };
   }
 }

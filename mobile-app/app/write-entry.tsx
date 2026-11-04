@@ -370,23 +370,33 @@ export default function WriteEntryScreen() {
     const result = await fetchTodayJournalSession(user.studentNumber);
 
     if (!result.ok) {
-      if (targetAiEnabled && /offline|network|failed/i.test(result.message || "")) {
-        setShowOfflineSwitchModal(true);
-        setIsLoading(false);
-        return;
+      const offlineResult = await createJournalSession({
+        aiEnabled: targetAiEnabled,
+        studentNumber: user.studentNumber,
+      });
+      setEntry(offlineResult.entry ?? null);
+      setMessages(offlineResult.messages ?? []);
+      if (targetAiEnabled) {
+        setStatusMessage("Muni can't reply right now. Your thoughts will be saved offline.");
       }
-      setErrorMessage(
-        result.message ?? "Unable to load your journal right now.",
-      );
-      setMessages([]);
-      setEntry(null);
       setAiEnabled(targetAiEnabled);
+      sessionStartedRef.current = true;
+      void loadJournalEmotion();
       setIsLoading(false);
       return;
     }
 
-    setEntry(result.entry ?? null);
-    setMessages(result.messages ?? []);
+    if (!result.entry && user?.studentNumber) {
+      const offlineResult = await createJournalSession({
+        aiEnabled: targetAiEnabled,
+        studentNumber: user.studentNumber,
+      });
+      setEntry(offlineResult.entry ?? null);
+      setMessages(offlineResult.messages ?? []);
+    } else {
+      setEntry(result.entry ?? null);
+      setMessages(result.messages ?? []);
+    }
     setAiEnabled(targetAiEnabled);
     sessionStartedRef.current = true;
     void loadJournalEmotion();
@@ -567,7 +577,7 @@ export default function WriteEntryScreen() {
       setPendingUserMessage("");
       setInputValue(trimmedMessage);
       if (/network|offline|failed to fetch|internet|timeout/i.test(result.message || "")) {
-        setShowOfflineSwitchModal(true);
+        setStatusMessage("Muni can't reply right now.");
       } else {
         setErrorMessage(result.message ?? "Unable to save your journal entry.");
       }
@@ -1114,6 +1124,13 @@ export default function WriteEntryScreen() {
     if (result.messages) {
       setMessages(result.messages);
     }
+    const isOfflineSaved = result.entry?.syncStatus === "pending" || result.entry?.id.startsWith("local-");
+    showAppNotice(
+      "Journal Saved",
+      isOfflineSaved
+        ? "Your entry is saved on this device. Muni's summary will be available when you're back online."
+        : "Your journal entry has been saved.",
+    );
     // DISTRESS Yes→Save: after usual finish, record VIEWED_WELLNESS then open wellness tools.
     if (pendingWellnessAfterFinishRef.current) {
       pendingWellnessAfterFinishRef.current = false;
@@ -1138,10 +1155,6 @@ export default function WriteEntryScreen() {
       setErrorMessage("This journal entry is already finished and can no longer be edited.");
       return;
     }
-    if (!entry?.id) {
-      setErrorMessage("Start a journal entry first.");
-      return;
-    }
     if (!user?.studentNumber) {
       setErrorMessage("You need to be logged in to finish this journal entry.");
       return;
@@ -1155,6 +1168,17 @@ export default function WriteEntryScreen() {
    setErrorMessage("");
    setStatusMessage("");
    let activeEntry = entry;
+
+   if (!activeEntry?.id) {
+     const created = await createJournalSession({
+       aiEnabled,
+       studentNumber,
+     });
+     if (created.entry?.id) {
+       activeEntry = created.entry;
+       setEntry(created.entry);
+     }
+   }
 
    if (inputValue.trim()) {
      setIsAnalyzingTags(true);

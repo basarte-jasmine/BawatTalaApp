@@ -21,6 +21,7 @@ type RecentEntryItem = {
   preview: string;
   summary: string;
   title: string;
+  syncStatus?: string;
 };
 
 function formatDateBox(entryDate: string) {
@@ -122,7 +123,15 @@ function SwipeSafeEntryCard({
         </View>
 
         <View style={styles.entryTextWrap}>
-          <Text style={styles.entryTime}>{formatCreatedAtTime(entry.createdAt)}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <Text style={styles.entryTime}>{formatCreatedAtTime(entry.createdAt)}</Text>
+            {entry.syncStatus === "pending" || entry.id.startsWith("local-") ? (
+              <View style={styles.pendingBadge}>
+                <Ionicons name="cloud-offline-outline" size={11} color="#3E6B48" />
+                <Text style={styles.pendingBadgeText}>Saved on device</Text>
+              </View>
+            ) : null}
+          </View>
           <Text style={styles.entryBody} numberOfLines={2}>
             {[entry.preview, entry.summary, entry.title].map((value) => String(value || "").trim()).find(Boolean) || "Journal entry"}
           </Text>
@@ -543,6 +552,20 @@ const styles = StyleSheet.create({
     justifyContent: "center" },
   entryTextWrap: {
     flex: 1 },
+  pendingBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 4,
+    backgroundColor: "#E8F4E5",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  pendingBadgeText: {
+    fontSize: 10,
+    fontFamily: "Outfit-Medium",
+    color: "#2C5435",
+  },
   entryTime: {
     color: "#2E4155",
     fontSize: 15,

@@ -307,9 +307,14 @@ export default function JournalEntryViewScreen() {
     () => formatSummaryText(entry?.summary, entry?.insights ?? []),
     [entry?.insights, entry?.summary],
   );
+  const isPendingSync = entry?.syncStatus === "pending" || Boolean(entry?.id && entry.id.startsWith("local-"));
   const aiSummaryText = useMemo(
-    () => storedSummaryText || summarizeParagraphs(paragraphs) || (entry?.aiEnabled ? "Muni saved this journal entry, but the summary text is still being prepared." : ""),
-    [entry?.aiEnabled, paragraphs, storedSummaryText],
+    () => {
+      if (storedSummaryText) return storedSummaryText;
+      if (isPendingSync) return "Muni's summary will be available when you're back online.";
+      return summarizeParagraphs(paragraphs) || (entry?.aiEnabled ? "Muni saved this journal entry, but the summary text is still being prepared." : "");
+    },
+    [entry?.aiEnabled, isPendingSync, paragraphs, storedSummaryText],
   );
   const usedChatbot = useMemo(
     () => Boolean(entry?.aiEnabled || assistantMessages.length > 0),
